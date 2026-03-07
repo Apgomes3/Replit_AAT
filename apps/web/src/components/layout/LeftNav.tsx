@@ -10,7 +10,6 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
     id: 'asw-library',
     label: 'ASW Library',
     items: [
-      { id: 'families', to: '/products', icon: Package, label: 'Families', end: true },
       { id: 'products', to: '/products/masters', icon: Package, label: 'Products' },
       { id: 'components', to: '/products/components', icon: Boxes, label: 'Components' },
       { id: 'piping', to: '/products/piping', icon: Pipette, label: 'Pipes & Fittings' },
@@ -21,7 +20,6 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
     id: 'knowledge-hub',
     label: 'Knowledge Hub',
     items: [
-      { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
       { id: 'specifications', to: '/knowledge/specifications', icon: BookOpen, label: 'Specifications' },
       { id: 'design-rules', to: '/knowledge/design-rules', icon: BookOpen, label: 'Design Rules' },
     ],
@@ -44,6 +42,8 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
     id: 'admin',
     label: 'Admin',
     items: [
+      { id: 'families', to: '/products', icon: Package, label: 'Families', end: true },
+      { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
       { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
       { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import' },
     ],
