@@ -40,6 +40,10 @@ export default function ProjectDetail() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
+  const isAdmin = user?.role === 'admin';
+  const APPROVAL_GATES: Record<string, string[]> = {
+    'Design': ['Draft', 'Concept'],
+  };
   const [tab, setTab] = useState<Tab>('systems');
   const [showNewSystem, setShowNewSystem] = useState(false);
   const [showNewTank, setShowNewTank] = useState(false);
@@ -571,26 +575,34 @@ export default function ProjectDetail() {
                           {PROJECT_LIFECYCLE.map((stage, idx) => {
                             const isPast = idx < currentIdx;
                             const isCurrent = stage === project.project_status;
+                            const gateFromStatuses = APPROVAL_GATES[stage];
+                            const isGated = !!(gateFromStatuses && gateFromStatuses.includes(project.project_status));
+                            const isLocked = isGated && !isAdmin;
                             return (
                               <button
                                 key={stage}
                                 onClick={async () => {
+                                  if (isCurrent || isLocked) return;
                                   await handleStatusChange(stage);
                                   setShowStatusMenu(false);
                                 }}
-                                disabled={isCurrent}
+                                disabled={isCurrent || isLocked}
+                                title={isLocked ? 'Requires admin approval to advance to Design' : undefined}
                                 className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors w-full
-                                  ${isCurrent ? 'bg-[#3E5C76] text-white cursor-default' : 'hover:bg-slate-50 text-slate-700'}
+                                  ${isCurrent ? 'bg-[#3E5C76] text-white cursor-default'
+                                    : isLocked ? 'opacity-50 cursor-not-allowed text-slate-400'
+                                    : 'hover:bg-slate-50 text-slate-700'}
                                 `}
                               >
                                 <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-xs font-bold
-                                  ${isCurrent ? 'bg-white/20 text-white' : isPast ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}
+                                  ${isCurrent ? 'bg-white/20 text-white' : isPast ? 'bg-green-100 text-green-600' : isLocked ? 'bg-slate-100 text-slate-300' : 'bg-slate-100 text-slate-400'}
                                 `}>
-                                  {isPast ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span>{idx + 1}</span>}
+                                  {isPast ? <CheckCircle2 className="w-3.5 h-3.5" /> : isLocked ? <span>🔒</span> : <span>{idx + 1}</span>}
                                 </span>
                                 <span className="font-medium">{stage}</span>
                                 {isCurrent && <span className="ml-auto text-xs text-white/70">current</span>}
-                                {stage === nextStage && <span className="ml-auto text-xs text-[#3E5C76] font-semibold">next →</span>}
+                                {isLocked && <span className="ml-auto text-xs text-slate-400">admin only</span>}
+                                {!isCurrent && !isLocked && stage === nextStage && <span className="ml-auto text-xs text-[#3E5C76] font-semibold">next →</span>}
                               </button>
                             );
                           })}
