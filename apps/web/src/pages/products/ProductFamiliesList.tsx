@@ -8,14 +8,16 @@ import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
+import FamilyClassifiersModal from '../../components/ui/FamilyClassifiersModal';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
-import { Plus, Pencil } from 'lucide-react';
+import { Plus, Pencil, SlidersHorizontal } from 'lucide-react';
 
 export default function ProductFamiliesList() {
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
   const [editRow, setEditRow] = useState<ProductFamily | null>(null);
+  const [classifiersFamily, setClassifiersFamily] = useState<ProductFamily | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['product-families'],
@@ -52,6 +54,11 @@ export default function ProductFamiliesList() {
               icon: <Pencil className="w-3.5 h-3.5" />,
               onClick: () => setEditRow(row),
             },
+            {
+              label: 'Manage Classifiers',
+              icon: <SlidersHorizontal className="w-3.5 h-3.5" />,
+              onClick: () => setClassifiersFamily(row),
+            },
           ]}
         />
       </div>
@@ -74,6 +81,10 @@ export default function ProductFamiliesList() {
             setShowNew(false);
           }}
         />
+      )}
+
+      {classifiersFamily && (
+        <FamilyClassifiersModal family={classifiersFamily} onClose={() => setClassifiersFamily(null)} />
       )}
 
       {editRow && (

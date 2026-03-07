@@ -1,6 +1,23 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
+
+const uploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const imageStorage = multer.diskStorage({
+  destination: uploadsDir,
+  filename: (_, file, cb) => {
+    const unique = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+    cb(null, `${unique}${path.extname(file.originalname)}`);
+  },
+});
+const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (_, file, cb) => {
+  cb(null, file.mimetype.startsWith('image/'));
+} });
 
 const router = Router();
 
@@ -329,6 +346,78 @@ router.post('/components/:id/duplicate', authenticate, async (req: AuthRequest, 
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
     [newCode, `Copy of ${src.component_name}`, src.component_type, src.component_category, src.description, src.primary_material_code, src.standard_size, src.weight_kg, src.unit, src.status, src.notes, src.synonyms || [], req.user!.id]);
   res.status(201).json(result.rows[0]);
+});
+
+// FAMILY CLASSIFIERS
+router.get('/product-families/:id/classifiers', authenticate, async (req: AuthRequest, res: Response) => {
+  const fam = await query('SELECT id FROM product_families WHERE id::text=$1 OR product_family_code=$1', [req.params.id]);
+  if (!fam.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Family not found' } });
+  const result = await query('SELECT * FROM family_classifiers WHERE family_id=$1 ORDER BY sort_order, created_at', [fam.rows[0].id]);
+  res.json({ items: result.rows });
+});
+
+router.post('/product-families/:id/classifiers', authenticate, async (req: AuthRequest, res: Response) => {
+  const fam = await query('SELECT id FROM product_families WHERE id::text=$1 OR product_family_code=$1', [req.params.id]);
+  if (!fam.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Family not found' } });
+  const { label, unit, field_type, sort_order } = req.body;
+  const result = await query(
+    'INSERT INTO family_classifiers (family_id, label, unit, field_type, sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [fam.rows[0].id, label, unit || null, field_type || 'text', sort_order ?? 0]);
+  res.status(201).json(result.rows[0]);
+});
+
+router.put('/family-classifiers/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { label, unit, field_type, sort_order } = req.body;
+  const result = await query(
+    'UPDATE family_classifiers SET label=$1, unit=$2, field_type=$3, sort_order=$4 WHERE id::text=$5 RETURNING *',
+    [label, unit || null, field_type || 'text', sort_order ?? 0, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Classifier not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/family-classifiers/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('DELETE FROM family_classifiers WHERE id::text=$1 RETURNING id', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Classifier not found' } });
+  res.json({ deleted: true });
+});
+
+// PRODUCT CLASSIFIER VALUES
+router.get('/product-masters/:id/classifier-values', authenticate, async (req: AuthRequest, res: Response) => {
+  const pm = await query('SELECT id, product_family_id FROM product_masters WHERE id::text=$1 OR product_code=$1', [req.params.id]);
+  if (!pm.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const { id, product_family_id } = pm.rows[0];
+  if (!product_family_id) return res.json({ classifiers: [], values: {} });
+  const classifiers = await query('SELECT * FROM family_classifiers WHERE family_id=$1 ORDER BY sort_order, created_at', [product_family_id]);
+  const values = await query('SELECT classifier_id, value_text FROM product_classifier_values WHERE product_id=$1', [id]);
+  const valueMap: Record<string, string> = {};
+  for (const v of values.rows) valueMap[v.classifier_id] = v.value_text;
+  res.json({ classifiers: classifiers.rows, values: valueMap });
+});
+
+router.put('/product-masters/:id/classifier-values', authenticate, async (req: AuthRequest, res: Response) => {
+  const pm = await query('SELECT id FROM product_masters WHERE id::text=$1 OR product_code=$1', [req.params.id]);
+  if (!pm.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const productId = pm.rows[0].id;
+  const { values } = req.body as { values: Record<string, string> };
+  for (const [classifierId, valueText] of Object.entries(values)) {
+    if (valueText === null || valueText === undefined || valueText === '') {
+      await query('DELETE FROM product_classifier_values WHERE product_id=$1 AND classifier_id=$2', [productId, classifierId]);
+    } else {
+      await query(
+        'INSERT INTO product_classifier_values (product_id, classifier_id, value_text) VALUES ($1,$2,$3) ON CONFLICT (product_id, classifier_id) DO UPDATE SET value_text=$3',
+        [productId, classifierId, valueText]);
+    }
+  }
+  res.json({ updated: true });
+});
+
+// PRODUCT IMAGE UPLOAD
+router.post('/product-masters/:id/image', authenticate, uploadImage.single('image'), async (req: AuthRequest, res: Response) => {
+  if (!req.file) return res.status(400).json({ error: { code: 'NO_FILE', message: 'No image file provided' } });
+  const imageUrl = `/uploads/${req.file.filename}`;
+  const result = await query('UPDATE product_masters SET image_url=$1, updated_at=NOW() WHERE id::text=$2 OR product_code=$2 RETURNING id, image_url', [imageUrl, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  res.json({ image_url: imageUrl });
 });
 
 export default router;

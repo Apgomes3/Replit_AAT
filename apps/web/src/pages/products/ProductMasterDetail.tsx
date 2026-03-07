@@ -80,7 +80,14 @@ export default function ProductMasterDetail() {
 
   const [showImageModal, setShowImageModal] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageInputMode, setImageInputMode] = useState<'url' | 'file'>('file');
   const [imageSubmitting, setImageSubmitting] = useState(false);
+  const imageFileRef = useRef<HTMLInputElement>(null);
+
+  const [showClassifiersEdit, setShowClassifiersEdit] = useState(false);
+  const [classifierEdits, setClassifierEdits] = useState<Record<string, string>>({});
+  const [classifiersSaving, setClassifiersSaving] = useState(false);
 
   const [showTankSpecsModal, setShowTankSpecsModal] = useState(false);
   const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', gross_volume_m3: '', operating_volume_m3: '' });
@@ -133,6 +140,12 @@ export default function ProductMasterDetail() {
     queryKey: ['comp-search', compSearch],
     queryFn: () => api.get(`/components?search=${compSearch}&page_size=8`).then(r => r.data),
     enabled: compSearch.length >= 2,
+  });
+
+  const { data: classifierData, refetch: refetchClassifiers } = useQuery({
+    queryKey: ['product-classifier-values', id],
+    queryFn: () => api.get(`/product-masters/${id}/classifier-values`).then(r => r.data),
+    enabled: !!product,
   });
 
   const productPutPayload = (overrides: Record<string, any>) => ({
@@ -197,14 +210,37 @@ export default function ProductMasterDetail() {
   const handleSaveImage = async () => {
     setImageSubmitting(true);
     try {
-      await api.put(`/product-masters/${id}`, productPutPayload({ image_url: imageUrlInput || null }));
+      if (imageInputMode === 'file' && imageFile) {
+        const form = new FormData();
+        form.append('image', imageFile);
+        await api.post(`/product-masters/${id}/image`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      } else {
+        await api.put(`/product-masters/${id}`, productPutPayload({ image_url: imageUrlInput || null }));
+      }
       toast.success('Image updated');
       setShowImageModal(false);
+      setImageFile(null);
+      setImageUrlInput('');
       queryClient.invalidateQueries({ queryKey: ['product-master', id] });
     } catch {
       toast.error('Failed to update image');
     } finally {
       setImageSubmitting(false);
+    }
+  };
+
+  const handleSaveClassifiers = async () => {
+    setClassifiersSaving(true);
+    try {
+      await api.put(`/product-masters/${id}/classifier-values`, { values: classifierEdits });
+      toast.success('Classifiers saved');
+      setShowClassifiersEdit(false);
+      setClassifierEdits({});
+      refetchClassifiers();
+    } catch {
+      toast.error('Failed to save classifiers');
+    } finally {
+      setClassifiersSaving(false);
     }
   };
 
@@ -434,7 +470,69 @@ export default function ProductMasterDetail() {
               { label: 'Notes', value: product.notes },
             ]} />
 
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
+            {classifierData?.classifiers?.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-lg mt-3">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                  <span className="text-xs text-slate-400 uppercase tracking-wide">Classifiers</span>
+                  <button
+                    onClick={() => {
+                      if (!showClassifiersEdit) {
+                        const edits: Record<string, string> = {};
+                        for (const c of classifierData.classifiers) {
+                          edits[c.id] = classifierData.values?.[c.id] ?? '';
+                        }
+                        setClassifierEdits(edits);
+                      }
+                      setShowClassifiersEdit(v => !v);
+                    }}
+                    className="text-xs text-[#3E5C76] hover:underline"
+                  >{showClassifiersEdit ? 'Cancel' : 'Edit'}</button>
+                </div>
+                {showClassifiersEdit ? (
+                  <div className="p-3 space-y-2">
+                    {classifierData.classifiers.map((c: any) => (
+                      <div key={c.id} className="flex items-center gap-3">
+                        <label className="w-32 text-xs text-slate-500 shrink-0">
+                          {c.label}{c.unit ? <span className="text-slate-300 ml-1">({c.unit})</span> : ''}
+                        </label>
+                        <input
+                          type={c.field_type === 'number' ? 'number' : 'text'}
+                          value={classifierEdits[c.id] ?? ''}
+                          onChange={e => setClassifierEdits(prev => ({ ...prev, [c.id]: e.target.value }))}
+                          placeholder="—"
+                          className="flex-1 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#3E5C76]"
+                        />
+                      </div>
+                    ))}
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button onClick={() => setShowClassifiersEdit(false)} className="text-xs px-3 py-1 bg-slate-100 text-slate-600 rounded hover:bg-slate-200">Cancel</button>
+                      <button onClick={handleSaveClassifiers} disabled={classifiersSaving}
+                        className="text-xs px-3 py-1 bg-[#3E5C76] text-white rounded hover:bg-[#2d4a63] disabled:opacity-50">
+                        {classifiersSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 space-y-1.5">
+                    {classifierData.classifiers
+                      .filter((c: any) => classifierData.values?.[c.id])
+                      .map((c: any) => (
+                        <div key={c.id} className="flex justify-between gap-2 text-xs">
+                          <span className="text-slate-400">{c.label}</span>
+                          <span className="text-slate-700 font-medium">
+                            {classifierData.values[c.id]}{c.unit ? <span className="text-slate-400 ml-1">{c.unit}</span> : ''}
+                          </span>
+                        </div>
+                      ))}
+                    {classifierData.classifiers.filter((c: any) => classifierData.values?.[c.id]).length === 0 && (
+                      <div className="text-xs text-slate-300 text-center py-2">No values set — click Edit to add</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="bg-white border border-slate-200 rounded-lg p-4 mt-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag className="w-3 h-3" /> Synonyms</span>
                 <button onClick={() => setShowSynonymsEdit(s => !s)} className="text-xs text-[#3E5C76] hover:underline">{showSynonymsEdit ? 'Done' : 'Edit'}</button>
@@ -465,21 +563,19 @@ export default function ProductMasterDetail() {
             </div>
           </div>
           <div className="space-y-3">
-            {isPiping && (
-              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
-                  <span className="text-xs text-slate-400 uppercase tracking-wide">Image</span>
-                  <button
-                    onClick={() => { setImageUrlInput(product.image_url || ''); setShowImageModal(true); }}
-                    className="text-xs text-[#3E5C76] hover:underline"
-                  >{product.image_url ? 'Change' : 'Add image'}</button>
-                </div>
-                {product.image_url
-                  ? <img src={product.image_url} alt={product.product_name} className="w-full h-40 object-contain p-2 bg-slate-50" />
-                  : <div className="h-32 flex items-center justify-center bg-slate-50 text-slate-300 text-sm">No image</div>
-                }
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                <span className="text-xs text-slate-400 uppercase tracking-wide">Image</span>
+                <button
+                  onClick={() => { setImageUrlInput(product.image_url || ''); setImageFile(null); setImageInputMode('file'); setShowImageModal(true); }}
+                  className="text-xs text-[#3E5C76] hover:underline"
+                >{product.image_url ? 'Change' : 'Add image'}</button>
               </div>
-            )}
+              {product.image_url
+                ? <img src={product.image_url} alt={product.product_name} className="w-full h-40 object-contain p-2 bg-slate-50" />
+                : <div className="h-32 flex items-center justify-center bg-slate-50 text-slate-300 text-sm">No image</div>
+              }
+            </div>
             {isTank && (
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
@@ -654,23 +750,58 @@ export default function ProductMasterDetail() {
               <button onClick={() => setShowImageModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Image URL</label>
-                <input type="url" placeholder="https://example.com/image.jpg"
-                  value={imageUrlInput} onChange={e => setImageUrlInput(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
-                <p className="text-xs text-slate-400 mt-1">Paste a direct link to a product photo or technical image</p>
+              <div className="flex gap-1 p-1 bg-slate-100 rounded-lg">
+                <button onClick={() => setImageInputMode('file')}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${imageInputMode === 'file' ? 'bg-white text-[#3E5C76] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                  Upload File
+                </button>
+                <button onClick={() => setImageInputMode('url')}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${imageInputMode === 'url' ? 'bg-white text-[#3E5C76] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                  Paste URL
+                </button>
               </div>
-              {imageUrlInput && (
-                <img src={imageUrlInput} alt="Preview" className="w-full h-36 object-contain border border-slate-100 rounded-lg bg-slate-50" onError={e => (e.currentTarget.style.display = 'none')} />
+              {imageInputMode === 'file' ? (
+                <div>
+                  <input ref={imageFileRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => setImageFile(e.target.files?.[0] || null)} />
+                  {imageFile ? (
+                    <div className="space-y-2">
+                      <img src={URL.createObjectURL(imageFile)} alt="Preview" className="w-full h-36 object-contain border border-slate-100 rounded-lg bg-slate-50" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500 truncate">{imageFile.name}</span>
+                        <button onClick={() => setImageFile(null)} className="text-xs text-slate-400 hover:text-red-500">Remove</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => imageFileRef.current?.click()}
+                      className="w-full h-28 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-[#3E5C76] hover:text-[#3E5C76] transition-colors">
+                      <Upload className="w-6 h-6" />
+                      <span className="text-xs">Click to select an image</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Image URL</label>
+                  <input type="url" placeholder="https://example.com/image.jpg"
+                    value={imageUrlInput} onChange={e => setImageUrlInput(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  {imageUrlInput && (
+                    <img src={imageUrlInput} alt="Preview" className="w-full h-36 object-contain border border-slate-100 rounded-lg bg-slate-50 mt-2" onError={e => (e.currentTarget.style.display = 'none')} />
+                  )}
+                </div>
               )}
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               {product.image_url && (
-                <Button variant="ghost" onClick={() => { setImageUrlInput(''); }} className="text-red-500 hover:text-red-700 mr-auto">Remove</Button>
+                <Button variant="ghost" onClick={async () => {
+                  await api.put(`/product-masters/${id}`, productPutPayload({ image_url: null }));
+                  queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+                  setShowImageModal(false);
+                }} className="text-red-500 hover:text-red-700 mr-auto">Remove</Button>
               )}
               <Button variant="ghost" onClick={() => setShowImageModal(false)}>Cancel</Button>
-              <Button onClick={handleSaveImage} disabled={imageSubmitting}>
+              <Button onClick={handleSaveImage} disabled={imageSubmitting || (imageInputMode === 'file' && !imageFile) || (imageInputMode === 'url' && !imageUrlInput)}>
                 {imageSubmitting ? 'Saving...' : 'Save'}
               </Button>
             </div>

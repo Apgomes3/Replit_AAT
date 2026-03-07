@@ -554,6 +554,26 @@ CREATE TABLE IF NOT EXISTS project_piping_items (
   UNIQUE(project_id, piping_code)
 );
 
+-- FAMILY CLASSIFIERS (dynamic attributes defined per product family)
+CREATE TABLE IF NOT EXISTS family_classifiers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_id UUID REFERENCES product_families(id) ON DELETE CASCADE,
+  label VARCHAR(100) NOT NULL,
+  unit VARCHAR(50),
+  field_type VARCHAR(20) DEFAULT 'text',
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- PRODUCT CLASSIFIER VALUES (per-product values for family classifiers)
+CREATE TABLE IF NOT EXISTS product_classifier_values (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID REFERENCES product_masters(id) ON DELETE CASCADE,
+  classifier_id UUID REFERENCES family_classifiers(id) ON DELETE CASCADE,
+  value_text TEXT,
+  UNIQUE(product_id, classifier_id)
+);
+
 -- BOM RELEASES (project-level material release documents)
 CREATE TABLE IF NOT EXISTS bom_releases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
