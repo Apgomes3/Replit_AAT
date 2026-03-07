@@ -155,8 +155,8 @@ router.delete('/roles/:id', authenticate, requireRole('admin'), async (req: Auth
 router.get('/pending-approvals', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const [pendingProjects, pendingProducts, pendingDocs] = await Promise.all([
     query(`SELECT id, project_code as code, project_name as name, project_status as status, 'Project' as type, updated_at
-           FROM projects WHERE project_status IN ('Draft','Internal Review','Pending Approval')
-           ORDER BY updated_at DESC LIMIT 10`),
+           FROM projects WHERE project_status IN ('Concept','Pre-FEED','FEED','Detail Design','Draft','Internal Review','Pending Approval')
+           ORDER BY updated_at DESC LIMIT 15`),
     query(`SELECT id, product_code as code, product_name as name, status, 'Product' as type, updated_at
            FROM product_masters WHERE status IN ('Draft','Internal Review','Pending Approval')
            ORDER BY updated_at DESC LIMIT 10`),

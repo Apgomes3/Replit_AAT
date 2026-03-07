@@ -11,7 +11,8 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, Circle, ArrowRight as ArrowRightIcon } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
@@ -31,10 +32,14 @@ type Tank = {
   product_material?: string; status?: string;
 };
 
+const PROJECT_LIFECYCLE = ['Concept', 'Pre-FEED', 'FEED', 'Detail Design', 'Construction', 'Commissioning', 'Operational', 'Completed'];
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuthStore();
+  const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
   const [tab, setTab] = useState<Tab>('systems');
   const [showNewSystem, setShowNewSystem] = useState(false);
   const [showNewTank, setShowNewTank] = useState(false);
@@ -168,6 +173,16 @@ export default function ProjectDetail() {
       setEditingProject(false);
     } catch { toast.error('Save failed'); }
     finally { setProjectSaving(false); }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      await api.put(`/projects/${project.id}`, { ...project, project_status: newStatus });
+      toast.success(`Status updated to ${newStatus}`);
+      refetch();
+      qc.invalidateQueries({ queryKey: ['projects'] });
+      qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+    } catch { toast.error('Status update failed'); }
   };
 
   const openEditSystem = (row: any) => {
@@ -426,6 +441,82 @@ export default function ProjectDetail() {
           </div>
         }
       />
+
+      {/* Status Workflow Bar */}
+      <div className="bg-white border-b border-slate-200 px-4 py-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-medium text-slate-500 uppercase tracking-wide shrink-0 mr-1">Workflow</span>
+          {PROJECT_LIFECYCLE.map((stage, idx) => {
+            const currentIdx = PROJECT_LIFECYCLE.indexOf(project.project_status);
+            const isPast = idx < currentIdx;
+            const isCurrent = stage === project.project_status;
+            return (
+              <div key={stage} className="flex items-center gap-1">
+                {idx > 0 && <ArrowRightIcon className="w-3 h-3 text-slate-300 shrink-0" />}
+                <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all
+                  ${isCurrent ? 'bg-[#3E5C76] text-white shadow-sm' : ''}
+                  ${isPast ? 'bg-green-50 text-green-600 border border-green-200' : ''}
+                  ${!isCurrent && !isPast ? 'bg-slate-50 text-slate-400 border border-slate-200' : ''}
+                `}>
+                  {isPast && <CheckCircle2 className="w-3 h-3" />}
+                  {stage}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Side states */}
+          {['On Hold', 'Cancelled'].map(s => (
+            <div key={s} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap border ml-1
+              ${project.project_status === s ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+              {s}
+            </div>
+          ))}
+
+          {isPrivileged && !editingProject && (() => {
+            const currentIdx = PROJECT_LIFECYCLE.indexOf(project.project_status);
+            const nextStage = currentIdx >= 0 && currentIdx < PROJECT_LIFECYCLE.length - 1 ? PROJECT_LIFECYCLE[currentIdx + 1] : null;
+            const isTerminal = project.project_status === 'Completed' || project.project_status === 'Cancelled';
+            return (
+              <div className="flex items-center gap-2 ml-auto shrink-0">
+                {nextStage && (
+                  <button
+                    onClick={() => handleStatusChange(nextStage)}
+                    className="flex items-center gap-1.5 bg-[#3E5C76] hover:bg-[#2d4a63] text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    Advance to {nextStage} <ArrowRightIcon className="w-3 h-3" />
+                  </button>
+                )}
+                {!isTerminal && (
+                  <div className="relative group">
+                    <button className="text-xs text-slate-400 hover:text-slate-600 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
+                      Other ▾
+                    </button>
+                    <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg z-20 hidden group-hover:block py-1">
+                      {PROJECT_LIFECYCLE.filter(s => s !== project.project_status).map(s => (
+                        <button key={s} onClick={() => handleStatusChange(s)}
+                          className="w-full text-left px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50">{s}</button>
+                      ))}
+                      <div className="border-t border-slate-100 mt-1 pt-1">
+                        <button onClick={() => handleStatusChange('On Hold')}
+                          className="w-full text-left px-3 py-1.5 text-xs text-orange-600 hover:bg-orange-50">On Hold</button>
+                        <button onClick={() => handleStatusChange('Cancelled')}
+                          className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">Cancel Project</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {isTerminal && (
+                  <button onClick={() => handleStatusChange('Concept')}
+                    className="text-xs text-slate-400 hover:text-slate-600 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
+                    Reopen
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
 
       <div className="flex-1 overflow-auto p-4">
         <div className="grid grid-cols-3 gap-4 mb-4">
