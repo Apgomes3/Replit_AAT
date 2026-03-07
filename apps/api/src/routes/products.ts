@@ -421,6 +421,72 @@ router.delete('/family-classifiers/:id', authenticate, async (req: AuthRequest, 
   res.json({ deleted: true });
 });
 
+// PRODUCT SPEC TABLES (dimensions, electrical, hydraulic)
+const resolveProductId = async (param: string): Promise<string | null> => {
+  const r = await query('SELECT id FROM product_masters WHERE id::text=$1 OR product_code=$1', [param]);
+  return r.rows[0]?.id ?? null;
+};
+
+router.get('/product-masters/:id/dimensions', authenticate, async (req: AuthRequest, res: Response) => {
+  const pid = await resolveProductId(req.params.id);
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const r = await query('SELECT * FROM product_dimensions WHERE product_master_id=$1', [pid]);
+  res.json(r.rows[0] || {});
+});
+
+router.put('/product-masters/:id/dimensions', authenticate, async (req: AuthRequest, res: Response) => {
+  const pid = await resolveProductId(req.params.id);
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const { length_mm, width_mm, height_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes } = req.body;
+  const r = await query(`
+    INSERT INTO product_dimensions (product_master_id, length_mm, width_mm, height_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())
+    ON CONFLICT (product_master_id) DO UPDATE SET
+      length_mm=$2, width_mm=$3, height_mm=$4, weight_kg=$5, inlet_dn_mm=$6, outlet_dn_mm=$7, notes=$8, updated_at=NOW()
+    RETURNING *`, [pid, length_mm||null, width_mm||null, height_mm||null, weight_kg||null, inlet_dn_mm||null, outlet_dn_mm||null, notes||null]);
+  res.json(r.rows[0]);
+});
+
+router.get('/product-masters/:id/electrical', authenticate, async (req: AuthRequest, res: Response) => {
+  const pid = await resolveProductId(req.params.id);
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const r = await query('SELECT * FROM product_electrical WHERE product_master_id=$1', [pid]);
+  res.json(r.rows[0] || {});
+});
+
+router.put('/product-masters/:id/electrical', authenticate, async (req: AuthRequest, res: Response) => {
+  const pid = await resolveProductId(req.params.id);
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const { rated_power_kw, voltage_v, phases, frequency_hz, full_load_current_a, rated_speed_rpm, motor_type, insulation_class, protection_class, efficiency_class, notes } = req.body;
+  const r = await query(`
+    INSERT INTO product_electrical (product_master_id, rated_power_kw, voltage_v, phases, frequency_hz, full_load_current_a, rated_speed_rpm, motor_type, insulation_class, protection_class, efficiency_class, notes, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+    ON CONFLICT (product_master_id) DO UPDATE SET
+      rated_power_kw=$2, voltage_v=$3, phases=$4, frequency_hz=$5, full_load_current_a=$6, rated_speed_rpm=$7, motor_type=$8, insulation_class=$9, protection_class=$10, efficiency_class=$11, notes=$12, updated_at=NOW()
+    RETURNING *`, [pid, rated_power_kw||null, voltage_v||null, phases||null, frequency_hz||null, full_load_current_a||null, rated_speed_rpm||null, motor_type||null, insulation_class||null, protection_class||null, efficiency_class||null, notes||null]);
+  res.json(r.rows[0]);
+});
+
+router.get('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {
+  const pid = await resolveProductId(req.params.id);
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const r = await query('SELECT * FROM product_hydraulic WHERE product_master_id=$1', [pid]);
+  res.json(r.rows[0] || {});
+});
+
+router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {
+  const pid = await resolveProductId(req.params.id);
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const { design_flow_m3h, min_flow_m3h, max_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes } = req.body;
+  const r = await query(`
+    INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+    ON CONFLICT (product_master_id) DO UPDATE SET
+      design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, design_head_m=$5, design_pressure_bar=$6, max_pressure_bar=$7, npsh_required_m=$8, fluid_type=$9, min_temperature_c=$10, max_temperature_c=$11, notes=$12, updated_at=NOW()
+    RETURNING *`, [pid, design_flow_m3h||null, min_flow_m3h||null, max_flow_m3h||null, design_head_m||null, design_pressure_bar||null, max_pressure_bar||null, npsh_required_m||null, fluid_type||null, min_temperature_c||null, max_temperature_c||null, notes||null]);
+  res.json(r.rows[0]);
+});
+
 // PRODUCT CLASSIFIER VALUES
 router.get('/product-masters/:id/classifier-values', authenticate, async (req: AuthRequest, res: Response) => {
   const pm = await query('SELECT id, product_family_id FROM product_masters WHERE id::text=$1 OR product_code=$1', [req.params.id]);

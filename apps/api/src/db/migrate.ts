@@ -601,6 +601,32 @@ CREATE TABLE IF NOT EXISTS bom_releases (
   UNIQUE(project_id, release_code)
 );
 
+-- PRODUCT SPEC TABLES
+CREATE TABLE IF NOT EXISTS product_dimensions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
+  length_mm NUMERIC, width_mm NUMERIC, height_mm NUMERIC, weight_kg NUMERIC,
+  inlet_dn_mm NUMERIC, outlet_dn_mm NUMERIC, notes TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS product_electrical (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
+  rated_power_kw NUMERIC, voltage_v NUMERIC, phases INTEGER, frequency_hz NUMERIC,
+  full_load_current_a NUMERIC, rated_speed_rpm NUMERIC, motor_type VARCHAR(100),
+  insulation_class VARCHAR(20), protection_class VARCHAR(20), efficiency_class VARCHAR(20),
+  notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS product_hydraulic (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
+  design_flow_m3h NUMERIC, min_flow_m3h NUMERIC, max_flow_m3h NUMERIC,
+  design_head_m NUMERIC, design_pressure_bar NUMERIC, max_pressure_bar NUMERIC,
+  npsh_required_m NUMERIC, fluid_type VARCHAR(100),
+  min_temperature_c NUMERIC, max_temperature_c NUMERIC,
+  notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- BOM RELEASE LINES (snapshot of items captured at release time)
 CREATE TABLE IF NOT EXISTS bom_release_lines (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

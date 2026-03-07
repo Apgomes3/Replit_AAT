@@ -85,9 +85,17 @@ export default function ProductMasterDetail() {
   const [imageSubmitting, setImageSubmitting] = useState(false);
   const imageFileRef = useRef<HTMLInputElement>(null);
 
-  const [showClassifiersEdit, setShowClassifiersEdit] = useState(false);
-  const [classifierEdits, setClassifierEdits] = useState<Record<string, string>>({});
-  const [classifiersSaving, setClassifiersSaving] = useState(false);
+  const [editingDimensions, setEditingDimensions] = useState(false);
+  const [dimensionsForm, setDimensionsForm] = useState<Record<string, any>>({});
+  const [dimensionsSaving, setDimensionsSaving] = useState(false);
+
+  const [editingElectrical, setEditingElectrical] = useState(false);
+  const [electricalForm, setElectricalForm] = useState<Record<string, any>>({});
+  const [electricalSaving, setElectricalSaving] = useState(false);
+
+  const [editingHydraulic, setEditingHydraulic] = useState(false);
+  const [hydraulicForm, setHydraulicForm] = useState<Record<string, any>>({});
+  const [hydraulicSaving, setHydraulicSaving] = useState(false);
 
   const [showTankSpecsModal, setShowTankSpecsModal] = useState(false);
   const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', gross_volume_m3: '', operating_volume_m3: '' });
@@ -165,9 +173,21 @@ export default function ProductMasterDetail() {
     enabled: compSearch.length >= 2,
   });
 
-  const { data: classifierData, refetch: refetchClassifiers } = useQuery({
-    queryKey: ['product-classifier-values', id],
-    queryFn: () => api.get(`/product-masters/${id}/classifier-values`).then(r => r.data),
+  const { data: dimensionsData, refetch: refetchDimensions } = useQuery({
+    queryKey: ['product-dimensions', id],
+    queryFn: () => api.get(`/product-masters/${id}/dimensions`).then(r => r.data),
+    enabled: !!product,
+  });
+
+  const { data: electricalData, refetch: refetchElectrical } = useQuery({
+    queryKey: ['product-electrical', id],
+    queryFn: () => api.get(`/product-masters/${id}/electrical`).then(r => r.data),
+    enabled: !!product,
+  });
+
+  const { data: hydraulicData, refetch: refetchHydraulic } = useQuery({
+    queryKey: ['product-hydraulic', id],
+    queryFn: () => api.get(`/product-masters/${id}/hydraulic`).then(r => r.data),
     enabled: !!product,
   });
 
@@ -290,19 +310,37 @@ export default function ProductMasterDetail() {
     }
   };
 
-  const handleSaveClassifiers = async () => {
-    setClassifiersSaving(true);
+  const handleSaveDimensions = async () => {
+    setDimensionsSaving(true);
     try {
-      await api.put(`/product-masters/${id}/classifier-values`, { values: classifierEdits });
-      toast.success('Classifiers saved');
-      setShowClassifiersEdit(false);
-      setClassifierEdits({});
-      refetchClassifiers();
-    } catch {
-      toast.error('Failed to save classifiers');
-    } finally {
-      setClassifiersSaving(false);
-    }
+      await api.put(`/product-masters/${id}/dimensions`, dimensionsForm);
+      toast.success('Dimensions saved');
+      setEditingDimensions(false);
+      refetchDimensions();
+    } catch { toast.error('Failed to save dimensions'); }
+    finally { setDimensionsSaving(false); }
+  };
+
+  const handleSaveElectrical = async () => {
+    setElectricalSaving(true);
+    try {
+      await api.put(`/product-masters/${id}/electrical`, electricalForm);
+      toast.success('Electrical data saved');
+      setEditingElectrical(false);
+      refetchElectrical();
+    } catch { toast.error('Failed to save electrical data'); }
+    finally { setElectricalSaving(false); }
+  };
+
+  const handleSaveHydraulic = async () => {
+    setHydraulicSaving(true);
+    try {
+      await api.put(`/product-masters/${id}/hydraulic`, hydraulicForm);
+      toast.success('Hydraulic data saved');
+      setEditingHydraulic(false);
+      refetchHydraulic();
+    } catch { toast.error('Failed to save hydraulic data'); }
+    finally { setHydraulicSaving(false); }
   };
 
   const handleSaveTankSpecs = async () => {
@@ -613,67 +651,94 @@ export default function ProductMasterDetail() {
             </div>
             )}
 
-            {classifierData?.classifiers?.length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-lg mt-3">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
-                  <span className="text-xs text-slate-400 uppercase tracking-wide">Classifiers</span>
-                  <button
-                    onClick={() => {
-                      if (!showClassifiersEdit) {
-                        const edits: Record<string, string> = {};
-                        for (const c of classifierData.classifiers) {
-                          edits[c.id] = classifierData.values?.[c.id] ?? '';
-                        }
-                        setClassifierEdits(edits);
-                      }
-                      setShowClassifiersEdit(v => !v);
-                    }}
-                    className="text-xs text-[#3E5C76] hover:underline"
-                  >{showClassifiersEdit ? 'Cancel' : 'Edit'}</button>
-                </div>
-                {showClassifiersEdit ? (
-                  <div className="p-3 space-y-2">
-                    {classifierData.classifiers.map((c: any) => (
-                      <div key={c.id} className="flex items-center gap-3">
-                        <label className="w-32 text-xs text-slate-500 shrink-0">
-                          {c.label}{c.unit ? <span className="text-slate-300 ml-1">({c.unit})</span> : ''}
-                        </label>
-                        <input
-                          type={c.field_type === 'number' ? 'number' : 'text'}
-                          value={classifierEdits[c.id] ?? ''}
-                          onChange={e => setClassifierEdits(prev => ({ ...prev, [c.id]: e.target.value }))}
-                          placeholder="—"
-                          className="flex-1 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#3E5C76]"
-                        />
-                      </div>
-                    ))}
-                    <div className="flex justify-end gap-2 pt-1">
-                      <button onClick={() => setShowClassifiersEdit(false)} className="text-xs px-3 py-1 bg-slate-100 text-slate-600 rounded hover:bg-slate-200">Cancel</button>
-                      <button onClick={handleSaveClassifiers} disabled={classifiersSaving}
-                        className="text-xs px-3 py-1 bg-[#3E5C76] text-white rounded hover:bg-[#2d4a63] disabled:opacity-50">
-                        {classifiersSaving ? 'Saving...' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-3 space-y-1.5">
-                    {classifierData.classifiers
-                      .filter((c: any) => classifierData.values?.[c.id])
-                      .map((c: any) => (
-                        <div key={c.id} className="flex justify-between gap-2 text-xs">
-                          <span className="text-slate-400">{c.label}</span>
-                          <span className="text-slate-700 font-medium">
-                            {classifierData.values[c.id]}{c.unit ? <span className="text-slate-400 ml-1">{c.unit}</span> : ''}
-                          </span>
-                        </div>
-                      ))}
-                    {classifierData.classifiers.filter((c: any) => classifierData.values?.[c.id]).length === 0 && (
-                      <div className="text-xs text-slate-300 text-center py-2">No values set — click Edit to add</div>
-                    )}
-                  </div>
-                )}
+            {/* Dimensions Card */}
+            <div className="bg-white border border-slate-200 rounded-lg mt-3">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Ruler className="w-3.5 h-3.5" />Dimensions</span>
+                {!editingDimensions
+                  ? <button onClick={() => { setDimensionsForm({ ...dimensionsData }); setEditingDimensions(true); }} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingDimensions(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveDimensions} disabled={dimensionsSaving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{dimensionsSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
-            )}
+              {editingDimensions ? (
+                <div className="p-3 grid grid-cols-2 gap-2">
+                  {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['weight_kg','Weight (kg)'],['inlet_dn_mm','Inlet DN (mm)'],['outlet_dn_mm','Outlet DN (mm)']].map(([k,l]) => (
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  ))}
+                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={dimensionsForm.notes ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                </div>
+              ) : (
+                <div className="p-3">
+                  {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                    ? <p className="text-xs text-slate-300 text-center py-2">No dimensions recorded — click Edit to add</p>
+                    : <div className="space-y-1">
+                        {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                          <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
+                        ))}
+                      </div>}
+                </div>
+              )}
+            </div>
+
+            {/* Hydraulic Card */}
+            <div className="bg-white border border-slate-200 rounded-lg mt-3">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Network className="w-3.5 h-3.5" />Hydraulic</span>
+                {!editingHydraulic
+                  ? <button onClick={() => { setHydraulicForm({ ...hydraulicData }); setEditingHydraulic(true); }} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingHydraulic(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveHydraulic} disabled={hydraulicSaving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{hydraulicSaving ? 'Saving…' : 'Save'}</button></div>}
+              </div>
+              {editingHydraulic ? (
+                <div className="p-3 grid grid-cols-2 gap-2">
+                  {[['design_flow_m3h','Design Flow (m³/h)'],['min_flow_m3h','Min Flow (m³/h)'],['max_flow_m3h','Max Flow (m³/h)'],['design_head_m','Design Head (m)'],['design_pressure_bar','Design Pressure (bar)'],['max_pressure_bar','Max Pressure (bar)'],['npsh_required_m','NPSH Required (m)'],['min_temperature_c','Min Temp (°C)'],['max_temperature_c','Max Temp (°C)']].map(([k,l]) => (
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={hydraulicForm[k] ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  ))}
+                  <div><label className="block text-xs text-slate-500 mb-0.5">Fluid Type</label><input value={hydraulicForm.fluid_type ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,fluid_type:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={hydraulicForm.notes ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                </div>
+              ) : (
+                <div className="p-3">
+                  {[['Design Flow',hydraulicData?.design_flow_m3h,'m³/h'],['Min Flow',hydraulicData?.min_flow_m3h,'m³/h'],['Max Flow',hydraulicData?.max_flow_m3h,'m³/h'],['Design Head',hydraulicData?.design_head_m,'m'],['Design Pressure',hydraulicData?.design_pressure_bar,'bar'],['Max Pressure',hydraulicData?.max_pressure_bar,'bar'],['NPSH Required',hydraulicData?.npsh_required_m,'m'],['Fluid Type',hydraulicData?.fluid_type,''],['Min Temp',hydraulicData?.min_temperature_c,'°C'],['Max Temp',hydraulicData?.max_temperature_c,'°C'],['Notes',hydraulicData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                    ? <p className="text-xs text-slate-300 text-center py-2">No hydraulic data recorded — click Edit to add</p>
+                    : <div className="space-y-1">
+                        {[['Design Flow',hydraulicData?.design_flow_m3h,'m³/h'],['Min Flow',hydraulicData?.min_flow_m3h,'m³/h'],['Max Flow',hydraulicData?.max_flow_m3h,'m³/h'],['Design Head',hydraulicData?.design_head_m,'m'],['Design Pressure',hydraulicData?.design_pressure_bar,'bar'],['Max Pressure',hydraulicData?.max_pressure_bar,'bar'],['NPSH Required',hydraulicData?.npsh_required_m,'m'],['Fluid Type',hydraulicData?.fluid_type,''],['Min Temp',hydraulicData?.min_temperature_c,'°C'],['Max Temp',hydraulicData?.max_temperature_c,'°C'],['Notes',hydraulicData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                          <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
+                        ))}
+                      </div>}
+                </div>
+              )}
+            </div>
+
+            {/* Electrical Card */}
+            <div className="bg-white border border-slate-200 rounded-lg mt-3">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" />Electrical</span>
+                {!editingElectrical
+                  ? <button onClick={() => { setElectricalForm({ ...electricalData }); setEditingElectrical(true); }} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingElectrical(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveElectrical} disabled={electricalSaving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{electricalSaving ? 'Saving…' : 'Save'}</button></div>}
+              </div>
+              {editingElectrical ? (
+                <div className="p-3 grid grid-cols-2 gap-2">
+                  {[['rated_power_kw','Rated Power (kW)'],['voltage_v','Voltage (V)'],['frequency_hz','Frequency (Hz)'],['full_load_current_a','Full Load Current (A)'],['rated_speed_rpm','Rated Speed (RPM)']].map(([k,l]) => (
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  ))}
+                  <div><label className="block text-xs text-slate-500 mb-0.5">Phases</label><select value={electricalForm.phases ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,phases:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]"><option value="">—</option><option value="1">1-Phase</option><option value="3">3-Phase</option></select></div>
+                  {[['motor_type','Motor Type'],['insulation_class','Insulation Class'],['protection_class','Protection Class (IP)'],['efficiency_class','Efficiency Class']].map(([k,l]) => (
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  ))}
+                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={electricalForm.notes ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                </div>
+              ) : (
+                <div className="p-3">
+                  {[['Rated Power',electricalData?.rated_power_kw,'kW'],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                    ? <p className="text-xs text-slate-300 text-center py-2">No electrical data recorded — click Edit to add</p>
+                    : <div className="space-y-1">
+                        {[['Rated Power',electricalData?.rated_power_kw,'kW'],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                          <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
+                        ))}
+                      </div>}
+                </div>
+              )}
+            </div>
 
             <div className="bg-white border border-slate-200 rounded-lg p-4 mt-3">
               <div className="flex items-center justify-between mb-2">
