@@ -151,4 +151,50 @@ router.delete('/roles/:id', authenticate, requireRole('admin'), async (req: Auth
   res.status(204).end();
 });
 
+// PENDING APPROVALS (admin/engineer only)
+router.get('/pending-approvals', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const [pendingProjects, pendingProducts, pendingDocs] = await Promise.all([
+    query(`SELECT id, project_code as code, project_name as name, project_status as status, 'Project' as type, updated_at
+           FROM projects WHERE project_status IN ('Draft','Internal Review','Pending Approval')
+           ORDER BY updated_at DESC LIMIT 10`),
+    query(`SELECT id, product_code as code, product_name as name, status, 'Product' as type, updated_at
+           FROM product_masters WHERE status IN ('Draft','Internal Review','Pending Approval')
+           ORDER BY updated_at DESC LIMIT 10`),
+    query(`SELECT id, document_code as code, document_title as name, status, 'Document' as type, updated_at
+           FROM documents WHERE status IN ('Draft','Internal Review')
+           ORDER BY updated_at DESC LIMIT 10`),
+  ]);
+  const items = [
+    ...pendingProjects.rows,
+    ...pendingProducts.rows,
+    ...pendingDocs.rows,
+  ].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 15);
+  res.json({ items });
+});
+
+// TO-DOs (per-user)
+router.get('/todos', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('SELECT * FROM todos WHERE user_id=$1 ORDER BY created_at ASC', [req.user!.id]);
+  res.json({ items: result.rows });
+});
+
+router.post('/todos', authenticate, async (req: AuthRequest, res: Response) => {
+  const { text } = req.body;
+  if (!text?.trim()) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'text required' } });
+  const result = await query('INSERT INTO todos (user_id, text) VALUES ($1,$2) RETURNING *', [req.user!.id, text.trim()]);
+  res.status(201).json(result.rows[0]);
+});
+
+router.patch('/todos/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { done } = req.body;
+  const result = await query('UPDATE todos SET done=$1 WHERE id=$2 AND user_id=$3 RETURNING *', [done, req.params.id, req.user!.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Todo not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/todos/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  await query('DELETE FROM todos WHERE id=$1 AND user_id=$2', [req.params.id, req.user!.id]);
+  res.status(204).end();
+});
+
 export default router;

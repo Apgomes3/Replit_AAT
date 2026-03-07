@@ -574,6 +574,15 @@ CREATE TABLE IF NOT EXISTS product_classifier_values (
   UNIQUE(product_id, classifier_id)
 );
 
+-- USER TO-DOs (personal task list per user)
+CREATE TABLE IF NOT EXISTS todos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  done BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- BOM RELEASES (project-level material release documents)
 CREATE TABLE IF NOT EXISTS bom_releases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
