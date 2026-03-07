@@ -612,17 +612,6 @@ export default function ProductMasterDetail() {
                 </div>
               </div>
             )}
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
-              <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Used in Projects</div>
-              {product.projects?.length === 0
-                ? <div className="text-sm text-slate-400">No project usage</div>
-                : product.projects?.map((p: any) => (
-                  <div key={p.project_code} className="flex items-center gap-2 mb-1.5">
-                    <Link to={`/projects/${p.project_code}`}><EntityCode code={p.project_code} /></Link>
-                    <span className="text-xs text-slate-500 truncate">{p.project_name}</span>
-                  </div>
-                ))}
-            </div>
           </div>
         </div>
 
