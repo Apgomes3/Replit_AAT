@@ -105,4 +105,50 @@ router.delete('/categories/:id', authenticate, requireRole('admin'), async (req:
   res.status(204).end();
 });
 
+// ROLES
+router.get('/roles', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('SELECT * FROM roles ORDER BY sort_order, name');
+  res.json({ items: result.rows });
+});
+
+router.post('/roles', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { name, description, sort_order } = req.body;
+  if (!name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'name is required' } });
+  try {
+    const result = await query(
+      'INSERT INTO roles (name, description, sort_order) VALUES ($1,$2,$3) RETURNING *',
+      [name.trim().toLowerCase(), description || null, sort_order || 0]);
+    res.status(201).json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Role name already exists' } });
+    throw err;
+  }
+});
+
+router.put('/roles/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { name, description, sort_order } = req.body;
+  const existing = await query('SELECT is_system FROM roles WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Role not found' } });
+  if (existing.rows[0].is_system && name !== existing.rows[0].name) {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot rename a built-in role' } });
+  }
+  try {
+    const result = await query(
+      'UPDATE roles SET name=$1, description=$2, sort_order=$3, updated_at=NOW() WHERE id=$4 RETURNING *',
+      [name.trim().toLowerCase(), description || null, sort_order ?? 0, req.params.id]);
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Role name already exists' } });
+    throw err;
+  }
+});
+
+router.delete('/roles/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT is_system FROM roles WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Role not found' } });
+  if (existing.rows[0].is_system) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot delete a built-in role' } });
+  await query('DELETE FROM roles WHERE id=$1', [req.params.id]);
+  res.status(204).end();
+});
+
 export default router;

@@ -18,6 +18,13 @@ export default function AdminUsers() {
     queryFn: () => api.get('/admin/users').then(r => r.data),
   });
 
+  const { data: rolesData } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get('/admin/roles').then(r => r.data),
+  });
+
+  const roleOptions: string[] = rolesData?.items?.map((r: any) => r.name) || ['admin', 'engineer', 'viewer'];
+
   const columns: Column<UserRow>[] = [
     { key: 'email', header: 'Email', render: r => <span className="font-medium">{r.email}</span> },
     { key: 'first_name', header: 'Name', render: r => `${r.first_name || ''} ${r.last_name || ''}`.trim() || '—' },
@@ -41,7 +48,7 @@ export default function AdminUsers() {
             { name: 'password', label: 'Password', required: true, type: 'password' },
             { name: 'first_name', label: 'First Name' },
             { name: 'last_name', label: 'Last Name' },
-            { name: 'role', label: 'Role', options: ['admin', 'engineer', 'viewer'] },
+            { name: 'role', label: 'Role', options: roleOptions },
           ]}
           onSubmit={async (data) => {
             await api.post('/admin/users', data);
