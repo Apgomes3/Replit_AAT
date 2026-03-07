@@ -1,5 +1,5 @@
-import { NavLink } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Database, Boxes, Pipette, Container, GripVertical, ShieldCheck } from 'lucide-react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Database, Boxes, Pipette, Container, GripVertical, ShieldCheck, Settings, ChevronRight } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 
@@ -38,18 +38,15 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
       { id: 'graph', to: '/graph', icon: Network, label: 'Graph Explorer' },
     ],
   },
-  {
-    id: 'admin',
-    label: 'Admin',
-    items: [
-      { id: 'families', to: '/products', icon: Package, label: 'Families', end: true },
-      { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
-      { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
-      { id: 'roles', to: '/admin/roles', icon: ShieldCheck, label: 'Roles' },
-      { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
-      { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import' },
-    ],
-  },
+];
+
+const ADMIN_ITEMS: NavItemDef[] = [
+  { id: 'families', to: '/products', icon: Package, label: 'Families', end: true },
+  { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
+  { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
+  { id: 'roles', to: '/admin/roles', icon: ShieldCheck, label: 'Roles' },
+  { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
+  { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import' },
 ];
 
 const STORAGE_KEY = 'nav-section-orders';
@@ -175,8 +172,54 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
   );
 }
 
+function AdminPopup({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const keyHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('keydown', keyHandler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', keyHandler);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute bottom-14 left-2 right-2 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 overflow-hidden"
+    >
+      <div className="px-3 py-2.5 border-b border-slate-100">
+        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Platform Admin</span>
+      </div>
+      <div className="py-1">
+        {ADMIN_ITEMS.map(item => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              onClick={() => { navigate(item.to); onClose(); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors text-left"
+            >
+              <Icon className="w-4 h-4 shrink-0 text-slate-400" />
+              <span>{item.label}</span>
+              <ChevronRight className="w-3.5 h-3.5 ml-auto text-slate-300" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function LeftNav() {
   const [orders, setOrders] = useState<Record<string, string[]>>(loadOrders);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   const handleOrderChange = (sectionId: string, newOrder: string[]) => {
     const next = { ...orders, [sectionId]: newOrder };
@@ -185,7 +228,7 @@ export default function LeftNav() {
   };
 
   return (
-    <nav className="w-56 bg-white border-r border-slate-200 flex flex-col h-full shrink-0">
+    <nav className="w-56 bg-white border-r border-slate-200 flex flex-col h-full shrink-0 relative">
       <div className="px-4 py-4 border-b border-slate-100">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-[#3E5C76] flex items-center justify-center shrink-0">
@@ -229,6 +272,24 @@ export default function LeftNav() {
           />
         ))}
       </div>
+
+      <div className="border-t border-slate-100 p-2">
+        <button
+          onClick={() => setShowAdmin(v => !v)}
+          className={clsx(
+            'w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors',
+            showAdmin
+              ? 'bg-[#3E5C76] text-white font-medium shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          )}
+        >
+          <Settings className="w-4 h-4 shrink-0" />
+          <span>Platform Admin</span>
+          <ChevronRight className={clsx('w-3.5 h-3.5 ml-auto transition-transform', showAdmin && 'rotate-90')} />
+        </button>
+      </div>
+
+      {showAdmin && <AdminPopup onClose={() => setShowAdmin(false)} />}
     </nav>
   );
 }
