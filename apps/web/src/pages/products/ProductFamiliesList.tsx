@@ -42,7 +42,7 @@ export default function ProductFamiliesList() {
 
   return (
     <div className="h-full flex flex-col">
-      <PageHeader title="Product Families" subtitle="Reusable product group definitions"
+      <PageHeader title="Products" subtitle="Reusable product group definitions"
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Family</Button>}
       />
       <div className="flex-1 bg-white overflow-auto">
