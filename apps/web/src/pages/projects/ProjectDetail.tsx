@@ -16,7 +16,7 @@ import { useAuthStore } from '../../store/authStore';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-type Tab = 'systems' | 'equipment' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'map';
+type Tab = 'systems' | 'equipment' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
 
 type EquipmentItem = {
   id: string; equip_code: string; product_code?: string; product_name?: string;
@@ -655,7 +655,6 @@ export default function ProjectDetail() {
               { key: 'bom-release', label: 'BOM Releases' },
               { key: 'documents', label: 'Documents' },
               { key: 'changes', label: 'Changes' },
-              { key: 'map', label: '🗺 Map' },
             ] as { key: Tab; label: string }[]).map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
@@ -812,21 +811,6 @@ export default function ProjectDetail() {
           )}
           {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents" onRowClick={r => navigate(`/documents/${r.id}`)} />}
           {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes" />}
-          {tab === 'map' && (
-            <div className="p-4">
-              {project.latitude != null && project.longitude != null ? (
-                <Suspense fallback={<div className="flex items-center justify-center h-96 text-slate-400 text-sm">Loading map...</div>}>
-                  <ProjectsMap projects={[project]} height="500px" singleProject />
-                </Suspense>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
-                  <MapPin className="w-8 h-8 opacity-30" />
-                  <p className="text-sm">No coordinates set for this project.</p>
-                  <p className="text-xs">Click <strong>Edit</strong> and enter Latitude & Longitude to pin it on the map.</p>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
