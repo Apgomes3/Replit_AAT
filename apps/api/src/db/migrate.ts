@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS product_masters (
   salinity_class VARCHAR(50),
   temperature_class VARCHAR(50),
   regional_compliance VARCHAR(255),
+  image_url TEXT,
   notes TEXT,
   status VARCHAR(50) DEFAULT 'Active',
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -465,6 +466,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
 
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS component_id UUID REFERENCES components(id);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS image_url TEXT;
 `;
 
 async function migrate() {

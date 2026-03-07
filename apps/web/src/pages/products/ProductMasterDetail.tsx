@@ -77,6 +77,10 @@ export default function ProductMasterDetail() {
   const [docSubmitting, setDocSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [imageUrlInput, setImageUrlInput] = useState('');
+  const [imageSubmitting, setImageSubmitting] = useState(false);
+
   const [showRelModal, setShowRelModal] = useState(false);
   const [relSearch, setRelSearch] = useState('');
   const [relTarget, setRelTarget] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
@@ -119,9 +123,34 @@ export default function ProductMasterDetail() {
     enabled: compSearch.length >= 2,
   });
 
+  const handleSaveImage = async () => {
+    setImageSubmitting(true);
+    try {
+      await api.put(`/product-masters/${id}`, {
+        product_name: product.product_name,
+        product_category: product.product_category,
+        application_type: product.application_type,
+        design_flow_m3h: product.design_flow_m3h,
+        power_kw: product.power_kw,
+        primary_material_code: product.primary_material_code,
+        standard_status: product.standard_status,
+        image_url: imageUrlInput || null,
+        notes: product.notes,
+      });
+      toast.success('Image updated');
+      setShowImageModal(false);
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+    } catch {
+      toast.error('Failed to update image');
+    } finally {
+      setImageSubmitting(false);
+    }
+  };
+
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!product) return <div className="p-8 text-slate-400">Product not found</div>;
 
+  const isPiping = product.product_category === 'Piping';
   const bom = product.boms?.[0];
   const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
@@ -309,15 +338,30 @@ export default function ProductMasterDetail() {
             <MetadataPanel fields={[
               { label: 'Family', value: product.product_family_name },
               { label: 'Category', value: product.product_category },
-              { label: 'Application', value: product.application_type },
-              { label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null },
-              { label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null },
-              { label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null },
+              ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
+              ...(!isPiping ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
+              ...(!isPiping ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
+              ...(!isPiping ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
               { label: 'Primary Material', value: product.primary_material_code ? <><EntityCode code={product.primary_material_code} /> {product.material_name && <span className="text-slate-500 text-xs ml-1">{product.material_name}</span>}</> : null },
               { label: 'Notes', value: product.notes },
             ]} />
           </div>
-          <div>
+          <div className="space-y-3">
+            {isPiping && (
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                  <span className="text-xs text-slate-400 uppercase tracking-wide">Image</span>
+                  <button
+                    onClick={() => { setImageUrlInput(product.image_url || ''); setShowImageModal(true); }}
+                    className="text-xs text-[#3E5C76] hover:underline"
+                  >{product.image_url ? 'Change' : 'Add image'}</button>
+                </div>
+                {product.image_url
+                  ? <img src={product.image_url} alt={product.product_name} className="w-full h-40 object-contain p-2 bg-slate-50" />
+                  : <div className="h-32 flex items-center justify-center bg-slate-50 text-slate-300 text-sm">No image</div>
+                }
+              </div>
+            )}
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Used in Projects</div>
               {product.projects?.length === 0
@@ -447,6 +491,38 @@ export default function ProductMasterDetail() {
           )}
         </div>
       </div>
+
+      {showImageModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="font-semibold text-slate-800">Product Image</h2>
+              <button onClick={() => setShowImageModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Image URL</label>
+                <input type="url" placeholder="https://example.com/image.jpg"
+                  value={imageUrlInput} onChange={e => setImageUrlInput(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                <p className="text-xs text-slate-400 mt-1">Paste a direct link to a product photo or technical image</p>
+              </div>
+              {imageUrlInput && (
+                <img src={imageUrlInput} alt="Preview" className="w-full h-36 object-contain border border-slate-100 rounded-lg bg-slate-50" onError={e => (e.currentTarget.style.display = 'none')} />
+              )}
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              {product.image_url && (
+                <Button variant="ghost" onClick={() => { setImageUrlInput(''); }} className="text-red-500 hover:text-red-700 mr-auto">Remove</Button>
+              )}
+              <Button variant="ghost" onClick={() => setShowImageModal(false)}>Cancel</Button>
+              <Button onClick={handleSaveImage} disabled={imageSubmitting}>
+                {imageSubmitting ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddLine && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">

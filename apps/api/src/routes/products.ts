@@ -65,9 +65,9 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, notes } = req.body;
-  const result = await query('UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, power_kw=$5, primary_material_code=$6, standard_status=$7, notes=$8, updated_at=NOW() WHERE id=$9 RETURNING *',
-    [product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, notes, req.params.id]);
+  const { product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url, notes } = req.body;
+  const result = await query('UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, power_kw=$5, primary_material_code=$6, standard_status=$7, image_url=$8, notes=$9, updated_at=NOW() WHERE id=$10 RETURNING *',
+    [product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url || null, notes, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   res.json(result.rows[0]);
 });
