@@ -16,7 +16,7 @@ import { useAuthStore } from '../../store/authStore';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-type Tab = 'systems' | 'equipment' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
+type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
 
 type EquipmentItem = {
   id: string; equip_code: string; product_code?: string; product_name?: string;
@@ -100,7 +100,7 @@ export default function ProjectDetail() {
   const { data: equipment } = useQuery({
     queryKey: ['project-equipment', id],
     queryFn: () => api.get(`/projects/${id}/equipment`).then(r => r.data),
-    enabled: tab === 'equipment' || tab === 'systems',
+    enabled: tab === 'systems',
   });
 
   const { data: tanks } = useQuery({
@@ -222,15 +222,6 @@ export default function ProjectDetail() {
     { key: 'system_type', header: 'Type' },
     { key: 'water_type', header: 'Water Type' },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
-  ];
-
-  const eqCols: Column<EquipmentItem>[] = [
-    { key: 'equip_code', header: 'Tag', render: r => <EntityCode code={r.equip_code} /> },
-    { key: 'product_name', header: 'Product', render: r => <span className="font-medium">{r.product_name || r.description || '—'}</span> },
-    { key: 'product_code', header: 'Product Code', render: r => r.product_code ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-[#3E5C76] hover:underline"><EntityCode code={r.product_code} /></Link> : <span className="text-slate-300">—</span> },
-    { key: 'system_code', header: 'System', render: r => r.system_code ? <EntityCode code={r.system_code} /> : <span className="text-slate-300">—</span> },
-    { key: 'quantity', header: 'Qty', render: r => <span>{r.quantity ?? 1} {r.unit || 'EA'}</span> },
-    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status || 'Design'} /> },
   ];
 
   const docCols: Column<Document>[] = [
@@ -649,7 +640,6 @@ export default function ProjectDetail() {
           <div className="flex border-b border-slate-200">
             {([
               { key: 'systems', label: 'Systems' },
-              { key: 'equipment', label: 'Products' },
               { key: 'tanks', label: 'Tanks' },
               { key: 'piping', label: 'Piping & Fittings' },
               { key: 'bom-release', label: 'BOM Releases' },
@@ -781,7 +771,6 @@ export default function ProjectDetail() {
               </div>
             );
           })()}
-          {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} tableId="project-equipment" emptyMessage="No products added yet — add products via the Systems tab" />}
           {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} tableId="project-tanks" emptyMessage="No tanks added to this project yet — click Add Tank above" />}
           {tab === 'piping' && (
             <DataTable
