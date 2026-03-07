@@ -32,7 +32,7 @@ type Tank = {
   product_material?: string; status?: string;
 };
 
-const PROJECT_LIFECYCLE = ['Concept', 'Pre-FEED', 'FEED', 'Detail Design', 'Construction', 'Commissioning', 'Operational', 'Completed'];
+const PROJECT_LIFECYCLE = ['Draft', 'Concept', 'Design', 'Handover', 'Released', 'Complete'];
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -153,7 +153,7 @@ export default function ProjectDetail() {
       city: project.city || '',
       latitude: project.latitude ?? '',
       longitude: project.longitude ?? '',
-      project_status: project.project_status || 'Concept',
+      project_status: project.project_status || 'Draft',
       start_date: project.start_date?.split('T')[0] || '',
       target_completion_date: project.target_completion_date?.split('T')[0] || '',
       project_manager: project.project_manager || '',
@@ -501,7 +501,7 @@ export default function ProjectDetail() {
                     <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                     <select value={projectForm.project_status} onChange={e => setProjectForm((f: any) => ({ ...f, project_status: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
-                      {['Concept', 'Pre-FEED', 'FEED', 'Detail Design', 'Construction', 'Commissioning', 'Operational', 'Completed', 'On Hold', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
+                      {['Draft', 'Concept', 'Design', 'Handover', 'Released', 'Complete', 'On Hold', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
@@ -559,7 +559,7 @@ export default function ProjectDetail() {
               {showStatusMenu && isPrivileged && (() => {
                 const currentIdx = PROJECT_LIFECYCLE.indexOf(project.project_status);
                 const nextStage = currentIdx >= 0 && currentIdx < PROJECT_LIFECYCLE.length - 1 ? PROJECT_LIFECYCLE[currentIdx + 1] : null;
-                const isTerminal = project.project_status === 'Completed' || project.project_status === 'Cancelled';
+                const isTerminal = project.project_status === 'Complete' || project.project_status === 'Released' || project.project_status === 'Cancelled';
                 return (
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setShowStatusMenu(false)} />
@@ -612,7 +612,7 @@ export default function ProjectDetail() {
                           </>
                         )}
                         {isTerminal && (
-                          <button onClick={async () => { await handleStatusChange('Concept'); setShowStatusMenu(false); }}
+                          <button onClick={async () => { await handleStatusChange('Draft'); setShowStatusMenu(false); }}
                             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left text-[#3E5C76] hover:bg-blue-50 transition-colors w-full font-medium">
                             ↩ Reopen Project
                           </button>
