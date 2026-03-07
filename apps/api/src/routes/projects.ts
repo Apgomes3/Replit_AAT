@@ -221,11 +221,23 @@ router.post('/systems', authenticate, async (req: AuthRequest, res: Response) =>
 });
 
 router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description } = req.body;
-  const result = await query('UPDATE systems SET system_name=$1, system_type=$2, design_flow_m3h=$3, turnover_rate_hr=$4, water_type=$5, status=$6, duty_description=$7, updated_at=NOW() WHERE id=$8 RETURNING *',
-    [system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, req.params.id]);
+  const { system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
+  const result = await query('UPDATE systems SET system_name=$1, system_type=$2, design_flow_m3h=$3, turnover_rate_hr=$4, water_type=$5, status=$6, duty_description=$7, redundancy_strategy=$8, updated_at=NOW() WHERE id=$9 RETURNING *',
+    [system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status, duty_description, redundancy_strategy, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   res.json(result.rows[0]);
+});
+
+router.post('/systems/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+  const src = await query('SELECT * FROM systems WHERE id=$1', [req.params.id]);
+  if (!src.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+  const s = src.rows[0];
+  const newCode = `${s.system_code}-COPY`;
+  const result = await query(
+    `INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, duty_description, redundancy_strategy)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [newCode, s.project_id, s.area_id, s.exhibit_id, `${s.system_name} (Copy)`, s.system_type, s.design_flow_m3h, s.turnover_rate_hr, s.water_type, s.duty_description, s.redundancy_strategy]);
+  res.status(201).json(result.rows[0]);
 });
 
 // EQUIPMENT ITEMS (direct product-to-project/system relationship)

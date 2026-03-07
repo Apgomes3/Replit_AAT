@@ -36,6 +36,9 @@ export default function ProjectDetail() {
   const [tab, setTab] = useState<Tab>('systems');
   const [showNewSystem, setShowNewSystem] = useState(false);
   const [showNewTank, setShowNewTank] = useState(false);
+  const [editSystemRow, setEditSystemRow] = useState<any>(null);
+  const [editSystemForm, setEditSystemForm] = useState<any>(null);
+  const [editSystemSaving, setEditSystemSaving] = useState(false);
 
   const [tankProductSearch, setTankProductSearch] = useState('');
   const [selectedTankProduct, setSelectedTankProduct] = useState<any>(null);
@@ -122,6 +125,32 @@ export default function ProjectDetail() {
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!project) return <div className="p-8 text-slate-400">Project not found</div>;
+
+  const openEditSystem = (row: any) => {
+    setEditSystemRow(row);
+    setEditSystemForm({
+      system_name: row.system_name || '',
+      system_type: row.system_type || '',
+      water_type: row.water_type || '',
+      design_flow_m3h: row.design_flow_m3h ?? '',
+      turnover_rate_hr: row.turnover_rate_hr ?? '',
+      status: row.status || 'Draft',
+      duty_description: row.duty_description || '',
+      redundancy_strategy: row.redundancy_strategy || '',
+    });
+  };
+
+  const handleEditSystemSave = async () => {
+    if (!editSystemRow) return;
+    setEditSystemSaving(true);
+    try {
+      await api.put(`/systems/${editSystemRow.id}`, editSystemForm);
+      toast.success('System updated');
+      qc.invalidateQueries({ queryKey: ['project-systems'] });
+      setEditSystemRow(null);
+    } catch { toast.error('Save failed'); }
+    finally { setEditSystemSaving(false); }
+  };
 
   const sysCols: Column<System>[] = [
     { key: 'system_code', header: 'Code', render: r => <EntityCode code={r.system_code} /> },
@@ -386,7 +415,20 @@ export default function ProjectDetail() {
             </div>
           </div>
 
-          {tab === 'systems' && <DataTable columns={sysCols} data={systems?.items || []} tableId="project-systems" onRowClick={r => navigate(`/systems/${r.id}`)} />}
+          {tab === 'systems' && <DataTable
+            columns={sysCols}
+            data={systems?.items || []}
+            tableId="project-systems"
+            onRowClick={r => navigate(`/systems/${r.id}`)}
+            contextMenuItems={row => [
+              { label: 'Edit', onClick: () => openEditSystem(row) },
+              { label: 'Duplicate', onClick: async () => {
+                await api.post(`/systems/${row.id}/duplicate`, {});
+                toast.success('System duplicated');
+                qc.invalidateQueries({ queryKey: ['project-systems'] });
+              }},
+            ]}
+          />}
           {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} tableId="project-equipment" emptyMessage="No products added yet — add products via the Systems tab" />}
           {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} tableId="project-tanks" emptyMessage="No tanks added to this project yet — click Add Tank above" />}
           {tab === 'piping' && (
@@ -754,6 +796,76 @@ export default function ProjectDetail() {
               {(!selectedRelease.lines || selectedRelease.lines.length === 0) && (
                 <div className="text-center text-slate-400 py-10">No items in this release — the selected sections had no items at the time of creation.</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editSystemRow && editSystemForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-[520px] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="font-semibold text-slate-800">Edit System</h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">{editSystemRow.system_code}</p>
+              </div>
+              <button onClick={() => setEditSystemRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">System Name</label>
+                <input value={editSystemForm.system_name} onChange={e => setEditSystemForm((f: any) => ({ ...f, system_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">System Type</label>
+                <select value={editSystemForm.system_type} onChange={e => setEditSystemForm((f: any) => ({ ...f, system_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                  <option value="">— select —</option>
+                  {['Life Support', 'Utility', 'HVAC', 'Fire Fighting', 'Electrical', 'Other'].map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Water Type</label>
+                <select value={editSystemForm.water_type} onChange={e => setEditSystemForm((f: any) => ({ ...f, water_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                  <option value="">— select —</option>
+                  {['Fresh Water', 'Salt Water', 'Brackish', 'N/A'].map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
+                <input type="number" value={editSystemForm.design_flow_m3h} onChange={e => setEditSystemForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Turnover Rate (/hr)</label>
+                <input type="number" value={editSystemForm.turnover_rate_hr} onChange={e => setEditSystemForm((f: any) => ({ ...f, turnover_rate_hr: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select value={editSystemForm.status} onChange={e => setEditSystemForm((f: any) => ({ ...f, status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                  {['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'].map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Redundancy Strategy</label>
+                <input value={editSystemForm.redundancy_strategy} onChange={e => setEditSystemForm((f: any) => ({ ...f, redundancy_strategy: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Duty Description</label>
+                <textarea value={editSystemForm.duty_description} onChange={e => setEditSystemForm((f: any) => ({ ...f, duty_description: e.target.value }))}
+                  rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <Button onClick={() => setEditSystemRow(null)}>Cancel</Button>
+              <Button variant="primary" onClick={handleEditSystemSave} disabled={editSystemSaving}>
+                {editSystemSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
             </div>
           </div>
         </div>
