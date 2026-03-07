@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Database, Boxes, Pipette, Container, GripVertical, ShieldCheck, Settings, ChevronRight } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Database, Boxes, Pipette, Container, GripVertical, ShieldCheck, Settings, ChevronRight, Ruler } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 
@@ -17,25 +17,10 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
     ],
   },
   {
-    id: 'knowledge-hub',
-    label: 'Knowledge Hub',
-    items: [
-      { id: 'specifications', to: '/knowledge/specifications', icon: BookOpen, label: 'Specifications' },
-      { id: 'design-rules', to: '/knowledge/design-rules', icon: BookOpen, label: 'Design Rules' },
-    ],
-  },
-  {
     id: 'documents',
     label: 'Documents',
     items: [
       { id: 'document-register', to: '/documents', icon: FileText, label: 'Document Register' },
-    ],
-  },
-  {
-    id: 'intelligence',
-    label: 'Intelligence',
-    items: [
-      { id: 'graph', to: '/graph', icon: Network, label: 'Graph Explorer' },
     ],
   },
 ];
@@ -43,6 +28,9 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
 const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'families', to: '/products', icon: Package, label: 'Families', end: true },
   { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
+  { id: 'specifications', to: '/knowledge/specifications', icon: BookOpen, label: 'Specifications' },
+  { id: 'design-rules', to: '/knowledge/design-rules', icon: Ruler, label: 'Design Rules' },
+  { id: 'graph', to: '/graph', icon: Network, label: 'Graph Explorer' },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
   { id: 'roles', to: '/admin/roles', icon: ShieldCheck, label: 'Roles' },
   { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
@@ -172,6 +160,21 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
   );
 }
 
+const ADMIN_GROUPS = [
+  {
+    label: 'Library',
+    items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules'].includes(i.id)),
+  },
+  {
+    label: 'Tools',
+    items: ADMIN_ITEMS.filter(i => ['graph'].includes(i.id)),
+  },
+  {
+    label: 'System',
+    items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import'].includes(i.id)),
+  },
+];
+
 function AdminPopup({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
@@ -197,21 +200,27 @@ function AdminPopup({ onClose }: { onClose: () => void }) {
       <div className="px-3 py-2.5 border-b border-slate-100">
         <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Platform Admin</span>
       </div>
-      <div className="py-1">
-        {ADMIN_ITEMS.map(item => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.id}
-              onClick={() => { navigate(item.to); onClose(); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors text-left"
-            >
-              <Icon className="w-4 h-4 shrink-0 text-slate-400" />
-              <span>{item.label}</span>
-              <ChevronRight className="w-3.5 h-3.5 ml-auto text-slate-300" />
-            </button>
-          );
-        })}
+      <div className="py-1 max-h-[70vh] overflow-y-auto">
+        {ADMIN_GROUPS.map((group, gi) => (
+          <div key={group.label}>
+            {gi > 0 && <div className="border-t border-slate-100 my-1" />}
+            <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold text-slate-300 uppercase tracking-widest">{group.label}</div>
+            {group.items.map(item => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => { navigate(item.to); onClose(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors text-left"
+                >
+                  <Icon className="w-4 h-4 shrink-0 text-slate-400" />
+                  <span>{item.label}</span>
+                  <ChevronRight className="w-3.5 h-3.5 ml-auto text-slate-300" />
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
