@@ -16,13 +16,6 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
       { id: 'tanks', to: '/products/tanks', icon: Container, label: 'Tanks' },
     ],
   },
-  {
-    id: 'documents',
-    label: 'Documents',
-    items: [
-      { id: 'document-register', to: '/documents', icon: FileText, label: 'Document Register' },
-    ],
-  },
 ];
 
 const ADMIN_ITEMS: NavItemDef[] = [
@@ -30,6 +23,7 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
   { id: 'specifications', to: '/knowledge/specifications', icon: BookOpen, label: 'Specifications' },
   { id: 'design-rules', to: '/knowledge/design-rules', icon: Ruler, label: 'Design Rules' },
+  { id: 'document-register', to: '/documents', icon: FileText, label: 'Document Register' },
   { id: 'graph', to: '/graph', icon: Network, label: 'Graph Explorer' },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
   { id: 'roles', to: '/admin/roles', icon: ShieldCheck, label: 'Roles' },
@@ -164,6 +158,10 @@ const ADMIN_GROUPS = [
   {
     label: 'Library',
     items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules'].includes(i.id)),
+  },
+  {
+    label: 'Documents',
+    items: ADMIN_ITEMS.filter(i => ['document-register'].includes(i.id)),
   },
   {
     label: 'Tools',
