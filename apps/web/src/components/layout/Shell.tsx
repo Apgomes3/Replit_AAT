@@ -4,7 +4,7 @@ import TopBar from './TopBar';
 
 export default function Shell() {
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F8FAFC]">
+    <div className="flex h-screen overflow-hidden bg-[#F1F4F8]">
       <LeftNav />
       <div className="flex flex-col flex-1 min-w-0">
         <TopBar />

@@ -25,13 +25,15 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1F2A44] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#F1F4F8] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-3 mb-8">
-          <Database className="w-8 h-8 text-[#3E5C76]" />
+          <div className="w-10 h-10 rounded-xl bg-[#3E5C76] flex items-center justify-center">
+            <Database className="w-5 h-5 text-white" />
+          </div>
           <div>
-            <h1 className="text-white text-xl font-semibold">Engineering Data Platform</h1>
-            <p className="text-[#748CAB] text-sm">Sign in to continue</p>
+            <h1 className="text-slate-800 text-xl font-semibold">Engineering Data Platform</h1>
+            <p className="text-slate-400 text-sm">Sign in to continue</p>
           </div>
         </div>
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-xl p-6 space-y-4">
@@ -46,7 +48,7 @@ export default function Login() {
               className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#3E5C76]" />
           </div>
           <button type="submit" disabled={loading}
-            className="w-full bg-[#3E5C76] text-white rounded py-2 text-sm font-medium hover:bg-[#1F2A44] transition-colors disabled:opacity-50">
+            className="w-full bg-[#3E5C76] text-white rounded-lg py-2 text-sm font-medium hover:bg-[#2d4a63] transition-colors disabled:opacity-50">
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
           <div className="text-xs text-slate-400 space-y-1 pt-2 border-t border-slate-100">

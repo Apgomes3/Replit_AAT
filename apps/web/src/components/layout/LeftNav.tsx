@@ -133,7 +133,7 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
 
   return (
     <div>
-      <div className="pt-2 pb-1 px-3 text-xs text-[#748CAB] uppercase tracking-wider">{section.label}</div>
+      <div className="pt-4 pb-1.5 px-3 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">{section.label}</div>
       {items.map((item, idx) => {
         const Icon = item.icon;
         const isDragging = draggingId === item.id;
@@ -147,20 +147,22 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
             onDrop={handleDrop}
             onDragEnd={handleDragEnd}
             className={clsx(
-              'group relative flex items-center rounded-md transition-all',
+              'group relative flex items-center rounded-lg transition-all mx-1',
               isDragging && 'opacity-40',
-              isOver && 'ring-1 ring-[#3E5C76] ring-inset bg-[#2d3d5c]/40',
+              isOver && 'ring-1 ring-[#3E5C76]/30 ring-inset bg-blue-50',
             )}
           >
             <div className="absolute left-0 top-0 bottom-0 flex items-center pl-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing z-10">
-              <GripVertical className="w-3 h-3 text-[#748CAB]" />
+              <GripVertical className="w-3 h-3 text-slate-300" />
             </div>
             <NavLink
               to={item.to}
               end={item.end}
               className={({ isActive }) => clsx(
-                'flex-1 flex items-center gap-2.5 pl-5 pr-3 py-2 text-sm rounded-md transition-colors',
-                isActive ? 'bg-[#3E5C76] text-white' : 'text-[#A8C4E0] hover:bg-[#2d3d5c] hover:text-white'
+                'flex-1 flex items-center gap-2.5 pl-6 pr-3 py-2 text-sm rounded-lg transition-colors',
+                isActive
+                  ? 'bg-[#3E5C76] text-white font-medium shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
               )}
             >
               <Icon className="w-4 h-4 shrink-0" />
@@ -183,36 +185,40 @@ export default function LeftNav() {
   };
 
   return (
-    <nav className="w-56 bg-[#1F2A44] flex flex-col h-full shrink-0">
-      <div className="p-4 border-b border-[#2d3d5c]">
-        <div className="flex items-center gap-2">
-          <Database className="w-5 h-5 text-[#3E5C76]" />
+    <nav className="w-56 bg-white border-r border-slate-200 flex flex-col h-full shrink-0">
+      <div className="px-4 py-4 border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-[#3E5C76] flex items-center justify-center shrink-0">
+            <Database className="w-4 h-4 text-white" />
+          </div>
           <div>
-            <div className="text-white text-sm font-semibold leading-tight">Eng. Data</div>
-            <div className="text-[#748CAB] text-xs">Platform v0.1</div>
+            <div className="text-slate-800 text-sm font-semibold leading-tight">ASW Library</div>
+            <div className="text-slate-400 text-xs">Eng. Data Platform</div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        <NavLink to="/" end className={({ isActive }) => clsx(
-          'flex items-center gap-2.5 px-3 py-2 text-sm rounded-md transition-colors',
-          isActive ? 'bg-[#3E5C76] text-white' : 'text-[#A8C4E0] hover:bg-[#2d3d5c] hover:text-white'
-        )}>
-          <LayoutDashboard className="w-4 h-4 shrink-0" /><span>Dashboard</span>
-        </NavLink>
-        <NavLink to="/projects" className={({ isActive }) => clsx(
-          'flex items-center gap-2.5 px-3 py-2 text-sm rounded-md transition-colors',
-          isActive ? 'bg-[#3E5C76] text-white' : 'text-[#A8C4E0] hover:bg-[#2d3d5c] hover:text-white'
-        )}>
-          <FolderOpen className="w-4 h-4 shrink-0" /><span>Projects</span>
-        </NavLink>
-        <NavLink to="/search" className={({ isActive }) => clsx(
-          'flex items-center gap-2.5 px-3 py-2 text-sm rounded-md transition-colors',
-          isActive ? 'bg-[#3E5C76] text-white' : 'text-[#A8C4E0] hover:bg-[#2d3d5c] hover:text-white'
-        )}>
-          <Search className="w-4 h-4 shrink-0" /><span>Search</span>
-        </NavLink>
+      <div className="flex-1 overflow-y-auto py-2">
+        <div className="px-1 space-y-0.5">
+          <NavLink to="/" end className={({ isActive }) => clsx(
+            'flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors mx-1',
+            isActive ? 'bg-[#3E5C76] text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          )}>
+            <LayoutDashboard className="w-4 h-4 shrink-0" /><span>Dashboard</span>
+          </NavLink>
+          <NavLink to="/projects" className={({ isActive }) => clsx(
+            'flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors mx-1',
+            isActive ? 'bg-[#3E5C76] text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          )}>
+            <FolderOpen className="w-4 h-4 shrink-0" /><span>Projects</span>
+          </NavLink>
+          <NavLink to="/search" className={({ isActive }) => clsx(
+            'flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors mx-1',
+            isActive ? 'bg-[#3E5C76] text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          )}>
+            <Search className="w-4 h-4 shrink-0" /><span>Search</span>
+          </NavLink>
+        </div>
 
         {SECTIONS.map(section => (
           <DraggableSection
