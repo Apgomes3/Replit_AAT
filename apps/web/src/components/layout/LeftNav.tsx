@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Settings, Users, Upload, LayoutDashboard, ChevronDown, ChevronRight, Database, Boxes, Ruler } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Settings, Users, Upload, LayoutDashboard, ChevronDown, ChevronRight, Database, Boxes } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 
@@ -57,7 +57,6 @@ export default function LeftNav() {
         <NavItem to="/products" icon={Package} label="Families" end />
         <NavItem to="/products/masters" icon={Package} label="Products" />
         <NavItem to="/products/components" icon={Boxes} label="Components" />
-        <NavItem to="/products/drawings" icon={Ruler} label="Drawings Library" />
 
         <div className="pt-2 pb-1 px-3 text-xs text-[#748CAB] uppercase tracking-wider">Knowledge Hub</div>
         <NavItem to="/knowledge/materials" icon={BookOpen} label="Materials" />
