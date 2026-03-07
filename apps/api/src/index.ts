@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
 import dotenv from 'dotenv';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 dotenv.config();
 
@@ -40,6 +41,12 @@ app.use('/api/v1/import', importRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
+
+app.use('/', createProxyMiddleware({
+  target: 'http://localhost:5000',
+  changeOrigin: true,
+  ws: true,
+}));
 
 app.use(notFound);
 app.use(errorHandler);
