@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
@@ -9,7 +9,7 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
-import { Network, Pencil, Plus, Trash2, Search, X } from 'lucide-react';
+import { Network, Pencil, Plus, Trash2, Search, X, Copy } from 'lucide-react';
 
 export default function SystemDetail() {
   const { id } = useParams();
@@ -29,6 +29,19 @@ export default function SystemDetail() {
   const [equipUnit, setEquipUnit] = useState('EA');
   const [equipStatus, setEquipStatus] = useState('Design');
   const [addingSaving, setAddingSaving] = useState(false);
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: any } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const [editingEq, setEditingEq] = useState<any>(null);
+  const [editEqForm, setEditEqForm] = useState<any>(null);
+  const [editEqSaving, setEditEqSaving] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setContextMenu(null);
+    window.addEventListener('click', handler);
+    window.addEventListener('contextmenu', handler);
+    return () => { window.removeEventListener('click', handler); window.removeEventListener('contextmenu', handler); };
+  }, []);
 
   const { data: system, isLoading, refetch } = useQuery({
     queryKey: ['system', id],
@@ -115,6 +128,54 @@ export default function SystemDetail() {
       toast.success('Removed');
       refetch();
     } catch { toast.error('Delete failed'); }
+  };
+
+  const openEditEq = (eq: any) => {
+    setEditingEq(eq);
+    setEditEqForm({
+      equip_code: eq.equip_code || '',
+      quantity: eq.quantity ?? 1,
+      unit: eq.unit || 'EA',
+      status: eq.status || 'Design',
+    });
+    setContextMenu(null);
+  };
+
+  const handleSaveEq = async () => {
+    if (!editEqForm.equip_code.trim()) { toast.error('Tag is required'); return; }
+    setEditEqSaving(true);
+    try {
+      await api.put(`/equipment-items/${editingEq.id}`, {
+        equip_code: editEqForm.equip_code.trim().toUpperCase(),
+        system_id: system.id,
+        product_master_id: editingEq.product_master_id || null,
+        quantity: parseFloat(editEqForm.quantity) || 1,
+        unit: editEqForm.unit,
+        status: editEqForm.status,
+      });
+      toast.success('Saved');
+      refetch();
+      setEditingEq(null);
+    } catch { toast.error('Save failed'); }
+    finally { setEditEqSaving(false); }
+  };
+
+  const handleDuplicateEq = async (eq: any) => {
+    setContextMenu(null);
+    try {
+      await api.post('/equipment-items', {
+        equip_code: eq.equip_code + '-COPY',
+        project_id: system.project_id,
+        system_id: system.id,
+        product_master_id: eq.product_master_id || null,
+        description: eq.description || null,
+        quantity: eq.quantity ?? 1,
+        unit: eq.unit || 'EA',
+        status: eq.status || 'Design',
+      });
+      toast.success('Duplicated');
+      refetch();
+    } catch { toast.error('Duplicate failed'); }
   };
 
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
@@ -250,12 +311,19 @@ export default function SystemDetail() {
                   <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Code</th>
                   <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Qty</th>
                   <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Status</th>
-                  <th className="px-5 py-2.5" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {equipment.map((eq: any) => (
-                  <tr key={eq.id} className="hover:bg-slate-50 group">
+                  <tr
+                    key={eq.id}
+                    className="hover:bg-slate-50 cursor-context-menu select-none"
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setContextMenu({ x: e.clientX, y: e.clientY, item: eq });
+                    }}
+                  >
                     <td className="px-5 py-3"><EntityCode code={eq.equip_code} /></td>
                     <td className="px-5 py-3 font-medium text-slate-800">{eq.product_name || eq.description || '—'}</td>
                     <td className="px-5 py-3">
@@ -265,15 +333,6 @@ export default function SystemDetail() {
                     </td>
                     <td className="px-5 py-3 text-slate-600">{eq.quantity ?? 1} {eq.unit || 'EA'}</td>
                     <td className="px-5 py-3"><StatusBadge status={eq.status || 'Design'} /></td>
-                    <td className="px-5 py-3 text-right">
-                      <button
-                        onClick={() => handleDeleteEquipment(eq.id)}
-                        className="text-slate-300 hover:text-red-500 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Remove from system"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -281,6 +340,96 @@ export default function SystemDetail() {
           )}
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-white border border-slate-200 rounded-xl shadow-2xl py-1.5 w-44"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={e => e.stopPropagation()}
+          onContextMenu={e => e.preventDefault()}
+        >
+          <button
+            onClick={() => openEditEq(contextMenu.item)}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left"
+          >
+            <Pencil className="w-3.5 h-3.5 text-slate-400" /> Edit
+          </button>
+          <button
+            onClick={() => handleDuplicateEq(contextMenu.item)}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left"
+          >
+            <Copy className="w-3.5 h-3.5 text-slate-400" /> Duplicate
+          </button>
+          <div className="my-1 border-t border-slate-100" />
+          <button
+            onClick={() => { handleDeleteEquipment(contextMenu.item.id); setContextMenu(null); }}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        </div>
+      )}
+
+      {/* Edit Equipment Modal */}
+      {editingEq && editEqForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-[400px]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-800">Edit Product Item</h3>
+              <button onClick={() => setEditingEq(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              {editingEq.product_name && (
+                <div className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  <span className="font-medium text-slate-700">{editingEq.product_name}</span>
+                  {editingEq.product_code && <span className="ml-2 text-slate-400">({editingEq.product_code})</span>}
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Tag / Equipment Code <span className="text-red-400">*</span></label>
+                <input
+                  value={editEqForm.equip_code}
+                  onChange={e => setEditEqForm((f: any) => ({ ...f, equip_code: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30 uppercase"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
+                  <input type="number" min="0.001" step="any"
+                    value={editEqForm.quantity}
+                    onChange={e => setEditEqForm((f: any) => ({ ...f, quantity: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
+                  <select value={editEqForm.unit} onChange={e => setEditEqForm((f: any) => ({ ...f, unit: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                    {['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'].map(u => <option key={u}>{u}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select value={editEqForm.status} onChange={e => setEditEqForm((f: any) => ({ ...f, status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                  {['Design', 'Procurement', 'Installed', 'Commissioned', 'Active', 'Decommissioned'].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100">
+              <Button size="sm" onClick={() => setEditingEq(null)}>Cancel</Button>
+              <Button size="sm" variant="primary" onClick={handleSaveEq} disabled={editEqSaving}>
+                {editEqSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Product Modal */}
       {showAddProduct && (
