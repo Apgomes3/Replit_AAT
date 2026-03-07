@@ -97,21 +97,21 @@ export default function ComponentsList() {
       />
 
       <div className="flex-1 overflow-auto p-4">
-        <div className="flex gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-6 mb-4">
           <input
             type="text" placeholder="Search components..." value={search}
             onChange={e => setSearch(e.target.value)}
-            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] w-64"
+            className="border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76] w-56"
           />
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="flex items-center gap-4">
             <button onClick={() => setTypeFilter('')}
-              className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors ${!typeFilter ? 'bg-[#3E5C76] text-white border-[#3E5C76]' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-              All ({components.length})
+              className={`text-xs transition-colors ${!typeFilter ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+              All <span className="text-slate-400 font-normal">({components.length})</span>
             </button>
             {COMPONENT_TYPES.filter(t => typeCounts[t] > 0).map(t => (
               <button key={t} onClick={() => setTypeFilter(typeFilter === t ? '' : t)}
-                className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors ${typeFilter === t ? 'bg-[#3E5C76] text-white border-[#3E5C76]' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-                {t} ({typeCounts[t]})
+                className={`text-xs transition-colors ${typeFilter === t ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+                {t} <span className="text-slate-400 font-normal">({typeCounts[t]})</span>
               </button>
             ))}
           </div>
