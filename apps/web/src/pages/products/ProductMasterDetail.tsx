@@ -191,6 +191,11 @@ export default function ProductMasterDetail() {
     enabled: !!product,
   });
 
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+  });
+
   const productPutPayload = (overrides: Record<string, any>) => ({
     product_name: product.product_name,
     product_category: product.product_category,
@@ -638,9 +643,16 @@ export default function ProductMasterDetail() {
                   </div>
                 </>)}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
-                  <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
+                  <select value={editForm.primary_material_code ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value || null }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    <option value="">— None —</option>
+                    {(materialsData?.items ?? []).map((m: any) => (
+                      <option key={m.material_code} value={m.material_code}>
+                        {m.material_code}{m.material_name ? ` — ${m.material_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
