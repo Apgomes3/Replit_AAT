@@ -10,7 +10,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, Copy } from 'lucide-react';
 
 const TANK_TYPES = ['Display Tank', 'Sump', 'Refugium', 'Quarantine', 'Acclimation', 'Holding', 'Treatment', 'Header Tank', 'Buffer Tank', 'Other'];
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Oval', 'Hexagonal', 'Custom'];
@@ -65,9 +65,25 @@ export default function TanksList() {
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
       </div>
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={data?.items || []} loading={isLoading} tableId="tanks-list"
+        <DataTable
+          columns={columns} data={data?.items || []} loading={isLoading} tableId="tanks-list"
           onRowClick={r => navigate(`/products/masters/${r.id}`)}
-          emptyMessage="No tank types in library — add a tank model above" />
+          emptyMessage="No tank types in library — add a tank model above"
+          contextMenuItems={row => [
+            {
+              label: 'Duplicate',
+              icon: <Copy className="w-3.5 h-3.5" />,
+              onClick: async () => {
+                try {
+                  const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                  toast.success('Tank duplicated');
+                  refetch();
+                  navigate(`/products/masters/${res.data.id}`);
+                } catch { toast.error('Duplicate failed'); }
+              },
+            },
+          ]}
+        />
       </div>
 
       {showNew && (

@@ -113,6 +113,25 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
   res.json(result.rows[0]);
 });
 
+router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+  const orig = await query('SELECT * FROM product_masters WHERE id=$1', [req.params.id]);
+  if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const src = orig.rows[0];
+  let newCode = `${src.product_code}-COPY`;
+  let suffix = 1;
+  while (true) {
+    const exists = await query('SELECT id FROM product_masters WHERE product_code=$1', [newCode]);
+    if (!exists.rows[0]) break;
+    suffix++;
+    newCode = `${src.product_code}-COPY-${suffix}`;
+  }
+  const result = await query(
+    `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+    [newCode, src.product_family_id, `Copy of ${src.product_name}`, src.product_category, src.application_type, src.design_flow_m3h, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, src.standard_status, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || []]);
+  res.status(201).json(result.rows[0]);
+});
+
 // PRODUCT VARIANTS
 router.get('/product-variants', authenticate, async (req: AuthRequest, res: Response) => {
   let where = '', params: any[] = [];
@@ -282,6 +301,25 @@ router.put('/components/:id', authenticate, async (req: AuthRequest, res: Respon
     [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
   res.json(result.rows[0]);
+});
+
+router.post('/components/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+  const orig = await query('SELECT * FROM components WHERE id=$1', [req.params.id]);
+  if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  const src = orig.rows[0];
+  let newCode = `${src.component_code}-COPY`;
+  let suffix = 1;
+  while (true) {
+    const exists = await query('SELECT id FROM components WHERE component_code=$1', [newCode]);
+    if (!exists.rows[0]) break;
+    suffix++;
+    newCode = `${src.component_code}-COPY-${suffix}`;
+  }
+  const result = await query(
+    `INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+    [newCode, `Copy of ${src.component_name}`, src.component_type, src.component_category, src.description, src.primary_material_code, src.standard_size, src.weight_kg, src.unit, src.status, src.notes, src.synonyms || [], req.user!.id]);
+  res.status(201).json(result.rows[0]);
 });
 
 export default router;

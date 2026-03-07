@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -8,7 +8,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import { Component } from '../../types';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const COMPONENT_TYPES = ['Vessel', 'Pump', 'Blower', 'Motor', 'Valve', 'Instrument', 'Pipe', 'Fitting', 'Sensor', 'Controller', 'Frame', 'Filter', 'Heat Exchanger', 'Other'];
@@ -31,6 +31,7 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export default function ComponentsList() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -118,7 +119,25 @@ export default function ComponentsList() {
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg">
-          <DataTable columns={columns} data={components} tableId="components-list" emptyMessage="No components yet — create your first component above" />
+          <DataTable
+            columns={columns} data={components} tableId="components-list"
+            emptyMessage="No components yet — create your first component above"
+            onRowClick={r => navigate(`/products/components/${r.id}`)}
+            contextMenuItems={row => [
+              {
+                label: 'Duplicate',
+                icon: <Copy className="w-3.5 h-3.5" />,
+                onClick: async () => {
+                  try {
+                    const res = await api.post(`/components/${row.id}/duplicate`, {});
+                    toast.success('Component duplicated');
+                    qc.invalidateQueries({ queryKey: ['components'] });
+                    navigate(`/products/components/${res.data.id}`);
+                  } catch { toast.error('Duplicate failed'); }
+                },
+              },
+            ]}
+          />
         </div>
       </div>
 

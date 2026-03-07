@@ -10,7 +10,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, Copy } from 'lucide-react';
 
 export default function ProductMastersList() {
   const navigate = useNavigate();
@@ -57,7 +57,24 @@ export default function ProductMastersList() {
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
       </div>
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={data?.items || []} loading={isLoading} tableId="products-list" onRowClick={r => navigate(`/products/masters/${r.id}`)} />
+        <DataTable
+          columns={columns} data={data?.items || []} loading={isLoading} tableId="products-list"
+          onRowClick={r => navigate(`/products/masters/${r.id}`)}
+          contextMenuItems={row => [
+            {
+              label: 'Duplicate',
+              icon: <Copy className="w-3.5 h-3.5" />,
+              onClick: async () => {
+                try {
+                  const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                  toast.success('Product duplicated');
+                  refetch();
+                  navigate(`/products/masters/${res.data.id}`);
+                } catch { toast.error('Duplicate failed'); }
+              },
+            },
+          ]}
+        />
       </div>
       {showNew && (
         <NewEntityModal title="New Product Master" onClose={() => setShowNew(false)}

@@ -1,6 +1,7 @@
 import { ReactNode, useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { GripVertical } from 'lucide-react';
+import ContextMenu, { ContextMenuItem } from './ContextMenu';
 
 export interface Column<T> {
   key: string;
@@ -13,6 +14,7 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
   onRowClick?: (row: T) => void;
+  contextMenuItems?: (row: T) => ContextMenuItem[];
   loading?: boolean;
   emptyMessage?: string;
   tableId?: string;
@@ -44,8 +46,9 @@ function applyOrder<T>(columns: Column<T>[], savedKeys: string[] | null): Column
 }
 
 export default function DataTable<T extends Record<string, any>>({
-  columns, data, onRowClick, loading, emptyMessage = 'No records found', tableId
+  columns, data, onRowClick, contextMenuItems, loading, emptyMessage = 'No records found', tableId
 }: DataTableProps<T>) {
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; row: T } | null>(null);
   const [orderedCols, setOrderedCols] = useState<Column<T>[]>(() =>
     tableId ? applyOrder(columns, loadColOrder(tableId)) : columns
   );
@@ -142,7 +145,12 @@ export default function DataTable<T extends Record<string, any>>({
             <tr
               key={row.id || i}
               onClick={() => onRowClick?.(row)}
-              className={clsx('border-b border-slate-100 transition-colors', onRowClick && 'cursor-pointer hover:bg-blue-50')}
+              onContextMenu={contextMenuItems ? e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, row }); } : undefined}
+              className={clsx(
+                'border-b border-slate-100 transition-colors',
+                onRowClick && 'cursor-pointer hover:bg-blue-50',
+                !onRowClick && contextMenuItems && 'hover:bg-slate-50',
+              )}
             >
               {cols.map(col => (
                 <td key={col.key} className="px-4 py-3 text-slate-700">
@@ -153,6 +161,13 @@ export default function DataTable<T extends Record<string, any>>({
           ))}
         </tbody>
       </table>
+      {ctxMenu && contextMenuItems && (
+        <ContextMenu
+          x={ctxMenu.x} y={ctxMenu.y}
+          items={contextMenuItems(ctxMenu.row)}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }

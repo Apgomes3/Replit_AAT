@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import PipingCsvImport from './PipingCsvImport';
 import toast from 'react-hot-toast';
-import { Plus, Upload } from 'lucide-react';
+import { Plus, Upload, Copy } from 'lucide-react';
 
 const FITTING_TYPES = ['Pipe', 'Fitting', 'Valve', 'Flange', 'Coupling', 'Reducer', 'Union', 'Elbow', 'Tee', 'Cap', 'Other'];
 const BRACKET_TYPES = ['Bracket', 'Support', 'Clamp', 'Hanger', 'Saddle', 'Shoe', 'Strut'];
@@ -99,10 +99,28 @@ export default function PipingList() {
       </div>
 
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={displayed} loading={isLoading} tableId={tab === 'fittings' ? 'piping-fittings' : 'piping-bracketing'} onRowClick={r => navigate(`/products/masters/${r.id}`)}
+        <DataTable
+          columns={columns} data={displayed} loading={isLoading}
+          tableId={tab === 'fittings' ? 'piping-fittings' : 'piping-bracketing'}
+          onRowClick={r => navigate(`/products/masters/${r.id}`)}
           emptyMessage={tab === 'fittings'
             ? 'No piping fittings — add one manually or import from CSV'
-            : 'No bracketing items — add a bracket, support or clamp'} />
+            : 'No bracketing items — add a bracket, support or clamp'}
+          contextMenuItems={row => [
+            {
+              label: 'Duplicate',
+              icon: <Copy className="w-3.5 h-3.5" />,
+              onClick: async () => {
+                try {
+                  const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                  toast.success('Item duplicated');
+                  refetch();
+                  navigate(`/products/masters/${res.data.id}`);
+                } catch { toast.error('Duplicate failed'); }
+              },
+            },
+          ]}
+        />
       </div>
 
       {showNew && (
