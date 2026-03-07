@@ -63,7 +63,7 @@ export default function SystemDetail() {
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
 
   const handleCreateEquipment = async () => {
-    if (!equipCode.trim()) { toast.error('Equipment tag code is required'); return; }
+    if (!equipCode.trim()) { toast.error('Product tag code is required'); return; }
     if (!selectedProduct) { toast.error('Select a product from the ASW Library'); return; }
     setSubmitting(true);
     try {
@@ -76,14 +76,14 @@ export default function SystemDetail() {
         unit: 'EA',
         status: 'Design',
       });
-      toast.success('Equipment added');
+      toast.success('Product added');
       setShowNewEq(false);
       setSelectedProduct(null);
       setProductSearch('');
       setEquipCode('');
       refetch();
     } catch {
-      toast.error('Failed to add equipment');
+      toast.error('Failed to add product');
     } finally {
       setSubmitting(false);
     }
@@ -133,10 +133,10 @@ export default function SystemDetail() {
 
         <div className="bg-white border border-slate-200 rounded-lg">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-            <span className="text-sm font-medium text-slate-700">Equipment ({system.equipment?.length || 0})</span>
-            <Button size="sm" variant="primary" onClick={openModal}><Plus className="w-3.5 h-3.5" />Add Equipment</Button>
+            <span className="text-sm font-medium text-slate-700">Products ({system.equipment?.length || 0})</span>
+            <Button size="sm" variant="primary" onClick={openModal}><Plus className="w-3.5 h-3.5" />Add Product</Button>
           </div>
-          <DataTable columns={eqCols} data={system.equipment || []} emptyMessage="No equipment added yet — click Add Equipment above" />
+          <DataTable columns={eqCols} data={system.equipment || []} emptyMessage="No products added yet — click Add Product above" />
         </div>
       </div>
 
@@ -167,7 +167,7 @@ export default function SystemDetail() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="font-semibold text-slate-800">Add Equipment to {system.system_code}</h2>
+              <h2 className="font-semibold text-slate-800">Add Product to {system.system_code}</h2>
               <button onClick={() => setShowNewEq(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
 
@@ -228,7 +228,7 @@ export default function SystemDetail() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Equipment Code * <span className="text-slate-400 font-normal">(project-specific tag number)</span></label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Product Tag Code * <span className="text-slate-400 font-normal">(project-specific tag number)</span></label>
                 <input
                   type="text"
                   placeholder={`e.g. ${system.system_code}-FF-01`}
@@ -242,7 +242,7 @@ export default function SystemDetail() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <Button variant="ghost" onClick={() => setShowNewEq(false)}>Cancel</Button>
               <Button onClick={handleCreateEquipment} disabled={submitting || !selectedProduct || !equipCode.trim()}>
-                {submitting ? 'Adding...' : 'Add Equipment'}
+                {submitting ? 'Adding...' : 'Add Product'}
               </Button>
             </div>
           </div>
