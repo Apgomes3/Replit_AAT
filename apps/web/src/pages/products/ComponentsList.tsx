@@ -41,6 +41,9 @@ export default function ComponentsList() {
     description: '', primary_material_code: '', standard_size: '', weight_kg: '', unit: 'EA', notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [editRow, setEditRow] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   const { data } = useQuery({
     queryKey: ['components', search, typeFilter],
@@ -51,6 +54,41 @@ export default function ComponentsList() {
       return api.get(`/components?${p}`).then(r => r.data);
     },
   });
+
+  const openEdit = (row: any) => {
+    setEditRow(row);
+    setEditForm({
+      component_name: row.component_name || '',
+      component_type: row.component_type || 'Vessel',
+      component_category: row.component_category || 'Mechanical',
+      description: row.description || '',
+      primary_material_code: row.primary_material_code || '',
+      standard_size: row.standard_size || '',
+      weight_kg: row.weight_kg != null ? String(row.weight_kg) : '',
+      unit: row.unit || 'EA',
+      status: row.status || 'Active',
+      notes: row.notes || '',
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editRow) return;
+    setEditSaving(true);
+    try {
+      await api.put(`/components/${editRow.id}`, {
+        ...editForm,
+        weight_kg: editForm.weight_kg ? parseFloat(editForm.weight_kg) : null,
+        synonyms: editRow.synonyms || [],
+      });
+      toast.success('Component updated');
+      setEditRow(null);
+      qc.invalidateQueries({ queryKey: ['components'] });
+    } catch {
+      toast.error('Failed to save changes');
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const handleCreate = async () => {
     if (!form.component_code || !form.component_name) { toast.error('Code and name are required'); return; }
@@ -127,7 +165,7 @@ export default function ComponentsList() {
               {
                 label: 'Edit',
                 icon: <Pencil className="w-3.5 h-3.5" />,
-                onClick: () => navigate(`/products/components/${row.id}`),
+                onClick: () => openEdit(row),
               },
               {
                 label: 'Duplicate',
@@ -223,6 +261,86 @@ export default function ComponentsList() {
               <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
               <Button onClick={handleCreate} disabled={submitting}>
                 {submitting ? 'Creating...' : 'Create Component'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editRow && editForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 sticky top-0 bg-white">
+              <div>
+                <h2 className="font-semibold text-slate-800">Edit Component</h2>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">{editRow.component_code}</p>
+              </div>
+              <button onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Name</label>
+                <input value={editForm.component_name} onChange={e => setEditForm((f: any) => ({ ...f, component_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
+                <select value={editForm.component_type} onChange={e => setEditForm((f: any) => ({ ...f, component_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
+                <select value={editForm.component_category} onChange={e => setEditForm((f: any) => ({ ...f, component_category: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select value={editForm.status} onChange={e => setEditForm((f: any) => ({ ...f, status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {STATUSES.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
+                <select value={editForm.unit} onChange={e => setEditForm((f: any) => ({ ...f, unit: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {UNITS.map(u => <option key={u}>{u}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
+                <textarea rows={2} value={editForm.description} onChange={e => setEditForm((f: any) => ({ ...f, description: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Material Code</label>
+                <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Standard Size</label>
+                <input value={editForm.standard_size} onChange={e => setEditForm((f: any) => ({ ...f, standard_size: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Weight (kg)</label>
+                <input type="number" value={editForm.weight_kg} onChange={e => setEditForm((f: any) => ({ ...f, weight_kg: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                <input value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 sticky bottom-0 bg-white">
+              <Button variant="ghost" onClick={() => setEditRow(null)}>Cancel</Button>
+              <Button onClick={handleEditSave} disabled={editSaving}>
+                {editSaving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           </div>

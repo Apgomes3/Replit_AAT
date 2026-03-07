@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import PipingCsvImport from './PipingCsvImport';
 import toast from 'react-hot-toast';
-import { Plus, Upload, Copy, Pencil } from 'lucide-react';
+import { Plus, Upload, Copy, Pencil, X } from 'lucide-react';
 
 const FITTING_TYPES = ['Pipe', 'Fitting', 'Valve', 'Flange', 'Coupling', 'Reducer', 'Union', 'Elbow', 'Tee', 'Cap', 'Other'];
 const BRACKET_TYPES = ['Bracket', 'Support', 'Clamp', 'Hanger', 'Saddle', 'Shoe', 'Strut'];
@@ -30,6 +30,9 @@ export default function PipingList() {
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [editRow, setEditRow] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['product-masters-piping', search],
@@ -48,6 +51,42 @@ export default function PipingList() {
   const fittings = allItems.filter(i => !isBracketing(i));
   const bracketing = allItems.filter(i => isBracketing(i));
   const displayed = tab === 'fittings' ? fittings : bracketing;
+
+  const openEdit = (row: any) => {
+    setEditRow(row);
+    setEditForm({
+      product_name: row.product_name || '',
+      application_type: row.application_type || '',
+      primary_material_code: row.primary_material_code || '',
+      standard_status: row.standard_status || 'Concept',
+      notes: row.notes || '',
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editRow) return;
+    setEditSaving(true);
+    try {
+      await api.put(`/product-masters/${editRow.id}`, {
+        product_name: editForm.product_name,
+        product_category: editRow.product_category,
+        application_type: editForm.application_type || null,
+        primary_material_code: editForm.primary_material_code || null,
+        standard_status: editForm.standard_status,
+        notes: editForm.notes || null,
+        synonyms: editRow.synonyms || [],
+        image_url: editRow.image_url || null,
+        product_family_id: editRow.product_family_id || null,
+      });
+      toast.success('Item updated');
+      setEditRow(null);
+      refetch();
+    } catch {
+      toast.error('Failed to save changes');
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const columns: Column<ProductMaster>[] = [
     { key: 'product_code', header: 'Code', render: r => <EntityCode code={r.product_code} /> },
@@ -110,7 +149,7 @@ export default function PipingList() {
             {
               label: 'Edit',
               icon: <Pencil className="w-3.5 h-3.5" />,
-              onClick: () => navigate(`/products/masters/${row.id}`),
+              onClick: () => openEdit(row),
             },
             {
               label: 'Duplicate',
@@ -160,6 +199,58 @@ export default function PipingList() {
           onClose={() => setShowImport(false)}
           onImported={() => { refetch(); setShowImport(false); }}
         />
+      )}
+
+      {editRow && editForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 sticky top-0 bg-white">
+              <div>
+                <h2 className="font-semibold text-slate-800">Edit {tab === 'fittings' ? 'Fitting' : 'Bracket'}</h2>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">{editRow.product_code}</p>
+              </div>
+              <button onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Item Name</label>
+                <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
+                <select value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  <option value="">— None —</option>
+                  {ALL_PIPE_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select value={editForm.standard_status} onChange={e => setEditForm((f: any) => ({ ...f, standard_status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
+                <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 sticky bottom-0 bg-white">
+              <Button variant="ghost" onClick={() => setEditRow(null)}>Cancel</Button>
+              <Button onClick={handleEditSave} disabled={editSaving}>
+                {editSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
