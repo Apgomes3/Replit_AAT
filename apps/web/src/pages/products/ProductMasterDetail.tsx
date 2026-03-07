@@ -81,6 +81,10 @@ export default function ProductMasterDetail() {
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [imageSubmitting, setImageSubmitting] = useState(false);
 
+  const [showTankSpecsModal, setShowTankSpecsModal] = useState(false);
+  const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', gross_volume_m3: '', operating_volume_m3: '' });
+  const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
+
   const [showRelModal, setShowRelModal] = useState(false);
   const [relSearch, setRelSearch] = useState('');
   const [relTarget, setRelTarget] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
@@ -123,20 +127,30 @@ export default function ProductMasterDetail() {
     enabled: compSearch.length >= 2,
   });
 
+  const productPutPayload = (overrides: Record<string, any>) => ({
+    product_name: product.product_name,
+    product_category: product.product_category,
+    application_type: product.application_type,
+    design_flow_m3h: product.design_flow_m3h,
+    power_kw: product.power_kw,
+    primary_material_code: product.primary_material_code,
+    standard_status: product.standard_status,
+    image_url: product.image_url,
+    notes: product.notes,
+    shape_type: product.shape_type,
+    length_mm: product.length_mm,
+    width_mm: product.width_mm,
+    height_mm: product.height_mm,
+    design_water_level_mm: product.design_water_level_mm,
+    gross_volume_m3: product.gross_volume_m3,
+    operating_volume_m3: product.operating_volume_m3,
+    ...overrides,
+  });
+
   const handleSaveImage = async () => {
     setImageSubmitting(true);
     try {
-      await api.put(`/product-masters/${id}`, {
-        product_name: product.product_name,
-        product_category: product.product_category,
-        application_type: product.application_type,
-        design_flow_m3h: product.design_flow_m3h,
-        power_kw: product.power_kw,
-        primary_material_code: product.primary_material_code,
-        standard_status: product.standard_status,
-        image_url: imageUrlInput || null,
-        notes: product.notes,
-      });
+      await api.put(`/product-masters/${id}`, productPutPayload({ image_url: imageUrlInput || null }));
       toast.success('Image updated');
       setShowImageModal(false);
       queryClient.invalidateQueries({ queryKey: ['product-master', id] });
@@ -147,10 +161,33 @@ export default function ProductMasterDetail() {
     }
   };
 
+  const handleSaveTankSpecs = async () => {
+    setTankSpecsSubmitting(true);
+    try {
+      await api.put(`/product-masters/${id}`, productPutPayload({
+        shape_type: tankSpecsForm.shape_type || null,
+        length_mm: tankSpecsForm.length_mm ? Number(tankSpecsForm.length_mm) : null,
+        width_mm: tankSpecsForm.width_mm ? Number(tankSpecsForm.width_mm) : null,
+        height_mm: tankSpecsForm.height_mm ? Number(tankSpecsForm.height_mm) : null,
+        design_water_level_mm: tankSpecsForm.design_water_level_mm ? Number(tankSpecsForm.design_water_level_mm) : null,
+        gross_volume_m3: tankSpecsForm.gross_volume_m3 ? Number(tankSpecsForm.gross_volume_m3) : null,
+        operating_volume_m3: tankSpecsForm.operating_volume_m3 ? Number(tankSpecsForm.operating_volume_m3) : null,
+      }));
+      toast.success('Tank specifications saved');
+      setShowTankSpecsModal(false);
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+    } catch {
+      toast.error('Failed to save tank specs');
+    } finally {
+      setTankSpecsSubmitting(false);
+    }
+  };
+
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!product) return <div className="p-8 text-slate-400">Product not found</div>;
 
   const isPiping = product.product_category === 'Piping';
+  const isTank = product.product_category === 'Tank';
   const bom = product.boms?.[0];
   const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
@@ -338,10 +375,11 @@ export default function ProductMasterDetail() {
             <MetadataPanel fields={[
               { label: 'Family', value: product.product_family_name },
               { label: 'Category', value: product.product_category },
-              ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
-              ...(!isPiping ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
-              ...(!isPiping ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
-              ...(!isPiping ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
+              ...(!isPiping && !isTank ? [{ label: 'Application', value: product.application_type }] : []),
+              ...(isTank ? [{ label: 'Tank Type', value: product.application_type }] : []),
+              ...(!isPiping && !isTank ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
+              ...(!isPiping && !isTank ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
+              ...(!isPiping && !isTank ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
               { label: 'Primary Material', value: product.primary_material_code ? <><EntityCode code={product.primary_material_code} /> {product.material_name && <span className="text-slate-500 text-xs ml-1">{product.material_name}</span>}</> : null },
               { label: 'Notes', value: product.notes },
             ]} />
@@ -360,6 +398,42 @@ export default function ProductMasterDetail() {
                   ? <img src={product.image_url} alt={product.product_name} className="w-full h-40 object-contain p-2 bg-slate-50" />
                   : <div className="h-32 flex items-center justify-center bg-slate-50 text-slate-300 text-sm">No image</div>
                 }
+              </div>
+            )}
+            {isTank && (
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                  <span className="text-xs text-slate-400 uppercase tracking-wide">Tank Specifications</span>
+                  <button
+                    onClick={() => {
+                      setTankSpecsForm({
+                        shape_type: product.shape_type || '',
+                        length_mm: product.length_mm != null ? String(product.length_mm) : '',
+                        width_mm: product.width_mm != null ? String(product.width_mm) : '',
+                        height_mm: product.height_mm != null ? String(product.height_mm) : '',
+                        design_water_level_mm: product.design_water_level_mm != null ? String(product.design_water_level_mm) : '',
+                        gross_volume_m3: product.gross_volume_m3 != null ? String(product.gross_volume_m3) : '',
+                        operating_volume_m3: product.operating_volume_m3 != null ? String(product.operating_volume_m3) : '',
+                      });
+                      setShowTankSpecsModal(true);
+                    }}
+                    className="text-xs text-[#3E5C76] hover:underline"
+                  >Edit</button>
+                </div>
+                <div className="p-3 space-y-1.5 text-xs">
+                  {[
+                    { label: 'Shape', value: product.shape_type },
+                    { label: 'L × W × H', value: product.length_mm != null ? `${product.length_mm} × ${product.width_mm ?? '—'} × ${product.height_mm ?? '—'} mm` : null },
+                    { label: 'Water Level', value: product.design_water_level_mm != null ? `${product.design_water_level_mm} mm` : null },
+                    { label: 'Gross Volume', value: product.gross_volume_m3 != null ? `${product.gross_volume_m3} m³` : null },
+                    { label: 'Op. Volume', value: product.operating_volume_m3 != null ? `${product.operating_volume_m3} m³` : null },
+                  ].map(row => (
+                    <div key={row.label} className="flex justify-between gap-2">
+                      <span className="text-slate-400">{row.label}</span>
+                      <span className="text-slate-700 font-medium">{row.value ?? <span className="text-slate-300">—</span>}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div className="bg-white border border-slate-200 rounded-lg p-4">
@@ -728,6 +802,49 @@ export default function ProductMasterDetail() {
               <Button variant="ghost" onClick={() => setShowDocModal(false)}>Cancel</Button>
               <Button onClick={handleAddDocument} disabled={docSubmitting}>
                 {docSubmitting ? 'Saving...' : 'Add Document'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTankSpecsModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="text-lg font-semibold text-slate-800">Tank Specifications</h2>
+              <button onClick={() => setShowTankSpecsModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-3">
+              {[
+                { key: 'shape_type', label: 'Shape', isSelect: true, options: ['Rectangular', 'Cylindrical', 'Oval', 'Hexagonal', 'Custom'] },
+                { key: 'length_mm', label: 'Length (mm)', placeholder: 'e.g. 2000' },
+                { key: 'width_mm', label: 'Width (mm)', placeholder: 'e.g. 800' },
+                { key: 'height_mm', label: 'Height (mm)', placeholder: 'e.g. 600' },
+                { key: 'design_water_level_mm', label: 'Design Water Level (mm)', placeholder: 'e.g. 550' },
+                { key: 'gross_volume_m3', label: 'Gross Volume (m³)', placeholder: 'e.g. 0.96' },
+                { key: 'operating_volume_m3', label: 'Operating Volume (m³)', placeholder: 'e.g. 0.88' },
+              ].map(field => (
+                <div key={field.key}>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
+                  {field.isSelect ? (
+                    <select value={(tankSpecsForm as any)[field.key]} onChange={e => setTankSpecsForm(f => ({ ...f, [field.key]: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                      <option value="">— Select —</option>
+                      {field.options?.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input type="number" placeholder={field.placeholder} value={(tankSpecsForm as any)[field.key]}
+                      onChange={e => setTankSpecsForm(f => ({ ...f, [field.key]: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <Button variant="ghost" onClick={() => setShowTankSpecsModal(false)}>Cancel</Button>
+              <Button onClick={handleSaveTankSpecs} disabled={tankSpecsSubmitting}>
+                {tankSpecsSubmitting ? 'Saving...' : 'Save Specifications'}
               </Button>
             </div>
           </div>

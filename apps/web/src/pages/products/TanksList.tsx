@@ -35,11 +35,20 @@ export default function TanksList() {
   const allFamilies = families?.items || [];
   const familyOptions = allFamilies.map((f: any) => f.product_family_code);
 
+  const fmtMm = (v: any) => v != null ? <span>{v} mm</span> : <span className="text-slate-300">—</span>;
+  const fmtM3 = (v: any) => v != null ? <span>{v} m³</span> : <span className="text-slate-300">—</span>;
+
   const columns: Column<ProductMaster>[] = [
     { key: 'product_code', header: 'Code', render: r => <EntityCode code={r.product_code} /> },
     { key: 'product_name', header: 'Tank Name / Model', render: r => <span className="font-medium">{r.product_name}</span> },
-    { key: 'product_family_name', header: 'Family' },
     { key: 'application_type', header: 'Type', render: r => r.application_type ? <span>{r.application_type}</span> : <span className="text-slate-300">—</span> },
+    { key: 'shape_type' as any, header: 'Shape', render: (r: any) => r.shape_type ? <span>{r.shape_type}</span> : <span className="text-slate-300">—</span> },
+    { key: 'length_mm' as any, header: 'L (mm)', render: (r: any) => fmtMm(r.length_mm) },
+    { key: 'width_mm' as any, header: 'W (mm)', render: (r: any) => fmtMm(r.width_mm) },
+    { key: 'height_mm' as any, header: 'H (mm)', render: (r: any) => fmtMm(r.height_mm) },
+    { key: 'design_water_level_mm' as any, header: 'Water Level (mm)', render: (r: any) => fmtMm(r.design_water_level_mm) },
+    { key: 'gross_volume_m3' as any, header: 'Gross Vol (m³)', render: (r: any) => fmtM3(r.gross_volume_m3) },
+    { key: 'operating_volume_m3' as any, header: 'Op. Vol (m³)', render: (r: any) => fmtM3(r.operating_volume_m3) },
     { key: 'primary_material_code', header: 'Material', render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
     { key: 'standard_status', header: 'Status', render: r => <StatusBadge status={r.standard_status} /> },
   ];
@@ -68,6 +77,13 @@ export default function TanksList() {
             { name: 'product_name', label: 'Tank Name / Model', required: true },
             { name: 'product_family_id', label: 'Family', options: familyOptions },
             { name: 'application_type', label: 'Tank Type', options: TANK_TYPES },
+            { name: 'shape_type', label: 'Shape', options: TANK_SHAPES },
+            { name: 'length_mm', label: 'Length (mm)', placeholder: 'e.g. 2000' },
+            { name: 'width_mm', label: 'Width (mm)', placeholder: 'e.g. 800' },
+            { name: 'height_mm', label: 'Height (mm)', placeholder: 'e.g. 600' },
+            { name: 'design_water_level_mm', label: 'Design Water Level (mm)', placeholder: 'e.g. 550' },
+            { name: 'gross_volume_m3', label: 'Gross Volume (m³)', placeholder: 'e.g. 0.96' },
+            { name: 'operating_volume_m3', label: 'Operating Volume (m³)', placeholder: 'e.g. 0.88' },
             { name: 'primary_material_code', label: 'Primary Material', options: TANK_MATERIALS },
             { name: 'standard_status', label: 'Status', options: ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'] },
           ]}
@@ -77,6 +93,12 @@ export default function TanksList() {
               ...formData,
               product_category: 'Tank',
               product_family_id: familyObj?.id ?? undefined,
+              length_mm: formData.length_mm ? Number(formData.length_mm) : null,
+              width_mm: formData.width_mm ? Number(formData.width_mm) : null,
+              height_mm: formData.height_mm ? Number(formData.height_mm) : null,
+              design_water_level_mm: formData.design_water_level_mm ? Number(formData.design_water_level_mm) : null,
+              gross_volume_m3: formData.gross_volume_m3 ? Number(formData.gross_volume_m3) : null,
+              operating_volume_m3: formData.operating_volume_m3 ? Number(formData.operating_volume_m3) : null,
             });
             toast.success('Tank type created');
             refetch();

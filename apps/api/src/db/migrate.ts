@@ -467,6 +467,14 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
 
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS component_id UUID REFERENCES components(id);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS shape_type VARCHAR(50);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS length_mm NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS width_mm NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS height_mm NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS design_water_level_mm NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS gross_volume_m3 NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS operating_volume_m3 NUMERIC;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS product_master_id UUID REFERENCES product_masters(id);
 `;
 
 async function migrate() {

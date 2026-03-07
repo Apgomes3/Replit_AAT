@@ -104,9 +104,10 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url, notes } = req.body;
-  const result = await query('UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, power_kw=$5, primary_material_code=$6, standard_status=$7, image_url=$8, notes=$9, updated_at=NOW() WHERE id=$10 RETURNING *',
-    [product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url || null, notes, req.params.id]);
+  const { product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3 } = req.body;
+  const result = await query(
+    'UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, power_kw=$5, primary_material_code=$6, standard_status=$7, image_url=$8, notes=$9, shape_type=$10, length_mm=$11, width_mm=$12, height_mm=$13, design_water_level_mm=$14, gross_volume_m3=$15, operating_volume_m3=$16, updated_at=NOW() WHERE id=$17 RETURNING *',
+    [product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   res.json(result.rows[0]);
 });

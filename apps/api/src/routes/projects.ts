@@ -152,21 +152,38 @@ router.post('/exhibits', authenticate, async (req: AuthRequest, res: Response) =
 router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
   let where = '', params: any[] = [];
   if (req.query.project_id) { params.push(req.query.project_id); where = `WHERE t.project_id = $1`; }
-  const result = await query(`SELECT t.*, e.exhibit_name, p.project_code FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id ${where} ORDER BY t.tank_code`, params);
+  const result = await query(
+    `SELECT t.*, e.exhibit_name, p.project_code,
+      pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
+      pm.shape_type as product_shape, pm.length_mm as product_length_mm, pm.width_mm as product_width_mm,
+      pm.height_mm as product_height_mm, pm.design_water_level_mm as product_water_level_mm,
+      pm.gross_volume_m3 as product_gross_volume_m3, pm.operating_volume_m3 as product_operating_volume_m3,
+      pm.primary_material_code as product_material
+     FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
+     LEFT JOIN product_masters pm ON t.product_master_id=pm.id ${where} ORDER BY t.tank_code`, params);
   res.json({ items: result.rows });
 });
 
 router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT t.*, e.exhibit_name, p.project_code, p.project_name FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id WHERE t.id=$1', [req.params.id]);
+  const result = await query(
+    `SELECT t.*, e.exhibit_name, p.project_code, p.project_name,
+      pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
+      pm.shape_type as product_shape, pm.length_mm as product_length_mm, pm.width_mm as product_width_mm,
+      pm.height_mm as product_height_mm, pm.design_water_level_mm as product_water_level_mm,
+      pm.gross_volume_m3 as product_gross_volume_m3, pm.operating_volume_m3 as product_operating_volume_m3,
+      pm.primary_material_code as product_material
+     FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
+     LEFT JOIN product_masters pm ON t.product_master_id=pm.id WHERE t.id=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
 });
 
 router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+  const { tank_code, project_id, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+  if (!tank_code || !project_id || !tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
   const result = await query(
-    'INSERT INTO tanks (tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *',
-    [tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material, status || 'Active', notes || null]);
+    'INSERT INTO tanks (tank_code, project_id, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
+    [tank_code, project_id, tank_name, tank_type || null, product_master_id || null, shape_type || null, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material || null, status || 'Active', notes || null]);
   res.status(201).json(result.rows[0]);
 });
 
