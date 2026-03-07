@@ -109,7 +109,14 @@ npm run seed       # Seed Taoyuan Aquarium demo data
 - `GET  /api/v1/search?q=` — Cross-domain search
 - `POST /api/v1/import/products` — CSV bulk import
 - `POST /api/v1/lifecycle/transition` — Lifecycle state change
-- `GET  /api/v1/admin/stats` — Platform stats including doc status breakdown & recent docs
+- `GET  /api/v1/components` — Component list (supports ?search= ?page_size=)
+- `GET  /api/v1/components/:id` — Component detail with used_in products + attached documents
+- `POST /api/v1/components` — Create component
+- `PUT  /api/v1/components/:id` — Update component
+- `GET  /api/v1/documents?drawing_types=1` — Filter for drawings/models only
+- `GET  /api/v1/documents?product_id=` — Documents for a product
+- `GET  /api/v1/documents?component_id=` — Documents for a component
+- `GET  /api/v1/admin/stats` — Platform stats including components count, doc status breakdown & recent docs
 - `GET  /api/health` — Health check
 
 ## Lifecycle States
@@ -120,6 +127,19 @@ Draft → Internal Review → Review Commented → Resubmitted → Approved → 
 - Green (#22C55E): Product library nodes
 - Gray (#94A3B8): Knowledge domain nodes
 - Amber (#F59E0B): Document nodes
+
+## Drawings & Models Library
+- Dedicated page at `/products/drawings` (nav: "Drawings Library")
+- Filters all documents to drawing/model types: Drawing, GA Drawing, Assembly Drawing, Fabrication Drawing, As-Built Drawing, 3D Model, P&ID, Wiring Diagram
+- Filter by entity type (Products / Components / All), drawing type, status, search
+- `documents` table has `product_id` and `component_id` FKs — docs can be attached to either
+
+## Document Types (ProductMasterDetail & ComponentDetail)
+TDS, O&M Manual, Installation Manual, Certificate, Drawing (General), GA Drawing, Assembly Drawing, Fabrication Drawing, As-Built Drawing, 3D Model, P&ID, Wiring Diagram, Test Report, Specification
+
+## ComponentDetail Tabs
+- **Specifications**: Current component specs + Used in Products + Details panel
+- **Documents**: Attached drawings/models with Add Document modal (same pattern as ProductMasterDetail)
 
 ## File Upload
 Documents support file attachment via multipart form. Files stored at `apps/api/uploads/`. The system is designed to swap to S3 by changing only the multer storage backend.

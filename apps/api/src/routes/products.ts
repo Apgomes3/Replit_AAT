@@ -206,13 +206,20 @@ router.get('/components/:id', authenticate, async (req: AuthRequest, res: Respon
     `SELECT c.*, m.material_name FROM components c LEFT JOIN materials m ON c.primary_material_code=m.material_code WHERE c.id::text=$1 OR c.component_code=$1`,
     [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-  const usedIn = await query(
-    `SELECT DISTINCT pm.id, pm.product_code, pm.product_name, pm.standard_status, bl.quantity, bl.unit
-     FROM bom_lines bl JOIN standard_boms sb ON bl.standard_bom_id=sb.id JOIN product_masters pm ON sb.product_master_id=pm.id
-     WHERE bl.component_id=$1 OR bl.component_reference_code=$2
-     ORDER BY pm.product_code`,
-    [result.rows[0].id, result.rows[0].component_code]);
-  res.json({ ...result.rows[0], used_in: usedIn.rows });
+  const [usedIn, documents] = await Promise.all([
+    query(
+      `SELECT DISTINCT pm.id, pm.product_code, pm.product_name, pm.standard_status, bl.quantity, bl.unit
+       FROM bom_lines bl JOIN standard_boms sb ON bl.standard_bom_id=sb.id JOIN product_masters pm ON sb.product_master_id=pm.id
+       WHERE bl.component_id=$1 OR bl.component_reference_code=$2
+       ORDER BY pm.product_code`,
+      [result.rows[0].id, result.rows[0].component_code]),
+    query(
+      `SELECT d.*, u.first_name || ' ' || u.last_name as created_by_name
+       FROM documents d LEFT JOIN users u ON d.created_by=u.id
+       WHERE d.component_id=$1 ORDER BY d.document_type, d.document_code`,
+      [result.rows[0].id]),
+  ]);
+  res.json({ ...result.rows[0], used_in: usedIn.rows, documents: documents.rows });
 });
 
 router.post('/components', authenticate, async (req: AuthRequest, res: Response) => {

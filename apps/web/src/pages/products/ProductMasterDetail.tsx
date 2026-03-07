@@ -8,7 +8,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import { VendorOption, BOMLine, ProductVariant, Document } from '../../types';
 import { useState, useRef } from 'react';
-import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2 } from 'lucide-react';
+import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 
@@ -19,7 +19,14 @@ const DOC_TYPES = [
   { value: 'O&M Manual', label: 'O&M Manual', abbr: 'OMM' },
   { value: 'Installation Manual', label: 'Installation Manual', abbr: 'IM' },
   { value: 'Certificate', label: 'Certificate', abbr: 'CERT' },
-  { value: 'Drawing', label: 'Drawing', abbr: 'DWG' },
+  { value: 'Drawing', label: 'Drawing (General)', abbr: 'DWG' },
+  { value: 'GA Drawing', label: 'GA Drawing', abbr: 'GA' },
+  { value: 'Assembly Drawing', label: 'Assembly Drawing', abbr: 'ASM' },
+  { value: 'Fabrication Drawing', label: 'Fabrication Drawing', abbr: 'FAB' },
+  { value: 'As-Built Drawing', label: 'As-Built Drawing', abbr: 'ABD' },
+  { value: '3D Model', label: '3D Model', abbr: '3DM' },
+  { value: 'P&ID', label: 'P&ID', abbr: 'PID' },
+  { value: 'Wiring Diagram', label: 'Wiring Diagram', abbr: 'WD' },
   { value: 'Test Report', label: 'Test Report', abbr: 'TR' },
   { value: 'Specification', label: 'Specification', abbr: 'SPEC' },
 ];
@@ -39,7 +46,14 @@ const docTypeIcon = (type: string) => {
     case 'O&M Manual': return <Wrench className="w-4 h-4 text-amber-500" />;
     case 'Installation Manual': return <FileText className="w-4 h-4 text-green-500" />;
     case 'Certificate': return <Award className="w-4 h-4 text-purple-500" />;
-    case 'Drawing': return <FileText className="w-4 h-4 text-slate-500" />;
+    case 'Drawing':
+    case 'GA Drawing':
+    case 'Assembly Drawing':
+    case 'Fabrication Drawing':
+    case 'As-Built Drawing': return <Ruler className="w-4 h-4 text-indigo-500" />;
+    case '3D Model': return <Box className="w-4 h-4 text-cyan-500" />;
+    case 'P&ID': return <Network className="w-4 h-4 text-teal-500" />;
+    case 'Wiring Diagram': return <Zap className="w-4 h-4 text-yellow-500" />;
     case 'Test Report': return <FileCheck className="w-4 h-4 text-red-500" />;
     default: return <FileText className="w-4 h-4 text-slate-400" />;
   }

@@ -29,16 +29,24 @@ router.get('/documents', authenticate, async (req: AuthRequest, res: Response) =
   const params: any[] = [];
 
   if (req.query.project_id) { params.push(req.query.project_id); filters.push(`d.project_id=$${params.length}`); }
+  if (req.query.product_id) { params.push(req.query.product_id); filters.push(`d.product_id=$${params.length}`); }
+  if (req.query.component_id) { params.push(req.query.component_id); filters.push(`d.component_id=$${params.length}`); }
   if (req.query.status) { params.push(req.query.status); filters.push(`d.status=$${params.length}`); }
   if (req.query.document_type) { params.push(req.query.document_type); filters.push(`d.document_type=$${params.length}`); }
+  if (req.query.drawing_types) { filters.push(`d.document_type IN ('Drawing','GA Drawing','Assembly Drawing','Fabrication Drawing','3D Model','P&ID','As-Built Drawing','Wiring Diagram')`); }
   if (req.query.q) { params.push(`%${req.query.q}%`); filters.push(`(d.document_code ILIKE $${params.length} OR d.document_title ILIKE $${params.length})`); }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const countRes = await query(`SELECT COUNT(*) FROM documents d ${where}`, params);
   params.push(page_size, offset);
   const result = await query(
-    `SELECT d.*, p.project_code, u.first_name || ' ' || u.last_name as created_by_name
-     FROM documents d LEFT JOIN projects p ON d.project_id=p.id LEFT JOIN users u ON d.created_by=u.id
+    `SELECT d.*, p.project_code, pm.product_code, pm.product_name, c.component_code, c.component_name,
+            u.first_name || ' ' || u.last_name as created_by_name
+     FROM documents d
+     LEFT JOIN projects p ON d.project_id=p.id
+     LEFT JOIN product_masters pm ON d.product_id=pm.id
+     LEFT JOIN components c ON d.component_id=c.id
+     LEFT JOIN users u ON d.created_by=u.id
      ${where} ORDER BY d.document_code LIMIT $${params.length-1} OFFSET $${params.length}`, params);
   res.json({ items: result.rows, pagination: { page, page_size, total: parseInt(countRes.rows[0].count) } });
 });
@@ -61,11 +69,11 @@ router.get('/documents/:id', authenticate, async (req: AuthRequest, res: Respons
 });
 
 router.post('/documents', authenticate, async (req: AuthRequest, res: Response) => {
-  const { document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, owner, notes } = req.body;
+  const { document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, component_id, owner, notes } = req.body;
   if (!document_code || !document_title) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'document_code and document_title required' } });
   const result = await query(
-    'INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, owner, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
-    [document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, owner, notes, req.user!.id]);
+    'INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, component_id, owner, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
+    [document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, component_id || null, owner, notes, req.user!.id]);
   await query('INSERT INTO lifecycle_transitions (entity_type, entity_id, to_state, actor_id, comment) VALUES ($1,$2,$3,$4,$5)',
     ['document', result.rows[0].id, 'Draft', req.user!.id, 'Document registered']);
   res.status(201).json(result.rows[0]);
