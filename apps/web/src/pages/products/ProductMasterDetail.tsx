@@ -12,7 +12,9 @@ import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, 
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 
-type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'documents' | 'projects';
+type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects';
+
+const DRAWING_TYPE_VALUES = new Set(['Drawing', 'GA Drawing', 'Assembly Drawing', 'Fabrication Drawing', 'As-Built Drawing', '3D Model', 'P&ID', 'Wiring Diagram']);
 
 const DOC_TYPES = [
   { value: 'Technical Data Sheet', label: 'Technical Data Sheet', abbr: 'TDS' },
@@ -69,6 +71,7 @@ export default function ProductMasterDetail() {
   const [tab, setTab] = useState<Tab>('bom');
 
   const [showDocModal, setShowDocModal] = useState(false);
+  const [docModalContext, setDocModalContext] = useState<'documents' | 'drawings'>('documents');
   const [docForm, setDocForm] = useState({ document_type: 'Technical Data Sheet', document_title: '', discipline: '', notes: '' });
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docSubmitting, setDocSubmitting] = useState(false);
@@ -122,6 +125,8 @@ export default function ProductMasterDetail() {
   const bom = product.boms?.[0];
   const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
+  const drawings = documents.filter(d => DRAWING_TYPE_VALUES.has(d.document_type));
+  const nonDrawingDocs = documents.filter(d => !DRAWING_TYPE_VALUES.has(d.document_type));
   const rels = relationships?.items || [];
 
   const invalidate = () => {
@@ -280,7 +285,8 @@ export default function ProductMasterDetail() {
     { key: 'variants', label: 'Variants' },
     { key: 'vendors', label: 'Vendors' },
     { key: 'related', label: `Related (${rels.length})` },
-    { key: 'documents', label: `Documents (${documents.length})` },
+    { key: 'drawings', label: `Drawings (${drawings.length})` },
+    { key: 'documents', label: `Documents (${nonDrawingDocs.length})` },
     { key: 'projects', label: 'Projects' },
   ];
 
@@ -402,15 +408,27 @@ export default function ProductMasterDetail() {
             </div>
           )}
 
+          {tab === 'drawings' && (
+            <div>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <span className="text-sm text-slate-500">{drawings.length} drawing{drawings.length !== 1 ? 's' : ''} & model{drawings.length !== 1 ? 's' : ''} attached</span>
+                <Button size="sm" onClick={() => { setDocModalContext('drawings'); setDocForm(f => ({ ...f, document_type: 'GA Drawing' })); setShowDocModal(true); }}>
+                  <Plus className="w-3.5 h-3.5" /> Add Drawing
+                </Button>
+              </div>
+              <DataTable columns={docCols} data={drawings} emptyMessage="No drawings or models attached — add a GA drawing, fabrication drawing, 3D model or P&ID above" />
+            </div>
+          )}
+
           {tab === 'documents' && (
             <div>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                <span className="text-sm text-slate-500">{documents.length} document{documents.length !== 1 ? 's' : ''} attached</span>
-                <Button size="sm" onClick={() => setShowDocModal(true)}>
+                <span className="text-sm text-slate-500">{nonDrawingDocs.length} document{nonDrawingDocs.length !== 1 ? 's' : ''} attached</span>
+                <Button size="sm" onClick={() => { setDocModalContext('documents'); setDocForm(f => ({ ...f, document_type: 'Technical Data Sheet' })); setShowDocModal(true); }}>
                   <Plus className="w-3.5 h-3.5" /> Add Document
                 </Button>
               </div>
-              <DataTable columns={docCols} data={documents} emptyMessage="No documents attached — add a manual, data sheet or certificate above" />
+              <DataTable columns={docCols} data={nonDrawingDocs} emptyMessage="No documents attached — add a data sheet, manual, certificate or test report above" />
             </div>
           )}
 
@@ -586,15 +604,18 @@ export default function ProductMasterDetail() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="font-semibold text-slate-800">Add Document to {product.product_code}</h2>
+              <h2 className="font-semibold text-slate-800">
+                {docModalContext === 'drawings' ? 'Add Drawing / Model' : 'Add Document'} — {product.product_code}
+              </h2>
               <button onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Document Type *</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type *</label>
                 <select value={docForm.document_type} onChange={e => setDocForm(f => ({ ...f, document_type: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
-                  {DOC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  {DOC_TYPES.filter(t => docModalContext === 'drawings' ? DRAWING_TYPE_VALUES.has(t.value) : !DRAWING_TYPE_VALUES.has(t.value))
+                    .map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
               <div>
