@@ -40,7 +40,7 @@ router.get('/projects', authenticate, async (req: AuthRequest, res: Response) =>
 });
 
 router.get('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM projects WHERE id = $1 OR project_code = $1', [req.params.id]);
+  const result = await query('SELECT * FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   res.json(result.rows[0]);
 });
@@ -74,21 +74,21 @@ router.delete('/projects/:id', authenticate, async (req: AuthRequest, res: Respo
 
 // AREAS
 router.get('/projects/:id/areas', authenticate, async (req: AuthRequest, res: Response) => {
-  const proj = await query('SELECT id FROM projects WHERE id = $1 OR project_code = $1', [req.params.id]);
+  const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const result = await query('SELECT * FROM areas WHERE project_id = $1 ORDER BY area_code', [proj.rows[0].id]);
   res.json({ items: result.rows });
 });
 
 router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: Response) => {
-  const proj = await query('SELECT id FROM projects WHERE id = $1 OR project_code = $1', [req.params.id]);
+  const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const result = await query('SELECT s.*, a.area_name, e.exhibit_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id WHERE s.project_id = $1 ORDER BY s.system_code', [proj.rows[0].id]);
   res.json({ items: result.rows });
 });
 
 router.get('/projects/:id/equipment', authenticate, async (req: AuthRequest, res: Response) => {
-  const proj = await query('SELECT id FROM projects WHERE id = $1 OR project_code = $1', [req.params.id]);
+  const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const result = await query(
     `SELECT ei.*, s.system_code, s.system_name, pm.product_code, pm.product_name 
@@ -98,14 +98,14 @@ router.get('/projects/:id/equipment', authenticate, async (req: AuthRequest, res
 });
 
 router.get('/projects/:id/documents', authenticate, async (req: AuthRequest, res: Response) => {
-  const proj = await query('SELECT id FROM projects WHERE id = $1 OR project_code = $1', [req.params.id]);
+  const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const result = await query('SELECT * FROM documents WHERE project_id = $1 ORDER BY document_code', [proj.rows[0].id]);
   res.json({ items: result.rows });
 });
 
 router.get('/projects/:id/change-requests', authenticate, async (req: AuthRequest, res: Response) => {
-  const proj = await query('SELECT id FROM projects WHERE id = $1 OR project_code = $1', [req.params.id]);
+  const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const result = await query('SELECT cr.*, u.first_name || \' \' || u.last_name as requested_by_name FROM change_requests cr LEFT JOIN users u ON cr.requested_by=u.id WHERE cr.project_id = $1 ORDER BY cr.created_at DESC', [proj.rows[0].id]);
   res.json({ items: result.rows });
@@ -184,7 +184,7 @@ router.get('/systems', authenticate, async (req: AuthRequest, res: Response) => 
 });
 
 router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id WHERE s.id=$1 OR s.system_code=$1', [req.params.id]);
+  const result = await query('SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id WHERE s.id::text=$1 OR s.system_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   const equipment = await query('SELECT ei.*, pm.product_code, pm.product_name FROM equipment_instances ei LEFT JOIN product_usages pu ON pu.equipment_instance_id=ei.id LEFT JOIN product_masters pm ON pu.product_master_id=pm.id WHERE ei.system_id=$1 ORDER BY ei.equipment_code', [result.rows[0].id]);
   res.json({ ...result.rows[0], equipment: equipment.rows });
@@ -228,7 +228,7 @@ router.get('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
   const result = await query(
     `SELECT ei.*, s.system_code, s.system_name, pm.product_code, pm.product_name, p.project_code, p.project_name, m.material_name
      FROM equipment_instances ei LEFT JOIN systems s ON ei.system_id=s.id LEFT JOIN product_usages pu ON pu.equipment_instance_id=ei.id LEFT JOIN product_masters pm ON pu.product_master_id=pm.id JOIN projects p ON ei.project_id=p.id LEFT JOIN materials m ON ei.material_code=m.material_code
-     WHERE ei.id=$1 OR ei.equipment_code=$1`, [req.params.id]);
+     WHERE ei.id::text=$1 OR ei.equipment_code=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
   res.json(result.rows[0]);
 });

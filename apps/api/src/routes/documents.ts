@@ -47,7 +47,7 @@ router.get('/documents/:id', authenticate, async (req: AuthRequest, res: Respons
   const result = await query(
     `SELECT d.*, p.project_code, p.project_name, u.first_name || ' ' || u.last_name as created_by_name
      FROM documents d LEFT JOIN projects p ON d.project_id=p.id LEFT JOIN users u ON d.created_by=u.id
-     WHERE d.id=$1 OR d.document_code=$1`, [req.params.id]);
+     WHERE d.id::text=$1 OR d.document_code=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
   const revisions = await query(
     `SELECT dr.*, u.first_name || ' ' || u.last_name as issued_by_name

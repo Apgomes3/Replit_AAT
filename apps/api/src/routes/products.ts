@@ -11,7 +11,7 @@ router.get('/product-families', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.get('/product-families/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM product_families WHERE id=$1 OR product_family_code=$1', [req.params.id]);
+  const result = await query('SELECT * FROM product_families WHERE id::text=$1 OR product_family_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product family not found' } });
   const products = await query('SELECT * FROM product_masters WHERE product_family_id=$1 ORDER BY product_code', [result.rows[0].id]);
   res.json({ ...result.rows[0], products: products.rows });
@@ -44,7 +44,7 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
 });
 
 router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT pm.*, pf.product_family_name, m.material_name FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id LEFT JOIN materials m ON pm.primary_material_code=m.material_code WHERE pm.id=$1 OR pm.product_code=$1', [req.params.id]);
+  const result = await query('SELECT pm.*, pf.product_family_name, m.material_name FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id LEFT JOIN materials m ON pm.primary_material_code=m.material_code WHERE pm.id::text=$1 OR pm.product_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const variants = await query('SELECT * FROM product_variants WHERE product_master_id=$1 ORDER BY variant_code', [result.rows[0].id]);
   const boms = await query('SELECT * FROM standard_boms WHERE product_master_id=$1 ORDER BY effective_from DESC', [result.rows[0].id]);

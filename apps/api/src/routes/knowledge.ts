@@ -14,7 +14,7 @@ router.get('/materials', authenticate, async (req: AuthRequest, res: Response) =
 });
 
 router.get('/materials/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM materials WHERE id=$1 OR material_code=$1', [req.params.id]);
+  const result = await query('SELECT * FROM materials WHERE id::text=$1 OR material_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Material not found' } });
   const products = await query('SELECT product_code, product_name FROM product_masters WHERE primary_material_code=$1 ORDER BY product_code', [result.rows[0].material_code]);
   res.json({ ...result.rows[0], products: products.rows });
@@ -42,7 +42,7 @@ router.get('/specifications', authenticate, async (req: AuthRequest, res: Respon
 });
 
 router.get('/specifications/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM specifications WHERE id=$1 OR spec_code=$1', [req.params.id]);
+  const result = await query('SELECT * FROM specifications WHERE id::text=$1 OR spec_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Specification not found' } });
   res.json(result.rows[0]);
 });
@@ -69,7 +69,7 @@ router.get('/design-rules', authenticate, async (req: AuthRequest, res: Response
 });
 
 router.get('/design-rules/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM design_rules WHERE id=$1 OR rule_code=$1', [req.params.id]);
+  const result = await query('SELECT * FROM design_rules WHERE id::text=$1 OR rule_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design rule not found' } });
   res.json(result.rows[0]);
 });
@@ -88,7 +88,7 @@ router.get('/calculation-templates', authenticate, async (req: AuthRequest, res:
 });
 
 router.get('/calculation-templates/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM calculation_templates WHERE id=$1 OR template_code=$1', [req.params.id]);
+  const result = await query('SELECT * FROM calculation_templates WHERE id::text=$1 OR template_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Calculation template not found' } });
   res.json(result.rows[0]);
 });
