@@ -24,7 +24,6 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'specifications', to: '/knowledge/specifications', icon: BookOpen, label: 'Specifications' },
   { id: 'design-rules', to: '/knowledge/design-rules', icon: Ruler, label: 'Design Rules' },
   { id: 'document-register', to: '/documents', icon: FileText, label: 'Document Register' },
-  { id: 'graph', to: '/graph', icon: Network, label: 'Graph Explorer' },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
   { id: 'roles', to: '/admin/roles', icon: ShieldCheck, label: 'Roles' },
   { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
@@ -164,10 +163,6 @@ const ADMIN_GROUPS = [
     items: ADMIN_ITEMS.filter(i => ['document-register'].includes(i.id)),
   },
   {
-    label: 'Tools',
-    items: ADMIN_ITEMS.filter(i => ['graph'].includes(i.id)),
-  },
-  {
     label: 'System',
     items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import'].includes(i.id)),
   },
@@ -267,6 +262,12 @@ export default function LeftNav() {
             isActive ? 'bg-[#3E5C76] text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
           )}>
             <Search className="w-4 h-4 shrink-0" /><span>Search</span>
+          </NavLink>
+          <NavLink to="/graph" className={({ isActive }) => clsx(
+            'flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors mx-1',
+            isActive ? 'bg-[#3E5C76] text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          )}>
+            <Network className="w-4 h-4 shrink-0" /><span>Graph Explorer</span>
           </NavLink>
         </div>
 
