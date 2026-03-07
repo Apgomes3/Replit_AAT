@@ -241,6 +241,46 @@ router.post('/product-masters/:id/relationships', authenticate, async (req: Auth
   res.status(201).json(result.rows[0]);
 });
 
+// DELETE entity relationship (unlink)
+router.delete('/entity-relationships/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('DELETE FROM entity_relationships WHERE id=$1 RETURNING id', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Relationship not found' } });
+  res.json({ success: true });
+});
+
+// COMPONENT VARIANTS (peer relationships via entity_relationships)
+router.get('/components/:id/variants', authenticate, async (req: AuthRequest, res: Response) => {
+  const comp = await query('SELECT id FROM components WHERE id::text=$1 OR component_code=$1', [req.params.id]);
+  if (!comp.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  const cid = comp.rows[0].id;
+  const result = await query(`
+    SELECT er.id, er.edge_type, er.properties,
+      CASE WHEN er.source_id=$1 THEN tgt.component_code ELSE src.component_code END as related_code,
+      CASE WHEN er.source_id=$1 THEN tgt.component_name ELSE src.component_name END as related_name,
+      CASE WHEN er.source_id=$1 THEN tgt.id ELSE src.id END as related_id,
+      CASE WHEN er.source_id=$1 THEN tgt.status ELSE src.status END as related_status,
+      CASE WHEN er.source_id=$1 THEN tgt.component_type ELSE src.component_type END as related_type
+    FROM entity_relationships er
+    LEFT JOIN components src ON er.source_id::text=src.id::text
+    LEFT JOIN components tgt ON er.target_id::text=tgt.id::text
+    WHERE (er.source_id=$1 OR er.target_id=$1)
+      AND er.source_type='component' AND er.target_type='component'
+      AND er.edge_type='variant'
+    ORDER BY er.created_at DESC`, [cid]);
+  res.json({ items: result.rows });
+});
+
+router.post('/components/:id/variants', authenticate, async (req: AuthRequest, res: Response) => {
+  const { target_component_id } = req.body;
+  if (!target_component_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'target_component_id required' } });
+  const comp = await query('SELECT id FROM components WHERE id::text=$1 OR component_code=$1', [req.params.id]);
+  if (!comp.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  const result = await query(
+    'INSERT INTO entity_relationships (source_id, source_type, target_id, target_type, edge_type) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [comp.rows[0].id, 'component', target_component_id, 'component', 'variant']);
+  res.status(201).json(result.rows[0]);
+});
+
 // VENDOR OPTIONS
 router.get('/vendor-options', authenticate, async (req: AuthRequest, res: Response) => {
   let where = '', params: any[] = [];

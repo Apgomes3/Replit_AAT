@@ -9,10 +9,10 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Pencil, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus, Tag } from 'lucide-react';
+import { Pencil, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus, Tag, Link2, Unlink } from 'lucide-react';
 import { Document } from '../../types';
 
-type Tab = 'specs' | 'drawings' | 'documents';
+type Tab = 'specs' | 'drawings' | 'documents' | 'variants';
 
 const DRAWING_TYPE_VALUES = new Set(['Drawing', 'GA Drawing', 'Assembly Drawing', 'Fabrication Drawing', 'As-Built Drawing', '3D Model', 'P&ID', 'Wiring Diagram']);
 
@@ -83,9 +83,26 @@ export default function ComponentDetail() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docSubmitting, setDocSubmitting] = useState(false);
 
+  const [showVariantModal, setShowVariantModal] = useState(false);
+  const [variantSearch, setVariantSearch] = useState('');
+  const [variantTarget, setVariantTarget] = useState<any>(null);
+  const [variantSubmitting, setVariantSubmitting] = useState(false);
+
   const { data: component, isLoading } = useQuery({
     queryKey: ['component', id],
     queryFn: () => api.get(`/components/${id}`).then(r => r.data),
+  });
+
+  const { data: compVariants, refetch: refetchVariants } = useQuery({
+    queryKey: ['component-variants', id],
+    queryFn: () => api.get(`/components/${id}/variants`).then(r => r.data),
+    enabled: tab === 'variants',
+  });
+
+  const { data: variantSearchResults } = useQuery({
+    queryKey: ['comp-variant-search', variantSearch],
+    queryFn: () => api.get(`/components?search=${variantSearch}&page_size=8`).then(r => r.data),
+    enabled: variantSearch.length >= 2 && !variantTarget,
   });
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
@@ -180,8 +197,31 @@ export default function ComponentDetail() {
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
 
-  const TABS: { key: Tab; label: string; count?: number }[] = [
+  const handleLinkVariant = async () => {
+    if (!variantTarget) { toast.error('Select a component'); return; }
+    setVariantSubmitting(true);
+    try {
+      await api.post(`/components/${component.id}/variants`, { target_component_id: variantTarget.id });
+      toast.success('Variant linked');
+      setShowVariantModal(false);
+      setVariantTarget(null);
+      setVariantSearch('');
+      refetchVariants();
+    } catch { toast.error('Failed to link variant'); }
+    finally { setVariantSubmitting(false); }
+  };
+
+  const handleUnlinkVariant = async (relId: string) => {
+    try {
+      await api.delete(`/entity-relationships/${relId}`);
+      toast.success('Variant unlinked');
+      refetchVariants();
+    } catch { toast.error('Failed to unlink'); }
+  };
+
+  const TABS: { key: Tab; label: string }[] = [
     { key: 'specs', label: 'Specifications' },
+    { key: 'variants', label: `Variants${(compVariants?.items?.length ?? 0) > 0 ? ` (${compVariants.items.length})` : ''}` },
     { key: 'drawings', label: `Drawings (${drawings.length})` },
     { key: 'documents', label: `Documents (${nonDrawingDocs.length})` },
   ];
@@ -370,6 +410,44 @@ export default function ComponentDetail() {
           </div>
         )}
 
+        {tab === 'variants' && (
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50/50">
+              <div>
+                <span className="text-sm font-semibold text-slate-700">Variant Components</span>
+                <p className="text-xs text-slate-400 mt-0.5">Other components in the library that are variants of this one</p>
+              </div>
+              <Button size="sm" onClick={() => { setVariantSearch(''); setVariantTarget(null); setShowVariantModal(true); }}>
+                <Link2 className="w-3.5 h-3.5" /> Link Variant
+              </Button>
+            </div>
+            {(compVariants?.items || []).length === 0 ? (
+              <div className="p-10 text-center text-sm text-slate-400">
+                No variant components linked — click <strong>Link Variant</strong> to connect related components
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {(compVariants?.items || []).map((v: any) => (
+                  <div key={v.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 group">
+                    <Link to={`/products/components/${v.related_id}`} className="flex items-center gap-2 hover:underline flex-1">
+                      <EntityCode code={v.related_code} />
+                      <span className="text-sm font-medium text-slate-800">{v.related_name}</span>
+                      {v.related_type && <span className="text-xs text-slate-400">{v.related_type}</span>}
+                    </Link>
+                    {v.related_status && <StatusBadge status={v.related_status} />}
+                    <button
+                      onClick={() => handleUnlinkVariant(v.id)}
+                      className="opacity-0 group-hover:opacity-100 text-xs text-slate-400 hover:text-red-500 border border-slate-200 rounded px-2 py-0.5 transition-opacity flex items-center gap-1"
+                    >
+                      <Unlink className="w-3 h-3" /> Unlink
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === 'drawings' && (
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -394,6 +472,52 @@ export default function ComponentDetail() {
           </div>
         )}
       </div>
+
+      {showVariantModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="font-semibold text-slate-800">Link Variant Component</h2>
+              <button onClick={() => setShowVariantModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-500">Search for another component in the library that is a variant of this one. The link is bidirectional.</p>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Search Component</label>
+                <input type="text" placeholder="Type component name or code..." autoFocus
+                  value={variantSearch} onChange={e => { setVariantSearch(e.target.value); setVariantTarget(null); }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                {variantSearch.length >= 2 && !variantTarget && (
+                  <div className="border border-slate-200 rounded-lg mt-1 max-h-52 overflow-auto divide-y divide-slate-100">
+                    {(variantSearchResults?.items || []).filter((c: any) => c.id !== component.id).map((c: any) => (
+                      <button key={c.id} onClick={() => { setVariantTarget(c); setVariantSearch(''); }}
+                        className="w-full text-left px-3 py-2.5 hover:bg-slate-50 flex items-center gap-2">
+                        <EntityCode code={c.component_code} />
+                        <span className="text-sm truncate">{c.component_name}</span>
+                        {c.component_type && <span className="text-xs text-slate-400 shrink-0">{c.component_type}</span>}
+                      </button>
+                    ))}
+                    {(variantSearchResults?.items || []).length === 0 && <div className="p-3 text-sm text-slate-400">No components found</div>}
+                  </div>
+                )}
+                {variantTarget && (
+                  <div className="mt-2 p-3 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-2 text-sm">
+                    <EntityCode code={variantTarget.component_code} />
+                    <span className="text-slate-700 font-medium">{variantTarget.component_name}</span>
+                    <button onClick={() => { setVariantTarget(null); setVariantSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <Button variant="ghost" onClick={() => setShowVariantModal(false)}>Cancel</Button>
+              <Button onClick={handleLinkVariant} disabled={variantSubmitting || !variantTarget}>
+                {variantSubmitting ? 'Linking...' : 'Link as Variant'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showDocModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">

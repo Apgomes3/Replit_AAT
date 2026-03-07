@@ -110,6 +110,11 @@ export default function ProductMasterDetail() {
   const [relEdgeType, setRelEdgeType] = useState('supersedes');
   const [relSubmitting, setRelSubmitting] = useState(false);
 
+  const [showVariantModal, setShowVariantModal] = useState(false);
+  const [variantSearch, setVariantSearch] = useState('');
+  const [variantTarget, setVariantTarget] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
+  const [variantSubmitting, setVariantSubmitting] = useState(false);
+
   const [showAddLine, setShowAddLine] = useState(false);
   const [lineForm, setLineForm] = useState({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
   const [lineSubmitting, setLineSubmitting] = useState(false);
@@ -126,6 +131,20 @@ export default function ProductMasterDetail() {
     queryKey: ['product-relationships', id],
     queryFn: () => api.get(`/product-masters/${id}/relationships`).then(r => r.data),
     enabled: tab === 'related',
+  });
+
+  const { data: peerVariants, refetch: refetchPeerVariants } = useQuery({
+    queryKey: ['product-peer-variants', id],
+    queryFn: () => api.get(`/product-masters/${id}/relationships`).then(r => ({
+      items: (r.data.items || []).filter((rel: any) => rel.edge_type === 'variant')
+    })),
+    enabled: tab === 'variants',
+  });
+
+  const { data: variantSearchResults } = useQuery({
+    queryKey: ['product-variant-search', variantSearch],
+    queryFn: () => api.get(`/product-masters?search=${variantSearch}&page_size=8`).then(r => r.data),
+    enabled: variantSearch.length >= 2 && !variantTarget,
   });
 
   const { data: bomDetail } = useQuery({
@@ -425,6 +444,33 @@ export default function ProductMasterDetail() {
       toast.error('Failed to create relationship');
     } finally {
       setRelSubmitting(false);
+    }
+  };
+
+  const handleLinkVariant = async () => {
+    if (!variantTarget) { toast.error('Select a product to link as variant'); return; }
+    setVariantSubmitting(true);
+    try {
+      await api.post(`/product-masters/${id}/relationships`, { target_product_id: variantTarget.id, edge_type: 'variant' });
+      toast.success('Variant linked');
+      setShowVariantModal(false);
+      setVariantTarget(null);
+      setVariantSearch('');
+      refetchPeerVariants();
+    } catch {
+      toast.error('Failed to link variant');
+    } finally {
+      setVariantSubmitting(false);
+    }
+  };
+
+  const handleUnlinkVariant = async (relId: string) => {
+    try {
+      await api.delete(`/entity-relationships/${relId}`);
+      toast.success('Variant unlinked');
+      refetchPeerVariants();
+    } catch {
+      toast.error('Failed to unlink');
     }
   };
 
@@ -754,7 +800,50 @@ export default function ProductMasterDetail() {
             </div>
           )}
 
-          {activeTab === 'variants' && <DataTable columns={variantCols} data={product.variants || []} emptyMessage="No variants" />}
+          {activeTab === 'variants' && (
+            <div>
+              {/* Peer variant products */}
+              <div className="border-b border-slate-100">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-50 bg-slate-50/50">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Peer Variants</span>
+                    <p className="text-xs text-slate-400 mt-0.5">Other library products that are variants of this one</p>
+                  </div>
+                  <Button size="sm" onClick={() => { setVariantSearch(''); setVariantTarget(null); setShowVariantModal(true); }}>
+                    <Link2 className="w-3.5 h-3.5" /> Link Variant
+                  </Button>
+                </div>
+                {(peerVariants?.items || []).length === 0 ? (
+                  <div className="px-4 py-5 text-sm text-slate-400 italic">No peer variants linked — click Link Variant to connect related products</div>
+                ) : (
+                  <div className="divide-y divide-slate-50">
+                    {(peerVariants?.items || []).map((v: any) => (
+                      <div key={v.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 group">
+                        <Link to={`/products/masters/${v.related_code}`} className="flex items-center gap-2 hover:underline flex-1">
+                          <EntityCode code={v.related_code} />
+                          <span className="text-sm font-medium text-slate-800">{v.related_name}</span>
+                        </Link>
+                        {v.related_status && <StatusBadge status={v.related_status} />}
+                        <button
+                          onClick={() => handleUnlinkVariant(v.id)}
+                          className="opacity-0 group-hover:opacity-100 text-xs text-slate-400 hover:text-red-500 border border-slate-200 rounded px-2 py-0.5 transition-opacity"
+                          title="Unlink variant"
+                        >Unlink</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Child variants (overrides) */}
+              <div>
+                <div className="px-4 py-3 border-b border-slate-50 bg-slate-50/30">
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Override Variants</span>
+                  <p className="text-xs text-slate-400 mt-0.5">Sub-variants with property overrides (material, region, etc.)</p>
+                </div>
+                <DataTable columns={variantCols} data={product.variants || []} emptyMessage="No override variants defined" />
+              </div>
+            </div>
+          )}
           {activeTab === 'vendors' && <DataTable columns={vendorCols} data={product.vendors || []} emptyMessage="No vendor options" />}
 
           {activeTab === 'related' && (
@@ -1050,6 +1139,52 @@ export default function ProductMasterDetail() {
               <Button variant="ghost" onClick={() => setShowRelModal(false)}>Cancel</Button>
               <Button onClick={handleLinkProduct} disabled={relSubmitting || !relTarget}>
                 {relSubmitting ? 'Linking...' : 'Link Product'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVariantModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="font-semibold text-slate-800">Link Peer Variant</h2>
+              <button onClick={() => setShowVariantModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-500">Search for another product in the library that is a variant of this one. The link is bidirectional.</p>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Search Product</label>
+                <input type="text" placeholder="Type product name or code..."
+                  value={variantSearch} onChange={e => { setVariantSearch(e.target.value); setVariantTarget(null); }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" autoFocus />
+                {variantSearch.length >= 2 && !variantTarget && (
+                  <div className="border border-slate-200 rounded-lg mt-1 max-h-52 overflow-auto divide-y divide-slate-100">
+                    {(variantSearchResults?.items || []).filter((p: any) => p.id !== product.id).map((p: any) => (
+                      <button key={p.id} onClick={() => { setVariantTarget(p); setVariantSearch(''); }}
+                        className="w-full text-left px-3 py-2.5 hover:bg-slate-50 flex items-center gap-2">
+                        <EntityCode code={p.product_code} />
+                        <span className="text-sm truncate">{p.product_name}</span>
+                        {p.status && <StatusBadge status={p.status} />}
+                      </button>
+                    ))}
+                    {(variantSearchResults?.items || []).length === 0 && <div className="p-3 text-sm text-slate-400">No products found</div>}
+                  </div>
+                )}
+                {variantTarget && (
+                  <div className="mt-2 p-3 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-2 text-sm">
+                    <EntityCode code={variantTarget.product_code} />
+                    <span className="text-slate-700 font-medium">{variantTarget.product_name}</span>
+                    <button onClick={() => { setVariantTarget(null); setVariantSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <Button variant="ghost" onClick={() => setShowVariantModal(false)}>Cancel</Button>
+              <Button onClick={handleLinkVariant} disabled={variantSubmitting || !variantTarget}>
+                {variantSubmitting ? 'Linking...' : 'Link as Variant'}
               </Button>
             </div>
           </div>
