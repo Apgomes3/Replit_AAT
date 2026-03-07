@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { height: 100%; }
+  body {
+    height: 100%;
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: #F8FAFC;
+    color: #334155;
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { height: 100%; }
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+.react-flow__node { cursor: pointer; }

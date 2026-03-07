@@ -1,0 +1,15 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently --names \"API,WEB\" --prefix-colors \"cyan,green\" \"tsx apps/api/src/index.ts\" \"vite --config apps/web/vite.config.ts\"",
+    "migrate": "tsx apps/api/src/db/migrate.ts",
+    "seed": "tsx apps/api/src/db/seed.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

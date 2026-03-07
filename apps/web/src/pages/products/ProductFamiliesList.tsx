@@ -1,0 +1,59 @@
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import api from '../../lib/api';
+import { ProductFamily } from '../../types';
+import DataTable, { Column } from '../../components/ui/DataTable';
+import StatusBadge from '../../components/ui/StatusBadge';
+import EntityCode from '../../components/ui/EntityCode';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import NewEntityModal from '../../components/ui/NewEntityModal';
+import toast from 'react-hot-toast';
+import { useState } from 'react';
+import { Plus } from 'lucide-react';
+
+export default function ProductFamiliesList() {
+  const [showNew, setShowNew] = useState(false);
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['product-families'],
+    queryFn: () => api.get('/product-families').then(r => r.data),
+  });
+
+  const columns: Column<ProductFamily>[] = [
+    { key: 'product_family_code', header: 'Code', render: r => <EntityCode code={r.product_family_code} /> },
+    { key: 'product_family_name', header: 'Family Name', render: r => <span className="font-medium">{r.product_family_name}</span> },
+    { key: 'category_code', header: 'Category' },
+    { key: 'product_count', header: 'Products', render: r => <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">{r.product_count}</span> },
+    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
+  ];
+
+  return (
+    <div className="h-full flex flex-col">
+      <PageHeader title="Product Families" subtitle="Reusable product group definitions"
+        actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Family</Button>}
+      />
+      <div className="flex-1 bg-white overflow-auto">
+        <DataTable columns={columns} data={data?.items || []} loading={isLoading} />
+      </div>
+      <div className="p-4 bg-white border-t border-slate-200">
+        <Link to="/products/masters" className="text-sm text-[#3E5C76] hover:underline">→ View all Product Masters</Link>
+      </div>
+      {showNew && (
+        <NewEntityModal title="New Product Family" onClose={() => setShowNew(false)}
+          fields={[
+            { name: 'product_family_code', label: 'Family Code', required: true, placeholder: 'PFM-XX' },
+            { name: 'product_family_name', label: 'Family Name', required: true },
+            { name: 'category_code', label: 'Category', options: ['FILTRATION', 'PUMPING', 'DISINFECTION', 'THERMAL', 'CONTROL', 'STRUCTURAL', 'OTHER'] },
+            { name: 'description', label: 'Description' },
+          ]}
+          onSubmit={async (data) => {
+            await api.post('/product-families', data);
+            toast.success('Product family created');
+            refetch();
+            setShowNew(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
