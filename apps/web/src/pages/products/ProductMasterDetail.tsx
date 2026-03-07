@@ -8,7 +8,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import { VendorOption, BOMLine, ProductVariant, Document } from '../../types';
 import { useState, useRef } from 'react';
-import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag } from 'lucide-react';
+import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag, Pencil, Check } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
@@ -100,6 +100,10 @@ export default function ProductMasterDetail() {
   const [synonymInput, setSynonymInput] = useState('');
   const [synonymsSaving, setSynonymsSaving] = useState(false);
 
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+
   const [showRelModal, setShowRelModal] = useState(false);
   const [relSearch, setRelSearch] = useState('');
   const [relTarget, setRelTarget] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
@@ -153,6 +157,7 @@ export default function ProductMasterDetail() {
     product_category: product.product_category,
     application_type: product.application_type,
     design_flow_m3h: product.design_flow_m3h,
+    design_head_m: product.design_head_m,
     power_kw: product.power_kw,
     primary_material_code: product.primary_material_code,
     standard_status: product.standard_status,
@@ -169,6 +174,43 @@ export default function ProductMasterDetail() {
     synonyms: product.synonyms || [],
     ...overrides,
   });
+
+  const startEdit = () => {
+    setEditForm({
+      product_name: product.product_name || '',
+      standard_status: product.standard_status || 'Concept',
+      application_type: product.application_type || '',
+      design_flow_m3h: product.design_flow_m3h != null ? String(product.design_flow_m3h) : '',
+      design_head_m: product.design_head_m != null ? String(product.design_head_m) : '',
+      power_kw: product.power_kw != null ? String(product.power_kw) : '',
+      primary_material_code: product.primary_material_code || '',
+      notes: product.notes || '',
+    });
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/product-masters/${id}`, productPutPayload({
+        product_name: editForm.product_name,
+        standard_status: editForm.standard_status,
+        application_type: editForm.application_type || null,
+        design_flow_m3h: editForm.design_flow_m3h ? parseFloat(editForm.design_flow_m3h) : null,
+        design_head_m: editForm.design_head_m ? parseFloat(editForm.design_head_m) : null,
+        power_kw: editForm.power_kw ? parseFloat(editForm.power_kw) : null,
+        primary_material_code: editForm.primary_material_code || null,
+        notes: editForm.notes || null,
+      }));
+      toast.success('Product updated');
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+    } catch {
+      toast.error('Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleFamilySelect = async (fam: { id: string; code: string; name: string }) => {
     setFamilySaving(true);
@@ -443,19 +485,32 @@ export default function ProductMasterDetail() {
   return (
     <div className="flex flex-col h-full">
       <PageHeader
-        code={product.product_code} title={product.product_name} status={product.standard_status}
+        code={product.product_code}
+        title={editing ? editForm.product_name : product.product_name}
+        status={editing ? editForm.standard_status : product.standard_status}
         subtitle={`${product.product_category || ''} ${product.application_type ? '· ' + product.application_type : ''}`}
         breadcrumb={<><Link to="/products" className="hover:underline">Families</Link> / <Link to="/products/masters" className="hover:underline">Products</Link></>}
         actions={
-          <Button size="sm" onClick={() => navigate(`/graph?start=${product.id}&type=product`)}>
-            <Network className="w-3.5 h-3.5" />Graph
-          </Button>
+          editing ? (
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setEditing(false)}><X className="w-3.5 h-3.5" /> Cancel</Button>
+              <Button size="sm" onClick={handleSave} disabled={saving}><Check className="w-3.5 h-3.5" />{saving ? 'Saving...' : 'Save'}</Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" onClick={startEdit}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+              <Button size="sm" onClick={() => navigate(`/graph?start=${product.id}&type=product`)}>
+                <Network className="w-3.5 h-3.5" />Graph
+              </Button>
+            </div>
+          )
         }
       />
 
       <div className="flex-1 overflow-auto p-4">
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="col-span-2">
+            {!editing ? (
             <MetadataPanel fields={[
               { label: 'Family', value: product.product_family_name,
                 action: <button onClick={() => setShowFamilyPicker(true)} disabled={familySaving}
@@ -469,6 +524,57 @@ export default function ProductMasterDetail() {
               { label: 'Primary Material', value: product.primary_material_code ? <><EntityCode code={product.primary_material_code} /> {product.material_name && <span className="text-slate-500 text-xs ml-1">{product.material_name}</span>}</> : null },
               { label: 'Notes', value: product.notes },
             ]} />
+            ) : (
+            <div className="bg-white border border-slate-200 rounded-lg p-4">
+              <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Edit Details</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
+                  <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                  <select value={editForm.standard_status} onChange={e => setEditForm((f: any) => ({ ...f, standard_status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                    {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{isTank ? 'Tank Type' : 'Application Type'}</label>
+                  <input value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                {!isPiping && !isTank && (<>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
+                    <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
+                    <input type="number" value={editForm.design_head_m} onChange={e => setEditForm((f: any) => ({ ...f, design_head_m: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Power (kW)</label>
+                    <input type="number" value={editForm.power_kw} onChange={e => setEditForm((f: any) => ({ ...f, power_kw: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  </div>
+                </>)}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
+                  <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                  <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+              </div>
+            </div>
+            )}
 
             {classifierData?.classifiers?.length > 0 && (
               <div className="bg-white border border-slate-200 rounded-lg mt-3">

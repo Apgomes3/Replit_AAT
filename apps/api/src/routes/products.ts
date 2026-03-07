@@ -130,11 +130,11 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, product_family_id, synonyms } = req.body;
+  const { product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, product_family_id, synonyms } = req.body;
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
   const result = await query(
-    'UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, power_kw=$5, primary_material_code=$6, standard_status=$7, image_url=$8, notes=$9, shape_type=$10, length_mm=$11, width_mm=$12, height_mm=$13, design_water_level_mm=$14, gross_volume_m3=$15, operating_volume_m3=$16, product_family_id=$17, synonyms=$18, updated_at=NOW() WHERE id=$19 RETURNING *',
-    [product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, req.params.id]);
+    'UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, updated_at=NOW() WHERE id=$20 RETURNING *',
+    [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   res.json(result.rows[0]);
 });
