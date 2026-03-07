@@ -10,7 +10,7 @@ import { Search } from 'lucide-react';
 const typeLinks: Record<string, (r: SearchResult) => string> = {
   project: r => `/projects/${r.id}`,
   system: r => `/systems/${r.id}`,
-  equipment: r => `/equipment/${r.id}`,
+  equipment: r => (r as any).system_id ? `/systems/${(r as any).system_id}` : `/projects/${r.id}`,
   product: r => `/products/masters/${r.id}`,
   material: r => `/knowledge/materials`,
   document: r => `/documents/${r.id}`,

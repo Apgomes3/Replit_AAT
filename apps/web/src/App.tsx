@@ -9,7 +9,6 @@ import Dashboard from './pages/Dashboard';
 import ProjectsList from './pages/projects/ProjectsList';
 import ProjectDetail from './pages/projects/ProjectDetail';
 import SystemDetail from './pages/projects/SystemDetail';
-import EquipmentDetail from './pages/projects/EquipmentDetail';
 import ProductFamiliesList from './pages/products/ProductFamiliesList';
 import ProductMastersList from './pages/products/ProductMastersList';
 import ProductMasterDetail from './pages/products/ProductMasterDetail';
@@ -52,7 +51,6 @@ export default function App() {
             <Route path="projects" element={<ProjectsList />} />
             <Route path="projects/:id" element={<ProjectDetail />} />
             <Route path="systems/:id" element={<SystemDetail />} />
-            <Route path="equipment/:id" element={<EquipmentDetail />} />
             <Route path="products" element={<ProductFamiliesList />} />
             <Route path="products/masters" element={<ProductMastersList />} />
             <Route path="products/masters/:id" element={<ProductMasterDetail />} />

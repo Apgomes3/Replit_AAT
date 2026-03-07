@@ -91,9 +91,11 @@ router.get('/projects/:id/equipment', authenticate, async (req: AuthRequest, res
   const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const result = await query(
-    `SELECT ei.*, s.system_code, s.system_name, pm.product_code, pm.product_name 
-     FROM equipment_instances ei LEFT JOIN systems s ON ei.system_id=s.id LEFT JOIN product_usages pu ON pu.equipment_instance_id=ei.id LEFT JOIN product_masters pm ON pu.product_master_id=pm.id
-     WHERE ei.project_id = $1 ORDER BY ei.equipment_code`, [proj.rows[0].id]);
+    `SELECT pei.*, s.system_code, s.system_name, pm.product_code, pm.product_name
+     FROM project_equipment_items pei
+     LEFT JOIN systems s ON pei.system_id = s.id
+     LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
+     WHERE pei.project_id = $1 ORDER BY pei.equip_code`, [proj.rows[0].id]);
   res.json({ items: result.rows });
 });
 
@@ -204,7 +206,10 @@ router.get('/systems', authenticate, async (req: AuthRequest, res: Response) => 
 router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query('SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id WHERE s.id::text=$1 OR s.system_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-  const equipment = await query('SELECT ei.*, pm.product_code, pm.product_name FROM equipment_instances ei LEFT JOIN product_usages pu ON pu.equipment_instance_id=ei.id LEFT JOIN product_masters pm ON pu.product_master_id=pm.id WHERE ei.system_id=$1 ORDER BY ei.equipment_code', [result.rows[0].id]);
+  const equipment = await query(
+    `SELECT pei.*, pm.product_code, pm.product_name FROM project_equipment_items pei
+     LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
+     WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [result.rows[0].id]);
   res.json({ ...result.rows[0], equipment: equipment.rows });
 });
 
@@ -223,7 +228,42 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
   res.json(result.rows[0]);
 });
 
-// EQUIPMENT INSTANCES
+// EQUIPMENT ITEMS (direct product-to-project/system relationship)
+router.post('/equipment-items', authenticate, async (req: AuthRequest, res: Response) => {
+  const { equip_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status } = req.body;
+  if (!equip_code || !project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'equip_code and project_id are required' } });
+  try {
+    const result = await query(
+      `INSERT INTO project_equipment_items (equip_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [equip_code.trim().toUpperCase(), project_id, system_id || null, product_master_id || null,
+       description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design']);
+    res.status(201).json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Equipment code already exists in this project' } });
+    throw err;
+  }
+});
+
+router.put('/equipment-items/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { equip_code, system_id, product_master_id, description, quantity, unit, notes, status } = req.body;
+  const result = await query(
+    `UPDATE project_equipment_items SET equip_code=COALESCE($1,equip_code), system_id=$2, product_master_id=$3,
+     description=$4, quantity=$5, unit=$6, notes=$7, status=$8, updated_at=NOW()
+     WHERE id=$9 RETURNING *`,
+    [equip_code ? equip_code.trim().toUpperCase() : null, system_id || null, product_master_id || null,
+     description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design', req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/equipment-items/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('DELETE FROM project_equipment_items WHERE id=$1 RETURNING id', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
+  res.json({ success: true });
+});
+
+// EQUIPMENT INSTANCES (legacy - kept for reference only)
 router.get('/equipment-instances', authenticate, async (req: AuthRequest, res: Response) => {
   const { page, page_size, offset } = paginate(req);
   const filters: string[] = [];
@@ -415,16 +455,15 @@ router.post('/bom-releases', authenticate, async (req: AuthRequest, res: Respons
   // Auto-generate lines from current project state
   let lineNum = 1;
   const equipment = await query(
-    `SELECT ei.equipment_code as tag_code, ei.equipment_name as description,
-            pm.product_code, pm.product_name, 1 as quantity, 'EA' as unit,
-            s.system_code as system_ref, a.area_name as area_ref
-     FROM equipment_instances ei
-     LEFT JOIN product_usages pu ON pu.equipment_instance_id = ei.id
-     LEFT JOIN product_masters pm ON pu.product_master_id = pm.id
-     LEFT JOIN systems s ON ei.system_id = s.id
-     LEFT JOIN areas a ON s.area_id = a.id
-     WHERE ei.project_id = $1
-     ORDER BY ei.equipment_code`,
+    `SELECT pei.equip_code as tag_code,
+            COALESCE(pei.description, pm.product_name) as description,
+            pm.product_code, pm.product_name, pei.quantity, pei.unit,
+            s.system_code as system_ref, NULL as area_ref
+     FROM project_equipment_items pei
+     LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
+     LEFT JOIN systems s ON pei.system_id = s.id
+     WHERE pei.project_id = $1
+     ORDER BY pei.equip_code`,
     [project_id]);
   for (const row of equipment.rows) {
     await query(

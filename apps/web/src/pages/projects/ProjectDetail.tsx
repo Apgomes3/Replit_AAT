@@ -9,11 +9,17 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
-import { System, EquipmentInstance, Document, ChangeRequest } from '../../types';
+import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
 import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 
 type Tab = 'systems' | 'equipment' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
+
+type EquipmentItem = {
+  id: string; equip_code: string; product_code?: string; product_name?: string;
+  description?: string; quantity?: number; unit?: string; status?: string;
+  system_code?: string; system_name?: string; system_id?: string;
+};
 
 type Tank = {
   id: string; tank_code: string; tank_name: string; tank_type?: string;
@@ -67,7 +73,7 @@ export default function ProjectDetail() {
 
   const { data: equipment } = useQuery({
     queryKey: ['project-equipment', id],
-    queryFn: () => api.get(`/equipment-instances?project_id=${id}&page_size=200`).then(r => r.data),
+    queryFn: () => api.get(`/projects/${id}/equipment`).then(r => r.data),
     enabled: tab === 'equipment',
   });
 
@@ -124,12 +130,13 @@ export default function ProjectDetail() {
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
 
-  const eqCols: Column<EquipmentInstance>[] = [
-    { key: 'equipment_code', header: 'Code', render: r => <EntityCode code={r.equipment_code} /> },
-    { key: 'equipment_name', header: 'Equipment Name', render: r => <span className="font-medium">{r.equipment_name}</span> },
-    { key: 'equipment_type', header: 'Type' },
+  const eqCols: Column<EquipmentItem>[] = [
+    { key: 'equip_code', header: 'Tag', render: r => <EntityCode code={r.equip_code} /> },
+    { key: 'product_name', header: 'Product', render: r => <span className="font-medium">{r.product_name || r.description || '—'}</span> },
+    { key: 'product_code', header: 'Product Code', render: r => r.product_code ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-[#3E5C76] hover:underline"><EntityCode code={r.product_code} /></Link> : <span className="text-slate-300">—</span> },
     { key: 'system_code', header: 'System', render: r => r.system_code ? <EntityCode code={r.system_code} /> : <span className="text-slate-300">—</span> },
-    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
+    { key: 'quantity', header: 'Qty', render: r => <span>{r.quantity ?? 1} {r.unit || 'EA'}</span> },
+    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status || 'Design'} /> },
   ];
 
   const docCols: Column<Document>[] = [
@@ -375,7 +382,7 @@ export default function ProjectDetail() {
           </div>
 
           {tab === 'systems' && <DataTable columns={sysCols} data={systems?.items || []} tableId="project-systems" onRowClick={r => navigate(`/systems/${r.id}`)} />}
-          {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} tableId="project-equipment" onRowClick={r => navigate(`/equipment/${r.id}`)} />}
+          {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} tableId="project-equipment" emptyMessage="No equipment added yet — add equipment via the Systems tab" />}
           {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} tableId="project-tanks" emptyMessage="No tanks added to this project yet — click Add Tank above" />}
           {tab === 'piping' && (
             <DataTable

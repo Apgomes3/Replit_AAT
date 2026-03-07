@@ -9,9 +9,13 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import LifecycleHistory from '../../components/ui/LifecycleHistory';
-import { EquipmentInstance } from '../../types';
 import toast from 'react-hot-toast';
 import { Plus, Network, X, Search, Package } from 'lucide-react';
+
+type EquipmentItem = {
+  id: string; equip_code: string; product_code?: string; product_name?: string;
+  description?: string; quantity?: number; unit?: string; status?: string;
+};
 
 export default function SystemDetail() {
   const { id } = useParams();
@@ -45,34 +49,32 @@ export default function SystemDetail() {
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!system) return <div className="p-8 text-slate-400">System not found</div>;
 
-  const eqCols: Column<EquipmentInstance>[] = [
-    { key: 'equipment_code', header: 'Code', render: r => <EntityCode code={r.equipment_code} /> },
-    { key: 'equipment_name', header: 'Equipment Name', render: r => <span className="font-medium">{r.equipment_name}</span> },
-    { key: 'product_code', header: 'Product', render: r => r.product_code
+  const eqCols: Column<EquipmentItem>[] = [
+    { key: 'equip_code', header: 'Tag', render: r => <EntityCode code={r.equip_code} /> },
+    { key: 'product_name', header: 'Product', render: r => <span className="font-medium">{r.product_name || r.description || '—'}</span> },
+    { key: 'product_code', header: 'Product Code', render: r => r.product_code
       ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-[#3E5C76] hover:underline"><EntityCode code={r.product_code} /></Link>
       : <span className="text-slate-300">—</span>
     },
-    { key: 'design_flow_m3h', header: 'Flow (m³/h)' },
-    { key: 'power_kw', header: 'Power (kW)' },
-    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
+    { key: 'quantity', header: 'Qty', render: r => <span>{r.quantity ?? 1} {r.unit || 'EA'}</span> },
+    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status || 'Design'} /> },
   ];
 
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
 
   const handleCreateEquipment = async () => {
-    if (!equipCode.trim()) { toast.error('Equipment code is required'); return; }
+    if (!equipCode.trim()) { toast.error('Equipment tag code is required'); return; }
     if (!selectedProduct) { toast.error('Select a product from the ASW Library'); return; }
     setSubmitting(true);
     try {
-      await api.post('/equipment-instances', {
-        equipment_code: equipCode.trim().toUpperCase(),
-        equipment_name: selectedProduct.product_name,
-        equipment_type: selectedProduct.application_type || selectedProduct.product_category,
-        design_flow_m3h: selectedProduct.design_flow_m3h || null,
-        power_kw: selectedProduct.power_kw || null,
+      await api.post('/equipment-items', {
+        equip_code: equipCode.trim().toUpperCase(),
         product_master_id: selectedProduct.id,
         project_id: system.project_id,
         system_id: system.id,
+        quantity: 1,
+        unit: 'EA',
+        status: 'Design',
       });
       toast.success('Equipment added');
       setShowNewEq(false);
@@ -134,7 +136,7 @@ export default function SystemDetail() {
             <span className="text-sm font-medium text-slate-700">Equipment ({system.equipment?.length || 0})</span>
             <Button size="sm" variant="primary" onClick={openModal}><Plus className="w-3.5 h-3.5" />Add Equipment</Button>
           </div>
-          <DataTable columns={eqCols} data={system.equipment || []} onRowClick={r => navigate(`/equipment/${r.id}`)} />
+          <DataTable columns={eqCols} data={system.equipment || []} emptyMessage="No equipment added yet — click Add Equipment above" />
         </div>
       </div>
 

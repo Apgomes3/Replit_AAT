@@ -520,6 +520,23 @@ ON CONFLICT (name) DO NOTHING;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS synonyms TEXT[] DEFAULT '{}';
 ALTER TABLE components ADD COLUMN IF NOT EXISTS synonyms TEXT[] DEFAULT '{}';
 
+-- PROJECT EQUIPMENT ITEMS (products assigned directly to a project/system)
+CREATE TABLE IF NOT EXISTS project_equipment_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equip_code VARCHAR(50) NOT NULL,
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  system_id UUID REFERENCES systems(id),
+  product_master_id UUID REFERENCES product_masters(id),
+  description VARCHAR(255),
+  quantity NUMERIC DEFAULT 1,
+  unit VARCHAR(50) DEFAULT 'EA',
+  notes TEXT,
+  status VARCHAR(50) DEFAULT 'Design',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(project_id, equip_code)
+);
+
 -- PROJECT PIPING ITEMS (pipes & fittings assigned to a project)
 CREATE TABLE IF NOT EXISTS project_piping_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
