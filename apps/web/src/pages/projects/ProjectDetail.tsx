@@ -56,9 +56,10 @@ export default function ProjectDetail() {
   const [bomTitle, setBomTitle] = useState('');
   const [bomRevision, setBomRevision] = useState('A');
   const [bomNotes, setBomNotes] = useState('');
+  const [bomSections, setBomSections] = useState<Record<string, boolean>>({ Products: true, Tank: true, Piping: true });
   const [bomSubmitting, setBomSubmitting] = useState(false);
   const [selectedRelease, setSelectedRelease] = useState<any>(null);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ Equipment: true, Tank: true, Piping: true });
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ Products: true, Equipment: true, Tank: true, Piping: true });
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -269,17 +270,21 @@ export default function ProjectDetail() {
   const handleCreateBomRelease = async () => {
     setBomSubmitting(true);
     try {
+      const selectedSections = Object.entries(bomSections).filter(([, v]) => v).map(([k]) => k);
+      if (selectedSections.length === 0) { toast.error('Select at least one section to include'); setBomSubmitting(false); return; }
       await api.post('/bom-releases', {
         project_id: project.id,
         title: bomTitle.trim() || undefined,
         revision: bomRevision || 'A',
         notes: bomNotes.trim() || undefined,
+        include_sections: selectedSections,
       });
-      toast.success('BOM release created with snapshot of current project items');
+      toast.success('BOM release created');
       setShowNewBomRelease(false);
       setBomTitle('');
       setBomRevision('A');
       setBomNotes('');
+      setBomSections({ Products: true, Tank: true, Piping: true });
       qc.invalidateQueries({ queryKey: ['project-bom-releases'] });
     } catch {
       toast.error('Failed to create BOM release');
@@ -361,7 +366,7 @@ export default function ProjectDetail() {
           <div className="flex border-b border-slate-200">
             {([
               { key: 'systems', label: 'Systems' },
-              { key: 'equipment', label: 'Equipment' },
+              { key: 'equipment', label: 'Products' },
               { key: 'tanks', label: 'Tanks' },
               { key: 'piping', label: 'Piping & Fittings' },
               { key: 'bom-release', label: 'BOM Releases' },
@@ -377,12 +382,12 @@ export default function ProjectDetail() {
               {tab === 'systems' && <Button size="sm" variant="primary" onClick={() => setShowNewSystem(true)}><Plus className="w-3.5 h-3.5" />System</Button>}
               {tab === 'tanks' && <Button size="sm" variant="primary" onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); setTankCode(''); setTankStatus('Active'); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button>}
               {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
-              {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
+              {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setBomSections({ Products: true, Tank: true, Piping: true }); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
             </div>
           </div>
 
           {tab === 'systems' && <DataTable columns={sysCols} data={systems?.items || []} tableId="project-systems" onRowClick={r => navigate(`/systems/${r.id}`)} />}
-          {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} tableId="project-equipment" emptyMessage="No equipment added yet — add equipment via the Systems tab" />}
+          {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} tableId="project-equipment" emptyMessage="No products added yet — add products via the Systems tab" />}
           {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} tableId="project-tanks" emptyMessage="No tanks added to this project yet — click Add Tank above" />}
           {tab === 'piping' && (
             <DataTable
@@ -405,7 +410,7 @@ export default function ProjectDetail() {
                 columns={bomReleaseCols}
                 data={bomReleases?.items || []}
                 tableId="project-bom-releases"
-                emptyMessage="No BOM releases yet — click New Release to snapshot the current project equipment, tanks and piping"
+                emptyMessage="No BOM releases yet — click New Release to create a snapshot of selected project items"
                 onRowClick={r => handleViewRelease(r.id)}
               />
             </div>
@@ -616,27 +621,48 @@ export default function ProjectDetail() {
               <h2 className="text-lg font-semibold text-slate-800">New BOM Release</h2>
               <button onClick={() => setShowNewBomRelease(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-slate-500">Creates a snapshot of all current equipment, tanks, and piping items in this project. The release is stamped with a unique code and can be issued once reviewed.</p>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-2">Include sections *</label>
+                <div className="space-y-2">
+                  {([
+                    { key: 'Products', label: 'Products', sub: 'Equipment items assigned to systems' },
+                    { key: 'Tank', label: 'Tanks', sub: 'Tank items in this project' },
+                    { key: 'Piping', label: 'Pipes & Fittings', sub: 'Piping items in this project' },
+                  ] as const).map(s => (
+                    <label key={s.key} className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${bomSections[s.key] ? 'border-[#3E5C76] bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                      <input type="checkbox" checked={!!bomSections[s.key]}
+                        onChange={e => setBomSections(prev => ({ ...prev, [s.key]: e.target.checked }))}
+                        className="mt-0.5 accent-[#3E5C76]" />
+                      <div>
+                        <div className="text-sm font-medium text-slate-800">{s.label}</div>
+                        <div className="text-xs text-slate-400">{s.sub}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Title</label>
                 <input placeholder="e.g. Issued for Procurement" value={bomTitle} onChange={e => setBomTitle(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" autoFocus />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Revision</label>
-                <input placeholder="A" maxLength={5} value={bomRevision} onChange={e => setBomRevision(e.target.value.toUpperCase())}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Revision</label>
+                  <input placeholder="A" maxLength={5} value={bomRevision} onChange={e => setBomRevision(e.target.value.toUpperCase())}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-                <textarea rows={3} placeholder="Optional notes or purpose of this release" value={bomNotes} onChange={e => setBomNotes(e.target.value)}
+                <textarea rows={2} placeholder="Optional notes or purpose of this release" value={bomNotes} onChange={e => setBomNotes(e.target.value)}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] resize-none" />
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <Button variant="ghost" onClick={() => setShowNewBomRelease(false)}>Cancel</Button>
-              <Button onClick={handleCreateBomRelease} disabled={bomSubmitting}>
+              <Button onClick={handleCreateBomRelease} disabled={bomSubmitting || !Object.values(bomSections).some(Boolean)}>
                 {bomSubmitting ? 'Creating...' : 'Create Release'}
               </Button>
             </div>
@@ -676,8 +702,10 @@ export default function ProjectDetail() {
               {selectedRelease.issued_date && (
                 <div className="text-xs text-slate-500">Issued: {selectedRelease.issued_date.split('T')[0]} · By {selectedRelease.created_by_name}</div>
               )}
-              {(['Equipment', 'Tank', 'Piping'] as const).map(section => {
-                const lines = (selectedRelease.lines || []).filter((l: any) => l.section === section);
+              {(['Products', 'Tank', 'Piping'] as const).map(section => {
+                const lines = (selectedRelease.lines || []).filter((l: any) =>
+                  section === 'Products' ? (l.section === 'Products' || l.section === 'Equipment') : l.section === section
+                );
                 if (lines.length === 0) return null;
                 const isOpen = expandedSections[section] !== false;
                 return (
@@ -724,7 +752,7 @@ export default function ProjectDetail() {
                 );
               })}
               {(!selectedRelease.lines || selectedRelease.lines.length === 0) && (
-                <div className="text-center text-slate-400 py-10">No items in this release — no equipment, tanks or piping were found in the project at the time of creation.</div>
+                <div className="text-center text-slate-400 py-10">No items in this release — the selected sections had no items at the time of creation.</div>
               )}
             </div>
           </div>

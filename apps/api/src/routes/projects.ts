@@ -439,8 +439,13 @@ router.get('/bom-releases/:id', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.post('/bom-releases', authenticate, async (req: AuthRequest, res: Response) => {
-  const { project_id, title, revision, notes } = req.body;
+  const { project_id, title, revision, notes, include_sections } = req.body;
   if (!project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'project_id is required' } });
+
+  const sections: string[] = Array.isArray(include_sections) && include_sections.length > 0
+    ? include_sections
+    : ['Products', 'Tank', 'Piping'];
+
   const countResult = await query('SELECT COUNT(*) FROM bom_releases WHERE project_id=$1', [project_id]);
   const num = (parseInt(countResult.rows[0].count) + 1).toString().padStart(3, '0');
   const projResult = await query('SELECT project_code FROM projects WHERE id=$1', [project_id]);
@@ -452,58 +457,64 @@ router.post('/bom-releases', authenticate, async (req: AuthRequest, res: Respons
     [release_code, project_id, title || `BOM Release ${num}`, revision || 'A', notes || null, req.user!.id]);
   const releaseId = result.rows[0].id;
 
-  // Auto-generate lines from current project state
   let lineNum = 1;
-  const equipment = await query(
-    `SELECT pei.equip_code as tag_code,
-            COALESCE(pei.description, pm.product_name) as description,
-            pm.product_code, pm.product_name, pei.quantity, pei.unit,
-            s.system_code as system_ref, NULL as area_ref
-     FROM project_equipment_items pei
-     LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
-     LEFT JOIN systems s ON pei.system_id = s.id
-     WHERE pei.project_id = $1
-     ORDER BY pei.equip_code`,
-    [project_id]);
-  for (const row of equipment.rows) {
-    await query(
-      `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
-       VALUES ($1,'Equipment',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+
+  if (sections.includes('Products')) {
+    const equipment = await query(
+      `SELECT pei.equip_code as tag_code,
+              COALESCE(pei.description, pm.product_name) as description,
+              pm.product_code, pm.product_name, pei.quantity, pei.unit,
+              s.system_code as system_ref, NULL as area_ref
+       FROM project_equipment_items pei
+       LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
+       LEFT JOIN systems s ON pei.system_id = s.id
+       WHERE pei.project_id = $1
+       ORDER BY pei.equip_code`,
+      [project_id]);
+    for (const row of equipment.rows) {
+      await query(
+        `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
+         VALUES ($1,'Products',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+    }
   }
 
-  const tanks = await query(
-    `SELECT t.tank_code as tag_code, t.tank_name as description,
-            pm.product_code, pm.product_name, 1 as quantity, 'EA' as unit,
-            NULL as system_ref, a.area_name as area_ref
-     FROM tanks t
-     LEFT JOIN product_masters pm ON t.product_master_id = pm.id
-     LEFT JOIN areas a ON t.area_id = a.id
-     WHERE t.project_id = $1
-     ORDER BY t.tank_code`,
-    [project_id]);
-  for (const row of tanks.rows) {
-    await query(
-      `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
-       VALUES ($1,'Tank',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+  if (sections.includes('Tank')) {
+    const tanks = await query(
+      `SELECT t.tank_code as tag_code, t.tank_name as description,
+              pm.product_code, pm.product_name, 1 as quantity, 'EA' as unit,
+              NULL as system_ref, a.area_name as area_ref
+       FROM tanks t
+       LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+       LEFT JOIN areas a ON t.area_id = a.id
+       WHERE t.project_id = $1
+       ORDER BY t.tank_code`,
+      [project_id]);
+    for (const row of tanks.rows) {
+      await query(
+        `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
+         VALUES ($1,'Tank',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+    }
   }
 
-  const piping = await query(
-    `SELECT ppi.piping_code as tag_code, COALESCE(ppi.description, pm.product_name) as description,
-            pm.product_code, pm.product_name, ppi.quantity, ppi.unit,
-            s.system_code as system_ref, NULL as area_ref
-     FROM project_piping_items ppi
-     LEFT JOIN product_masters pm ON ppi.product_master_id = pm.id
-     LEFT JOIN systems s ON ppi.system_id = s.id
-     WHERE ppi.project_id = $1
-     ORDER BY ppi.piping_code`,
-    [project_id]);
-  for (const row of piping.rows) {
-    await query(
-      `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
-       VALUES ($1,'Piping',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+  if (sections.includes('Piping')) {
+    const piping = await query(
+      `SELECT ppi.piping_code as tag_code, COALESCE(ppi.description, pm.product_name) as description,
+              pm.product_code, pm.product_name, ppi.quantity, ppi.unit,
+              s.system_code as system_ref, NULL as area_ref
+       FROM project_piping_items ppi
+       LEFT JOIN product_masters pm ON ppi.product_master_id = pm.id
+       LEFT JOIN systems s ON ppi.system_id = s.id
+       WHERE ppi.project_id = $1
+       ORDER BY ppi.piping_code`,
+      [project_id]);
+    for (const row of piping.rows) {
+      await query(
+        `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
+         VALUES ($1,'Piping',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+    }
   }
 
   const final = await query('SELECT * FROM bom_releases WHERE id=$1', [releaseId]);
