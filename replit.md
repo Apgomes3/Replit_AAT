@@ -71,13 +71,21 @@ workspace/
 20+ tables covering:
 - **Project domain**: projects, areas, exhibits, tanks, systems, equipment_instances
 - **Product Library**: product_families, product_masters, product_variants, standard_boms, bom_lines, vendor_options
+- **Components**: components table (23 seeded) — component_code, type, category, material, specs; linked to bom_lines via component_id FK
 - **Bridge**: product_usages (links equipment instances to product masters)
 - **Knowledge**: materials, specifications, design_rules, calculation_templates
-- **Documents**: documents, document_revisions, approvals, release_packages
+- **Documents**: documents, document_revisions, approvals, release_packages; has product_id + component_id FKs
 - **Graph**: entity_relationships (source_id, source_type, target_id, target_type, edge_type)
 - **Workflow**: lifecycle_transitions
 - **Auth**: users, refresh_tokens
 - **Audit**: audit_logs
+
+## Demo Data (Seed)
+- **7 Product Families**: Foam Fractionators (FILTRATION), Circulation Pumps (PUMPING), Drum Filters, UV Sterilizers, Heat Exchangers, Ozone Generators, **Pipes & Fittings (PIPING)**
+- **14 Product Masters**: FF-1500, FF-800, Pump 55kW, Pump 22kW, Drum 60Hz, UV 120W, FRP Pipe DN50/80, CPVC Pipe DN50, Elbow/Tee/Reducer/Union/Flange DN50-80
+- **23 Components**: 8 mechanical (vessels, blowers, venturi, meters, valves, seals, impellers, cups, diffusers), 15 piping (pipes, elbows, tees, reducers, unions, flanges, ball valves, PRV, air valve)
+- **3 BOMs fully linked**: FF-1500 (10 lines), FF-800 (9 lines), Pump-22 (7 lines) — 100% component_id coverage
+- **Shared component**: COMP-VEN-50 (Venturi Injector) used in both FF-1500 and FF-800
 
 ## Running the App
 

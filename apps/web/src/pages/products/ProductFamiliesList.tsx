@@ -43,7 +43,7 @@ export default function ProductFamiliesList() {
           fields={[
             { name: 'product_family_code', label: 'Family Code', required: true, placeholder: 'PFM-XX' },
             { name: 'product_family_name', label: 'Family Name', required: true },
-            { name: 'category_code', label: 'Category', options: ['FILTRATION', 'PUMPING', 'DISINFECTION', 'THERMAL', 'CONTROL', 'STRUCTURAL', 'OTHER'] },
+            { name: 'category_code', label: 'Category', options: ['FILTRATION', 'PUMPING', 'DISINFECTION', 'THERMAL', 'PIPING', 'CONTROL', 'STRUCTURAL', 'OTHER'] },
             { name: 'description', label: 'Description' },
           ]}
           onSubmit={async (data) => {

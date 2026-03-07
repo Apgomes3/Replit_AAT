@@ -70,12 +70,13 @@ async function seed() {
     // Product Families
     await client.query(`
       INSERT INTO product_families (product_family_code, product_family_name, category_code, status) VALUES
-        ('PFM-FF', 'Foam Fractionators', 'FILTRATION', 'Active'),
-        ('PFM-PUMP', 'Circulation Pumps', 'PUMPING', 'Active'),
-        ('PFM-DRUM', 'Drum Filters', 'FILTRATION', 'Active'),
-        ('PFM-UV', 'UV Sterilizers', 'DISINFECTION', 'Active'),
-        ('PFM-HX', 'Heat Exchangers', 'THERMAL', 'Active'),
-        ('PFM-OZ', 'Ozone Generators', 'DISINFECTION', 'Active')
+        ('PFM-FF',   'Foam Fractionators', 'FILTRATION',  'Active'),
+        ('PFM-PUMP', 'Circulation Pumps',  'PUMPING',     'Active'),
+        ('PFM-DRUM', 'Drum Filters',       'FILTRATION',  'Active'),
+        ('PFM-UV',   'UV Sterilizers',     'DISINFECTION','Active'),
+        ('PFM-HX',   'Heat Exchangers',    'THERMAL',     'Active'),
+        ('PFM-OZ',   'Ozone Generators',   'DISINFECTION','Active'),
+        ('PFM-PIPE', 'Pipes & Fittings',   'PIPING',      'Active')
       ON CONFLICT (product_family_code) DO NOTHING
     `);
 
@@ -83,18 +84,56 @@ async function seed() {
     const pumpFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-PUMP'`);
     const drumFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-DRUM'`);
     const uvFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-UV'`);
+    const pipeFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-PIPE'`);
 
     // Product Masters
     await client.query(`
       INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status) VALUES
-        ('PM-FF-1500', $1, 'Foam Fractionator FF-1500', 'Filtration', 'Marine Display', 1500, 7.5, 'MAT-FRP-VE', 'Active'),
-        ('PM-FF-800', $1, 'Foam Fractionator FF-800', 'Filtration', 'Marine Display', 800, 4.0, 'MAT-FRP-VE', 'Active'),
-        ('PM-PUMP-CIR-55', $2, 'Circulation Pump 55kW', 'Pumping', 'LSS Primary', 1200, 55.0, 'MAT-SS316', 'Active'),
-        ('PM-PUMP-CIR-22', $2, 'Circulation Pump 22kW', 'Pumping', 'LSS Primary', 500, 22.0, 'MAT-SS316', 'Active'),
-        ('PM-DRUM-60', $3, 'Drum Filter 60Hz', 'Filtration', 'Mechanical Filtration', 800, 1.5, 'MAT-SS316', 'Active'),
-        ('PM-UV-120', $4, 'UV Sterilizer 120W/m3', 'Disinfection', 'UV Disinfection', 200, 3.0, 'MAT-SS316', 'Active')
+        ('PM-FF-1500',      $1, 'Foam Fractionator FF-1500',   'Filtration', 'Marine Display',          1500, 7.5,  'MAT-FRP-VE', 'Active'),
+        ('PM-FF-800',       $1, 'Foam Fractionator FF-800',    'Filtration', 'Marine Display',           800, 4.0,  'MAT-FRP-VE', 'Active'),
+        ('PM-PUMP-CIR-55',  $2, 'Circulation Pump 55kW',       'Pumping',    'LSS Primary',             1200, 55.0, 'MAT-SS316',  'Active'),
+        ('PM-PUMP-CIR-22',  $2, 'Circulation Pump 22kW',       'Pumping',    'LSS Primary',              500, 22.0, 'MAT-SS316',  'Active'),
+        ('PM-DRUM-60',      $3, 'Drum Filter 60Hz',            'Filtration', 'Mechanical Filtration',    800, 1.5,  'MAT-SS316',  'Active'),
+        ('PM-UV-120',       $4, 'UV Sterilizer 120W/m3',       'Disinfection','UV Disinfection',         200, 3.0,  'MAT-SS316',  'Active'),
+        ('PM-PIPE-FRP-50',  $5, 'FRP Pipe DN50',               'Piping',     'Seawater / LSS',          NULL, NULL, 'MAT-FRP-VE', 'Active'),
+        ('PM-PIPE-FRP-80',  $5, 'FRP Pipe DN80',               'Piping',     'Seawater / LSS',          NULL, NULL, 'MAT-FRP-VE', 'Active'),
+        ('PM-PIPE-CPVC-50', $5, 'CPVC Pipe DN50',              'Piping',     'Chemical / LSS',          NULL, NULL, 'MAT-CPVC',   'Active'),
+        ('PM-FIT-ELB50',    $5, 'Elbow 90° DN50 FRP',          'Piping',     'Seawater / LSS',          NULL, NULL, 'MAT-FRP-VE', 'Active'),
+        ('PM-FIT-TEE50',    $5, 'Tee DN50 FRP',                'Piping',     'Seawater / LSS',          NULL, NULL, 'MAT-FRP-VE', 'Active'),
+        ('PM-FIT-RED8050',  $5, 'Reducer DN80×50 FRP',         'Piping',     'Seawater / LSS',          NULL, NULL, 'MAT-FRP-VE', 'Active'),
+        ('PM-FIT-UNI50',    $5, 'Union Connector DN50 CPVC',   'Piping',     'LSS / Chemical',          NULL, NULL, 'MAT-CPVC',   'Active'),
+        ('PM-FIT-FLG80',    $5, 'Flange PN10 DN80 FRP',        'Piping',     'Seawater',                NULL, NULL, 'MAT-FRP-VE', 'Active')
       ON CONFLICT (product_code) DO NOTHING
-    `, [ffFamilyRes.rows[0].id, pumpFamilyRes.rows[0].id, drumFamilyRes.rows[0].id, uvFamilyRes.rows[0].id]);
+    `, [ffFamilyRes.rows[0].id, pumpFamilyRes.rows[0].id, drumFamilyRes.rows[0].id, uvFamilyRes.rows[0].id, pipeFamilyRes.rows[0].id]);
+
+    // Components
+    await client.query(`
+      INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by) VALUES
+        ('COMP-VEN-50',      'Venturi Injector DN50',           'Instrument', 'Mechanical',       'Venturi-type air-water mixing injector, key functional element of foam fractionators. Creates micro-bubble dispersion for protein skimming.',                            'MAT-FRP-VE', 'DN50',                          1.2,  'EA', 'Active', 'Matched pair with reaction column. Operating pressure 0.5–2.5 bar.',              $1),
+        ('COMP-VES-FF1500',  'FRP-VE Reaction Column 1500L',    'Vessel',     'Mechanical',       'Primary reaction vessel for FF-1500 foam fractionator. Cylindrical FRP-VE column where bubble/water contact occurs.',                                                  'MAT-FRP-VE', '1500L / Ø600mm × H2400mm',     48.0, 'EA', 'Active', 'Full system weight inc. water: ~2200 kg. Flanged DN80 connections.',              $1),
+        ('COMP-VES-FF800',   'FRP-VE Reaction Column 800L',     'Vessel',     'Mechanical',       'Smaller reaction vessel for FF-800 foam fractionator.',                                                                                                                  'MAT-FRP-VE', '800L / Ø450mm × H1800mm',      28.0, 'EA', 'Active', 'Full system weight inc. water: ~1050 kg. Flanged DN50 connections.',              $1),
+        ('COMP-BLW-22',      'Air Blower 2.2kW',                'Blower',     'Mechanical',       'Side-channel air blower, oil-free, for feeding venturi injector. Delivers clean dry air at 0.4–0.6 bar.',                                                              NULL,         '2.2 kW / DN50 air outlet',      14.5, 'EA', 'Active', 'Mounted on anti-vibration pads. Connect to COMP-VEN-50 via DN25 air line.',        $1),
+        ('COMP-BLW-11',      'Air Blower 1.1kW',                'Blower',     'Mechanical',       'Side-channel air blower for FF-800. Oil-free, delivers air at 0.4–0.6 bar via DN25 outlet.',                                                                           NULL,         '1.1 kW / DN25 air outlet',       8.2,  'EA', 'Active', 'Paired with COMP-VEN-50 at lower flow rate.',                                     $1),
+        ('COMP-FMT-DN50',    'Flow Meter DN50 (Rotameter)',      'Instrument', 'Instrumentation',  'Variable-area rotameter for measuring seawater inlet flow to foam fractionator. FRP body, ball-float.',                                                                'MAT-FRP-VE', 'DN50, 0–30 m³/h',               1.8,  'EA', 'Active', 'Calibrated range 5–25 m³/h. ANSI flanged connections.',                           $1),
+        ('COMP-VLV-BL50',    'Ball Valve DN50 FRP',              'Valve',      'Piping',           'Full-bore ball valve for isolation and flow throttling on seawater lines. FRP body, PTFE-lined.',                                                                       'MAT-FRP-VE', 'DN50 PN10',                      2.4,  'EA', 'Active', 'Lever operated. Working pressure 10 bar. Suitable for seawater and brine.',       $1),
+        ('COMP-VLV-BL80',    'Ball Valve DN80 FRP',              'Valve',      'Piping',           'Full-bore ball valve DN80 for pump isolation. FRP body, PTFE seats.',                                                                                                  'MAT-FRP-VE', 'DN80 PN10',                      4.5,  'EA', 'Active', 'Gear-operated on sizes DN80 and above.',                                           $1),
+        ('COMP-VLV-AIR25',   'Air Inlet Valve DN25 CPVC',        'Valve',      'Piping',           'Manual needle valve for controlling air flow rate from blower to venturi. CPVC body, stainless needle.',                                                               'MAT-CPVC',   'DN25',                           0.6,  'EA', 'Active', 'Fine adjustment valve — set during commissioning. Lock-wire after setting.',      $1),
+        ('COMP-PRV-50',      'Pressure Relief Valve DN50',        'Valve',      'Mechanical',       'Spring-loaded pressure relief valve on pump discharge. Set to 3.5 bar.',                                                                                               'MAT-SS316',  'DN50, 0.5–4 bar adj.',           1.8,  'EA', 'Active', 'Test annually. Calibration sticker required after each test.',                    $1),
+        ('COMP-CUP-FF',      'Collection Cup Assembly',           'Vessel',     'Mechanical',       'Removable foam collection cup with neck tube for FF series. Collects concentrated DOC/protein foam for disposal.',                                                     'MAT-ACRYLIC','Ø200mm × H450mm',               3.2,  'EA', 'Active', 'Fitted with drain valve and sight glass. Clean weekly under normal bioload.',     $1),
+        ('COMP-DIFF-FF',     'Bubble Diffuser Plate',             'Other',      'Mechanical',       'Perforated distribution plate at base of reaction column. Ensures uniform micro-bubble distribution across column cross-section.',                                     'MAT-FRP-VE', 'Ø590mm, 1mm holes @ 10mm pitch', 0.8,  'EA', 'Active', 'Replace when hole enlargement exceeds 1.5mm or foam quality degrades.',          $1),
+        ('COMP-IMP-22',      'Pump Impeller 22kW',                'Other',      'Mechanical',       'Stainless steel impeller for 22kW circulation pump. Fitted with wear-resistant coating for seawater service.',                                                        'MAT-SS316',  'Ø210mm, 6-vane',                 4.5,  'EA', 'Active', 'Replace if erosion exceeds 0.5mm or pump head drops >10% from baseline.',        $1),
+        ('COMP-SEAL-22',     'Mechanical Seal — 22kW Pump',       'Other',      'Mechanical',       'Silicon carbide / carbon mechanical shaft seal for seawater circulation pump.',                                                                                        NULL,         'Ø35mm shaft, SiC/C faces',       0.3,  'EA', 'Active', 'Replace every 12 months or at first sign of leak. Spare kept in stores.',        $1),
+        ('COMP-PIPE-FRP50',  'FRP Pipe DN50 (per metre)',          'Pipe',       'Piping',           'Filament-wound FRP vinyl ester pipe, DN50 (2-inch nominal), PN16. Standard length 3m or 6m.',                                                                        'MAT-FRP-VE', 'DN50 / OD 63mm / WT 4mm',       0.9,  'm',  'Active', 'Cut to length on site. Pressure test at 24 bar.',                                 $1),
+        ('COMP-PIPE-FRP80',  'FRP Pipe DN80 (per metre)',          'Pipe',       'Piping',           'Filament-wound FRP vinyl ester pipe, DN80 (3-inch nominal), PN16. Standard length 6m.',                                                                              'MAT-FRP-VE', 'DN80 / OD 90mm / WT 5mm',       1.6,  'm',  'Active', 'Header pipe for LSS ring main. Supports flow up to 45 m³/h.',                    $1),
+        ('COMP-PIPE-CPVC50', 'CPVC Pipe DN50 (per metre)',         'Pipe',       'Piping',           'CPVC schedule 80 pressure pipe DN50. Suitable for chemical dosing and ozone service up to 93°C.',                                                                     'MAT-CPVC',   'DN50 / OD 60.3mm / WT 5.5mm',   0.7,  'm',  'Active', 'Solvent-cement or threaded joints. UV-stabilised for exposed runs.',              $1),
+        ('COMP-ELB-FRP50',   '90° Elbow DN50 FRP',                'Fitting',    'Piping',           'Short-radius 90-degree elbow, DN50, FRP vinyl ester, PN16.',                                                                                                          'MAT-FRP-VE', 'DN50 SR90',                      0.4,  'EA', 'Active', NULL,                                                                              $1),
+        ('COMP-ELB-FRP80',   '90° Elbow DN80 FRP',                'Fitting',    'Piping',           'Short-radius 90-degree elbow, DN80, FRP vinyl ester, PN16.',                                                                                                          'MAT-FRP-VE', 'DN80 SR90',                      0.8,  'EA', 'Active', NULL,                                                                              $1),
+        ('COMP-TEE-FRP50',   'Tee DN50 FRP',                       'Fitting',    'Piping',           'Equal tee junction DN50 FRP vinyl ester, PN16. All butt-weld ends.',                                                                                                 'MAT-FRP-VE', 'DN50 EQ-T',                      0.5,  'EA', 'Active', NULL,                                                                              $1),
+        ('COMP-RED-8050',    'Reducer DN80×50 FRP',                 'Fitting',    'Piping',           'Concentric reducer DN80 to DN50, FRP vinyl ester. Used at pump outlets.',                                                                                             'MAT-FRP-VE', 'DN80×50',                         0.6,  'EA', 'Active', NULL,                                                                              $1),
+        ('COMP-UNI-CPVC50',  'Union Connector DN50 CPVC',           'Fitting',    'Piping',           'True-union connector for break-out maintenance access. CPVC, EPDM o-ring.',                                                                                          'MAT-CPVC',   'DN50',                           0.3,  'EA', 'Active', 'Install on inlet/outlet of all major equipment for service isolation.',           $1),
+        ('COMP-FLG-FRP80',   'Flange PN10 DN80 FRP',                'Fitting',    'Piping',           'Flat-face flange DN80 PN10 FRP, drilled to DIN 2501. Bonded to pipe or moulded integral.',                                                                           'MAT-FRP-VE', 'DN80 PN10',                      1.1,  'EA', 'Active', NULL,                                                                              $1)
+      ON CONFLICT (component_code) DO NOTHING
+    `, [adminId]);
 
     // Vendor Options
     await client.query(`
@@ -107,19 +146,81 @@ async function seed() {
 
     // Standard BOMs
     await client.query(`
-      INSERT INTO standard_boms (bom_code, product_master_id, revision_code) VALUES
-        ('BOM-FF-1500-A', (SELECT id FROM product_masters WHERE product_code='PM-FF-1500'), 'A'),
-        ('BOM-PUMP-55-A', (SELECT id FROM product_masters WHERE product_code='PM-PUMP-CIR-55'), 'A')
-      ON CONFLICT DO NOTHING
+      INSERT INTO standard_boms (bom_code, product_master_id, revision_code)
+      SELECT t.code, pm.id, 'A'
+      FROM (VALUES
+        ('BOM-FF-1500-A',  'PM-FF-1500'),
+        ('BOM-FF-800-A',   'PM-FF-800'),
+        ('BOM-PUMP-22-A',  'PM-PUMP-CIR-22'),
+        ('BOM-PUMP-55-A',  'PM-PUMP-CIR-55')
+      ) AS t(code, pcode)
+      JOIN product_masters pm ON pm.product_code = t.pcode
+      WHERE NOT EXISTS (SELECT 1 FROM standard_boms WHERE bom_code = t.code)
     `);
 
+    // FF-1500 BOM lines (10 lines with component_id links)
     await client.query(`
-      INSERT INTO bom_lines (standard_bom_id, line_number, component_type, component_reference_code, component_name, quantity, unit) VALUES
-        ((SELECT id FROM standard_boms WHERE bom_code='BOM-FF-1500-A'), 1, 'Vessel', 'FRP-VE-VESSEL-1500', 'FRP-VE Reaction Column', 1, 'EA'),
-        ((SELECT id FROM standard_boms WHERE bom_code='BOM-FF-1500-A'), 2, 'Pump', 'PM-PUMP-CIR-22', 'Air Blower Pump', 2, 'EA'),
-        ((SELECT id FROM standard_boms WHERE bom_code='BOM-FF-1500-A'), 3, 'Instrument', 'INS-FLOW-001', 'Flow Meter', 1, 'EA'),
-        ((SELECT id FROM standard_boms WHERE bom_code='BOM-FF-1500-A'), 4, 'Valve', 'VLV-BALL-50', 'Ball Valve DN50', 4, 'EA')
-      ON CONFLICT DO NOTHING
+      INSERT INTO bom_lines (standard_bom_id, component_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks)
+      SELECT sb.id, c.id, t.ln, t.ctype, t.cref, t.cname, t.qty, t.unit, t.opt, t.remarks
+      FROM standard_boms sb
+      JOIN product_masters pm ON sb.product_master_id = pm.id
+      CROSS JOIN (VALUES
+        (1,  'Vessel',     'COMP-VES-FF1500', 'FRP-VE Reaction Column 1500L',   1,   'EA', false, 'Main reaction vessel body'),
+        (2,  'Blower',     'COMP-BLW-22',     'Air Blower 2.2kW',              2,   'EA', false, 'Blower pair for air feed'),
+        (3,  'Instrument', 'COMP-FMT-DN50',   'Flow Meter DN50 (Rotameter)',    1,   'EA', false, ''),
+        (4,  'Valve',      'COMP-VLV-BL50',   'Ball Valve DN50 FRP',           4,   'EA', false, 'Inlet/outlet and bypass'),
+        (5,  'Instrument', 'COMP-VEN-50',     'Venturi Injector DN50',          1,   'EA', false, 'Core air-water mixing element'),
+        (6,  'Vessel',     'COMP-CUP-FF',     'Collection Cup Assembly',        1,   'EA', false, 'Includes neck tube and drain valve'),
+        (7,  'Other',      'COMP-DIFF-FF',    'Bubble Diffuser Plate',          1,   'EA', false, 'Ø590mm perforated plate at column base'),
+        (8,  'Valve',      'COMP-VLV-AIR25',  'Air Inlet Valve DN25 CPVC',     1,   'EA', false, 'Fine-adjust air flow control'),
+        (9,  'Pipe',       'COMP-PIPE-FRP50', 'FRP Pipe DN50 Inlet/Outlet',    2,   'm',  false, 'Water inlet and outlet spools'),
+        (10, 'Fitting',    'COMP-UNI-CPVC50', 'Union Connector DN50 CPVC',     2,   'EA', false, 'Service isolation unions')
+      ) AS t(ln, ctype, cref, cname, qty, unit, opt, remarks)
+      JOIN components c ON c.component_code = t.cref
+      WHERE pm.product_code = 'PM-FF-1500'
+        AND NOT EXISTS (SELECT 1 FROM bom_lines x WHERE x.standard_bom_id = sb.id AND x.line_number = t.ln)
+    `);
+
+    // FF-800 BOM lines (9 lines)
+    await client.query(`
+      INSERT INTO bom_lines (standard_bom_id, component_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks)
+      SELECT sb.id, c.id, t.ln, t.ctype, t.cref, t.cname, t.qty, t.unit, t.opt, t.remarks
+      FROM standard_boms sb
+      JOIN product_masters pm ON sb.product_master_id = pm.id
+      CROSS JOIN (VALUES
+        (1, 'Vessel',     'COMP-VES-FF800',  'FRP-VE Reaction Column 800L',   1, 'EA', false, 'Main reaction vessel body'),
+        (2, 'Instrument', 'COMP-VEN-50',     'Venturi Injector DN50',          1, 'EA', false, 'Same venturi as FF-1500 — lower air flow duty'),
+        (3, 'Blower',     'COMP-BLW-11',     'Air Blower 1.1kW',              1, 'EA', false, ''),
+        (4, 'Instrument', 'COMP-FMT-DN50',   'Flow Meter DN50 (Rotameter)',    1, 'EA', false, ''),
+        (5, 'Valve',      'COMP-VLV-BL50',   'Ball Valve DN50 FRP',           2, 'EA', false, 'Inlet and outlet isolation'),
+        (6, 'Vessel',     'COMP-CUP-FF',     'Collection Cup Assembly',        1, 'EA', false, ''),
+        (7, 'Other',      'COMP-DIFF-FF',    'Bubble Diffuser Plate',          1, 'EA', false, 'Ø440mm variant for 800L column'),
+        (8, 'Pipe',       'COMP-PIPE-FRP50', 'FRP Pipe DN50 Inlet/Outlet',    1, 'm',  false, ''),
+        (9, 'Fitting',    'COMP-UNI-CPVC50', 'Union Connector DN50 CPVC',     2, 'EA', false, '')
+      ) AS t(ln, ctype, cref, cname, qty, unit, opt, remarks)
+      JOIN components c ON c.component_code = t.cref
+      WHERE pm.product_code = 'PM-FF-800'
+        AND NOT EXISTS (SELECT 1 FROM bom_lines x WHERE x.standard_bom_id = sb.id AND x.line_number = t.ln)
+    `);
+
+    // Pump-22 BOM lines (7 lines)
+    await client.query(`
+      INSERT INTO bom_lines (standard_bom_id, component_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks)
+      SELECT sb.id, c.id, t.ln, t.ctype, t.cref, t.cname, t.qty, t.unit, t.opt, t.remarks
+      FROM standard_boms sb
+      JOIN product_masters pm ON sb.product_master_id = pm.id
+      CROSS JOIN (VALUES
+        (1, 'Other',   'COMP-IMP-22',    'Pump Impeller 22kW SS316',      1,   'EA', false, 'Replace if head drops >10% from baseline'),
+        (2, 'Other',   'COMP-SEAL-22',   'Mechanical Seal — 22kW Pump',   2,   'EA', false, 'Spare set should be kept in stores'),
+        (3, 'Valve',   'COMP-VLV-BL80',  'Ball Valve DN80 FRP',           2,   'EA', false, 'Suction and discharge isolation'),
+        (4, 'Valve',   'COMP-PRV-50',    'Pressure Relief Valve DN50',    1,   'EA', false, 'Set 3.5 bar — test annually'),
+        (5, 'Pipe',    'COMP-PIPE-FRP80','FRP Pipe DN80 (per metre)',     0.5, 'm',  false, 'Short spool pieces at pump flanges'),
+        (6, 'Fitting', 'COMP-FLG-FRP80', 'Flange PN10 DN80 FRP',         2,   'EA', false, 'Suction and discharge flanges'),
+        (7, 'Fitting', 'COMP-RED-8050',  'Reducer DN80×50 FRP',           1,   'EA', true,  'Required when connecting to DN50 ring main')
+      ) AS t(ln, ctype, cref, cname, qty, unit, opt, remarks)
+      JOIN components c ON c.component_code = t.cref
+      WHERE pm.product_code = 'PM-PUMP-CIR-22'
+        AND NOT EXISTS (SELECT 1 FROM bom_lines x WHERE x.standard_bom_id = sb.id AND x.line_number = t.ln)
     `);
 
     // Project: Taoyuan Aquarium

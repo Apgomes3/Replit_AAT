@@ -57,7 +57,7 @@ export default function ProductMastersList() {
           fields={[
             { name: 'product_code', label: 'Product Code', required: true, placeholder: 'PM-XX-000' },
             { name: 'product_name', label: 'Product Name', required: true },
-            { name: 'product_category', label: 'Category', options: ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Control', 'Structural', 'Instrumentation', 'Other'] },
+            { name: 'product_category', label: 'Category', options: ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Other'] },
             { name: 'application_type', label: 'Application Type' },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
             { name: 'power_kw', label: 'Power (kW)', type: 'number' },
