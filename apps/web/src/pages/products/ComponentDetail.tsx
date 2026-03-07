@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Pencil, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus } from 'lucide-react';
+import { Pencil, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus, Tag } from 'lucide-react';
 import { Document } from '../../types';
 
 type Tab = 'specs' | 'drawings' | 'documents';
@@ -96,6 +96,8 @@ export default function ComponentDetail() {
   const nonDrawingDocs = documents.filter(d => !DRAWING_TYPE_VALUES.has(d.document_type));
   const usedIn = component.used_in || [];
 
+  const [synonymInput, setSynonymInput] = useState('');
+
   const startEdit = () => {
     setForm({
       component_name: component.component_name,
@@ -108,14 +110,25 @@ export default function ComponentDetail() {
       unit: component.unit || 'EA',
       status: component.status,
       notes: component.notes || '',
+      synonyms: component.synonyms || [],
     });
     setEditing(true);
+  };
+
+  const addSynonym = (raw: string) => {
+    const terms = raw.split(',').map(s => s.trim()).filter(Boolean);
+    setForm((f: any) => ({ ...f, synonyms: [...new Set([...(f.synonyms || []), ...terms])] }));
+    setSynonymInput('');
+  };
+
+  const removeSynonym = (term: string) => {
+    setForm((f: any) => ({ ...f, synonyms: (f.synonyms || []).filter((s: string) => s !== term) }));
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put(`/components/${component.id}`, { ...form, weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null });
+      await api.put(`/components/${component.id}`, { ...form, weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null, synonyms: form.synonyms || [] });
       toast.success('Component updated');
       setEditing(false);
       qc.invalidateQueries({ queryKey: ['component', id] });
@@ -225,6 +238,9 @@ export default function ComponentDetail() {
                   { label: 'Weight', value: component.weight_kg ? `${component.weight_kg} kg` : null },
                   { label: 'Unit', value: component.unit },
                   { label: 'Notes', value: component.notes },
+                  { label: 'Synonyms', value: component.synonyms?.length
+                    ? <div className="flex flex-wrap gap-1">{component.synonyms.map((s: string) => <span key={s} className="bg-[#3E5C76]/10 text-[#3E5C76] text-xs px-2 py-0.5 rounded-full">{s}</span>)}</div>
+                    : null },
                 ]} />
               ) : (
                 <div className="bg-white border border-slate-200 rounded-lg p-4">
@@ -287,6 +303,28 @@ export default function ComponentDetail() {
                       <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                       <input value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))}
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1"><Tag className="w-3 h-3" /> Synonyms <span className="text-slate-400 font-normal">(alternate names for search)</span></label>
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {(form.synonyms || []).map((s: string) => (
+                          <span key={s} className="inline-flex items-center gap-1 bg-[#3E5C76]/10 text-[#3E5C76] text-xs px-2 py-0.5 rounded-full">
+                            {s}
+                            <button type="button" onClick={() => removeSynonym(s)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          value={synonymInput}
+                          onChange={e => setSynonymInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); if (synonymInput.trim()) addSynonym(synonymInput); } }}
+                          placeholder="Type a synonym and press Enter or comma"
+                          className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                        />
+                        <button type="button" onClick={() => { if (synonymInput.trim()) addSynonym(synonymInput); }}
+                          className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-sm hover:bg-slate-200">Add</button>
+                      </div>
                     </div>
                   </div>
                 </div>

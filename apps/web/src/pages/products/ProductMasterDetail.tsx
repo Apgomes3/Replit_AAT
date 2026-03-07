@@ -8,7 +8,8 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import { VendorOption, BOMLine, ProductVariant, Document } from '../../types';
 import { useState, useRef } from 'react';
-import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap } from 'lucide-react';
+import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag } from 'lucide-react';
+import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 
@@ -85,6 +86,13 @@ export default function ProductMasterDetail() {
   const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', gross_volume_m3: '', operating_volume_m3: '' });
   const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
 
+  const [showFamilyPicker, setShowFamilyPicker] = useState(false);
+  const [familySaving, setFamilySaving] = useState(false);
+
+  const [showSynonymsEdit, setShowSynonymsEdit] = useState(false);
+  const [synonymInput, setSynonymInput] = useState('');
+  const [synonymsSaving, setSynonymsSaving] = useState(false);
+
   const [showRelModal, setShowRelModal] = useState(false);
   const [relSearch, setRelSearch] = useState('');
   const [relTarget, setRelTarget] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
@@ -144,8 +152,47 @@ export default function ProductMasterDetail() {
     design_water_level_mm: product.design_water_level_mm,
     gross_volume_m3: product.gross_volume_m3,
     operating_volume_m3: product.operating_volume_m3,
+    product_family_id: product.product_family_id,
+    synonyms: product.synonyms || [],
     ...overrides,
   });
+
+  const handleFamilySelect = async (fam: { id: string; code: string; name: string }) => {
+    setFamilySaving(true);
+    setShowFamilyPicker(false);
+    try {
+      await api.put(`/product-masters/${id}`, productPutPayload({ product_family_id: fam.id || null }));
+      toast.success(fam.id ? `Family changed to ${fam.name}` : 'Family cleared');
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+    } catch {
+      toast.error('Failed to update family');
+    } finally {
+      setFamilySaving(false); }
+  };
+
+  const addSynonym = async (raw: string) => {
+    const terms = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (!terms.length) return;
+    setSynonymsSaving(true);
+    setSynonymInput('');
+    try {
+      const current: string[] = product.synonyms || [];
+      const updated = [...new Set([...current, ...terms])];
+      await api.put(`/product-masters/${id}`, productPutPayload({ synonyms: updated }));
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+    } catch { toast.error('Failed to save synonym'); }
+    finally { setSynonymsSaving(false); }
+  };
+
+  const removeSynonym = async (term: string) => {
+    setSynonymsSaving(true);
+    try {
+      const updated = (product.synonyms || []).filter((s: string) => s !== term);
+      await api.put(`/product-masters/${id}`, productPutPayload({ synonyms: updated }));
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+    } catch { toast.error('Failed to remove synonym'); }
+    finally { setSynonymsSaving(false); }
+  };
 
   const handleSaveImage = async () => {
     setImageSubmitting(true);
@@ -373,7 +420,9 @@ export default function ProductMasterDetail() {
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="col-span-2">
             <MetadataPanel fields={[
-              { label: 'Family', value: product.product_family_name },
+              { label: 'Family', value: product.product_family_name,
+                action: <button onClick={() => setShowFamilyPicker(true)} disabled={familySaving}
+                  className="text-xs text-[#3E5C76] hover:underline whitespace-nowrap">{familySaving ? '...' : 'Change'}</button> },
               { label: 'Category', value: product.product_category },
               ...(!isPiping && !isTank ? [{ label: 'Application', value: product.application_type }] : []),
               ...(isTank ? [{ label: 'Tank Type', value: product.application_type }] : []),
@@ -383,6 +432,36 @@ export default function ProductMasterDetail() {
               { label: 'Primary Material', value: product.primary_material_code ? <><EntityCode code={product.primary_material_code} /> {product.material_name && <span className="text-slate-500 text-xs ml-1">{product.material_name}</span>}</> : null },
               { label: 'Notes', value: product.notes },
             ]} />
+
+            <div className="bg-white border border-slate-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag className="w-3 h-3" /> Synonyms</span>
+                <button onClick={() => setShowSynonymsEdit(s => !s)} className="text-xs text-[#3E5C76] hover:underline">{showSynonymsEdit ? 'Done' : 'Edit'}</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(product.synonyms || []).length === 0 && !showSynonymsEdit && <span className="text-xs text-slate-300">No synonyms — add alternate names to improve search</span>}
+                {(product.synonyms || []).map((s: string) => (
+                  <span key={s} className="inline-flex items-center gap-1 bg-[#3E5C76]/10 text-[#3E5C76] text-xs px-2 py-0.5 rounded-full">
+                    {s}
+                    {showSynonymsEdit && <button onClick={() => removeSynonym(s)} disabled={synonymsSaving} className="hover:text-red-500"><X className="w-3 h-3" /></button>}
+                  </span>
+                ))}
+              </div>
+              {showSynonymsEdit && (
+                <div className="flex gap-2 mt-2">
+                  <input
+                    value={synonymInput}
+                    onChange={e => setSynonymInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSynonym(synonymInput); } }}
+                    placeholder="Type a synonym and press Enter"
+                    disabled={synonymsSaving}
+                    className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                  />
+                  <button onClick={() => addSynonym(synonymInput)} disabled={synonymsSaving || !synonymInput.trim()}
+                    className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-sm hover:bg-slate-200 disabled:opacity-40">Add</button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="space-y-3">
             {isPiping && (
@@ -849,6 +928,14 @@ export default function ProductMasterDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {showFamilyPicker && (
+        <FamilyPickerModal
+          currentFamilyId={product.product_family_id}
+          onSelect={handleFamilySelect}
+          onClose={() => setShowFamilyPicker(false)}
+        />
       )}
     </div>
   );

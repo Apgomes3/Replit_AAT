@@ -35,10 +35,10 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   if (req.query.family_id) { params.push(req.query.family_id); filters.push(`pm.product_family_id = $${params.length}`); }
   if (req.query.category) { params.push(req.query.category); filters.push(`pm.product_category = $${params.length}`); }
   if (req.query.status) { params.push(req.query.status); filters.push(`pm.standard_status = $${params.length}`); }
-  if (req.query.q) { params.push(`%${req.query.q}%`); filters.push(`(pm.product_name ILIKE $${params.length} OR pm.product_code ILIKE $${params.length})`); }
+  if (req.query.q) { params.push(`%${req.query.q}%`); const p = params.length; filters.push(`(pm.product_name ILIKE $${p} OR pm.product_code ILIKE $${p} OR pf.product_family_name ILIKE $${p} OR EXISTS (SELECT 1 FROM unnest(pm.synonyms) s WHERE s ILIKE $${p}))`); }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const countRes = await query(`SELECT COUNT(*) FROM product_masters pm ${where}`, params);
+  const countRes = await query(`SELECT COUNT(*) FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id ${where}`, params);
   params.push(page_size, offset);
   const result = await query(`SELECT pm.*, pf.product_family_name FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id ${where} ORDER BY pm.product_code LIMIT $${params.length-1} OFFSET $${params.length}`, params);
   res.json({ items: result.rows, pagination: { page, page_size, total: parseInt(countRes.rows[0].count) } });
@@ -104,10 +104,11 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3 } = req.body;
+  const { product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, product_family_id, synonyms } = req.body;
+  const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
   const result = await query(
-    'UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, power_kw=$5, primary_material_code=$6, standard_status=$7, image_url=$8, notes=$9, shape_type=$10, length_mm=$11, width_mm=$12, height_mm=$13, design_water_level_mm=$14, gross_volume_m3=$15, operating_volume_m3=$16, updated_at=NOW() WHERE id=$17 RETURNING *',
-    [product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, req.params.id]);
+    'UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, power_kw=$5, primary_material_code=$6, standard_status=$7, image_url=$8, notes=$9, shape_type=$10, length_mm=$11, width_mm=$12, height_mm=$13, design_water_level_mm=$14, gross_volume_m3=$15, operating_volume_m3=$16, product_family_id=$17, synonyms=$18, updated_at=NOW() WHERE id=$19 RETURNING *',
+    [product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   res.json(result.rows[0]);
 });
@@ -231,7 +232,8 @@ router.get('/components', authenticate, async (req: AuthRequest, res: Response) 
   let params: any[] = [];
   if (req.query.search) {
     params.push(`%${req.query.search}%`);
-    conditions.push(`(c.component_code ILIKE $${params.length} OR c.component_name ILIKE $${params.length} OR c.description ILIKE $${params.length})`);
+    const p = params.length;
+    conditions.push(`(c.component_code ILIKE $${p} OR c.component_name ILIKE $${p} OR c.description ILIKE $${p} OR EXISTS (SELECT 1 FROM unnest(c.synonyms) s WHERE s ILIKE $${p}))`);
   }
   if (req.query.component_type) { params.push(req.query.component_type); conditions.push(`c.component_type=$${params.length}`); }
   if (req.query.status) { params.push(req.query.status); conditions.push(`c.status=$${params.length}`); }
@@ -273,10 +275,11 @@ router.post('/components', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.put('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes } = req.body;
+  const { component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms } = req.body;
+  const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
   const result = await query(
-    'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, updated_at=NOW() WHERE id=$11 RETURNING *',
-    [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, req.params.id]);
+    'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, updated_at=NOW() WHERE id=$12 RETURNING *',
+    [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
   res.json(result.rows[0]);
 });

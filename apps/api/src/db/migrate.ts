@@ -516,6 +516,9 @@ INSERT INTO roles (name, description, is_system, sort_order) VALUES
   ('engineer', 'Create and edit library data, projects and documents', true, 20),
   ('viewer', 'Read-only access to all platform data', true, 30)
 ON CONFLICT (name) DO NOTHING;
+
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS synonyms TEXT[] DEFAULT '{}';
+ALTER TABLE components ADD COLUMN IF NOT EXISTS synonyms TEXT[] DEFAULT '{}';
 `;
 
 async function migrate() {
