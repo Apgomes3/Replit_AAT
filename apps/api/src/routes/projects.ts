@@ -163,9 +163,10 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
 });
 
 router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, primary_material } = req.body;
-  const result = await query('INSERT INTO tanks (tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, primary_material) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *',
-    [tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, primary_material]);
+  const { tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+  const result = await query(
+    'INSERT INTO tanks (tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *',
+    [tank_code, project_id, area_id, exhibit_id, tank_name, tank_type, shape_type, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material, status || 'Active', notes || null]);
   res.status(201).json(result.rows[0]);
 });
 

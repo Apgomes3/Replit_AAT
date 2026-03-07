@@ -15,7 +15,7 @@ import { Plus, Network } from 'lucide-react';
 
 type Tab = 'systems' | 'equipment' | 'tanks' | 'documents' | 'changes';
 
-type Tank = { id: string; tank_code: string; tank_name: string; tank_type?: string; gross_volume_m3?: number; primary_material?: string; };
+type Tank = { id: string; tank_code: string; tank_name: string; tank_type?: string; shape_type?: string; length_mm?: number; width_mm?: number; height_mm?: number; design_water_level_mm?: number; gross_volume_m3?: number; operating_volume_m3?: number; primary_material?: string; status?: string; };
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -91,12 +91,21 @@ export default function ProjectDetail() {
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
 
+  const fmt = (v?: number, unit = '') => v != null ? <span>{v}{unit}</span> : <span className="text-slate-300">—</span>;
+
   const tankCols: Column<Tank>[] = [
     { key: 'tank_code', header: 'Code', render: r => <EntityCode code={r.tank_code} /> },
     { key: 'tank_name', header: 'Tank Name', render: r => <span className="font-medium">{r.tank_name}</span> },
-    { key: 'tank_type', header: 'Type' },
-    { key: 'gross_volume_m3', header: 'Volume (m³)', render: r => r.gross_volume_m3 ? <span>{r.gross_volume_m3}</span> : <span className="text-slate-300">—</span> },
+    { key: 'tank_type', header: 'Type', render: r => r.tank_type ? <span>{r.tank_type}</span> : <span className="text-slate-300">—</span> },
+    { key: 'shape_type', header: 'Shape', render: r => r.shape_type ? <span>{r.shape_type}</span> : <span className="text-slate-300">—</span> },
+    { key: 'length_mm', header: 'L (mm)', render: r => fmt(r.length_mm) },
+    { key: 'width_mm', header: 'W (mm)', render: r => fmt(r.width_mm) },
+    { key: 'height_mm', header: 'H (mm)', render: r => fmt(r.height_mm) },
+    { key: 'design_water_level_mm', header: 'Water Level (mm)', render: r => fmt(r.design_water_level_mm) },
+    { key: 'gross_volume_m3', header: 'Gross Vol (m³)', render: r => fmt(r.gross_volume_m3) },
+    { key: 'operating_volume_m3', header: 'Op. Vol (m³)', render: r => fmt(r.operating_volume_m3) },
     { key: 'primary_material', header: 'Material', render: r => r.primary_material ? <span>{r.primary_material}</span> : <span className="text-slate-300">—</span> },
+    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status || 'Active'} /> },
   ];
 
   const crCols: Column<ChangeRequest>[] = [
@@ -199,8 +208,10 @@ export default function ProjectDetail() {
             { name: 'operating_volume_m3', label: 'Operating Volume (m³)', type: 'number' },
             { name: 'length_mm', label: 'Length (mm)', type: 'number' },
             { name: 'width_mm', label: 'Width (mm)', type: 'number' },
-            { name: 'height_mm', label: 'Height (mm)', type: 'number' },
+            { name: 'height_mm', label: 'Total Height (mm)', type: 'number' },
+            { name: 'design_water_level_mm', label: 'Design Water Level (mm)', type: 'number' },
             { name: 'primary_material', label: 'Material', options: ['Acrylic', 'Glass', 'FRP', 'HDPE', 'GRP', 'Stainless Steel', 'Concrete', 'Other'] },
+            { name: 'status', label: 'Status', options: ['Active', 'Design', 'Procurement', 'Installation', 'Commissioning', 'Decommissioned'] },
           ]}
           onSubmit={async (data) => {
             await api.post('/tanks', { ...data, project_id: project.id });
