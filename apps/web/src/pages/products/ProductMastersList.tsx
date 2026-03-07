@@ -88,9 +88,6 @@ export default function ProductMastersList() {
     { key: 'product_name', header: 'Product Name', render: r => <span className="font-medium">{r.product_name}</span> },
     { key: 'product_family_name', header: 'Family' },
     { key: 'product_category', header: 'Category' },
-    { key: 'design_flow_m3h', header: 'Flow (m³/h)' },
-    { key: 'power_kw', header: 'Power (kW)' },
-    { key: 'primary_material_code', header: 'Material', render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
     { key: 'standard_status', header: 'Status', render: r => <StatusBadge status={r.standard_status} /> },
   ];
 
