@@ -212,9 +212,28 @@ CREATE TABLE IF NOT EXISTS standard_boms (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS components (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  component_code VARCHAR(50) UNIQUE NOT NULL,
+  component_name VARCHAR(255) NOT NULL,
+  component_type VARCHAR(100),
+  component_category VARCHAR(100),
+  description TEXT,
+  primary_material_code VARCHAR(50) REFERENCES materials(material_code),
+  standard_size VARCHAR(100),
+  weight_kg NUMERIC,
+  unit VARCHAR(50) DEFAULT 'EA',
+  status VARCHAR(50) DEFAULT 'Active',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by UUID REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS bom_lines (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   standard_bom_id UUID REFERENCES standard_boms(id) ON DELETE CASCADE,
+  component_id UUID REFERENCES components(id),
   line_number INTEGER NOT NULL,
   component_type VARCHAR(100),
   component_reference_code VARCHAR(100),

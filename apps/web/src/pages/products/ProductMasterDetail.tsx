@@ -70,6 +70,8 @@ export default function ProductMasterDetail() {
   const [lineForm, setLineForm] = useState({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
   const [lineSubmitting, setLineSubmitting] = useState(false);
   const [creatingBom, setCreatingBom] = useState(false);
+  const [compSearch, setCompSearch] = useState('');
+  const [selectedComp, setSelectedComp] = useState<{ id: string; component_code: string; component_name: string } | null>(null);
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product-master', id],
@@ -92,6 +94,12 @@ export default function ProductMasterDetail() {
     queryKey: ['product-search', relSearch],
     queryFn: () => api.get(`/product-masters?search=${relSearch}&page_size=8`).then(r => r.data),
     enabled: relSearch.length >= 2,
+  });
+
+  const { data: compSearchResults } = useQuery({
+    queryKey: ['comp-search', compSearch],
+    queryFn: () => api.get(`/components?search=${compSearch}&page_size=8`).then(r => r.data),
+    enabled: compSearch.length >= 2,
   });
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
@@ -128,6 +136,7 @@ export default function ProductMasterDetail() {
       const nextLine = bomLines.length + 1;
       await api.post(`/product-boms/${bom.id}/lines`, {
         line_number: nextLine,
+        component_id: selectedComp?.id || null,
         component_type: lineForm.component_type,
         component_name: lineForm.component_name,
         component_reference_code: lineForm.component_reference_code || null,
@@ -139,6 +148,8 @@ export default function ProductMasterDetail() {
       toast.success('Line added');
       setShowAddLine(false);
       setLineForm({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
+      setSelectedComp(null);
+      setCompSearch('');
       queryClient.invalidateQueries({ queryKey: ['bom-detail', bom.id] });
     } catch {
       toast.error('Failed to add line');
@@ -412,7 +423,44 @@ export default function ProductMasterDetail() {
               <h2 className="font-semibold text-slate-800">Add BOM Line</h2>
               <button onClick={() => setShowAddLine(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-6 grid grid-cols-2 gap-4">
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Search Component Library (optional)</label>
+                <input type="text" placeholder="Type to search components..."
+                  value={compSearch} onChange={e => { setCompSearch(e.target.value); if (selectedComp) setSelectedComp(null); }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                {compSearch.length >= 2 && !selectedComp && (
+                  <div className="border border-slate-200 rounded-lg mt-1 max-h-36 overflow-auto divide-y divide-slate-100 bg-white shadow-sm">
+                    {(compSearchResults?.items || []).map((c: any) => (
+                      <button key={c.id} onClick={() => {
+                        setSelectedComp(c);
+                        setCompSearch(c.component_name);
+                        setLineForm(f => ({
+                          ...f,
+                          component_type: c.component_type || f.component_type,
+                          component_name: c.component_name,
+                          component_reference_code: c.component_code,
+                          unit: c.unit || f.unit,
+                        }));
+                      }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2">
+                        <EntityCode code={c.component_code} />
+                        <span className="text-sm truncate">{c.component_name}</span>
+                        {c.component_type && <span className="text-xs text-slate-400 ml-auto">{c.component_type}</span>}
+                      </button>
+                    ))}
+                    {(compSearchResults?.items || []).length === 0 && <div className="p-3 text-sm text-slate-400">No components found</div>}
+                  </div>
+                )}
+                {selectedComp && (
+                  <div className="mt-1 px-3 py-2 bg-blue-50 rounded-lg flex items-center gap-2 text-sm">
+                    <EntityCode code={selectedComp.component_code} />
+                    <span className="text-slate-700 text-xs">Linked from component library</span>
+                    <button onClick={() => { setSelectedComp(null); setCompSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Type *</label>
                 <select value={lineForm.component_type} onChange={e => setLineForm(f => ({ ...f, component_type: e.target.value }))}
@@ -457,6 +505,7 @@ export default function ProductMasterDetail() {
                   Optional component
                 </label>
               </div>
+            </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <Button variant="ghost" onClick={() => setShowAddLine(false)}>Cancel</Button>

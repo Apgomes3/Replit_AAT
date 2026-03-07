@@ -223,6 +223,23 @@ export interface CalculationTemplate {
   status: string;
 }
 
+export interface Component {
+  id: string;
+  component_code: string;
+  component_name: string;
+  component_type?: string;
+  component_category?: string;
+  description?: string;
+  primary_material_code?: string;
+  material_name?: string;
+  standard_size?: string;
+  weight_kg?: number;
+  unit?: string;
+  status: string;
+  notes?: string;
+  created_at: string;
+}
+
 export interface Document {
   id: string;
   document_code: string;

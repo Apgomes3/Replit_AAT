@@ -109,9 +109,10 @@ router.post('/product-boms', authenticate, async (req: AuthRequest, res: Respons
 });
 
 router.post('/product-boms/:id/lines', authenticate, async (req: AuthRequest, res: Response) => {
-  const { line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks } = req.body;
-  const result = await query('INSERT INTO bom_lines (standard_bom_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
-    [req.params.id, line_number, component_type, component_reference_code, component_name, quantity || 1, unit, is_optional || false, remarks]);
+  const { line_number, component_id, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks } = req.body;
+  const result = await query(
+    'INSERT INTO bom_lines (standard_bom_id, component_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+    [req.params.id, component_id || null, line_number, component_type, component_reference_code, component_name, quantity || 1, unit, is_optional || false, remarks]);
   res.status(201).json(result.rows[0]);
 });
 
@@ -181,6 +182,55 @@ router.post('/product-usages', authenticate, async (req: AuthRequest, res: Respo
   const result = await query('INSERT INTO product_usages (project_id, product_master_id, equipment_instance_id, usage_type) VALUES ($1,$2,$3,$4) RETURNING *',
     [project_id, product_master_id, equipment_instance_id, usage_type || 'Standard']);
   res.status(201).json(result.rows[0]);
+});
+
+// COMPONENTS
+router.get('/components', authenticate, async (req: AuthRequest, res: Response) => {
+  let conditions: string[] = [];
+  let params: any[] = [];
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    conditions.push(`(c.component_code ILIKE $${params.length} OR c.component_name ILIKE $${params.length} OR c.description ILIKE $${params.length})`);
+  }
+  if (req.query.component_type) { params.push(req.query.component_type); conditions.push(`c.component_type=$${params.length}`); }
+  if (req.query.status) { params.push(req.query.status); conditions.push(`c.status=$${params.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const result = await query(
+    `SELECT c.*, m.material_name FROM components c LEFT JOIN materials m ON c.primary_material_code=m.material_code ${where} ORDER BY c.component_code`,
+    params);
+  res.json({ items: result.rows });
+});
+
+router.get('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT c.*, m.material_name FROM components c LEFT JOIN materials m ON c.primary_material_code=m.material_code WHERE c.id::text=$1 OR c.component_code=$1`,
+    [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  const usedIn = await query(
+    `SELECT DISTINCT pm.id, pm.product_code, pm.product_name, pm.standard_status, bl.quantity, bl.unit
+     FROM bom_lines bl JOIN standard_boms sb ON bl.standard_bom_id=sb.id JOIN product_masters pm ON sb.product_master_id=pm.id
+     WHERE bl.component_id=$1 OR bl.component_reference_code=$2
+     ORDER BY pm.product_code`,
+    [result.rows[0].id, result.rows[0].component_code]);
+  res.json({ ...result.rows[0], used_in: usedIn.rows });
+});
+
+router.post('/components', authenticate, async (req: AuthRequest, res: Response) => {
+  const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes } = req.body;
+  if (!component_code || !component_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'component_code and component_name required' } });
+  const result = await query(
+    'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
+    [component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit || 'EA', status || 'Active', notes, req.user!.id]);
+  res.status(201).json(result.rows[0]);
+});
+
+router.put('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes } = req.body;
+  const result = await query(
+    'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, updated_at=NOW() WHERE id=$11 RETURNING *',
+    [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  res.json(result.rows[0]);
 });
 
 export default router;

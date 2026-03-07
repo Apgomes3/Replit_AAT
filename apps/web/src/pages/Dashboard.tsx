@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import StatusBadge from '../components/ui/StatusBadge';
-import { FolderOpen, Package, FileText, Cpu, FlaskConical, GitBranch, Network, ArrowRight, FileSearch, Wrench, FileCheck, Award } from 'lucide-react';
+import { FolderOpen, Package, FileText, Cpu, FlaskConical, GitBranch, Network, ArrowRight, FileSearch, Wrench, FileCheck, Award, Boxes } from 'lucide-react';
 
 const docTypeIcon = (type: string) => {
   switch (type) {
@@ -42,6 +42,7 @@ export default function Dashboard() {
     { label: 'Equipment', value: stats?.equipment, icon: Cpu, href: '/projects', color: 'bg-purple-50 text-purple-600 border-purple-100' },
     { label: 'Materials', value: stats?.materials, icon: FlaskConical, href: '/knowledge/materials', color: 'bg-slate-50 text-slate-600 border-slate-200' },
     { label: 'Systems', value: stats?.systems, icon: GitBranch, href: '/projects', color: 'bg-teal-50 text-teal-600 border-teal-100' },
+    { label: 'Components', value: stats?.components, icon: Boxes, href: '/products/components', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
   ];
 
   const docByStatus: { status: string; count: string }[] = stats?.document_by_status || [];
