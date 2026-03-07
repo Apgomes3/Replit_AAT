@@ -317,7 +317,8 @@ export default function SystemDetail() {
                 {equipment.map((eq: any) => (
                   <tr
                     key={eq.id}
-                    className="hover:bg-slate-50 cursor-context-menu select-none"
+                    className={`select-none ${eq.product_code ? 'hover:bg-slate-50 cursor-pointer' : 'hover:bg-slate-50 cursor-context-menu'}`}
+                    onClick={() => { if (eq.product_code) navigate(`/products/masters/${eq.product_code}`); }}
                     onContextMenu={e => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -328,7 +329,7 @@ export default function SystemDetail() {
                     <td className="px-5 py-3 font-medium text-slate-800">{eq.product_name || eq.description || '—'}</td>
                     <td className="px-5 py-3">
                       {eq.product_code
-                        ? <Link to={`/products/masters/${eq.product_code}`} className="text-[#3E5C76] hover:underline"><EntityCode code={eq.product_code} /></Link>
+                        ? <EntityCode code={eq.product_code} />
                         : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-5 py-3 text-slate-600">{eq.quantity ?? 1} {eq.unit || 'EA'}</td>
