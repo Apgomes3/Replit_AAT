@@ -150,6 +150,27 @@ export default function EquipmentDetail() {
       />
 
       <div className="flex-1 overflow-auto p-4">
+        {equipment.product_code ? (
+          <Link to={`/products/masters/${equipment.product_code}`}
+            className="flex items-center gap-3 mb-4 px-4 py-3 bg-[#3E5C76]/5 border border-[#3E5C76]/20 rounded-lg hover:bg-[#3E5C76]/10 transition-colors group">
+            <div className="w-8 h-8 rounded-md bg-[#3E5C76]/10 flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4 text-[#3E5C76]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 uppercase tracking-wide">Product</span>
+                <EntityCode code={equipment.product_code} />
+              </div>
+              <div className="text-sm font-medium text-slate-800 truncate">{equipment.product_name}</div>
+            </div>
+            <svg className="w-4 h-4 text-slate-400 group-hover:text-[#3E5C76] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          </Link>
+        ) : (
+          <div className="flex items-center justify-between mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <span className="text-sm text-amber-700">No product linked — this equipment has no reference in the Product Library</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2 space-y-4">
             <div className="bg-white border border-slate-200 rounded-lg">
@@ -181,16 +202,6 @@ export default function EquipmentDetail() {
                     { label: 'Commissioning Date', value: equipment.commissioning_date?.split('T')[0] },
                     { label: 'PO Reference', value: equipment.po_reference },
                   ]} />
-
-                  {equipment.product_code && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                      <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Referenced Product</div>
-                      <Link to={`/products/masters/${equipment.product_code}`} className="flex items-center gap-2 hover:bg-white p-2 rounded transition-colors">
-                        <EntityCode code={equipment.product_code} />
-                        <span className="text-sm text-[#3E5C76]">{equipment.product_name}</span>
-                      </Link>
-                    </div>
-                  )}
                 </div>
               )}
 

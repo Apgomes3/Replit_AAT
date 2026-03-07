@@ -237,11 +237,18 @@ router.get('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
 });
 
 router.post('/equipment-instances', authenticate, async (req: AuthRequest, res: Response) => {
-  const { equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference } = req.body;
+  const { equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference, product_master_id } = req.body;
   const result = await query(
     'INSERT INTO equipment_instances (equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
     [equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference]);
-  res.status(201).json(result.rows[0]);
+  const eq = result.rows[0];
+  if (product_master_id && eq?.id) {
+    await query(
+      'INSERT INTO product_usages (product_master_id, equipment_instance_id, project_id) VALUES ($1,$2,$3)',
+      [product_master_id, eq.id, project_id]
+    );
+  }
+  res.status(201).json(eq);
 });
 
 router.put('/equipment-instances/:id', authenticate, async (req: AuthRequest, res: Response) => {

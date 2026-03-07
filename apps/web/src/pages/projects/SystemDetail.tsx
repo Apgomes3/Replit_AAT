@@ -8,11 +8,10 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
-import NewEntityModal from '../../components/ui/NewEntityModal';
 import LifecycleHistory from '../../components/ui/LifecycleHistory';
 import { EquipmentInstance } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network } from 'lucide-react';
+import { Plus, Network, X, Search, Package } from 'lucide-react';
 
 export default function SystemDetail() {
   const { id } = useParams();
@@ -21,6 +20,11 @@ export default function SystemDetail() {
   const [showTransition, setShowTransition] = useState(false);
   const [showNewEq, setShowNewEq] = useState(false);
   const [newState, setNewState] = useState('');
+
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [equipCode, setEquipCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const { data: system, isLoading, refetch } = useQuery({
     queryKey: ['system', id],
@@ -32,20 +36,63 @@ export default function SystemDetail() {
     queryFn: () => api.get(`/lifecycle/system/${id}`).then(r => r.data),
   });
 
+  const { data: productResults } = useQuery({
+    queryKey: ['product-search-eq', productSearch],
+    queryFn: () => api.get(`/product-masters?q=${productSearch}&page_size=8`).then(r => r.data),
+    enabled: productSearch.length >= 2 && !selectedProduct,
+  });
+
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!system) return <div className="p-8 text-slate-400">System not found</div>;
 
   const eqCols: Column<EquipmentInstance>[] = [
     { key: 'equipment_code', header: 'Code', render: r => <EntityCode code={r.equipment_code} /> },
     { key: 'equipment_name', header: 'Equipment Name', render: r => <span className="font-medium">{r.equipment_name}</span> },
-    { key: 'equipment_type', header: 'Type' },
-    { key: 'product_code', header: 'Product', render: r => r.product_code ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-[#3E5C76] hover:underline"><EntityCode code={r.product_code} /></Link> : <span className="text-slate-300">—</span> },
+    { key: 'product_code', header: 'Product', render: r => r.product_code
+      ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-[#3E5C76] hover:underline"><EntityCode code={r.product_code} /></Link>
+      : <span className="text-slate-300">—</span>
+    },
     { key: 'design_flow_m3h', header: 'Flow (m³/h)' },
     { key: 'power_kw', header: 'Power (kW)' },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
 
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
+
+  const handleCreateEquipment = async () => {
+    if (!equipCode.trim()) { toast.error('Equipment code is required'); return; }
+    if (!selectedProduct) { toast.error('Select a product from the library'); return; }
+    setSubmitting(true);
+    try {
+      await api.post('/equipment-instances', {
+        equipment_code: equipCode.trim().toUpperCase(),
+        equipment_name: selectedProduct.product_name,
+        equipment_type: selectedProduct.application_type || selectedProduct.product_category,
+        design_flow_m3h: selectedProduct.design_flow_m3h || null,
+        power_kw: selectedProduct.power_kw || null,
+        product_master_id: selectedProduct.id,
+        project_id: system.project_id,
+        system_id: system.id,
+      });
+      toast.success('Equipment added');
+      setShowNewEq(false);
+      setSelectedProduct(null);
+      setProductSearch('');
+      setEquipCode('');
+      refetch();
+    } catch {
+      toast.error('Failed to add equipment');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openModal = () => {
+    setSelectedProduct(null);
+    setProductSearch('');
+    setEquipCode('');
+    setShowNewEq(true);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -85,7 +132,7 @@ export default function SystemDetail() {
         <div className="bg-white border border-slate-200 rounded-lg">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
             <span className="text-sm font-medium text-slate-700">Equipment ({system.equipment?.length || 0})</span>
-            <Button size="sm" variant="primary" onClick={() => setShowNewEq(true)}><Plus className="w-3.5 h-3.5" />Add Equipment</Button>
+            <Button size="sm" variant="primary" onClick={openModal}><Plus className="w-3.5 h-3.5" />Add Equipment</Button>
           </div>
           <DataTable columns={eqCols} data={system.equipment || []} onRowClick={r => navigate(`/equipment/${r.id}`)} />
         </div>
@@ -115,22 +162,89 @@ export default function SystemDetail() {
       )}
 
       {showNewEq && (
-        <NewEntityModal title="New Equipment Instance" onClose={() => setShowNewEq(false)}
-          fields={[
-            { name: 'equipment_code', label: 'Equipment Code', required: true, placeholder: 'EQI-TY-SHARK-XX-01' },
-            { name: 'equipment_name', label: 'Equipment Name', required: true },
-            { name: 'equipment_type', label: 'Equipment Type', options: ['Foam Fractionator', 'Circulation Pump', 'Drum Filter', 'UV Sterilizer', 'Heat Exchanger', 'Ozone Generator', 'Control Panel', 'Valve', 'Other'] },
-            { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
-            { name: 'power_kw', label: 'Power (kW)', type: 'number' },
-            { name: 'material_code', label: 'Material Code' },
-          ]}
-          onSubmit={async (data) => {
-            await api.post('/equipment-instances', { ...data, project_id: system.project_id, system_id: system.id });
-            toast.success('Equipment created');
-            refetch();
-            setShowNewEq(false);
-          }}
-        />
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="font-semibold text-slate-800">Add Equipment to {system.system_code}</h2>
+              <button onClick={() => setShowNewEq(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-2">Select Product from Library *</label>
+                {selectedProduct ? (
+                  <div className="flex items-center justify-between p-3 border border-[#3E5C76] rounded-lg bg-blue-50">
+                    <div className="flex items-center gap-3">
+                      <Package className="w-4 h-4 text-[#3E5C76]" />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <EntityCode code={selectedProduct.product_code} />
+                          <span className="text-sm font-medium text-slate-800">{selectedProduct.product_name}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">{selectedProduct.product_category}{selectedProduct.application_type ? ' · ' + selectedProduct.application_type : ''}</div>
+                      </div>
+                    </div>
+                    <button onClick={() => { setSelectedProduct(null); setProductSearch(''); }} className="text-slate-400 hover:text-slate-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search products by name or code..."
+                        value={productSearch}
+                        onChange={e => setProductSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                        autoFocus
+                      />
+                    </div>
+                    {productResults?.items?.length > 0 && (
+                      <div className="mt-1 border border-slate-200 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                        {productResults.items.map((p: any) => (
+                          <button key={p.id} onClick={() => { setSelectedProduct(p); setProductSearch(p.product_name); }}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 text-left border-b border-slate-100 last:border-0">
+                            <EntityCode code={p.product_code} />
+                            <div>
+                              <div className="text-sm font-medium text-slate-800">{p.product_name}</div>
+                              <div className="text-xs text-slate-400">{p.product_category}{p.application_type ? ' · ' + p.application_type : ''}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {productSearch.length >= 2 && productResults?.items?.length === 0 && (
+                      <div className="mt-1 px-3 py-2 text-sm text-slate-400 border border-slate-200 rounded-lg">No products found</div>
+                    )}
+                    {productSearch.length < 2 && (
+                      <p className="mt-1 text-xs text-slate-400">Type at least 2 characters to search</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Equipment Code * <span className="text-slate-400 font-normal">(project-specific tag number)</span></label>
+                <input
+                  type="text"
+                  placeholder={`e.g. ${system.system_code}-FF-01`}
+                  value={equipCode}
+                  onChange={e => setEquipCode(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <Button variant="ghost" onClick={() => setShowNewEq(false)}>Cancel</Button>
+              <Button onClick={handleCreateEquipment} disabled={submitting || !selectedProduct || !equipCode.trim()}>
+                {submitting ? 'Adding...' : 'Add Equipment'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
