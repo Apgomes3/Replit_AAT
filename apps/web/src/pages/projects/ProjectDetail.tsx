@@ -18,11 +18,6 @@ const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
 type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
 
-type EquipmentItem = {
-  id: string; equip_code: string; product_code?: string; product_name?: string;
-  description?: string; quantity?: number; unit?: string; status?: string;
-  system_code?: string; system_name?: string; system_id?: string;
-};
 
 type Tank = {
   id: string; tank_code: string; tank_name: string; tank_type?: string;
@@ -50,13 +45,6 @@ export default function ProjectDetail() {
   const [editSystemRow, setEditSystemRow] = useState<any>(null);
   const [editSystemForm, setEditSystemForm] = useState<any>(null);
   const [editSystemSaving, setEditSystemSaving] = useState(false);
-  const [expandedSystemIds, setExpandedSystemIds] = useState<Set<string>>(new Set());
-
-  const toggleSystem = (sysId: string) => setExpandedSystemIds(prev => {
-    const next = new Set(prev);
-    if (next.has(sysId)) next.delete(sysId); else next.add(sysId);
-    return next;
-  });
   const [editingProject, setEditingProject] = useState(false);
   const [projectForm, setProjectForm] = useState<any>(null);
   const [projectSaving, setProjectSaving] = useState(false);
@@ -97,11 +85,6 @@ export default function ProjectDetail() {
     enabled: tab === 'systems',
   });
 
-  const { data: equipment } = useQuery({
-    queryKey: ['project-equipment', id],
-    queryFn: () => api.get(`/projects/${id}/equipment`).then(r => r.data),
-    enabled: tab === 'systems',
-  });
 
   const { data: tanks } = useQuery({
     queryKey: ['project-tanks', id],
@@ -661,113 +644,39 @@ export default function ProjectDetail() {
 
           {tab === 'systems' && (() => {
             const sysItems: System[] = systems?.items || [];
-            const eqItems: EquipmentItem[] = equipment?.items || [];
-            const eqBySystem = eqItems.reduce<Record<string, EquipmentItem[]>>((acc, eq) => {
-              const key = (eq as any).system_id || '__none__';
-              if (!acc[key]) acc[key] = [];
-              acc[key].push(eq);
-              return acc;
-            }, {});
-
             if (sysItems.length === 0) return (
               <div className="p-8 text-center text-sm text-slate-400">No systems added yet — click <strong>System</strong> to add one</div>
             );
-
             return (
               <div className="divide-y divide-slate-100">
-                {sysItems.map(sys => {
-                  const expanded = expandedSystemIds.has(sys.id);
-                  const sysProducts = eqBySystem[sys.id] || [];
-                  return (
-                    <div key={sys.id}>
-                      <div
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer group"
-                        onClick={() => toggleSystem(sys.id)}
-                        onContextMenu={e => {
-                          e.preventDefault();
-                          openEditSystem(sys);
+                {sysItems.map(sys => (
+                  <div
+                    key={sys.id}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer group"
+                    onClick={() => navigate(`/systems/${sys.id}`)}
+                  >
+                    <EntityCode code={sys.system_code} />
+                    <span className="font-medium text-sm text-slate-800 flex-1">{sys.system_name}</span>
+                    <span className="text-xs text-slate-400">{sys.system_type}</span>
+                    {sys.water_type && <span className="text-xs bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5">{sys.water_type}</span>}
+                    <StatusBadge status={sys.status} />
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => openEditSystem(sys)}
+                        className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100"
+                      >Edit</button>
+                      <button
+                        onClick={async () => {
+                          await api.post(`/systems/${sys.id}/duplicate`, {});
+                          toast.success('System duplicated');
+                          qc.invalidateQueries({ queryKey: ['project-systems'] });
                         }}
-                      >
-                        <button
-                          onClick={e => { e.stopPropagation(); toggleSystem(sys.id); }}
-                          className="text-slate-400 hover:text-slate-600 shrink-0"
-                        >
-                          {expanded
-                            ? <ChevronDown className="w-4 h-4" />
-                            : <ChevronRight className="w-4 h-4" />}
-                        </button>
-                        <EntityCode code={sys.system_code} />
-                        <span className="font-medium text-sm text-slate-800 flex-1">{sys.system_name}</span>
-                        <span className="text-xs text-slate-400">{sys.system_type}</span>
-                        {sys.water_type && <span className="text-xs bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5">{sys.water_type}</span>}
-                        {sysProducts.length > 0 && (
-                          <span className="text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5 font-medium">
-                            {sysProducts.length} product{sysProducts.length !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                        <StatusBadge status={sys.status} />
-                        <button
-                          onClick={e => { e.stopPropagation(); navigate(`/systems/${sys.id}`); }}
-                          className="opacity-0 group-hover:opacity-100 text-xs text-[#3E5C76] hover:underline font-medium shrink-0 flex items-center gap-1 transition-opacity"
-                        >
-                          Open <ChevronRight className="w-3 h-3" />
-                        </button>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={e => { e.stopPropagation(); openEditSystem(sys); }}
-                            className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100"
-                          >Edit</button>
-                          <button
-                            onClick={async e => {
-                              e.stopPropagation();
-                              await api.post(`/systems/${sys.id}/duplicate`, {});
-                              toast.success('System duplicated');
-                              qc.invalidateQueries({ queryKey: ['project-systems'] });
-                            }}
-                            className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100"
-                          >Duplicate</button>
-                        </div>
-                      </div>
-
-                      {expanded && (
-                        <div className="bg-slate-50/70 border-t border-b border-slate-100 ml-12 mr-0">
-                          {sysProducts.length === 0 ? (
-                            <div className="px-6 py-4 text-sm text-slate-400 italic">
-                              No products assigned to this system yet. Go to the <strong>Products</strong> tab to add items.
-                            </div>
-                          ) : (
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b border-slate-200">
-                                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Tag</th>
-                                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Product</th>
-                                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Code</th>
-                                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Qty</th>
-                                  <th className="text-left px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {sysProducts.map(eq => (
-                                  <tr key={eq.id} className="hover:bg-white/80">
-                                    <td className="px-4 py-2.5"><EntityCode code={eq.equip_code} /></td>
-                                    <td className="px-4 py-2.5 font-medium text-slate-800">{eq.product_name || (eq as any).description || '—'}</td>
-                                    <td className="px-4 py-2.5">
-                                      {eq.product_code
-                                        ? <Link to={`/products/masters/${eq.product_code}`} className="text-[#3E5C76] hover:underline"><EntityCode code={eq.product_code} /></Link>
-                                        : <span className="text-slate-300">—</span>}
-                                    </td>
-                                    <td className="px-4 py-2.5 text-slate-600">{eq.quantity ?? 1} {eq.unit || 'EA'}</td>
-                                    <td className="px-4 py-2.5"><StatusBadge status={eq.status || 'Design'} /></td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-                      )}
+                        className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100"
+                      >Duplicate</button>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             );
           })()}
