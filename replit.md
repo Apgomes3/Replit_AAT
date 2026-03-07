@@ -69,7 +69,8 @@ workspace/
 
 ## Database Schema
 20+ tables covering:
-- **Project domain**: projects, areas, exhibits, tanks, systems, equipment_instances
+- **Project domain**: projects, areas, exhibits, tanks, systems, equipment_instances, project_piping_items
+- **BOM Releases**: bom_releases (project-level snapshot documents), bom_release_lines (equipment/tank/piping snapshot lines)
 - **Product Library**: product_families, product_masters, product_variants, standard_boms, bom_lines, vendor_options
 - **Components**: components table (23 seeded) — component_code, type, category, material, specs; linked to bom_lines via component_id FK
 - **Bridge**: product_usages (links equipment instances to product masters)

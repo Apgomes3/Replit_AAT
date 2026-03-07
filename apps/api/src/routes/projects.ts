@@ -333,4 +333,160 @@ router.put('/change-requests/:id', authenticate, async (req: AuthRequest, res: R
   res.json(result.rows[0]);
 });
 
+// PROJECT PIPING ITEMS
+router.get('/projects/:id/piping', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT ppi.*, pm.product_code, pm.product_name, pm.application_type,
+            s.system_code, s.system_name
+     FROM project_piping_items ppi
+     LEFT JOIN product_masters pm ON ppi.product_master_id = pm.id
+     LEFT JOIN systems s ON ppi.system_id = s.id
+     WHERE ppi.project_id = $1
+     ORDER BY ppi.piping_code`,
+    [req.params.id]);
+  res.json({ items: result.rows });
+});
+
+router.post('/piping-items', authenticate, async (req: AuthRequest, res: Response) => {
+  const { piping_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status } = req.body;
+  if (!piping_code || !project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'piping_code and project_id are required' } });
+  const result = await query(
+    `INSERT INTO project_piping_items (piping_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [piping_code.trim().toUpperCase(), project_id, system_id || null, product_master_id || null,
+     description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design']);
+  res.status(201).json(result.rows[0]);
+});
+
+router.put('/piping-items/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { description, quantity, unit, notes, status, system_id } = req.body;
+  const result = await query(
+    `UPDATE project_piping_items SET description=$1, quantity=$2, unit=$3, notes=$4, status=$5, system_id=$6, updated_at=NOW()
+     WHERE id=$7 RETURNING *`,
+    [description || null, quantity || 1, unit || 'EA', notes || null, status, system_id || null, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Piping item not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/piping-items/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  await query('DELETE FROM project_piping_items WHERE id=$1', [req.params.id]);
+  res.json({ success: true });
+});
+
+// BOM RELEASES
+router.get('/projects/:id/bom-releases', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT br.*, u.first_name || ' ' || u.last_name as created_by_name,
+            (SELECT COUNT(*) FROM bom_release_lines WHERE bom_release_id = br.id) as line_count
+     FROM bom_releases br
+     LEFT JOIN users u ON br.created_by = u.id
+     WHERE br.project_id = $1
+     ORDER BY br.created_at DESC`,
+    [req.params.id]);
+  res.json({ items: result.rows });
+});
+
+router.get('/bom-releases/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const release = await query(
+    `SELECT br.*, u.first_name || ' ' || u.last_name as created_by_name
+     FROM bom_releases br LEFT JOIN users u ON br.created_by=u.id
+     WHERE br.id=$1`, [req.params.id]);
+  if (!release.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'BOM Release not found' } });
+  const lines = await query(
+    'SELECT * FROM bom_release_lines WHERE bom_release_id=$1 ORDER BY section, line_number',
+    [req.params.id]);
+  res.json({ ...release.rows[0], lines: lines.rows });
+});
+
+router.post('/bom-releases', authenticate, async (req: AuthRequest, res: Response) => {
+  const { project_id, title, revision, notes } = req.body;
+  if (!project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'project_id is required' } });
+  const countResult = await query('SELECT COUNT(*) FROM bom_releases WHERE project_id=$1', [project_id]);
+  const num = (parseInt(countResult.rows[0].count) + 1).toString().padStart(3, '0');
+  const projResult = await query('SELECT project_code FROM projects WHERE id=$1', [project_id]);
+  const projectCode = projResult.rows[0]?.project_code || 'PRJ';
+  const release_code = `BOM-${projectCode}-${num}`;
+  const result = await query(
+    `INSERT INTO bom_releases (release_code, project_id, title, revision, notes, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [release_code, project_id, title || `BOM Release ${num}`, revision || 'A', notes || null, req.user!.id]);
+  const releaseId = result.rows[0].id;
+
+  // Auto-generate lines from current project state
+  let lineNum = 1;
+  const equipment = await query(
+    `SELECT ei.equipment_code as tag_code, ei.equipment_name as description,
+            pm.product_code, pm.product_name, 1 as quantity, 'EA' as unit,
+            s.system_code as system_ref, a.area_name as area_ref
+     FROM equipment_instances ei
+     LEFT JOIN product_usages pu ON pu.equipment_instance_id = ei.id
+     LEFT JOIN product_masters pm ON pu.product_master_id = pm.id
+     LEFT JOIN systems s ON ei.system_id = s.id
+     LEFT JOIN areas a ON s.area_id = a.id
+     WHERE ei.project_id = $1
+     ORDER BY ei.equipment_code`,
+    [project_id]);
+  for (const row of equipment.rows) {
+    await query(
+      `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
+       VALUES ($1,'Equipment',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+  }
+
+  const tanks = await query(
+    `SELECT t.tank_code as tag_code, t.tank_name as description,
+            pm.product_code, pm.product_name, 1 as quantity, 'EA' as unit,
+            NULL as system_ref, a.area_name as area_ref
+     FROM tanks t
+     LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+     LEFT JOIN areas a ON t.area_id = a.id
+     WHERE t.project_id = $1
+     ORDER BY t.tank_code`,
+    [project_id]);
+  for (const row of tanks.rows) {
+    await query(
+      `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
+       VALUES ($1,'Tank',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+  }
+
+  const piping = await query(
+    `SELECT ppi.piping_code as tag_code, COALESCE(ppi.description, pm.product_name) as description,
+            pm.product_code, pm.product_name, ppi.quantity, ppi.unit,
+            s.system_code as system_ref, NULL as area_ref
+     FROM project_piping_items ppi
+     LEFT JOIN product_masters pm ON ppi.product_master_id = pm.id
+     LEFT JOIN systems s ON ppi.system_id = s.id
+     WHERE ppi.project_id = $1
+     ORDER BY ppi.piping_code`,
+    [project_id]);
+  for (const row of piping.rows) {
+    await query(
+      `INSERT INTO bom_release_lines (bom_release_id, section, line_number, tag_code, description, product_code, product_name, quantity, unit, system_ref, area_ref)
+       VALUES ($1,'Piping',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [releaseId, lineNum++, row.tag_code, row.description, row.product_code, row.product_name, row.quantity, row.unit, row.system_ref, row.area_ref]);
+  }
+
+  const final = await query('SELECT * FROM bom_releases WHERE id=$1', [releaseId]);
+  res.status(201).json(final.rows[0]);
+});
+
+router.post('/bom-releases/:id/issue', authenticate, async (req: AuthRequest, res: Response) => {
+  const { issued_date } = req.body;
+  const result = await query(
+    `UPDATE bom_releases SET status='Issued', issued_date=COALESCE($1::date, CURRENT_DATE), updated_at=NOW()
+     WHERE id=$2 AND status='Draft' RETURNING *`,
+    [issued_date || null, req.params.id]);
+  if (!result.rows[0]) return res.status(400).json({ error: { code: 'INVALID_STATE', message: 'Release not found or already issued' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/bom-releases/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const check = await query('SELECT status FROM bom_releases WHERE id=$1', [req.params.id]);
+  if (!check.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'BOM Release not found' } });
+  if (check.rows[0].status === 'Issued') return res.status(400).json({ error: { code: 'INVALID_STATE', message: 'Cannot delete an issued release' } });
+  await query('DELETE FROM bom_releases WHERE id=$1', [req.params.id]);
+  res.json({ success: true });
+});
+
 export default router;
