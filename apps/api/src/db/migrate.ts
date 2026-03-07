@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS projects (
   site_name VARCHAR(255),
   country VARCHAR(100),
   city VARCHAR(100),
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   timezone VARCHAR(100),
   project_status VARCHAR(50) DEFAULT 'Concept',
   project_phase VARCHAR(100),

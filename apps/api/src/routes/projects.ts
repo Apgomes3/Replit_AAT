@@ -57,11 +57,11 @@ router.post('/projects', authenticate, async (req: AuthRequest, res: Response) =
 });
 
 router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { project_name, client_name, site_name, country, city, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes } = req.body;
+  const { project_name, client_name, site_name, country, city, latitude, longitude, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes } = req.body;
   const result = await query(
-    `UPDATE projects SET project_name=$1, client_name=$2, site_name=$3, country=$4, city=$5, project_status=$6, start_date=$7, target_completion_date=$8, project_manager=$9, engineering_manager=$10, qa_owner=$11, notes=$12, updated_at=NOW()
-     WHERE id=$13 RETURNING *`,
-    [project_name, client_name, site_name, country, city, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, req.params.id]
+    `UPDATE projects SET project_name=$1, client_name=$2, site_name=$3, country=$4, city=$5, latitude=$6, longitude=$7, project_status=$8, start_date=$9, target_completion_date=$10, project_manager=$11, engineering_manager=$12, qa_owner=$13, notes=$14, updated_at=NOW()
+     WHERE id=$15 RETURNING *`,
+    [project_name, client_name, site_name, country, city, latitude || null, longitude || null, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   res.json(result.rows[0]);

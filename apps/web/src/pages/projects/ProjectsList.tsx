@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import api from '../../lib/api';
 import { Project } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -8,14 +8,17 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
-import { Plus } from 'lucide-react';
+import { Plus, List, Map } from 'lucide-react';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
+
+const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
 export default function ProjectsList() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [view, setView] = useState<'table' | 'map'>('table');
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['projects', search],
@@ -35,15 +38,47 @@ export default function ProjectsList() {
   return (
     <div className="h-full flex flex-col">
       <PageHeader title="Projects" subtitle={`${data?.pagination?.total ?? 0} projects`}
-        actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Project</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setView('table')}
+                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'table' ? 'bg-[#3E5C76] text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                <List className="w-3.5 h-3.5" /> List
+              </button>
+              <button
+                onClick={() => setView('map')}
+                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'map' ? 'bg-[#3E5C76] text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                <Map className="w-3.5 h-3.5" /> Map
+              </button>
+            </div>
+            <Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Project</Button>
+          </div>
+        }
       />
-      <div className="p-4 border-b border-slate-200 bg-white">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
-      </div>
-      <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => navigate(`/projects/${r.id}`)} />
-      </div>
+
+      {view === 'table' && (
+        <>
+          <div className="p-4 border-b border-slate-200 bg-white">
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
+              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
+          </div>
+          <div className="flex-1 bg-white overflow-auto">
+            <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => navigate(`/projects/${r.id}`)} />
+          </div>
+        </>
+      )}
+
+      {view === 'map' && (
+        <div className="flex-1 overflow-auto p-4">
+          <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading map...</div>}>
+            <ProjectsMap projects={data?.items || []} height="calc(100vh - 180px)" />
+          </Suspense>
+        </div>
+      )}
+
       {showNew && (
         <NewEntityModal title="New Project" onClose={() => setShowNew(false)}
           fields={[

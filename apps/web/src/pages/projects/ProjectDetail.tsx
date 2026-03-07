@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
@@ -11,9 +11,11 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin } from 'lucide-react';
 
-type Tab = 'systems' | 'equipment' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
+const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
+
+type Tab = 'systems' | 'equipment' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'map';
 
 type EquipmentItem = {
   id: string; equip_code: string; product_code?: string; product_name?: string;
@@ -39,6 +41,9 @@ export default function ProjectDetail() {
   const [editSystemRow, setEditSystemRow] = useState<any>(null);
   const [editSystemForm, setEditSystemForm] = useState<any>(null);
   const [editSystemSaving, setEditSystemSaving] = useState(false);
+  const [editingProject, setEditingProject] = useState(false);
+  const [projectForm, setProjectForm] = useState<any>(null);
+  const [projectSaving, setProjectSaving] = useState(false);
 
   const [tankProductSearch, setTankProductSearch] = useState('');
   const [selectedTankProduct, setSelectedTankProduct] = useState<any>(null);
@@ -64,7 +69,7 @@ export default function ProjectDetail() {
   const [selectedRelease, setSelectedRelease] = useState<any>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ Products: true, Equipment: true, Tank: true, Piping: true });
 
-  const { data: project, isLoading } = useQuery({
+  const { data: project, isLoading, refetch } = useQuery({
     queryKey: ['project', id],
     queryFn: () => api.get(`/projects/${id}`).then(r => r.data),
   });
@@ -125,6 +130,38 @@ export default function ProjectDetail() {
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!project) return <div className="p-8 text-slate-400">Project not found</div>;
+
+  const startEditProject = () => {
+    setProjectForm({
+      project_name: project.project_name || '',
+      client_name: project.client_name || '',
+      site_name: project.site_name || '',
+      country: project.country || '',
+      city: project.city || '',
+      latitude: project.latitude ?? '',
+      longitude: project.longitude ?? '',
+      project_status: project.project_status || 'Concept',
+      start_date: project.start_date?.split('T')[0] || '',
+      target_completion_date: project.target_completion_date?.split('T')[0] || '',
+      project_manager: project.project_manager || '',
+      engineering_manager: project.engineering_manager || '',
+      qa_owner: project.qa_owner || '',
+      notes: project.notes || '',
+    });
+    setEditingProject(true);
+  };
+
+  const handleSaveProject = async () => {
+    setProjectSaving(true);
+    try {
+      await api.put(`/projects/${project.id}`, projectForm);
+      toast.success('Project saved');
+      refetch();
+      qc.invalidateQueries({ queryKey: ['projects'] });
+      setEditingProject(false);
+    } catch { toast.error('Save failed'); }
+    finally { setProjectSaving(false); }
+  };
 
   const openEditSystem = (row: any) => {
     setEditSystemRow(row);
@@ -363,31 +400,133 @@ export default function ProjectDetail() {
         subtitle={`${project.client_name || ''} ${project.country ? '· ' + project.country : ''}`}
         breadcrumb={<Link to="/projects" className="hover:underline">Projects</Link>}
         actions={
-          <Button size="sm" onClick={() => navigate(`/graph?start=${project.id}&type=project`)}>
-            <Network className="w-3.5 h-3.5" />Graph
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => navigate(`/graph?start=${project.id}&type=project`)}>
+              <Network className="w-3.5 h-3.5" />Graph
+            </Button>
+            {!editingProject ? (
+              <Button size="sm" variant="primary" onClick={startEditProject}>
+                <Pencil className="w-3.5 h-3.5" />Edit
+              </Button>
+            ) : (
+              <>
+                <Button size="sm" onClick={() => setEditingProject(false)}>Cancel</Button>
+                <Button size="sm" variant="primary" onClick={handleSaveProject} disabled={projectSaving}>
+                  {projectSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </>
+            )}
+          </div>
         }
       />
 
       <div className="flex-1 overflow-auto p-4">
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="col-span-2">
-            <MetadataPanel fields={[
-              { label: 'Client', value: project.client_name },
-              { label: 'Site', value: project.site_name },
-              { label: 'Location', value: [project.city, project.country].filter(Boolean).join(', ') },
-              { label: 'Start Date', value: project.start_date?.split('T')[0] },
-              { label: 'Target Completion', value: project.target_completion_date?.split('T')[0] },
-              { label: 'Project Manager', value: project.project_manager },
-              { label: 'Engineering Manager', value: project.engineering_manager },
-              { label: 'QA Owner', value: project.qa_owner },
-            ]} />
+            {!editingProject ? (
+              <MetadataPanel fields={[
+                { label: 'Client', value: project.client_name },
+                { label: 'Site', value: project.site_name },
+                { label: 'Location', value: [project.city, project.country].filter(Boolean).join(', ') },
+                { label: 'Coordinates', value: project.latitude != null && project.longitude != null ? `${project.latitude}, ${project.longitude}` : null },
+                { label: 'Start Date', value: project.start_date?.split('T')[0] },
+                { label: 'Target Completion', value: project.target_completion_date?.split('T')[0] },
+                { label: 'Project Manager', value: project.project_manager },
+                { label: 'Engineering Manager', value: project.engineering_manager },
+                { label: 'QA Owner', value: project.qa_owner },
+              ]} />
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-lg p-5">
+                <div className="text-xs text-slate-400 uppercase tracking-wide mb-4">Edit Project Details</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Project Name</label>
+                    <input value={projectForm.project_name} onChange={e => setProjectForm((f: any) => ({ ...f, project_name: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Client</label>
+                    <input value={projectForm.client_name} onChange={e => setProjectForm((f: any) => ({ ...f, client_name: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Site Name</label>
+                    <input value={projectForm.site_name} onChange={e => setProjectForm((f: any) => ({ ...f, site_name: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Country</label>
+                    <input value={projectForm.country} onChange={e => setProjectForm((f: any) => ({ ...f, country: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">City</label>
+                    <input value={projectForm.city} onChange={e => setProjectForm((f: any) => ({ ...f, city: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" />Latitude</label>
+                    <input type="number" step="any" placeholder="e.g. 25.2048" value={projectForm.latitude} onChange={e => setProjectForm((f: any) => ({ ...f, latitude: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" />Longitude</label>
+                    <input type="number" step="any" placeholder="e.g. 55.2708" value={projectForm.longitude} onChange={e => setProjectForm((f: any) => ({ ...f, longitude: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                    <select value={projectForm.project_status} onChange={e => setProjectForm((f: any) => ({ ...f, project_status: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                      {['Concept', 'Pre-FEED', 'FEED', 'Detail Design', 'Construction', 'Commissioning', 'Operational', 'Completed', 'On Hold', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Start Date</label>
+                    <input type="date" value={projectForm.start_date} onChange={e => setProjectForm((f: any) => ({ ...f, start_date: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Target Completion</label>
+                    <input type="date" value={projectForm.target_completion_date} onChange={e => setProjectForm((f: any) => ({ ...f, target_completion_date: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Project Manager</label>
+                    <input value={projectForm.project_manager} onChange={e => setProjectForm((f: any) => ({ ...f, project_manager: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Engineering Manager</label>
+                    <input value={projectForm.engineering_manager} onChange={e => setProjectForm((f: any) => ({ ...f, engineering_manager: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">QA Owner</label>
+                    <input value={projectForm.qa_owner} onChange={e => setProjectForm((f: any) => ({ ...f, qa_owner: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                    <textarea value={projectForm.notes} onChange={e => setProjectForm((f: any) => ({ ...f, notes: e.target.value }))}
+                      rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="space-y-3">
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Status</div>
               <StatusBadge status={project.project_status} className="text-sm px-3 py-1" />
             </div>
+            {project.latitude != null && project.longitude != null && !editingProject && (
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden" style={{ height: '160px' }}>
+                <Suspense fallback={<div className="h-full flex items-center justify-center text-slate-400 text-xs">Loading map...</div>}>
+                  <ProjectsMap projects={[project]} height="160px" singleProject />
+                </Suspense>
+              </div>
+            )}
           </div>
         </div>
 
@@ -401,6 +540,7 @@ export default function ProjectDetail() {
               { key: 'bom-release', label: 'BOM Releases' },
               { key: 'documents', label: 'Documents' },
               { key: 'changes', label: 'Changes' },
+              { key: 'map', label: '🗺 Map' },
             ] as { key: Tab; label: string }[]).map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
@@ -459,6 +599,21 @@ export default function ProjectDetail() {
           )}
           {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents" onRowClick={r => navigate(`/documents/${r.id}`)} />}
           {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes" />}
+          {tab === 'map' && (
+            <div className="p-4">
+              {project.latitude != null && project.longitude != null ? (
+                <Suspense fallback={<div className="flex items-center justify-center h-96 text-slate-400 text-sm">Loading map...</div>}>
+                  <ProjectsMap projects={[project]} height="500px" singleProject />
+                </Suspense>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3">
+                  <MapPin className="w-8 h-8 opacity-30" />
+                  <p className="text-sm">No coordinates set for this project.</p>
+                  <p className="text-xs">Click <strong>Edit</strong> and enter Latitude & Longitude to pin it on the map.</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
