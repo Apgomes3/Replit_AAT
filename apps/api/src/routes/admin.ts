@@ -68,4 +68,41 @@ router.get('/stats', authenticate, async (req: AuthRequest, res: Response) => {
   });
 });
 
+// PRODUCT CATEGORIES
+router.get('/categories', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('SELECT * FROM product_categories ORDER BY sort_order, name');
+  res.json({ items: result.rows });
+});
+
+router.post('/categories', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const { name, code, description, sort_order } = req.body;
+  if (!name || !code) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'name and code required' } });
+  try {
+    const result = await query(
+      'INSERT INTO product_categories (name, code, description, sort_order) VALUES ($1,$2,$3,$4) RETURNING *',
+      [name, code.toUpperCase(), description || null, sort_order || 0]);
+    res.status(201).json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Category name or code already exists' } });
+    throw err;
+  }
+});
+
+router.put('/categories/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const { name, code, description, sort_order } = req.body;
+  const result = await query(
+    'UPDATE product_categories SET name=$1, code=$2, description=$3, sort_order=$4, updated_at=NOW() WHERE id=$5 RETURNING *',
+    [name, code?.toUpperCase(), description || null, sort_order ?? 0, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Category not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/categories/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT is_system FROM product_categories WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Category not found' } });
+  if (existing.rows[0].is_system) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot delete a built-in category' } });
+  await query('DELETE FROM product_categories WHERE id=$1', [req.params.id]);
+  res.status(204).end();
+});
+
 export default router;

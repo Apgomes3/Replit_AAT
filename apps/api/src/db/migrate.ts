@@ -465,6 +465,31 @@ CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS product_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(100) NOT NULL UNIQUE,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  description TEXT,
+  sort_order INT DEFAULT 0,
+  is_system BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO product_categories (name, code, description, is_system, sort_order) VALUES
+  ('Filtration', 'FILTRATION', 'Filtration systems and equipment', true, 10),
+  ('Pumping', 'PUMPING', 'Pumps, blowers and fluid movers', true, 20),
+  ('Disinfection', 'DISINFECTION', 'UV, ozone and chemical dosing', true, 30),
+  ('Thermal', 'THERMAL', 'Heating and chilling equipment', true, 40),
+  ('Piping', 'PIPING', 'Pipes, fittings, valves and flanges', true, 50),
+  ('Control', 'CONTROL', 'Controllers, PLCs and automation', true, 60),
+  ('Structural', 'STRUCTURAL', 'Frames, supports and enclosures', true, 70),
+  ('Instrumentation', 'INSTRUMENTATION', 'Sensors, probes and meters', true, 80),
+  ('Tank', 'TANK', 'Display tanks, sumps and reservoirs', true, 90),
+  ('Electrical', 'ELECTRICAL', 'Electrical panels and distribution', true, 100),
+  ('Other', 'OTHER', 'Miscellaneous equipment', true, 999)
+ON CONFLICT (name) DO NOTHING;
+
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS component_id UUID REFERENCES components(id);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS shape_type VARCHAR(50);

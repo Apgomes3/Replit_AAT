@@ -27,6 +27,7 @@ import GraphExplorer from './pages/graph/GraphExplorer';
 import SearchPage from './pages/search/SearchPage';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminImport from './pages/admin/AdminImport';
+import AdminCategories from './pages/admin/AdminCategories';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -68,6 +69,7 @@ export default function App() {
             <Route path="search" element={<SearchPage />} />
             <Route path="admin/users" element={<AdminUsers />} />
             <Route path="admin/import" element={<AdminImport />} />
+            <Route path="admin/categories" element={<AdminCategories />} />
           </Route>
         </Routes>
       </BrowserRouter>

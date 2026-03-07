@@ -44,6 +44,7 @@ const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
     items: [
       { id: 'families', to: '/products', icon: Package, label: 'Families', end: true },
       { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
+      { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
       { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
       { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import' },
     ],

@@ -19,6 +19,13 @@ export default function ProductFamiliesList() {
     queryFn: () => api.get('/product-families').then(r => r.data),
   });
 
+  const { data: categoriesData } = useQuery({
+    queryKey: ['product-categories'],
+    queryFn: () => api.get('/admin/categories').then(r => r.data),
+  });
+
+  const categoryCodeOptions: string[] = categoriesData?.items?.map((c: any) => c.code) || ['FILTRATION', 'PUMPING', 'DISINFECTION', 'THERMAL', 'PIPING', 'CONTROL', 'STRUCTURAL', 'TANK', 'ELECTRICAL', 'OTHER'];
+
   const columns: Column<ProductFamily>[] = [
     { key: 'product_family_code', header: 'Code', render: r => <EntityCode code={r.product_family_code} /> },
     { key: 'product_family_name', header: 'Family Name', render: r => <span className="font-medium">{r.product_family_name}</span> },
@@ -43,7 +50,7 @@ export default function ProductFamiliesList() {
           fields={[
             { name: 'product_family_code', label: 'Family Code', required: true, placeholder: 'PFM-XX' },
             { name: 'product_family_name', label: 'Family Name', required: true },
-            { name: 'category_code', label: 'Category', options: ['FILTRATION', 'PUMPING', 'DISINFECTION', 'THERMAL', 'PIPING', 'CONTROL', 'STRUCTURAL', 'OTHER'] },
+            { name: 'category_code', label: 'Category', options: categoryCodeOptions },
             { name: 'description', label: 'Description' },
           ]}
           onSubmit={async (data) => {
