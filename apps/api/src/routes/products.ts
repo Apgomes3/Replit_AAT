@@ -216,15 +216,15 @@ router.get('/product-masters/:id/relationships', authenticate, async (req: AuthR
   const result = await query(`
     SELECT er.id, er.edge_type, er.properties,
       er.source_id, er.target_id,
-      CASE WHEN er.source_id=$1 THEN 'outgoing' ELSE 'incoming' END as direction,
-      CASE WHEN er.source_id=$1 THEN tgt.product_code ELSE src.product_code END as related_code,
-      CASE WHEN er.source_id=$1 THEN tgt.product_name ELSE src.product_name END as related_name,
-      CASE WHEN er.source_id=$1 THEN tgt.id ELSE src.id END as related_id,
-      CASE WHEN er.source_id=$1 THEN tgt.standard_status ELSE src.standard_status END as related_status
+      CASE WHEN er.source_id=$1::text THEN 'outgoing' ELSE 'incoming' END as direction,
+      CASE WHEN er.source_id=$1::text THEN tgt.product_code ELSE src.product_code END as related_code,
+      CASE WHEN er.source_id=$1::text THEN tgt.product_name ELSE src.product_name END as related_name,
+      CASE WHEN er.source_id=$1::text THEN tgt.id ELSE src.id END as related_id,
+      CASE WHEN er.source_id=$1::text THEN tgt.standard_status ELSE src.standard_status END as related_status
     FROM entity_relationships er
-    LEFT JOIN product_masters src ON er.source_id=src.id
-    LEFT JOIN product_masters tgt ON er.target_id=tgt.id
-    WHERE (er.source_id=$1 OR er.target_id=$1)
+    LEFT JOIN product_masters src ON er.source_id=src.id::text
+    LEFT JOIN product_masters tgt ON er.target_id=tgt.id::text
+    WHERE (er.source_id=$1::text OR er.target_id=$1::text)
       AND er.source_type='product' AND er.target_type='product'
     ORDER BY er.edge_type`, [pid]);
   res.json({ items: result.rows });

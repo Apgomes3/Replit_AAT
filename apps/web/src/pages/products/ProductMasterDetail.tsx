@@ -6,7 +6,7 @@ import MetadataPanel from '../../components/ui/MetadataPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
-import { VendorOption, BOMLine, ProductVariant, Document } from '../../types';
+import { VendorOption, BOMLine, Document } from '../../types';
 import { useState, useRef } from 'react';
 import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag, Pencil, Check } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
@@ -490,15 +490,6 @@ export default function ProductMasterDetail() {
     )},
   ];
 
-  const variantCols: Column<ProductVariant>[] = [
-    { key: 'variant_code', header: 'Code', render: r => <EntityCode code={r.variant_code} /> },
-    { key: 'variant_name', header: 'Variant Name', render: r => <span className="font-medium">{r.variant_name}</span> },
-    { key: 'variant_reason', header: 'Reason' },
-    { key: 'override_material_code', header: 'Material Override', render: r => r.override_material_code ? <EntityCode code={r.override_material_code} /> : <span className="text-slate-300">—</span> },
-    { key: 'override_power_kw', header: 'Power Override' },
-    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
-  ];
-
   const vendorCols: Column<VendorOption>[] = [
     { key: 'vendor_option_code', header: 'Code', render: r => <EntityCode code={r.vendor_option_code} /> },
     { key: 'vendor_name', header: 'Vendor' },
@@ -801,47 +792,38 @@ export default function ProductMasterDetail() {
           )}
 
           {activeTab === 'variants' && (
-            <div>
-              {/* Peer variant products */}
-              <div className="border-b border-slate-100">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-50 bg-slate-50/50">
-                  <div>
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Peer Variants</span>
-                    <p className="text-xs text-slate-400 mt-0.5">Other library products that are variants of this one</p>
-                  </div>
-                  <Button size="sm" onClick={() => { setVariantSearch(''); setVariantTarget(null); setShowVariantModal(true); }}>
-                    <Link2 className="w-3.5 h-3.5" /> Link Variant
-                  </Button>
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50/50">
+                <div>
+                  <span className="text-sm font-semibold text-slate-700">Variant Products</span>
+                  <p className="text-xs text-slate-400 mt-0.5">Other library products that are variants of this one</p>
                 </div>
-                {(peerVariants?.items || []).length === 0 ? (
-                  <div className="px-4 py-5 text-sm text-slate-400 italic">No peer variants linked — click Link Variant to connect related products</div>
-                ) : (
-                  <div className="divide-y divide-slate-50">
-                    {(peerVariants?.items || []).map((v: any) => (
-                      <div key={v.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 group">
-                        <Link to={`/products/masters/${v.related_code}`} className="flex items-center gap-2 hover:underline flex-1">
-                          <EntityCode code={v.related_code} />
-                          <span className="text-sm font-medium text-slate-800">{v.related_name}</span>
-                        </Link>
-                        {v.related_status && <StatusBadge status={v.related_status} />}
-                        <button
-                          onClick={() => handleUnlinkVariant(v.id)}
-                          className="opacity-0 group-hover:opacity-100 text-xs text-slate-400 hover:text-red-500 border border-slate-200 rounded px-2 py-0.5 transition-opacity"
-                          title="Unlink variant"
-                        >Unlink</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <Button size="sm" onClick={() => { setVariantSearch(''); setVariantTarget(null); setShowVariantModal(true); }}>
+                  <Link2 className="w-3.5 h-3.5" /> Link Variant
+                </Button>
               </div>
-              {/* Child variants (overrides) */}
-              <div>
-                <div className="px-4 py-3 border-b border-slate-50 bg-slate-50/30">
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Override Variants</span>
-                  <p className="text-xs text-slate-400 mt-0.5">Sub-variants with property overrides (material, region, etc.)</p>
+              {(peerVariants?.items || []).filter((v: any) => v.edge_type === 'variant').length === 0 ? (
+                <div className="p-10 text-center text-sm text-slate-400">
+                  No variants linked — click <strong>Link Variant</strong> to connect related products
                 </div>
-                <DataTable columns={variantCols} data={product.variants || []} emptyMessage="No override variants defined" />
-              </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {(peerVariants?.items || []).filter((v: any) => v.edge_type === 'variant').map((v: any) => (
+                    <div key={v.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 group">
+                      <Link to={`/products/masters/${v.related_code}`} className="flex items-center gap-2 hover:underline flex-1">
+                        <EntityCode code={v.related_code} />
+                        <span className="text-sm font-medium text-slate-800">{v.related_name}</span>
+                      </Link>
+                      {v.related_status && <StatusBadge status={v.related_status} />}
+                      <button
+                        onClick={() => handleUnlinkVariant(v.id)}
+                        className="opacity-0 group-hover:opacity-100 text-xs text-slate-400 hover:text-red-500 border border-slate-200 rounded px-2 py-0.5 transition-opacity"
+                        title="Unlink variant"
+                      >Unlink</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {activeTab === 'vendors' && <DataTable columns={vendorCols} data={product.vendors || []} emptyMessage="No vendor options" />}
