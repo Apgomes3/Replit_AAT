@@ -394,7 +394,7 @@ export default function ProductMasterDetail() {
   ];
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'bom', label: `BOM (${bom ? bom.revision_code : '—'})` },
+    ...(!isPiping ? [{ key: 'bom' as Tab, label: `BOM (${bom ? bom.revision_code : '—'})` }] : []),
     { key: 'variants', label: 'Variants' },
     { key: 'vendors', label: 'Vendors' },
     { key: 'related', label: `Related (${rels.length})` },
@@ -402,6 +402,7 @@ export default function ProductMasterDetail() {
     { key: 'documents', label: `Documents (${nonDrawingDocs.length})` },
     { key: 'projects', label: 'Projects' },
   ];
+  const activeTab: Tab = tabs.find(t => t.key === tab) ? tab : (tabs[0]?.key ?? 'vendors');
 
   return (
     <div className="flex flex-col h-full">
@@ -533,13 +534,13 @@ export default function ProductMasterDetail() {
           <div className="flex border-b border-slate-200 overflow-x-auto">
             {tabs.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {t.label}
               </button>
             ))}
           </div>
 
-          {tab === 'bom' && (
+          {activeTab === 'bom' && (
             <div>
               {!bom ? (
                 <div className="p-10 text-center">
@@ -562,10 +563,10 @@ export default function ProductMasterDetail() {
             </div>
           )}
 
-          {tab === 'variants' && <DataTable columns={variantCols} data={product.variants || []} emptyMessage="No variants" />}
-          {tab === 'vendors' && <DataTable columns={vendorCols} data={product.vendors || []} emptyMessage="No vendor options" />}
+          {activeTab === 'variants' && <DataTable columns={variantCols} data={product.variants || []} emptyMessage="No variants" />}
+          {activeTab === 'vendors' && <DataTable columns={vendorCols} data={product.vendors || []} emptyMessage="No vendor options" />}
 
-          {tab === 'related' && (
+          {activeTab === 'related' && (
             <div>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                 <span className="text-sm text-slate-500">{rels.length} product relationship{rels.length !== 1 ? 's' : ''}</span>
@@ -605,7 +606,7 @@ export default function ProductMasterDetail() {
             </div>
           )}
 
-          {tab === 'drawings' && (
+          {activeTab === 'drawings' && (
             <div>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                 <span className="text-sm text-slate-500">{drawings.length} drawing{drawings.length !== 1 ? 's' : ''} & model{drawings.length !== 1 ? 's' : ''} attached</span>
@@ -617,7 +618,7 @@ export default function ProductMasterDetail() {
             </div>
           )}
 
-          {tab === 'documents' && (
+          {activeTab === 'documents' && (
             <div>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                 <span className="text-sm text-slate-500">{nonDrawingDocs.length} document{nonDrawingDocs.length !== 1 ? 's' : ''} attached</span>
@@ -629,7 +630,7 @@ export default function ProductMasterDetail() {
             </div>
           )}
 
-          {tab === 'projects' && (
+          {activeTab === 'projects' && (
             <div className="p-4">
               {product.projects?.length === 0
                 ? <div className="text-slate-400">Not used in any projects</div>
