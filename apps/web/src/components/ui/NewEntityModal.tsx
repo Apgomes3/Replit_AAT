@@ -16,10 +16,12 @@ interface NewEntityModalProps {
   fields: Field[];
   onSubmit: (data: Record<string, any>) => Promise<void>;
   onClose: () => void;
+  initialValues?: Record<string, any>;
+  submitLabel?: string;
 }
 
-export default function NewEntityModal({ title, fields, onSubmit, onClose }: NewEntityModalProps) {
-  const [values, setValues] = useState<Record<string, any>>({});
+export default function NewEntityModal({ title, fields, onSubmit, onClose, initialValues, submitLabel }: NewEntityModalProps) {
+  const [values, setValues] = useState<Record<string, any>>(initialValues || {});
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,7 +58,7 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose }: New
           ))}
           <div className="flex justify-end gap-2 pt-2">
             <Button onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={loading}>{loading ? 'Saving...' : 'Create'}</Button>
+            <Button type="submit" variant="primary" disabled={loading}>{loading ? 'Saving...' : (submitLabel || 'Create')}</Button>
           </div>
         </form>
       </div>

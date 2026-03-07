@@ -24,6 +24,15 @@ router.post('/product-families', authenticate, async (req: AuthRequest, res: Res
   res.status(201).json(result.rows[0]);
 });
 
+router.put('/product-families/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { product_family_name, category_code, description, status } = req.body;
+  const result = await query(
+    'UPDATE product_families SET product_family_name=$1, category_code=$2, description=$3, status=COALESCE($4, status), updated_at=NOW() WHERE id::text=$5 RETURNING *',
+    [product_family_name, category_code, description, status || null, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Family not found' } });
+  res.json(result.rows[0]);
+});
+
 // PRODUCT MASTERS
 router.get('/product-masters', authenticate, async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;

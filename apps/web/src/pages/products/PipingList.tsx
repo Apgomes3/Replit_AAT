@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import PipingCsvImport from './PipingCsvImport';
 import toast from 'react-hot-toast';
-import { Plus, Upload, Copy } from 'lucide-react';
+import { Plus, Upload, Copy, Pencil } from 'lucide-react';
 
 const FITTING_TYPES = ['Pipe', 'Fitting', 'Valve', 'Flange', 'Coupling', 'Reducer', 'Union', 'Elbow', 'Tee', 'Cap', 'Other'];
 const BRACKET_TYPES = ['Bracket', 'Support', 'Clamp', 'Hanger', 'Saddle', 'Shoe', 'Strut'];
@@ -108,8 +108,14 @@ export default function PipingList() {
             : 'No bracketing items — add a bracket, support or clamp'}
           contextMenuItems={row => [
             {
+              label: 'Edit',
+              icon: <Pencil className="w-3.5 h-3.5" />,
+              onClick: () => navigate(`/products/masters/${row.id}`),
+            },
+            {
               label: 'Duplicate',
               icon: <Copy className="w-3.5 h-3.5" />,
+              divider: true,
               onClick: async () => {
                 try {
                   const res = await api.post(`/product-masters/${row.id}/duplicate`, {});

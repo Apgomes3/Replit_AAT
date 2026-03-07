@@ -10,7 +10,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus, Copy } from 'lucide-react';
+import { Plus, Copy, Pencil } from 'lucide-react';
 
 export default function ProductMastersList() {
   const navigate = useNavigate();
@@ -62,8 +62,14 @@ export default function ProductMastersList() {
           onRowClick={r => navigate(`/products/masters/${r.id}`)}
           contextMenuItems={row => [
             {
+              label: 'Edit',
+              icon: <Pencil className="w-3.5 h-3.5" />,
+              onClick: () => navigate(`/products/masters/${row.id}`),
+            },
+            {
               label: 'Duplicate',
               icon: <Copy className="w-3.5 h-3.5" />,
+              divider: true,
               onClick: async () => {
                 try {
                   const res = await api.post(`/product-masters/${row.id}/duplicate`, {});

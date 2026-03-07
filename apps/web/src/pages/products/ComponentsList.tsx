@@ -8,7 +8,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import { Component } from '../../types';
-import { Plus, X, Copy } from 'lucide-react';
+import { Plus, X, Copy, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const COMPONENT_TYPES = ['Vessel', 'Pump', 'Blower', 'Motor', 'Valve', 'Instrument', 'Pipe', 'Fitting', 'Sensor', 'Controller', 'Frame', 'Filter', 'Heat Exchanger', 'Other'];
@@ -125,8 +125,14 @@ export default function ComponentsList() {
             onRowClick={r => navigate(`/products/components/${r.id}`)}
             contextMenuItems={row => [
               {
+                label: 'Edit',
+                icon: <Pencil className="w-3.5 h-3.5" />,
+                onClick: () => navigate(`/products/components/${row.id}`),
+              },
+              {
                 label: 'Duplicate',
                 icon: <Copy className="w-3.5 h-3.5" />,
+                divider: true,
                 onClick: async () => {
                   try {
                     const res = await api.post(`/components/${row.id}/duplicate`, {});

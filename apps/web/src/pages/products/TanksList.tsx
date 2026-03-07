@@ -10,7 +10,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus, Copy } from 'lucide-react';
+import { Plus, Copy, Pencil } from 'lucide-react';
 
 const TANK_TYPES = ['Display Tank', 'Sump', 'Refugium', 'Quarantine', 'Acclimation', 'Holding', 'Treatment', 'Header Tank', 'Buffer Tank', 'Other'];
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Oval', 'Hexagonal', 'Custom'];
@@ -71,8 +71,14 @@ export default function TanksList() {
           emptyMessage="No tank types in library — add a tank model above"
           contextMenuItems={row => [
             {
+              label: 'Edit',
+              icon: <Pencil className="w-3.5 h-3.5" />,
+              onClick: () => navigate(`/products/masters/${row.id}`),
+            },
+            {
               label: 'Duplicate',
               icon: <Copy className="w-3.5 h-3.5" />,
+              divider: true,
               onClick: async () => {
                 try {
                   const res = await api.post(`/product-masters/${row.id}/duplicate`, {});

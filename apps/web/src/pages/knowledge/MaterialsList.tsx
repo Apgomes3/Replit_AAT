@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import api from '../../lib/api';
 import { Material } from '../../types';
@@ -9,11 +9,13 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, Pencil } from 'lucide-react';
 
 export default function MaterialsList() {
+  const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState<Material | null>(null);
+  const [editRow, setEditRow] = useState<Material | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['materials'],
@@ -43,7 +45,17 @@ export default function MaterialsList() {
           actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Material</Button>}
         />
         <div className="flex-1 bg-white overflow-auto">
-          <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => setSelected(r)} />
+          <DataTable
+            columns={columns} data={data?.items || []} loading={isLoading}
+            onRowClick={r => setSelected(r)}
+            contextMenuItems={row => [
+              {
+                label: 'Edit',
+                icon: <Pencil className="w-3.5 h-3.5" />,
+                onClick: () => setEditRow(row),
+              },
+            ]}
+          />
         </div>
       </div>
 
@@ -92,6 +104,39 @@ export default function MaterialsList() {
             toast.success('Material created');
             refetch();
             setShowNew(false);
+          }}
+        />
+      )}
+
+      {editRow && (
+        <NewEntityModal
+          title={`Edit ${editRow.material_code}`}
+          submitLabel="Save Changes"
+          onClose={() => setEditRow(null)}
+          initialValues={{
+            material_name: editRow.material_name,
+            material_category: (editRow as any).material_category || '',
+            density: (editRow as any).density || '',
+            temperature_limit: (editRow as any).temperature_limit || '',
+            chemical_resistance: (editRow as any).chemical_resistance || '',
+            status: (editRow as any).status || '',
+            notes: (editRow as any).notes || '',
+          }}
+          fields={[
+            { name: 'material_name', label: 'Material Name', required: true },
+            { name: 'material_category', label: 'Category', options: ['Metal', 'Plastic', 'Composite', 'Rubber', 'Glass', 'Ceramic', 'Other'] },
+            { name: 'density', label: 'Density (kg/m³)', type: 'number' },
+            { name: 'temperature_limit', label: 'Temperature Limit (°C)', type: 'number' },
+            { name: 'chemical_resistance', label: 'Chemical Resistance' },
+            { name: 'status', label: 'Status', options: ['Active', 'Inactive', 'Draft'] },
+            { name: 'notes', label: 'Notes' },
+          ]}
+          onSubmit={async (formData) => {
+            await api.put(`/materials/${editRow.id}`, formData);
+            toast.success('Material updated');
+            qc.invalidateQueries({ queryKey: ['materials'] });
+            if (selected?.id === editRow.id) qc.invalidateQueries({ queryKey: ['material', editRow.id] });
+            setEditRow(null);
           }}
         />
       )}
