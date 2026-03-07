@@ -99,7 +99,7 @@ export default function PipingList() {
       </div>
 
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={displayed} loading={isLoading} onRowClick={r => navigate(`/products/masters/${r.id}`)}
+        <DataTable columns={columns} data={displayed} loading={isLoading} tableId={tab === 'fittings' ? 'piping-fittings' : 'piping-bracketing'} onRowClick={r => navigate(`/products/masters/${r.id}`)}
           emptyMessage={tab === 'fittings'
             ? 'No piping fittings — add one manually or import from CSV'
             : 'No bracketing items — add a bracket, support or clamp'} />

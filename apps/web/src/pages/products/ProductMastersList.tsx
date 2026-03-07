@@ -50,7 +50,7 @@ export default function ProductMastersList() {
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
       </div>
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => navigate(`/products/masters/${r.id}`)} />
+        <DataTable columns={columns} data={data?.items || []} loading={isLoading} tableId="products-list" onRowClick={r => navigate(`/products/masters/${r.id}`)} />
       </div>
       {showNew && (
         <NewEntityModal title="New Product Master" onClose={() => setShowNew(false)}

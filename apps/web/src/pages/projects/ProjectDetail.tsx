@@ -216,11 +216,11 @@ export default function ProjectDetail() {
             </div>
           </div>
 
-          {tab === 'systems' && <DataTable columns={sysCols} data={systems?.items || []} onRowClick={r => navigate(`/systems/${r.id}`)} />}
-          {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} onRowClick={r => navigate(`/equipment/${r.id}`)} />}
-          {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} emptyMessage="No tanks added to this project yet — click Add Tank above" />}
-          {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} onRowClick={r => navigate(`/documents/${r.id}`)} />}
-          {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} />}
+          {tab === 'systems' && <DataTable columns={sysCols} data={systems?.items || []} tableId="project-systems" onRowClick={r => navigate(`/systems/${r.id}`)} />}
+          {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} tableId="project-equipment" onRowClick={r => navigate(`/equipment/${r.id}`)} />}
+          {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} tableId="project-tanks" emptyMessage="No tanks added to this project yet — click Add Tank above" />}
+          {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents" onRowClick={r => navigate(`/documents/${r.id}`)} />}
+          {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes" />}
         </div>
       </div>
 

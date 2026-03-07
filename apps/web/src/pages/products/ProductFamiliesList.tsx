@@ -33,7 +33,7 @@ export default function ProductFamiliesList() {
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Family</Button>}
       />
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={data?.items || []} loading={isLoading} />
+        <DataTable columns={columns} data={data?.items || []} loading={isLoading} tableId="families-list" />
       </div>
       <div className="p-4 bg-white border-t border-slate-200">
         <Link to="/products/masters" className="text-sm text-[#3E5C76] hover:underline">→ View all Product Masters</Link>

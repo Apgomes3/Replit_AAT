@@ -65,7 +65,7 @@ export default function TanksList() {
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
       </div>
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={data?.items || []} loading={isLoading}
+        <DataTable columns={columns} data={data?.items || []} loading={isLoading} tableId="tanks-list"
           onRowClick={r => navigate(`/products/masters/${r.id}`)}
           emptyMessage="No tank types in library — add a tank model above" />
       </div>

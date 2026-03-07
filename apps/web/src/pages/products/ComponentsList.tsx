@@ -118,7 +118,7 @@ export default function ComponentsList() {
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg">
-          <DataTable columns={columns} data={components} emptyMessage="No components yet — create your first component above" />
+          <DataTable columns={columns} data={components} tableId="components-list" emptyMessage="No components yet — create your first component above" />
         </div>
       </div>
 
