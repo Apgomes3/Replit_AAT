@@ -55,6 +55,45 @@ router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
   res.json({ ...result.rows[0], variants: variants.rows, boms: boms.rows, vendors: vendors.rows, projects: projectUsage.rows, documents: documents.rows });
 });
 
+router.post('/product-masters/bulk-import', authenticate, async (req: AuthRequest, res: Response) => {
+  const { rows } = req.body as { rows: Array<{ product_code: string; product_name: string; application_type?: string; primary_material_code?: string; family_code?: string; standard_status?: string; dn_size?: string; pressure_rating?: string; notes?: string }> };
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'rows array required' } });
+
+  const created: string[] = [];
+  const linked: string[] = [];
+  const errors: Array<{ code: string; message: string }> = [];
+
+  for (const row of rows) {
+    if (!row.product_code || !row.product_name) { errors.push({ code: row.product_code || '?', message: 'product_code and product_name required' }); continue; }
+    try {
+      const existing = await query('SELECT id FROM product_masters WHERE product_code=$1', [row.product_code]);
+      if (existing.rows[0]) {
+        linked.push(row.product_code);
+        continue;
+      }
+      let family_id: string | null = null;
+      if (row.family_code) {
+        const fam = await query('SELECT id FROM product_families WHERE product_family_code=$1', [row.family_code]);
+        if (fam.rows[0]) family_id = fam.rows[0].id;
+      }
+      const noteParts: string[] = [];
+      if (row.dn_size) noteParts.push(`DN: ${row.dn_size}`);
+      if (row.pressure_rating) noteParts.push(`Rating: ${row.pressure_rating}`);
+      if (row.notes) noteParts.push(row.notes);
+      const notes = noteParts.length ? noteParts.join(' | ') : null;
+      await query(
+        'INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, primary_material_code, standard_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [row.product_code, family_id, row.product_name, 'Piping', row.application_type || null, row.primary_material_code || null, row.standard_status || 'Active', notes]
+      );
+      created.push(row.product_code);
+    } catch (err: any) {
+      errors.push({ code: row.product_code, message: err.message });
+    }
+  }
+
+  res.json({ created: created.length, linked: linked.length, errors, created_codes: created, linked_codes: linked });
+});
+
 router.post('/product-masters', authenticate, async (req: AuthRequest, res: Response) => {
   const { product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes } = req.body;
   if (!product_code || !product_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_code and product_name required' } });
