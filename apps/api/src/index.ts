@@ -22,7 +22,10 @@ import { errorHandler, notFound } from './middleware/errors';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false,
+}));
 app.use(cors({ origin: true, credentials: true }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
