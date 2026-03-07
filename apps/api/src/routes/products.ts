@@ -115,6 +115,44 @@ router.post('/product-boms/:id/lines', authenticate, async (req: AuthRequest, re
   res.status(201).json(result.rows[0]);
 });
 
+router.delete('/product-boms/:bomId/lines/:lineId', authenticate, async (req: AuthRequest, res: Response) => {
+  await query('DELETE FROM bom_lines WHERE id=$1 AND standard_bom_id=$2', [req.params.lineId, req.params.bomId]);
+  res.status(204).end();
+});
+
+// PRODUCT RELATIONSHIPS
+router.get('/product-masters/:id/relationships', authenticate, async (req: AuthRequest, res: Response) => {
+  const product = await query('SELECT id FROM product_masters WHERE id::text=$1 OR product_code=$1', [req.params.id]);
+  if (!product.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const pid = product.rows[0].id;
+  const result = await query(`
+    SELECT er.id, er.edge_type, er.properties,
+      er.source_id, er.target_id,
+      CASE WHEN er.source_id=$1 THEN 'outgoing' ELSE 'incoming' END as direction,
+      CASE WHEN er.source_id=$1 THEN tgt.product_code ELSE src.product_code END as related_code,
+      CASE WHEN er.source_id=$1 THEN tgt.product_name ELSE src.product_name END as related_name,
+      CASE WHEN er.source_id=$1 THEN tgt.id ELSE src.id END as related_id,
+      CASE WHEN er.source_id=$1 THEN tgt.standard_status ELSE src.standard_status END as related_status
+    FROM entity_relationships er
+    LEFT JOIN product_masters src ON er.source_id=src.id
+    LEFT JOIN product_masters tgt ON er.target_id=tgt.id
+    WHERE (er.source_id=$1 OR er.target_id=$1)
+      AND er.source_type='product' AND er.target_type='product'
+    ORDER BY er.edge_type`, [pid]);
+  res.json({ items: result.rows });
+});
+
+router.post('/product-masters/:id/relationships', authenticate, async (req: AuthRequest, res: Response) => {
+  const { target_product_id, edge_type } = req.body;
+  if (!target_product_id || !edge_type) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'target_product_id and edge_type required' } });
+  const product = await query('SELECT id FROM product_masters WHERE id::text=$1 OR product_code=$1', [req.params.id]);
+  if (!product.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const result = await query(
+    'INSERT INTO entity_relationships (source_id, source_type, target_id, target_type, edge_type) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [product.rows[0].id, 'product', target_product_id, 'product', edge_type]);
+  res.status(201).json(result.rows[0]);
+});
+
 // VENDOR OPTIONS
 router.get('/vendor-options', authenticate, async (req: AuthRequest, res: Response) => {
   let where = '', params: any[] = [];

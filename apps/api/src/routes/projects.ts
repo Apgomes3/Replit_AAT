@@ -230,7 +230,10 @@ router.get('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
      FROM equipment_instances ei LEFT JOIN systems s ON ei.system_id=s.id LEFT JOIN product_usages pu ON pu.equipment_instance_id=ei.id LEFT JOIN product_masters pm ON pu.product_master_id=pm.id JOIN projects p ON ei.project_id=p.id LEFT JOIN materials m ON ei.material_code=m.material_code
      WHERE ei.id::text=$1 OR ei.equipment_code=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
-  res.json(result.rows[0]);
+  const documents = await query(
+    `SELECT d.*, u.first_name || ' ' || u.last_name as created_by_name FROM documents d LEFT JOIN users u ON d.created_by=u.id WHERE d.equipment_id=$1 ORDER BY d.document_type, d.document_code`,
+    [result.rows[0].id]);
+  res.json({ ...result.rows[0], documents: documents.rows });
 });
 
 router.post('/equipment-instances', authenticate, async (req: AuthRequest, res: Response) => {

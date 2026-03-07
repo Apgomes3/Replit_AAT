@@ -95,13 +95,21 @@ npm run seed       # Seed Taoyuan Aquarium demo data
 ## Key API Endpoints
 - `POST /api/v1/auth/login` — Login
 - `GET  /api/v1/projects` — Project list
-- `GET  /api/v1/projects/:id` — Project detail
+- `GET  /api/v1/projects/:id` — Project detail with documents
+- `GET  /api/v1/equipment-instances/:id` — Equipment detail with documents
+- `GET  /api/v1/product-masters/:id` — Product detail with documents, BOM lines, variants, vendors
+- `GET  /api/v1/product-masters/:id/relationships` — Product-to-product graph edges
+- `POST /api/v1/product-masters/:id/relationships` — Create product-to-product link
+- `POST /api/v1/product-boms` — Create a BOM for a product
+- `POST /api/v1/product-boms/:id/lines` — Add BOM line
+- `DELETE /api/v1/product-boms/:bomId/lines/:lineId` — Remove BOM line
 - `POST /api/v1/graph/query` — Graph traversal (depth up to 5)
 - `GET  /api/v1/graph/impact/:productId` — Impact analysis
 - `GET  /api/v1/graph/product-reuse/:productId` — Product reuse
 - `GET  /api/v1/search?q=` — Cross-domain search
 - `POST /api/v1/import/products` — CSV bulk import
 - `POST /api/v1/lifecycle/transition` — Lifecycle state change
+- `GET  /api/v1/admin/stats` — Platform stats including doc status breakdown & recent docs
 - `GET  /api/health` — Health check
 
 ## Lifecycle States

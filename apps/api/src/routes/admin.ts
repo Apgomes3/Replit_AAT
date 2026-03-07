@@ -39,12 +39,19 @@ router.get('/audit-logs', authenticate, requireRole('admin', 'engineer'), async 
 });
 
 router.get('/stats', authenticate, async (req: AuthRequest, res: Response) => {
-  const [projs, products, docs, equip, mats] = await Promise.all([
+  const [projs, products, docs, equip, mats, systems, docByStatus, equipByStatus, recentDocs] = await Promise.all([
     query('SELECT COUNT(*) FROM projects'),
     query('SELECT COUNT(*) FROM product_masters'),
     query('SELECT COUNT(*) FROM documents'),
     query('SELECT COUNT(*) FROM equipment_instances'),
     query('SELECT COUNT(*) FROM materials'),
+    query('SELECT COUNT(*) FROM systems'),
+    query('SELECT status, COUNT(*) as count FROM documents GROUP BY status ORDER BY status'),
+    query('SELECT status, COUNT(*) as count FROM equipment_instances GROUP BY status ORDER BY status'),
+    query(`SELECT d.id, d.document_code, d.document_title, d.document_type, d.status, d.created_at,
+             u.first_name || ' ' || u.last_name as created_by_name
+           FROM documents d LEFT JOIN users u ON d.created_by=u.id
+           ORDER BY d.created_at DESC LIMIT 5`),
   ]);
   res.json({
     projects: parseInt(projs.rows[0].count),
@@ -52,6 +59,10 @@ router.get('/stats', authenticate, async (req: AuthRequest, res: Response) => {
     documents: parseInt(docs.rows[0].count),
     equipment: parseInt(equip.rows[0].count),
     materials: parseInt(mats.rows[0].count),
+    systems: parseInt(systems.rows[0].count),
+    document_by_status: docByStatus.rows,
+    equipment_by_status: equipByStatus.rows,
+    recent_documents: recentDocs.rows,
   });
 });
 

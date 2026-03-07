@@ -8,11 +8,11 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import { VendorOption, BOMLine, ProductVariant, Document } from '../../types';
 import { useState, useRef } from 'react';
-import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Download, Plus, X } from 'lucide-react';
+import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2 } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 
-type Tab = 'bom' | 'variants' | 'vendors' | 'projects' | 'documents';
+type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'documents' | 'projects';
 
 const DOC_TYPES = [
   { value: 'Technical Data Sheet', label: 'Technical Data Sheet', abbr: 'TDS' },
@@ -22,6 +22,15 @@ const DOC_TYPES = [
   { value: 'Drawing', label: 'Drawing', abbr: 'DWG' },
   { value: 'Test Report', label: 'Test Report', abbr: 'TR' },
   { value: 'Specification', label: 'Specification', abbr: 'SPEC' },
+];
+
+const EDGE_TYPES = [
+  { value: 'supersedes', label: 'Supersedes' },
+  { value: 'replaced_by', label: 'Replaced By' },
+  { value: 'compatible_with', label: 'Compatible With' },
+  { value: 'alternate_for', label: 'Alternate For' },
+  { value: 'paired_with', label: 'Paired With' },
+  { value: 'upgrade_of', label: 'Upgrade Of' },
 ];
 
 const docTypeIcon = (type: string) => {
@@ -36,35 +45,121 @@ const docTypeIcon = (type: string) => {
   }
 };
 
+const COMPONENT_TYPES = ['Vessel', 'Pump', 'Blower', 'Motor', 'Valve', 'Instrument', 'Pipe', 'Fitting', 'Sensor', 'Controller', 'Frame', 'Other'];
+const UNITS = ['EA', 'SET', 'm', 'kg', 'L', 'kW', 'mm', 'pcs'];
+
 export default function ProductMasterDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>('bom');
+
   const [showDocModal, setShowDocModal] = useState(false);
   const [docForm, setDocForm] = useState({ document_type: 'Technical Data Sheet', document_title: '', discipline: '', notes: '' });
   const [docFile, setDocFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [docSubmitting, setDocSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [showRelModal, setShowRelModal] = useState(false);
+  const [relSearch, setRelSearch] = useState('');
+  const [relTarget, setRelTarget] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
+  const [relEdgeType, setRelEdgeType] = useState('supersedes');
+  const [relSubmitting, setRelSubmitting] = useState(false);
+
+  const [showAddLine, setShowAddLine] = useState(false);
+  const [lineForm, setLineForm] = useState({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
+  const [lineSubmitting, setLineSubmitting] = useState(false);
+  const [creatingBom, setCreatingBom] = useState(false);
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product-master', id],
     queryFn: () => api.get(`/product-masters/${id}`).then(r => r.data),
   });
 
+  const { data: relationships } = useQuery({
+    queryKey: ['product-relationships', id],
+    queryFn: () => api.get(`/product-masters/${id}/relationships`).then(r => r.data),
+    enabled: tab === 'related',
+  });
+
+  const { data: bomDetail } = useQuery({
+    queryKey: ['bom-detail', product?.boms?.[0]?.id],
+    queryFn: () => api.get(`/product-boms/${product.boms[0].id}`).then(r => r.data),
+    enabled: !!product?.boms?.[0]?.id,
+  });
+
+  const { data: relSearchResults } = useQuery({
+    queryKey: ['product-search', relSearch],
+    queryFn: () => api.get(`/product-masters?search=${relSearch}&page_size=8`).then(r => r.data),
+    enabled: relSearch.length >= 2,
+  });
+
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!product) return <div className="p-8 text-slate-400">Product not found</div>;
 
   const bom = product.boms?.[0];
-  const bomLines: BOMLine[] = bom?.lines || [];
+  const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
+  const rels = relationships?.items || [];
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+    queryClient.invalidateQueries({ queryKey: ['bom-detail'] });
+  };
+
+  const handleCreateBom = async () => {
+    setCreatingBom(true);
+    try {
+      const bomCode = `BOM-${product.product_code}-A`;
+      await api.post('/product-boms', { bom_code: bomCode, product_master_id: product.id, revision_code: 'A' });
+      toast.success('BOM created');
+      invalidate();
+    } catch {
+      toast.error('Failed to create BOM');
+    } finally {
+      setCreatingBom(false);
+    }
+  };
+
+  const handleAddLine = async () => {
+    if (!lineForm.component_name || !lineForm.component_type) { toast.error('Type and name are required'); return; }
+    setLineSubmitting(true);
+    try {
+      const nextLine = bomLines.length + 1;
+      await api.post(`/product-boms/${bom.id}/lines`, {
+        line_number: nextLine,
+        component_type: lineForm.component_type,
+        component_name: lineForm.component_name,
+        component_reference_code: lineForm.component_reference_code || null,
+        quantity: parseFloat(lineForm.quantity) || 1,
+        unit: lineForm.unit,
+        is_optional: lineForm.is_optional,
+        remarks: lineForm.remarks || null,
+      });
+      toast.success('Line added');
+      setShowAddLine(false);
+      setLineForm({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
+      queryClient.invalidateQueries({ queryKey: ['bom-detail', bom.id] });
+    } catch {
+      toast.error('Failed to add line');
+    } finally {
+      setLineSubmitting(false);
+    }
+  };
+
+  const handleDeleteLine = async (lineId: string) => {
+    try {
+      await api.delete(`/product-boms/${bom.id}/lines/${lineId}`);
+      toast.success('Line removed');
+      queryClient.invalidateQueries({ queryKey: ['bom-detail', bom.id] });
+    } catch {
+      toast.error('Failed to remove line');
+    }
+  };
 
   const handleAddDocument = async () => {
-    if (!docForm.document_title || !docForm.document_type) {
-      toast.error('Title and type are required');
-      return;
-    }
-    setSubmitting(true);
+    if (!docForm.document_title) { toast.error('Title is required'); return; }
+    setDocSubmitting(true);
     try {
       const abbr = DOC_TYPES.find(t => t.value === docForm.document_type)?.abbr || 'DOC';
       const code = `${product.product_code}-${abbr}-${Date.now().toString(36).toUpperCase()}`;
@@ -76,18 +171,13 @@ export default function ProductMasterDetail() {
         product_id: product.id,
         notes: docForm.notes || null,
       });
-      const newDoc = docRes.data;
-
       if (docFile) {
         const fd = new FormData();
         fd.append('file', docFile);
         fd.append('revision_code', 'A');
         fd.append('revision_purpose', 'Initial issue');
-        await api.post(`/documents/${newDoc.id}/revisions`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        await api.post(`/documents/${docRes.data.id}/revisions`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       }
-
       toast.success('Document added');
       setShowDocModal(false);
       setDocForm({ document_type: 'Technical Data Sheet', document_title: '', discipline: '', notes: '' });
@@ -96,19 +186,41 @@ export default function ProductMasterDetail() {
     } catch {
       toast.error('Failed to add document');
     } finally {
-      setSubmitting(false);
+      setDocSubmitting(false);
+    }
+  };
+
+  const handleLinkProduct = async () => {
+    if (!relTarget) { toast.error('Select a product to link'); return; }
+    setRelSubmitting(true);
+    try {
+      await api.post(`/product-masters/${id}/relationships`, { target_product_id: relTarget.id, edge_type: relEdgeType });
+      toast.success('Relationship created');
+      setShowRelModal(false);
+      setRelTarget(null);
+      setRelSearch('');
+      queryClient.invalidateQueries({ queryKey: ['product-relationships', id] });
+    } catch {
+      toast.error('Failed to create relationship');
+    } finally {
+      setRelSubmitting(false);
     }
   };
 
   const bomCols: Column<BOMLine>[] = [
-    { key: 'line_number', header: '#', className: 'w-12' },
+    { key: 'line_number', header: '#', className: 'w-10' },
     { key: 'component_type', header: 'Type' },
     { key: 'component_reference_code', header: 'Code', render: r => r.component_reference_code ? <EntityCode code={r.component_reference_code} /> : <span className="text-slate-300">—</span> },
-    { key: 'component_name', header: 'Component Name', render: r => <span className="font-medium">{r.component_name}</span> },
+    { key: 'component_name', header: 'Component', render: r => <span className="font-medium">{r.component_name}</span> },
     { key: 'quantity', header: 'Qty' },
     { key: 'unit', header: 'Unit' },
     { key: 'is_optional', header: 'Optional', render: r => r.is_optional ? <span className="text-amber-600 text-xs">Optional</span> : null },
     { key: 'remarks', header: 'Remarks' },
+    { key: 'id', header: '', className: 'w-10', render: r => (
+      <button onClick={() => handleDeleteLine((r as any).id)} className="text-slate-300 hover:text-red-500 transition-colors">
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    )},
   ];
 
   const variantCols: Column<ProductVariant>[] = [
@@ -131,34 +243,18 @@ export default function ProductMasterDetail() {
   ];
 
   const docCols: Column<Document>[] = [
-    { key: 'document_type', header: 'Type', render: r => (
-      <div className="flex items-center gap-2">
-        {docTypeIcon(r.document_type)}
-        <span className="text-xs text-slate-600">{r.document_type}</span>
-      </div>
-    )},
+    { key: 'document_type', header: 'Type', render: r => <div className="flex items-center gap-2">{docTypeIcon(r.document_type)}<span className="text-xs text-slate-600">{r.document_type}</span></div> },
     { key: 'document_code', header: 'Code', render: r => <EntityCode code={r.document_code} /> },
-    { key: 'document_title', header: 'Title', render: r => (
-      <Link to={`/documents/${r.id}`} className="font-medium text-[#3E5C76] hover:underline">{r.document_title}</Link>
-    )},
+    { key: 'document_title', header: 'Title', render: r => <Link to={`/documents/${r.id}`} className="font-medium text-[#3E5C76] hover:underline">{r.document_title}</Link> },
     { key: 'current_revision', header: 'Rev', render: r => r.current_revision ? <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{r.current_revision}</span> : <span className="text-slate-300">—</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
-    { key: 'id', header: '', render: r => (
-      <div className="flex items-center gap-2 justify-end">
-        {(r as any).file_path && (
-          <a href={(r as any).file_path} target="_blank" rel="noreferrer"
-            className="flex items-center gap-1 text-xs text-slate-500 hover:text-[#3E5C76]">
-            <Download className="w-3.5 h-3.5" /> File
-          </a>
-        )}
-      </div>
-    )},
   ];
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'bom', label: `BOM (${bom ? bom.revision_code : '—'})` },
     { key: 'variants', label: 'Variants' },
     { key: 'vendors', label: 'Vendors' },
+    { key: 'related', label: `Related (${rels.length})` },
     { key: 'documents', label: `Documents (${documents.length})` },
     { key: 'projects', label: 'Projects' },
   ];
@@ -206,21 +302,93 @@ export default function ProductMasterDetail() {
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg">
-          <div className="flex border-b border-slate-200">
+          <div className="flex border-b border-slate-200 overflow-x-auto">
             {tabs.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {t.label}
               </button>
             ))}
           </div>
 
           {tab === 'bom' && (
-            bom ? <DataTable columns={bomCols} data={bomLines} emptyMessage="No BOM lines" />
-              : <div className="p-8 text-slate-400 text-center">No BOM defined</div>
+            <div>
+              {!bom ? (
+                <div className="p-10 text-center">
+                  <div className="text-slate-400 mb-4">No BOM defined for this product</div>
+                  <Button onClick={handleCreateBom} disabled={creatingBom}>
+                    <Plus className="w-4 h-4" />{creatingBom ? 'Creating...' : 'Create BOM'}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <span className="text-sm text-slate-500">Revision {bom.revision_code} · {bomLines.length} line{bomLines.length !== 1 ? 's' : ''}</span>
+                    <Button size="sm" onClick={() => setShowAddLine(true)}>
+                      <Plus className="w-3.5 h-3.5" /> Add Line
+                    </Button>
+                  </div>
+                  <DataTable columns={bomCols} data={bomLines} emptyMessage="No BOM lines — add components above" />
+                </>
+              )}
+            </div>
           )}
+
           {tab === 'variants' && <DataTable columns={variantCols} data={product.variants || []} emptyMessage="No variants" />}
           {tab === 'vendors' && <DataTable columns={vendorCols} data={product.vendors || []} emptyMessage="No vendor options" />}
+
+          {tab === 'related' && (
+            <div>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <span className="text-sm text-slate-500">{rels.length} product relationship{rels.length !== 1 ? 's' : ''}</span>
+                <Button size="sm" onClick={() => setShowRelModal(true)}>
+                  <Link2 className="w-3.5 h-3.5" /> Link Product
+                </Button>
+              </div>
+              {rels.length === 0
+                ? <div className="p-8 text-center text-slate-400">No product relationships — link a superseded product, alternate, or compatible product</div>
+                : (
+                  <div className="divide-y divide-slate-100">
+                    {rels.map((r: any) => (
+                      <div key={r.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+                        <div className="flex items-center gap-1 text-xs">
+                          {r.direction === 'outgoing'
+                            ? <><span className="text-slate-400">This</span><ArrowRight className="w-3 h-3 text-slate-400" /></>
+                            : <><ArrowLeft className="w-3 h-3 text-slate-400" /><span className="text-slate-400">This</span></>
+                          }
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          r.edge_type === 'supersedes' ? 'bg-red-50 text-red-700' :
+                          r.edge_type === 'replaced_by' ? 'bg-orange-50 text-orange-700' :
+                          r.edge_type === 'compatible_with' ? 'bg-green-50 text-green-700' :
+                          r.edge_type === 'alternate_for' ? 'bg-blue-50 text-blue-700' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>{r.edge_type.replace(/_/g, ' ')}</span>
+                        <Link to={`/products/masters/${r.related_code}`} className="flex items-center gap-2 hover:underline">
+                          <EntityCode code={r.related_code} />
+                          <span className="text-sm">{r.related_name}</span>
+                        </Link>
+                        {r.related_status && <StatusBadge status={r.related_status} />}
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+            </div>
+          )}
+
+          {tab === 'documents' && (
+            <div>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <span className="text-sm text-slate-500">{documents.length} document{documents.length !== 1 ? 's' : ''} attached</span>
+                <Button size="sm" onClick={() => setShowDocModal(true)}>
+                  <Plus className="w-3.5 h-3.5" /> Add Document
+                </Button>
+              </div>
+              <DataTable columns={docCols} data={documents} emptyMessage="No documents attached — add a manual, data sheet or certificate above" />
+            </div>
+          )}
+
           {tab === 'projects' && (
             <div className="p-4">
               {product.projects?.length === 0
@@ -234,19 +402,122 @@ export default function ProductMasterDetail() {
                 ))}
             </div>
           )}
-          {tab === 'documents' && (
-            <div>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                <span className="text-sm text-slate-500">{documents.length} document{documents.length !== 1 ? 's' : ''} attached</span>
-                <Button size="sm" onClick={() => setShowDocModal(true)}>
-                  <Plus className="w-3.5 h-3.5" /> Add Document
-                </Button>
-              </div>
-              <DataTable columns={docCols} data={documents} emptyMessage="No documents attached — add a manual, data sheet or certificate above" />
-            </div>
-          )}
         </div>
       </div>
+
+      {showAddLine && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="font-semibold text-slate-800">Add BOM Line</h2>
+              <button onClick={() => setShowAddLine(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Component Type *</label>
+                <select value={lineForm.component_type} onChange={e => setLineForm(f => ({ ...f, component_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Reference Code</label>
+                <input type="text" placeholder="e.g. PM-PUMP-22" value={lineForm.component_reference_code}
+                  onChange={e => setLineForm(f => ({ ...f, component_reference_code: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
+                <input type="text" placeholder="e.g. Air Blower Pump" value={lineForm.component_name}
+                  onChange={e => setLineForm(f => ({ ...f, component_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
+                <input type="number" min="0.01" step="0.01" value={lineForm.quantity}
+                  onChange={e => setLineForm(f => ({ ...f, quantity: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
+                <select value={lineForm.unit} onChange={e => setLineForm(f => ({ ...f, unit: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {UNITS.map(u => <option key={u}>{u}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Remarks</label>
+                <input type="text" placeholder="Optional notes" value={lineForm.remarks}
+                  onChange={e => setLineForm(f => ({ ...f, remarks: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+              </div>
+              <div className="col-span-2">
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={lineForm.is_optional} onChange={e => setLineForm(f => ({ ...f, is_optional: e.target.checked }))} />
+                  Optional component
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <Button variant="ghost" onClick={() => setShowAddLine(false)}>Cancel</Button>
+              <Button onClick={handleAddLine} disabled={lineSubmitting}>
+                {lineSubmitting ? 'Adding...' : 'Add Line'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRelModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="font-semibold text-slate-800">Link Related Product</h2>
+              <button onClick={() => setShowRelModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Relationship Type</label>
+                <select value={relEdgeType} onChange={e => setRelEdgeType(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  {EDGE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Search Product</label>
+                <input type="text" placeholder="Type product name or code..."
+                  value={relSearch} onChange={e => { setRelSearch(e.target.value); setRelTarget(null); }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                {relSearch.length >= 2 && !relTarget && (
+                  <div className="border border-slate-200 rounded-lg mt-1 max-h-48 overflow-auto divide-y divide-slate-100">
+                    {(relSearchResults?.items || []).filter((p: any) => p.id !== product.id).map((p: any) => (
+                      <button key={p.id} onClick={() => { setRelTarget(p); setRelSearch(p.product_name); }}
+                        className="w-full text-left px-3 py-2.5 hover:bg-slate-50 flex items-center gap-2">
+                        <EntityCode code={p.product_code} />
+                        <span className="text-sm truncate">{p.product_name}</span>
+                      </button>
+                    ))}
+                    {(relSearchResults?.items || []).length === 0 && <div className="p-3 text-sm text-slate-400">No products found</div>}
+                  </div>
+                )}
+                {relTarget && (
+                  <div className="mt-2 p-3 bg-blue-50 rounded-lg flex items-center gap-2 text-sm">
+                    <EntityCode code={relTarget.product_code} />
+                    <span className="text-slate-700">{relTarget.product_name}</span>
+                    <button onClick={() => { setRelTarget(null); setRelSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <Button variant="ghost" onClick={() => setShowRelModal(false)}>Cancel</Button>
+              <Button onClick={handleLinkProduct} disabled={relSubmitting || !relTarget}>
+                {relSubmitting ? 'Linking...' : 'Link Product'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showDocModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -282,9 +553,8 @@ export default function ProductMasterDetail() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">File (optional — PDF, DWG, etc.)</label>
-                <div
-                  onClick={() => fileRef.current?.click()}
+                <label className="block text-xs font-medium text-slate-600 mb-1">File (optional)</label>
+                <div onClick={() => fileRef.current?.click()}
                   className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-[#3E5C76] transition-colors">
                   {docFile
                     ? <div className="flex items-center justify-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-[#3E5C76]" />{docFile.name} <span className="text-slate-400">({(docFile.size / 1024).toFixed(0)} KB)</span></div>
@@ -296,8 +566,8 @@ export default function ProductMasterDetail() {
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <Button variant="ghost" onClick={() => setShowDocModal(false)}>Cancel</Button>
-              <Button onClick={handleAddDocument} disabled={submitting}>
-                {submitting ? 'Saving...' : 'Add Document'}
+              <Button onClick={handleAddDocument} disabled={docSubmitting}>
+                {docSubmitting ? 'Saving...' : 'Add Document'}
               </Button>
             </div>
           </div>
