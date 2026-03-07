@@ -33,6 +33,7 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   const params: any[] = [];
 
   if (req.query.family_id) { params.push(req.query.family_id); filters.push(`pm.product_family_id = $${params.length}`); }
+  if (req.query.category) { params.push(req.query.category); filters.push(`pm.product_category = $${params.length}`); }
   if (req.query.status) { params.push(req.query.status); filters.push(`pm.standard_status = $${params.length}`); }
   if (req.query.q) { params.push(`%${req.query.q}%`); filters.push(`(pm.product_name ILIKE $${params.length} OR pm.product_code ILIKE $${params.length})`); }
 

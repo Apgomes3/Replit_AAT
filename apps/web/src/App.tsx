@@ -15,6 +15,7 @@ import ProductMastersList from './pages/products/ProductMastersList';
 import ProductMasterDetail from './pages/products/ProductMasterDetail';
 import ComponentsList from './pages/products/ComponentsList';
 import ComponentDetail from './pages/products/ComponentDetail';
+import PipingList from './pages/products/PipingList';
 import DrawingsLibrary from './pages/products/DrawingsLibrary';
 import MaterialsList from './pages/knowledge/MaterialsList';
 import SpecificationsList from './pages/knowledge/SpecificationsList';
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="products/masters/:id" element={<ProductMasterDetail />} />
             <Route path="products/components" element={<ComponentsList />} />
             <Route path="products/components/:id" element={<ComponentDetail />} />
+            <Route path="products/piping" element={<PipingList />} />
             <Route path="products/drawings" element={<DrawingsLibrary />} />
             <Route path="knowledge/materials" element={<MaterialsList />} />
             <Route path="knowledge/specifications" element={<SpecificationsList />} />
