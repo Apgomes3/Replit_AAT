@@ -13,7 +13,9 @@ import { System, EquipmentInstance, Document, ChangeRequest } from '../../types'
 import toast from 'react-hot-toast';
 import { Plus, Network } from 'lucide-react';
 
-type Tab = 'systems' | 'equipment' | 'documents' | 'changes';
+type Tab = 'systems' | 'equipment' | 'tanks' | 'documents' | 'changes';
+
+type Tank = { id: string; tank_code: string; tank_name: string; tank_type?: string; gross_volume_m3?: number; primary_material?: string; };
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -21,6 +23,7 @@ export default function ProjectDetail() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>('systems');
   const [showNewSystem, setShowNewSystem] = useState(false);
+  const [showNewTank, setShowNewTank] = useState(false);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -37,6 +40,12 @@ export default function ProjectDetail() {
     queryKey: ['project-equipment', id],
     queryFn: () => api.get(`/projects/${id}/equipment`).then(r => r.data),
     enabled: tab === 'equipment',
+  });
+
+  const { data: tanks } = useQuery({
+    queryKey: ['project-tanks', id],
+    queryFn: () => api.get(`/tanks?project_id=${id}`).then(r => r.data),
+    enabled: tab === 'tanks',
   });
 
   const { data: documents } = useQuery({
@@ -80,6 +89,14 @@ export default function ProjectDetail() {
     { key: 'discipline', header: 'Discipline' },
     { key: 'current_revision', header: 'Rev', render: r => <span className="font-mono text-xs">{r.current_revision}</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
+  ];
+
+  const tankCols: Column<Tank>[] = [
+    { key: 'tank_code', header: 'Code', render: r => <EntityCode code={r.tank_code} /> },
+    { key: 'tank_name', header: 'Tank Name', render: r => <span className="font-medium">{r.tank_name}</span> },
+    { key: 'tank_type', header: 'Type' },
+    { key: 'gross_volume_m3', header: 'Volume (m³)', render: r => r.gross_volume_m3 ? <span>{r.gross_volume_m3}</span> : <span className="text-slate-300">—</span> },
+    { key: 'primary_material', header: 'Material', render: r => r.primary_material ? <span>{r.primary_material}</span> : <span className="text-slate-300">—</span> },
   ];
 
   const crCols: Column<ChangeRequest>[] = [
@@ -127,19 +144,27 @@ export default function ProjectDetail() {
 
         <div className="bg-white border border-slate-200 rounded-lg">
           <div className="flex border-b border-slate-200">
-            {(['systems', 'equipment', 'documents', 'changes'] as Tab[]).map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                className={`px-4 py-3 text-sm capitalize font-medium border-b-2 transition-colors ${tab === t ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                {t}
+            {([
+              { key: 'systems', label: 'Systems' },
+              { key: 'equipment', label: 'Equipment' },
+              { key: 'tanks', label: 'Tanks' },
+              { key: 'documents', label: 'Documents' },
+              { key: 'changes', label: 'Changes' },
+            ] as { key: Tab; label: string }[]).map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                {t.label}
               </button>
             ))}
             <div className="ml-auto p-2">
               {tab === 'systems' && <Button size="sm" variant="primary" onClick={() => setShowNewSystem(true)}><Plus className="w-3.5 h-3.5" />System</Button>}
+              {tab === 'tanks' && <Button size="sm" variant="primary" onClick={() => setShowNewTank(true)}><Plus className="w-3.5 h-3.5" />Add Tank</Button>}
             </div>
           </div>
 
           {tab === 'systems' && <DataTable columns={sysCols} data={systems?.items || []} onRowClick={r => navigate(`/systems/${r.id}`)} />}
           {tab === 'equipment' && <DataTable columns={eqCols} data={equipment?.items || []} onRowClick={r => navigate(`/equipment/${r.id}`)} />}
+          {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} emptyMessage="No tanks added to this project yet — click Add Tank above" />}
           {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} onRowClick={r => navigate(`/documents/${r.id}`)} />}
           {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} />}
         </div>
@@ -159,6 +184,29 @@ export default function ProjectDetail() {
             toast.success('System created');
             qc.invalidateQueries({ queryKey: ['project-systems'] });
             setShowNewSystem(false);
+          }}
+        />
+      )}
+
+      {showNewTank && (
+        <NewEntityModal title="Add Tank to Project" onClose={() => setShowNewTank(false)}
+          fields={[
+            { name: 'tank_code', label: 'Tank Code', required: true, placeholder: 'TNK-DIS-001' },
+            { name: 'tank_name', label: 'Tank Name', required: true },
+            { name: 'tank_type', label: 'Tank Type', options: ['Display Tank', 'Sump', 'Refugium', 'Quarantine', 'Acclimation', 'Holding', 'Treatment', 'Header Tank', 'Buffer Tank', 'Other'] },
+            { name: 'shape_type', label: 'Shape', options: ['Rectangular', 'Cylindrical', 'Oval', 'Hexagonal', 'Custom'] },
+            { name: 'gross_volume_m3', label: 'Gross Volume (m³)', type: 'number' },
+            { name: 'operating_volume_m3', label: 'Operating Volume (m³)', type: 'number' },
+            { name: 'length_mm', label: 'Length (mm)', type: 'number' },
+            { name: 'width_mm', label: 'Width (mm)', type: 'number' },
+            { name: 'height_mm', label: 'Height (mm)', type: 'number' },
+            { name: 'primary_material', label: 'Material', options: ['Acrylic', 'Glass', 'FRP', 'HDPE', 'GRP', 'Stainless Steel', 'Concrete', 'Other'] },
+          ]}
+          onSubmit={async (data) => {
+            await api.post('/tanks', { ...data, project_id: project.id });
+            toast.success('Tank added');
+            qc.invalidateQueries({ queryKey: ['project-tanks'] });
+            setShowNewTank(false);
           }}
         />
       )}

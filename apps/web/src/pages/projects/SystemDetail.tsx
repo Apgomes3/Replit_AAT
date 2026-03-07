@@ -61,7 +61,7 @@ export default function SystemDetail() {
 
   const handleCreateEquipment = async () => {
     if (!equipCode.trim()) { toast.error('Equipment code is required'); return; }
-    if (!selectedProduct) { toast.error('Select a product from the library'); return; }
+    if (!selectedProduct) { toast.error('Select a product from the ASW Library'); return; }
     setSubmitting(true);
     try {
       await api.post('/equipment-instances', {

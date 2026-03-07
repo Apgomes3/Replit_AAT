@@ -42,7 +42,7 @@ export default function ProductMastersList() {
 
   return (
     <div className="h-full flex flex-col">
-      <PageHeader title="Product Masters" subtitle={`${data?.pagination?.total ?? 0} products in library`}
+      <PageHeader title="Product Masters" subtitle={`${data?.pagination?.total ?? 0} products in ASW Library`}
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Product</Button>}
       />
       <div className="p-4 border-b border-slate-200 bg-white">

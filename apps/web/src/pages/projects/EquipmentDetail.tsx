@@ -167,7 +167,7 @@ export default function EquipmentDetail() {
           </Link>
         ) : (
           <div className="flex items-center justify-between mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <span className="text-sm text-amber-700">No product linked — this equipment has no reference in the Product Library</span>
+            <span className="text-sm text-amber-700">No product linked — this equipment has no reference in the ASW Library</span>
           </div>
         )}
 

@@ -52,7 +52,7 @@ export default function Dashboard() {
 
   const quickLinks = [
     { to: '/graph', label: 'Graph Explorer', sub: 'Trace entity relationships' },
-    { to: '/products/masters', label: 'Product Library', sub: 'Reusable product definitions' },
+    { to: '/products/masters', label: 'ASW Library', sub: 'Reusable product definitions' },
     { to: '/documents', label: 'Document Register', sub: 'Controlled files & revisions' },
     { to: '/knowledge/design-rules', label: 'Design Rules', sub: 'Engineering standards' },
     { to: '/admin/import', label: 'CSV Import', sub: 'Bulk data loading' },
