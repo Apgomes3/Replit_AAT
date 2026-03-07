@@ -98,23 +98,33 @@ export default function DrawingsLibrary() {
         </div>
       </div>
 
-      <div className="bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-48">
+      <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4">
+        <div className="relative min-w-48 max-w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input type="text" placeholder="Search drawings..." value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}
             className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
         </div>
-        <select value={docType} onChange={e => { setDocType(e.target.value); setPage(1); }}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
-          {DRAWING_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-        <select value={entityFilter} onChange={e => { setEntityFilter(e.target.value); setPage(1); }}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
-          {ENTITY_FILTERS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-        </select>
+        <div className="flex items-center gap-0.5 text-sm">
+          {DRAWING_TYPES.map(t => (
+            <button key={t.value} onClick={() => { setDocType(t.value); setPage(1); }}
+              className={`px-3 py-1.5 transition-colors ${docType === t.value ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="h-4 w-px bg-slate-200" />
+        <div className="flex items-center gap-0.5 text-sm">
+          {ENTITY_FILTERS.map(f => (
+            <button key={f.value} onClick={() => { setEntityFilter(f.value); setPage(1); }}
+              className={`px-3 py-1.5 transition-colors ${entityFilter === f.value ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="h-4 w-px bg-slate-200" />
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+          className="appearance-none bg-transparent text-sm cursor-pointer focus:outline-none text-slate-400 hover:text-slate-600 pr-1">
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s || 'All Statuses'}</option>)}
         </select>
       </div>
