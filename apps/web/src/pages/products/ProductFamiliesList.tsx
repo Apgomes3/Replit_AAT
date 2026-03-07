@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import api from '../../lib/api';
 import { ProductFamily } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -62,10 +61,6 @@ export default function ProductFamiliesList() {
           ]}
         />
       </div>
-      <div className="p-4 bg-white border-t border-slate-200">
-        <Link to="/products/masters" className="text-sm text-[#3E5C76] hover:underline">→ View all Product Masters</Link>
-      </div>
-
       {showNew && (
         <NewEntityModal title="New Product Family" onClose={() => setShowNew(false)}
           fields={[
