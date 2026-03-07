@@ -558,7 +558,7 @@ export default function ProductMasterDetail() {
               ...(!isPiping && !isTank ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
               ...(!isPiping && !isTank ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
               ...(!isPiping && !isTank ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
-              { label: 'Primary Material', value: product.primary_material_code ? <><EntityCode code={product.primary_material_code} /> {product.material_name && <span className="text-slate-500 text-xs ml-1">{product.material_name}</span>}</> : null },
+              { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
               { label: 'Notes', value: product.notes },
             ]} />
             ) : (

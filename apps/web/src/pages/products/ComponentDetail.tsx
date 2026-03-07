@@ -272,7 +272,7 @@ export default function ComponentDetail() {
                   { label: 'Category', value: component.component_category },
                   { label: 'Description', value: component.description },
                   { label: 'Primary Material', value: component.primary_material_code
-                    ? <><EntityCode code={component.primary_material_code} />{component.material_name && <span className="text-slate-500 text-xs ml-1">{component.material_name}</span>}</>
+                    ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={component.primary_material_code} />{component.material_name && <span className="text-slate-500 text-xs">{component.material_name}</span>}</Link>
                     : null },
                   { label: 'Standard Size', value: component.standard_size },
                   { label: 'Weight', value: component.weight_kg ? `${component.weight_kg} kg` : null },
