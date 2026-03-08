@@ -581,7 +581,11 @@ export default function ProductMasterDetail() {
         subtitle={`${product.product_category || ''} ${product.application_type ? '· ' + product.application_type : ''}`}
         breadcrumb={<><Link to="/products" className="hover:underline">Families</Link> / <Link to="/products/masters" className="hover:underline">Products</Link></>}
         actions={
-          editing ? (
+          isTank ? (
+            <Button size="sm" onClick={() => navigate(`/graph?start=${product.id}&type=product`)}>
+              <Network className="w-3.5 h-3.5" />Graph
+            </Button>
+          ) : editing ? (
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => setEditing(false)}><X className="w-3.5 h-3.5" /> Cancel</Button>
               <Button size="sm" onClick={handleSave} disabled={saving}><Check className="w-3.5 h-3.5" />{saving ? 'Saving...' : 'Save'}</Button>
@@ -600,25 +604,28 @@ export default function ProductMasterDetail() {
       <div className="flex-1 overflow-auto p-4">
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="col-span-2">
-            {!editing ? (
-            <MetadataPanel fields={[
-              { label: 'Family', value: product.product_family_name,
-                action: <button onClick={() => setShowFamilyPicker(true)} disabled={familySaving}
-                  className="text-xs text-[#3E5C76] hover:underline whitespace-nowrap">{familySaving ? '...' : 'Change'}</button> },
-              { label: 'Category', value: product.product_category },
-              ...(!isPiping && !isTank ? [{ label: 'Application', value: product.application_type }] : []),
-              ...(isTank ? [{ label: 'Tank Type', value: product.application_type }] : []),
-              ...(isTank ? [{ label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null }] : []),
-              ...(!isPiping && !isTank ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
-              ...(!isPiping && !isTank ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
-              ...(!isPiping && !isTank ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
-              { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
-              { label: 'Notes', value: product.notes },
-            ]} />
-            ) : (
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
-              <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Edit Details</div>
-              <div className="grid grid-cols-2 gap-3">
+            {isTank ? (
+            <div className="bg-white border border-slate-200 rounded-lg">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Details</span>
+                {!editing
+                  ? <button onClick={startEdit} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
+                  : <div className="flex gap-3">
+                      <button onClick={() => setEditing(false)} className="text-xs text-slate-400 hover:underline">Cancel</button>
+                      <button onClick={handleSave} disabled={saving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+                    </div>}
+              </div>
+              {!editing ? (
+              <MetadataPanel noBorder fields={[
+                { label: 'Category', value: product.product_category },
+                { label: 'Tank Type', value: product.application_type },
+                { label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null },
+                { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
+                { label: 'Notes', value: product.notes },
+              ]} />
+              ) : (
+              <div className="p-4">
+                <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
                   <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
@@ -684,6 +691,82 @@ export default function ProductMasterDetail() {
                 </div>
               </div>
             </div>
+            )}
+            </div>
+            ) : (
+            <>
+            {!editing ? (
+            <MetadataPanel fields={[
+              { label: 'Family', value: product.product_family_name,
+                action: <button onClick={() => setShowFamilyPicker(true)} disabled={familySaving}
+                  className="text-xs text-[#3E5C76] hover:underline whitespace-nowrap">{familySaving ? '...' : 'Change'}</button> },
+              { label: 'Category', value: product.product_category },
+              ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
+              ...(!isPiping ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
+              ...(!isPiping ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
+              ...(!isPiping ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
+              { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
+              { label: 'Notes', value: product.notes },
+            ]} />
+            ) : (
+            <div className="bg-white border border-slate-200 rounded-lg p-4">
+              <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Edit Details</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
+                  <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                  <select value={editForm.standard_status} onChange={e => setEditForm((f: any) => ({ ...f, standard_status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                    {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Application Type</label>
+                  <input value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                {!isPiping && (<>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
+                    <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
+                    <input type="number" value={editForm.design_head_m} onChange={e => setEditForm((f: any) => ({ ...f, design_head_m: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Power (kW)</label>
+                    <input type="number" value={editForm.power_kw} onChange={e => setEditForm((f: any) => ({ ...f, power_kw: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  </div>
+                </>)}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
+                  <select value={editForm.primary_material_code ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value || null }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    <option value="">— None —</option>
+                    {(materialsData?.items ?? []).map((m: any) => (
+                      <option key={m.material_code} value={m.material_code}>
+                        {m.material_code}{m.material_name ? ` — ${m.material_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                  <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+              </div>
+            </div>
+            )}
+            </>
             )}
 
             {/* Dimensions Card */}

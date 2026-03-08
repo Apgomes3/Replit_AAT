@@ -6,13 +6,13 @@ interface MetadataField {
   action?: ReactNode;
 }
 
-export default function MetadataPanel({ title, fields }: { title?: string; fields: MetadataField[] }) {
+export default function MetadataPanel({ title, fields, noBorder }: { title?: string; fields: MetadataField[]; noBorder?: boolean }) {
   const visibleFields = fields.filter(({ value, action }) =>
     action != null || (value !== null && value !== undefined && value !== '')
   );
 
-  return (
-    <div className="bg-white border border-slate-200 rounded-lg">
+  const inner = (
+    <>
       {title && <div className="px-4 py-3 border-b border-slate-100 text-sm font-medium text-slate-700">{title}</div>}
       <div className="p-4 grid grid-cols-1 gap-y-3">
         {visibleFields.length === 0 ? (
@@ -27,6 +27,14 @@ export default function MetadataPanel({ title, fields }: { title?: string; field
           ))
         )}
       </div>
+    </>
+  );
+
+  if (noBorder) return <div>{inner}</div>;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg">
+      {inner}
     </div>
   );
 }
