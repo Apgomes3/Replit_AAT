@@ -124,8 +124,12 @@ router.post('/documents/:id/approvals', authenticate, async (req: AuthRequest, r
     if (revision_id) await query('UPDATE document_revisions SET status=$1, issued_at=NOW(), issued_by=$2 WHERE id=$3', ['Approved', req.user!.id, revision_id]);
   } else if (action === 'Released') {
     await query('UPDATE documents SET status=$1, updated_at=NOW() WHERE id=$2', ['Released', req.params.id]);
+    if (revision_id) await query('UPDATE document_revisions SET status=$1, issued_at=NOW(), issued_by=$2 WHERE id=$3', ['Released', req.user!.id, revision_id]);
   } else if (action === 'Rejected') {
-    await query('UPDATE documents SET status=$1, updated_at=NOW() WHERE id=$2', ['Review Commented', req.params.id]);
+    await query('UPDATE documents SET status=$1, updated_at=NOW() WHERE id=$2', ['Draft', req.params.id]);
+    if (revision_id) await query('UPDATE document_revisions SET status=$1, issued_at=NOW(), issued_by=$2 WHERE id=$3', ['Rejected', req.user!.id, revision_id]);
+  } else if (action === 'Review Commented') {
+    if (revision_id) await query('UPDATE document_revisions SET status=$1 WHERE id=$2', ['Review Commented', revision_id]);
   }
 
   await query('INSERT INTO lifecycle_transitions (entity_type, entity_id, to_state, actor_id, comment) VALUES ($1,$2,$3,$4,$5)',

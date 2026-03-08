@@ -95,8 +95,18 @@ export default function DocumentDetail() {
         breadcrumb={<Link to="/documents" className="hover:underline">Documents</Link>}
         actions={
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => { const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string); setIssueRev(nextRevLetter(existing)); setShowIssue(true); }}><Upload className="w-3.5 h-3.5" />Issue Revision</Button>
-            <Button size="sm" variant="primary" onClick={() => setShowApproval(true)}><CheckCircle className="w-3.5 h-3.5" />Approve/Release</Button>
+            <Button size="sm" onClick={() => {
+              const latestRev = document.revisions?.[0];
+              if (latestRev && latestRev.status === 'Draft') {
+                toast.error(`Rev ${latestRev.revision_code} is pending review — approve or reject it first`);
+                return;
+              }
+              const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string);
+              setIssueRev(nextRevLetter(existing));
+              setShowIssue(true);
+            }}><Upload className="w-3.5 h-3.5" />Issue Revision</Button>
+            <Button size="sm" onClick={() => { setApprovalAction('Rejected'); setApprovalComment(''); setShowApproval(true); }}><XCircle className="w-3.5 h-3.5" />Reject</Button>
+            <Button size="sm" variant="primary" onClick={() => { setApprovalAction('Approved'); setApprovalComment(''); setShowApproval(true); }}><CheckCircle className="w-3.5 h-3.5" />Approve / Release</Button>
           </div>
         }
       />
@@ -199,25 +209,44 @@ export default function DocumentDetail() {
       {showApproval && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-80 p-5">
-            <h3 className="font-semibold mb-3">Record Approval Action</h3>
+            <h3 className="font-semibold mb-1">
+              {approvalAction === 'Rejected' ? 'Reject Revision' : 'Approve / Release Revision'}
+            </h3>
+            {document.revisions?.[0] && (
+              <p className="text-xs text-slate-400 mb-3">Rev <span className="font-mono font-medium">{document.revisions[0].revision_code}</span></p>
+            )}
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide">Action</label>
-                <select value={approvalAction} onChange={e => setApprovalAction(e.target.value)} className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none">
-                  <option>Approved</option>
-                  <option>Released</option>
-                  <option>Rejected</option>
-                  <option>Review Commented</option>
+                <select value={approvalAction} onChange={e => setApprovalAction(e.target.value)} className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[#3E5C76]">
+                  <option value="Approved">Approved</option>
+                  <option value="Released">Released</option>
+                  <option value="Review Commented">Review Commented</option>
+                  <option value="Rejected">Rejected</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-slate-500 uppercase tracking-wide">Comment</label>
-                <textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} rows={3} className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none resize-none" />
+                <label className="text-xs text-slate-500 uppercase tracking-wide">
+                  Comment{approvalAction === 'Rejected' ? ' (reason)' : ' (optional)'}
+                </label>
+                <textarea
+                  value={approvalComment}
+                  onChange={e => setApprovalComment(e.target.value)}
+                  rows={3}
+                  placeholder={approvalAction === 'Rejected' ? 'State reason for rejection…' : ''}
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[#3E5C76] resize-none"
+                />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <Button onClick={() => setShowApproval(false)}>Cancel</Button>
-              <Button variant="primary" onClick={handleApproval}>Submit</Button>
+              <Button
+                variant={approvalAction === 'Rejected' ? 'danger' : 'primary'}
+                onClick={handleApproval}
+                disabled={approvalAction === 'Rejected' && !approvalComment.trim()}
+              >
+                {approvalAction === 'Rejected' ? 'Confirm Reject' : 'Submit'}
+              </Button>
             </div>
           </div>
         </div>
