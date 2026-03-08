@@ -9,7 +9,11 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
-import { Network, Pencil, Plus, Trash2, Search, X, Copy } from 'lucide-react';
+import { Network, Pencil, Plus, Trash2, Check, X, Search } from 'lucide-react';
+
+const UNITS = ['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'];
+const STATUSES = ['Design', 'Procurement', 'Installed', 'Commissioned', 'Active', 'Decommissioned'];
+const NEW_ROW_ID = '__new__';
 
 export default function SystemDetail() {
   const { id } = useParams();
@@ -21,27 +25,13 @@ export default function SystemDetail() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<any>(null);
 
-  const [showAddProduct, setShowAddProduct] = useState(false);
-  const [productSearch, setProductSearch] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [equipCode, setEquipCode] = useState('');
-  const [equipQty, setEquipQty] = useState('1');
-  const [equipUnit, setEquipUnit] = useState('EA');
-  const [equipStatus, setEquipStatus] = useState('Design');
-  const [addingSaving, setAddingSaving] = useState(false);
-
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: any } | null>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-  const [editingEq, setEditingEq] = useState<any>(null);
-  const [editEqForm, setEditEqForm] = useState<any>(null);
-  const [editEqSaving, setEditEqSaving] = useState(false);
-
-  useEffect(() => {
-    const handler = () => setContextMenu(null);
-    window.addEventListener('click', handler);
-    window.addEventListener('contextmenu', handler);
-    return () => { window.removeEventListener('click', handler); window.removeEventListener('contextmenu', handler); };
-  }, []);
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [inlineForm, setInlineForm] = useState<any>(null);
+  const [inlineProductSearch, setInlineProductSearch] = useState('');
+  const [inlineSelectedProduct, setInlineSelectedProduct] = useState<any>(null);
+  const [inlineSaving, setInlineSaving] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const { data: system, isLoading, refetch } = useQuery({
     queryKey: ['system', id],
@@ -54,10 +44,20 @@ export default function SystemDetail() {
   });
 
   const { data: productSearchResults } = useQuery({
-    queryKey: ['product-search', productSearch],
-    queryFn: () => api.get(`/product-masters?q=${productSearch}&page_size=8`).then(r => r.data),
-    enabled: productSearch.length >= 2 && !selectedProduct,
+    queryKey: ['product-search-inline', inlineProductSearch],
+    queryFn: () => api.get(`/product-masters?q=${inlineProductSearch}&page_size=8`).then(r => r.data),
+    enabled: inlineProductSearch.length >= 2 && !inlineSelectedProduct,
   });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (deleteConfirmId && !(e.target as Element).closest('[data-delete-row]')) {
+        setDeleteConfirmId(null);
+      }
+    };
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [deleteConfirmId]);
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!system) return <div className="p-8 text-slate-400">System not found</div>;
@@ -90,95 +90,74 @@ export default function SystemDetail() {
     finally { setSaving(false); }
   };
 
-  const openAddProduct = () => {
-    setProductSearch('');
-    setSelectedProduct(null);
-    setEquipCode('');
-    setEquipQty('1');
-    setEquipUnit('EA');
-    setEquipStatus('Design');
-    setShowAddProduct(true);
-  };
-
-  const handleAddProduct = async () => {
-    if (!equipCode.trim()) { toast.error('Tag / equipment code is required'); return; }
-    setAddingSaving(true);
-    try {
-      await api.post('/equipment-items', {
-        equip_code: equipCode.trim().toUpperCase(),
-        project_id: system.project_id,
-        system_id: system.id,
-        product_master_id: selectedProduct?.id || null,
-        description: selectedProduct ? null : productSearch || null,
-        quantity: parseFloat(equipQty) || 1,
-        unit: equipUnit,
-        status: equipStatus,
-      });
-      toast.success('Product added');
-      refetch();
-      setShowAddProduct(false);
-    } catch { toast.error('Failed to add product'); }
-    finally { setAddingSaving(false); }
-  };
-
-  const handleDeleteEquipment = async (eqId: string) => {
-    if (!confirm('Remove this product from the system?')) return;
-    try {
-      await api.delete(`/equipment-items/${eqId}`);
-      toast.success('Removed');
-      refetch();
-    } catch { toast.error('Delete failed'); }
-  };
-
-  const openEditEq = (eq: any) => {
-    setEditingEq(eq);
-    setEditEqForm({
+  const startInlineEdit = (eq: any) => {
+    if (inlineEditId === eq.id) return;
+    setInlineEditId(eq.id);
+    setInlineForm({
       equip_code: eq.equip_code || '',
       quantity: eq.quantity ?? 1,
       unit: eq.unit || 'EA',
       status: eq.status || 'Design',
     });
-    setContextMenu(null);
+    setInlineSelectedProduct(eq.product_master_id ? { id: eq.product_master_id, product_code: eq.product_code, product_name: eq.product_name } : null);
+    setInlineProductSearch('');
   };
 
-  const handleSaveEq = async () => {
-    if (!editEqForm.equip_code.trim()) { toast.error('Tag is required'); return; }
-    setEditEqSaving(true);
-    try {
-      await api.put(`/equipment-items/${editingEq.id}`, {
-        equip_code: editEqForm.equip_code.trim().toUpperCase(),
-        system_id: system.id,
-        product_master_id: editingEq.product_master_id || null,
-        quantity: parseFloat(editEqForm.quantity) || 1,
-        unit: editEqForm.unit,
-        status: editEqForm.status,
-      });
-      toast.success('Saved');
-      refetch();
-      setEditingEq(null);
-    } catch { toast.error('Save failed'); }
-    finally { setEditEqSaving(false); }
+  const startNewRow = () => {
+    setInlineEditId(NEW_ROW_ID);
+    setInlineForm({ equip_code: '', quantity: 1, unit: 'EA', status: 'Design' });
+    setInlineSelectedProduct(null);
+    setInlineProductSearch('');
+    setTimeout(() => searchRef.current?.focus(), 50);
   };
 
-  const handleDuplicateEq = async (eq: any) => {
-    setContextMenu(null);
+  const cancelInline = () => {
+    setInlineEditId(null);
+    setInlineForm(null);
+    setInlineSelectedProduct(null);
+    setInlineProductSearch('');
+  };
+
+  const saveInlineRow = async () => {
+    if (!inlineForm.equip_code.trim()) { toast.error('Tag / equipment code is required'); return; }
+    setInlineSaving(true);
     try {
-      await api.post('/equipment-items', {
-        equip_code: eq.equip_code + '-COPY',
+      const payload = {
+        equip_code: inlineForm.equip_code.trim().toUpperCase(),
         project_id: system.project_id,
         system_id: system.id,
-        product_master_id: eq.product_master_id || null,
-        description: eq.description || null,
-        quantity: eq.quantity ?? 1,
-        unit: eq.unit || 'EA',
-        status: eq.status || 'Design',
-      });
-      toast.success('Duplicated');
+        product_master_id: inlineSelectedProduct?.id || null,
+        description: !inlineSelectedProduct ? (inlineProductSearch || null) : null,
+        quantity: parseFloat(inlineForm.quantity) || 1,
+        unit: inlineForm.unit,
+        status: inlineForm.status,
+      };
+      if (inlineEditId === NEW_ROW_ID) {
+        await api.post('/equipment-items', payload);
+        toast.success('Row added');
+      } else {
+        await api.put(`/equipment-items/${inlineEditId}`, payload);
+        toast.success('Saved');
+      }
       refetch();
-    } catch { toast.error('Duplicate failed'); }
+      cancelInline();
+    } catch { toast.error('Save failed'); }
+    finally { setInlineSaving(false); }
+  };
+
+  const handleDeleteRow = async (eqId: string) => {
+    try {
+      await api.delete(`/equipment-items/${eqId}`);
+      toast.success('Row removed');
+      refetch();
+      setDeleteConfirmId(null);
+    } catch { toast.error('Delete failed'); }
   };
 
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
+
+  const inputCls = 'w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#3E5C76] bg-white';
+  const cellCls = 'px-3 py-2.5';
 
   return (
     <div className="flex flex-col h-full">
@@ -211,7 +190,6 @@ export default function SystemDetail() {
       />
 
       <div className="flex-1 overflow-auto p-4 space-y-4">
-        {/* Details + history row */}
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2">
             {!editing ? (
@@ -264,7 +242,7 @@ export default function SystemDetail() {
                     <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                     <select value={form.status} onChange={e => setForm((f: any) => ({ ...f, status: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
-                      {['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'].map(t => <option key={t}>{t}</option>)}
+                      {transitions.map(t => <option key={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>
@@ -286,269 +264,274 @@ export default function SystemDetail() {
           </div>
         </div>
 
-        {/* Products section */}
-        <div className="bg-white border border-slate-200 rounded-lg">
+        {/* Products inline grid */}
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Products</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Equipment items assigned to this system</p>
+              <p className="text-xs text-slate-400 mt-0.5">Equipment items assigned to this system — click any row to edit</p>
             </div>
-            <Button size="sm" variant="primary" onClick={openAddProduct}>
-              <Plus className="w-3.5 h-3.5" />Add Product
+            <Button size="sm" variant="primary" onClick={startNewRow} disabled={inlineEditId === NEW_ROW_ID}>
+              <Plus className="w-3.5 h-3.5" />Add Row
             </Button>
           </div>
 
-          {equipment.length === 0 ? (
-            <div className="p-10 text-center text-sm text-slate-400">
-              No products added yet — click <strong>Add Product</strong> to assign equipment to this system.
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50">
-                  <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Tag</th>
-                  <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Product</th>
-                  <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Code</th>
-                  <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Qty</th>
-                  <th className="text-left px-5 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Status</th>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/50">
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[130px]">Tag</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Product</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Code</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[80px]">Qty</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[80px]">Unit</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[140px]">Status</th>
+                <th className="w-[80px]" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {equipment.length === 0 && inlineEditId !== NEW_ROW_ID && (
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">
+                    No products yet — click <strong>Add Row</strong> to assign equipment to this system.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {equipment.map((eq: any) => (
+              )}
+
+              {equipment.map((eq: any) => {
+                const isEditing = inlineEditId === eq.id;
+                return (
                   <tr
                     key={eq.id}
-                    className={`select-none ${eq.product_code ? 'hover:bg-slate-50 cursor-pointer' : 'hover:bg-slate-50 cursor-context-menu'}`}
-                    onClick={() => { if (eq.product_code) navigate(`/products/masters/${eq.product_code}`); }}
-                    onContextMenu={e => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setContextMenu({ x: e.clientX, y: e.clientY, item: eq });
-                    }}
+                    className={`group ${isEditing ? 'bg-blue-50/40' : 'hover:bg-slate-50 cursor-pointer'}`}
+                    onClick={() => { if (!isEditing) startInlineEdit(eq); }}
                   >
-                    <td className="px-5 py-3"><EntityCode code={eq.equip_code} /></td>
-                    <td className="px-5 py-3 font-medium text-slate-800">{eq.product_name || eq.description || '—'}</td>
-                    <td className="px-5 py-3">
-                      {eq.product_code
-                        ? <EntityCode code={eq.product_code} />
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{eq.quantity ?? 1} {eq.unit || 'EA'}</td>
-                    <td className="px-5 py-3"><StatusBadge status={eq.status || 'Design'} /></td>
+                    {isEditing ? (
+                      <>
+                        <td className={cellCls}>
+                          <input
+                            value={inlineForm.equip_code}
+                            onChange={e => setInlineForm((f: any) => ({ ...f, equip_code: e.target.value.toUpperCase() }))}
+                            className={inputCls + ' font-mono uppercase'}
+                            placeholder="TAG-101"
+                            onKeyDown={e => { if (e.key === 'Escape') cancelInline(); if (e.key === 'Enter') saveInlineRow(); }}
+                          />
+                        </td>
+                        <td className={cellCls + ' relative'}>
+                          {inlineSelectedProduct ? (
+                            <div className="flex items-center gap-1.5 border border-[#3E5C76] bg-blue-50 rounded px-2 py-1 text-sm">
+                              <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
+                              <button onClick={e => { e.stopPropagation(); setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="relative" onClick={e => e.stopPropagation()}>
+                              <Search className="absolute left-2 top-1.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                              <input
+                                ref={searchRef}
+                                value={inlineProductSearch}
+                                onChange={e => setInlineProductSearch(e.target.value)}
+                                placeholder="Search or type description…"
+                                className={inputCls + ' pl-7'}
+                                onKeyDown={e => { if (e.key === 'Escape') cancelInline(); }}
+                              />
+                              {productSearchResults?.items?.length > 0 && (
+                                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl mt-0.5 z-20 max-h-52 overflow-auto">
+                                  {productSearchResults.items.map((p: any) => (
+                                    <button
+                                      key={p.id}
+                                      onMouseDown={e => e.preventDefault()}
+                                      onClick={() => { setInlineSelectedProduct(p); setInlineProductSearch(''); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0"
+                                    >
+                                      <EntityCode code={p.product_code} />
+                                      <span className="text-sm text-slate-800 truncate">{p.product_name}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className={cellCls}>
+                          {inlineSelectedProduct
+                            ? <EntityCode code={inlineSelectedProduct.product_code} />
+                            : <span className="text-slate-300 text-xs">—</span>}
+                        </td>
+                        <td className={cellCls}>
+                          <input type="number" min="0.001" step="any"
+                            value={inlineForm.quantity}
+                            onChange={e => setInlineForm((f: any) => ({ ...f, quantity: e.target.value }))}
+                            className={inputCls}
+                          />
+                        </td>
+                        <td className={cellCls}>
+                          <select value={inlineForm.unit} onChange={e => setInlineForm((f: any) => ({ ...f, unit: e.target.value }))} className={inputCls}>
+                            {UNITS.map(u => <option key={u}>{u}</option>)}
+                          </select>
+                        </td>
+                        <td className={cellCls}>
+                          <select value={inlineForm.status} onChange={e => setInlineForm((f: any) => ({ ...f, status: e.target.value }))} className={inputCls}>
+                            {STATUSES.map(s => <option key={s}>{s}</option>)}
+                          </select>
+                        </td>
+                        <td className={cellCls} onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-1">
+                            <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-[#3E5C76] text-white hover:bg-[#2d4a63] disabled:opacity-50">
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className={cellCls}><EntityCode code={eq.equip_code} /></td>
+                        <td className={cellCls + ' font-medium text-slate-800'}>{eq.product_name || eq.description || <span className="text-slate-300">—</span>}</td>
+                        <td className={cellCls}>
+                          {eq.product_code ? <EntityCode code={eq.product_code} /> : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className={cellCls + ' text-slate-600'}>{eq.quantity ?? 1}</td>
+                        <td className={cellCls + ' text-slate-500'}>{eq.unit || 'EA'}</td>
+                        <td className={cellCls}><StatusBadge status={eq.status || 'Design'} /></td>
+                        <td className={cellCls} onClick={e => e.stopPropagation()}>
+                          {deleteConfirmId === eq.id ? (
+                            <div className="flex items-center gap-1" data-delete-row>
+                              <button onClick={() => handleDeleteRow(eq.id)} className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700">Delete</button>
+                              <button onClick={() => setDeleteConfirmId(null)} className="px-2 py-1 text-xs rounded text-slate-500 hover:bg-slate-100">Cancel</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirmId(eq.id)}
+                              className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-opacity"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </>
+                    )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+                );
+              })}
 
-      {/* Context Menu */}
-      {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className="fixed z-50 bg-white border border-slate-200 rounded-xl shadow-2xl py-1.5 w-44"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={e => e.stopPropagation()}
-          onContextMenu={e => e.preventDefault()}
-        >
-          <button
-            onClick={() => openEditEq(contextMenu.item)}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left"
-          >
-            <Pencil className="w-3.5 h-3.5 text-slate-400" /> Edit
-          </button>
-          <button
-            onClick={() => handleDuplicateEq(contextMenu.item)}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left"
-          >
-            <Copy className="w-3.5 h-3.5 text-slate-400" /> Duplicate
-          </button>
-          <div className="my-1 border-t border-slate-100" />
-          <button
-            onClick={() => { handleDeleteEquipment(contextMenu.item.id); setContextMenu(null); }}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Delete
-          </button>
-        </div>
-      )}
-
-      {/* Edit Equipment Modal */}
-      {editingEq && editEqForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-[400px]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800">Edit Product Item</h3>
-              <button onClick={() => setEditingEq(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              {editingEq.product_name && (
-                <div className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                  <span className="font-medium text-slate-700">{editingEq.product_name}</span>
-                  {editingEq.product_code && <span className="ml-2 text-slate-400">({editingEq.product_code})</span>}
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Tag / Equipment Code <span className="text-red-400">*</span></label>
-                <input
-                  value={editEqForm.equip_code}
-                  onChange={e => setEditEqForm((f: any) => ({ ...f, equip_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30 uppercase"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
-                  <input type="number" min="0.001" step="any"
-                    value={editEqForm.quantity}
-                    onChange={e => setEditEqForm((f: any) => ({ ...f, quantity: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
-                  <select value={editEqForm.unit} onChange={e => setEditEqForm((f: any) => ({ ...f, unit: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
-                    {['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'].map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={editEqForm.status} onChange={e => setEditEqForm((f: any) => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
-                  {['Design', 'Procurement', 'Installed', 'Commissioned', 'Active', 'Decommissioned'].map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100">
-              <Button size="sm" onClick={() => setEditingEq(null)}>Cancel</Button>
-              <Button size="sm" variant="primary" onClick={handleSaveEq} disabled={editEqSaving}>
-                {editEqSaving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Product Modal */}
-      {showAddProduct && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-[480px] max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800">Add Product to System</h3>
-              <button onClick={() => setShowAddProduct(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4 overflow-auto">
-              {/* Product search */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Product (from library)</label>
-                {selectedProduct ? (
-                  <div className="flex items-center gap-2 border border-[#3E5C76] bg-blue-50 rounded-lg px-3 py-2">
-                    <EntityCode code={selectedProduct.product_code} />
-                    <span className="text-sm font-medium text-slate-800 flex-1">{selectedProduct.product_name}</span>
-                    <button onClick={() => { setSelectedProduct(null); setProductSearch(''); }} className="text-slate-400 hover:text-red-500">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
+              {/* New row being added */}
+              {inlineEditId === NEW_ROW_ID && (
+                <tr className="bg-blue-50/40 border-t-2 border-[#3E5C76]/20">
+                  <td className={cellCls}>
                     <input
-                      autoFocus
-                      value={productSearch}
-                      onChange={e => setProductSearch(e.target.value)}
-                      placeholder="Search product library..."
-                      className="w-full border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30"
+                      value={inlineForm.equip_code}
+                      onChange={e => setInlineForm((f: any) => ({ ...f, equip_code: e.target.value.toUpperCase() }))}
+                      className={inputCls + ' font-mono uppercase'}
+                      placeholder="TAG-101"
+                      onKeyDown={e => { if (e.key === 'Escape') cancelInline(); if (e.key === 'Enter') saveInlineRow(); }}
                     />
-                    {productSearchResults?.items?.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 z-10 max-h-48 overflow-auto">
-                        {productSearchResults.items.map((p: any) => (
-                          <button
-                            key={p.id}
-                            onClick={() => { setSelectedProduct(p); setProductSearch(''); }}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0"
-                          >
-                            <EntityCode code={p.product_code} />
-                            <span className="text-sm text-slate-800">{p.product_name}</span>
-                          </button>
-                        ))}
+                  </td>
+                  <td className={cellCls + ' relative'}>
+                    {inlineSelectedProduct ? (
+                      <div className="flex items-center gap-1.5 border border-[#3E5C76] bg-blue-50 rounded px-2 py-1 text-sm">
+                        <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
+                        <button onClick={() => { setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <Search className="absolute left-2 top-1.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                        <input
+                          ref={searchRef}
+                          value={inlineProductSearch}
+                          onChange={e => setInlineProductSearch(e.target.value)}
+                          placeholder="Search or type description…"
+                          className={inputCls + ' pl-7'}
+                          onKeyDown={e => { if (e.key === 'Escape') cancelInline(); }}
+                        />
+                        {productSearchResults?.items?.length > 0 && (
+                          <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl mt-0.5 z-20 max-h-52 overflow-auto">
+                            {productSearchResults.items.map((p: any) => (
+                              <button
+                                key={p.id}
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => { setInlineSelectedProduct(p); setInlineProductSearch(''); }}
+                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0"
+                              >
+                                <EntityCode code={p.product_code} />
+                                <span className="text-sm text-slate-800 truncate">{p.product_name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
-                    {productSearch.length >= 2 && !productSearchResults?.items?.length && (
-                      <p className="text-xs text-slate-400 mt-1">No products found — you can still add a free-text item below.</p>
-                    )}
-                  </div>
-                )}
-              </div>
+                  </td>
+                  <td className={cellCls}>
+                    {inlineSelectedProduct
+                      ? <EntityCode code={inlineSelectedProduct.product_code} />
+                      : <span className="text-slate-300 text-xs">—</span>}
+                  </td>
+                  <td className={cellCls}>
+                    <input type="number" min="0.001" step="any"
+                      value={inlineForm.quantity}
+                      onChange={e => setInlineForm((f: any) => ({ ...f, quantity: e.target.value }))}
+                      className={inputCls}
+                    />
+                  </td>
+                  <td className={cellCls}>
+                    <select value={inlineForm.unit} onChange={e => setInlineForm((f: any) => ({ ...f, unit: e.target.value }))} className={inputCls}>
+                      {UNITS.map(u => <option key={u}>{u}</option>)}
+                    </select>
+                  </td>
+                  <td className={cellCls}>
+                    <select value={inlineForm.status} onChange={e => setInlineForm((f: any) => ({ ...f, status: e.target.value }))} className={inputCls}>
+                      {STATUSES.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </td>
+                  <td className={cellCls}>
+                    <div className="flex items-center gap-1">
+                      <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-[#3E5C76] text-white hover:bg-[#2d4a63] disabled:opacity-50">
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
 
-              {/* Tag / equipment code */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Tag / Equipment Code <span className="text-red-400">*</span></label>
-                <input
-                  value={equipCode}
-                  onChange={e => setEquipCode(e.target.value)}
-                  placeholder="e.g. P-101"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30 uppercase"
-                />
-              </div>
-
-              {/* Qty + Unit */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
-                  <input type="number" min="0.001" step="any"
-                    value={equipQty} onChange={e => setEquipQty(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
-                  <select value={equipUnit} onChange={e => setEquipUnit(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
-                    {['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'].map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={equipStatus} onChange={e => setEquipStatus(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
-                  {['Design', 'Procurement', 'Installed', 'Commissioned', 'Active', 'Decommissioned'].map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100">
-              <Button size="sm" onClick={() => setShowAddProduct(false)}>Cancel</Button>
-              <Button size="sm" variant="primary" onClick={handleAddProduct} disabled={addingSaving}>
-                {addingSaving ? 'Adding...' : 'Add Product'}
-              </Button>
-            </div>
+          {/* Footer add row shortcut */}
+          <div className="border-t border-slate-100 px-3 py-2">
+            <button
+              onClick={startNewRow}
+              disabled={inlineEditId === NEW_ROW_ID}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-[#3E5C76] disabled:opacity-40"
+            >
+              <Plus className="w-3.5 h-3.5" />Add row
+            </button>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Transition State Modal */}
       {showTransition && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-80 p-5">
             <h3 className="font-semibold mb-3">Transition State</h3>
-            <select value={newState} onChange={e => setNewState(e.target.value)} className="w-full border rounded px-3 py-2 text-sm mb-3 focus:outline-none focus:border-[#3E5C76]">
-              <option value="">Select new state...</option>
+            <select value={newState} onChange={e => setNewState(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-sm mb-4 bg-white focus:outline-none focus:border-[#3E5C76]">
+              <option value="">— select state —</option>
               {transitions.map(t => <option key={t}>{t}</option>)}
             </select>
             <div className="flex justify-end gap-2">
               <Button onClick={() => setShowTransition(false)}>Cancel</Button>
-              <Button variant="primary" onClick={async () => {
-                if (!newState) return;
-                await api.post('/lifecycle/transition', { entity_type: 'system', entity_id: system.id, to_state: newState });
+              <Button variant="primary" disabled={!newState} onClick={async () => {
+                await api.put(`/systems/${system.id}`, { ...system, status: newState });
                 toast.success(`State → ${newState}`);
                 refetch();
-                qc.invalidateQueries({ queryKey: ['lifecycle'] });
                 setShowTransition(false);
               }}>Apply</Button>
             </div>
