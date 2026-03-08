@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -113,6 +113,40 @@ router.post('/documents/:id/revisions', authenticate, upload.single('file'), asy
 
   await query('UPDATE documents SET current_revision=$1, updated_at=NOW() WHERE id=$2', [revision_code || 'A', req.params.id]);
   res.status(201).json(result.rows[0]);
+});
+
+// DELETE REVISION (admin only)
+router.delete('/documents/revisions/:revId', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const rev = await query('SELECT * FROM document_revisions WHERE id=$1', [req.params.revId]);
+  if (!rev.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Revision not found' } });
+  const docId = rev.rows[0].document_id;
+  if (rev.rows[0].file_path) {
+    const filePath = path.join(__dirname, '../../', rev.rows[0].file_path);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+  await query('DELETE FROM document_revisions WHERE id=$1', [req.params.revId]);
+  const remaining = await query('SELECT revision_code FROM document_revisions WHERE document_id=$1 ORDER BY created_at DESC LIMIT 1', [docId]);
+  const newCurrent = remaining.rows[0]?.revision_code ?? null;
+  await query('UPDATE documents SET current_revision=$1, updated_at=NOW() WHERE id=$2', [newCurrent, docId]);
+  res.status(204).end();
+});
+
+// DELETE DOCUMENT (admin only)
+router.delete('/documents/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const doc = await query('SELECT * FROM documents WHERE id=$1', [req.params.id]);
+  if (!doc.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  const revisions = await query('SELECT file_path FROM document_revisions WHERE document_id=$1', [req.params.id]);
+  for (const rev of revisions.rows) {
+    if (rev.file_path) {
+      const filePath = path.join(__dirname, '../../', rev.file_path);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+  }
+  await query('DELETE FROM document_revisions WHERE document_id=$1', [req.params.id]);
+  await query('DELETE FROM approvals WHERE document_id=$1', [req.params.id]);
+  await query('DELETE FROM lifecycle_transitions WHERE entity_type=$1 AND entity_id=$2', ['document', req.params.id]);
+  await query('DELETE FROM documents WHERE id=$1', [req.params.id]);
+  res.status(204).end();
 });
 
 // APPROVALS

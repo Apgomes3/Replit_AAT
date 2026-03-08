@@ -10,7 +10,8 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus, Upload, FolderOpen, FolderX, ExternalLink, Paperclip } from 'lucide-react';
+import { Plus, Upload, FolderOpen, FolderX, ExternalLink, Paperclip, Trash2 } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -32,6 +33,8 @@ function nextRevLetter(existing: string[]): string {
 export default function DocumentsList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
 
@@ -112,6 +115,13 @@ export default function DocumentsList() {
     }
   };
 
+  const handleDeleteDocument = async (doc: Document) => {
+    if (!window.confirm(`Permanently delete ${doc.document_code}? All revisions and files will be removed.`)) return;
+    await api.delete(`/documents/${doc.id}`);
+    toast.success(`${doc.document_code} deleted`);
+    refetch();
+  };
+
   const columns: Column<Document>[] = [
     { key: 'document_code', header: 'Code', render: r => <EntityCode code={r.document_code} /> },
     { key: 'document_title', header: 'Title', render: r => <span className="font-medium">{r.document_title}</span> },
@@ -177,6 +187,13 @@ export default function DocumentsList() {
                 toast.success('Project link removed');
                 refetch();
               },
+            }] : []),
+            ...(isAdmin ? [{
+              label: 'Delete Document',
+              icon: <Trash2 className="w-3.5 h-3.5" />,
+              danger: true,
+              divider: true,
+              onClick: () => handleDeleteDocument(row),
             }] : []),
           ]}
         />

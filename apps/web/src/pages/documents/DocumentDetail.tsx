@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link } from 'react-router-dom';
-import { useState, useRef } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
@@ -9,7 +9,8 @@ import EntityCode from '../../components/ui/EntityCode';
 import LifecycleHistory from '../../components/ui/LifecycleHistory';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Upload, CheckCircle, XCircle, ArrowRight, Download } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Download, Trash2 } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -30,7 +31,10 @@ function nextRevLetter(existing: string[]): string {
 
 export default function DocumentDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
   const [showIssue, setShowIssue] = useState(false);
   const [showApproval, setShowApproval] = useState(false);
   const [issueRev, setIssueRev] = useState('');
@@ -41,6 +45,14 @@ export default function DocumentDetail() {
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const issueSavingRef = useRef(false);
+  const [revCtxMenu, setRevCtxMenu] = useState<{ rev: any; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const close = () => setRevCtxMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close); };
+  }, []);
 
   const { data: document, isLoading, refetch } = useQuery({
     queryKey: ['document', id],
@@ -96,6 +108,20 @@ export default function DocumentDetail() {
     setShowApproval(false);
   };
 
+  const handleDeleteRevision = async (rev: any) => {
+    if (!window.confirm(`Delete revision ${rev.revision_code}? This cannot be undone.`)) return;
+    await api.delete(`/documents/revisions/${rev.id}`);
+    toast.success(`Revision ${rev.revision_code} deleted`);
+    refetch();
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!window.confirm(`Permanently delete document ${document.document_code}? All revisions and files will be removed.`)) return;
+    await api.delete(`/documents/${id}`);
+    toast.success(`Document ${document.document_code} deleted`);
+    navigate('/documents');
+  };
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader
@@ -116,6 +142,7 @@ export default function DocumentDetail() {
             }}><Upload className="w-3.5 h-3.5" />Issue Revision</Button>
             <Button size="sm" onClick={() => { setApprovalAction('Rejected'); setApprovalComment(''); setShowApproval(true); }}><XCircle className="w-3.5 h-3.5" />Reject</Button>
             <Button size="sm" variant="primary" onClick={() => { setApprovalAction('Approved'); setApprovalComment(''); setShowApproval(true); }}><CheckCircle className="w-3.5 h-3.5" />Approve / Release</Button>
+            {isAdmin && <Button size="sm" variant="danger" onClick={handleDeleteDocument}><Trash2 className="w-3.5 h-3.5" />Delete</Button>}
           </div>
         }
       />
@@ -137,7 +164,11 @@ export default function DocumentDetail() {
                 {document.revisions?.length === 0 ? (
                   <div className="p-4 text-slate-400 text-sm">No revisions issued yet</div>
                 ) : document.revisions?.map((rev: any) => (
-                  <div key={rev.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                  <div
+                    key={rev.id}
+                    className="px-4 py-3 flex items-start justify-between gap-4 hover:bg-slate-50 select-none"
+                    onContextMenu={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); setRevCtxMenu({ rev, x: e.clientX, y: e.clientY }); } : undefined}
+                  >
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-medium">Rev {rev.revision_code}</span>
@@ -270,6 +301,21 @@ export default function DocumentDetail() {
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {revCtxMenu && (
+        <div
+          className="fixed z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[160px]"
+          style={{ top: revCtxMenu.y, left: revCtxMenu.x }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button
+            className="w-full px-3 py-2 text-sm text-left flex items-center gap-2 text-red-600 hover:bg-red-50"
+            onClick={() => { setRevCtxMenu(null); handleDeleteRevision(revCtxMenu.rev); }}
+          >
+            <Trash2 className="w-3.5 h-3.5" />Delete Revision {revCtxMenu.rev.revision_code}
+          </button>
         </div>
       )}
     </div>
