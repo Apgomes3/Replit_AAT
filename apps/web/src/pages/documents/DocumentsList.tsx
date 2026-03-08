@@ -10,7 +10,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus, Upload, FolderOpen, FolderX, ExternalLink, Paperclip, Trash2 } from 'lucide-react';
+import { Plus, Upload, FolderOpen, FolderX, ExternalLink, Paperclip, Trash2, Package, PackageX } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
 function nextRevLetter(existing: string[]): string {
@@ -50,6 +50,11 @@ export default function DocumentsList() {
   const [linkSaving, setLinkSaving] = useState(false);
   const [linkDocProjects, setLinkDocProjects] = useState<Array<{ id: string; project_code: string; project_name: string }>>([]);
 
+  const [productLinkTarget, setProductLinkTarget] = useState<any | null>(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [addProductId, setAddProductId] = useState('');
+  const [productLinkSaving, setProductLinkSaving] = useState(false);
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['documents', search],
     queryFn: () => api.get(`/documents${search ? `?q=${search}` : ''}`).then(r => r.data),
@@ -58,6 +63,11 @@ export default function DocumentsList() {
   const { data: projects } = useQuery({
     queryKey: ['projects-list'],
     queryFn: () => api.get('/projects?page_size=200').then(r => r.data),
+  });
+
+  const { data: allProducts } = useQuery({
+    queryKey: ['products-list-doclist'],
+    queryFn: () => api.get('/product-masters?page_size=500').then(r => r.data),
   });
 
   const openIssue = (doc: Document) => {
@@ -119,6 +129,37 @@ export default function DocumentsList() {
     qc.invalidateQueries({ queryKey: ['document', linkTarget.id] });
   };
 
+  const openProductLink = async (doc: any) => {
+    const res = await api.get(`/documents/${doc.id}`);
+    setProductLinkTarget({ ...doc, product_id: res.data.product_id, product_code: res.data.product_code, product_name: res.data.product_name });
+    setProductSearch('');
+    setAddProductId('');
+  };
+
+  const handleSetProductLink = async () => {
+    if (!productLinkTarget || !addProductId || productLinkSaving) return;
+    setProductLinkSaving(true);
+    try {
+      await api.put(`/documents/${productLinkTarget.id}/product`, { product_id: addProductId });
+      const prod = (allProducts?.items ?? []).find((p: any) => p.id === addProductId);
+      setProductLinkTarget((prev: any) => ({ ...prev, product_id: addProductId, product_code: prod?.product_code, product_name: prod?.product_name }));
+      setAddProductId('');
+      setProductSearch('');
+      toast.success('Product linked');
+      refetch();
+    } finally {
+      setProductLinkSaving(false);
+    }
+  };
+
+  const handleRemoveProductLink = async () => {
+    if (!productLinkTarget) return;
+    await api.delete(`/documents/${productLinkTarget.id}/product`);
+    setProductLinkTarget((prev: any) => ({ ...prev, product_id: null, product_code: null, product_name: null }));
+    toast.success('Product link removed');
+    refetch();
+  };
+
   const handleDeleteDocument = async (doc: Document) => {
     if (!window.confirm(`Permanently delete ${doc.document_code}? All revisions and files will be removed.`)) return;
     await api.delete(`/documents/${doc.id}`);
@@ -172,6 +213,11 @@ export default function DocumentsList() {
               label: 'Manage Project Links',
               icon: <FolderOpen className="w-3.5 h-3.5" />,
               onClick: () => openLink(row),
+            },
+            {
+              label: 'Manage Product Links',
+              icon: <Package className="w-3.5 h-3.5" />,
+              onClick: () => openProductLink(row),
               divider: true,
             },
             ...(isAdmin ? [{
@@ -296,6 +342,74 @@ export default function DocumentsList() {
             </div>
             <div className="flex justify-end mt-4">
               <Button onClick={() => setLinkTarget(null)}>Done</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {productLinkTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-[420px] p-5">
+            <h3 className="font-semibold mb-0.5">Manage Product Links</h3>
+            <p className="text-xs text-slate-400 mb-4"><span className="font-mono font-medium">{productLinkTarget.document_code}</span> — {productLinkTarget.document_title}</p>
+            {productLinkTarget.product_id ? (
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide">Linked Product</label>
+                <div className="flex items-center justify-between bg-slate-50 rounded px-3 py-2 text-sm mt-1.5">
+                  <span>
+                    <span className="font-mono font-medium text-[#3E5C76]">{productLinkTarget.product_code}</span>
+                    <span className="text-slate-400 ml-2">{productLinkTarget.product_name}</span>
+                  </span>
+                  <button onClick={handleRemoveProductLink} className="text-red-400 hover:text-red-600 ml-2">
+                    <PackageX className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 mb-4">No product linked yet.</p>
+            )}
+            <div className="space-y-2">
+              <label className="text-xs text-slate-500 uppercase tracking-wide">{productLinkTarget.product_id ? 'Change Product' : 'Link a Product'}</label>
+              <input
+                value={productSearch}
+                onChange={e => { setProductSearch(e.target.value); setAddProductId(''); }}
+                placeholder="Search by code or name…"
+                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-[#3E5C76]"
+              />
+              {productSearch.length >= 1 && (
+                <div className="border rounded max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white">
+                  {(allProducts?.items ?? [])
+                    .filter((p: any) =>
+                      p.product_code?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                      p.product_name?.toLowerCase().includes(productSearch.toLowerCase())
+                    )
+                    .slice(0, 20)
+                    .map((p: any) => (
+                      <button
+                        key={p.id}
+                        className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 ${addProductId === p.id ? 'bg-blue-50 font-medium' : ''}`}
+                        onClick={() => setAddProductId(p.id)}
+                      >
+                        <EntityCode code={p.product_code} />
+                        <span className="text-slate-600 truncate">{p.product_name}</span>
+                      </button>
+                    ))}
+                  {(allProducts?.items ?? []).filter((p: any) =>
+                    p.product_code?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                    p.product_name?.toLowerCase().includes(productSearch.toLowerCase())
+                  ).length === 0 && (
+                    <div className="px-3 py-2 text-sm text-slate-400">No products match</div>
+                  )}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button variant="primary" onClick={handleSetProductLink} disabled={!addProductId || productLinkSaving}>
+                  {productLinkSaving ? '…' : 'Link'}
+                </Button>
+              </div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <Button onClick={() => setProductLinkTarget(null)}>Done</Button>
             </div>
           </div>
         </div>
