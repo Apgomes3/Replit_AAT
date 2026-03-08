@@ -86,7 +86,7 @@ async function getEntityInfo(id: string, type: string): Promise<GraphNode | null
 
 export async function findProductReuse(productId: string) {
   const result = await query(`
-    SELECT DISTINCT p.project_code, p.project_name, p.project_status,
+    SELECT DISTINCT p.id::text as project_id, p.project_code, p.project_name, p.project_status,
            pm.product_code, pm.product_name
     FROM product_usages pu
     JOIN projects p ON pu.project_id = p.id
