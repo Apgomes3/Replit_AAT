@@ -366,6 +366,19 @@ CREATE TABLE IF NOT EXISTS document_project_links (
   UNIQUE(document_id, project_id)
 );
 
+CREATE TABLE IF NOT EXISTS project_products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
+  quantity NUMERIC DEFAULT 1,
+  unit VARCHAR(50) DEFAULT 'EA',
+  description TEXT,
+  notes TEXT,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS document_revisions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
