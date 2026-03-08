@@ -54,7 +54,7 @@ export default function DocumentDetail() {
   if (!document) return <div className="p-8 text-slate-400">Document not found</div>;
 
   const handleIssueRevision = async () => {
-    if (!issueRev) return;
+    if (!issueRev || !uploadFile) return;
     const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string);
     if (existing.map(s => s.toUpperCase()).includes(issueRev.toUpperCase())) {
       toast.error(`Revision ${issueRev.toUpperCase()} already exists — next available is ${nextRevLetter(existing)}`);
@@ -63,7 +63,7 @@ export default function DocumentDetail() {
     const form = new FormData();
     form.append('revision_code', issueRev.toUpperCase());
     form.append('revision_purpose', issuePurpose);
-    if (uploadFile) form.append('file', uploadFile);
+    form.append('file', uploadFile);
     await api.post(`/documents/${id}/revisions`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
     toast.success(`Revision ${issueRev.toUpperCase()} issued`);
     refetch();
@@ -194,13 +194,23 @@ export default function DocumentDetail() {
                 <input value={issuePurpose} onChange={e => setIssuePurpose(e.target.value)} placeholder="For Construction" className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[#3E5C76]" />
               </div>
               <div>
-                <label className="text-xs text-slate-500 uppercase tracking-wide">Attach File (optional)</label>
-                <input ref={fileRef} type="file" onChange={e => setUploadFile(e.target.files?.[0] || null)} className="w-full text-sm mt-1" />
+                <label className="text-xs text-slate-500 uppercase tracking-wide">
+                  Document File <span className="text-red-500">*</span>
+                </label>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  onChange={e => setUploadFile(e.target.files?.[0] || null)}
+                  className="w-full text-sm mt-1 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
+                />
+                {uploadFile && (
+                  <p className="text-xs text-slate-500 mt-1 truncate">{uploadFile.name} <span className="text-slate-400">({(uploadFile.size / 1024).toFixed(0)} KB)</span></p>
+                )}
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <Button onClick={() => setShowIssue(false)}>Cancel</Button>
-              <Button variant="primary" onClick={handleIssueRevision}>Issue</Button>
+              <Button variant="primary" onClick={handleIssueRevision} disabled={!issueRev || !uploadFile}>Issue</Button>
             </div>
           </div>
         </div>

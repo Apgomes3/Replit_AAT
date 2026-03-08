@@ -10,7 +10,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus, Upload, FolderOpen, FolderX, ExternalLink } from 'lucide-react';
+import { Plus, Upload, FolderOpen, FolderX, ExternalLink, Paperclip } from 'lucide-react';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -38,6 +38,7 @@ export default function DocumentsList() {
   const [issueTarget, setIssueTarget] = useState<Document | null>(null);
   const [issueRev, setIssueRev] = useState('');
   const [issuePurpose, setIssuePurpose] = useState('');
+  const [issueFile, setIssueFile] = useState<File | null>(null);
   const [issueSaving, setIssueSaving] = useState(false);
 
   const [linkTarget, setLinkTarget] = useState<Document | null>(null);
@@ -58,16 +59,18 @@ export default function DocumentsList() {
     const existing = (doc as any).current_revision ? [(doc as any).current_revision] : [];
     setIssueRev(nextRevLetter(existing));
     setIssuePurpose('');
+    setIssueFile(null);
     setIssueTarget(doc);
   };
 
   const handleIssueRevision = async () => {
-    if (!issueTarget || !issueRev) return;
+    if (!issueTarget || !issueRev || !issueFile) return;
     setIssueSaving(true);
     try {
       const form = new FormData();
       form.append('revision_code', issueRev.toUpperCase());
       form.append('revision_purpose', issuePurpose);
+      form.append('file', issueFile);
       await api.post(`/documents/${issueTarget.id}/revisions`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success(`Revision ${issueRev.toUpperCase()} issued for ${issueTarget.document_code}`);
       refetch();
@@ -225,10 +228,23 @@ export default function DocumentsList() {
                   className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[#3E5C76]"
                 />
               </div>
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                  <Paperclip className="w-3 h-3" />Document File <span className="text-red-500 ml-0.5">*</span>
+                </label>
+                <input
+                  type="file"
+                  onChange={e => setIssueFile(e.target.files?.[0] || null)}
+                  className="w-full text-sm mt-1 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
+                />
+                {issueFile && (
+                  <p className="text-xs text-slate-500 mt-1 truncate">{issueFile.name} <span className="text-slate-400">({(issueFile.size / 1024).toFixed(0)} KB)</span></p>
+                )}
+              </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <Button onClick={() => setIssueTarget(null)}>Cancel</Button>
-              <Button variant="primary" onClick={handleIssueRevision} disabled={!issueRev || issueSaving}>
+              <Button variant="primary" onClick={handleIssueRevision} disabled={!issueRev || !issueFile || issueSaving}>
                 {issueSaving ? 'Issuing…' : 'Issue'}
               </Button>
             </div>
