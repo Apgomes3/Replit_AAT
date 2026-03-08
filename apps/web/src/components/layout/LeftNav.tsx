@@ -157,7 +157,7 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
 const ADMIN_GROUPS = [
   {
     label: 'Library',
-    items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules'].includes(i.id)),
+    items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families'].includes(i.id)),
   },
   {
     label: 'Documents',
