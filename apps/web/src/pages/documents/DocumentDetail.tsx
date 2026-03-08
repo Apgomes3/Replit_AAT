@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import LifecycleHistory from '../../components/ui/LifecycleHistory';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus, Package, PackageX } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
 function nextRevLetter(existing: string[]): string {
@@ -49,6 +49,10 @@ export default function DocumentDetail() {
   const [showProjectLinks, setShowProjectLinks] = useState(false);
   const [addProjectId, setAddProjectId] = useState('');
   const [projectLinkSaving, setProjectLinkSaving] = useState(false);
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [addProductId, setAddProductId] = useState('');
+  const [productLinkSaving, setProductLinkSaving] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
 
   useEffect(() => {
     const close = () => setRevCtxMenu(null);
@@ -70,6 +74,11 @@ export default function DocumentDetail() {
   const { data: allProjects } = useQuery({
     queryKey: ['projects-list'],
     queryFn: () => api.get('/projects?page_size=200').then(r => r.data),
+  });
+
+  const { data: allProducts } = useQuery({
+    queryKey: ['products-list-doc'],
+    queryFn: () => api.get('/product-masters?page_size=500').then(r => r.data),
   });
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
@@ -146,6 +155,28 @@ export default function DocumentDetail() {
   const handleRemoveProjectLink = async (projectId: string) => {
     await api.delete(`/documents/${id}/projects/${projectId}`);
     toast.success('Project link removed');
+    refetch();
+  };
+
+  const handleSetProductLink = async () => {
+    if (!addProductId || productLinkSaving) return;
+    setProductLinkSaving(true);
+    try {
+      await api.put(`/documents/${id}/product`, { product_id: addProductId });
+      setAddProductId('');
+      setProductSearch('');
+      setShowProductPicker(false);
+      toast.success('Product linked');
+      refetch();
+    } finally {
+      setProductLinkSaving(false);
+    }
+  };
+
+  const handleRemoveProductLink = async () => {
+    if (!window.confirm('Remove the product link from this document?')) return;
+    await api.delete(`/documents/${id}/product`);
+    toast.success('Product link removed');
     refetch();
   };
 
@@ -226,6 +257,88 @@ export default function DocumentDetail() {
                       {projectLinkSaving ? '…' : 'Link'}
                     </Button>
                     <Button size="sm" onClick={() => { setShowProjectLinks(false); setAddProjectId(''); }}>Cancel</Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Product Link */}
+            <div className="bg-white border border-slate-200 rounded-lg">
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5 text-slate-400" />Product Link
+                </span>
+                {document.product_id ? (
+                  <button
+                    onClick={() => { setShowProductPicker(v => !v); setProductSearch(''); setAddProductId(''); }}
+                    className="text-xs text-[#3E5C76] hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />Change
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setShowProductPicker(v => !v); setProductSearch(''); setAddProductId(''); }}
+                    className="text-xs text-[#3E5C76] hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />Add
+                  </button>
+                )}
+              </div>
+              <div className="px-4 py-3 space-y-2">
+                {document.product_id ? (
+                  <div className="flex items-center justify-between">
+                    <Link to={`/products/masters/${document.product_id}`} className="flex items-center gap-1.5 text-sm hover:underline">
+                      <Package className="w-3.5 h-3.5 text-slate-400" />
+                      <EntityCode code={document.product_code} />
+                      <span className="text-slate-500">{document.product_name}</span>
+                    </Link>
+                    <button onClick={handleRemoveProductLink} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50">
+                      <PackageX className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  !showProductPicker && <p className="text-sm text-slate-400">Not linked to any product</p>
+                )}
+                {showProductPicker && (
+                  <div className="space-y-2 pt-1">
+                    <input
+                      value={productSearch}
+                      onChange={e => { setProductSearch(e.target.value); setAddProductId(''); }}
+                      placeholder="Search by code or name…"
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]"
+                    />
+                    {productSearch.length >= 1 && (
+                      <div className="border rounded max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white">
+                        {(allProducts?.items ?? [])
+                          .filter((p: any) =>
+                            p.product_code?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                            p.product_name?.toLowerCase().includes(productSearch.toLowerCase())
+                          )
+                          .slice(0, 20)
+                          .map((p: any) => (
+                            <button
+                              key={p.id}
+                              className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 ${addProductId === p.id ? 'bg-blue-50' : ''}`}
+                              onClick={() => setAddProductId(p.id)}
+                            >
+                              <EntityCode code={p.product_code} />
+                              <span className="text-slate-600 truncate">{p.product_name}</span>
+                            </button>
+                          ))}
+                        {(allProducts?.items ?? []).filter((p: any) =>
+                          p.product_code?.toLowerCase().includes(productSearch.toLowerCase()) ||
+                          p.product_name?.toLowerCase().includes(productSearch.toLowerCase())
+                        ).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-slate-400">No products match</div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="primary" onClick={handleSetProductLink} disabled={!addProductId || productLinkSaving}>
+                        {productLinkSaving ? '…' : 'Link'}
+                      </Button>
+                      <Button size="sm" onClick={() => { setShowProductPicker(false); setAddProductId(''); setProductSearch(''); }}>Cancel</Button>
+                    </div>
                   </div>
                 )}
               </div>

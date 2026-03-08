@@ -55,8 +55,11 @@ router.get('/documents', authenticate, async (req: AuthRequest, res: Response) =
 
 router.get('/documents/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query(
-    `SELECT d.*, u.first_name || ' ' || u.last_name as created_by_name
-     FROM documents d LEFT JOIN users u ON d.created_by=u.id
+    `SELECT d.*, u.first_name || ' ' || u.last_name as created_by_name,
+            pm.product_code, pm.product_name
+     FROM documents d
+     LEFT JOIN users u ON d.created_by=u.id
+     LEFT JOIN product_masters pm ON d.product_id=pm.id
      WHERE d.id::text=$1 OR d.document_code=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
   const docId = result.rows[0].id;
@@ -72,6 +75,24 @@ router.get('/documents/:id', authenticate, async (req: AuthRequest, res: Respons
      FROM approvals a LEFT JOIN users u ON a.approver_id=u.id
      WHERE a.document_id=$1 ORDER BY a.acted_at DESC`, [docId]);
   res.json({ ...result.rows[0], projects: projects.rows, revisions: revisions.rows, approvals: approvals.rows });
+});
+
+// PRODUCT LINK
+router.put('/documents/:id/product', authenticate, async (req: AuthRequest, res: Response) => {
+  const { product_id } = req.body;
+  if (!product_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_id required' } });
+  const result = await query(
+    `UPDATE documents SET product_id=$1, updated_at=NOW() WHERE id=$2
+     RETURNING id, product_id`,
+    [product_id, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  const pm = await query('SELECT id, product_code, product_name FROM product_masters WHERE id=$1', [product_id]);
+  res.json(pm.rows[0] ?? {});
+});
+
+router.delete('/documents/:id/product', authenticate, async (req: AuthRequest, res: Response) => {
+  await query('UPDATE documents SET product_id=NULL, updated_at=NOW() WHERE id=$1', [req.params.id]);
+  res.status(204).end();
 });
 
 router.post('/documents', authenticate, async (req: AuthRequest, res: Response) => {
