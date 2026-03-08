@@ -11,6 +11,23 @@ import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 import { Upload, CheckCircle, XCircle, ArrowRight, Download } from 'lucide-react';
 
+function nextRevLetter(existing: string[]): string {
+  if (existing.length === 0) return 'A';
+  const sorted = [...existing].map(s => s.toUpperCase()).sort();
+  const last = sorted[sorted.length - 1];
+  const chars = last.split('');
+  let i = chars.length - 1;
+  while (i >= 0) {
+    if (chars[i] < 'Z') {
+      chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1);
+      return chars.join('');
+    }
+    chars[i] = 'A';
+    i--;
+  }
+  return 'A' + chars.join('');
+}
+
 export default function DocumentDetail() {
   const { id } = useParams();
   const qc = useQueryClient();
@@ -38,15 +55,22 @@ export default function DocumentDetail() {
 
   const handleIssueRevision = async () => {
     if (!issueRev) return;
+    const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string);
+    if (existing.map(s => s.toUpperCase()).includes(issueRev.toUpperCase())) {
+      toast.error(`Revision ${issueRev.toUpperCase()} already exists — next available is ${nextRevLetter(existing)}`);
+      return;
+    }
     const form = new FormData();
-    form.append('revision_code', issueRev);
+    form.append('revision_code', issueRev.toUpperCase());
     form.append('revision_purpose', issuePurpose);
     if (uploadFile) form.append('file', uploadFile);
     await api.post(`/documents/${id}/revisions`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
-    toast.success(`Revision ${issueRev} issued`);
+    toast.success(`Revision ${issueRev.toUpperCase()} issued`);
     refetch();
     qc.invalidateQueries({ queryKey: ['lifecycle'] });
     setShowIssue(false);
+    setIssuePurpose('');
+    setUploadFile(null);
   };
 
   const handleApproval = async () => {
@@ -71,7 +95,7 @@ export default function DocumentDetail() {
         breadcrumb={<Link to="/documents" className="hover:underline">Documents</Link>}
         actions={
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => setShowIssue(true)}><Upload className="w-3.5 h-3.5" />Issue Revision</Button>
+            <Button size="sm" onClick={() => { const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string); setIssueRev(nextRevLetter(existing)); setShowIssue(true); }}><Upload className="w-3.5 h-3.5" />Issue Revision</Button>
             <Button size="sm" variant="primary" onClick={() => setShowApproval(true)}><CheckCircle className="w-3.5 h-3.5" />Approve/Release</Button>
           </div>
         }
@@ -145,7 +169,15 @@ export default function DocumentDetail() {
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide">Revision Code</label>
-                <input value={issueRev} onChange={e => setIssueRev(e.target.value)} placeholder="B" className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[#3E5C76]" />
+                <input
+                  value={issueRev}
+                  onChange={e => setIssueRev(e.target.value.toUpperCase())}
+                  maxLength={4}
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 font-mono focus:outline-none focus:border-[#3E5C76]"
+                />
+                {document.revisions?.length > 0 && (
+                  <p className="text-xs text-slate-400 mt-1">Current: <span className="font-mono font-medium">{document.current_revision}</span> · Existing: {(document.revisions as any[]).map(r => r.revision_code).join(', ')}</p>
+                )}
               </div>
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide">Purpose</label>
