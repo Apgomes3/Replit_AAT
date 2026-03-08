@@ -744,7 +744,7 @@ export default function ProductMasterDetail() {
             </div>
 
             {/* Electrical Card */}
-            <div className="bg-white border border-slate-200 rounded-lg mt-3">
+            {!isTank && <div className="bg-white border border-slate-200 rounded-lg mt-3">
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" />Electrical</span>
                 {!editingElectrical
@@ -773,7 +773,7 @@ export default function ProductMasterDetail() {
                       </div>}
                 </div>
               )}
-            </div>
+            </div>}
 
             <div className="bg-white border border-slate-200 rounded-lg p-4 mt-3">
               <div className="flex items-center justify-between mb-2">
