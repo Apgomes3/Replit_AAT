@@ -196,6 +196,13 @@ export default function ProductMasterDetail() {
     queryFn: () => api.get('/materials').then(r => r.data),
   });
 
+  const { data: tankFamiliesData } = useQuery({
+    queryKey: ['tank-families'],
+    queryFn: () => api.get('/tank-families').then(r => r.data),
+    enabled: true,
+  });
+  const tankFamilies: any[] = tankFamiliesData?.items || [];
+
   const productPutPayload = (overrides: Record<string, any>) => ({
     product_name: product.product_name,
     product_category: product.product_category,
@@ -215,6 +222,7 @@ export default function ProductMasterDetail() {
     gross_volume_m3: product.gross_volume_m3,
     operating_volume_m3: product.operating_volume_m3,
     product_family_id: product.product_family_id,
+    tank_family_id: product.tank_family_id,
     synonyms: product.synonyms || [],
     ...overrides,
   });
@@ -229,6 +237,7 @@ export default function ProductMasterDetail() {
       power_kw: product.power_kw != null ? String(product.power_kw) : '',
       primary_material_code: product.primary_material_code || '',
       notes: product.notes || '',
+      tank_family_id: (product as any).tank_family_id || '',
     });
     setEditing(true);
   };
@@ -245,6 +254,7 @@ export default function ProductMasterDetail() {
         power_kw: editForm.power_kw ? parseFloat(editForm.power_kw) : null,
         primary_material_code: editForm.primary_material_code || null,
         notes: editForm.notes || null,
+        tank_family_id: editForm.tank_family_id || null,
       }));
       toast.success('Product updated');
       setEditing(false);
@@ -598,6 +608,7 @@ export default function ProductMasterDetail() {
               { label: 'Category', value: product.product_category },
               ...(!isPiping && !isTank ? [{ label: 'Application', value: product.application_type }] : []),
               ...(isTank ? [{ label: 'Tank Type', value: product.application_type }] : []),
+              ...(isTank ? [{ label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null }] : []),
               ...(!isPiping && !isTank ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
               ...(!isPiping && !isTank ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
               ...(!isPiping && !isTank ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
@@ -625,6 +636,18 @@ export default function ProductMasterDetail() {
                   <input value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
                 </div>
+                {isTank && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Tank Family</label>
+                    <select value={editForm.tank_family_id ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_family_id: e.target.value || null }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                      <option value="">— None —</option>
+                      {tankFamilies.map((fam: any) => (
+                        <option key={fam.id} value={fam.id}>{fam.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {!isPiping && !isTank && (<>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
