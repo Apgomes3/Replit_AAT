@@ -16,7 +16,7 @@ import { useAuthStore } from '../../store/authStore';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-type Tab = 'systems' | 'tanks' | 'piping' | 'products' | 'documents' | 'changes' | 'bom-release';
+type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
 
 
 type Tank = {
@@ -60,12 +60,6 @@ export default function ProjectDetail() {
   const [pipingUnit, setPipingUnit] = useState('EA');
   const [pipingDesc, setPipingDesc] = useState('');
   const [pipingSubmitting, setPipingSubmitting] = useState(false);
-
-  const [productGridMode, setProductGridMode] = useState(false);
-  const [productRows, setProductRows] = useState<any[]>([]);
-  const [productSaving, setProductSaving] = useState(false);
-  const [productSearchActive, setProductSearchActive] = useState<number | null>(null);
-  const [productSearchTerm, setProductSearchTerm] = useState('');
 
   const [showNewBomRelease, setShowNewBomRelease] = useState(false);
   const [bomTitle, setBomTitle] = useState('');
@@ -128,18 +122,6 @@ export default function ProjectDetail() {
     queryKey: ['project-bom-releases', id],
     queryFn: () => api.get(`/projects/${id}/bom-releases`).then(r => r.data),
     enabled: tab === 'bom-release',
-  });
-
-  const { data: projectProducts } = useQuery({
-    queryKey: ['project-products', id],
-    queryFn: () => api.get(`/projects/${id}/products`).then(r => r.data),
-    enabled: tab === 'products',
-  });
-
-  const { data: productGridSearchResults } = useQuery({
-    queryKey: ['product-grid-search', productSearchTerm],
-    queryFn: () => api.get(`/product-masters?q=${encodeURIComponent(productSearchTerm)}&page_size=8`).then(r => r.data),
-    enabled: productSearchTerm.length >= 2 && productSearchActive !== null,
   });
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
@@ -345,75 +327,6 @@ export default function ProjectDetail() {
       qc.invalidateQueries({ queryKey: ['project-piping'] });
     } catch {
       toast.error('Failed to remove item');
-    }
-  };
-
-  const enterProductGridMode = () => {
-    setProductRows((projectProducts?.items || []).map((p: any) => ({
-      ...p,
-      _search: p.product_code ? `${p.product_code} – ${p.product_name}` : '',
-    })));
-    setProductGridMode(true);
-    setProductSearchActive(null);
-    setProductSearchTerm('');
-  };
-
-  const cancelProductGridMode = () => {
-    setProductGridMode(false);
-    setProductSearchActive(null);
-    setProductSearchTerm('');
-  };
-
-  const addProductRow = () => {
-    setProductRows(rows => [
-      ...rows,
-      { _new: true, quantity: 1, unit: 'EA', description: '', notes: '', sort_order: rows.length, _search: '' },
-    ]);
-  };
-
-  const updateProductRow = (idx: number, field: string, value: any) => {
-    setProductRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value, _dirty: true } : r));
-  };
-
-  const removeProductRow = (idx: number) => {
-    setProductRows(rows => rows.map((r, i) => i === idx ? { ...r, _deleted: true } : r));
-  };
-
-  const saveProductGrid = async () => {
-    setProductSaving(true);
-    try {
-      for (const row of productRows) {
-        if (row._deleted) {
-          if (row.id) await api.delete(`/project-products/${row.id}`);
-        } else if (row._new) {
-          await api.post(`/projects/${id}/products`, {
-            product_master_id: row.product_master_id || null,
-            quantity: parseFloat(row.quantity) || 1,
-            unit: row.unit || 'EA',
-            description: row.description || null,
-            notes: row.notes || null,
-            sort_order: row.sort_order ?? 0,
-          });
-        } else if (row._dirty) {
-          await api.put(`/project-products/${row.id}`, {
-            product_master_id: row.product_master_id || null,
-            quantity: parseFloat(row.quantity) || 1,
-            unit: row.unit || 'EA',
-            description: row.description || null,
-            notes: row.notes || null,
-            sort_order: row.sort_order ?? 0,
-          });
-        }
-      }
-      toast.success('Products saved');
-      qc.invalidateQueries({ queryKey: ['project-products'] });
-      setProductGridMode(false);
-      setProductSearchActive(null);
-      setProductSearchTerm('');
-    } catch {
-      toast.error('Failed to save products');
-    } finally {
-      setProductSaving(false);
     }
   };
 
@@ -702,7 +615,6 @@ export default function ProjectDetail() {
               { key: 'systems', label: 'Systems' },
               { key: 'tanks', label: 'Tanks' },
               { key: 'piping', label: 'Piping & Fittings' },
-              { key: 'products', label: 'Products' },
               { key: 'bom-release', label: 'BOM Releases' },
               { key: 'documents', label: 'Documents' },
               { key: 'changes', label: 'Changes' },
@@ -716,17 +628,6 @@ export default function ProjectDetail() {
               {tab === 'systems' && <Button size="sm" variant="primary" onClick={() => setShowNewSystem(true)}><Plus className="w-3.5 h-3.5" />System</Button>}
               {tab === 'tanks' && <Button size="sm" variant="primary" onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); setTankCode(''); setTankStatus('Active'); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button>}
               {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
-              {tab === 'products' && !productGridMode && isPrivileged && (
-                <Button size="sm" variant="primary" onClick={enterProductGridMode}><Pencil className="w-3.5 h-3.5" />Edit in Grid</Button>
-              )}
-              {tab === 'products' && productGridMode && (
-                <>
-                  <Button size="sm" onClick={cancelProductGridMode}>Cancel</Button>
-                  <Button size="sm" variant="primary" onClick={saveProductGrid} disabled={productSaving}>
-                    {productSaving ? 'Saving...' : 'Save'}
-                  </Button>
-                </>
-              )}
               {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setBomSections({ Products: true, Tank: true, Piping: true }); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
             </div>
           </div>
@@ -785,201 +686,6 @@ export default function ProjectDetail() {
               emptyMessage="No piping or fittings added — click Add Item above"
             />
           )}
-          {tab === 'products' && (() => {
-            const viewItems: any[] = projectProducts?.items || [];
-            if (!productGridMode) {
-              if (viewItems.length === 0) return (
-                <div className="p-8 text-center text-sm text-slate-400">
-                  No products added yet
-                  {isPrivileged && <> — click <strong>Edit in Grid</strong> to add products from the ASW Library</>}
-                </div>
-              );
-              return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50">
-                        <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 w-8">#</th>
-                        <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Product</th>
-                        <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Category</th>
-                        <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Description</th>
-                        <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 w-20">Qty</th>
-                        <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 w-16">Unit</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {viewItems.map((item, i) => (
-                        <tr key={item.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-2.5 text-xs text-slate-400">{i + 1}</td>
-                          <td className="px-4 py-2.5">
-                            {item.product_code
-                              ? <Link to={`/products/masters/${item.product_code}`} className="text-[#3E5C76] hover:underline flex items-center gap-1.5">
-                                  <EntityCode code={item.product_code} />
-                                  <span className="text-slate-600 font-medium">{item.product_name}</span>
-                                </Link>
-                              : <span className="text-slate-400 italic text-xs">No product linked</span>
-                            }
-                          </td>
-                          <td className="px-4 py-2.5 text-slate-500 text-xs">{item.application_type || item.product_category || '—'}</td>
-                          <td className="px-4 py-2.5 text-slate-600">{item.description || <span className="text-slate-300">—</span>}</td>
-                          <td className="px-4 py-2.5 text-slate-700 font-mono text-xs">{item.quantity ?? 1}</td>
-                          <td className="px-4 py-2.5 text-slate-500 text-xs">{item.unit || 'EA'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            }
-
-            const activeRows = productRows.filter(r => !r._deleted);
-            const deletedCount = productRows.filter(r => r._deleted).length;
-            return (
-              <div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50">
-                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 w-8">#</th>
-                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 min-w-[220px]">Product</th>
-                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 w-28">Category</th>
-                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500">Description</th>
-                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 w-20">Qty</th>
-                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 w-20">Unit</th>
-                        <th className="w-8 px-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {productRows.map((row, idx) => {
-                        if (row._deleted) return null;
-                        const realIdx = productRows.indexOf(row);
-                        return (
-                          <tr key={idx} className="hover:bg-slate-50/60 group">
-                            <td className="px-3 py-1.5 text-xs text-slate-400">{activeRows.indexOf(row) + 1}</td>
-                            <td className="px-3 py-1.5 relative">
-                              <input
-                                type="text"
-                                value={productSearchActive === realIdx ? productSearchTerm : (row._search || '')}
-                                placeholder="Search product…"
-                                onFocus={() => {
-                                  setProductSearchActive(realIdx);
-                                  setProductSearchTerm(row._search || '');
-                                }}
-                                onChange={e => {
-                                  setProductSearchTerm(e.target.value);
-                                  setProductSearchActive(realIdx);
-                                  updateProductRow(realIdx, '_search', e.target.value);
-                                  if (!e.target.value) {
-                                    updateProductRow(realIdx, 'product_master_id', null);
-                                    updateProductRow(realIdx, 'product_code', null);
-                                    updateProductRow(realIdx, 'product_name', null);
-                                  }
-                                }}
-                                onBlur={() => setTimeout(() => {
-                                  if (productSearchActive === realIdx) {
-                                    setProductSearchActive(null);
-                                    setProductSearchTerm('');
-                                  }
-                                }, 200)}
-                                className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#3E5C76]/40 bg-white"
-                              />
-                              {productSearchActive === realIdx && productSearchTerm.length >= 2 && (
-                                <div className="absolute left-3 right-3 top-full mt-0.5 bg-white border border-slate-200 rounded-lg shadow-xl z-20 max-h-48 overflow-auto">
-                                  {(productGridSearchResults?.items || []).length === 0
-                                    ? <div className="px-3 py-2 text-xs text-slate-400">No products found</div>
-                                    : (productGridSearchResults?.items || []).map((p: any) => (
-                                        <button
-                                          key={p.id}
-                                          onMouseDown={e => e.preventDefault()}
-                                          onClick={() => {
-                                            const display = `${p.product_code} – ${p.product_name}`;
-                                            updateProductRow(realIdx, 'product_master_id', p.id);
-                                            updateProductRow(realIdx, 'product_code', p.product_code);
-                                            updateProductRow(realIdx, 'product_name', p.product_name);
-                                            updateProductRow(realIdx, 'application_type', p.application_type);
-                                            updateProductRow(realIdx, 'product_category', p.product_category);
-                                            updateProductRow(realIdx, '_search', display);
-                                            if (!productRows[realIdx].description) {
-                                              updateProductRow(realIdx, 'description', p.product_name);
-                                            }
-                                            setProductSearchActive(null);
-                                            setProductSearchTerm('');
-                                          }}
-                                          className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-0"
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            <EntityCode code={p.product_code} />
-                                            <span className="text-xs font-medium text-slate-700">{p.product_name}</span>
-                                          </div>
-                                          {(p.application_type || p.product_category) && (
-                                            <div className="text-xs text-slate-400 mt-0.5 ml-0.5">{p.application_type || p.product_category}</div>
-                                          )}
-                                        </button>
-                                      ))
-                                  }
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-1.5 text-xs text-slate-400">{row.application_type || row.product_category || '—'}</td>
-                            <td className="px-3 py-1.5">
-                              <input
-                                type="text"
-                                value={row.description || ''}
-                                placeholder="Description"
-                                onChange={e => updateProductRow(realIdx, 'description', e.target.value)}
-                                className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#3E5C76]/40 bg-white"
-                              />
-                            </td>
-                            <td className="px-3 py-1.5">
-                              <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={row.quantity ?? 1}
-                                onChange={e => updateProductRow(realIdx, 'quantity', e.target.value)}
-                                className="w-full border border-slate-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#3E5C76]/40 bg-white"
-                              />
-                            </td>
-                            <td className="px-3 py-1.5">
-                              <input
-                                type="text"
-                                value={row.unit || 'EA'}
-                                onChange={e => updateProductRow(realIdx, 'unit', e.target.value)}
-                                className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#3E5C76]/40 bg-white"
-                              />
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <button
-                                onClick={() => removeProductRow(realIdx)}
-                                className="text-slate-300 hover:text-red-500 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      <tr>
-                        <td colSpan={7} className="px-3 py-2">
-                          <button
-                            onClick={addProductRow}
-                            className="flex items-center gap-1.5 text-xs text-[#3E5C76] hover:text-[#2d4a63] font-medium px-2 py-1 rounded hover:bg-slate-50 transition-colors"
-                          >
-                            <Plus className="w-3.5 h-3.5" /> Add row
-                          </button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                {deletedCount > 0 && (
-                  <div className="px-4 py-2 text-xs text-slate-400 border-t border-slate-100">
-                    {deletedCount} row{deletedCount > 1 ? 's' : ''} marked for deletion — will be removed on Save
-                  </div>
-                )}
-              </div>
-            );
-          })()}
           {tab === 'bom-release' && (
             <div>
               <DataTable

@@ -425,50 +425,6 @@ router.delete('/piping-items/:id', authenticate, async (req: AuthRequest, res: R
   res.json({ success: true });
 });
 
-// PROJECT PRODUCTS (direct product-to-project links for BOM planning)
-router.get('/projects/:id/products', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query(
-    `SELECT pp.*, pm.product_code, pm.product_name, pm.application_type, pm.product_category
-     FROM project_products pp
-     LEFT JOIN product_masters pm ON pp.product_master_id = pm.id
-     WHERE pp.project_id = $1
-     ORDER BY pp.sort_order, pp.created_at`,
-    [req.params.id]);
-  res.json({ items: result.rows });
-});
-
-router.post('/projects/:id/products', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_master_id, quantity, unit, description, notes, sort_order } = req.body;
-  const result = await query(
-    `INSERT INTO project_products (project_id, product_master_id, quantity, unit, description, notes, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [req.params.id, product_master_id || null, quantity || 1, unit || 'EA', description || null, notes || null, sort_order ?? 0]);
-  const full = await query(
-    `SELECT pp.*, pm.product_code, pm.product_name, pm.application_type, pm.product_category
-     FROM project_products pp LEFT JOIN product_masters pm ON pp.product_master_id = pm.id
-     WHERE pp.id = $1`, [result.rows[0].id]);
-  res.status(201).json(full.rows[0]);
-});
-
-router.put('/project-products/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_master_id, quantity, unit, description, notes, sort_order } = req.body;
-  const result = await query(
-    `UPDATE project_products SET product_master_id=$1, quantity=$2, unit=$3, description=$4, notes=$5, sort_order=$6, updated_at=NOW()
-     WHERE id=$7 RETURNING *`,
-    [product_master_id || null, quantity || 1, unit || 'EA', description || null, notes || null, sort_order ?? 0, req.params.id]);
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product item not found' } });
-  const full = await query(
-    `SELECT pp.*, pm.product_code, pm.product_name, pm.application_type, pm.product_category
-     FROM project_products pp LEFT JOIN product_masters pm ON pp.product_master_id = pm.id
-     WHERE pp.id = $1`, [result.rows[0].id]);
-  res.json(full.rows[0]);
-});
-
-router.delete('/project-products/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  await query('DELETE FROM project_products WHERE id=$1', [req.params.id]);
-  res.json({ success: true });
-});
-
 // BOM RELEASES
 router.get('/projects/:id/bom-releases', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query(
