@@ -28,7 +28,7 @@ router.get('/documents', authenticate, async (req: AuthRequest, res: Response) =
   const filters: string[] = [];
   const params: any[] = [];
 
-  if (req.query.project_id) { params.push(req.query.project_id); filters.push(`d.project_id=$${params.length}`); }
+  if (req.query.project_id) { params.push(req.query.project_id); filters.push(`EXISTS (SELECT 1 FROM document_project_links dpl WHERE dpl.document_id=d.id AND dpl.project_id=$${params.length})`); }
   if (req.query.product_id) { params.push(req.query.product_id); filters.push(`d.product_id=$${params.length}`); }
   if (req.query.component_id) { params.push(req.query.component_id); filters.push(`d.component_id=$${params.length}`); }
   if (req.query.status) { params.push(req.query.status); filters.push(`d.status=$${params.length}`); }
@@ -40,10 +40,12 @@ router.get('/documents', authenticate, async (req: AuthRequest, res: Response) =
   const countRes = await query(`SELECT COUNT(*) FROM documents d ${where}`, params);
   params.push(page_size, offset);
   const result = await query(
-    `SELECT d.*, p.project_code, pm.product_code, pm.product_name, c.component_code, c.component_name,
+    `SELECT d.*,
+            (SELECT STRING_AGG(p.project_code, ', ' ORDER BY dpl.linked_at) FROM document_project_links dpl JOIN projects p ON dpl.project_id=p.id WHERE dpl.document_id=d.id) as project_codes,
+            (SELECT STRING_AGG(dpl.project_id::text, ',' ORDER BY dpl.linked_at) FROM document_project_links dpl WHERE dpl.document_id=d.id) as project_ids,
+            pm.product_code, pm.product_name, c.component_code, c.component_name,
             u.first_name || ' ' || u.last_name as created_by_name
      FROM documents d
-     LEFT JOIN projects p ON d.project_id=p.id
      LEFT JOIN product_masters pm ON d.product_id=pm.id
      LEFT JOIN components c ON d.component_id=c.id
      LEFT JOIN users u ON d.created_by=u.id
@@ -53,40 +55,65 @@ router.get('/documents', authenticate, async (req: AuthRequest, res: Response) =
 
 router.get('/documents/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query(
-    `SELECT d.*, p.project_code, p.project_name, u.first_name || ' ' || u.last_name as created_by_name
-     FROM documents d LEFT JOIN projects p ON d.project_id=p.id LEFT JOIN users u ON d.created_by=u.id
+    `SELECT d.*, u.first_name || ' ' || u.last_name as created_by_name
+     FROM documents d LEFT JOIN users u ON d.created_by=u.id
      WHERE d.id::text=$1 OR d.document_code=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  const docId = result.rows[0].id;
+  const projects = await query(
+    `SELECT p.id, p.project_code, p.project_name FROM document_project_links dpl JOIN projects p ON dpl.project_id=p.id WHERE dpl.document_id=$1 ORDER BY dpl.linked_at`,
+    [docId]);
   const revisions = await query(
     `SELECT dr.*, u.first_name || ' ' || u.last_name as issued_by_name
      FROM document_revisions dr LEFT JOIN users u ON dr.issued_by=u.id
-     WHERE dr.document_id=$1 ORDER BY dr.created_at DESC`, [result.rows[0].id]);
+     WHERE dr.document_id=$1 ORDER BY dr.created_at DESC`, [docId]);
   const approvals = await query(
     `SELECT a.*, u.first_name || ' ' || u.last_name as approver_name
      FROM approvals a LEFT JOIN users u ON a.approver_id=u.id
-     WHERE a.document_id=$1 ORDER BY a.acted_at DESC`, [result.rows[0].id]);
-  res.json({ ...result.rows[0], revisions: revisions.rows, approvals: approvals.rows });
+     WHERE a.document_id=$1 ORDER BY a.acted_at DESC`, [docId]);
+  res.json({ ...result.rows[0], projects: projects.rows, revisions: revisions.rows, approvals: approvals.rows });
 });
 
 router.post('/documents', authenticate, async (req: AuthRequest, res: Response) => {
   const { document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, component_id, owner, notes } = req.body;
   if (!document_code || !document_title) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'document_code and document_title required' } });
   const result = await query(
-    'INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, component_id, owner, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
-    [document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, component_id || null, owner, notes, req.user!.id]);
+    'INSERT INTO documents (document_code, document_title, document_type, discipline, system_id, equipment_id, product_id, component_id, owner, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
+    [document_code, document_title, document_type, discipline, system_id, equipment_id, product_id, component_id || null, owner, notes, req.user!.id]);
+  if (project_id) {
+    await query('INSERT INTO document_project_links (document_id, project_id, linked_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+      [result.rows[0].id, project_id, req.user!.id]);
+  }
   await query('INSERT INTO lifecycle_transitions (entity_type, entity_id, to_state, actor_id, comment) VALUES ($1,$2,$3,$4,$5)',
     ['document', result.rows[0].id, 'Draft', req.user!.id, 'Document registered']);
   res.status(201).json(result.rows[0]);
 });
 
 router.put('/documents/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { document_title, document_type, discipline, status, owner, notes, project_id } = req.body;
+  const { document_title, document_type, discipline, status, owner, notes } = req.body;
   const result = await query(
-    'UPDATE documents SET document_title=$1, document_type=$2, discipline=$3, status=$4, owner=$5, notes=$6, project_id=$7, updated_at=NOW() WHERE id=$8 RETURNING *',
-    [document_title, document_type, discipline, status, owner, notes, project_id ?? null, req.params.id]
+    'UPDATE documents SET document_title=$1, document_type=$2, discipline=$3, status=$4, owner=$5, notes=$6, updated_at=NOW() WHERE id=$7 RETURNING *',
+    [document_title, document_type, discipline, status, owner, notes, req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
   res.json(result.rows[0]);
+});
+
+// PROJECT LINKS
+router.post('/documents/:id/projects', authenticate, async (req: AuthRequest, res: Response) => {
+  const { project_id } = req.body;
+  if (!project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'project_id required' } });
+  await query('INSERT INTO document_project_links (document_id, project_id, linked_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+    [req.params.id, project_id, req.user!.id]);
+  const links = await query(
+    'SELECT p.id, p.project_code, p.project_name FROM document_project_links dpl JOIN projects p ON dpl.project_id=p.id WHERE dpl.document_id=$1 ORDER BY dpl.linked_at',
+    [req.params.id]);
+  res.json(links.rows);
+});
+
+router.delete('/documents/:id/projects/:projectId', authenticate, async (req: AuthRequest, res: Response) => {
+  await query('DELETE FROM document_project_links WHERE document_id=$1 AND project_id=$2', [req.params.id, req.params.projectId]);
+  res.status(204).end();
 });
 
 // REVISIONS

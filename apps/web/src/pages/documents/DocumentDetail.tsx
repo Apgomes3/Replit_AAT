@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import LifecycleHistory from '../../components/ui/LifecycleHistory';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Upload, CheckCircle, XCircle, Download, Trash2 } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
 function nextRevLetter(existing: string[]): string {
@@ -46,6 +46,9 @@ export default function DocumentDetail() {
   const fileRef = useRef<HTMLInputElement>(null);
   const issueSavingRef = useRef(false);
   const [revCtxMenu, setRevCtxMenu] = useState<{ rev: any; x: number; y: number } | null>(null);
+  const [showProjectLinks, setShowProjectLinks] = useState(false);
+  const [addProjectId, setAddProjectId] = useState('');
+  const [projectLinkSaving, setProjectLinkSaving] = useState(false);
 
   useEffect(() => {
     const close = () => setRevCtxMenu(null);
@@ -62,6 +65,11 @@ export default function DocumentDetail() {
   const { data: history } = useQuery({
     queryKey: ['lifecycle', 'document', id],
     queryFn: () => api.get(`/lifecycle/document/${id}`).then(r => r.data),
+  });
+
+  const { data: allProjects } = useQuery({
+    queryKey: ['projects-list'],
+    queryFn: () => api.get('/projects?page_size=200').then(r => r.data),
   });
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
@@ -122,6 +130,25 @@ export default function DocumentDetail() {
     navigate('/documents');
   };
 
+  const handleAddProjectLink = async () => {
+    if (!addProjectId || projectLinkSaving) return;
+    setProjectLinkSaving(true);
+    try {
+      await api.post(`/documents/${id}/projects`, { project_id: addProjectId });
+      setAddProjectId('');
+      toast.success('Project linked');
+      refetch();
+    } finally {
+      setProjectLinkSaving(false);
+    }
+  };
+
+  const handleRemoveProjectLink = async (projectId: string) => {
+    await api.delete(`/documents/${id}/projects/${projectId}`);
+    toast.success('Project link removed');
+    refetch();
+  };
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader
@@ -153,10 +180,56 @@ export default function DocumentDetail() {
             <MetadataPanel fields={[
               { label: 'Document Type', value: document.document_type },
               { label: 'Discipline', value: document.discipline },
-              { label: 'Project', value: document.project_code ? <Link to={`/projects/${document.project_id}`}><EntityCode code={document.project_code} /></Link> : null },
               { label: 'Current Revision', value: <span className="font-mono font-medium">{document.current_revision}</span> },
               { label: 'Owner', value: document.owner },
             ]} />
+
+            <div className="bg-white border border-slate-200 rounded-lg">
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700">Project Links</span>
+                <button
+                  onClick={() => setShowProjectLinks(v => !v)}
+                  className="text-xs text-[#3E5C76] hover:underline flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />Add
+                </button>
+              </div>
+              <div className="px-4 py-3 space-y-2">
+                {(document.projects ?? []).length === 0 && !showProjectLinks && (
+                  <p className="text-sm text-slate-400">Global — not linked to any project</p>
+                )}
+                {(document.projects ?? []).map((p: any) => (
+                  <div key={p.id} className="flex items-center justify-between">
+                    <Link to={`/projects/${p.id}`} className="flex items-center gap-1.5 text-sm hover:underline">
+                      <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
+                      <EntityCode code={p.project_code} />
+                      <span className="text-slate-500">{p.project_name}</span>
+                    </Link>
+                    <button onClick={() => handleRemoveProjectLink(p.id)} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50">
+                      <FolderX className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {showProjectLinks && (
+                  <div className="flex gap-2 pt-1">
+                    <select
+                      value={addProjectId}
+                      onChange={e => setAddProjectId(e.target.value)}
+                      className="flex-1 border rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-[#3E5C76]"
+                    >
+                      <option value="">— Select project —</option>
+                      {(allProjects?.items ?? []).filter((p: any) => !(document.projects ?? []).find((lp: any) => lp.id === p.id)).map((p: any) => (
+                        <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>
+                      ))}
+                    </select>
+                    <Button size="sm" variant="primary" onClick={handleAddProjectLink} disabled={!addProjectId || projectLinkSaving}>
+                      {projectLinkSaving ? '…' : 'Link'}
+                    </Button>
+                    <Button size="sm" onClick={() => { setShowProjectLinks(false); setAddProjectId(''); }}>Cancel</Button>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="bg-white border border-slate-200 rounded-lg">
               <div className="px-4 py-3 border-b border-slate-200 text-sm font-medium text-slate-700">Revision History</div>

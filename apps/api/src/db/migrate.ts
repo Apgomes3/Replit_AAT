@@ -345,7 +345,6 @@ CREATE TABLE IF NOT EXISTS documents (
   document_title VARCHAR(500) NOT NULL,
   document_type VARCHAR(100),
   discipline VARCHAR(100),
-  project_id UUID REFERENCES projects(id),
   system_id UUID REFERENCES systems(id),
   equipment_id UUID REFERENCES equipment_instances(id),
   product_id UUID REFERENCES product_masters(id),
@@ -356,6 +355,15 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   created_by UUID REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS document_project_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  linked_at TIMESTAMPTZ DEFAULT NOW(),
+  linked_by UUID REFERENCES users(id),
+  UNIQUE(document_id, project_id)
 );
 
 CREATE TABLE IF NOT EXISTS document_revisions (

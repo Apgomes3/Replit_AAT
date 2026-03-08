@@ -46,8 +46,9 @@ export default function DocumentsList() {
   const issueSavingRef = useRef(false);
 
   const [linkTarget, setLinkTarget] = useState<Document | null>(null);
-  const [linkProjectId, setLinkProjectId] = useState('');
+  const [addProjectId, setAddProjectId] = useState('');
   const [linkSaving, setLinkSaving] = useState(false);
+  const [linkDocProjects, setLinkDocProjects] = useState<Array<{ id: string; project_code: string; project_name: string }>>([]);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['documents', search],
@@ -87,32 +88,35 @@ export default function DocumentsList() {
     }
   };
 
-  const openLink = (doc: Document) => {
-    setLinkProjectId((doc as any).project_id ?? '');
+  const openLink = async (doc: Document) => {
+    const res = await api.get(`/documents/${doc.id}`);
+    setLinkDocProjects(res.data.projects || []);
+    setAddProjectId('');
     setLinkTarget(doc);
   };
 
-  const handleLinkProject = async () => {
-    if (!linkTarget) return;
+  const handleAddProjectLink = async () => {
+    if (!linkTarget || !addProjectId || linkSaving) return;
     setLinkSaving(true);
     try {
-      const doc = linkTarget as any;
-      await api.put(`/documents/${linkTarget.id}`, {
-        document_title: doc.document_title,
-        document_type: doc.document_type,
-        discipline: doc.discipline,
-        status: doc.status,
-        owner: doc.owner,
-        notes: doc.notes,
-        project_id: linkProjectId || null,
-      });
-      toast.success(linkProjectId ? 'Document linked to project' : 'Project link removed');
+      const res = await api.post(`/documents/${linkTarget.id}/projects`, { project_id: addProjectId });
+      setLinkDocProjects(res.data);
+      setAddProjectId('');
+      toast.success('Project linked');
       refetch();
       qc.invalidateQueries({ queryKey: ['document', linkTarget.id] });
-      setLinkTarget(null);
     } finally {
       setLinkSaving(false);
     }
+  };
+
+  const handleRemoveProjectLink = async (projectId: string) => {
+    if (!linkTarget) return;
+    await api.delete(`/documents/${linkTarget.id}/projects/${projectId}`);
+    setLinkDocProjects(prev => prev.filter(p => p.id !== projectId));
+    toast.success('Project link removed');
+    refetch();
+    qc.invalidateQueries({ queryKey: ['document', linkTarget.id] });
   };
 
   const handleDeleteDocument = async (doc: Document) => {
@@ -127,10 +131,11 @@ export default function DocumentsList() {
     { key: 'document_title', header: 'Title', render: r => <span className="font-medium">{r.document_title}</span> },
     { key: 'document_type', header: 'Type' },
     { key: 'discipline', header: 'Discipline' },
-    { key: 'project_code', header: 'Project', render: r => (r as any).project_code
-      ? <EntityCode code={(r as any).project_code} />
-      : <span className="text-slate-300 text-xs">Global</span>
-    },
+    { key: 'project_codes' as any, header: 'Projects', render: r => {
+      const codes = ((r as any).project_codes || '').split(', ').filter(Boolean);
+      if (!codes.length) return <span className="text-slate-300 text-xs">Global</span>;
+      return <div className="flex flex-wrap gap-1">{codes.map((c: string) => <EntityCode key={c} code={c} />)}</div>;
+    }},
     { key: 'current_revision', header: 'Rev', render: r => <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{r.current_revision ?? '—'}</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
     { key: 'owner', header: 'Owner' },
@@ -164,30 +169,11 @@ export default function DocumentsList() {
               divider: true,
             },
             {
-              label: (row as any).project_id ? 'Change Project Link' : 'Link to Project',
+              label: 'Manage Project Links',
               icon: <FolderOpen className="w-3.5 h-3.5" />,
               onClick: () => openLink(row),
               divider: true,
             },
-            ...((row as any).project_id ? [{
-              label: 'Unlink from Project',
-              icon: <FolderX className="w-3.5 h-3.5" />,
-              danger: true,
-              onClick: async () => {
-                const doc = row as any;
-                await api.put(`/documents/${row.id}`, {
-                  document_title: doc.document_title,
-                  document_type: doc.document_type,
-                  discipline: doc.discipline,
-                  status: doc.status,
-                  owner: doc.owner,
-                  notes: doc.notes,
-                  project_id: null,
-                });
-                toast.success('Project link removed');
-                refetch();
-              },
-            }] : []),
             ...(isAdmin ? [{
               label: 'Delete Document',
               icon: <Trash2 className="w-3.5 h-3.5" />,
@@ -274,27 +260,42 @@ export default function DocumentsList() {
 
       {linkTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-96 p-5">
-            <h3 className="font-semibold mb-0.5">Link to Project</h3>
+          <div className="bg-white rounded-xl shadow-2xl w-[420px] p-5">
+            <h3 className="font-semibold mb-0.5">Manage Project Links</h3>
             <p className="text-xs text-slate-400 mb-4"><span className="font-mono font-medium">{linkTarget.document_code}</span> — {linkTarget.document_title}</p>
-            <div>
-              <label className="text-xs text-slate-500 uppercase tracking-wide">Project</label>
-              <select
-                value={linkProjectId}
-                onChange={e => setLinkProjectId(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white focus:outline-none focus:border-[#3E5C76]"
-              >
-                <option value="">— Global (no project) —</option>
-                {(projects?.items ?? []).map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>
+            {linkDocProjects.length > 0 ? (
+              <div className="mb-4 space-y-1.5">
+                <label className="text-xs text-slate-500 uppercase tracking-wide">Linked Projects</label>
+                {linkDocProjects.map(p => (
+                  <div key={p.id} className="flex items-center justify-between bg-slate-50 rounded px-3 py-2 text-sm">
+                    <span><span className="font-mono font-medium text-[#3E5C76]">{p.project_code}</span><span className="text-slate-400 ml-2">{p.project_name}</span></span>
+                    <button onClick={() => handleRemoveProjectLink(p.id)} className="text-red-400 hover:text-red-600 ml-2"><FolderX className="w-4 h-4" /></button>
+                  </div>
                 ))}
-              </select>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 mb-4">No projects linked yet — this document is global.</p>
+            )}
+            <div className="space-y-2">
+              <label className="text-xs text-slate-500 uppercase tracking-wide">Add to Project</label>
+              <div className="flex gap-2">
+                <select
+                  value={addProjectId}
+                  onChange={e => setAddProjectId(e.target.value)}
+                  className="flex-1 border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#3E5C76]"
+                >
+                  <option value="">— Select project —</option>
+                  {(projects?.items ?? []).filter((p: any) => !linkDocProjects.find(lp => lp.id === p.id)).map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>
+                  ))}
+                </select>
+                <Button variant="primary" onClick={handleAddProjectLink} disabled={!addProjectId || linkSaving}>
+                  {linkSaving ? '…' : 'Add'}
+                </Button>
+              </div>
             </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button onClick={() => setLinkTarget(null)}>Cancel</Button>
-              <Button variant="primary" onClick={handleLinkProject} disabled={linkSaving}>
-                {linkSaving ? 'Saving…' : 'Save'}
-              </Button>
+            <div className="flex justify-end mt-4">
+              <Button onClick={() => setLinkTarget(null)}>Done</Button>
             </div>
           </div>
         </div>
