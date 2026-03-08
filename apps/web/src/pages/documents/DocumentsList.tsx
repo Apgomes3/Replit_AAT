@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import api from '../../lib/api';
 import { Document } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -40,6 +40,7 @@ export default function DocumentsList() {
   const [issuePurpose, setIssuePurpose] = useState('');
   const [issueFile, setIssueFile] = useState<File | null>(null);
   const [issueSaving, setIssueSaving] = useState(false);
+  const issueSavingRef = useRef(false);
 
   const [linkTarget, setLinkTarget] = useState<Document | null>(null);
   const [linkProjectId, setLinkProjectId] = useState('');
@@ -64,7 +65,8 @@ export default function DocumentsList() {
   };
 
   const handleIssueRevision = async () => {
-    if (!issueTarget || !issueRev || !issueFile) return;
+    if (!issueTarget || !issueRev || !issueFile || issueSavingRef.current) return;
+    issueSavingRef.current = true;
     setIssueSaving(true);
     try {
       const form = new FormData();
@@ -77,6 +79,7 @@ export default function DocumentsList() {
       qc.invalidateQueries({ queryKey: ['document', issueTarget.id] });
       setIssueTarget(null);
     } finally {
+      issueSavingRef.current = false;
       setIssueSaving(false);
     }
   };

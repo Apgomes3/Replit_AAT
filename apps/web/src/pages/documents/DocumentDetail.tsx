@@ -38,7 +38,9 @@ export default function DocumentDetail() {
   const [approvalAction, setApprovalAction] = useState('Approved');
   const [approvalComment, setApprovalComment] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isIssueSaving, setIsIssueSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const issueSavingRef = useRef(false);
 
   const { data: document, isLoading, refetch } = useQuery({
     queryKey: ['document', id],
@@ -54,23 +56,30 @@ export default function DocumentDetail() {
   if (!document) return <div className="p-8 text-slate-400">Document not found</div>;
 
   const handleIssueRevision = async () => {
-    if (!issueRev || !uploadFile) return;
+    if (!issueRev || !uploadFile || issueSavingRef.current) return;
     const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string);
     if (existing.map(s => s.toUpperCase()).includes(issueRev.toUpperCase())) {
       toast.error(`Revision ${issueRev.toUpperCase()} already exists — next available is ${nextRevLetter(existing)}`);
       return;
     }
-    const form = new FormData();
-    form.append('revision_code', issueRev.toUpperCase());
-    form.append('revision_purpose', issuePurpose);
-    form.append('file', uploadFile);
-    await api.post(`/documents/${id}/revisions`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
-    toast.success(`Revision ${issueRev.toUpperCase()} issued`);
-    refetch();
-    qc.invalidateQueries({ queryKey: ['lifecycle'] });
-    setShowIssue(false);
-    setIssuePurpose('');
-    setUploadFile(null);
+    issueSavingRef.current = true;
+    setIsIssueSaving(true);
+    try {
+      const form = new FormData();
+      form.append('revision_code', issueRev.toUpperCase());
+      form.append('revision_purpose', issuePurpose);
+      form.append('file', uploadFile);
+      await api.post(`/documents/${id}/revisions`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success(`Revision ${issueRev.toUpperCase()} issued`);
+      refetch();
+      qc.invalidateQueries({ queryKey: ['lifecycle'] });
+      setShowIssue(false);
+      setIssuePurpose('');
+      setUploadFile(null);
+    } finally {
+      issueSavingRef.current = false;
+      setIsIssueSaving(false);
+    }
   };
 
   const handleApproval = async () => {
@@ -209,8 +218,10 @@ export default function DocumentDetail() {
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <Button onClick={() => setShowIssue(false)}>Cancel</Button>
-              <Button variant="primary" onClick={handleIssueRevision} disabled={!issueRev || !uploadFile}>Issue</Button>
+              <Button onClick={() => setShowIssue(false)} disabled={isIssueSaving}>Cancel</Button>
+              <Button variant="primary" onClick={handleIssueRevision} disabled={!issueRev || !uploadFile || isIssueSaving}>
+                {isIssueSaving ? 'Issuing…' : 'Issue'}
+              </Button>
             </div>
           </div>
         </div>
