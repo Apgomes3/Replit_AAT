@@ -89,9 +89,8 @@ router.put('/tank-families/:id', authenticate, async (req: AuthRequest, res: Res
 });
 
 router.delete('/tank-families/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const existing = await query('SELECT is_system FROM tank_families WHERE id::text=$1', [req.params.id]);
+  const existing = await query('SELECT id FROM tank_families WHERE id::text=$1', [req.params.id]);
   if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank family not found' } });
-  if (existing.rows[0].is_system) return res.status(400).json({ error: { code: 'FORBIDDEN', message: 'Built-in tank families cannot be deleted' } });
   await query('UPDATE product_masters SET tank_family_id=NULL WHERE tank_family_id::text=$1', [req.params.id]);
   await query('DELETE FROM tank_families WHERE id::text=$1', [req.params.id]);
   res.status(204).end();

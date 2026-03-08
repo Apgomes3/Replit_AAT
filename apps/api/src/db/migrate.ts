@@ -522,14 +522,6 @@ CREATE TABLE IF NOT EXISTS tank_families (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-INSERT INTO tank_families (code, name, description, sort_order, is_system) VALUES
-  ('DISPLAY', 'Display Tanks', 'Aquarium display tanks visible to the public', 10, true),
-  ('SUMP', 'Sump Tanks', 'Sump and filter compartment tanks', 20, true),
-  ('HOLDING', 'Holding Tanks', 'Animal holding and quarantine tanks', 30, true),
-  ('HEADER', 'Header Tanks', 'Break tanks and header tanks for water distribution', 40, true),
-  ('REFUGIUM', 'Refugium Tanks', 'Refugium and biological filter tanks', 50, true),
-  ('TREATMENT', 'Treatment Tanks', 'Medical treatment and dip tanks', 60, false)
-ON CONFLICT (code) DO NOTHING;
 
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_family_id UUID REFERENCES tank_families(id) ON DELETE SET NULL;
 

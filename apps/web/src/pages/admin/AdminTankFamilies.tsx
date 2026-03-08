@@ -4,7 +4,7 @@ import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, ShieldCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, X } from 'lucide-react';
 import ContextMenu, { ContextMenuItem } from '../../components/ui/ContextMenu';
 
 interface TankFamily {
@@ -13,7 +13,6 @@ interface TankFamily {
   name: string;
   description: string | null;
   sort_order: number;
-  is_system: boolean;
   product_count: number;
 }
 
@@ -86,8 +85,7 @@ export default function AdminTankFamilies() {
   };
 
   const handleDelete = async (fam: TankFamily) => {
-    if (fam.is_system) { toast.error('Built-in tank families cannot be deleted'); return; }
-    if (!confirm(`Delete tank family "${fam.name}"? Products linked to it will be unlinked.`)) return;
+    if (!confirm(`Delete tank family "${fam.name}"?${fam.product_count > 0 ? ` ${fam.product_count} tank(s) linked to it will be unlinked.` : ''}`)) return;
     try {
       await api.delete(`/admin/tank-families/${fam.id}`);
       toast.success('Tank family deleted');
@@ -101,16 +99,14 @@ export default function AdminTankFamilies() {
 
   const getMenuItems = (fam: TankFamily): ContextMenuItem[] => [
     { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(fam) },
-    ...(!fam.is_system ? [{
-      label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: () => handleDelete(fam), danger: true, divider: true,
-    }] : []),
+    { label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: () => handleDelete(fam), danger: true, divider: true },
   ];
 
   return (
     <div className="h-full flex flex-col">
       <PageHeader
         title="Tank Families"
-        subtitle="Distinct family classifications for tank types in the library"
+        subtitle="Family classifications for tanks — used when creating new tank types"
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Family</Button>}
       />
 
@@ -120,19 +116,18 @@ export default function AdminTankFamilies() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Name</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-32">Code</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-36">Code</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Description</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Order</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Products</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-24">Type</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Tanks</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={6} className="text-center py-12 text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={5} className="text-center py-12 text-slate-400">Loading...</td></tr>
               )}
               {!isLoading && families.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-12 text-slate-400">No tank families yet</td></tr>
+                <tr><td colSpan={5} className="text-center py-12 text-slate-400">No tank families yet — create one to start classifying tanks</td></tr>
               )}
               {families.map(fam => (
                 <tr
@@ -145,11 +140,6 @@ export default function AdminTankFamilies() {
                   <td className="px-4 py-3 text-slate-500 text-xs">{fam.description || <span className="text-slate-300">—</span>}</td>
                   <td className="px-4 py-3 text-slate-500">{fam.sort_order}</td>
                   <td className="px-4 py-3 text-slate-600">{fam.product_count}</td>
-                  <td className="px-4 py-3">
-                    {fam.is_system
-                      ? <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
-                      : <span className="text-xs text-slate-400">Custom</span>}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -177,13 +167,13 @@ export default function AdminTankFamilies() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Name *</label>
                 <input value={newForm.name}
                   onChange={e => setNewForm(f => ({ ...f, name: e.target.value, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '_') }))}
-                  placeholder="e.g. Drum Filters" className={inputCls} autoFocus />
+                  placeholder="e.g. Display Tanks" className={inputCls} autoFocus />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Code * <span className="text-slate-400 font-normal">(unique identifier)</span></label>
                 <input value={newForm.code}
                   onChange={e => setNewForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
-                  placeholder="e.g. DRUM_FILTERS" className={inputCls} />
+                  placeholder="e.g. DISPLAY_TANKS" className={inputCls} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
@@ -220,9 +210,7 @@ export default function AdminTankFamilies() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Name *</label>
                 <input value={editForm.name}
                   onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                  className={inputCls} autoFocus
-                  disabled={editTarget.is_system} />
-                {editTarget.is_system && <p className="text-xs text-amber-600 mt-1">Built-in family name cannot be changed</p>}
+                  className={inputCls} autoFocus />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Code</label>
