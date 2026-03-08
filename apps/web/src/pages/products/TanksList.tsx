@@ -10,7 +10,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus, Copy, Pencil } from 'lucide-react';
+import { Plus, Copy, Pencil, Container } from 'lucide-react';
 
 const TANK_TYPES = ['Display Tank', 'Sump', 'Refugium', 'Quarantine', 'Acclimation', 'Holding', 'Treatment', 'Header Tank', 'Buffer Tank', 'Other'];
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Oval', 'Hexagonal', 'Custom'];
@@ -20,20 +20,24 @@ export default function TanksList() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
+
+  const { data: familiesData } = useQuery({
+    queryKey: ['tank-families'],
+    queryFn: () => api.get('/tank-families').then(r => r.data),
+  });
+
+  const tankFamilies: any[] = familiesData?.items || [];
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['product-masters-tanks', search],
-    queryFn: () => api.get(`/product-masters?category=Tank${search ? `&q=${search}` : ''}&page_size=200`).then(r => r.data),
+    queryKey: ['product-masters-tanks', search, selectedFamilyId],
+    queryFn: () => {
+      let url = `/product-masters?category=Tank&page_size=200`;
+      if (search) url += `&q=${search}`;
+      if (selectedFamilyId) url += `&tank_family_id=${selectedFamilyId}`;
+      return api.get(url).then(r => r.data);
+    },
   });
-
-  const { data: families } = useQuery({
-    queryKey: ['product-families'],
-    queryFn: () => api.get('/product-families').then(r => r.data),
-  });
-
-  const tankFamilies = families?.items?.filter((f: any) => f.category_code === 'TANK') || [];
-  const allFamilies = families?.items || [];
-  const familyOptions = allFamilies.map((f: any) => f.product_family_code);
 
   const fmtMm = (v: any) => v != null ? <span>{v} mm</span> : <span className="text-slate-300">—</span>;
   const fmtM3 = (v: any) => v != null ? <span>{v} m³</span> : <span className="text-slate-300">—</span>;
@@ -46,50 +50,97 @@ export default function TanksList() {
     { key: 'length_mm' as any, header: 'L (mm)', render: (r: any) => fmtMm(r.length_mm) },
     { key: 'width_mm' as any, header: 'W (mm)', render: (r: any) => fmtMm(r.width_mm) },
     { key: 'height_mm' as any, header: 'H (mm)', render: (r: any) => fmtMm(r.height_mm) },
-    { key: 'design_water_level_mm' as any, header: 'Water Level (mm)', render: (r: any) => fmtMm(r.design_water_level_mm) },
     { key: 'gross_volume_m3' as any, header: 'Gross Vol (m³)', render: (r: any) => fmtM3(r.gross_volume_m3) },
     { key: 'operating_volume_m3' as any, header: 'Op. Vol (m³)', render: (r: any) => fmtM3(r.operating_volume_m3) },
     { key: 'primary_material_code', header: 'Material', render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
     { key: 'standard_status', header: 'Status', render: r => <StatusBadge status={r.standard_status} /> },
   ];
 
+  const selectedFamily = tankFamilies.find(f => f.id === selectedFamilyId);
+
   return (
     <div className="h-full flex flex-col">
       <PageHeader
-        title="Tanks"
-        subtitle={`${data?.pagination?.total ?? 0} tank types in library`}
+        title={selectedFamily ? selectedFamily.name : 'Tanks'}
+        subtitle={selectedFamily ? selectedFamily.description || `${data?.pagination?.total ?? 0} tank types` : `${data?.pagination?.total ?? 0} tank types in library`}
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Tank Type</Button>}
       />
-      <div className="p-4 border-b border-slate-200 bg-white">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
-      </div>
-      <div className="flex-1 bg-white overflow-auto">
-        <DataTable
-          columns={columns} data={data?.items || []} loading={isLoading} tableId="tanks-list"
-          onRowClick={r => navigate(`/products/masters/${r.id}`)}
-          emptyMessage="No tank types in library — add a tank model above"
-          contextMenuItems={row => [
-            {
-              label: 'Edit',
-              icon: <Pencil className="w-3.5 h-3.5" />,
-              onClick: () => navigate(`/products/masters/${row.id}`),
-            },
-            {
-              label: 'Duplicate',
-              icon: <Copy className="w-3.5 h-3.5" />,
-              divider: true,
-              onClick: async () => {
-                try {
-                  const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
-                  toast.success('Tank duplicated');
-                  refetch();
-                  navigate(`/products/masters/${res.data.id}`);
-                } catch { toast.error('Duplicate failed'); }
-              },
-            },
-          ]}
-        />
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Family sidebar */}
+        <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 overflow-auto">
+          <div className="px-3 py-2.5 border-b border-slate-100">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Families</span>
+          </div>
+          <div className="py-1">
+            <button
+              onClick={() => setSelectedFamilyId(null)}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left rounded-none transition-colors ${
+                selectedFamilyId === null
+                  ? 'bg-[#3E5C76]/10 text-[#3E5C76] font-medium'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Container className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">All Tanks</span>
+              <span className="ml-auto text-xs text-slate-400">{data?.pagination?.total ?? ''}</span>
+            </button>
+            {tankFamilies.map((fam: any) => (
+              <button
+                key={fam.id}
+                onClick={() => setSelectedFamilyId(fam.id === selectedFamilyId ? null : fam.id)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                  selectedFamilyId === fam.id
+                    ? 'bg-[#3E5C76]/10 text-[#3E5C76] font-medium'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Container className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                <span className="truncate">{fam.name}</span>
+                <span className="ml-auto text-xs text-slate-400">{fam.product_count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0 bg-white overflow-hidden">
+          <div className="p-3 border-b border-slate-200">
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or code..."
+              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]"
+            />
+          </div>
+          <div className="flex-1 overflow-auto">
+            <DataTable
+              columns={columns} data={data?.items || []} loading={isLoading} tableId="tanks-list"
+              onRowClick={r => navigate(`/products/masters/${r.id}`)}
+              emptyMessage="No tank types — add a tank model above or select a different family"
+              contextMenuItems={row => [
+                {
+                  label: 'Edit',
+                  icon: <Pencil className="w-3.5 h-3.5" />,
+                  onClick: () => navigate(`/products/masters/${row.id}`),
+                },
+                {
+                  label: 'Duplicate',
+                  icon: <Copy className="w-3.5 h-3.5" />,
+                  divider: true,
+                  onClick: async () => {
+                    try {
+                      const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                      toast.success('Tank duplicated');
+                      refetch();
+                      navigate(`/products/masters/${res.data.id}`);
+                    } catch { toast.error('Duplicate failed'); }
+                  },
+                },
+              ]}
+            />
+          </div>
+        </div>
       </div>
 
       {showNew && (
@@ -97,7 +148,7 @@ export default function TanksList() {
           fields={[
             { name: 'product_code', label: 'Product Code', required: true, placeholder: 'PM-TNK-ACR-001' },
             { name: 'product_name', label: 'Tank Name / Model', required: true },
-            { name: 'product_family_id', label: 'Family', options: familyOptions },
+            { name: 'tank_family_id', label: 'Tank Family', options: tankFamilies.map((f: any) => f.name) },
             { name: 'application_type', label: 'Tank Type', options: TANK_TYPES },
             { name: 'shape_type', label: 'Shape', options: TANK_SHAPES },
             { name: 'length_mm', label: 'Length (mm)', placeholder: 'e.g. 2000' },
@@ -110,11 +161,12 @@ export default function TanksList() {
             { name: 'standard_status', label: 'Status', options: ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'] },
           ]}
           onSubmit={async (formData) => {
-            const familyObj = allFamilies.find((f: any) => f.product_family_code === formData.product_family_id);
+            const familyObj = tankFamilies.find((f: any) => f.name === formData.tank_family_id);
             await api.post('/product-masters', {
               ...formData,
               product_category: 'Tank',
-              product_family_id: familyObj?.id ?? undefined,
+              tank_family_id: familyObj?.id ?? undefined,
+              product_family_id: undefined,
               length_mm: formData.length_mm ? Number(formData.length_mm) : null,
               width_mm: formData.width_mm ? Number(formData.width_mm) : null,
               height_mm: formData.height_mm ? Number(formData.height_mm) : null,

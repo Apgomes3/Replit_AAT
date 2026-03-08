@@ -28,6 +28,7 @@ import AdminUsers from './pages/admin/AdminUsers';
 import AdminImport from './pages/admin/AdminImport';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminRoles from './pages/admin/AdminRoles';
+import AdminTankFamilies from './pages/admin/AdminTankFamilies';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="admin/import" element={<AdminImport />} />
             <Route path="admin/categories" element={<AdminCategories />} />
             <Route path="admin/roles" element={<AdminRoles />} />
+            <Route path="admin/tank-families" element={<AdminTankFamilies />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -193,4 +193,49 @@ router.delete('/todos/:id', authenticate, async (req: AuthRequest, res: Response
   res.status(204).end();
 });
 
+// TANK FAMILIES (admin management)
+router.get('/tank-families', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT tf.*, COUNT(pm.id)::int as product_count
+     FROM tank_families tf
+     LEFT JOIN product_masters pm ON pm.tank_family_id = tf.id
+     GROUP BY tf.id ORDER BY tf.sort_order, tf.name`
+  );
+  res.json({ items: result.rows });
+});
+
+router.post('/tank-families', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const { code, name, description, sort_order } = req.body;
+  if (!code || !name) return res.status(400).json({ error: { code: 'INVALID', message: 'code and name are required' } });
+  try {
+    const result = await query(
+      'INSERT INTO tank_families (code, name, description, sort_order) VALUES ($1,$2,$3,$4) RETURNING *',
+      [code.toUpperCase(), name, description || null, sort_order ?? 0]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e: any) {
+    if (e.code === '23505') return res.status(400).json({ error: { code: 'DUPLICATE', message: 'A tank family with that code already exists' } });
+    throw e;
+  }
+});
+
+router.put('/tank-families/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const { name, description, sort_order } = req.body;
+  const result = await query(
+    'UPDATE tank_families SET name=$1, description=$2, sort_order=$3, updated_at=NOW() WHERE id::text=$4 RETURNING *',
+    [name, description || null, sort_order ?? 0, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank family not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/tank-families/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT is_system FROM tank_families WHERE id::text=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank family not found' } });
+  if (existing.rows[0].is_system) return res.status(400).json({ error: { code: 'FORBIDDEN', message: 'Built-in tank families cannot be deleted' } });
+  await query('UPDATE product_masters SET tank_family_id=NULL WHERE tank_family_id::text=$1', [req.params.id]);
+  await query('DELETE FROM tank_families WHERE id::text=$1', [req.params.id]);
+  res.status(204).end();
+});
+
 export default router;

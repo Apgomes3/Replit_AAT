@@ -50,6 +50,53 @@ router.put('/product-families/:id', authenticate, async (req: AuthRequest, res: 
   res.json(result.rows[0]);
 });
 
+// TANK FAMILIES
+router.get('/tank-families', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT tf.*, COUNT(pm.id)::int as product_count
+     FROM tank_families tf
+     LEFT JOIN product_masters pm ON pm.tank_family_id = tf.id
+     GROUP BY tf.id ORDER BY tf.sort_order, tf.name`
+  );
+  res.json({ items: result.rows });
+});
+
+router.get('/tank-families/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('SELECT * FROM tank_families WHERE id::text=$1 OR code=$1', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank family not found' } });
+  const products = await query('SELECT * FROM product_masters WHERE tank_family_id=$1 ORDER BY product_code', [result.rows[0].id]);
+  res.json({ ...result.rows[0], products: products.rows });
+});
+
+router.post('/tank-families', authenticate, async (req: AuthRequest, res: Response) => {
+  const { code, name, description, sort_order } = req.body;
+  if (!code || !name) return res.status(400).json({ error: { code: 'INVALID', message: 'code and name are required' } });
+  const result = await query(
+    'INSERT INTO tank_families (code, name, description, sort_order) VALUES ($1,$2,$3,$4) RETURNING *',
+    [code.toUpperCase(), name, description || null, sort_order ?? 0]
+  );
+  res.status(201).json(result.rows[0]);
+});
+
+router.put('/tank-families/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { name, description, sort_order } = req.body;
+  const result = await query(
+    'UPDATE tank_families SET name=$1, description=$2, sort_order=$3, updated_at=NOW() WHERE id::text=$4 RETURNING *',
+    [name, description || null, sort_order ?? 0, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank family not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/tank-families/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT is_system FROM tank_families WHERE id::text=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank family not found' } });
+  if (existing.rows[0].is_system) return res.status(400).json({ error: { code: 'FORBIDDEN', message: 'Built-in tank families cannot be deleted' } });
+  await query('UPDATE product_masters SET tank_family_id=NULL WHERE tank_family_id::text=$1', [req.params.id]);
+  await query('DELETE FROM tank_families WHERE id::text=$1', [req.params.id]);
+  res.status(204).end();
+});
+
 // PRODUCT MASTERS
 router.get('/product-masters', authenticate, async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
@@ -59,6 +106,7 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   const params: any[] = [];
 
   if (req.query.family_id) { params.push(req.query.family_id); filters.push(`pm.product_family_id = $${params.length}`); }
+  if (req.query.tank_family_id) { params.push(req.query.tank_family_id); filters.push(`pm.tank_family_id = $${params.length}`); }
   if (req.query.category) { params.push(req.query.category); filters.push(`pm.product_category = $${params.length}`); }
   if (req.query.status) { params.push(req.query.status); filters.push(`pm.standard_status = $${params.length}`); }
   if (req.query.q) { params.push(`%${req.query.q}%`); const p = params.length; filters.push(`(pm.product_name ILIKE $${p} OR pm.product_code ILIKE $${p} OR pf.product_family_name ILIKE $${p} OR EXISTS (SELECT 1 FROM unnest(pm.synonyms) s WHERE s ILIKE $${p}))`); }

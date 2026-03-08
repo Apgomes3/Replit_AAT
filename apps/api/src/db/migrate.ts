@@ -511,6 +511,28 @@ ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS gross_volume_m3 NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS operating_volume_m3 NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS product_master_id UUID REFERENCES product_masters(id);
 
+CREATE TABLE IF NOT EXISTS tank_families (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code VARCHAR(50) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  sort_order INT DEFAULT 0,
+  is_system BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO tank_families (code, name, description, sort_order, is_system) VALUES
+  ('DISPLAY', 'Display Tanks', 'Aquarium display tanks visible to the public', 10, true),
+  ('SUMP', 'Sump Tanks', 'Sump and filter compartment tanks', 20, true),
+  ('HOLDING', 'Holding Tanks', 'Animal holding and quarantine tanks', 30, true),
+  ('HEADER', 'Header Tanks', 'Break tanks and header tanks for water distribution', 40, true),
+  ('REFUGIUM', 'Refugium Tanks', 'Refugium and biological filter tanks', 50, true),
+  ('TREATMENT', 'Treatment Tanks', 'Medical treatment and dip tanks', 60, false)
+ON CONFLICT (code) DO NOTHING;
+
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_family_id UUID REFERENCES tank_families(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(100) NOT NULL UNIQUE,

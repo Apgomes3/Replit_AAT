@@ -24,6 +24,7 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'specifications', to: '/knowledge/specifications', icon: BookOpen, label: 'Specifications' },
   { id: 'design-rules', to: '/knowledge/design-rules', icon: Ruler, label: 'Design Rules' },
   { id: 'document-register', to: '/documents', icon: FileText, label: 'Document Register' },
+  { id: 'tank-families', to: '/admin/tank-families', icon: Container, label: 'Tank Families' },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
   { id: 'roles', to: '/admin/roles', icon: ShieldCheck, label: 'Roles' },
   { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
