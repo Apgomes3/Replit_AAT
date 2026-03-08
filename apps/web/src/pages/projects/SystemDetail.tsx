@@ -167,24 +167,10 @@ export default function SystemDetail() {
         breadcrumb={<><Link to="/projects" className="hover:underline">Projects</Link> / <Link to={`/projects/${system.project_id}`} className="hover:underline">{system.project_code}</Link></>}
         actions={
           <div className="flex gap-2">
-            {!editing ? (
-              <>
-                <Button size="sm" onClick={() => navigate(`/graph?start=${system.id}&type=system`)}>
-                  <Network className="w-3.5 h-3.5" />Graph
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => setShowTransition(true)}>Transition State</Button>
-                <Button size="sm" variant="primary" onClick={startEdit}>
-                  <Pencil className="w-3.5 h-3.5" />Edit
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button size="sm" onClick={() => setEditing(false)}>Cancel</Button>
-                <Button size="sm" variant="primary" onClick={handleSave} disabled={saving}>
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </>
-            )}
+            <Button size="sm" onClick={() => navigate(`/graph?start=${system.id}&type=system`)}>
+              <Network className="w-3.5 h-3.5" />Graph
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowTransition(true)}>Transition State</Button>
           </div>
         }
       />
@@ -193,19 +179,36 @@ export default function SystemDetail() {
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2">
             {!editing ? (
-              <MetadataPanel fields={[
-                { label: 'System Type', value: system.system_type },
-                { label: 'Water Type', value: system.water_type },
-                { label: 'Design Flow', value: system.design_flow_m3h ? `${system.design_flow_m3h} m³/h` : null },
-                { label: 'Turnover Rate', value: system.turnover_rate_hr ? `${system.turnover_rate_hr} /hr` : null },
-                { label: 'Area', value: system.area_name },
-                { label: 'Exhibit', value: system.exhibit_name },
-                { label: 'Duty', value: system.duty_description },
-                { label: 'Redundancy', value: system.redundancy_strategy },
-              ]} />
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">System Details</span>
+                  <Button size="sm" variant="primary" onClick={startEdit}>
+                    <Pencil className="w-3.5 h-3.5" />Edit
+                  </Button>
+                </div>
+                <MetadataPanel fields={[
+                  { label: 'System Type', value: system.system_type },
+                  { label: 'Water Type', value: system.water_type },
+                  { label: 'Design Flow', value: system.design_flow_m3h ? `${system.design_flow_m3h} m³/h` : null },
+                  { label: 'Turnover Rate', value: system.turnover_rate_hr ? `${system.turnover_rate_hr} /hr` : null },
+                  { label: 'Area', value: system.area_name },
+                  { label: 'Exhibit', value: system.exhibit_name },
+                  { label: 'Duty', value: system.duty_description },
+                  { label: 'Redundancy', value: system.redundancy_strategy },
+                ]} />
+              </div>
             ) : (
-              <div className="bg-white border border-slate-200 rounded-lg p-5">
-                <div className="text-xs text-slate-400 uppercase tracking-wide mb-4">Edit System Details</div>
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Edit System Details</span>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => setEditing(false)}>Cancel</Button>
+                    <Button size="sm" variant="primary" onClick={handleSave} disabled={saving}>
+                      {saving ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </div>
+                </div>
+                <div className="p-5">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1">System Name</label>
@@ -255,6 +258,7 @@ export default function SystemDetail() {
                     <textarea value={form.duty_description} onChange={e => setForm((f: any) => ({ ...f, duty_description: e.target.value }))}
                       rows={3} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
                   </div>
+                </div>
                 </div>
               </div>
             )}
