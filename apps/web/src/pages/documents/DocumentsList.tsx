@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../../lib/api';
@@ -10,12 +10,39 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, Upload, FolderOpen, FolderX, ExternalLink } from 'lucide-react';
+
+function nextRevLetter(existing: string[]): string {
+  if (existing.length === 0) return 'A';
+  const sorted = [...existing].map(s => s.toUpperCase()).sort();
+  const last = sorted[sorted.length - 1];
+  const chars = last.split('');
+  let i = chars.length - 1;
+  while (i >= 0) {
+    if (chars[i] < 'Z') {
+      chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1);
+      return chars.join('');
+    }
+    chars[i] = 'A';
+    i--;
+  }
+  return 'A' + chars.join('');
+}
 
 export default function DocumentsList() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
+
+  const [issueTarget, setIssueTarget] = useState<Document | null>(null);
+  const [issueRev, setIssueRev] = useState('');
+  const [issuePurpose, setIssuePurpose] = useState('');
+  const [issueSaving, setIssueSaving] = useState(false);
+
+  const [linkTarget, setLinkTarget] = useState<Document | null>(null);
+  const [linkProjectId, setLinkProjectId] = useState('');
+  const [linkSaving, setLinkSaving] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['documents', search],
@@ -27,18 +54,71 @@ export default function DocumentsList() {
     queryFn: () => api.get('/projects?page_size=200').then(r => r.data),
   });
 
+  const openIssue = (doc: Document) => {
+    const existing = (doc as any).current_revision ? [(doc as any).current_revision] : [];
+    setIssueRev(nextRevLetter(existing));
+    setIssuePurpose('');
+    setIssueTarget(doc);
+  };
+
+  const handleIssueRevision = async () => {
+    if (!issueTarget || !issueRev) return;
+    setIssueSaving(true);
+    try {
+      const form = new FormData();
+      form.append('revision_code', issueRev.toUpperCase());
+      form.append('revision_purpose', issuePurpose);
+      await api.post(`/documents/${issueTarget.id}/revisions`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success(`Revision ${issueRev.toUpperCase()} issued for ${issueTarget.document_code}`);
+      refetch();
+      qc.invalidateQueries({ queryKey: ['document', issueTarget.id] });
+      setIssueTarget(null);
+    } finally {
+      setIssueSaving(false);
+    }
+  };
+
+  const openLink = (doc: Document) => {
+    setLinkProjectId((doc as any).project_id ?? '');
+    setLinkTarget(doc);
+  };
+
+  const handleLinkProject = async () => {
+    if (!linkTarget) return;
+    setLinkSaving(true);
+    try {
+      const doc = linkTarget as any;
+      await api.put(`/documents/${linkTarget.id}`, {
+        document_title: doc.document_title,
+        document_type: doc.document_type,
+        discipline: doc.discipline,
+        status: doc.status,
+        owner: doc.owner,
+        notes: doc.notes,
+        project_id: linkProjectId || null,
+      });
+      toast.success(linkProjectId ? 'Document linked to project' : 'Project link removed');
+      refetch();
+      qc.invalidateQueries({ queryKey: ['document', linkTarget.id] });
+      setLinkTarget(null);
+    } finally {
+      setLinkSaving(false);
+    }
+  };
+
   const columns: Column<Document>[] = [
     { key: 'document_code', header: 'Code', render: r => <EntityCode code={r.document_code} /> },
     { key: 'document_title', header: 'Title', render: r => <span className="font-medium">{r.document_title}</span> },
     { key: 'document_type', header: 'Type' },
     { key: 'discipline', header: 'Discipline' },
-    { key: 'project_code', header: 'Project', render: r => r.project_code ? <EntityCode code={r.project_code} /> : <span className="text-slate-300">—</span> },
-    { key: 'current_revision', header: 'Rev', render: r => <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{r.current_revision}</span> },
+    { key: 'project_code', header: 'Project', render: r => (r as any).project_code
+      ? <EntityCode code={(r as any).project_code} />
+      : <span className="text-slate-300 text-xs">Global</span>
+    },
+    { key: 'current_revision', header: 'Rev', render: r => <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{r.current_revision ?? '—'}</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
     { key: 'owner', header: 'Owner' },
   ];
-
-  const projectOptions = projects?.items?.map((p: any) => p.project_code) || [];
 
   return (
     <div className="h-full flex flex-col">
@@ -50,8 +130,52 @@ export default function DocumentsList() {
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
       </div>
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => navigate(`/documents/${r.id}`)} />
+        <DataTable
+          columns={columns}
+          data={data?.items || []}
+          loading={isLoading}
+          onRowClick={r => navigate(`/documents/${r.id}`)}
+          contextMenuItems={row => [
+            {
+              label: 'Open',
+              icon: <ExternalLink className="w-3.5 h-3.5" />,
+              onClick: () => navigate(`/documents/${row.id}`),
+            },
+            {
+              label: 'Issue Revision',
+              icon: <Upload className="w-3.5 h-3.5" />,
+              onClick: () => openIssue(row),
+              divider: true,
+            },
+            {
+              label: (row as any).project_id ? 'Change Project Link' : 'Link to Project',
+              icon: <FolderOpen className="w-3.5 h-3.5" />,
+              onClick: () => openLink(row),
+              divider: true,
+            },
+            ...((row as any).project_id ? [{
+              label: 'Unlink from Project',
+              icon: <FolderX className="w-3.5 h-3.5" />,
+              danger: true,
+              onClick: async () => {
+                const doc = row as any;
+                await api.put(`/documents/${row.id}`, {
+                  document_title: doc.document_title,
+                  document_type: doc.document_type,
+                  discipline: doc.discipline,
+                  status: doc.status,
+                  owner: doc.owner,
+                  notes: doc.notes,
+                  project_id: null,
+                });
+                toast.success('Project link removed');
+                refetch();
+              },
+            }] : []),
+          ]}
+        />
       </div>
+
       {showNew && (
         <NewEntityModal title="Register Document" onClose={() => setShowNew(false)}
           fields={[
@@ -60,14 +184,84 @@ export default function DocumentsList() {
             { name: 'document_type', label: 'Document Type', options: ['PID', 'Drawing', 'Calculation', 'Specification', 'Datasheet', 'Report', 'Procedure', 'Other'] },
             { name: 'discipline', label: 'Discipline', options: ['Mechanical', 'Piping', 'Electrical', 'Structural', 'Civil', 'General'] },
             { name: 'owner', label: 'Owner / Author' },
+            { name: 'project_code', label: 'Project (optional)', options: ['', ...(projects?.items?.map((p: any) => p.project_code) || [])] },
           ]}
           onSubmit={async (formData) => {
-            await api.post('/documents', formData);
+            const payload: any = { ...formData };
+            if (formData.project_code) {
+              const proj = projects?.items?.find((p: any) => p.project_code === formData.project_code);
+              payload.project_id = proj?.id ?? null;
+            }
+            delete payload.project_code;
+            await api.post('/documents', payload);
             toast.success('Document registered');
             refetch();
             setShowNew(false);
           }}
         />
+      )}
+
+      {issueTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-5">
+            <h3 className="font-semibold mb-0.5">Issue Revision</h3>
+            <p className="text-xs text-slate-400 mb-4"><span className="font-mono font-medium">{issueTarget.document_code}</span> — {issueTarget.document_title}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wide">Revision Code</label>
+                <input
+                  value={issueRev}
+                  onChange={e => setIssueRev(e.target.value.toUpperCase())}
+                  maxLength={4}
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 font-mono focus:outline-none focus:border-[#3E5C76]"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wide">Purpose</label>
+                <input
+                  value={issuePurpose}
+                  onChange={e => setIssuePurpose(e.target.value)}
+                  placeholder="For Review"
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[#3E5C76]"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button onClick={() => setIssueTarget(null)}>Cancel</Button>
+              <Button variant="primary" onClick={handleIssueRevision} disabled={!issueRev || issueSaving}>
+                {issueSaving ? 'Issuing…' : 'Issue'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {linkTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-5">
+            <h3 className="font-semibold mb-0.5">Link to Project</h3>
+            <p className="text-xs text-slate-400 mb-4"><span className="font-mono font-medium">{linkTarget.document_code}</span> — {linkTarget.document_title}</p>
+            <div>
+              <label className="text-xs text-slate-500 uppercase tracking-wide">Project</label>
+              <select
+                value={linkProjectId}
+                onChange={e => setLinkProjectId(e.target.value)}
+                className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white focus:outline-none focus:border-[#3E5C76]"
+              >
+                <option value="">— Global (no project) —</option>
+                {(projects?.items ?? []).map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button onClick={() => setLinkTarget(null)}>Cancel</Button>
+              <Button variant="primary" onClick={handleLinkProject} disabled={linkSaving}>
+                {linkSaving ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

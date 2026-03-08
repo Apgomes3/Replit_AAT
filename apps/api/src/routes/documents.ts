@@ -80,9 +80,11 @@ router.post('/documents', authenticate, async (req: AuthRequest, res: Response) 
 });
 
 router.put('/documents/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { document_title, document_type, discipline, status, owner, notes } = req.body;
-  const result = await query('UPDATE documents SET document_title=$1, document_type=$2, discipline=$3, status=$4, owner=$5, notes=$6, updated_at=NOW() WHERE id=$7 RETURNING *',
-    [document_title, document_type, discipline, status, owner, notes, req.params.id]);
+  const { document_title, document_type, discipline, status, owner, notes, project_id } = req.body;
+  const result = await query(
+    'UPDATE documents SET document_title=$1, document_type=$2, discipline=$3, status=$4, owner=$5, notes=$6, project_id=$7, updated_at=NOW() WHERE id=$8 RETURNING *',
+    [document_title, document_type, discipline, status, owner, notes, project_id ?? null, req.params.id]
+  );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
   res.json(result.rows[0]);
 });
