@@ -30,4 +30,18 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   res.json(result.rows[0]);
 });
 
+router.get('/dashboard-prefs', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('SELECT dashboard_prefs FROM users WHERE id = $1', [req.user!.id]);
+  res.json(result.rows[0]?.dashboard_prefs || {});
+});
+
+router.put('/dashboard-prefs', authenticate, async (req: AuthRequest, res: Response) => {
+  const prefs = req.body;
+  if (typeof prefs !== 'object' || prefs === null) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Body must be a JSON object' } });
+  }
+  await query('UPDATE users SET dashboard_prefs = $1 WHERE id = $2', [JSON.stringify(prefs), req.user!.id]);
+  res.json({ ok: true });
+});
+
 export default router;

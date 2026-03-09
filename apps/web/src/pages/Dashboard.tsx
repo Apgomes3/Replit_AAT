@@ -13,67 +13,76 @@ import {
 type CardState = 'visible' | 'minimized' | 'hidden';
 type Prefs = Record<string, CardState>;
 
-const STORAGE_KEY = (userId: string) => `edp_dash_prefs_${userId}`;
-const ORDER_KEY = (userId: string) => `edp_dash_order_${userId}`;
+const PREFS_LS = (uid: string) => `edp_dash_prefs_${uid}`;
+const ORDER_LS = (uid: string) => `edp_dash_order_${uid}`;
 
 const DEFAULT_ORDER = ['stat-counts', 'doc-status', 'recent-docs', 'recent-projects', 'quick-links', 'pending-approvals', 'todos'];
 
-function useCardPrefs(userId: string | undefined) {
+function mergeOrder(stored: string[]): string[] {
+  return [...stored, ...DEFAULT_ORDER.filter(id => !stored.includes(id))];
+}
+
+function useDashboardPrefs(userId: string | undefined) {
   const [prefs, setPrefsState] = useState<Prefs>(() => {
     if (!userId) return {};
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY(userId)) || '{}'); }
-    catch { return {}; }
+    try { return JSON.parse(localStorage.getItem(PREFS_LS(userId)) || '{}'); } catch { return {}; }
   });
+  const [order, setOrderState] = useState<string[]>(() => {
+    if (!userId) return DEFAULT_ORDER;
+    try {
+      const s = JSON.parse(localStorage.getItem(ORDER_LS(userId)) || 'null');
+      if (Array.isArray(s) && s.length) return mergeOrder(s);
+    } catch {}
+    return DEFAULT_ORDER;
+  });
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const saveToServer = (p: Prefs, o: string[]) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      api.put('/auth/dashboard-prefs', { prefs: p, order: o }).catch(() => {});
+    }, 600);
+  };
+
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      const lsPrefs = JSON.parse(localStorage.getItem(PREFS_LS(userId)) || '{}');
+      setPrefsState(lsPrefs);
+      const lsOrder = JSON.parse(localStorage.getItem(ORDER_LS(userId)) || 'null');
+      if (Array.isArray(lsOrder) && lsOrder.length) setOrderState(mergeOrder(lsOrder));
+    } catch {}
+    api.get('/auth/dashboard-prefs').then(res => {
+      const d = res.data;
+      if (d.prefs && typeof d.prefs === 'object') {
+        setPrefsState(d.prefs);
+        localStorage.setItem(PREFS_LS(userId), JSON.stringify(d.prefs));
+      }
+      if (Array.isArray(d.order) && d.order.length) {
+        const merged = mergeOrder(d.order);
+        setOrderState(merged);
+        localStorage.setItem(ORDER_LS(userId), JSON.stringify(merged));
+      }
+    }).catch(() => {});
+  }, [userId]);
 
   const setPrefs = (p: Prefs) => {
     setPrefsState(p);
-    if (userId) localStorage.setItem(STORAGE_KEY(userId), JSON.stringify(p));
+    if (userId) localStorage.setItem(PREFS_LS(userId), JSON.stringify(p));
+    saveToServer(p, order);
+  };
+
+  const setOrder = (o: string[]) => {
+    setOrderState(o);
+    if (userId) localStorage.setItem(ORDER_LS(userId), JSON.stringify(o));
+    saveToServer(prefs, o);
   };
 
   const state = (id: string): CardState => prefs[id] || 'visible';
   const update = (id: string, s: CardState) => setPrefs({ ...prefs, [id]: s });
 
-  useEffect(() => {
-    if (!userId) return;
-    try {
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY(userId)) || '{}');
-      setPrefsState(stored);
-    } catch {}
-  }, [userId]);
-
-  return { prefs, state, update, setPrefs };
-}
-
-function useCardOrder(userId: string | undefined) {
-  const [order, setOrderState] = useState<string[]>(() => {
-    if (!userId) return DEFAULT_ORDER;
-    try {
-      const stored = JSON.parse(localStorage.getItem(ORDER_KEY(userId)) || 'null');
-      if (Array.isArray(stored) && stored.length > 0) {
-        const merged = [...stored, ...DEFAULT_ORDER.filter(id => !stored.includes(id))];
-        return merged;
-      }
-    } catch {}
-    return DEFAULT_ORDER;
-  });
-
-  const setOrder = (newOrder: string[]) => {
-    setOrderState(newOrder);
-    if (userId) localStorage.setItem(ORDER_KEY(userId), JSON.stringify(newOrder));
-  };
-
-  useEffect(() => {
-    if (!userId) return;
-    try {
-      const stored = JSON.parse(localStorage.getItem(ORDER_KEY(userId)) || 'null');
-      if (Array.isArray(stored) && stored.length > 0) {
-        const merged = [...stored, ...DEFAULT_ORDER.filter(id => !stored.includes(id))];
-        setOrderState(merged);
-      }
-    } catch {}
-  }, [userId]);
-
-  return { order, setOrder };
+  return { prefs, state, update, setPrefs, order, setOrder };
 }
 
 function DashboardCard({
@@ -172,8 +181,7 @@ export default function Dashboard() {
   const [showManage, setShowManage] = useState(false);
   const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
 
-  const { prefs, state, update, setPrefs } = useCardPrefs(user?.id);
-  const { order, setOrder } = useCardOrder(user?.id);
+  const { prefs, state, update, setPrefs, order, setOrder } = useDashboardPrefs(user?.id);
 
   const dragId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
