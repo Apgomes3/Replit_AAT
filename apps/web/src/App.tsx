@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { useAuthStore } from './store/authStore';
 import Shell from './components/layout/Shell';
 import Login from './pages/auth/Login';
+import HomeHub from './pages/HomeHub';
 import Dashboard from './pages/Dashboard';
 import ProjectsList from './pages/projects/ProjectsList';
 import ProjectDetail from './pages/projects/ProjectDetail';
@@ -31,6 +32,9 @@ import AdminRoles from './pages/admin/AdminRoles';
 import AdminTankFamilies from './pages/admin/AdminTankFamilies';
 import PurchaseOrdersList from './pages/procurement/PurchaseOrdersList';
 import PurchaseOrderDetail from './pages/procurement/PurchaseOrderDetail';
+import PIMDashboard from './pages/pim/PIMDashboard';
+import OrderManagementDashboard from './pages/orders/OrderManagementDashboard';
+import ProjectManagementDashboard from './pages/project-mgmt/ProjectManagementDashboard';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -38,7 +42,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, token, loadUser, isLoading } = useAuthStore();
   useEffect(() => { if (token && !user) loadUser(); }, []);
   if (!token) return <Navigate to="/login" replace />;
-  if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="text-slate-500">Loading...</div></div>;
+  if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="text-stone-500">Loading...</div></div>;
   return <>{children}</>;
 }
 
@@ -50,7 +54,11 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<AuthGuard><Shell /></AuthGuard>}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<HomeHub />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="pim" element={<PIMDashboard />} />
+            <Route path="order-management" element={<OrderManagementDashboard />} />
+            <Route path="project-management" element={<ProjectManagementDashboard />} />
             <Route path="projects" element={<ProjectsList />} />
             <Route path="projects/:id" element={<ProjectDetail />} />
             <Route path="systems/:id" element={<SystemDetail />} />

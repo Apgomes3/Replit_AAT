@@ -266,7 +266,7 @@ export default function ProjectDetail() {
 
   const handleAddTank = async () => {
     if (!tankCode.trim()) { toast.error('Tank tag code is required'); return; }
-    if (!selectedTankProduct) { toast.error('Select a tank product from the ASW Library'); return; }
+    if (!selectedTankProduct) { toast.error('Select a tank product from the Shark OS'); return; }
     setTankSubmitting(true);
     try {
       await api.post('/tanks', {
@@ -293,7 +293,7 @@ export default function ProjectDetail() {
 
   const handleAddPiping = async () => {
     if (!pipingCode.trim()) { toast.error('Tag code is required'); return; }
-    if (!selectedPipingProduct) { toast.error('Select a piping product from the ASW Library'); return; }
+    if (!selectedPipingProduct) { toast.error('Select a piping product from the Shark OS'); return; }
     setPipingSubmitting(true);
     try {
       await api.post('/piping-items', {
@@ -729,7 +729,7 @@ export default function ProjectDetail() {
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Tank Product (ASW Library) *</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Tank Product (Shark OS) *</label>
                 {selectedTankProduct ? (
                   <div className="border border-amber-600 rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
                     <div>
@@ -776,7 +776,7 @@ export default function ProjectDetail() {
                       </div>
                     )}
                     {tankProductSearch.length >= 2 && !tankProductResults?.items?.length && (
-                      <div className="mt-2 text-xs text-slate-400">No tank products found — add them in the ASW Library first</div>
+                      <div className="mt-2 text-xs text-slate-400">No tank products found — add them in the Shark OS first</div>
                     )}
                   </div>
                 )}
@@ -821,7 +821,7 @@ export default function ProjectDetail() {
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Piping Product (ASW Library) *</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Piping Product (Shark OS) *</label>
                 {selectedPipingProduct ? (
                   <div className="border border-amber-600 rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
                     <div>
@@ -854,7 +854,7 @@ export default function ProjectDetail() {
                       </div>
                     )}
                     {pipingProductSearch.length >= 2 && !pipingProductResults?.items?.length && (
-                      <div className="mt-2 text-xs text-slate-400">No piping products found — add them in the ASW Library first</div>
+                      <div className="mt-2 text-xs text-slate-400">No piping products found — add them in the Shark OS first</div>
                     )}
                   </div>
                 )}

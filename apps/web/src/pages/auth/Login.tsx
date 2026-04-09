@@ -32,7 +32,7 @@ export default function Login() {
             <Database className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-stone-800 text-xl font-semibold">Engineering Data Platform</h1>
+            <h1 className="text-stone-800 text-xl font-semibold">Shark OS</h1>
             <p className="text-stone-400 text-sm">Sign in to continue</p>
           </div>
         </div>

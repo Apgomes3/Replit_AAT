@@ -1,7 +1,7 @@
 # Engineering Data Platform (EDP)
 
 ## Overview
-A full-stack knowledge graph platform for aquarium/engineering projects with three domains: Project, Product Library, and Knowledge Hub.
+**Shark OS** — A full-stack engineering operations platform for aquarium/engineering projects. Features a hub-based navigation with three modules: PIM Management (product catalog), Order Management (PO lifecycle), and Project Management.
 
 ## Architecture
 

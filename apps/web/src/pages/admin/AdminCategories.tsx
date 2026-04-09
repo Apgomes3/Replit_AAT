@@ -105,7 +105,7 @@ export default function AdminCategories() {
     <div className="h-full flex flex-col">
       <PageHeader
         title="Product Categories"
-        subtitle="Manage categories used when classifying products in the ASW Library"
+        subtitle="Manage categories used when classifying products in the Shark OS"
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Category</Button>}
       />
 

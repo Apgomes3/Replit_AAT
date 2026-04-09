@@ -1,19 +1,38 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Database, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; end?: boolean };
 
-const SECTIONS: { id: string; label: string; items: NavItemDef[] }[] = [
+const PIM_ITEMS: NavItemDef[] = [
+  { id: 'products', to: '/products/masters', icon: Package, label: 'Products' },
+  { id: 'components', to: '/products/components', icon: Boxes, label: 'Components' },
+  { id: 'piping', to: '/products/piping', icon: Pipette, label: 'Pipes & Fittings' },
+  { id: 'tanks', to: '/products/tanks', icon: Container, label: 'Tanks' },
+];
+
+const SECTIONS: { id: string; label: string; hub: string; items: NavItemDef[] }[] = [
   {
-    id: 'asw-library',
-    label: 'ASW Library',
+    id: 'pim',
+    label: 'PIM Management',
+    hub: '/pim',
+    items: PIM_ITEMS,
+  },
+  {
+    id: 'orders',
+    label: 'Order Management',
+    hub: '/order-management',
     items: [
-      { id: 'products', to: '/products/masters', icon: Package, label: 'Products' },
-      { id: 'components', to: '/products/components', icon: Boxes, label: 'Components' },
-      { id: 'piping', to: '/products/piping', icon: Pipette, label: 'Pipes & Fittings' },
-      { id: 'tanks', to: '/products/tanks', icon: Container, label: 'Tanks' },
+      { id: 'purchase-orders', to: '/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' },
+    ],
+  },
+  {
+    id: 'projects',
+    label: 'Project Management',
+    hub: '/project-management',
+    items: [
+      { id: 'projects', to: '/projects', icon: FolderOpen, label: 'Projects' },
     ],
   },
 ];
@@ -46,15 +65,15 @@ function saveOrders(orders: Record<string, string[]>) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
 }
 
-function applySectionOrder(section: typeof SECTIONS[0], savedIds: string[] | undefined): NavItemDef[] {
-  if (!savedIds || savedIds.length === 0) return section.items;
-  const map = new Map(section.items.map(i => [i.id, i]));
+function applySectionOrder(items: NavItemDef[], savedIds: string[] | undefined): NavItemDef[] {
+  if (!savedIds || savedIds.length === 0) return items;
+  const map = new Map(items.map(i => [i.id, i]));
   const ordered: NavItemDef[] = [];
   for (const id of savedIds) {
     const item = map.get(id);
     if (item) ordered.push(item);
   }
-  for (const item of section.items) {
+  for (const item of items) {
     if (!ordered.find(o => o.id === item.id)) ordered.push(item);
   }
   return ordered;
@@ -65,14 +84,16 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
   savedOrder: string[] | undefined;
   onOrderChange: (sectionId: string, newOrder: string[]) => void;
 }) {
-  const [items, setItems] = useState<NavItemDef[]>(() => applySectionOrder(section, savedOrder));
+  const navigate = useNavigate();
+  const [items, setItems] = useState<NavItemDef[]>(() => applySectionOrder(section.items, savedOrder));
   const dragIdx = useRef<number | null>(null);
   const overIdx = useRef<number | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overItemId, setOverItemId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
-    setItems(applySectionOrder(section, savedOrder));
+    setItems(applySectionOrder(section.items, savedOrder));
   }, []);
 
   const handleDragStart = (e: React.DragEvent, idx: number) => {
@@ -112,8 +133,14 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
 
   return (
     <div>
-      <div className="pt-4 pb-1.5 px-3 text-[10px] font-semibold text-stone-400 uppercase tracking-widest">{section.label}</div>
-      {items.map((item, idx) => {
+      <button
+        onClick={() => { navigate(section.hub); setExpanded(v => !v); }}
+        className="w-full flex items-center justify-between pt-4 pb-1.5 px-3 group"
+      >
+        <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest group-hover:text-amber-600 transition-colors">{section.label}</span>
+        <ChevronRight className={clsx('w-3 h-3 text-stone-300 group-hover:text-amber-500 transition-all', !expanded && 'rotate-90')} />
+      </button>
+      {expanded && items.map((item, idx) => {
         const Icon = item.icon;
         const isDragging = draggingId === item.id;
         const isOver = overItemId === item.id && draggingId !== item.id;
@@ -242,11 +269,11 @@ export default function LeftNav() {
       <div className="px-4 py-4 border-b border-stone-200">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-amber-600 flex items-center justify-center shrink-0 shadow-sm">
-            <Database className="w-4 h-4 text-white" />
+            <LayoutDashboard className="w-4 h-4 text-white" />
           </div>
           <div>
-            <div className="text-stone-800 text-sm font-semibold leading-tight">ASW Library</div>
-            <div className="text-stone-400 text-xs">Eng. Data Platform</div>
+            <div className="text-stone-800 text-sm font-bold leading-tight tracking-tight">Shark OS</div>
+            <div className="text-stone-400 text-xs">Engineering Platform</div>
           </div>
         </div>
       </div>
@@ -254,10 +281,7 @@ export default function LeftNav() {
       <div className="flex-1 overflow-y-auto py-2">
         <div className="px-1 space-y-0.5">
           <NavLink to="/" end className={navLinkClass}>
-            <LayoutDashboard className="w-4 h-4 shrink-0" /><span>Dashboard</span>
-          </NavLink>
-          <NavLink to="/projects" className={navLinkClass}>
-            <FolderOpen className="w-4 h-4 shrink-0" /><span>Projects</span>
+            <Home className="w-4 h-4 shrink-0" /><span>Home</span>
           </NavLink>
           <NavLink to="/search" className={navLinkClass}>
             <Search className="w-4 h-4 shrink-0" /><span>Search</span>
@@ -275,13 +299,6 @@ export default function LeftNav() {
             onOrderChange={handleOrderChange}
           />
         ))}
-
-        <div className="pt-4 pb-1.5 px-3 text-[10px] font-semibold text-stone-400 uppercase tracking-widest">Procurement</div>
-        <div className="px-1">
-          <NavLink to="/purchase-orders" className={navLinkClass}>
-            <ShoppingCart className="w-4 h-4 shrink-0" /><span>Purchase Orders</span>
-          </NavLink>
-        </div>
       </div>
 
       <div className="border-t border-stone-200 p-2">

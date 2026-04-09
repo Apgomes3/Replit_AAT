@@ -236,7 +236,7 @@ export default function Dashboard() {
 
   const quickLinks = [
     { to: '/graph', label: 'Graph Explorer', sub: 'Trace entity relationships' },
-    { to: '/products/masters', label: 'ASW Library', sub: 'Reusable product definitions' },
+    { to: '/products/masters', label: 'Shark OS', sub: 'Reusable product definitions' },
     { to: '/documents', label: 'Document Register', sub: 'Controlled files & revisions' },
     { to: '/knowledge/design-rules', label: 'Design Rules', sub: 'Engineering standards' },
     { to: '/admin/import', label: 'CSV Import', sub: 'Bulk data loading' },
@@ -493,7 +493,7 @@ export default function Dashboard() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-stone-800 mb-1">Dashboard</h1>
-          <p className="text-stone-500 text-sm">Engineering Data Platform overview</p>
+          <p className="text-stone-500 text-sm">Shark OS overview</p>
         </div>
         <div className="relative">
           <button

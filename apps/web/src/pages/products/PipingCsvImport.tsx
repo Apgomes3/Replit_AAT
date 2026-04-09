@@ -115,7 +115,7 @@ export default function PipingCsvImport({ onClose, onImported }: Props) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <div>
             <h2 className="font-semibold text-slate-800">Import Piping Fittings from CSV</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Items will be created in the ASW Library and linked by product code</p>
+            <p className="text-sm text-slate-500 mt-0.5">Items will be created in the Shark OS and linked by product code</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
