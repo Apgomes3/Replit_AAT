@@ -6,10 +6,8 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
-import NewEntityModal from '../../components/ui/NewEntityModal';
-import toast from 'react-hot-toast';
+import CreatePOModal from './CreatePOModal';
 import { Plus } from 'lucide-react';
-import { useAuthStore } from '../../store/authStore';
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:              { label: 'Draft',              color: 'bg-slate-100 text-slate-600' },
@@ -34,17 +32,11 @@ type PO = {
 
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [showNew, setShowNew] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
 
-  const { data: projectsData } = useQuery({
-    queryKey: ['projects-list-po'],
-    queryFn: () => api.get('/projects?page_size=200').then(r => r.data),
-  });
-
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['purchase-orders', search, statusFilter],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -66,24 +58,13 @@ export default function PurchaseOrdersList() {
     { key: 'created_at', header: 'Date', render: r => <span className="text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString()}</span> },
   ];
 
-  const handleCreate = async (formData: Record<string, string>) => {
-    const proj = projectsData?.items?.find((p: any) => p.project_code === formData.project_code);
-    await api.post('/purchase-orders', {
-      project_id: proj?.id || null,
-      notes: formData.notes || null,
-    });
-    toast.success('Purchase Order created');
-    refetch();
-    setShowNew(false);
-  };
-
   return (
     <div className="h-full flex flex-col">
       <PageHeader
         title="Purchase Orders"
         subtitle={`${data?.pagination?.total ?? 0} orders`}
         actions={
-          <Button variant="primary" onClick={() => setShowNew(true)}>
+          <Button variant="primary" onClick={() => setShowCreate(true)}>
             <Plus className="w-4 h-4" />New PO
           </Button>
         }
@@ -115,17 +96,7 @@ export default function PurchaseOrdersList() {
         />
       </div>
 
-      {showNew && (
-        <NewEntityModal
-          title="New Purchase Order"
-          onClose={() => setShowNew(false)}
-          fields={[
-            { name: 'project_code', label: 'Project', options: ['', ...(projectsData?.items?.map((p: any) => p.project_code) || [])] },
-            { name: 'notes', label: 'Notes / Description' },
-          ]}
-          onSubmit={handleCreate}
-        />
-      )}
+      {showCreate && <CreatePOModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }

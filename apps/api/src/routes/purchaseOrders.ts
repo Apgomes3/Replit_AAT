@@ -22,6 +22,26 @@ async function isDesignated(poId: string, userId: string): Promise<boolean> {
   return r.rows.length > 0;
 }
 
+// USERS LIST (for designated-user picker, accessible to all roles)
+router.get('/purchase-orders/users', authenticate, async (_req: AuthRequest, res: Response) => {
+  const r = await query(
+    `SELECT id, first_name, last_name, email, role FROM users WHERE is_active=true ORDER BY first_name, last_name`,
+    []
+  );
+  res.json({ items: r.rows });
+});
+
+// SYSTEMS SEARCH (for system linking, accessible to all roles)
+router.get('/purchase-orders/systems-search', authenticate, async (req: AuthRequest, res: Response) => {
+  const { q = '', page_size = '50' } = req.query as any;
+  const r = await query(
+    `SELECT s.id, s.system_code, s.system_name, p.project_code FROM systems s JOIN projects p ON s.project_id=p.id
+     WHERE s.system_code ILIKE $1 OR s.system_name ILIKE $1 ORDER BY s.system_code LIMIT $2`,
+    [`%${q}%`, parseInt(page_size)]
+  );
+  res.json({ items: r.rows });
+});
+
 // LIST
 router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Response) => {
   const { status, project_id, q, page = '1', page_size = '50' } = req.query as any;

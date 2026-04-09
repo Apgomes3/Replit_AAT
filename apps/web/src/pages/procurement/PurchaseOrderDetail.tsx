@@ -8,7 +8,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import {
-  Package, CheckCircle, XCircle, ArrowRight, Plus, Trash2, Users, Clock, ChevronRight, DollarSign
+  Package, CheckCircle, XCircle, ArrowRight, Plus, Trash2, Users, Clock, ChevronRight, Search, Link2, X
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
@@ -109,6 +109,11 @@ export default function PurchaseOrderDetail() {
   const [showDesignated, setShowDesignated] = useState(false);
   const [designatedUserId, setDesignatedUserId] = useState('');
 
+  // Systems management
+  const [systemSearch, setSystemSearch] = useState('');
+  const [showSystemResults, setShowSystemResults] = useState(false);
+  const [savingSystems, setSavingSystems] = useState(false);
+
   const { data: po, isLoading, refetch } = useQuery({
     queryKey: ['purchase-order', id],
     queryFn: () => api.get(`/purchase-orders/${id}`).then(r => r.data),
@@ -121,7 +126,13 @@ export default function PurchaseOrderDetail() {
 
   const { data: allUsers } = useQuery({
     queryKey: ['users-list-po'],
-    queryFn: () => api.get('/admin/users?page_size=200').then(r => r.data),
+    queryFn: () => api.get('/purchase-orders/users').then(r => r.data),
+  });
+
+  const { data: systemSearchResults } = useQuery({
+    queryKey: ['po-systems-search-detail', systemSearch],
+    queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(systemSearch)}&page_size=20`).then(r => r.data),
+    enabled: systemSearch.length >= 1,
   });
 
   useEffect(() => {
@@ -207,6 +218,45 @@ export default function PurchaseOrderDetail() {
     await api.delete(`/purchase-orders/${id}/designated-users/${userId}`);
     toast.success('User removed');
     refetch();
+  };
+
+  const handleAddSystem = async (system: { id: string; system_code: string; system_name: string }) => {
+    setSavingSystems(true);
+    setSystemSearch('');
+    setShowSystemResults(false);
+    try {
+      const currentIds = (po?.systems || []).map((s: any) => s.id);
+      if (currentIds.includes(system.id)) return;
+      await api.put(`/purchase-orders/${id}`, {
+        project_id: po?.project_id || null,
+        notes: po?.notes || null,
+        system_ids: [...currentIds, system.id],
+      });
+      toast.success(`${system.system_code} linked`);
+      refetch();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to link system');
+    } finally {
+      setSavingSystems(false);
+    }
+  };
+
+  const handleRemoveSystem = async (systemId: string) => {
+    setSavingSystems(true);
+    try {
+      const currentIds = (po?.systems || []).map((s: any) => s.id).filter((sid: string) => sid !== systemId);
+      await api.put(`/purchase-orders/${id}`, {
+        project_id: po?.project_id || null,
+        notes: po?.notes || null,
+        system_ids: currentIds,
+      });
+      toast.success('System unlinked');
+      refetch();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to unlink system');
+    } finally {
+      setSavingSystems(false);
+    }
   };
 
   const formatCurrency = (amount: number | null, from: string) => {
@@ -325,19 +375,55 @@ export default function PurchaseOrderDetail() {
 
             {/* Systems */}
             <div className="bg-white border border-slate-200 rounded-lg">
-              <div className="px-4 py-3 border-b border-slate-100 text-sm font-medium text-slate-700">
-                Systems ({po.systems?.length || 0})
+              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5 text-slate-400" />Systems ({po.systems?.length || 0})
+                </span>
+                {savingSystems && <span className="text-xs text-slate-400">Saving…</span>}
               </div>
-              <div className="px-4 py-3 space-y-1.5">
-                {po.systems?.length === 0
+              <div className="px-4 py-3 space-y-2">
+                {po.systems?.length === 0 && !isDraft
                   ? <p className="text-sm text-slate-400">No systems linked</p>
-                  : po.systems.map((s: any) => (
+                  : po.systems?.map((s: any) => (
                     <div key={s.id} className="flex items-center gap-1.5 text-sm">
                       <EntityCode code={s.system_code} />
-                      <span className="text-slate-600">{s.system_name}</span>
+                      <span className="text-slate-600 flex-1 truncate">{s.system_name}</span>
+                      {isDraft && (
+                        <button onClick={() => handleRemoveSystem(s.id)} className="text-red-300 hover:text-red-500 shrink-0" title="Unlink">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))
                 }
+                {isDraft && (
+                  <div className="relative pt-1">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                      <input
+                        value={systemSearch}
+                        onChange={e => { setSystemSearch(e.target.value); setShowSystemResults(true); }}
+                        onFocus={() => setShowSystemResults(true)}
+                        placeholder="Add system…"
+                        className="w-full border border-slate-200 rounded pl-6 pr-3 py-1.5 text-xs focus:outline-none focus:border-[#3E5C76]"
+                      />
+                    </div>
+                    {showSystemResults && systemSearch.length >= 1 && (systemSearchResults?.items || []).length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-36 overflow-y-auto divide-y divide-slate-50">
+                        {(systemSearchResults?.items || [])
+                          .filter((s: any) => !po.systems?.find((x: any) => x.id === s.id))
+                          .map((s: any) => (
+                            <button key={s.id} onClick={() => handleAddSystem(s)}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-2">
+                              <EntityCode code={s.system_code} />
+                              <span className="text-slate-600 truncate">{s.system_name}</span>
+                              <span className="text-slate-300 ml-auto shrink-0">{s.project_code}</span>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
