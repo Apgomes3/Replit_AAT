@@ -238,6 +238,9 @@ export default function ProductMasterDetail() {
       primary_material_code: product.primary_material_code || '',
       notes: product.notes || '',
       tank_family_id: (product as any).tank_family_id || '',
+      cost_price: (product as any).cost_price != null ? String((product as any).cost_price) : '',
+      sell_price: (product as any).sell_price != null ? String((product as any).sell_price) : '',
+      currency: (product as any).currency || 'USD',
     });
     setEditing(true);
   };
@@ -255,6 +258,9 @@ export default function ProductMasterDetail() {
         primary_material_code: editForm.primary_material_code || null,
         notes: editForm.notes || null,
         tank_family_id: editForm.tank_family_id || null,
+        cost_price: editForm.cost_price !== '' ? parseFloat(editForm.cost_price) : null,
+        sell_price: editForm.sell_price !== '' ? parseFloat(editForm.sell_price) : null,
+        currency: editForm.currency || 'USD',
       }));
       toast.success('Product updated');
       setEditing(false);
@@ -621,6 +627,8 @@ export default function ProductMasterDetail() {
                 { label: 'Tank Type', value: product.application_type },
                 { label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null },
                 { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
+                ...((product as any).cost_price != null ? [{ label: 'Cost Price', value: `${Number((product as any).cost_price).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
+                ...((product as any).sell_price != null ? [{ label: 'Sell Price', value: `${Number((product as any).sell_price).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
                 { label: 'Notes', value: product.notes },
               ]} />
               ) : (
@@ -684,6 +692,23 @@ export default function ProductMasterDetail() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
+                  <input type="number" min="0" step="any" placeholder="0.00" value={editForm.cost_price} onChange={e => setEditForm((f: any) => ({ ...f, cost_price: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Sell Price</label>
+                  <input type="number" min="0" step="any" placeholder="0.00" value={editForm.sell_price} onChange={e => setEditForm((f: any) => ({ ...f, sell_price: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+                  <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
@@ -706,6 +731,8 @@ export default function ProductMasterDetail() {
               ...(!isPiping ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
               ...(!isPiping ? [{ label: 'Power', value: product.power_kw ? `${product.power_kw} kW` : null }] : []),
               { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
+              ...((product as any).cost_price != null ? [{ label: 'Cost Price', value: `${Number((product as any).cost_price).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
+              ...((product as any).sell_price != null ? [{ label: 'Sell Price', value: `${Number((product as any).sell_price).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
               { label: 'Notes', value: product.notes },
             ]} />
             ) : (
@@ -756,6 +783,23 @@ export default function ProductMasterDetail() {
                         {m.material_code}{m.material_name ? ` — ${m.material_name}` : ''}
                       </option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
+                  <input type="number" min="0" step="any" placeholder="0.00" value={editForm.cost_price} onChange={e => setEditForm((f: any) => ({ ...f, cost_price: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Sell Price</label>
+                  <input type="number" min="0" step="any" placeholder="0.00" value={editForm.sell_price} onChange={e => setEditForm((f: any) => ({ ...f, sell_price: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+                  <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="col-span-2">

@@ -29,6 +29,8 @@ import AdminImport from './pages/admin/AdminImport';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminRoles from './pages/admin/AdminRoles';
 import AdminTankFamilies from './pages/admin/AdminTankFamilies';
+import PurchaseOrdersList from './pages/procurement/PurchaseOrdersList';
+import PurchaseOrderDetail from './pages/procurement/PurchaseOrderDetail';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -72,6 +74,8 @@ export default function App() {
             <Route path="admin/categories" element={<AdminCategories />} />
             <Route path="admin/roles" element={<AdminRoles />} />
             <Route path="admin/tank-families" element={<AdminTankFamilies />} />
+            <Route path="purchase-orders" element={<PurchaseOrdersList />} />
+            <Route path="purchase-orders/:id" element={<PurchaseOrderDetail />} />
           </Route>
         </Routes>
       </BrowserRouter>

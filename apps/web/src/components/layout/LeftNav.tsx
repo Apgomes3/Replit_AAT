@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Database, Boxes, Pipette, Container, GripVertical, ShieldCheck, Settings, ChevronRight, Ruler } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Database, Boxes, Pipette, Container, GripVertical, ShieldCheck, Settings, ChevronRight, Ruler, ShoppingCart } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 
@@ -280,6 +280,16 @@ export default function LeftNav() {
             onOrderChange={handleOrderChange}
           />
         ))}
+
+        <div className="pt-4 pb-1.5 px-3 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Procurement</div>
+        <div className="px-1">
+          <NavLink to="/purchase-orders" className={({ isActive }) => clsx(
+            'flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors mx-1',
+            isActive ? 'bg-[#3E5C76] text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          )}>
+            <ShoppingCart className="w-4 h-4 shrink-0" /><span>Purchase Orders</span>
+          </NavLink>
+        </div>
       </div>
 
       <div className="border-t border-slate-100 p-2">
