@@ -83,6 +83,7 @@ function convertAmount(amount: number | null, fromCurrency: string, toCurrency: 
 type Item = {
   id: string; product_master_id: string | null; product_code: string; product_name: string;
   quantity: string; cost_price: string | null; sell_price: string | null; currency: string; notes: string | null;
+  system_id: string | null; system_code: string | null; system_name: string | null;
 };
 
 export default function PurchaseOrderDetail() {
@@ -105,6 +106,11 @@ export default function PurchaseOrderDetail() {
   const [itemCurrency, setItemCurrency] = useState('USD');
   const [itemNotes, setItemNotes] = useState('');
   const [addingItem, setAddingItem] = useState(false);
+  const [itemSystemId, setItemSystemId] = useState('');
+  const [itemSystemCode, setItemSystemCode] = useState('');
+  const [itemSystemName, setItemSystemName] = useState('');
+  const [addItemSystemSearch, setAddItemSystemSearch] = useState('');
+  const [showAddItemSystemResults, setShowAddItemSystemResults] = useState(false);
 
   const [showDesignated, setShowDesignated] = useState(false);
   const [designatedUserId, setDesignatedUserId] = useState('');
@@ -133,6 +139,12 @@ export default function PurchaseOrderDetail() {
     queryKey: ['po-systems-search-detail', systemSearch],
     queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(systemSearch)}&page_size=20`).then(r => r.data),
     enabled: systemSearch.length >= 1,
+  });
+
+  const { data: addItemSystemResults } = useQuery({
+    queryKey: ['add-item-system-search', addItemSystemSearch],
+    queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(addItemSystemSearch)}&page_size=15`).then(r => r.data),
+    enabled: addItemSystemSearch.length >= 1,
   });
 
   useEffect(() => {
@@ -188,11 +200,14 @@ export default function PurchaseOrderDetail() {
         sell_price: itemSellPrice ? parseFloat(itemSellPrice) : (prod?.sell_price || null),
         currency: itemCurrency,
         notes: itemNotes || null,
+        system_id: itemSystemId || null,
       });
       toast.success('Item added');
       setShowAddItem(false);
       setSelectedProductId(''); setProductSearch(''); setItemQty('1');
       setItemCostPrice(''); setItemSellPrice(''); setItemNotes('');
+      setItemSystemId(''); setItemSystemCode(''); setItemSystemName('');
+      setAddItemSystemSearch(''); setShowAddItemSystemResults(false);
       refetch();
     } finally {
       setAddingItem(false);
@@ -549,13 +564,54 @@ export default function PurchaseOrderDetail() {
                       </select>
                     </div>
                   </div>
+                  {/* System picker */}
+                  <div>
+                    <label className="text-xs text-slate-500">System</label>
+                    {itemSystemId ? (
+                      <div className="mt-0.5 inline-flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
+                        <EntityCode code={itemSystemCode} />
+                        <span>{itemSystemName}</span>
+                        <button onClick={() => { setItemSystemId(''); setItemSystemCode(''); setItemSystemName(''); }} className="text-blue-400 hover:text-red-500 ml-0.5">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative mt-0.5">
+                        <input
+                          value={addItemSystemSearch}
+                          onChange={e => { setAddItemSystemSearch(e.target.value); setShowAddItemSystemResults(true); }}
+                          onFocus={() => setShowAddItemSystemResults(true)}
+                          placeholder="Search system to link (optional)…"
+                          className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]"
+                        />
+                        {showAddItemSystemResults && addItemSystemSearch.length >= 1 && (addItemSystemResults?.items || []).length > 0 && (
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded shadow-lg z-10 max-h-36 overflow-y-auto divide-y">
+                            {(addItemSystemResults?.items || []).map((s: any) => (
+                              <button key={s.id} onClick={() => {
+                                setItemSystemId(s.id); setItemSystemCode(s.system_code); setItemSystemName(s.system_name);
+                                setAddItemSystemSearch(''); setShowAddItemSystemResults(false);
+                              }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-slate-50">
+                                <EntityCode code={s.system_code} />
+                                <span className="text-slate-600 truncate">{s.system_name}</span>
+                                <span className="text-slate-300 ml-auto text-xs">{s.project_code}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <input value={itemNotes} onChange={e => setItemNotes(e.target.value)} placeholder="Notes (optional)"
                     className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]" />
                   <div className="flex gap-2">
                     <Button variant="primary" size="sm" onClick={handleAddItem} disabled={!selectedProductId || addingItem}>
                       {addingItem ? '…' : 'Add Item'}
                     </Button>
-                    <Button size="sm" onClick={() => { setShowAddItem(false); setSelectedProductId(''); setProductSearch(''); }}>Cancel</Button>
+                    <Button size="sm" onClick={() => {
+                      setShowAddItem(false); setSelectedProductId(''); setProductSearch('');
+                      setItemSystemId(''); setItemSystemCode(''); setItemSystemName('');
+                      setAddItemSystemSearch(''); setShowAddItemSystemResults(false);
+                    }}>Cancel</Button>
                   </div>
                 </div>
               )}
@@ -569,6 +625,7 @@ export default function PurchaseOrderDetail() {
                       <thead>
                         <tr className="border-b border-slate-100">
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Product</th>
+                          <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500">System</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Qty</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Cost ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Sell ({displayCurrency})</th>
@@ -583,11 +640,20 @@ export default function PurchaseOrderDetail() {
                               {item.product_code
                                 ? <span className="flex items-center gap-1.5">
                                     <EntityCode code={item.product_code} />
-                                    <span className="text-slate-600 text-xs truncate max-w-[180px]">{item.product_name}</span>
+                                    <span className="text-slate-600 text-xs truncate max-w-[160px]">{item.product_name}</span>
                                   </span>
                                 : <span className="text-slate-400 text-xs">Unknown product</span>
                               }
                               {item.notes && <div className="text-xs text-slate-400 mt-0.5">{item.notes}</div>}
+                            </td>
+                            <td className="px-3 py-3">
+                              {item.system_code
+                                ? <span className="flex items-center gap-1">
+                                    <EntityCode code={item.system_code} />
+                                    <span className="text-slate-500 text-xs truncate max-w-[120px]">{item.system_name}</span>
+                                  </span>
+                                : <span className="text-slate-300 text-xs">—</span>
+                              }
                             </td>
                             <td className="px-3 py-3 text-right font-mono text-xs">{parseFloat(item.quantity).toFixed(2)}</td>
                             <td className="px-3 py-3 text-right text-xs text-slate-600">{formatCurrency(parseFloat(item.cost_price || '0'), item.currency)}</td>
@@ -607,7 +673,7 @@ export default function PurchaseOrderDetail() {
                       </tbody>
                       <tfoot>
                         <tr className="border-t border-slate-200 bg-slate-50">
-                          <td colSpan={2} className="px-4 py-2.5 text-xs font-medium text-slate-500 text-right">Totals</td>
+                          <td colSpan={3} className="px-4 py-2.5 text-xs font-medium text-slate-500 text-right">Totals</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700">{formatTotal(totalCost)}</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700" />
                           <td className="px-3 py-2.5 text-right text-sm font-bold text-[#3E5C76]">{formatTotal(totalSell)}</td>

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
-import { X, Plus, Trash2, Search, Package } from 'lucide-react';
+import { X, Trash2, Search, Package } from 'lucide-react';
 import Button from '../../components/ui/Button';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
@@ -19,9 +19,10 @@ type DraftItem = {
   sell_price: string;
   currency: string;
   notes: string;
+  system_id: string;
+  system_code: string;
+  system_name: string;
 };
-
-type DraftSystem = { id: string; system_code: string; system_name: string; project_code: string };
 
 export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
@@ -29,26 +30,21 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Systems
-  const [systemSearch, setSystemSearch] = useState('');
-  const [systems, setSystems] = useState<DraftSystem[]>([]);
-  const [showSystemResults, setShowSystemResults] = useState(false);
-
   // Items
   const [items, setItems] = useState<DraftItem[]>([]);
   const [itemKey, setItemKey] = useState(0);
   const [productSearch, setProductSearch] = useState('');
   const [showProductResults, setShowProductResults] = useState(false);
 
+  // Per-item system search
+  const [activeSystemItemKey, setActiveSystemItemKey] = useState<number | null>(null);
+  const [itemSystemSearch, setItemSystemSearch] = useState<Record<number, string>>({});
+
+  const activeSystemQuery = activeSystemItemKey !== null ? (itemSystemSearch[activeSystemItemKey] || '') : '';
+
   const { data: projectsData } = useQuery({
     queryKey: ['projects-list-createpo'],
     queryFn: () => api.get('/projects?page_size=200').then(r => r.data),
-  });
-
-  const { data: systemsData } = useQuery({
-    queryKey: ['po-systems-search', systemSearch],
-    queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(systemSearch)}&page_size=30`).then(r => r.data),
-    enabled: systemSearch.length >= 1,
   });
 
   const { data: productsData } = useQuery({
@@ -57,13 +53,11 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
     enabled: productSearch.length >= 1,
   });
 
-  const addSystem = (s: DraftSystem) => {
-    if (!systems.find(x => x.id === s.id)) setSystems(prev => [...prev, s]);
-    setSystemSearch('');
-    setShowSystemResults(false);
-  };
-
-  const removeSystem = (id: string) => setSystems(prev => prev.filter(s => s.id !== id));
+  const { data: itemSystemResults } = useQuery({
+    queryKey: ['item-system-search', activeSystemQuery],
+    queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(activeSystemQuery)}&page_size=15`).then(r => r.data),
+    enabled: activeSystemQuery.length >= 1,
+  });
 
   const addItem = (prod: any) => {
     setItems(prev => [...prev, {
@@ -76,17 +70,33 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       sell_price: prod.sell_price != null ? String(prod.sell_price) : '',
       currency: prod.currency || 'USD',
       notes: '',
+      system_id: '',
+      system_code: '',
+      system_name: '',
     }]);
     setItemKey(k => k + 1);
     setProductSearch('');
     setShowProductResults(false);
   };
 
-  const updateItem = (key: number, field: string, value: string) => {
-    setItems(prev => prev.map(i => i.key === key ? { ...i, [field]: value } : i));
+  const updateItem = (key: number, fields: Partial<DraftItem>) => {
+    setItems(prev => prev.map(i => i.key === key ? { ...i, ...fields } : i));
   };
 
-  const removeItem = (key: number) => setItems(prev => prev.filter(i => i.key !== key));
+  const removeItem = (key: number) => {
+    setItems(prev => prev.filter(i => i.key !== key));
+    if (activeSystemItemKey === key) setActiveSystemItemKey(null);
+  };
+
+  const selectSystem = (itemKey: number, sys: { id: string; system_code: string; system_name: string }) => {
+    updateItem(itemKey, { system_id: sys.id, system_code: sys.system_code, system_name: sys.system_name });
+    setActiveSystemItemKey(null);
+    setItemSystemSearch(prev => ({ ...prev, [itemKey]: '' }));
+  };
+
+  const clearSystem = (itemKey: number) => {
+    updateItem(itemKey, { system_id: '', system_code: '', system_name: '' });
+  };
 
   const handleCreate = async () => {
     setSaving(true);
@@ -95,7 +105,6 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       const poRes = await api.post('/purchase-orders', {
         project_id: proj?.id || null,
         notes: notes || null,
-        system_ids: systems.map(s => s.id),
       });
       const poId = poRes.data.id;
 
@@ -107,6 +116,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
           sell_price: item.sell_price !== '' ? parseFloat(item.sell_price) : null,
           currency: item.currency || 'USD',
           notes: item.notes || null,
+          system_id: item.system_id || null,
         });
       }
 
@@ -158,63 +168,20 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Systems */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Systems</h3>
-            <div className="relative">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                <input
-                  value={systemSearch}
-                  onChange={e => { setSystemSearch(e.target.value); setShowSystemResults(true); }}
-                  onFocus={() => setShowSystemResults(true)}
-                  placeholder="Search by system code or name…"
-                  className="w-full border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
-                />
-              </div>
-              {showSystemResults && systemSearch.length >= 1 && (systemsData?.items || []).length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto divide-y divide-slate-50">
-                  {(systemsData?.items || [])
-                    .filter((s: any) => !systems.find(x => x.id === s.id))
-                    .map((s: any) => (
-                      <button key={s.id} onClick={() => addSystem(s)}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2">
-                        <EntityCode code={s.system_code} />
-                        <span className="text-slate-600 truncate">{s.system_name}</span>
-                        <span className="text-xs text-slate-300 ml-auto shrink-0">{s.project_code}</span>
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-            {systems.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {systems.map(s => (
-                  <span key={s.id} className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-full">
-                    <EntityCode code={s.system_code} />
-                    <span>{s.system_name}</span>
-                    <button onClick={() => removeSystem(s.id)} className="text-slate-400 hover:text-red-500 ml-0.5">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* Line items */}
           <div className="space-y-2">
             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
               <Package className="w-3.5 h-3.5" />Line Items ({items.length})
             </h3>
-            {/* Product search */}
+
+            {/* Product search to add new item */}
             <div className="relative">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                 <input
                   value={productSearch}
                   onChange={e => { setProductSearch(e.target.value); setShowProductResults(true); }}
-                  onFocus={() => setShowProductResults(true)}
+                  onFocus={() => { setShowProductResults(true); setActiveSystemItemKey(null); }}
                   placeholder="Search product by code or name to add…"
                   className="w-full border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
                 />
@@ -237,47 +204,90 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
             {items.length === 0 ? (
               <p className="text-xs text-slate-400 text-center py-3">No items added yet — search for a product above</p>
             ) : (
-              <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100">
+              <div className="border border-slate-200 rounded-lg overflow-visible divide-y divide-slate-100">
                 {items.map(item => (
                   <div key={item.key} className="p-3 bg-white">
-                    <div className="flex items-start justify-between gap-2 mb-2">
+                    {/* Row 1: product + remove */}
+                    <div className="flex items-start justify-between gap-2 mb-2.5">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <EntityCode code={item.product_code} />
-                        <span className="text-sm text-slate-600 truncate">{item.product_name}</span>
+                        <span className="text-sm text-slate-700 font-medium truncate">{item.product_name}</span>
                       </div>
                       <button onClick={() => removeItem(item.key)} className="text-red-300 hover:text-red-500 shrink-0">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
+
+                    {/* Row 2: System picker */}
+                    <div className="mb-2.5">
+                      <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">System</label>
+                      {item.system_id ? (
+                        <div className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
+                          <EntityCode code={item.system_code} />
+                          <span>{item.system_name}</span>
+                          <button onClick={() => clearSystem(item.key)} className="text-blue-400 hover:text-red-500 ml-0.5">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                          <input
+                            value={activeSystemItemKey === item.key ? (itemSystemSearch[item.key] || '') : ''}
+                            onChange={e => {
+                              setActiveSystemItemKey(item.key);
+                              setItemSystemSearch(prev => ({ ...prev, [item.key]: e.target.value }));
+                            }}
+                            onFocus={() => setActiveSystemItemKey(item.key)}
+                            placeholder="Search system to link…"
+                            className="w-full border border-slate-200 rounded pl-6 pr-3 py-1 text-xs focus:outline-none focus:border-[#3E5C76]"
+                          />
+                          {activeSystemItemKey === item.key && activeSystemQuery.length >= 1 && (itemSystemResults?.items || []).length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-36 overflow-y-auto divide-y divide-slate-50">
+                              {(itemSystemResults?.items || []).map((s: any) => (
+                                <button key={s.id} onClick={() => selectSystem(item.key, s)}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-2">
+                                  <EntityCode code={s.system_code} />
+                                  <span className="text-slate-600 truncate">{s.system_name}</span>
+                                  <span className="text-slate-300 ml-auto shrink-0">{s.project_code}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Row 3: Qty / Cost / Sell / Currency */}
                     <div className="grid grid-cols-4 gap-2">
                       <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">Qty</label>
+                        <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Qty</label>
                         <input type="number" min="0" step="any" value={item.quantity}
-                          onChange={e => updateItem(item.key, 'quantity', e.target.value)}
+                          onChange={e => updateItem(item.key, { quantity: e.target.value })}
                           className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">Cost</label>
+                        <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Cost</label>
                         <input type="number" min="0" step="any" placeholder="0.00" value={item.cost_price}
-                          onChange={e => updateItem(item.key, 'cost_price', e.target.value)}
+                          onChange={e => updateItem(item.key, { cost_price: e.target.value })}
                           className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">Sell</label>
+                        <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Sell</label>
                         <input type="number" min="0" step="any" placeholder="0.00" value={item.sell_price}
-                          onChange={e => updateItem(item.key, 'sell_price', e.target.value)}
+                          onChange={e => updateItem(item.key, { sell_price: e.target.value })}
                           className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">Currency</label>
-                        <select value={item.currency} onChange={e => updateItem(item.key, 'currency', e.target.value)}
+                        <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Currency</label>
+                        <select value={item.currency} onChange={e => updateItem(item.key, { currency: e.target.value })}
                           className="w-full border border-slate-200 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#3E5C76]">
                           {CURRENCIES.map(c => <option key={c}>{c}</option>)}
                         </select>
                       </div>
                     </div>
                     <input placeholder="Notes (optional)" value={item.notes}
-                      onChange={e => updateItem(item.key, 'notes', e.target.value)}
+                      onChange={e => updateItem(item.key, { notes: e.target.value })}
                       className="mt-2 w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
                   </div>
                 ))}
@@ -289,7 +299,6 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
           <div className="text-xs text-slate-400">
-            {systems.length > 0 && <span>{systems.length} system{systems.length > 1 ? 's' : ''} · </span>}
             {items.length > 0 && <span>{items.length} item{items.length > 1 ? 's' : ''}</span>}
           </div>
           <div className="flex items-center gap-2">
