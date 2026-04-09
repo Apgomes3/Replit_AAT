@@ -16,7 +16,7 @@ interface Category {
   is_system: boolean;
 }
 
-const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] w-full';
+const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 w-full';
 
 export default function AdminCategories() {
   const qc = useQueryClient();

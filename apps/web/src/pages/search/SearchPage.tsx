@@ -55,7 +55,7 @@ export default function SearchPage() {
         <div className="relative mb-6">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search across all entities..."
-            className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-[#3E5C76] shadow-sm" />
+            className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-amber-600 shadow-sm" />
         </div>
       </form>
 

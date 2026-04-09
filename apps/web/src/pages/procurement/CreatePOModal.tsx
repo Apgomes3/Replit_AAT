@@ -148,7 +148,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                 <select
                   value={projectCode}
                   onChange={e => setProjectCode(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-600"
                 >
                   <option value="">— None —</option>
                   {(projectsData?.items || []).map((p: any) => (
@@ -162,7 +162,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
                   placeholder="Optional description…"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600"
                 />
               </div>
             </div>
@@ -183,7 +183,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                   onChange={e => { setProductSearch(e.target.value); setShowProductResults(true); }}
                   onFocus={() => { setShowProductResults(true); setActiveSystemItemKey(null); }}
                   placeholder="Search product by code or name to add…"
-                  className="w-full border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                  className="w-full border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600"
                 />
               </div>
               {showProductResults && productSearch.length >= 1 && (productsData?.items || []).length > 0 && (
@@ -240,7 +240,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                             }}
                             onFocus={() => setActiveSystemItemKey(item.key)}
                             placeholder="Search system to link…"
-                            className="w-full border border-slate-200 rounded pl-6 pr-3 py-1 text-xs focus:outline-none focus:border-[#3E5C76]"
+                            className="w-full border border-slate-200 rounded pl-6 pr-3 py-1 text-xs focus:outline-none focus:border-amber-600"
                           />
                           {activeSystemItemKey === item.key && activeSystemQuery.length >= 1 && (itemSystemResults?.items || []).length > 0 && (
                             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-36 overflow-y-auto divide-y divide-slate-50">
@@ -264,31 +264,31 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                         <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Qty</label>
                         <input type="number" min="0" step="any" value={item.quantity}
                           onChange={e => updateItem(item.key, { quantity: e.target.value })}
-                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
+                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" />
                       </div>
                       <div>
                         <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Cost</label>
                         <input type="number" min="0" step="any" placeholder="0.00" value={item.cost_price}
                           onChange={e => updateItem(item.key, { cost_price: e.target.value })}
-                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
+                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" />
                       </div>
                       <div>
                         <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Sell</label>
                         <input type="number" min="0" step="any" placeholder="0.00" value={item.sell_price}
                           onChange={e => updateItem(item.key, { sell_price: e.target.value })}
-                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
+                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" />
                       </div>
                       <div>
                         <label className="block text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">Currency</label>
                         <select value={item.currency} onChange={e => updateItem(item.key, { currency: e.target.value })}
-                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#3E5C76]">
+                          className="w-full border border-slate-200 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-600">
                           {CURRENCIES.map(c => <option key={c}>{c}</option>)}
                         </select>
                       </div>
                     </div>
                     <input placeholder="Notes (optional)" value={item.notes}
                       onChange={e => updateItem(item.key, { notes: e.target.value })}
-                      className="mt-2 w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" />
+                      className="mt-2 w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-600" />
                   </div>
                 ))}
               </div>

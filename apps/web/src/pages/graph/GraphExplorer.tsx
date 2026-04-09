@@ -348,7 +348,7 @@ export default function GraphExplorer() {
             value={startNode}
             onChange={e => setStartNode(e.target.value)}
             placeholder="Paste entity UUID"
-            className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76] font-mono"
+            className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-amber-600 font-mono"
           />
         </div>
         <div>
@@ -356,7 +356,7 @@ export default function GraphExplorer() {
           <select
             value={startType}
             onChange={e => setStartType(e.target.value)}
-            className="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]"
+            className="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-amber-600"
           >
             {['project','area','exhibit','system','equipment','product','material','document'].map(t => (
               <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
@@ -368,7 +368,7 @@ export default function GraphExplorer() {
           <input
             type="number" value={depth} min={1} max={5}
             onChange={e => setDepth(Math.min(5, Math.max(1, parseInt(e.target.value) || 1)))}
-            className="border border-slate-300 rounded px-3 py-1.5 text-sm w-16 focus:outline-none focus:border-[#3E5C76]"
+            className="border border-slate-300 rounded px-3 py-1.5 text-sm w-16 focus:outline-none focus:border-amber-600"
           />
         </div>
         <div className="flex items-end gap-2">
@@ -451,7 +451,7 @@ export default function GraphExplorer() {
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/60">
             <div className="text-sm text-slate-500 flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-[#3E5C76] border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
               {viewMode === 'reuse' ? 'Finding project reuse…' : viewMode === 'impact' ? 'Analysing impact paths…' : 'Traversing graph…'}
             </div>
           </div>

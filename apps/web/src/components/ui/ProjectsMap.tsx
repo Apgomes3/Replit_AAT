@@ -26,7 +26,7 @@ const STATUS_ICON_COLOR: Record<string, string> = {
 };
 
 function coloredMarker(status: string) {
-  const color = STATUS_ICON_COLOR[status] || '#3E5C76';
+  const color = STATUS_ICON_COLOR[status] || '#d97706';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="24" height="36">
     <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${color}" stroke="white" stroke-width="1.5"/>
     <circle cx="12" cy="12" r="5" fill="white" opacity="0.9"/>
@@ -92,7 +92,7 @@ export default function ProjectsMap({ projects, height = '420px', singleProject 
                     <div className="text-xs text-slate-500 mb-2">{[p.city, p.country].filter(Boolean).join(', ')}</div>
                   )}
                   <div className="mb-2"><StatusBadge status={p.project_status} /></div>
-                  <Link to={`/projects/${p.id}`} className="text-xs text-[#3E5C76] hover:underline font-medium">
+                  <Link to={`/projects/${p.id}`} className="text-xs text-amber-600 hover:underline font-medium">
                     Open project →
                   </Link>
                 </div>

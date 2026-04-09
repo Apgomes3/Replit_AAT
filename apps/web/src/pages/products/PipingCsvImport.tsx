@@ -124,7 +124,7 @@ export default function PipingCsvImport({ onClose, onImported }: Props) {
           {!rows.length && !result && (
             <div className="space-y-4">
               <div
-                className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center cursor-pointer hover:border-[#3E5C76]/40 hover:bg-slate-50 transition-colors"
+                className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center cursor-pointer hover:border-amber-600/40 hover:bg-slate-50 transition-colors"
                 onClick={() => fileRef.current?.click()}
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
@@ -139,12 +139,12 @@ export default function PipingCsvImport({ onClose, onImported }: Props) {
                 <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Expected columns</div>
                 <div className="flex flex-wrap gap-1.5">
                   {EXPECTED_COLUMNS.map(col => (
-                    <span key={col} className={`text-xs px-2 py-0.5 rounded font-mono ${col === 'product_code' || col === 'product_name' ? 'bg-[#3E5C76]/10 text-[#3E5C76] font-semibold' : 'bg-slate-200 text-slate-600'}`}>
+                    <span key={col} className={`text-xs px-2 py-0.5 rounded font-mono ${col === 'product_code' || col === 'product_name' ? 'bg-amber-600/10 text-amber-600 font-semibold' : 'bg-slate-200 text-slate-600'}`}>
                       {col}{(col === 'product_code' || col === 'product_name') ? ' *' : ''}
                     </span>
                   ))}
                 </div>
-                <button onClick={downloadTemplate} className="mt-3 flex items-center gap-1.5 text-xs text-[#3E5C76] hover:underline">
+                <button onClick={downloadTemplate} className="mt-3 flex items-center gap-1.5 text-xs text-amber-600 hover:underline">
                   <Download className="w-3.5 h-3.5" /> Download template CSV
                 </button>
               </div>

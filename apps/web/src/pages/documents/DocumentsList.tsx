@@ -189,7 +189,7 @@ export default function DocumentsList() {
       />
       <div className="p-4 border-b border-slate-200 bg-white">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by code or title..."
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
+          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-amber-600" />
       </div>
       <div className="flex-1 bg-white overflow-auto">
         <DataTable
@@ -268,7 +268,7 @@ export default function DocumentsList() {
                   value={issueRev}
                   onChange={e => setIssueRev(e.target.value.toUpperCase())}
                   maxLength={4}
-                  className="w-full border rounded px-3 py-2 text-sm mt-1 font-mono focus:outline-none focus:border-[#3E5C76]"
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 font-mono focus:outline-none focus:border-amber-600"
                 />
               </div>
               <div>
@@ -277,7 +277,7 @@ export default function DocumentsList() {
                   value={issuePurpose}
                   onChange={e => setIssuePurpose(e.target.value)}
                   placeholder="For Review"
-                  className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[#3E5C76]"
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-amber-600"
                 />
               </div>
               <div>
@@ -314,7 +314,7 @@ export default function DocumentsList() {
                 <label className="text-xs text-slate-500 uppercase tracking-wide">Linked Projects</label>
                 {linkDocProjects.map(p => (
                   <div key={p.id} className="flex items-center justify-between bg-slate-50 rounded px-3 py-2 text-sm">
-                    <span><span className="font-mono font-medium text-[#3E5C76]">{p.project_code}</span><span className="text-slate-400 ml-2">{p.project_name}</span></span>
+                    <span><span className="font-mono font-medium text-amber-600">{p.project_code}</span><span className="text-slate-400 ml-2">{p.project_name}</span></span>
                     <button onClick={() => handleRemoveProjectLink(p.id)} className="text-red-400 hover:text-red-600 ml-2"><FolderX className="w-4 h-4" /></button>
                   </div>
                 ))}
@@ -328,7 +328,7 @@ export default function DocumentsList() {
                 <select
                   value={addProjectId}
                   onChange={e => setAddProjectId(e.target.value)}
-                  className="flex-1 border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#3E5C76]"
+                  className="flex-1 border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-600"
                 >
                   <option value="">— Select project —</option>
                   {(projects?.items ?? []).filter((p: any) => !linkDocProjects.find(lp => lp.id === p.id)).map((p: any) => (
@@ -357,7 +357,7 @@ export default function DocumentsList() {
                 <label className="text-xs text-slate-500 uppercase tracking-wide">Linked Product</label>
                 <div className="flex items-center justify-between bg-slate-50 rounded px-3 py-2 text-sm mt-1.5">
                   <span>
-                    <span className="font-mono font-medium text-[#3E5C76]">{productLinkTarget.product_code}</span>
+                    <span className="font-mono font-medium text-amber-600">{productLinkTarget.product_code}</span>
                     <span className="text-slate-400 ml-2">{productLinkTarget.product_name}</span>
                   </span>
                   <button onClick={handleRemoveProductLink} className="text-red-400 hover:text-red-600 ml-2">
@@ -374,7 +374,7 @@ export default function DocumentsList() {
                 value={productSearch}
                 onChange={e => { setProductSearch(e.target.value); setAddProductId(''); }}
                 placeholder="Search by code or name…"
-                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-[#3E5C76]"
+                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-600"
               />
               {productSearch.length >= 1 && (
                 <div className="border rounded max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white">

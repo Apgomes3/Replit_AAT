@@ -65,7 +65,7 @@ export default function AdminImport() {
             <div className="flex gap-2">
               {(['products', 'equipment', 'documents'] as ImportType[]).map(t => (
                 <button key={t} onClick={() => { setType(t); setFile(null); setResult(null); if (fileRef.current) fileRef.current.value = ''; }}
-                  className={`px-3 py-1.5 text-sm rounded capitalize border transition-colors ${type === t ? 'bg-[#3E5C76] text-white border-[#3E5C76]' : 'text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                  className={`px-3 py-1.5 text-sm rounded capitalize border transition-colors ${type === t ? 'bg-amber-600 text-white border-amber-600' : 'text-slate-600 border-slate-300 hover:border-slate-400'}`}>
                   {t}
                 </button>
               ))}
@@ -75,7 +75,7 @@ export default function AdminImport() {
           <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">Required CSV Columns</span>
-              <button onClick={downloadTemplate} className="text-xs text-[#3E5C76] hover:underline flex items-center gap-1"><FileText className="w-3 h-3" />Download Template</button>
+              <button onClick={downloadTemplate} className="text-xs text-amber-600 hover:underline flex items-center gap-1"><FileText className="w-3 h-3" />Download Template</button>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {templates[type].headers.map(h => (

@@ -122,18 +122,18 @@ export default function PipingList() {
       <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6">
         <div className="flex items-center gap-0.5 text-sm">
           <button onClick={() => setTab('fittings')}
-            className={`px-3 py-1.5 transition-colors ${tab === 'fittings' ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+            className={`px-3 py-1.5 transition-colors ${tab === 'fittings' ? 'text-amber-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
             Piping Fittings
-            <span className={`ml-1.5 text-xs font-normal ${tab === 'fittings' ? 'text-[#3E5C76]/70' : 'text-slate-300'}`}>{fittings.length}</span>
+            <span className={`ml-1.5 text-xs font-normal ${tab === 'fittings' ? 'text-amber-600/70' : 'text-slate-300'}`}>{fittings.length}</span>
           </button>
           <button onClick={() => setTab('bracketing')}
-            className={`px-3 py-1.5 transition-colors ${tab === 'bracketing' ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+            className={`px-3 py-1.5 transition-colors ${tab === 'bracketing' ? 'text-amber-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
             Bracketing
-            <span className={`ml-1.5 text-xs font-normal ${tab === 'bracketing' ? 'text-[#3E5C76]/70' : 'text-slate-300'}`}>{bracketing.length}</span>
+            <span className={`ml-1.5 text-xs font-normal ${tab === 'bracketing' ? 'text-amber-600/70' : 'text-slate-300'}`}>{bracketing.length}</span>
           </button>
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-56 focus:outline-none focus:border-[#3E5C76]" />
+          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-56 focus:outline-none focus:border-amber-600" />
         <span className="text-xs text-slate-400 ml-auto">{total} {tab === 'fittings' ? 'fitting' : 'bracket'}{total !== 1 ? 's' : ''}</span>
       </div>
 
@@ -215,12 +215,12 @@ export default function PipingList() {
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Item Name</label>
                 <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
                 <select value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   <option value="">— None —</option>
                   {ALL_PIPE_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
@@ -228,19 +228,19 @@ export default function PipingList() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select value={editForm.standard_status} onChange={e => setEditForm((f: any) => ({ ...f, standard_status: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
                 <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 sticky bottom-0 bg-white">

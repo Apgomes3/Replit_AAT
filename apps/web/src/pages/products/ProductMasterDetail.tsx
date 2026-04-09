@@ -562,7 +562,7 @@ export default function ProductMasterDetail() {
   const docCols: Column<Document>[] = [
     { key: 'document_type', header: 'Type', render: r => <div className="flex items-center gap-2">{docTypeIcon(r.document_type)}<span className="text-xs text-slate-600">{r.document_type}</span></div> },
     { key: 'document_code', header: 'Code', render: r => <EntityCode code={r.document_code} /> },
-    { key: 'document_title', header: 'Title', render: r => <Link to={`/documents/${r.id}`} className="font-medium text-[#3E5C76] hover:underline">{r.document_title}</Link> },
+    { key: 'document_title', header: 'Title', render: r => <Link to={`/documents/${r.id}`} className="font-medium text-amber-600 hover:underline">{r.document_title}</Link> },
     { key: 'current_revision', header: 'Rev', render: r => r.current_revision ? <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{r.current_revision}</span> : <span className="text-slate-300">—</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
@@ -615,10 +615,10 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Details</span>
                 {!editing
-                  ? <button onClick={startEdit} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
+                  ? <button onClick={startEdit} className="text-xs text-amber-600 hover:underline">Edit</button>
                   : <div className="flex gap-3">
                       <button onClick={() => setEditing(false)} className="text-xs text-slate-400 hover:underline">Cancel</button>
-                      <button onClick={handleSave} disabled={saving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+                      <button onClick={handleSave} disabled={saving} className="text-xs text-amber-600 font-semibold hover:underline disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
                     </div>}
               </div>
               {!editing ? (
@@ -637,25 +637,25 @@ export default function ProductMasterDetail() {
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
                   <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                   <select value={editForm.standard_status} onChange={e => setEditForm((f: any) => ({ ...f, standard_status: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                     {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">{isTank ? 'Tank Type' : 'Application Type'}</label>
                   <input value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 {isTank && (
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Tank Family</label>
                     <select value={editForm.tank_family_id ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_family_id: e.target.value || null }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 bg-white">
                       <option value="">— None —</option>
                       {tankFamilies.map((fam: any) => (
                         <option key={fam.id} value={fam.id}>{fam.name}</option>
@@ -667,23 +667,23 @@ export default function ProductMasterDetail() {
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
                     <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
                     <input type="number" value={editForm.design_head_m} onChange={e => setEditForm((f: any) => ({ ...f, design_head_m: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Power (kW)</label>
                     <input type="number" value={editForm.power_kw} onChange={e => setEditForm((f: any) => ({ ...f, power_kw: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   </div>
                 </>)}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
                   <select value={editForm.primary_material_code ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value || null }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 bg-white">
                     <option value="">— None —</option>
                     {(materialsData?.items ?? []).map((m: any) => (
                       <option key={m.material_code} value={m.material_code}>
@@ -695,24 +695,24 @@ export default function ProductMasterDetail() {
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
                   <input type="number" min="0" step="any" placeholder="0.00" value={editForm.cost_price} onChange={e => setEditForm((f: any) => ({ ...f, cost_price: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Sell Price</label>
                   <input type="number" min="0" step="any" placeholder="0.00" value={editForm.sell_price} onChange={e => setEditForm((f: any) => ({ ...f, sell_price: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
                   <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 bg-white">
                     {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
               </div>
             </div>
@@ -724,7 +724,7 @@ export default function ProductMasterDetail() {
             <MetadataPanel fields={[
               { label: 'Family', value: product.product_family_name,
                 action: <button onClick={() => setShowFamilyPicker(true)} disabled={familySaving}
-                  className="text-xs text-[#3E5C76] hover:underline whitespace-nowrap">{familySaving ? '...' : 'Change'}</button> },
+                  className="text-xs text-amber-600 hover:underline whitespace-nowrap">{familySaving ? '...' : 'Change'}</button> },
               { label: 'Category', value: product.product_category },
               ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
               ...(!isPiping ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
@@ -742,41 +742,41 @@ export default function ProductMasterDetail() {
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
                   <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                   <select value={editForm.standard_status} onChange={e => setEditForm((f: any) => ({ ...f, standard_status: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                     {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Application Type</label>
                   <input value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 {!isPiping && (<>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
                     <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
                     <input type="number" value={editForm.design_head_m} onChange={e => setEditForm((f: any) => ({ ...f, design_head_m: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Power (kW)</label>
                     <input type="number" value={editForm.power_kw} onChange={e => setEditForm((f: any) => ({ ...f, power_kw: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   </div>
                 </>)}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
                   <select value={editForm.primary_material_code ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value || null }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 bg-white">
                     <option value="">— None —</option>
                     {(materialsData?.items ?? []).map((m: any) => (
                       <option key={m.material_code} value={m.material_code}>
@@ -788,24 +788,24 @@ export default function ProductMasterDetail() {
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
                   <input type="number" min="0" step="any" placeholder="0.00" value={editForm.cost_price} onChange={e => setEditForm((f: any) => ({ ...f, cost_price: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Sell Price</label>
                   <input type="number" min="0" step="any" placeholder="0.00" value={editForm.sell_price} onChange={e => setEditForm((f: any) => ({ ...f, sell_price: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
                   <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] bg-white">
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 bg-white">
                     {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
               </div>
             </div>
@@ -818,15 +818,15 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Ruler className="w-3.5 h-3.5" />Dimensions</span>
                 {!editingDimensions
-                  ? <button onClick={() => { setDimensionsForm({ ...dimensionsData }); setEditingDimensions(true); }} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
-                  : <div className="flex gap-2"><button onClick={() => setEditingDimensions(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveDimensions} disabled={dimensionsSaving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{dimensionsSaving ? 'Saving…' : 'Save'}</button></div>}
+                  ? <button onClick={() => { setDimensionsForm({ ...dimensionsData }); setEditingDimensions(true); }} className="text-xs text-amber-600 hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingDimensions(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveDimensions} disabled={dimensionsSaving} className="text-xs text-amber-600 font-semibold hover:underline disabled:opacity-50">{dimensionsSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
               {editingDimensions ? (
                 <div className="p-3 grid grid-cols-2 gap-2">
                   {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['weight_kg','Weight (kg)'],['inlet_dn_mm','Inlet DN (mm)'],['outlet_dn_mm','Outlet DN (mm)']].map(([k,l]) => (
-                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
                   ))}
-                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={dimensionsForm.notes ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={dimensionsForm.notes ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
                 </div>
               ) : (
                 <div className="p-3">
@@ -846,16 +846,16 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Network className="w-3.5 h-3.5" />Hydraulic</span>
                 {!editingHydraulic
-                  ? <button onClick={() => { setHydraulicForm({ ...hydraulicData }); setEditingHydraulic(true); }} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
-                  : <div className="flex gap-2"><button onClick={() => setEditingHydraulic(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveHydraulic} disabled={hydraulicSaving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{hydraulicSaving ? 'Saving…' : 'Save'}</button></div>}
+                  ? <button onClick={() => { setHydraulicForm({ ...hydraulicData }); setEditingHydraulic(true); }} className="text-xs text-amber-600 hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingHydraulic(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveHydraulic} disabled={hydraulicSaving} className="text-xs text-amber-600 font-semibold hover:underline disabled:opacity-50">{hydraulicSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
               {editingHydraulic ? (
                 <div className="p-3 grid grid-cols-2 gap-2">
                   {[['design_flow_m3h','Design Flow (m³/h)'],['min_flow_m3h','Min Flow (m³/h)'],['max_flow_m3h','Max Flow (m³/h)'],['design_head_m','Design Head (m)'],['design_pressure_bar','Design Pressure (bar)'],['max_pressure_bar','Max Pressure (bar)'],['npsh_required_m','NPSH Required (m)'],['min_temperature_c','Min Temp (°C)'],['max_temperature_c','Max Temp (°C)']].map(([k,l]) => (
-                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={hydraulicForm[k] ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={hydraulicForm[k] ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
                   ))}
-                  <div><label className="block text-xs text-slate-500 mb-0.5">Fluid Type</label><input value={hydraulicForm.fluid_type ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,fluid_type:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
-                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={hydraulicForm.notes ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  <div><label className="block text-xs text-slate-500 mb-0.5">Fluid Type</label><input value={hydraulicForm.fluid_type ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,fluid_type:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
+                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={hydraulicForm.notes ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
                 </div>
               ) : (
                 <div className="p-3">
@@ -875,19 +875,19 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" />Electrical</span>
                 {!editingElectrical
-                  ? <button onClick={() => { setElectricalForm({ ...electricalData }); setEditingElectrical(true); }} className="text-xs text-[#3E5C76] hover:underline">Edit</button>
-                  : <div className="flex gap-2"><button onClick={() => setEditingElectrical(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveElectrical} disabled={electricalSaving} className="text-xs text-[#3E5C76] font-semibold hover:underline disabled:opacity-50">{electricalSaving ? 'Saving…' : 'Save'}</button></div>}
+                  ? <button onClick={() => { setElectricalForm({ ...electricalData }); setEditingElectrical(true); }} className="text-xs text-amber-600 hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingElectrical(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveElectrical} disabled={electricalSaving} className="text-xs text-amber-600 font-semibold hover:underline disabled:opacity-50">{electricalSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
               {editingElectrical ? (
                 <div className="p-3 grid grid-cols-2 gap-2">
                   {[['rated_power_kw','Rated Power (kW)'],['voltage_v','Voltage (V)'],['frequency_hz','Frequency (Hz)'],['full_load_current_a','Full Load Current (A)'],['rated_speed_rpm','Rated Speed (RPM)']].map(([k,l]) => (
-                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
                   ))}
-                  <div><label className="block text-xs text-slate-500 mb-0.5">Phases</label><select value={electricalForm.phases ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,phases:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]"><option value="">—</option><option value="1">1-Phase</option><option value="3">3-Phase</option></select></div>
+                  <div><label className="block text-xs text-slate-500 mb-0.5">Phases</label><select value={electricalForm.phases ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,phases:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600"><option value="">—</option><option value="1">1-Phase</option><option value="3">3-Phase</option></select></div>
                   {[['motor_type','Motor Type'],['insulation_class','Insulation Class'],['protection_class','Protection Class (IP)'],['efficiency_class','Efficiency Class']].map(([k,l]) => (
-                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
                   ))}
-                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={electricalForm.notes ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#3E5C76]" /></div>
+                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={electricalForm.notes ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-600" /></div>
                 </div>
               ) : (
                 <div className="p-3">
@@ -905,12 +905,12 @@ export default function ProductMasterDetail() {
             <div className="bg-white border border-slate-200 rounded-lg p-4 mt-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag className="w-3 h-3" /> Synonyms</span>
-                <button onClick={() => setShowSynonymsEdit(s => !s)} className="text-xs text-[#3E5C76] hover:underline">{showSynonymsEdit ? 'Done' : 'Edit'}</button>
+                <button onClick={() => setShowSynonymsEdit(s => !s)} className="text-xs text-amber-600 hover:underline">{showSynonymsEdit ? 'Done' : 'Edit'}</button>
               </div>
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {(product.synonyms || []).length === 0 && !showSynonymsEdit && <span className="text-xs text-slate-300">No synonyms — add alternate names to improve search</span>}
                 {(product.synonyms || []).map((s: string) => (
-                  <span key={s} className="inline-flex items-center gap-1 bg-[#3E5C76]/10 text-[#3E5C76] text-xs px-2 py-0.5 rounded-full">
+                  <span key={s} className="inline-flex items-center gap-1 bg-amber-600/10 text-amber-600 text-xs px-2 py-0.5 rounded-full">
                     {s}
                     {showSynonymsEdit && <button onClick={() => removeSynonym(s)} disabled={synonymsSaving} className="hover:text-red-500"><X className="w-3 h-3" /></button>}
                   </span>
@@ -924,7 +924,7 @@ export default function ProductMasterDetail() {
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSynonym(synonymInput); } }}
                     placeholder="Type a synonym and press Enter"
                     disabled={synonymsSaving}
-                    className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                    className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600"
                   />
                   <button onClick={() => addSynonym(synonymInput)} disabled={synonymsSaving || !synonymInput.trim()}
                     className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-sm hover:bg-slate-200 disabled:opacity-40">Add</button>
@@ -938,7 +938,7 @@ export default function ProductMasterDetail() {
                 <span className="text-xs text-slate-400 uppercase tracking-wide">Image</span>
                 <button
                   onClick={() => { setImageUrlInput(product.image_url || ''); setImageFile(null); setImageInputMode('file'); setShowImageModal(true); }}
-                  className="text-xs text-[#3E5C76] hover:underline"
+                  className="text-xs text-amber-600 hover:underline"
                 >{product.image_url ? 'Change' : 'Add image'}</button>
               </div>
               {product.image_url
@@ -963,7 +963,7 @@ export default function ProductMasterDetail() {
                       });
                       setShowTankSpecsModal(true);
                     }}
-                    className="text-xs text-[#3E5C76] hover:underline"
+                    className="text-xs text-amber-600 hover:underline"
                   >Edit</button>
                 </div>
                 <div className="p-3 space-y-1.5 text-xs">
@@ -989,7 +989,7 @@ export default function ProductMasterDetail() {
           <div className="flex border-b border-slate-200 overflow-x-auto">
             {tabs.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === t.key ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {t.label}
               </button>
             ))}
@@ -1145,11 +1145,11 @@ export default function ProductMasterDetail() {
             <div className="p-6 space-y-4">
               <div className="flex gap-1 p-1 bg-slate-100 rounded-lg">
                 <button onClick={() => setImageInputMode('file')}
-                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${imageInputMode === 'file' ? 'bg-white text-[#3E5C76] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${imageInputMode === 'file' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                   Upload File
                 </button>
                 <button onClick={() => setImageInputMode('url')}
-                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${imageInputMode === 'url' ? 'bg-white text-[#3E5C76] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${imageInputMode === 'url' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                   Paste URL
                 </button>
               </div>
@@ -1167,7 +1167,7 @@ export default function ProductMasterDetail() {
                     </div>
                   ) : (
                     <button onClick={() => imageFileRef.current?.click()}
-                      className="w-full h-28 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-[#3E5C76] hover:text-[#3E5C76] transition-colors">
+                      className="w-full h-28 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-amber-600 hover:text-amber-600 transition-colors">
                       <Upload className="w-6 h-6" />
                       <span className="text-xs">Click to select an image</span>
                     </button>
@@ -1178,7 +1178,7 @@ export default function ProductMasterDetail() {
                   <label className="block text-xs font-medium text-slate-600 mb-1">Image URL</label>
                   <input type="url" placeholder="https://example.com/image.jpg"
                     value={imageUrlInput} onChange={e => setImageUrlInput(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   {imageUrlInput && (
                     <img src={imageUrlInput} alt="Preview" className="w-full h-36 object-contain border border-slate-100 rounded-lg bg-slate-50 mt-2" onError={e => (e.currentTarget.style.display = 'none')} />
                   )}
@@ -1214,7 +1214,7 @@ export default function ProductMasterDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Search Component Library (optional)</label>
                 <input type="text" placeholder="Type to search components..."
                   value={compSearch} onChange={e => { setCompSearch(e.target.value); if (selectedComp) setSelectedComp(null); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 {compSearch.length >= 2 && !selectedComp && (
                   <div className="border border-slate-200 rounded-lg mt-1 max-h-36 overflow-auto divide-y divide-slate-100 bg-white shadow-sm">
                     {(compSearchResults?.items || []).map((c: any) => (
@@ -1250,7 +1250,7 @@ export default function ProductMasterDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Type *</label>
                 <select value={lineForm.component_type} onChange={e => setLineForm(f => ({ ...f, component_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
@@ -1258,24 +1258,24 @@ export default function ProductMasterDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Reference Code</label>
                 <input type="text" placeholder="e.g. PM-PUMP-22" value={lineForm.component_reference_code}
                   onChange={e => setLineForm(f => ({ ...f, component_reference_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
                 <input type="text" placeholder="e.g. Air Blower Pump" value={lineForm.component_name}
                   onChange={e => setLineForm(f => ({ ...f, component_name: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
                 <input type="number" min="0.01" step="0.01" value={lineForm.quantity}
                   onChange={e => setLineForm(f => ({ ...f, quantity: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
                 <select value={lineForm.unit} onChange={e => setLineForm(f => ({ ...f, unit: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {UNITS.map(u => <option key={u}>{u}</option>)}
                 </select>
               </div>
@@ -1283,7 +1283,7 @@ export default function ProductMasterDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Remarks</label>
                 <input type="text" placeholder="Optional notes" value={lineForm.remarks}
                   onChange={e => setLineForm(f => ({ ...f, remarks: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div className="col-span-2">
                 <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
@@ -1314,7 +1314,7 @@ export default function ProductMasterDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Relationship Type</label>
                 <select value={relEdgeType} onChange={e => setRelEdgeType(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {EDGE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
@@ -1322,7 +1322,7 @@ export default function ProductMasterDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Search Product</label>
                 <input type="text" placeholder="Type product name or code..."
                   value={relSearch} onChange={e => { setRelSearch(e.target.value); setRelTarget(null); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 {relSearch.length >= 2 && !relTarget && (
                   <div className="border border-slate-200 rounded-lg mt-1 max-h-48 overflow-auto divide-y divide-slate-100">
                     {(relSearchResults?.items || []).filter((p: any) => p.id !== product.id).map((p: any) => (
@@ -1367,7 +1367,7 @@ export default function ProductMasterDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Search Product</label>
                 <input type="text" placeholder="Type product name or code..."
                   value={variantSearch} onChange={e => { setVariantSearch(e.target.value); setVariantTarget(null); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" autoFocus />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" autoFocus />
                 {variantSearch.length >= 2 && !variantTarget && (
                   <div className="border border-slate-200 rounded-lg mt-1 max-h-52 overflow-auto divide-y divide-slate-100">
                     {(variantSearchResults?.items || []).filter((p: any) => p.id !== product.id).map((p: any) => (
@@ -1413,7 +1413,7 @@ export default function ProductMasterDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type *</label>
                 <select value={docForm.document_type} onChange={e => setDocForm(f => ({ ...f, document_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {DOC_TYPES.filter(t => docModalContext === 'drawings' ? DRAWING_TYPE_VALUES.has(t.value) : !DRAWING_TYPE_VALUES.has(t.value))
                     .map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
@@ -1422,26 +1422,26 @@ export default function ProductMasterDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Title *</label>
                 <input type="text" placeholder={`e.g. ${product.product_name} Technical Data Sheet`}
                   value={docForm.document_title} onChange={e => setDocForm(f => ({ ...f, document_title: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Discipline</label>
                 <input type="text" placeholder="e.g. Mechanical, Electrical"
                   value={docForm.discipline} onChange={e => setDocForm(f => ({ ...f, discipline: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <textarea rows={2} placeholder="Optional notes"
                   value={docForm.notes} onChange={e => setDocForm(f => ({ ...f, notes: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">File (optional)</label>
                 <div onClick={() => fileRef.current?.click()}
-                  className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-[#3E5C76] transition-colors">
+                  className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-amber-600 transition-colors">
                   {docFile
-                    ? <div className="flex items-center justify-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-[#3E5C76]" />{docFile.name} <span className="text-slate-400">({(docFile.size / 1024).toFixed(0)} KB)</span></div>
+                    ? <div className="flex items-center justify-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-amber-600" />{docFile.name} <span className="text-slate-400">({(docFile.size / 1024).toFixed(0)} KB)</span></div>
                     : <div className="flex flex-col items-center gap-1 text-slate-400"><Upload className="w-5 h-5" /><span className="text-sm">Click to upload file</span><span className="text-xs">PDF, DWG, XLSX, PNG — max 100MB</span></div>
                   }
                 </div>
@@ -1479,14 +1479,14 @@ export default function ProductMasterDetail() {
                   <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                   {field.isSelect ? (
                     <select value={(tankSpecsForm as any)[field.key]} onChange={e => setTankSpecsForm(f => ({ ...f, [field.key]: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                       <option value="">— Select —</option>
                       {field.options?.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : (
                     <input type="number" placeholder={field.placeholder} value={(tankSpecsForm as any)[field.key]}
                       onChange={e => setTankSpecsForm(f => ({ ...f, [field.key]: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                   )}
                 </div>
               ))}

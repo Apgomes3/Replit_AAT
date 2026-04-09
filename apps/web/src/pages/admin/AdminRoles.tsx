@@ -14,7 +14,7 @@ interface Role {
   sort_order: number;
 }
 
-const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] w-full';
+const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 w-full';
 
 export default function AdminRoles() {
   const qc = useQueryClient();
@@ -147,7 +147,7 @@ export default function AdminRoles() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <button onClick={() => startEdit(role)} className="p-1.5 text-slate-400 hover:text-[#3E5C76] hover:bg-slate-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => startEdit(role)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-slate-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                           {!role.is_system && (
                             <button onClick={() => handleDelete(role)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                           )}

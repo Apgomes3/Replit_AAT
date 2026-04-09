@@ -74,12 +74,12 @@ export default function PurchaseOrdersList() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search by PO code or project…"
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]"
+          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-amber-600"
         />
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-[#3E5C76]"
+          className="border border-slate-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-600"
         >
           <option value="">All statuses</option>
           {Object.entries(STATUS_META).map(([k, v]) => (

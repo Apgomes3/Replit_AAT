@@ -115,7 +115,7 @@ export default function ComponentsList() {
 
   const columns: Column<Component>[] = [
     { key: 'component_code', header: 'Code', render: r => <Link to={`/products/components/${r.id}`}><EntityCode code={r.component_code} /></Link> },
-    { key: 'component_name', header: 'Name', render: r => <Link to={`/products/components/${r.id}`} className="font-medium text-slate-800 hover:text-[#3E5C76]">{r.component_name}</Link> },
+    { key: 'component_name', header: 'Name', render: r => <Link to={`/products/components/${r.id}`} className="font-medium text-slate-800 hover:text-amber-600">{r.component_name}</Link> },
     { key: 'component_type', header: 'Type', render: r => r.component_type
       ? <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[r.component_type] || 'bg-slate-100 text-slate-600'}`}>{r.component_type}</span>
       : null },
@@ -140,16 +140,16 @@ export default function ComponentsList() {
           <input
             type="text" placeholder="Search components..." value={search}
             onChange={e => setSearch(e.target.value)}
-            className="border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76] w-56"
+            className="border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-amber-600 w-56"
           />
           <div className="flex items-center gap-4">
             <button onClick={() => setTypeFilter('')}
-              className={`text-xs transition-colors ${!typeFilter ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+              className={`text-xs transition-colors ${!typeFilter ? 'text-amber-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
               All <span className="text-slate-400 font-normal">({components.length})</span>
             </button>
             {COMPONENT_TYPES.filter(t => typeCounts[t] > 0).map(t => (
               <button key={t} onClick={() => setTypeFilter(typeFilter === t ? '' : t)}
-                className={`text-xs transition-colors ${typeFilter === t ? 'text-[#3E5C76] font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+                className={`text-xs transition-colors ${typeFilter === t ? 'text-amber-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
                 {t} <span className="text-slate-400 font-normal">({typeCounts[t]})</span>
               </button>
             ))}
@@ -197,12 +197,12 @@ export default function ComponentsList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Code *</label>
                 <input type="text" placeholder="e.g. COMP-VESSEL-001" value={form.component_code}
                   onChange={e => setForm(f => ({ ...f, component_code: e.target.value.toUpperCase() }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
                 <select value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {UNITS.map(u => <option key={u}>{u}</option>)}
                 </select>
               </div>
@@ -210,19 +210,19 @@ export default function ComponentsList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
                 <input type="text" placeholder="e.g. FRP-VE Reaction Column" value={form.component_name}
                   onChange={e => setForm(f => ({ ...f, component_name: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
                 <select value={form.component_type} onChange={e => setForm(f => ({ ...f, component_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
                 <select value={form.component_category} onChange={e => setForm(f => ({ ...f, component_category: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
@@ -230,31 +230,31 @@ export default function ComponentsList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
                 <textarea rows={2} placeholder="Brief description of the component" value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
                 <input type="text" placeholder="e.g. FRP-VE" value={form.primary_material_code}
                   onChange={e => setForm(f => ({ ...f, primary_material_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Standard Size</label>
                 <input type="text" placeholder="e.g. DN50, PN16, 1500L" value={form.standard_size}
                   onChange={e => setForm(f => ({ ...f, standard_size: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Weight (kg)</label>
                 <input type="number" placeholder="0.0" value={form.weight_kg}
                   onChange={e => setForm(f => ({ ...f, weight_kg: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <input type="text" placeholder="Optional notes" value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 sticky bottom-0 bg-white">
@@ -281,60 +281,60 @@ export default function ComponentsList() {
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Name</label>
                 <input value={editForm.component_name} onChange={e => setEditForm((f: any) => ({ ...f, component_name: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
                 <select value={editForm.component_type} onChange={e => setEditForm((f: any) => ({ ...f, component_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
                 <select value={editForm.component_category} onChange={e => setEditForm((f: any) => ({ ...f, component_category: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select value={editForm.status} onChange={e => setEditForm((f: any) => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {STATUSES.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
                 <select value={editForm.unit} onChange={e => setEditForm((f: any) => ({ ...f, unit: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {UNITS.map(u => <option key={u}>{u}</option>)}
                 </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
                 <textarea rows={2} value={editForm.description} onChange={e => setEditForm((f: any) => ({ ...f, description: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Material Code</label>
                 <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Standard Size</label>
                 <input value={editForm.standard_size} onChange={e => setEditForm((f: any) => ({ ...f, standard_size: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Weight (kg)</label>
                 <input type="number" value={editForm.weight_kg} onChange={e => setEditForm((f: any) => ({ ...f, weight_kg: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <input value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 sticky bottom-0 bg-white">

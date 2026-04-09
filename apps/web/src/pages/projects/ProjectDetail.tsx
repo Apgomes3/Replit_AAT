@@ -217,7 +217,7 @@ export default function ProjectDetail() {
     { key: 'tank_code', header: 'Tag', render: r => <EntityCode code={r.tank_code} /> },
     { key: 'tank_name', header: 'Tank Name', render: r => <span className="font-medium">{r.tank_name}</span> },
     { key: 'product_code', header: 'Product', render: r => r.product_code
-      ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-[#3E5C76] hover:underline"><EntityCode code={r.product_code} /></Link>
+      ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-amber-600 hover:underline"><EntityCode code={r.product_code} /></Link>
       : <span className="text-slate-300">—</span>
     },
     { key: 'tank_type', header: 'Type', render: r => r.tank_type ? <span>{r.tank_type}</span> : <span className="text-slate-300">—</span> },
@@ -243,7 +243,7 @@ export default function ProjectDetail() {
   const pipingCols: Column<any>[] = [
     { key: 'piping_code', header: 'Tag', render: r => <EntityCode code={r.piping_code} /> },
     { key: 'product_code', header: 'Product', render: r => r.product_code
-      ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-[#3E5C76] hover:underline"><EntityCode code={r.product_code} /></Link>
+      ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-amber-600 hover:underline"><EntityCode code={r.product_code} /></Link>
       : <span className="text-slate-300">—</span>
     },
     { key: 'product_name', header: 'Description', render: r => <span className="font-medium">{r.description || r.product_name || '—'}</span> },
@@ -439,74 +439,74 @@ export default function ProjectDetail() {
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1">Project Name</label>
                     <input value={projectForm.project_name} onChange={e => setProjectForm((f: any) => ({ ...f, project_name: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Client</label>
                     <input value={projectForm.client_name} onChange={e => setProjectForm((f: any) => ({ ...f, client_name: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Site Name</label>
                     <input value={projectForm.site_name} onChange={e => setProjectForm((f: any) => ({ ...f, site_name: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Country</label>
                     <input value={projectForm.country} onChange={e => setProjectForm((f: any) => ({ ...f, country: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">City</label>
                     <input value={projectForm.city} onChange={e => setProjectForm((f: any) => ({ ...f, city: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" />Latitude</label>
                     <input type="number" step="any" placeholder="e.g. 25.2048" value={projectForm.latitude} onChange={e => setProjectForm((f: any) => ({ ...f, latitude: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" />Longitude</label>
                     <input type="number" step="any" placeholder="e.g. 55.2708" value={projectForm.longitude} onChange={e => setProjectForm((f: any) => ({ ...f, longitude: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                     <select value={projectForm.project_status} onChange={e => setProjectForm((f: any) => ({ ...f, project_status: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30">
                       {['Draft', 'Concept', 'Design', 'Handover', 'Released', 'Complete', 'On Hold', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Start Date</label>
                     <input type="date" value={projectForm.start_date} onChange={e => setProjectForm((f: any) => ({ ...f, start_date: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Target Completion</label>
                     <input type="date" value={projectForm.target_completion_date} onChange={e => setProjectForm((f: any) => ({ ...f, target_completion_date: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Project Manager</label>
                     <input value={projectForm.project_manager} onChange={e => setProjectForm((f: any) => ({ ...f, project_manager: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Engineering Manager</label>
                     <input value={projectForm.engineering_manager} onChange={e => setProjectForm((f: any) => ({ ...f, engineering_manager: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">QA Owner</label>
                     <input value={projectForm.qa_owner} onChange={e => setProjectForm((f: any) => ({ ...f, qa_owner: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                     <textarea value={projectForm.notes} onChange={e => setProjectForm((f: any) => ({ ...f, notes: e.target.value }))}
-                      rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                 </div>
               </div>
@@ -521,7 +521,7 @@ export default function ProjectDetail() {
                 {isPrivileged && !editingProject && (
                   <button
                     onClick={() => setShowStatusMenu(v => !v)}
-                    className="text-xs text-slate-400 hover:text-[#3E5C76] border border-slate-200 rounded-lg px-2 py-1 hover:bg-slate-50 transition-colors flex items-center gap-1"
+                    className="text-xs text-slate-400 hover:text-amber-600 border border-slate-200 rounded-lg px-2 py-1 hover:bg-slate-50 transition-colors flex items-center gap-1"
                     title="Change status"
                   >
                     <ArrowRightIcon className="w-3 h-3" /> Advance
@@ -555,7 +555,7 @@ export default function ProjectDetail() {
                                 }}
                                 disabled={isCurrent}
                                 className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors w-full
-                                  ${isCurrent ? 'bg-[#3E5C76] text-white cursor-default'
+                                  ${isCurrent ? 'bg-amber-600 text-white cursor-default'
                                     : 'hover:bg-slate-50 text-slate-700'}
                                 `}
                               >
@@ -566,7 +566,7 @@ export default function ProjectDetail() {
                                 </span>
                                 <span className="font-medium">{stage}</span>
                                 {isCurrent && <span className="ml-auto text-xs text-white/70">current</span>}
-                                {!isCurrent && stage === nextStage && <span className="ml-auto text-xs text-[#3E5C76] font-semibold">next →</span>}
+                                {!isCurrent && stage === nextStage && <span className="ml-auto text-xs text-amber-600 font-semibold">next →</span>}
                               </button>
                             );
                           })}
@@ -589,7 +589,7 @@ export default function ProjectDetail() {
                         )}
                         {isTerminal && (
                           <button onClick={async () => { await handleStatusChange('Draft'); setShowStatusMenu(false); }}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left text-[#3E5C76] hover:bg-blue-50 transition-colors w-full font-medium">
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left text-amber-600 hover:bg-blue-50 transition-colors w-full font-medium">
                             ↩ Reopen Project
                           </button>
                         )}
@@ -620,7 +620,7 @@ export default function ProjectDetail() {
               { key: 'changes', label: 'Changes' },
             ] as { key: Tab; label: string }[]).map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {t.label}
               </button>
             ))}
@@ -731,7 +731,7 @@ export default function ProjectDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Tank Product (ASW Library) *</label>
                 {selectedTankProduct ? (
-                  <div className="border border-[#3E5C76] rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
+                  <div className="border border-amber-600 rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
                         <EntityCode code={selectedTankProduct.product_code} />
@@ -754,7 +754,7 @@ export default function ProjectDetail() {
                       placeholder="Search tank products by name or code..."
                       value={tankProductSearch}
                       onChange={e => setTankProductSearch(e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                      className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600"
                     />
                     {tankProductResults?.items?.length > 0 && (
                       <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 z-10 max-h-48 overflow-auto">
@@ -788,14 +788,14 @@ export default function ProjectDetail() {
                   placeholder="e.g. TNK-DIS-001"
                   value={tankCode}
                   onChange={e => setTankCode(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select value={tankStatus} onChange={e => setTankStatus(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {['Design', 'Procurement', 'Installation', 'Commissioning', 'Active', 'Decommissioned'].map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
@@ -823,7 +823,7 @@ export default function ProjectDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Piping Product (ASW Library) *</label>
                 {selectedPipingProduct ? (
-                  <div className="border border-[#3E5C76] rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
+                  <div className="border border-amber-600 rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
                         <EntityCode code={selectedPipingProduct.product_code} />
@@ -838,7 +838,7 @@ export default function ProjectDetail() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input autoFocus placeholder="Search piping products by name or code..."
                       value={pipingProductSearch} onChange={e => setPipingProductSearch(e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                      className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                     {pipingProductResults?.items?.length > 0 && (
                       <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 z-10 max-h-48 overflow-auto">
                         {pipingProductResults.items.map((p: any) => (
@@ -863,24 +863,24 @@ export default function ProjectDetail() {
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Project Tag Code *</label>
                   <input placeholder="e.g. PIP-LSS-001" value={pipingCode} onChange={e => setPipingCode(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
                   <input placeholder="Optional override description" value={pipingDesc} onChange={e => setPipingDesc(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
                   <input type="number" min="0.01" step="0.01" value={pipingQty} onChange={e => setPipingQty(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Unit</label>
                   <select value={pipingUnit} onChange={e => setPipingUnit(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                     {['EA', 'm', 'kg', 'set', 'lot'].map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
@@ -912,10 +912,10 @@ export default function ProjectDetail() {
                     { key: 'Tank', label: 'Tanks', sub: 'Tank items in this project' },
                     { key: 'Piping', label: 'Pipes & Fittings', sub: 'Piping items in this project' },
                   ] as const).map(s => (
-                    <label key={s.key} className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${bomSections[s.key] ? 'border-[#3E5C76] bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                    <label key={s.key} className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${bomSections[s.key] ? 'border-amber-600 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
                       <input type="checkbox" checked={!!bomSections[s.key]}
                         onChange={e => setBomSections(prev => ({ ...prev, [s.key]: e.target.checked }))}
-                        className="mt-0.5 accent-[#3E5C76]" />
+                        className="mt-0.5 accent-amber-600" />
                       <div>
                         <div className="text-sm font-medium text-slate-800">{s.label}</div>
                         <div className="text-xs text-slate-400">{s.sub}</div>
@@ -927,19 +927,19 @@ export default function ProjectDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Title</label>
                 <input placeholder="e.g. Issued for Procurement" value={bomTitle} onChange={e => setBomTitle(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" autoFocus />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" autoFocus />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Revision</label>
                   <input placeholder="A" maxLength={5} value={bomRevision} onChange={e => setBomRevision(e.target.value.toUpperCase())}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <textarea rows={2} placeholder="Optional notes or purpose of this release" value={bomNotes} onChange={e => setBomNotes(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76] resize-none" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 resize-none" />
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
@@ -1019,7 +1019,7 @@ export default function ProjectDetail() {
                               <td className="px-4 py-2.5 text-slate-700">{line.description || '—'}</td>
                               <td className="px-4 py-2.5">
                                 {line.product_code
-                                  ? <Link to={`/products/masters/${line.product_code}`} onClick={() => setSelectedRelease(null)} className="text-[#3E5C76] hover:underline text-xs">{line.product_code}</Link>
+                                  ? <Link to={`/products/masters/${line.product_code}`} onClick={() => setSelectedRelease(null)} className="text-amber-600 hover:underline text-xs">{line.product_code}</Link>
                                   : <span className="text-slate-300">—</span>}
                               </td>
                               <td className="px-4 py-2.5 text-right">{line.quantity}</td>
@@ -1055,12 +1055,12 @@ export default function ProjectDetail() {
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">System Name</label>
                 <input value={editSystemForm.system_name} onChange={e => setEditSystemForm((f: any) => ({ ...f, system_name: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">System Type</label>
                 <select value={editSystemForm.system_type} onChange={e => setEditSystemForm((f: any) => ({ ...f, system_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30">
                   <option value="">— select —</option>
                   {['Life Support', 'Utility', 'HVAC', 'Fire Fighting', 'Electrical', 'Other'].map(t => <option key={t}>{t}</option>)}
                 </select>
@@ -1068,7 +1068,7 @@ export default function ProjectDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Water Type</label>
                 <select value={editSystemForm.water_type} onChange={e => setEditSystemForm((f: any) => ({ ...f, water_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30">
                   <option value="">— select —</option>
                   {['Fresh Water', 'Salt Water', 'Brackish', 'N/A'].map(t => <option key={t}>{t}</option>)}
                 </select>
@@ -1076,29 +1076,29 @@ export default function ProjectDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
                 <input type="number" value={editSystemForm.design_flow_m3h} onChange={e => setEditSystemForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Turnover Rate (/hr)</label>
                 <input type="number" value={editSystemForm.turnover_rate_hr} onChange={e => setEditSystemForm((f: any) => ({ ...f, turnover_rate_hr: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select value={editSystemForm.status} onChange={e => setEditSystemForm((f: any) => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30">
                   {['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'].map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Redundancy Strategy</label>
                 <input value={editSystemForm.redundancy_strategy} onChange={e => setEditSystemForm((f: any) => ({ ...f, redundancy_strategy: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Duty Description</label>
                 <textarea value={editSystemForm.duty_description} onChange={e => setEditSystemForm((f: any) => ({ ...f, duty_description: e.target.value }))}
-                  rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                  rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 pb-5">

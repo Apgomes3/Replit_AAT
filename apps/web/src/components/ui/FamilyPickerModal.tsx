@@ -48,7 +48,7 @@ export default function FamilyPickerModal({ currentFamilyId, onSelect, onClose }
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by code, name or category..."
-              className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]"
+              className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600"
             />
           </div>
         </div>
@@ -77,7 +77,7 @@ export default function FamilyPickerModal({ currentFamilyId, onSelect, onClose }
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-xs text-slate-400">{f.product_count} product{f.product_count !== 1 ? 's' : ''}</span>
-                {f.id === currentFamilyId && <Check className="w-4 h-4 text-[#3E5C76]" />}
+                {f.id === currentFamilyId && <Check className="w-4 h-4 text-amber-600" />}
               </div>
             </button>
           ))}

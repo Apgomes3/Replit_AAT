@@ -43,13 +43,13 @@ export default function ProjectsList() {
             <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
               <button
                 onClick={() => setView('table')}
-                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'table' ? 'bg-[#3E5C76] text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'table' ? 'bg-amber-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 <List className="w-3.5 h-3.5" /> List
               </button>
               <button
                 onClick={() => setView('map')}
-                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'map' ? 'bg-[#3E5C76] text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'map' ? 'bg-amber-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 <Map className="w-3.5 h-3.5" /> Map
               </button>
@@ -63,7 +63,7 @@ export default function ProjectsList() {
         <>
           <div className="p-4 border-b border-slate-200 bg-white">
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
-              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]" />
+              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-amber-600" />
           </div>
           <div className="flex-1 bg-white overflow-auto">
             <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => navigate(`/projects/${r.id}`)} />

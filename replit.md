@@ -11,7 +11,7 @@ A full-stack knowledge graph platform for aquarium/engineering projects with thr
 - **Database**: PostgreSQL (Replit built-in) with recursive CTE graph traversal
 - **Auth**: JWT + bcrypt (self-contained, no OAuth)
 - **File Storage**: Local disk at `apps/api/uploads/` (S3-swap-ready)
-- **CSS**: Tailwind CSS v4 with `@import "tailwindcss"` syntax
+- **CSS**: Tailwind CSS v4 with `@import "tailwindcss"` syntax; **design system**: Warm Enterprise theme — amber-600 primary accent, stone neutral palette, warm off-white (`#fafaf9`) background
 - **State**: Zustand (auth), React Query v5 (server state)
 
 ### Structure

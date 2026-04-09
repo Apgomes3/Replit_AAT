@@ -45,13 +45,13 @@ function LifecycleBar({ status }: { status: string }) {
         return (
           <div key={s} className="flex items-center flex-1 min-w-0">
             <div className={`flex flex-col items-center flex-1 min-w-0`}>
-              <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${active ? 'border-[#3E5C76] bg-[#3E5C76]' : done ? 'border-[#3E5C76] bg-[#3E5C76]/30' : 'border-slate-200 bg-white'}`} />
-              <span className={`text-[10px] mt-1 text-center leading-tight hidden sm:block ${active ? 'text-[#3E5C76] font-semibold' : done ? 'text-slate-400' : 'text-slate-300'}`}>
+              <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${active ? 'border-amber-600 bg-amber-600' : done ? 'border-amber-600 bg-amber-600/30' : 'border-slate-200 bg-white'}`} />
+              <span className={`text-[10px] mt-1 text-center leading-tight hidden sm:block ${active ? 'text-amber-600 font-semibold' : done ? 'text-slate-400' : 'text-slate-300'}`}>
                 {meta?.label}
               </span>
             </div>
             {i < STAGES.length - 1 && (
-              <div className={`h-0.5 flex-1 ${i < idx ? 'bg-[#3E5C76]/40' : 'bg-slate-100'}`} />
+              <div className={`h-0.5 flex-1 ${i < idx ? 'bg-amber-600/40' : 'bg-slate-100'}`} />
             )}
           </div>
         );
@@ -309,7 +309,7 @@ export default function PurchaseOrderDetail() {
             <select
               value={displayCurrency}
               onChange={e => setDisplayCurrency(e.target.value)}
-              className="border border-slate-200 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-[#3E5C76]"
+              className="border border-slate-200 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-600"
               title="Display currency"
             >
               {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -420,7 +420,7 @@ export default function PurchaseOrderDetail() {
                         onChange={e => { setSystemSearch(e.target.value); setShowSystemResults(true); }}
                         onFocus={() => setShowSystemResults(true)}
                         placeholder="Add system…"
-                        className="w-full border border-slate-200 rounded pl-6 pr-3 py-1.5 text-xs focus:outline-none focus:border-[#3E5C76]"
+                        className="w-full border border-slate-200 rounded pl-6 pr-3 py-1.5 text-xs focus:outline-none focus:border-amber-600"
                       />
                     </div>
                     {showSystemResults && systemSearch.length >= 1 && (systemSearchResults?.items || []).length > 0 && (
@@ -449,7 +449,7 @@ export default function PurchaseOrderDetail() {
                   <Users className="w-3.5 h-3.5 text-slate-400" />Designated Users
                 </span>
                 {canManage && (
-                  <button onClick={() => setShowDesignated(v => !v)} className="text-xs text-[#3E5C76] hover:underline flex items-center gap-1">
+                  <button onClick={() => setShowDesignated(v => !v)} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
                     <Plus className="w-3 h-3" />Add
                   </button>
                 )}
@@ -473,7 +473,7 @@ export default function PurchaseOrderDetail() {
                     <select
                       value={designatedUserId}
                       onChange={e => setDesignatedUserId(e.target.value)}
-                      className="flex-1 border rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-[#3E5C76]"
+                      className="flex-1 border rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-600"
                     >
                       <option value="">— Select user —</option>
                       {(allUsers?.items || [])
@@ -501,7 +501,7 @@ export default function PurchaseOrderDetail() {
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-slate-400">Totals in <span className="font-medium text-slate-600">{displayCurrency}</span></span>
                   {isDraft && (
-                    <button onClick={() => setShowAddItem(v => !v)} className="text-xs text-[#3E5C76] hover:underline flex items-center gap-1">
+                    <button onClick={() => setShowAddItem(v => !v)} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
                       <Plus className="w-3 h-3" />Add Item
                     </button>
                   )}
@@ -515,7 +515,7 @@ export default function PurchaseOrderDetail() {
                     value={productSearch}
                     onChange={e => { setProductSearch(e.target.value); setSelectedProductId(''); }}
                     placeholder="Search product by code or name…"
-                    className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-[#3E5C76]"
+                    className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-600"
                   />
                   {productSearch.length >= 1 && (
                     <div className="border rounded max-h-32 overflow-y-auto divide-y bg-white">
@@ -544,22 +544,22 @@ export default function PurchaseOrderDetail() {
                     <div>
                       <label className="text-xs text-slate-500">Qty</label>
                       <input value={itemQty} onChange={e => setItemQty(e.target.value)} type="number" min="0" step="any"
-                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 focus:outline-none focus:border-[#3E5C76]" />
+                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 focus:outline-none focus:border-amber-600" />
                     </div>
                     <div>
                       <label className="text-xs text-slate-500">Cost Price</label>
                       <input value={itemCostPrice} onChange={e => setItemCostPrice(e.target.value)} type="number" min="0" step="any" placeholder="0.00"
-                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 focus:outline-none focus:border-[#3E5C76]" />
+                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 focus:outline-none focus:border-amber-600" />
                     </div>
                     <div>
                       <label className="text-xs text-slate-500">Sell Price</label>
                       <input value={itemSellPrice} onChange={e => setItemSellPrice(e.target.value)} type="number" min="0" step="any" placeholder="0.00"
-                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 focus:outline-none focus:border-[#3E5C76]" />
+                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 focus:outline-none focus:border-amber-600" />
                     </div>
                     <div>
                       <label className="text-xs text-slate-500">Currency</label>
                       <select value={itemCurrency} onChange={e => setItemCurrency(e.target.value)}
-                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 bg-white focus:outline-none focus:border-[#3E5C76]">
+                        className="w-full border rounded px-2 py-1.5 text-sm mt-0.5 bg-white focus:outline-none focus:border-amber-600">
                         {CURRENCIES.map(c => <option key={c}>{c}</option>)}
                       </select>
                     </div>
@@ -582,7 +582,7 @@ export default function PurchaseOrderDetail() {
                           onChange={e => { setAddItemSystemSearch(e.target.value); setShowAddItemSystemResults(true); }}
                           onFocus={() => setShowAddItemSystemResults(true)}
                           placeholder="Search system to link (optional)…"
-                          className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]"
+                          className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-600"
                         />
                         {showAddItemSystemResults && addItemSystemSearch.length >= 1 && (addItemSystemResults?.items || []).length > 0 && (
                           <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded shadow-lg z-10 max-h-36 overflow-y-auto divide-y">
@@ -602,7 +602,7 @@ export default function PurchaseOrderDetail() {
                     )}
                   </div>
                   <input value={itemNotes} onChange={e => setItemNotes(e.target.value)} placeholder="Notes (optional)"
-                    className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]" />
+                    className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-600" />
                   <div className="flex gap-2">
                     <Button variant="primary" size="sm" onClick={handleAddItem} disabled={!selectedProductId || addingItem}>
                       {addingItem ? '…' : 'Add Item'}
@@ -676,7 +676,7 @@ export default function PurchaseOrderDetail() {
                           <td colSpan={3} className="px-4 py-2.5 text-xs font-medium text-slate-500 text-right">Totals</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700">{formatTotal(totalCost)}</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700" />
-                          <td className="px-3 py-2.5 text-right text-sm font-bold text-[#3E5C76]">{formatTotal(totalSell)}</td>
+                          <td className="px-3 py-2.5 text-right text-sm font-bold text-amber-600">{formatTotal(totalSell)}</td>
                           {isDraft && <td />}
                         </tr>
                       </tfoot>
@@ -696,7 +696,7 @@ export default function PurchaseOrderDetail() {
                   ? <div className="px-4 py-4 text-sm text-slate-400">No history</div>
                   : po.history.map((h: any) => (
                     <div key={h.id} className="px-4 py-3 flex items-start gap-3">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#3E5C76]/40 mt-1.5 shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-600/40 mt-1.5 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           {h.from_status
@@ -736,7 +736,7 @@ export default function PurchaseOrderDetail() {
               onChange={e => setComment(e.target.value)}
               placeholder="Add a comment (optional)…"
               rows={3}
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-[#3E5C76] resize-none"
+              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-600 resize-none"
             />
             <div className="flex justify-end gap-2 mt-4">
               <Button onClick={() => { setCommentModal(null); setComment(''); }}>Cancel</Button>

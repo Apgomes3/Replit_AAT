@@ -116,7 +116,7 @@ export default function EquipmentDetail() {
     )},
     { key: 'document_code', header: 'Code', render: r => <EntityCode code={r.document_code} /> },
     { key: 'document_title', header: 'Title', render: r => (
-      <Link to={`/documents/${r.id}`} className="font-medium text-[#3E5C76] hover:underline">{r.document_title}</Link>
+      <Link to={`/documents/${r.id}`} className="font-medium text-amber-600 hover:underline">{r.document_title}</Link>
     )},
     { key: 'current_revision', header: 'Rev', render: r => r.current_revision
       ? <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{r.current_revision}</span>
@@ -152,9 +152,9 @@ export default function EquipmentDetail() {
       <div className="flex-1 overflow-auto p-4">
         {equipment.product_code ? (
           <Link to={`/products/masters/${equipment.product_code}`}
-            className="flex items-center gap-3 mb-4 px-4 py-3 bg-[#3E5C76]/5 border border-[#3E5C76]/20 rounded-lg hover:bg-[#3E5C76]/10 transition-colors group">
-            <div className="w-8 h-8 rounded-md bg-[#3E5C76]/10 flex items-center justify-center shrink-0">
-              <svg className="w-4 h-4 text-[#3E5C76]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+            className="flex items-center gap-3 mb-4 px-4 py-3 bg-amber-600/5 border border-amber-600/20 rounded-lg hover:bg-amber-600/10 transition-colors group">
+            <div className="w-8 h-8 rounded-md bg-amber-600/10 flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -163,7 +163,7 @@ export default function EquipmentDetail() {
               </div>
               <div className="text-sm font-medium text-slate-800 truncate">{equipment.product_name}</div>
             </div>
-            <svg className="w-4 h-4 text-slate-400 group-hover:text-[#3E5C76] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            <svg className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
           </Link>
         ) : (
           <div className="flex items-center justify-between mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -177,7 +177,7 @@ export default function EquipmentDetail() {
               <div className="flex border-b border-slate-200">
                 {tabs.map(t => (
                   <button key={t.key} onClick={() => setTab(t.key)}
-                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? 'border-[#3E5C76] text-[#3E5C76]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                     {t.label}
                   </button>
                 ))}
@@ -224,8 +224,8 @@ export default function EquipmentDetail() {
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Project Context</div>
               <div className="space-y-1.5 text-sm">
-                {equipment.project_code && <div><span className="text-slate-400">Project:</span> <Link to={`/projects/${equipment.project_id}`} className="text-[#3E5C76] hover:underline ml-1"><EntityCode code={equipment.project_code} /></Link></div>}
-                {equipment.system_code && <div><span className="text-slate-400">System:</span> <Link to={`/systems/${equipment.system_id}`} className="text-[#3E5C76] hover:underline ml-1"><EntityCode code={equipment.system_code} /></Link></div>}
+                {equipment.project_code && <div><span className="text-slate-400">Project:</span> <Link to={`/projects/${equipment.project_id}`} className="text-amber-600 hover:underline ml-1"><EntityCode code={equipment.project_code} /></Link></div>}
+                {equipment.system_code && <div><span className="text-slate-400">System:</span> <Link to={`/systems/${equipment.system_id}`} className="text-amber-600 hover:underline ml-1"><EntityCode code={equipment.system_code} /></Link></div>}
               </div>
             </div>
           </div>
@@ -266,7 +266,7 @@ export default function EquipmentDetail() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Document Type *</label>
                 <select value={docForm.document_type} onChange={e => setDocForm(f => ({ ...f, document_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]">
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600">
                   {DOC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
@@ -274,26 +274,26 @@ export default function EquipmentDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Title *</label>
                 <input type="text" placeholder={`e.g. ${equipment.equipment_name} O&M Manual`}
                   value={docForm.document_title} onChange={e => setDocForm(f => ({ ...f, document_title: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Discipline</label>
                 <input type="text" placeholder="e.g. Mechanical, Electrical"
                   value={docForm.discipline} onChange={e => setDocForm(f => ({ ...f, discipline: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <textarea rows={2} placeholder="Optional notes"
                   value={docForm.notes} onChange={e => setDocForm(f => ({ ...f, notes: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">File (optional)</label>
                 <div onClick={() => fileRef.current?.click()}
-                  className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-[#3E5C76] transition-colors">
+                  className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-amber-600 transition-colors">
                   {docFile
-                    ? <div className="flex items-center justify-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-[#3E5C76]" />{docFile.name} <span className="text-slate-400">({(docFile.size / 1024).toFixed(0)} KB)</span></div>
+                    ? <div className="flex items-center justify-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-amber-600" />{docFile.name} <span className="text-slate-400">({(docFile.size / 1024).toFixed(0)} KB)</span></div>
                     : <div className="flex flex-col items-center gap-1 text-slate-400"><Upload className="w-5 h-5" /><span className="text-sm">Click to upload file</span><span className="text-xs">PDF, DWG, XLSX, PNG — max 100MB</span></div>
                   }
                 </div>

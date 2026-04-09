@@ -116,32 +116,32 @@ export default function FamilyClassifiersModal({ family, onClose }: Props) {
                   <input
                     value={editForm.label}
                     onChange={e => setEditForm(f => ({ ...f, label: e.target.value }))}
-                    className="flex-1 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#3E5C76]"
+                    className="flex-1 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-amber-600"
                     placeholder="Label"
                     autoFocus
                   />
                   <input
                     value={editForm.unit}
                     onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))}
-                    className="w-20 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#3E5C76]"
+                    className="w-20 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-amber-600"
                     placeholder="Unit"
                   />
                   <select
                     value={editForm.field_type}
                     onChange={e => setEditForm(f => ({ ...f, field_type: e.target.value as 'text' | 'number' }))}
-                    className="border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#3E5C76]"
+                    className="border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-amber-600"
                   >
                     <option value="text">Text</option>
                     <option value="number">Number</option>
                   </select>
                   <button onClick={() => handleEdit(c.id)} disabled={saving}
-                    className="text-xs px-2 py-1 bg-[#3E5C76] text-white rounded hover:bg-[#2d4a63] disabled:opacity-50">Save</button>
+                    className="text-xs px-2 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50">Save</button>
                   <button onClick={() => setEditId(null)} className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded hover:bg-slate-200">Cancel</button>
                 </div>
               ) : (
                 <>
                   <div className="flex-1">
-                    <button onClick={() => startEdit(c)} className="text-sm font-medium text-slate-700 hover:text-[#3E5C76] text-left">{c.label}</button>
+                    <button onClick={() => startEdit(c)} className="text-sm font-medium text-slate-700 hover:text-amber-600 text-left">{c.label}</button>
                     <div className="text-xs text-slate-400 mt-0.5">
                       {c.field_type === 'number' ? 'Number' : 'Text'}{c.unit ? ` · ${c.unit}` : ''}
                     </div>
@@ -164,18 +164,18 @@ export default function FamilyClassifiersModal({ family, onClose }: Props) {
               onChange={e => setAddForm(f => ({ ...f, label: e.target.value }))}
               onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
               placeholder="Label (e.g. Design Flow)"
-              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#3E5C76] bg-white"
+              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-600 bg-white"
             />
             <input
               value={addForm.unit}
               onChange={e => setAddForm(f => ({ ...f, unit: e.target.value }))}
               placeholder="Unit"
-              className="w-20 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#3E5C76] bg-white"
+              className="w-20 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-600 bg-white"
             />
             <select
               value={addForm.field_type}
               onChange={e => setAddForm(f => ({ ...f, field_type: e.target.value as 'text' | 'number' }))}
-              className="border border-slate-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[#3E5C76] bg-white"
+              className="border border-slate-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-amber-600 bg-white"
             >
               <option value="text">Text</option>
               <option value="number">Number</option>

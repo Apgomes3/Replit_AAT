@@ -45,14 +45,14 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
               </label>
               {field.options ? (
                 <select value={values[field.name] || ''} onChange={e => setValues(v => ({ ...v, [field.name]: e.target.value }))} required={field.required}
-                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]">
+                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-amber-600">
                   <option value="">Select...</option>
                   {field.options.map(o => <option key={o}>{o}</option>)}
                 </select>
               ) : (
                 <input type={field.type || 'text'} value={values[field.name] || ''} onChange={e => setValues(v => ({ ...v, [field.name]: e.target.value }))}
                   required={field.required} placeholder={field.placeholder}
-                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#3E5C76]" />
+                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-amber-600" />
               )}
             </div>
           ))}

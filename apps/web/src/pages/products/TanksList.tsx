@@ -77,7 +77,7 @@ export default function TanksList() {
               onClick={() => setSelectedFamilyId(null)}
               className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left rounded-none transition-colors ${
                 selectedFamilyId === null
-                  ? 'bg-[#3E5C76]/10 text-[#3E5C76] font-medium'
+                  ? 'bg-amber-600/10 text-amber-600 font-medium'
                   : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
@@ -91,7 +91,7 @@ export default function TanksList() {
                 onClick={() => setSelectedFamilyId(fam.id === selectedFamilyId ? null : fam.id)}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
                   selectedFamilyId === fam.id
-                    ? 'bg-[#3E5C76]/10 text-[#3E5C76] font-medium'
+                    ? 'bg-amber-600/10 text-amber-600 font-medium'
                     : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -110,7 +110,7 @@ export default function TanksList() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by name or code..."
-              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-[#3E5C76]"
+              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-amber-600"
             />
           </div>
           <div className="flex-1 overflow-auto">

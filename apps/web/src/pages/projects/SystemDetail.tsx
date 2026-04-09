@@ -156,7 +156,7 @@ export default function SystemDetail() {
 
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
 
-  const inputCls = 'w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#3E5C76] bg-white';
+  const inputCls = 'w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-amber-600 bg-white';
   const cellCls = 'px-3 py-2.5';
 
   return (
@@ -213,12 +213,12 @@ export default function SystemDetail() {
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1">System Name</label>
                     <input value={form.system_name} onChange={e => setForm((f: any) => ({ ...f, system_name: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">System Type</label>
                     <select value={form.system_type} onChange={e => setForm((f: any) => ({ ...f, system_type: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30">
                       <option value="">— select —</option>
                       {['Life Support', 'Utility', 'HVAC', 'Fire Fighting', 'Electrical', 'Other'].map(t => <option key={t}>{t}</option>)}
                     </select>
@@ -226,7 +226,7 @@ export default function SystemDetail() {
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Water Type</label>
                     <select value={form.water_type} onChange={e => setForm((f: any) => ({ ...f, water_type: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30">
                       <option value="">— select —</option>
                       {['Fresh Water', 'Salt Water', 'Brackish', 'N/A'].map(t => <option key={t}>{t}</option>)}
                     </select>
@@ -234,29 +234,29 @@ export default function SystemDetail() {
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
                     <input type="number" value={form.design_flow_m3h} onChange={e => setForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Turnover Rate (/hr)</label>
                     <input type="number" value={form.turnover_rate_hr} onChange={e => setForm((f: any) => ({ ...f, turnover_rate_hr: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                     <select value={form.status} onChange={e => setForm((f: any) => ({ ...f, status: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30">
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30">
                       {transitions.map(t => <option key={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Redundancy Strategy</label>
                     <input value={form.redundancy_strategy} onChange={e => setForm((f: any) => ({ ...f, redundancy_strategy: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1">Duty Description</label>
                     <textarea value={form.duty_description} onChange={e => setForm((f: any) => ({ ...f, duty_description: e.target.value }))}
-                      rows={3} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3E5C76]/30" />
+                      rows={3} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
                   </div>
                 </div>
                 </div>
@@ -322,7 +322,7 @@ export default function SystemDetail() {
                         </td>
                         <td className={cellCls + ' relative'}>
                           {inlineSelectedProduct ? (
-                            <div className="flex items-center gap-1.5 border border-[#3E5C76] bg-blue-50 rounded px-2 py-1 text-sm">
+                            <div className="flex items-center gap-1.5 border border-amber-600 bg-blue-50 rounded px-2 py-1 text-sm">
                               <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
                               <button onClick={e => { e.stopPropagation(); setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0">
                                 <X className="w-3 h-3" />
@@ -381,7 +381,7 @@ export default function SystemDetail() {
                         </td>
                         <td className={cellCls} onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-[#3E5C76] text-white hover:bg-[#2d4a63] disabled:opacity-50">
+                            <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">
                               <Check className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
@@ -423,7 +423,7 @@ export default function SystemDetail() {
 
               {/* New row being added */}
               {inlineEditId === NEW_ROW_ID && (
-                <tr className="bg-blue-50/40 border-t-2 border-[#3E5C76]/20">
+                <tr className="bg-blue-50/40 border-t-2 border-amber-600/20">
                   <td className={cellCls}>
                     <input
                       value={inlineForm.equip_code}
@@ -435,7 +435,7 @@ export default function SystemDetail() {
                   </td>
                   <td className={cellCls + ' relative'}>
                     {inlineSelectedProduct ? (
-                      <div className="flex items-center gap-1.5 border border-[#3E5C76] bg-blue-50 rounded px-2 py-1 text-sm">
+                      <div className="flex items-center gap-1.5 border border-amber-600 bg-blue-50 rounded px-2 py-1 text-sm">
                         <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
                         <button onClick={() => { setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0">
                           <X className="w-3 h-3" />
@@ -494,7 +494,7 @@ export default function SystemDetail() {
                   </td>
                   <td className={cellCls}>
                     <div className="flex items-center gap-1">
-                      <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-[#3E5C76] text-white hover:bg-[#2d4a63] disabled:opacity-50">
+                      <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">
                         <Check className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
@@ -512,7 +512,7 @@ export default function SystemDetail() {
             <button
               onClick={startNewRow}
               disabled={inlineEditId === NEW_ROW_ID}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-[#3E5C76] disabled:opacity-40"
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-amber-600 disabled:opacity-40"
             >
               <Plus className="w-3.5 h-3.5" />Add row
             </button>
@@ -526,7 +526,7 @@ export default function SystemDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-80 p-5">
             <h3 className="font-semibold mb-3">Transition State</h3>
             <select value={newState} onChange={e => setNewState(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm mb-4 bg-white focus:outline-none focus:border-[#3E5C76]">
+              className="w-full border rounded px-3 py-2 text-sm mb-4 bg-white focus:outline-none focus:border-amber-600">
               <option value="">— select state —</option>
               {transitions.map(t => <option key={t}>{t}</option>)}
             </select>

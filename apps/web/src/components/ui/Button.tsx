@@ -12,10 +12,10 @@ interface ButtonProps {
 }
 
 const variants = {
-  primary: 'bg-[#3E5C76] text-white hover:bg-[#2d4a63] border-transparent',
-  secondary: 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300',
+  primary: 'bg-amber-600 text-white hover:bg-amber-700 border-transparent',
+  secondary: 'bg-white text-stone-700 hover:bg-stone-50 border-stone-300',
   danger: 'bg-red-600 text-white hover:bg-red-700 border-transparent',
-  ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 border-transparent',
+  ghost: 'bg-transparent text-stone-600 hover:bg-stone-100 border-transparent',
 };
 
 const sizes = {
