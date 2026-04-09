@@ -83,11 +83,16 @@ export default function ProductMastersList() {
     }
   };
 
+  const fmtCurrency = (val: any) =>
+    val != null ? `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-slate-300">—</span>;
+
   const columns: Column<ProductMaster>[] = [
     { key: 'product_code', header: 'Code', render: r => <EntityCode code={r.product_code} /> },
     { key: 'product_name', header: 'Product Name', render: r => <span className="font-medium">{r.product_name}</span> },
     { key: 'product_family_name', header: 'Family' },
     { key: 'product_category', header: 'Category' },
+    { key: 'cost', header: 'Cost', render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
+    { key: 'sell_price', header: 'Sell Price', render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price)}</span> },
     { key: 'standard_status', header: 'Status', render: r => <StatusBadge status={r.standard_status} /> },
   ];
 

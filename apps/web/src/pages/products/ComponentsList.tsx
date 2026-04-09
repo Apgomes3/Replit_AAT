@@ -113,6 +113,9 @@ export default function ComponentsList() {
     return acc;
   }, {});
 
+  const fmtCurrency = (val: any) =>
+    val != null ? `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-slate-300">—</span>;
+
   const columns: Column<Component>[] = [
     { key: 'component_code', header: 'Code', render: r => <Link to={`/products/components/${r.id}`}><EntityCode code={r.component_code} /></Link> },
     { key: 'component_name', header: 'Name', render: r => <Link to={`/products/components/${r.id}`} className="font-medium text-slate-800 hover:text-amber-600">{r.component_name}</Link> },
@@ -123,6 +126,8 @@ export default function ComponentsList() {
     { key: 'primary_material_code', header: 'Material', render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
     { key: 'standard_size', header: 'Size' },
     { key: 'unit', header: 'Unit' },
+    { key: 'cost', header: 'Cost', render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
+    { key: 'sell_price', header: 'Sell Price', render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price)}</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
 

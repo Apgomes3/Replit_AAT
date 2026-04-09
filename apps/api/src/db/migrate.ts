@@ -607,6 +607,27 @@ CREATE TABLE IF NOT EXISTS todos (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS cost NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
+ALTER TABLE components ADD COLUMN IF NOT EXISTS cost NUMERIC;
+ALTER TABLE components ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
+
+UPDATE product_masters SET
+  cost = ROUND((RANDOM() * 4500 + 500)::numeric, 2)
+WHERE cost IS NULL;
+
+UPDATE product_masters SET
+  sell_price = ROUND((RANDOM() * 7000 + 800)::numeric, 2)
+WHERE sell_price IS NULL;
+
+UPDATE components SET
+  cost = ROUND((RANDOM() * 900 + 50)::numeric, 2)
+WHERE cost IS NULL;
+
+UPDATE components SET
+  sell_price = ROUND((RANDOM() * 1500 + 100)::numeric, 2)
+WHERE sell_price IS NULL;
+
 -- BOM RELEASES (project-level material release documents)
 CREATE TABLE IF NOT EXISTS bom_releases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

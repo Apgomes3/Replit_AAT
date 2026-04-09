@@ -177,11 +177,13 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, product_family_id, tank_family_id, synonyms, cost_price, sell_price, currency } = req.body;
+  const { product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, product_family_id, tank_family_id, synonyms, cost, sell_price, currency } = req.body;
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
+  const costVal = cost != null && cost !== '' ? parseFloat(cost) : undefined;
+  const sellVal = sell_price != null && sell_price !== '' ? parseFloat(sell_price) : undefined;
   const result = await query(
-    'UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost_price=$21, sell_price=$22, currency=$23, updated_at=NOW() WHERE id=$24 RETURNING *',
-    [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, cost_price != null && cost_price !== '' ? parseFloat(cost_price) : null, sell_price != null && sell_price !== '' ? parseFloat(sell_price) : null, currency || 'USD', req.params.id]);
+    `UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=COALESCE($21, cost), sell_price=COALESCE($22, sell_price), currency=$23, updated_at=NOW() WHERE id=$24 RETURNING *`,
+    [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal ?? null, sellVal ?? null, currency || 'USD', req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   res.json(result.rows[0]);
 });
@@ -407,11 +409,13 @@ router.post('/components', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.put('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms } = req.body;
+  const { component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, cost, sell_price } = req.body;
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
+  const costVal = cost != null && cost !== '' ? parseFloat(cost) : undefined;
+  const sellVal = sell_price != null && sell_price !== '' ? parseFloat(sell_price) : undefined;
   const result = await query(
-    'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, updated_at=NOW() WHERE id=$12 RETURNING *',
-    [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, req.params.id]);
+    'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, cost=COALESCE($12, cost), sell_price=COALESCE($13, sell_price), updated_at=NOW() WHERE id=$14 RETURNING *',
+    [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal ?? null, sellVal ?? null, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
   res.json(result.rows[0]);
 });

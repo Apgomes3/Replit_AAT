@@ -123,6 +123,8 @@ export interface ProductMaster {
   primary_material_code?: string;
   material_name?: string;
   standard_status: string;
+  cost?: number | string | null;
+  sell_price?: number | string | null;
   notes?: string;
   variants?: ProductVariant[];
   boms?: StandardBOM[];
@@ -236,6 +238,8 @@ export interface Component {
   weight_kg?: number;
   unit?: string;
   status: string;
+  cost?: number | string | null;
+  sell_price?: number | string | null;
   notes?: string;
   created_at: string;
 }
