@@ -96,8 +96,8 @@ export default function PIMDashboard() {
       href: '/products/tanks',
       icon: Container,
       color: 'text-teal-600 bg-teal-50 border-teal-200',
-      count: tanksData?.length ?? '—',
-      items: tanksData?.slice(0, 5) ?? [],
+      count: tanksData?.items?.length ?? '—',
+      items: (tanksData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <div key={item.id}
           className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50 transition-colors">
