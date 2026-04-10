@@ -40,7 +40,7 @@ export default function PIMDashboard() {
       icon: Package,
       color: 'text-amber-600 bg-amber-50 border-amber-200',
       count: stats?.products ?? '—',
-      items: productsData?.items ?? [],
+      items: (productsData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <Link key={item.id} to={`/products/masters/${item.id}`}
           className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50 transition-colors group">
@@ -59,7 +59,7 @@ export default function PIMDashboard() {
       icon: Boxes,
       color: 'text-indigo-600 bg-indigo-50 border-indigo-200',
       count: stats?.components ?? '—',
-      items: componentsData?.items ?? [],
+      items: (componentsData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <Link key={item.id} to={`/products/components/${item.id}`}
           className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50 transition-colors group">
@@ -67,7 +67,7 @@ export default function PIMDashboard() {
             <span className="font-mono text-xs text-stone-400 mr-2">{item.component_code}</span>
             <span className="text-sm text-stone-700 group-hover:text-indigo-600 truncate">{item.component_name}</span>
           </div>
-          <StatusBadge status={item.standard_status} />
+          <StatusBadge status={item.status} />
         </Link>
       ),
     },
@@ -78,7 +78,7 @@ export default function PIMDashboard() {
       icon: Pipette,
       color: 'text-cyan-600 bg-cyan-50 border-cyan-200',
       count: pipingData?.total ?? pipingData?.items?.length ?? '—',
-      items: pipingData?.items ?? [],
+      items: (pipingData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <Link key={item.id} to={`/products/masters/${item.id}`}
           className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50 transition-colors group">
