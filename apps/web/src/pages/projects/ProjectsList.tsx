@@ -26,13 +26,13 @@ export default function ProjectsList() {
   });
 
   const columns: Column<Project>[] = [
-    { key: 'project_code', header: 'Code', render: r => <EntityCode code={r.project_code} /> },
-    { key: 'project_name', header: 'Project Name', render: r => <span className="font-medium">{r.project_name}</span> },
-    { key: 'client_name', header: 'Client' },
-    { key: 'country', header: 'Country' },
-    { key: 'project_status', header: 'Status', render: r => <StatusBadge status={r.project_status} /> },
-    { key: 'project_manager', header: 'PM' },
-    { key: 'target_completion_date', header: 'Target', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
+    { key: 'project_code', header: 'Code', sortable: true, render: r => <EntityCode code={r.project_code} /> },
+    { key: 'project_name', header: 'Project Name', sortable: true, filterable: true, render: r => <span className="font-medium">{r.project_name}</span> },
+    { key: 'client_name', header: 'Client', sortable: true, filterable: true },
+    { key: 'country', header: 'Country', sortable: true, filterable: true },
+    { key: 'project_status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.project_status ?? '', render: r => <StatusBadge status={r.project_status} /> },
+    { key: 'project_manager', header: 'PM', sortable: true, filterable: true },
+    { key: 'target_completion_date', header: 'Target', sortable: true, sortValue: r => r.target_completion_date ?? '', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
   ];
 
   return (

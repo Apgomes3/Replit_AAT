@@ -47,15 +47,17 @@ export default function PurchaseOrdersList() {
   });
 
   const columns: Column<PO>[] = [
-    { key: 'po_code', header: 'PO Code', render: r => <EntityCode code={r.po_code} /> },
-    { key: 'project_name' as any, header: 'Project', render: r => r.project_code
-      ? <span><span className="font-mono text-xs text-slate-400 mr-1">{r.project_code}</span>{r.project_name}</span>
-      : <span className="text-slate-300 text-xs">—</span>
+    { key: 'po_code', header: 'PO Code', sortable: true, render: r => <EntityCode code={r.po_code} /> },
+    { key: 'project_name' as any, header: 'Project', sortable: true, filterable: true,
+      filterValue: r => `${r.project_code ?? ''} ${r.project_name ?? ''}`,
+      render: r => r.project_code
+        ? <span><span className="font-mono text-xs text-slate-400 mr-1">{r.project_code}</span>{r.project_name}</span>
+        : <span className="text-slate-300 text-xs">—</span>
     },
-    { key: 'status', header: 'Status', render: r => <POStatusBadge status={r.status} /> },
-    { key: 'item_count' as any, header: 'Items', render: r => <span className="text-sm text-slate-600">{r.item_count}</span> },
-    { key: 'created_by_name' as any, header: 'Created By', render: r => <span className="text-sm text-slate-600">{r.created_by_name}</span> },
-    { key: 'created_at', header: 'Date', render: r => <span className="text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString()}</span> },
+    { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status, render: r => <POStatusBadge status={r.status} /> },
+    { key: 'item_count' as any, header: 'Items', sortable: true, sortValue: r => Number(r.item_count) || 0, render: r => <span className="text-sm text-slate-600">{r.item_count}</span> },
+    { key: 'created_by_name' as any, header: 'Created By', sortable: true, filterable: true, render: r => <span className="text-sm text-slate-600">{r.created_by_name}</span> },
+    { key: 'created_at', header: 'Date', sortable: true, sortValue: r => new Date(r.created_at).getTime(), render: r => <span className="text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString()}</span> },
   ];
 
   return (

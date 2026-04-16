@@ -117,18 +117,18 @@ export default function ComponentsList() {
     val != null ? `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-slate-300">—</span>;
 
   const columns: Column<Component>[] = [
-    { key: 'component_code', header: 'Code', render: r => <Link to={`/products/components/${r.id}`}><EntityCode code={r.component_code} /></Link> },
-    { key: 'component_name', header: 'Name', render: r => <Link to={`/products/components/${r.id}`} className="font-medium text-slate-800 hover:text-amber-600">{r.component_name}</Link> },
-    { key: 'component_type', header: 'Type', render: r => r.component_type
+    { key: 'component_code', header: 'Code', sortable: true, render: r => <Link to={`/products/components/${r.id}`}><EntityCode code={r.component_code} /></Link> },
+    { key: 'component_name', header: 'Name', sortable: true, filterable: true, render: r => <Link to={`/products/components/${r.id}`} className="font-medium text-slate-800 hover:text-amber-600">{r.component_name}</Link> },
+    { key: 'component_type', header: 'Type', sortable: true, filterable: true, filterValue: r => r.component_type ?? '', render: r => r.component_type
       ? <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[r.component_type] || 'bg-slate-100 text-slate-600'}`}>{r.component_type}</span>
       : null },
-    { key: 'component_category', header: 'Category', render: r => r.component_category ? <span className="text-xs text-slate-500">{r.component_category}</span> : null },
-    { key: 'primary_material_code', header: 'Material', render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
-    { key: 'standard_size', header: 'Size' },
-    { key: 'unit', header: 'Unit' },
-    { key: 'cost', header: 'Cost', render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
-    { key: 'sell_price', header: 'Sell Price', render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price)}</span> },
-    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
+    { key: 'component_category', header: 'Category', sortable: true, filterable: true, render: r => r.component_category ? <span className="text-xs text-slate-500">{r.component_category}</span> : null },
+    { key: 'primary_material_code', header: 'Material', sortable: true, render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
+    { key: 'standard_size', header: 'Size', sortable: true },
+    { key: 'unit', header: 'Unit', sortable: true },
+    { key: 'cost', header: 'Cost', sortable: true, sortValue: r => (r as any).cost ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
+    { key: 'sell_price', header: 'Sell Price', sortable: true, sortValue: r => (r as any).sell_price ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price)}</span> },
+    { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status ?? '', render: r => <StatusBadge status={r.status} /> },
   ];
 
   return (
