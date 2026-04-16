@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { useEffect } from 'react';
 import { useAuthStore } from './store/authStore';
 import Shell from './components/layout/Shell';
+import CommandPalette from './components/ui/CommandPalette';
 import Login from './pages/auth/Login';
 import HomeHub from './pages/HomeHub';
 import Dashboard from './pages/Dashboard';
@@ -51,6 +52,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Toaster position="top-right" toastOptions={{ style: { fontSize: '14px' } }} />
+        <CommandPalette />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<AuthGuard><Shell /></AuthGuard>}>

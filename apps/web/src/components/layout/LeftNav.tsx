@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
+import { useCommandPalette } from '../../store/commandPaletteStore';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; end?: boolean };
 
@@ -230,6 +231,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) => clsx(
 export default function LeftNav() {
   const [orders, setOrders] = useState<Record<string, string[]>>(loadOrders);
   const [showAdmin, setShowAdmin] = useState(false);
+  const { open: openPalette } = useCommandPalette();
 
   const handleOrderChange = (sectionId: string, newOrder: string[]) => {
     const next = { ...orders, [sectionId]: newOrder };
@@ -258,7 +260,6 @@ export default function LeftNav() {
         <div className="px-1 space-y-0.5">
           {([
             { to: '/', icon: Home, label: 'Home', end: true },
-            { to: '/search', icon: Search, label: 'Search' },
             { to: '/graph', icon: Network, label: 'Graph Explorer' },
           ] as const).map(({ to, icon: Icon, label, end }: any) => (
             <NavLink key={to} to={to} end={end} className={navLinkClass}>
@@ -276,6 +277,16 @@ export default function LeftNav() {
               )}
             </NavLink>
           ))}
+          <button
+            onClick={openPalette}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150 mx-1 group relative overflow-hidden text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm"
+          >
+            <Search className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-stone-600 group-hover:scale-110 transition-all duration-150" />
+            <span className="flex-1 text-left">Search</span>
+            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-stone-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-stone-400 group-hover:border-amber-200 group-hover:text-amber-500 transition-colors duration-150">
+              ⌘K
+            </kbd>
+          </button>
         </div>
 
         {SECTIONS.map(section => (
