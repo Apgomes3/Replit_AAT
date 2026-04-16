@@ -62,6 +62,7 @@ export default function PurchaseOrdersList() {
     <div className="h-full flex flex-col">
       <PageHeader
         title="Purchase Orders"
+        crumbs={[{ label: 'Order Management', href: '/order-management' }, { label: 'Purchase Orders' }]}
         subtitle={`${data?.pagination?.total ?? 0} orders`}
         actions={
           <Button variant="primary" onClick={() => setShowCreate(true)}>

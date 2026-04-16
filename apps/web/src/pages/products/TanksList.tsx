@@ -62,6 +62,7 @@ export default function TanksList() {
     <div className="h-full flex flex-col">
       <PageHeader
         title={selectedFamily ? selectedFamily.name : 'Tanks'}
+        crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Tanks' }]}
         subtitle={selectedFamily ? selectedFamily.description || `${data?.pagination?.total ?? 0} tank types` : `${data?.pagination?.total ?? 0} tank types in library`}
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Tank Type</Button>}
       />

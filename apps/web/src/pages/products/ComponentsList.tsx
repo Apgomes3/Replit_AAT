@@ -136,7 +136,7 @@ export default function ComponentsList() {
       <PageHeader
         title="Component Library"
         subtitle={`${components.length} components · structural sub-assemblies and parts`}
-        breadcrumb={<Link to="/products" className="hover:underline">Families</Link>}
+        crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Components' }]}
         actions={<Button size="sm" onClick={() => setShowModal(true)}><Plus className="w-3.5 h-3.5" /> New Component</Button>}
       />
 

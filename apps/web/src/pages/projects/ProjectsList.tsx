@@ -37,7 +37,7 @@ export default function ProjectsList() {
 
   return (
     <div className="h-full flex flex-col">
-      <PageHeader title="Projects" subtitle={`${data?.pagination?.total ?? 0} projects`}
+      <PageHeader title="Projects" crumbs={[{ label: 'Project Management', href: '/project-management' }, { label: 'Projects' }]} subtitle={`${data?.pagination?.total ?? 0} projects`}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">

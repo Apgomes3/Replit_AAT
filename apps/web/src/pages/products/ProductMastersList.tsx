@@ -99,6 +99,7 @@ export default function ProductMastersList() {
   return (
     <div className="h-full flex flex-col">
       <PageHeader title="Product Masters" subtitle={`${data?.pagination?.total ?? 0} products in Shark OS`}
+        crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Products' }]}
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Product</Button>}
       />
       <div className="p-4 border-b border-slate-200 bg-white">

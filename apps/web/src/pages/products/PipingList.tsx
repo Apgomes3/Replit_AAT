@@ -104,6 +104,7 @@ export default function PipingList() {
     <div className="h-full flex flex-col">
       <PageHeader
         title="Pipes & Fittings"
+        crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Pipes & Fittings' }]}
         subtitle={`${data?.pagination?.total ?? 0} items in piping library`}
         actions={
           <div className="flex gap-2">
