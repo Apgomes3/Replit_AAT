@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -36,6 +36,7 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'roles', to: '/admin/roles', icon: Users, label: 'Roles' },
   { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
   { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import' },
+  { id: 'audit-log', to: '/admin/audit-log', icon: ClipboardList, label: 'Audit Log' },
 ];
 
 const STORAGE_KEY = 'nav-section-orders';
@@ -172,7 +173,7 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
 const ADMIN_GROUPS = [
   { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families'].includes(i.id)) },
   { label: 'Documents', items: ADMIN_ITEMS.filter(i => ['document-register'].includes(i.id)) },
-  { label: 'System', items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import'].includes(i.id)) },
+  { label: 'System', items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import', 'audit-log'].includes(i.id)) },
 ];
 
 function AdminPopup({ onClose }: { onClose: () => void }) {

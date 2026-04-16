@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
+import { logAudit } from '../db/audit';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import multer from 'multer';
 import path from 'path';
@@ -173,6 +174,7 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
   const result = await query(
     'INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
     [product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status || 'Concept', notes]);
+  await logAudit(req.user!.id, 'product', result.rows[0].id, 'CREATE', { product_code, product_name, standard_status: standard_status || 'Concept' });
   res.status(201).json(result.rows[0]);
 });
 
@@ -185,6 +187,7 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
     `UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=COALESCE($21, cost), sell_price=COALESCE($22, sell_price), currency=$23, updated_at=NOW() WHERE id=$24 RETURNING *`,
     [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal ?? null, sellVal ?? null, currency || 'USD', req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', { product_name, standard_status });
   res.json(result.rows[0]);
 });
 
@@ -405,6 +408,7 @@ router.post('/components', authenticate, async (req: AuthRequest, res: Response)
   const result = await query(
     'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
     [component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit || 'EA', status || 'Active', notes, req.user!.id]);
+  await logAudit(req.user!.id, 'component', result.rows[0].id, 'CREATE', { component_code, component_name, component_type });
   res.status(201).json(result.rows[0]);
 });
 
@@ -417,6 +421,7 @@ router.put('/components/:id', authenticate, async (req: AuthRequest, res: Respon
     'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, cost=COALESCE($12, cost), sell_price=COALESCE($13, sell_price), updated_at=NOW() WHERE id=$14 RETURNING *',
     [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal ?? null, sellVal ?? null, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', { component_name, component_type, status });
   res.json(result.rows[0]);
 });
 

@@ -31,11 +31,43 @@ router.get('/audit-logs', authenticate, requireRole('admin', 'engineer'), async 
   const page = parseInt(req.query.page as string) || 1;
   const page_size = Math.min(parseInt(req.query.page_size as string) || 50, 200);
   const offset = (page - 1) * page_size;
-  const result = await query(
-    `SELECT al.*, u.first_name || ' ' || u.last_name as actor_name
-     FROM audit_logs al LEFT JOIN users u ON al.actor_id=u.id
-     ORDER BY al.created_at DESC LIMIT $1 OFFSET $2`, [page_size, offset]);
-  res.json({ items: result.rows, pagination: { page, page_size } });
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  const entity_type = req.query.entity_type as string;
+  const action = req.query.action as string;
+  const actor = req.query.actor as string;
+  const from = req.query.from as string;
+  const to = req.query.to as string;
+
+  if (entity_type) { params.push(entity_type); conditions.push(`al.entity_type = $${params.length}`); }
+  if (action) { params.push(action); conditions.push(`al.action = $${params.length}`); }
+  if (actor) { params.push(`%${actor}%`); conditions.push(`(u.first_name || ' ' || u.last_name) ILIKE $${params.length}`); }
+  if (from) { params.push(from); conditions.push(`al.created_at >= $${params.length}`); }
+  if (to) { params.push(to); conditions.push(`al.created_at <= $${params.length}`); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const countParams = [...params];
+  const dataParams = [...params, page_size, offset];
+
+  const [result, countResult] = await Promise.all([
+    query(
+      `SELECT al.*, u.first_name || ' ' || u.last_name as actor_name, u.email as actor_email
+       FROM audit_logs al LEFT JOIN users u ON al.actor_id=u.id
+       ${where}
+       ORDER BY al.created_at DESC LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+      dataParams
+    ),
+    query(
+      `SELECT COUNT(*) FROM audit_logs al LEFT JOIN users u ON al.actor_id=u.id ${where}`,
+      countParams
+    ),
+  ]);
+
+  const total = parseInt(countResult.rows[0].count);
+  res.json({ items: result.rows, pagination: { page, page_size, total, pages: Math.ceil(total / page_size) } });
 });
 
 router.get('/stats', authenticate, async (req: AuthRequest, res: Response) => {
