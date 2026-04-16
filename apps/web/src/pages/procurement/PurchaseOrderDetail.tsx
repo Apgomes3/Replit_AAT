@@ -303,7 +303,11 @@ export default function PurchaseOrderDetail() {
       <PageHeader
         title={<span className="flex items-center gap-2"><EntityCode code={po.po_code} /><POStatusBadge status={po.status} /></span>}
         subtitle={po.project_name ? `${po.project_code} — ${po.project_name}` : 'No project linked'}
-        back="/purchase-orders"
+        crumbs={[
+          { label: 'Order Management', href: '/order-management' },
+          { label: 'Purchase Orders', href: '/purchase-orders' },
+          { label: po.po_code },
+        ]}
         actions={
           <div className="flex items-center gap-2">
             <select

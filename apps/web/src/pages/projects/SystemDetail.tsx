@@ -164,7 +164,11 @@ export default function SystemDetail() {
       <PageHeader
         code={system.system_code} title={system.system_name} status={system.status}
         subtitle={`${system.system_type || ''} ${system.water_type ? '· ' + system.water_type : ''}`}
-        breadcrumb={<><Link to="/projects" className="hover:underline">Projects</Link> / <Link to={`/projects/${system.project_id}`} className="hover:underline">{system.project_code}</Link></>}
+        crumbs={[
+          { label: 'Projects', href: '/projects' },
+          { label: system.project_code, href: `/projects/${system.project_id}` },
+          { label: system.system_code },
+        ]}
         actions={
           <div className="flex gap-2">
             <Button size="sm" onClick={() => navigate(`/graph?start=${system.id}&type=system`)}>

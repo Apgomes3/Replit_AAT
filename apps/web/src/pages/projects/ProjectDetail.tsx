@@ -395,7 +395,7 @@ export default function ProjectDetail() {
       <PageHeader
         code={project.project_code} title={project.project_name} status={project.project_status}
         subtitle={`${project.client_name || ''} ${project.country ? '· ' + project.country : ''}`}
-        breadcrumb={<Link to="/projects" className="hover:underline">Projects</Link>}
+        crumbs={[{ label: 'Projects', href: '/projects' }, { label: project.project_code }]}
         actions={
           <div className="flex gap-2">
             <Button size="sm" onClick={() => navigate(`/graph?start=${project.id}&type=project`)}>

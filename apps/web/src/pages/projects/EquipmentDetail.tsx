@@ -134,11 +134,12 @@ export default function EquipmentDetail() {
       <PageHeader
         code={equipment.equipment_code} title={equipment.equipment_name} status={equipment.status}
         subtitle={equipment.equipment_type}
-        breadcrumb={<>
-          <Link to="/projects" className="hover:underline">Projects</Link> /
-          <Link to={`/projects/${equipment.project_id}`} className="hover:underline ml-1">{equipment.project_code}</Link> /
-          {equipment.system_id && <Link to={`/systems/${equipment.system_id}`} className="hover:underline ml-1">{equipment.system_code}</Link>}
-        </>}
+        crumbs={[
+          { label: 'Projects', href: '/projects' },
+          { label: equipment.project_code, href: `/projects/${equipment.project_id}` },
+          ...(equipment.system_id ? [{ label: equipment.system_code, href: `/systems/${equipment.system_id}` }] : []),
+          { label: equipment.equipment_code },
+        ]}
         actions={
           <div className="flex gap-2">
             <Button size="sm" onClick={() => navigate(`/graph?start=${equipment.id}&type=equipment`)}>

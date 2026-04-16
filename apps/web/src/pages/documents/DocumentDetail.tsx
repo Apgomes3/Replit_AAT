@@ -185,7 +185,7 @@ export default function DocumentDetail() {
       <PageHeader
         code={document.document_code} title={document.document_title} status={document.status}
         subtitle={`${document.document_type || ''} ${document.discipline ? '· ' + document.discipline : ''}`}
-        breadcrumb={<Link to="/documents" className="hover:underline">Documents</Link>}
+        crumbs={[{ label: 'Documents', href: '/documents' }, { label: document.document_code }]}
         actions={
           <div className="flex gap-2">
             <Button size="sm" onClick={() => {

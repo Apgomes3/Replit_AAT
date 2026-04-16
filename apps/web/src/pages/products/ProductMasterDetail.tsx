@@ -585,7 +585,11 @@ export default function ProductMasterDetail() {
         title={editing ? editForm.product_name : product.product_name}
         status={editing ? editForm.standard_status : product.standard_status}
         subtitle={`${product.product_category || ''} ${product.application_type ? '· ' + product.application_type : ''}`}
-        breadcrumb={<><Link to="/products" className="hover:underline">Families</Link> / <Link to="/products/masters" className="hover:underline">Products</Link></>}
+        crumbs={[
+          { label: 'PIM', href: '/pim' },
+          { label: 'Products', href: '/products/masters' },
+          { label: product.product_code },
+        ]}
         actions={
           isTank ? (
             <Button size="sm" onClick={() => navigate(`/graph?start=${product.id}&type=product`)}>

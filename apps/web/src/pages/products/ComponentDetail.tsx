@@ -237,7 +237,11 @@ export default function ComponentDetail() {
             {component.component_type}
           </span>
         ) : undefined}
-        breadcrumb={<><Link to="/products" className="hover:underline">Families</Link> / <Link to="/products/components" className="hover:underline">Components</Link></>}
+        crumbs={[
+          { label: 'PIM', href: '/pim' },
+          { label: 'Components', href: '/products/components' },
+          { label: component.component_code },
+        ]}
         actions={
           editing ? (
             <div className="flex gap-2">
