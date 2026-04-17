@@ -12,6 +12,7 @@ import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
 import { Plus, Copy, Pencil, X, Download } from 'lucide-react';
 import { exportCsv, csvDate } from '../../lib/exportCsv';
+import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 
 const STATUSES = ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'];
 
@@ -94,7 +95,17 @@ export default function ProductMastersList() {
     { key: 'product_category', header: 'Category', sortable: true, filterable: true },
     { key: 'cost', header: 'Cost', sortable: true, sortValue: r => (r as any).cost ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
     { key: 'sell_price', header: 'Sell Price', sortable: true, sortValue: r => (r as any).sell_price ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price)}</span> },
-    { key: 'standard_status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.standard_status ?? '', render: r => <StatusBadge status={r.standard_status} /> },
+    { key: 'standard_status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.standard_status ?? '', render: r => (
+      <InlineStatusSelect
+        value={r.standard_status ?? 'Concept'}
+        options={STATUSES}
+        onSave={async (status) => {
+          await api.patch(`/product-masters/${r.id}/status`, { standard_status: status });
+          toast.success('Status updated');
+          refetch();
+        }}
+      />
+    ) },
   ];
 
   return (

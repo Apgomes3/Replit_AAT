@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button';
 import { Component } from '../../types';
 import { Plus, X, Copy, Pencil, Download } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
+import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 import toast from 'react-hot-toast';
 
 const COMPONENT_TYPES = ['Vessel', 'Pump', 'Blower', 'Motor', 'Valve', 'Instrument', 'Pipe', 'Fitting', 'Sensor', 'Controller', 'Frame', 'Filter', 'Heat Exchanger', 'Other'];
@@ -129,7 +130,17 @@ export default function ComponentsList() {
     { key: 'unit', header: 'Unit', sortable: true },
     { key: 'cost', header: 'Cost', sortable: true, sortValue: r => (r as any).cost ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
     { key: 'sell_price', header: 'Sell Price', sortable: true, sortValue: r => (r as any).sell_price ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price)}</span> },
-    { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status ?? '', render: r => <StatusBadge status={r.status} /> },
+    { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status ?? '', render: r => (
+      <InlineStatusSelect
+        value={r.status ?? 'Active'}
+        options={STATUSES}
+        onSave={async (status) => {
+          await api.patch(`/components/${r.id}/status`, { status });
+          toast.success('Status updated');
+          qc.invalidateQueries({ queryKey: ['components'] });
+        }}
+      />
+    ) },
   ];
 
   return (

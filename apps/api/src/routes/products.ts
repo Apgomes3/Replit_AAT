@@ -425,6 +425,28 @@ router.put('/components/:id', authenticate, async (req: AuthRequest, res: Respon
   res.json(result.rows[0]);
 });
 
+router.patch('/product-masters/:id/status', authenticate, async (req: AuthRequest, res: Response) => {
+  const { standard_status } = req.body;
+  if (!standard_status) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'standard_status required' } });
+  const result = await query(
+    'UPDATE product_masters SET standard_status=$1, updated_at=NOW() WHERE id=$2 RETURNING id, standard_status',
+    [standard_status, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  await logAudit(req.user!.id, 'product', String(req.params.id), 'STATUS_CHANGE', { from: undefined, to: standard_status });
+  res.json(result.rows[0]);
+});
+
+router.patch('/components/:id/status', authenticate, async (req: AuthRequest, res: Response) => {
+  const { status } = req.body;
+  if (!status) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'status required' } });
+  const result = await query(
+    'UPDATE components SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING id, status',
+    [status, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  await logAudit(req.user!.id, 'component', String(req.params.id), 'STATUS_CHANGE', { to: status });
+  res.json(result.rows[0]);
+});
+
 router.post('/components/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
   const orig = await query('SELECT * FROM components WHERE id=$1', [req.params.id]);
   if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
