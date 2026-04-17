@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, LayoutDashboard, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -246,10 +246,7 @@ export default function LeftNav() {
 
       <div className="px-4 py-4 border-b border-stone-200/80">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-md"
-            style={{ background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}>
-            <LayoutDashboard className="w-4 h-4 text-white" />
-          </div>
+          <img src="/shark-os-logo.png" alt="Shark OS" className="h-8 w-auto shrink-0" />
           <div>
             <div className="text-stone-800 text-sm font-bold leading-tight tracking-tight">Shark OS</div>
             <div className="text-stone-400 text-[11px]">Engineering Platform</div>

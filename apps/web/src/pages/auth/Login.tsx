@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { Database } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Login() {
@@ -40,10 +39,7 @@ export default function Login() {
 
       <div className="w-full max-w-sm relative animate-fade-in-up">
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-lg"
-            style={{ background: 'linear-gradient(135deg, #d97706 0%, #92400e 100%)' }}>
-            <Database className="w-5 h-5 text-white" />
-          </div>
+          <img src="/shark-os-logo.png" alt="Shark OS" className="h-11 w-auto" />
           <div>
             <h1 className="text-stone-800 text-xl font-bold tracking-tight">Shark OS</h1>
             <p className="text-stone-400 text-sm">Sign in to continue</p>
