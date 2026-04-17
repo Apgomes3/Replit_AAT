@@ -8,7 +8,8 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import { Component } from '../../types';
-import { Plus, X, Copy, Pencil } from 'lucide-react';
+import { Plus, X, Copy, Pencil, Download } from 'lucide-react';
+import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 
 const COMPONENT_TYPES = ['Vessel', 'Pump', 'Blower', 'Motor', 'Valve', 'Instrument', 'Pipe', 'Fitting', 'Sensor', 'Controller', 'Frame', 'Filter', 'Heat Exchanger', 'Other'];
@@ -137,7 +138,29 @@ export default function ComponentsList() {
         title="Component Library"
         subtitle={`${components.length} components · structural sub-assemblies and parts`}
         crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Components' }]}
-        actions={<Button size="sm" onClick={() => setShowModal(true)}><Plus className="w-3.5 h-3.5" /> New Component</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportCsv(`components-${new Date().toISOString().slice(0, 10)}.csv`, [
+                { header: 'Code',        value: r => r.component_code ?? '' },
+                { header: 'Name',        value: r => r.component_name ?? '' },
+                { header: 'Type',        value: r => r.component_type ?? '' },
+                { header: 'Category',    value: r => r.component_category ?? '' },
+                { header: 'Material',    value: r => r.primary_material_code ?? '' },
+                { header: 'Size',        value: r => r.standard_size ?? '' },
+                { header: 'Unit',        value: r => r.unit ?? '' },
+                { header: 'Status',      value: r => r.status ?? '' },
+                { header: 'Cost',        value: r => r.cost != null ? String(r.cost) : '' },
+                { header: 'Sell Price',  value: r => r.sell_price != null ? String(r.sell_price) : '' },
+              ], components ?? [])}
+              disabled={!components?.length}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-amber-300 hover:text-amber-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+            <Button size="sm" onClick={() => setShowModal(true)}><Plus className="w-3.5 h-3.5" /> New Component</Button>
+          </div>
+        }
       />
 
       <div className="flex-1 overflow-auto p-4">

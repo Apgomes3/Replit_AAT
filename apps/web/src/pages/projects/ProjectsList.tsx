@@ -8,7 +8,8 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
-import { Plus, List, Map } from 'lucide-react';
+import { Plus, List, Map, Download } from 'lucide-react';
+import { exportCsv, csvDate } from '../../lib/exportCsv';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
 
@@ -54,6 +55,21 @@ export default function ProjectsList() {
                 <Map className="w-3.5 h-3.5" /> Map
               </button>
             </div>
+            <button
+              onClick={() => exportCsv(`projects-${new Date().toISOString().slice(0, 10)}.csv`, [
+                { header: 'Code',        value: r => r.project_code ?? '' },
+                { header: 'Name',        value: r => r.project_name ?? '' },
+                { header: 'Client',      value: r => r.client_name ?? '' },
+                { header: 'Country',     value: r => r.country ?? '' },
+                { header: 'Status',      value: r => r.project_status ?? '' },
+                { header: 'PM',          value: r => r.project_manager ?? '' },
+                { header: 'Target Date', value: r => csvDate(r.target_completion_date) },
+              ], (data?.items ?? []) as Project[])}
+              disabled={!data?.items?.length}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-amber-300 hover:text-amber-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
             <Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Project</Button>
           </div>
         }

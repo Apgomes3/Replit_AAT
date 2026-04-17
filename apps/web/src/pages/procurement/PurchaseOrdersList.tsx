@@ -7,7 +7,8 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus } from 'lucide-react';
+import { Plus, Download } from 'lucide-react';
+import { exportCsv } from '../../lib/exportCsv';
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:              { label: 'Draft',              color: 'bg-slate-100 text-slate-600' },
@@ -67,9 +68,26 @@ export default function PurchaseOrdersList() {
         crumbs={[{ label: 'Order Management', href: '/order-management' }, { label: 'Purchase Orders' }]}
         subtitle={`${data?.pagination?.total ?? 0} orders`}
         actions={
-          <Button variant="primary" onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4" />New PO
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportCsv(`purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`, [
+                { header: 'PO Code',      value: r => r.po_code ?? '' },
+                { header: 'Project Code', value: r => r.project_code ?? '' },
+                { header: 'Project',      value: r => r.project_name ?? '' },
+                { header: 'Status',       value: r => r.status ?? '' },
+                { header: 'Items',        value: r => String(r.item_count ?? '') },
+                { header: 'Created By',   value: r => r.created_by_name ?? '' },
+                { header: 'Date',         value: r => new Date(r.created_at).toLocaleDateString() },
+              ], (data?.items ?? []) as PO[])}
+              disabled={!data?.items?.length}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-amber-300 hover:text-amber-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+            <Button variant="primary" onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4" />New PO
+            </Button>
+          </div>
         }
       />
       <div className="p-4 border-b border-slate-200 bg-white flex gap-3 items-center flex-wrap">
