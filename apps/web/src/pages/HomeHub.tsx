@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import api from '../lib/api';
-import { Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight, Network, FileText, Search, Ruler } from 'lucide-react';
+import { Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight, Network, FileText, Search, Ruler, BookOpen } from 'lucide-react';
 
 export default function HomeHub() {
   const { user } = useAuthStore();
@@ -31,6 +31,7 @@ export default function HomeHub() {
       icon: Package,
       title: 'PIM Management',
       description: 'Master catalog for products, components, pipes & fittings and tanks across all projects.',
+      comingSoon: false,
       accent: {
         glow: 'hover:shadow-amber-100/80',
         border: 'hover:border-amber-300/60',
@@ -52,6 +53,7 @@ export default function HomeHub() {
       icon: ShoppingCart,
       title: 'Order Management',
       description: 'Track purchase orders through drafting, approval, engineering review and release.',
+      comingSoon: false,
       accent: {
         glow: 'hover:shadow-blue-100/80',
         border: 'hover:border-blue-300/60',
@@ -73,6 +75,7 @@ export default function HomeHub() {
       icon: FolderOpen,
       title: 'Project Management',
       description: 'Manage active projects, systems, equipment lists and engineering deliverables.',
+      comingSoon: false,
       accent: {
         glow: 'hover:shadow-emerald-100/80',
         border: 'hover:border-emerald-300/60',
@@ -87,6 +90,25 @@ export default function HomeHub() {
         { label: 'Projects', value: stats?.projects ?? '—' },
       ],
     },
+    {
+      id: 'design-book-engine',
+      href: '',
+      icon: BookOpen,
+      title: 'Design Book Engine',
+      description: 'Generate, manage and version engineering design books with automated calculations, drawings and specifications.',
+      comingSoon: true,
+      accent: {
+        glow: '',
+        border: '',
+        iconGradient: 'from-violet-300 to-violet-400',
+        iconShadow: 'shadow-violet-300/20',
+        badge: 'bg-violet-50 text-violet-400 border border-violet-200/60',
+        badgeDot: 'bg-violet-300',
+        btn: '',
+        topBar: 'from-violet-300/10 to-transparent',
+      },
+      stats: [],
+    },
   ];
 
   const quickLinks = [
@@ -98,7 +120,7 @@ export default function HomeHub() {
 
   return (
     <div className="min-h-full" style={{ background: 'linear-gradient(160deg, #fafaf9 0%, #f5f3f0 100%)' }}>
-      <div className="max-w-5xl mx-auto px-8 py-12">
+      <div className="max-w-6xl mx-auto px-8 py-12">
         <div className="mb-10 animate-fade-in-up">
           <p className="text-xs font-bold text-stone-400 uppercase tracking-[0.15em] mb-2">
             Welcome back, {firstName}
@@ -110,9 +132,33 @@ export default function HomeHub() {
           <p className="text-stone-400 mt-1 text-sm">Choose a module to get started</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
           {modules.map((mod, i) => {
             const Icon = mod.icon;
+            if (mod.comingSoon) {
+              return (
+                <div
+                  key={mod.id}
+                  style={{ animationDelay: `${i * 60}ms` }}
+                  className="animate-fade-in-up text-left rounded-2xl border border-stone-200/60 bg-white/50 backdrop-blur-sm shadow-sm p-6 flex flex-col overflow-hidden relative cursor-default opacity-70"
+                >
+                  <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r ${mod.accent.topBar}`} />
+
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${mod.accent.iconGradient} flex items-center justify-center shadow-md ${mod.accent.iconShadow} shrink-0`}>
+                      <Icon className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-violet-100 text-violet-500 border border-violet-200/70 shrink-0">
+                      Coming Soon
+                    </span>
+                  </div>
+
+                  <h2 className="text-base font-semibold text-stone-400 mb-2">{mod.title}</h2>
+                  <p className="text-sm text-stone-300 leading-relaxed flex-1">{mod.description}</p>
+                </div>
+              );
+            }
+
             return (
               <button
                 key={mod.id}
