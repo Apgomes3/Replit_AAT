@@ -48,20 +48,25 @@ router.get('/projects/:id', authenticate, async (req: AuthRequest, res: Response
 router.post('/projects', authenticate, async (req: AuthRequest, res: Response) => {
   const { project_code, project_name, client_name, site_name, country, city, timezone, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes } = req.body;
   if (!project_code || !project_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'project_code and project_name required' } });
+  const toDate = (v: any) => (v === '' || v == null) ? null : v;
+  const toStr  = (v: any) => (v === '' || v == null) ? null : String(v);
   const result = await query(
     `INSERT INTO projects (project_code, project_name, client_name, site_name, country, city, timezone, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
-    [project_code, project_name, client_name, site_name, country, city, timezone, project_status || 'Concept', start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, req.user!.id]
+    [project_code, project_name, toStr(client_name), toStr(site_name), toStr(country), toStr(city), toStr(timezone), project_status || 'Concept', toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), req.user!.id]
   );
   res.status(201).json(result.rows[0]);
 });
 
 router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { project_name, client_name, site_name, country, city, latitude, longitude, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes } = req.body;
+  const toDate = (v: any) => (v === '' || v == null) ? null : v;
+  const toNum  = (v: any) => (v === '' || v == null) ? null : Number(v);
+  const toStr  = (v: any) => (v === '' || v == null) ? null : String(v);
   const result = await query(
     `UPDATE projects SET project_name=$1, client_name=$2, site_name=$3, country=$4, city=$5, latitude=$6, longitude=$7, project_status=$8, start_date=$9, target_completion_date=$10, project_manager=$11, engineering_manager=$12, qa_owner=$13, notes=$14, updated_at=NOW()
      WHERE id=$15 RETURNING *`,
-    [project_name, client_name, site_name, country, city, latitude || null, longitude || null, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, req.params.id]
+    [toStr(project_name), toStr(client_name), toStr(site_name), toStr(country), toStr(city), toNum(latitude), toNum(longitude), project_status, toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   res.json(result.rows[0]);
