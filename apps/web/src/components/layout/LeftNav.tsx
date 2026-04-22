@@ -246,7 +246,7 @@ export default function LeftNav() {
 
       <div className="px-4 py-4 border-b border-stone-200/80">
         <div className="flex items-center gap-2.5">
-          <img src="/shark-os-logo.png" alt="Shark OS" className="h-8 w-auto shrink-0" />
+          <img src="/shark-os-logo.png" alt="Shark OS" className="h-14 w-auto shrink-0" />
           <div>
             <div className="text-stone-800 text-sm font-bold leading-tight tracking-tight">Shark OS</div>
             <div className="text-stone-400 text-[11px]">Engineering Platform</div>
