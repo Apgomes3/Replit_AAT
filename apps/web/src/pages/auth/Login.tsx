@@ -38,12 +38,8 @@ export default function Login() {
         }} />
 
       <div className="w-full max-w-sm relative animate-fade-in-up">
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <img src="/shark-os-logo.png" alt="Shark OS" className="h-20 w-auto" />
-          <div>
-            <h1 className="text-stone-800 text-xl font-bold tracking-tight">Shark OS</h1>
-            <p className="text-stone-400 text-sm">Sign in to continue</p>
-          </div>
+        <div className="flex justify-center mb-8">
+          <img src="/shark-os-logo.png" alt="Shark OS" className="h-36 w-auto" />
         </div>
 
         <form onSubmit={handleSubmit}
