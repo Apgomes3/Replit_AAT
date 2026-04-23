@@ -136,12 +136,12 @@ export default function OrderManagementDashboard() {
                 <div className="flex items-center gap-3 min-w-0">
                   <ShoppingCart className="w-4 h-4 text-stone-300 shrink-0 group-hover:text-blue-400 transition-colors" />
                   <div className="min-w-0 flex items-center gap-2">
-                    <span className="font-mono text-xs text-stone-400 shrink-0">{po.po_number}</span>
-                    <span className="text-sm text-stone-600 group-hover:text-blue-700 truncate transition-colors">{po.title}</span>
+                    <span className="font-mono text-xs text-stone-400 shrink-0">{po.po_code}</span>
+                    <span className="text-sm text-stone-600 group-hover:text-blue-700 truncate transition-colors">{po.project_name || po.notes || '—'}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-3">
-                  <span className="text-xs text-stone-400">{po.supplier_name || '—'}</span>
+                  <span className="text-xs text-stone-400">{po.created_by_name || '—'}</span>
                   <StatusBadge status={po.status} />
                 </div>
               </Link>
