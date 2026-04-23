@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 export default function Login() {
+  usePageTitle();
   const { user, login } = useAuthStore();
   const [email, setEmail] = useState('admin@edp.com');
   const [password, setPassword] = useState('admin123');
