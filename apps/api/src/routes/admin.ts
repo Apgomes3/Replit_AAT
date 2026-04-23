@@ -269,4 +269,49 @@ router.delete('/tank-families/:id', authenticate, requireRole('admin'), async (r
   res.status(204).end();
 });
 
+router.get('/system-types', authenticate, async (_req: AuthRequest, res: Response) => {
+  const result = await query(
+    'SELECT * FROM system_types ORDER BY sort_order, name'
+  );
+  res.json({ items: result.rows });
+});
+
+router.post('/system-types', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const { name, description, sort_order } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'name is required' } });
+  try {
+    const result = await query(
+      'INSERT INTO system_types (name, description, sort_order) VALUES ($1,$2,$3) RETURNING *',
+      [name.trim(), description?.trim() || null, sort_order ?? 0]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e: any) {
+    if (e.code === '23505') return res.status(400).json({ error: { code: 'DUPLICATE', message: 'A system type with that name already exists' } });
+    throw e;
+  }
+});
+
+router.put('/system-types/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const { name, description, sort_order, is_active } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'name is required' } });
+  try {
+    const result = await query(
+      'UPDATE system_types SET name=$1, description=$2, sort_order=$3, is_active=$4, updated_at=NOW() WHERE id::text=$5 RETURNING *',
+      [name.trim(), description?.trim() || null, sort_order ?? 0, is_active ?? true, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System type not found' } });
+    res.json(result.rows[0]);
+  } catch (e: any) {
+    if (e.code === '23505') return res.status(400).json({ error: { code: 'DUPLICATE', message: 'A system type with that name already exists' } });
+    throw e;
+  }
+});
+
+router.delete('/system-types/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT id FROM system_types WHERE id::text=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System type not found' } });
+  await query('DELETE FROM system_types WHERE id::text=$1', [req.params.id]);
+  res.status(204).end();
+});
+
 export default router;

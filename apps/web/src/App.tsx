@@ -31,6 +31,7 @@ import AdminImport from './pages/admin/AdminImport';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminRoles from './pages/admin/AdminRoles';
 import AdminTankFamilies from './pages/admin/AdminTankFamilies';
+import AdminSystemTypes from './pages/admin/AdminSystemTypes';
 import AdminAuditLog from './pages/admin/AdminAuditLog';
 import PurchaseOrdersList from './pages/procurement/PurchaseOrdersList';
 import PurchaseOrderDetail from './pages/procurement/PurchaseOrderDetail';
@@ -85,6 +86,7 @@ export default function App() {
             <Route path="admin/categories" element={<AdminCategories />} />
             <Route path="admin/roles" element={<AdminRoles />} />
             <Route path="admin/tank-families" element={<AdminTankFamilies />} />
+            <Route path="admin/system-types" element={<AdminSystemTypes />} />
             <Route path="admin/audit-log" element={<AdminAuditLog />} />
             <Route path="purchase-orders" element={<PurchaseOrdersList />} />
             <Route path="purchase-orders/:id" element={<PurchaseOrderDetail />} />

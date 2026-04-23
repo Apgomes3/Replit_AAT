@@ -45,6 +45,12 @@ export default function SystemDetail() {
     queryFn: () => api.get(`/lifecycle/system/${id}`).then(r => r.data),
   });
 
+  const { data: systemTypesData } = useQuery({
+    queryKey: ['system-types'],
+    queryFn: () => api.get('/admin/system-types').then(r => r.data),
+  });
+  const systemTypeOptions: string[] = (systemTypesData?.items || []).map((t: any) => t.name);
+
   const { data: productSearchResults } = useQuery({
     queryKey: ['product-search-inline', inlineProductSearch],
     queryFn: () => api.get(`/product-masters?q=${inlineProductSearch}&page_size=8`).then(r => r.data),
@@ -226,7 +232,7 @@ export default function SystemDetail() {
                     <select value={form.system_type} onChange={e => setForm((f: any) => ({ ...f, system_type: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30">
                       <option value="">— select —</option>
-                      {['Life Support', 'Utility', 'HVAC', 'Fire Fighting', 'Electrical', 'Other'].map(t => <option key={t}>{t}</option>)}
+                      {systemTypeOptions.map(t => <option key={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>

@@ -687,6 +687,29 @@ CREATE TABLE IF NOT EXISTS bom_release_lines (
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS system_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL UNIQUE,
+  description TEXT,
+  sort_order INT DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO system_types (name, sort_order) VALUES
+  ('Single Exhibit LSS', 1),
+  ('Multiple Exhibit LSS', 2),
+  ('Main System LSS', 3),
+  ('Quarantine', 4),
+  ('Central Services', 5),
+  ('Intake System', 6),
+  ('Coral Propagation', 7),
+  ('Penguin', 8),
+  ('Marine Mammals', 9),
+  ('Reptiles', 10)
+ON CONFLICT (name) DO NOTHING;
 `;
 
 async function migrate() {

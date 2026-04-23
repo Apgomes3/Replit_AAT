@@ -114,6 +114,12 @@ export default function ProjectDetail() {
     enabled: tab === 'piping',
   });
 
+  const { data: systemTypesData } = useQuery({
+    queryKey: ['system-types'],
+    queryFn: () => api.get('/admin/system-types').then(r => r.data),
+  });
+  const systemTypeOptions: string[] = (systemTypesData?.items || []).map((t: any) => t.name);
+
   const { data: pipingProductResults } = useQuery({
     queryKey: ['piping-product-search', pipingProductSearch],
     queryFn: () => api.get(`/product-masters?q=${pipingProductSearch}&category=Piping&page_size=8`).then(r => r.data),
@@ -709,7 +715,7 @@ export default function ProjectDetail() {
           fields={[
             { name: 'system_code', label: 'System Code', required: true, placeholder: 'SYS-LSS-XX-01' },
             { name: 'system_name', label: 'System Name', required: true },
-            { name: 'system_type', label: 'System Type', options: ['Life Support', 'Utility', 'HVAC', 'Fire Fighting', 'Electrical', 'Other'] },
+            { name: 'system_type', label: 'System Type', options: systemTypeOptions },
             { name: 'water_type', label: 'Water Type', options: ['Marine', 'Freshwater', 'Brackish', 'Other'] },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
           ]}
@@ -1064,7 +1070,7 @@ export default function ProjectDetail() {
                 <select value={editSystemForm.system_type} onChange={e => setEditSystemForm((f: any) => ({ ...f, system_type: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30">
                   <option value="">— select —</option>
-                  {['Life Support', 'Utility', 'HVAC', 'Fire Fighting', 'Electrical', 'Other'].map(t => <option key={t}>{t}</option>)}
+                  {systemTypeOptions.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>
