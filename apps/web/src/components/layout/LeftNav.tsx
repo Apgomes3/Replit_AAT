@@ -110,11 +110,11 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
         onClick={() => { navigate(section.hub); setExpanded(v => !v); }}
         className="w-full flex items-center justify-between pt-4 pb-1.5 px-3 group"
       >
-        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.12em] group-hover:text-amber-600 transition-colors duration-150">
+        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.12em] group-hover:text-blue-600 transition-colors duration-150">
           {section.label}
         </span>
         <ChevronRight className={clsx(
-          'w-3 h-3 text-stone-300 group-hover:text-amber-500 transition-all duration-200',
+          'w-3 h-3 text-stone-300 group-hover:text-blue-500 transition-all duration-200',
           expanded ? 'rotate-90' : 'rotate-0'
         )} />
       </button>
@@ -134,7 +134,7 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
             className={clsx(
               'group relative flex items-center rounded-lg transition-all mx-1',
               isDragging && 'opacity-40 scale-95',
-              isOver && 'ring-1 ring-amber-400/40 ring-inset bg-amber-50/60',
+              isOver && 'ring-1 ring-blue-400/40 ring-inset bg-blue-50/60',
             )}
           >
             <div className="absolute left-0 top-0 bottom-0 flex items-center pl-1 opacity-0 group-hover:opacity-60 transition-opacity cursor-grab active:cursor-grabbing z-10">
@@ -146,18 +146,18 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
               className={({ isActive }) => clsx(
                 'flex-1 flex items-center gap-2.5 pl-6 pr-3 py-2 text-sm rounded-lg transition-all duration-150 relative overflow-hidden',
                 isActive
-                  ? 'bg-white text-amber-600 font-semibold shadow-sm border border-stone-200/70'
+                  ? 'bg-white text-blue-600 font-semibold shadow-sm border border-stone-200/70'
                   : 'text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm'
               )}
             >
               {({ isActive }) => (
                 <>
                   {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-amber-500 rounded-r-full" />
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-500 rounded-r-full" />
                   )}
                   <Icon className={clsx(
                     'w-4 h-4 shrink-0 transition-all duration-150',
-                    isActive ? 'text-amber-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:scale-110'
+                    isActive ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:scale-110'
                   )} />
                   <span>{item.label}</span>
                 </>
@@ -207,11 +207,11 @@ function AdminPopup({ onClose }: { onClose: () => void }) {
                 <button
                   key={item.id}
                   onClick={() => { navigate(item.to); onClose(); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-stone-600 hover:bg-stone-50 hover:text-amber-600 transition-all duration-150 text-left group"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-stone-600 hover:bg-stone-50 hover:text-blue-600 transition-all duration-150 text-left group"
                 >
-                  <Icon className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-amber-500 transition-colors duration-150" />
+                  <Icon className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-blue-500 transition-colors duration-150" />
                   <span>{item.label}</span>
-                  <ChevronRight className="w-3.5 h-3.5 ml-auto text-stone-300 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all duration-150" />
+                  <ChevronRight className="w-3.5 h-3.5 ml-auto text-stone-300 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all duration-150" />
                 </button>
               );
             })}
@@ -225,7 +225,7 @@ function AdminPopup({ onClose }: { onClose: () => void }) {
 const navLinkClass = ({ isActive }: { isActive: boolean }) => clsx(
   'flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150 mx-1 group relative overflow-hidden',
   isActive
-    ? 'bg-white text-amber-600 font-semibold shadow-sm border border-stone-200/70'
+    ? 'bg-white text-blue-600 font-semibold shadow-sm border border-stone-200/70'
     : 'text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm'
 );
 
@@ -264,11 +264,11 @@ export default function LeftNav() {
               {({ isActive }) => (
                 <>
                   {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-amber-500 rounded-r-full" />
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-500 rounded-r-full" />
                   )}
                   <Icon className={clsx(
                     'w-4 h-4 shrink-0 transition-all duration-150',
-                    isActive ? 'text-amber-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:scale-110'
+                    isActive ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:scale-110'
                   )} />
                   <span>{label}</span>
                 </>
@@ -281,7 +281,7 @@ export default function LeftNav() {
           >
             <Search className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-stone-600 group-hover:scale-110 transition-all duration-150" />
             <span className="flex-1 text-left">Search</span>
-            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-stone-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-stone-400 group-hover:border-amber-200 group-hover:text-amber-500 transition-colors duration-150">
+            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-stone-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-stone-400 group-hover:border-blue-200 group-hover:text-blue-500 transition-colors duration-150">
               ⌘K
             </kbd>
           </button>
@@ -303,13 +303,13 @@ export default function LeftNav() {
           className={clsx(
             'w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150 group',
             showAdmin
-              ? 'bg-white text-amber-600 font-semibold shadow-sm border border-stone-200/70'
+              ? 'bg-white text-blue-600 font-semibold shadow-sm border border-stone-200/70'
               : 'text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm'
           )}
         >
           <Settings className={clsx(
             'w-4 h-4 shrink-0 transition-all duration-150',
-            showAdmin ? 'text-amber-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:rotate-45'
+            showAdmin ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:rotate-45'
           )} />
           <span>Platform Admin</span>
           <ChevronRight className={clsx('w-3.5 h-3.5 ml-auto transition-transform duration-200', showAdmin && 'rotate-90')} />

@@ -28,9 +28,9 @@ const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; dot
   project:   { label: 'Project',   icon: FolderOpen, color: 'text-blue-600',   dot: 'bg-blue-500'   },
   system:    { label: 'System',    icon: Network,    color: 'text-sky-600',    dot: 'bg-sky-500'    },
   equipment: { label: 'Equipment', icon: Wrench,     color: 'text-indigo-600', dot: 'bg-indigo-500' },
-  product:   { label: 'Product',   icon: Package,    color: 'text-amber-600',  dot: 'bg-amber-500'  },
+  product:   { label: 'Product',   icon: Package,    color: 'text-blue-600',   dot: 'bg-blue-500'   },
   material:  { label: 'Material',  icon: BookOpen,   color: 'text-stone-500',  dot: 'bg-stone-400'  },
-  document:  { label: 'Document',  icon: FileText,   color: 'text-orange-600', dot: 'bg-orange-500' },
+  document:  { label: 'Document',  icon: FileText,   color: 'text-blue-600',   dot: 'bg-blue-500'   },
 };
 
 function getHref(r: SearchResult): string {
@@ -168,7 +168,7 @@ export default function CommandPalette() {
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-stone-100">
           <Search className={clsx(
             'w-4 h-4 shrink-0 transition-colors',
-            isFetching ? 'text-amber-500 animate-pulse' : 'text-stone-400'
+            isFetching ? 'text-blue-500 animate-pulse' : 'text-stone-400'
           )} />
           <input
             ref={inputRef}
@@ -240,8 +240,8 @@ export default function CommandPalette() {
                   ].map(link => (
                     <button key={link.href}
                       onClick={() => { navigate(link.href); close(); }}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-stone-50 hover:bg-amber-50 hover:text-amber-700 text-xs text-stone-500 transition-colors text-left group">
-                      <Hash className="w-2.5 h-2.5 shrink-0 group-hover:text-amber-500" />
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-stone-50 hover:bg-blue-50 hover:text-blue-700 text-xs text-stone-500 transition-colors text-left group">
+                      <Hash className="w-2.5 h-2.5 shrink-0 group-hover:text-blue-500" />
                       {link.label}
                     </button>
                   ))}
@@ -301,7 +301,7 @@ export default function CommandPalette() {
                       className={clsx(
                         'w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left group border-l-2',
                         isHighlighted
-                          ? `bg-amber-50 border-amber-400`
+                          ? `bg-blue-50 border-blue-400`
                           : 'border-transparent hover:bg-stone-50 hover:border-stone-200'
                       )}
                     >
@@ -324,7 +324,7 @@ export default function CommandPalette() {
                       )}
                       <ArrowRight className={clsx(
                         'w-3 h-3 shrink-0 transition-all',
-                        isHighlighted ? 'text-amber-500 translate-x-0' : 'text-stone-200 -translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'
+                        isHighlighted ? 'text-blue-500 translate-x-0' : 'text-stone-200 -translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'
                       )} />
                     </button>
                   );
@@ -352,7 +352,7 @@ export default function CommandPalette() {
           {debouncedQ.trim().length >= 2 && (
             <button
               onClick={() => { navigate(`/search?q=${encodeURIComponent(debouncedQ)}`); close(); }}
-              className="flex items-center gap-1 text-[11px] text-amber-600 hover:text-amber-700 font-medium transition-colors"
+              className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 font-medium transition-colors"
             >
               Full results <ExternalLink className="w-3 h-3" />
             </button>

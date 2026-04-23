@@ -53,7 +53,7 @@ export default function InlineStatusSelect({ value, options, onSave, disabled }:
         disabled={disabled || saving}
         className={clsx(
           'flex items-center gap-1 rounded-full transition-all focus:outline-none',
-          !disabled && !saving && 'hover:ring-2 hover:ring-amber-300 hover:ring-offset-1 cursor-pointer group',
+          !disabled && !saving && 'hover:ring-2 hover:ring-blue-300 hover:ring-offset-1 cursor-pointer group',
           saving && 'opacity-60 cursor-wait',
           disabled && 'cursor-default',
         )}
@@ -62,11 +62,11 @@ export default function InlineStatusSelect({ value, options, onSave, disabled }:
         {!disabled && !saving && (
           <ChevronDown className={clsx(
             'w-3 h-3 text-stone-400 -ml-0.5 opacity-0 group-hover:opacity-100 transition-all duration-150',
-            open && 'rotate-180 opacity-100 text-amber-500',
+            open && 'rotate-180 opacity-100 text-blue-500',
           )} />
         )}
         {saving && (
-          <span className="w-3 h-3 -ml-0.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin inline-block" />
+          <span className="w-3 h-3 -ml-0.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin inline-block" />
         )}
       </button>
 
@@ -79,12 +79,12 @@ export default function InlineStatusSelect({ value, options, onSave, disabled }:
               onClick={e => handleSelect(e, opt)}
               className={clsx(
                 'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors duration-100',
-                opt === value ? 'bg-amber-50/60' : 'hover:bg-stone-50',
+                opt === value ? 'bg-blue-50/60' : 'hover:bg-stone-50',
               )}
             >
               <StatusBadge status={opt} />
               {opt === value && (
-                <span className="ml-auto text-amber-500 text-xs font-bold">✓</span>
+                <span className="ml-auto text-blue-500 text-xs font-bold">✓</span>
               )}
             </button>
           ))}

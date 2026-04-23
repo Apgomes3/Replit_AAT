@@ -103,7 +103,7 @@ function DashboardCard({
   const minimized = state === 'minimized';
   return (
     <div
-      className={`bg-white border rounded-lg transition-all duration-150 ${isDragOver ? 'border-amber-600 shadow-lg ring-2 ring-amber-600/20' : 'border-stone-200'} ${className}`}
+      className={`bg-white border rounded-lg transition-all duration-150 ${isDragOver ? 'border-blue-600 shadow-lg ring-2 ring-blue-600/20' : 'border-stone-200'} ${className}`}
       draggable
       onDragStart={onDragStart}
       onDragEnter={onDragEnter}
@@ -145,7 +145,7 @@ function DashboardCard({
 const docTypeIcon = (type: string) => {
   switch (type) {
     case 'Technical Data Sheet': return <FileSearch className="w-3.5 h-3.5 text-blue-500" />;
-    case 'O&M Manual': return <Wrench className="w-3.5 h-3.5 text-amber-500" />;
+    case 'O&M Manual': return <Wrench className="w-3.5 h-3.5 text-blue-500" />;
     case 'Certificate': return <Award className="w-3.5 h-3.5 text-purple-500" />;
     case 'Test Report': return <FileCheck className="w-3.5 h-3.5 text-red-500" />;
     default: return <FileText className="w-3.5 h-3.5 text-stone-400" />;
@@ -161,8 +161,8 @@ const typeHref = (type: string, id: string) => {
 
 const STATUS_COLORS: Record<string, string> = {
   Draft: 'bg-stone-200',
-  'Internal Review': 'bg-amber-300',
-  'Review Commented': 'bg-orange-300',
+  'Internal Review': 'bg-blue-300',
+  'Review Commented': 'bg-sky-300',
   Approved: 'bg-green-400',
   Released: 'bg-blue-400',
   Superseded: 'bg-stone-300',
@@ -347,7 +347,7 @@ export default function Dashboard() {
     'recent-docs': (
       <DashboardCard id="recent-docs" title="Recent Documents" state={state('recent-docs')} onUpdate={s => update('recent-docs', s)}
         className={CARD_SPAN['recent-docs']}
-        headerRight={<Link to="/documents" className="text-xs text-amber-600 hover:underline">View all</Link>}
+        headerRight={<Link to="/documents" className="text-xs text-blue-600 hover:underline">View all</Link>}
         {...sharedDragProps('recent-docs')}>
         {recentDocs.length === 0
           ? <div className="p-4 text-sm text-stone-400">No documents yet</div>
@@ -370,7 +370,7 @@ export default function Dashboard() {
     ),
     'recent-projects': (
       <DashboardCard id="recent-projects" title="Recent Projects" state={state('recent-projects')} onUpdate={s => update('recent-projects', s)}
-        headerRight={<Link to="/projects" className="text-xs text-amber-600 hover:underline">View all</Link>}
+        headerRight={<Link to="/projects" className="text-xs text-blue-600 hover:underline">View all</Link>}
         {...sharedDragProps('recent-projects')}>
         <div className="divide-y divide-stone-100">
           {projects?.items?.map((p: any) => (
@@ -393,15 +393,15 @@ export default function Dashboard() {
             {quickLinks.map(({ to, label, sub }) => (
               <Link key={to} to={to} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-stone-50 group">
                 <div>
-                  <div className="text-sm text-stone-700 group-hover:text-amber-600 font-medium">{label}</div>
+                  <div className="text-sm text-stone-700 group-hover:text-blue-600 font-medium">{label}</div>
                   <div className="text-xs text-stone-400">{sub}</div>
                 </div>
-                <ArrowRight className="w-4 h-4 text-stone-300 group-hover:text-amber-600" />
+                <ArrowRight className="w-4 h-4 text-stone-300 group-hover:text-blue-600" />
               </Link>
             ))}
           </div>
           <div className="mt-3 pt-3 border-t border-stone-100 flex gap-2">
-            <Link to="/graph" className="flex items-center gap-1.5 text-xs text-amber-600 hover:underline font-medium">
+            <Link to="/graph" className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline font-medium">
               <Network className="w-3.5 h-3.5" /> Graph Explorer
             </Link>
           </div>
@@ -411,9 +411,9 @@ export default function Dashboard() {
     'pending-approvals': isPrivileged ? (
       <DashboardCard
         id="pending-approvals"
-        title={<><Clock className="w-4 h-4 text-amber-500" />Pending Approvals</>}
+        title={<><Clock className="w-4 h-4 text-blue-500" />Pending Approvals</>}
         badge={approvals.length > 0 ? (
-          <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">{approvals.length}</span>
+          <span className="bg-blue-100 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded-full">{approvals.length}</span>
         ) : undefined}
         state={state('pending-approvals')} onUpdate={s => update('pending-approvals', s)}
         {...sharedDragProps('pending-approvals')}>
@@ -438,18 +438,18 @@ export default function Dashboard() {
     'todos': (
       <DashboardCard
         id="todos"
-        title={<><CheckSquare className="w-4 h-4 text-amber-600" />To-Do</>}
+        title={<><CheckSquare className="w-4 h-4 text-blue-600" />To-Do</>}
         badge={pendingTodos.length > 0 ? (
-          <span className="bg-amber-600/10 text-amber-600 text-xs font-semibold px-2 py-0.5 rounded-full">{pendingTodos.length}</span>
+          <span className="bg-blue-600/10 text-blue-600 text-xs font-semibold px-2 py-0.5 rounded-full">{pendingTodos.length}</span>
         ) : undefined}
         state={state('todos')} onUpdate={s => update('todos', s)}
         {...sharedDragProps('todos')}>
         <div className="p-3">
           <form onSubmit={e => { e.preventDefault(); if (todoInput.trim()) addTodo.mutate(todoInput); }} className="flex gap-2 mb-3">
             <input value={todoInput} onChange={e => setTodoInput(e.target.value)} placeholder="Add a task..."
-              className="flex-1 border border-stone-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600/30" />
+              className="flex-1 border border-stone-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
             <button type="submit" disabled={!todoInput.trim() || addTodo.isPending}
-              className="bg-amber-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-40 flex items-center gap-1">
+              className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-40 flex items-center gap-1">
               <Plus className="w-4 h-4" />
             </button>
           </form>
@@ -457,7 +457,7 @@ export default function Dashboard() {
             {todos.length === 0 && <p className="text-sm text-stone-400 px-1 py-2">No tasks yet — add one above</p>}
             {pendingTodos.map(t => (
               <div key={t.id} className="flex items-center gap-2 group px-1 py-1.5 rounded hover:bg-stone-50">
-                <button onClick={() => toggleTodo.mutate({ id: t.id, done: true })} className="text-stone-300 hover:text-amber-600 shrink-0">
+                <button onClick={() => toggleTodo.mutate({ id: t.id, done: true })} className="text-stone-300 hover:text-blue-600 shrink-0">
                   <Square className="w-4 h-4" />
                 </button>
                 <span className="flex-1 text-sm text-stone-700">{t.text}</span>
@@ -471,7 +471,7 @@ export default function Dashboard() {
                 <div className="text-xs text-stone-400 uppercase tracking-wide px-1 pt-2 pb-1">Done</div>
                 {doneTodos.map(t => (
                   <div key={t.id} className="flex items-center gap-2 group px-1 py-1.5 rounded hover:bg-stone-50">
-                    <button onClick={() => toggleTodo.mutate({ id: t.id, done: false })} className="text-amber-600 shrink-0">
+                    <button onClick={() => toggleTodo.mutate({ id: t.id, done: false })} className="text-blue-600 shrink-0">
                       <CheckSquare className="w-4 h-4" />
                     </button>
                     <span className="flex-1 text-sm text-stone-400 line-through">{t.text}</span>
@@ -498,12 +498,12 @@ export default function Dashboard() {
         <div className="relative">
           <button
             onClick={() => setShowManage(v => !v)}
-            className="flex items-center gap-1.5 text-sm text-stone-500 hover:text-amber-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-stone-500 hover:text-blue-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50 transition-colors"
           >
             <LayoutDashboard className="w-4 h-4" />
             Customize
             {hiddenCards.length > 0 && (
-              <span className="bg-amber-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
+              <span className="bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
                 {hiddenCards.length}
               </span>
             )}
@@ -527,7 +527,7 @@ export default function Dashboard() {
                       <span className="text-sm text-stone-700">{c.label}</span>
                       <button
                         onClick={() => update(c.id, 'visible')}
-                        className="flex items-center gap-1 text-xs text-amber-600 hover:underline font-medium"
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-medium"
                       >
                         <Eye className="w-3.5 h-3.5" /> Show
                       </button>

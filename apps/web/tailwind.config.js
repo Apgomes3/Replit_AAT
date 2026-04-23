@@ -21,7 +21,7 @@ export default {
         slate: '#748CAB',
         status: {
           draft: '#94A3B8',
-          review: '#ED6C02',
+          review: '#2563EB',
           approved: '#0288D1',
           released: '#2E7D32',
           superseded: '#334155',

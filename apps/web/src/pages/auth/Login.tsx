@@ -29,7 +29,7 @@ export default function Login() {
 
       <div className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(217,119,6,0.07) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(180,83,9,0.05) 0%, transparent 40%)',
+          backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(37,99,235,0.07) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(29,78,216,0.05) 0%, transparent 40%)',
         }} />
 
       <div className="absolute inset-0 pointer-events-none opacity-[0.03]"
@@ -56,7 +56,7 @@ export default function Login() {
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
-              className="w-full border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm bg-white/60 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/15 transition-all duration-200 text-stone-800 placeholder-stone-300"
+              className="w-full border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm bg-white/60 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 transition-all duration-200 text-stone-800 placeholder-stone-300"
             />
           </div>
           <div>
@@ -66,14 +66,14 @@ export default function Login() {
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
-              className="w-full border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm bg-white/60 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/15 transition-all duration-200 text-stone-800 placeholder-stone-300"
+              className="w-full border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm bg-white/60 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 transition-all duration-200 text-stone-800 placeholder-stone-300"
             />
           </div>
           <button
             type="submit"
             disabled={loading}
             className="w-full text-white rounded-xl py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 active:scale-[0.98] shadow-md hover:shadow-lg"
-            style={{ background: loading ? '#d97706' : 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
+            style={{ background: loading ? '#2563EB' : 'linear-gradient(135deg, #2563EB 0%, #1d4ed8 100%)' }}
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
