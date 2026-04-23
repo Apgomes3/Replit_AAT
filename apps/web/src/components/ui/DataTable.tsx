@@ -187,8 +187,8 @@ export default function DataTable<T extends Record<string, any>>({
                   className={clsx(
                     'h-7 pl-2.5 pr-7 text-xs rounded-lg border outline-none transition-all w-36',
                     filters[col.key]
-                      ? 'border-amber-400 bg-amber-50/60 text-stone-800 placeholder:text-amber-400'
-                      : 'border-stone-200 bg-white text-stone-700 placeholder:text-stone-400 focus:border-amber-400'
+                      ? 'border-blue-400 bg-blue-50/60 text-stone-800 placeholder:text-blue-400'
+                      : 'border-stone-200 bg-white text-stone-700 placeholder:text-stone-400 focus:border-blue-400'
                   )}
                 />
                 {filters[col.key] && (
@@ -212,14 +212,14 @@ export default function DataTable<T extends Record<string, any>>({
             className={clsx(
               'flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all shrink-0',
               showFilters
-                ? 'bg-amber-50 border-amber-300 text-amber-700 font-medium'
-                : 'bg-white border-stone-200 text-stone-500 hover:border-amber-300 hover:text-amber-600'
+                ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
+                : 'bg-white border-stone-200 text-stone-500 hover:border-blue-300 hover:text-blue-600'
             )}
           >
             <Filter className="w-3 h-3" />
             {showFilters ? 'Hide Filters' : 'Filters'}
             {activeFilterCount > 0 && (
-              <span className="bg-amber-500 text-white rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none">
+              <span className="bg-blue-500 text-white rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none">
                 {activeFilterCount}
               </span>
             )}
@@ -252,9 +252,9 @@ export default function DataTable<T extends Record<string, any>>({
                     className={clsx(
                       'group text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap select-none transition-colors duration-100',
                       col.className,
-                      isActiveSort ? 'text-amber-600 bg-amber-50/60' : 'text-stone-500',
+                      isActiveSort ? 'text-blue-600 bg-blue-50/60' : 'text-stone-500',
                       isDragging && 'opacity-40',
-                      isOver && 'bg-amber-50 text-amber-600',
+                      isOver && 'bg-blue-50 text-blue-600',
                       (isSortable || tableId) && 'cursor-pointer hover:bg-stone-100',
                     )}
                   >
@@ -266,7 +266,7 @@ export default function DataTable<T extends Record<string, any>>({
                       {isSortable && (
                         <SortIcon className={clsx(
                           'w-3 h-3 shrink-0 transition-opacity',
-                          isActiveSort ? 'opacity-100 text-amber-500' : 'opacity-0 group-hover:opacity-40'
+                          isActiveSort ? 'opacity-100 text-blue-500' : 'opacity-0 group-hover:opacity-40'
                         )} />
                       )}
                     </div>
@@ -291,7 +291,7 @@ export default function DataTable<T extends Record<string, any>>({
                   : undefined}
                 className={clsx(
                   'border-b border-stone-100 transition-colors duration-100',
-                  onRowClick && 'cursor-pointer hover:bg-amber-50/40 hover:border-l-2 hover:border-l-amber-300',
+                  onRowClick && 'cursor-pointer hover:bg-blue-50/40 hover:border-l-2 hover:border-l-blue-300',
                   !onRowClick && contextMenuItems && 'hover:bg-stone-50',
                 )}
               >

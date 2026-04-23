@@ -54,19 +54,19 @@ export default function PIMDashboard() {
       label: 'Products',
       href: '/products/masters',
       icon: Package,
-      color: 'text-amber-600',
-      iconBg: 'from-amber-500 to-amber-700',
-      iconShadow: 'shadow-amber-600/30',
-      headerBg: 'bg-amber-50/50',
+      color: 'text-blue-600',
+      iconBg: 'from-blue-500 to-blue-700',
+      iconShadow: 'shadow-blue-600/30',
+      headerBg: 'bg-blue-50/50',
       count: stats?.products ?? '—',
       isLoading: loadingProducts,
       items: (productsData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <Link key={item.id} to={`/products/masters/${item.id}`}
-          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 border-transparent hover:border-amber-400">
+          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 border-transparent hover:border-blue-400">
           <div className="min-w-0 flex items-center gap-2">
             <span className="font-mono text-xs text-stone-400">{item.product_code}</span>
-            <span className="text-sm text-stone-600 group-hover:text-amber-700 truncate transition-colors">{item.product_name}</span>
+            <span className="text-sm text-stone-600 group-hover:text-blue-700 truncate transition-colors">{item.product_name}</span>
           </div>
           <StatusBadge status={item.standard_status} />
         </Link>
@@ -150,7 +150,7 @@ export default function PIMDashboard() {
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-amber-600 transition-colors duration-150 group"
+          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group"
         >
           <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform duration-150" />
           Home

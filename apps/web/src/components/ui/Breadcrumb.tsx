@@ -23,7 +23,7 @@ export default function Breadcrumb({ items }: { items: CrumbItem[] }) {
             ) : item.href ? (
               <Link
                 to={item.href}
-                className="flex items-center gap-1 text-sm text-stone-400 hover:text-amber-600 transition-colors duration-150 group truncate max-w-[160px]"
+                className="flex items-center gap-1 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group truncate max-w-[160px]"
               >
                 {isFirst && (
                   <ChevronLeft className="w-4 h-4 shrink-0 group-hover:-translate-x-0.5 transition-transform duration-150" />

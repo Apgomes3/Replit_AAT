@@ -6,7 +6,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 
 const STAGES = [
   { key: 'draft',               label: 'Draft',            icon: FilePen,      colorClass: 'bg-stone-50  text-stone-500  border-stone-200',  dot: 'bg-stone-400'   },
-  { key: 'pending_approval',    label: 'Pending Approval', icon: Clock,        colorClass: 'bg-amber-50  text-amber-600  border-amber-200',  dot: 'bg-amber-500'   },
+  { key: 'pending_approval',    label: 'Pending Approval', icon: Clock,        colorClass: 'bg-blue-50  text-blue-600  border-blue-200',  dot: 'bg-blue-500'   },
   { key: 'purchase_order',      label: 'Purchase Order',   icon: ShoppingCart, colorClass: 'bg-blue-50   text-blue-600   border-blue-200',   dot: 'bg-blue-500'    },
   { key: 'po_review',           label: 'PO Review',        icon: FileCheck,    colorClass: 'bg-indigo-50 text-indigo-600 border-indigo-200', dot: 'bg-indigo-500'  },
   { key: 'engineering_review',  label: 'Eng. Review',      icon: Wrench,       colorClass: 'bg-purple-50 text-purple-600 border-purple-200', dot: 'bg-purple-500'  },
@@ -57,7 +57,7 @@ export default function OrderManagementDashboard() {
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-amber-600 transition-colors duration-150 group"
+          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group"
         >
           <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform duration-150" />
           Home
@@ -73,7 +73,7 @@ export default function OrderManagementDashboard() {
         </div>
         <Link
           to="/purchase-orders"
-          className="flex items-center gap-1.5 text-sm font-medium text-amber-600 hover:text-amber-700 border border-amber-200 hover:border-amber-400 bg-white px-3 py-1.5 rounded-lg transition-all duration-150 shadow-sm hover:shadow active:scale-95"
+          className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-400 bg-white px-3 py-1.5 rounded-lg transition-all duration-150 shadow-sm hover:shadow active:scale-95"
         >
           <Send className="w-3.5 h-3.5" /> All Purchase Orders
         </Link>
@@ -83,7 +83,7 @@ export default function OrderManagementDashboard() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-stone-700">PO Lifecycle Pipeline</h2>
           <span className="text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-full px-2.5 py-0.5">
-            {items.length} total · <span className="text-amber-600 font-medium">{totalActive} in progress</span>
+            {items.length} total · <span className="text-blue-600 font-medium">{totalActive} in progress</span>
           </span>
         </div>
         <div className="flex items-stretch gap-0 overflow-x-auto pb-1">
@@ -117,7 +117,7 @@ export default function OrderManagementDashboard() {
       <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
         <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100 bg-stone-50/50">
           <span className="text-sm font-semibold text-stone-700">Recent Purchase Orders</span>
-          <Link to="/purchase-orders" className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium transition-colors">
+          <Link to="/purchase-orders" className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors">
             View all <ArrowUpRight className="w-3 h-3" />
           </Link>
         </div>

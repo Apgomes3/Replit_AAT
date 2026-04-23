@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -65,6 +66,7 @@ export default function DocumentDetail() {
     queryKey: ['document', id],
     queryFn: () => api.get(`/documents/${id}`).then(r => r.data),
   });
+  useRecordTitle(document?.document_title);
 
   const { data: history } = useQuery({
     queryKey: ['lifecycle', 'document', id],
@@ -220,7 +222,7 @@ export default function DocumentDetail() {
                 <span className="text-sm font-medium text-slate-700">Project Links</span>
                 <button
                   onClick={() => setShowProjectLinks(v => !v)}
-                  className="text-xs text-amber-600 hover:underline flex items-center gap-1"
+                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
                 >
                   <Plus className="w-3 h-3" />Add
                 </button>
@@ -246,7 +248,7 @@ export default function DocumentDetail() {
                     <select
                       value={addProjectId}
                       onChange={e => setAddProjectId(e.target.value)}
-                      className="flex-1 border rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-600"
+                      className="flex-1 border rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-blue-600"
                     >
                       <option value="">— Select project —</option>
                       {(allProjects?.items ?? []).filter((p: any) => !(document.projects ?? []).find((lp: any) => lp.id === p.id)).map((p: any) => (
@@ -271,14 +273,14 @@ export default function DocumentDetail() {
                 {document.product_id ? (
                   <button
                     onClick={() => { setShowProductPicker(v => !v); setProductSearch(''); setAddProductId(''); }}
-                    className="text-xs text-amber-600 hover:underline flex items-center gap-1"
+                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
                   >
                     <Plus className="w-3 h-3" />Change
                   </button>
                 ) : (
                   <button
                     onClick={() => { setShowProductPicker(v => !v); setProductSearch(''); setAddProductId(''); }}
-                    className="text-xs text-amber-600 hover:underline flex items-center gap-1"
+                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
                   >
                     <Plus className="w-3 h-3" />Add
                   </button>
@@ -305,7 +307,7 @@ export default function DocumentDetail() {
                       value={productSearch}
                       onChange={e => { setProductSearch(e.target.value); setAddProductId(''); }}
                       placeholder="Search by code or name…"
-                      className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-600"
+                      className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-600"
                     />
                     {productSearch.length >= 1 && (
                       <div className="border rounded max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white">
@@ -364,7 +366,7 @@ export default function DocumentDetail() {
                       <div className="text-xs text-slate-400 mt-0.5">{new Date(rev.created_at).toLocaleDateString()}{rev.issued_by_name ? ` · ${rev.issued_by_name}` : ''}</div>
                     </div>
                     {rev.file_path && (
-                      <a href={rev.file_path} target="_blank" rel="noreferrer" className="text-amber-600 hover:underline text-sm flex items-center gap-1">
+                      <a href={rev.file_path} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
                         <Download className="w-3.5 h-3.5" />{rev.file_name || 'Download'}
                       </a>
                     )}
@@ -409,7 +411,7 @@ export default function DocumentDetail() {
                   value={issueRev}
                   onChange={e => setIssueRev(e.target.value.toUpperCase())}
                   maxLength={4}
-                  className="w-full border rounded px-3 py-2 text-sm mt-1 font-mono focus:outline-none focus:border-amber-600"
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 font-mono focus:outline-none focus:border-blue-600"
                 />
                 {document.revisions?.length > 0 && (
                   <p className="text-xs text-slate-400 mt-1">Current: <span className="font-mono font-medium">{document.current_revision}</span> · Existing: {(document.revisions as any[]).map(r => r.revision_code).join(', ')}</p>
@@ -417,7 +419,7 @@ export default function DocumentDetail() {
               </div>
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide">Purpose</label>
-                <input value={issuePurpose} onChange={e => setIssuePurpose(e.target.value)} placeholder="For Construction" className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-amber-600" />
+                <input value={issuePurpose} onChange={e => setIssuePurpose(e.target.value)} placeholder="For Construction" className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-blue-600" />
               </div>
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide">
@@ -456,7 +458,7 @@ export default function DocumentDetail() {
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-slate-500 uppercase tracking-wide">Action</label>
-                <select value={approvalAction} onChange={e => setApprovalAction(e.target.value)} className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-amber-600">
+                <select value={approvalAction} onChange={e => setApprovalAction(e.target.value)} className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-blue-600">
                   <option value="Approved">Approved</option>
                   <option value="Released">Released</option>
                   <option value="Review Commented">Review Commented</option>
@@ -472,7 +474,7 @@ export default function DocumentDetail() {
                   onChange={e => setApprovalComment(e.target.value)}
                   rows={3}
                   placeholder={approvalAction === 'Rejected' ? 'State reason for rejection…' : ''}
-                  className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-amber-600 resize-none"
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-blue-600 resize-none"
                 />
               </div>
             </div>

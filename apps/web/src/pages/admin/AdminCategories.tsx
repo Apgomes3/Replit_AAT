@@ -16,7 +16,7 @@ interface Category {
   is_system: boolean;
 }
 
-const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 w-full';
+const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 w-full';
 
 export default function AdminCategories() {
   const qc = useQueryClient();
@@ -140,7 +140,7 @@ export default function AdminCategories() {
                   <td className="px-4 py-3 text-slate-500">{cat.sort_order}</td>
                   <td className="px-4 py-3">
                     {cat.is_system
-                      ? <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
+                      ? <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
                       : <span className="text-xs text-slate-400">Custom</span>}
                   </td>
                 </tr>
@@ -210,7 +210,7 @@ export default function AdminCategories() {
                 <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="e.g. Aeration" className={inputCls} autoFocus
                   disabled={editTarget.is_system} />
-                {editTarget.is_system && <p className="text-xs text-amber-600 mt-1">Built-in category name cannot be changed</p>}
+                {editTarget.is_system && <p className="text-xs text-blue-600 mt-1">Built-in category name cannot be changed</p>}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Code *</label>

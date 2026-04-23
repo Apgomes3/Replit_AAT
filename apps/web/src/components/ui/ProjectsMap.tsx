@@ -92,7 +92,7 @@ export default function ProjectsMap({ projects, height = '420px', singleProject 
                     <div className="text-xs text-slate-500 mb-2">{[p.city, p.country].filter(Boolean).join(', ')}</div>
                   )}
                   <div className="mb-2"><StatusBadge status={p.project_status} /></div>
-                  <Link to={`/projects/${p.id}`} className="text-xs text-amber-600 hover:underline font-medium">
+                  <Link to={`/projects/${p.id}`} className="text-xs text-blue-600 hover:underline font-medium">
                     Open project →
                   </Link>
                 </div>
@@ -103,7 +103,7 @@ export default function ProjectsMap({ projects, height = '420px', singleProject 
       </div>
 
       {unmapped.length > 0 && !singleProject && (
-        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-700">
+        <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
           {unmapped.length} project{unmapped.length > 1 ? 's' : ''} without coordinates:{' '}
           {unmapped.slice(0, 5).map(p => p.project_code).join(', ')}
           {unmapped.length > 5 ? ` +${unmapped.length - 5} more` : ''}. Open a project and click Edit to set lat/lng.

@@ -8,7 +8,7 @@ import { useAuthStore } from '../../store/authStore';
 const STATUS_CONFIG: Record<string, { bg: string; text: string; dot: string; border: string }> = {
   'Planning':  { bg: 'bg-stone-50',   text: 'text-stone-600',   dot: 'bg-stone-400',   border: 'border-stone-200' },
   'Active':    { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', border: 'border-emerald-200' },
-  'On Hold':   { bg: 'bg-amber-50',   text: 'text-amber-700',   dot: 'bg-amber-500',   border: 'border-amber-200' },
+  'On Hold':   { bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-500',   border: 'border-blue-200' },
   'Completed': { bg: 'bg-blue-50',    text: 'text-blue-700',    dot: 'bg-blue-500',    border: 'border-blue-200' },
   'Cancelled': { bg: 'bg-red-50',     text: 'text-red-600',     dot: 'bg-red-500',     border: 'border-red-200' },
 };
@@ -56,7 +56,7 @@ export default function ProjectManagementDashboard() {
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-amber-600 transition-colors duration-150 group"
+          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group"
         >
           <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform duration-150" />
           Home
@@ -141,7 +141,7 @@ export default function ProjectManagementDashboard() {
       <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
         <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100 bg-stone-50/50">
           <span className="text-sm font-semibold text-stone-700">All Projects</span>
-          <Link to="/projects" className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium transition-colors">
+          <Link to="/projects" className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors">
             View all <ArrowUpRight className="w-3 h-3" />
           </Link>
         </div>

@@ -65,7 +65,7 @@ export default function AdminImport() {
             <div className="flex gap-2">
               {(['products', 'equipment', 'documents'] as ImportType[]).map(t => (
                 <button key={t} onClick={() => { setType(t); setFile(null); setResult(null); if (fileRef.current) fileRef.current.value = ''; }}
-                  className={`px-3 py-1.5 text-sm rounded capitalize border transition-colors ${type === t ? 'bg-amber-600 text-white border-amber-600' : 'text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                  className={`px-3 py-1.5 text-sm rounded capitalize border transition-colors ${type === t ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-600 border-slate-300 hover:border-slate-400'}`}>
                   {t}
                 </button>
               ))}
@@ -75,7 +75,7 @@ export default function AdminImport() {
           <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-slate-600 uppercase tracking-wide">Required CSV Columns</span>
-              <button onClick={downloadTemplate} className="text-xs text-amber-600 hover:underline flex items-center gap-1"><FileText className="w-3 h-3" />Download Template</button>
+              <button onClick={downloadTemplate} className="text-xs text-blue-600 hover:underline flex items-center gap-1"><FileText className="w-3 h-3" />Download Template</button>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {templates[type].headers.map(h => (
@@ -101,7 +101,7 @@ export default function AdminImport() {
               <div className="font-medium text-slate-700 mb-3">Import Results</div>
               <div className="grid grid-cols-3 gap-4 mb-3">
                 <div className="text-center"><div className="text-2xl font-bold text-green-600">{result.imported}</div><div className="text-xs text-slate-500">Imported</div></div>
-                <div className="text-center"><div className="text-2xl font-bold text-amber-500">{result.skipped}</div><div className="text-xs text-slate-500">Skipped</div></div>
+                <div className="text-center"><div className="text-2xl font-bold text-blue-500">{result.skipped}</div><div className="text-xs text-slate-500">Skipped</div></div>
                 <div className="text-center"><div className="text-2xl font-bold text-slate-400">{result.total}</div><div className="text-xs text-slate-500">Total</div></div>
               </div>
               {result.errors.length > 0 && (

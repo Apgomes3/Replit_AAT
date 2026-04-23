@@ -20,7 +20,7 @@ interface AuditLog {
 
 const ACTION_META: Record<string, { label: string; color: string; dot: string }> = {
   CREATE:           { label: 'Create',     color: 'bg-emerald-50 text-emerald-700 ring-emerald-200',  dot: 'bg-emerald-400' },
-  UPDATE:           { label: 'Update',     color: 'bg-amber-50 text-amber-700 ring-amber-200',        dot: 'bg-amber-400' },
+  UPDATE:           { label: 'Update',     color: 'bg-blue-50 text-blue-700 ring-blue-200',        dot: 'bg-blue-400' },
   DELETE:           { label: 'Delete',     color: 'bg-red-50 text-red-700 ring-red-200',              dot: 'bg-red-400' },
   STATE_TRANSITION: { label: 'Transition', color: 'bg-blue-50 text-blue-700 ring-blue-200',           dot: 'bg-blue-400' },
   APPROVE:          { label: 'Approve',    color: 'bg-emerald-50 text-emerald-700 ring-emerald-200',  dot: 'bg-emerald-400' },
@@ -47,7 +47,7 @@ function ActorAvatar({ name, email }: { name: string; email: string }) {
     ? name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
     : email?.slice(0, 2).toUpperCase() ?? '?';
   return (
-    <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 text-xs font-bold flex items-center justify-center shrink-0 ring-1 ring-amber-200">
+    <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0 ring-1 ring-blue-200">
       {initials}
     </div>
   );
@@ -190,7 +190,7 @@ export default function AdminAuditLog() {
           <button
             onClick={() => refetch()}
             className={clsx(
-              'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-amber-300 hover:text-amber-600 bg-white transition-all',
+              'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-blue-300 hover:text-blue-600 bg-white transition-all',
               isFetching && 'opacity-60'
             )}
           >
@@ -203,7 +203,7 @@ export default function AdminAuditLog() {
       <div className="px-4 py-3 border-b border-stone-100 bg-stone-50/60 flex items-center gap-3 flex-wrap">
         <select
           value={entityType} onChange={e => { setEntityType(e.target.value); setPage(1); }}
-          className="h-8 pl-2.5 pr-7 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-amber-400 appearance-none"
+          className="h-8 pl-2.5 pr-7 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-blue-400 appearance-none"
         >
           <option value="">All Entities</option>
           {ENTITY_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
@@ -211,7 +211,7 @@ export default function AdminAuditLog() {
 
         <select
           value={action} onChange={e => { setAction(e.target.value); setPage(1); }}
-          className="h-8 pl-2.5 pr-7 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-amber-400 appearance-none"
+          className="h-8 pl-2.5 pr-7 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-blue-400 appearance-none"
         >
           <option value="">All Actions</option>
           {ACTIONS.map(a => <option key={a} value={a}>{a.replace('_', ' ')}</option>)}
@@ -220,19 +220,19 @@ export default function AdminAuditLog() {
         <input
           value={actor} onChange={e => { setActor(e.target.value); setPage(1); }}
           placeholder="Filter by actor…"
-          className="h-8 px-2.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 placeholder:text-stone-400 focus:outline-none focus:border-amber-400 w-40"
+          className="h-8 px-2.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 placeholder:text-stone-400 focus:outline-none focus:border-blue-400 w-40"
         />
 
         <div className="flex items-center gap-1.5">
           <input type="date" value={from} onChange={e => { setFrom(e.target.value); setPage(1); }}
-            className="h-8 px-2.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-amber-400" />
+            className="h-8 px-2.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-blue-400" />
           <span className="text-xs text-stone-400">→</span>
           <input type="date" value={to} onChange={e => { setTo(e.target.value); setPage(1); }}
-            className="h-8 px-2.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-amber-400" />
+            className="h-8 px-2.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-blue-400" />
         </div>
 
         {hasFilters && (
-          <button onClick={resetFilters} className="text-xs text-stone-400 hover:text-amber-600 underline underline-offset-2 transition-colors">
+          <button onClick={resetFilters} className="text-xs text-stone-400 hover:text-blue-600 underline underline-offset-2 transition-colors">
             Clear filters
           </button>
         )}
@@ -289,7 +289,7 @@ export default function AdminAuditLog() {
           <div className="flex items-center gap-1">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-              className="px-2.5 py-1 text-xs rounded-lg border border-stone-200 text-stone-600 hover:border-amber-300 hover:text-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="px-2.5 py-1 text-xs rounded-lg border border-stone-200 text-stone-600 hover:border-blue-300 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               ← Prev
             </button>
@@ -300,8 +300,8 @@ export default function AdminAuditLog() {
                   className={clsx(
                     'w-7 h-7 text-xs rounded-lg border transition-all',
                     page === p
-                      ? 'bg-amber-600 border-amber-600 text-white font-medium'
-                      : 'border-stone-200 text-stone-600 hover:border-amber-300 hover:text-amber-600'
+                      ? 'bg-blue-600 border-blue-600 text-white font-medium'
+                      : 'border-stone-200 text-stone-600 hover:border-blue-300 hover:text-blue-600'
                   )}
                 >
                   {p}
@@ -310,7 +310,7 @@ export default function AdminAuditLog() {
             })}
             <button
               onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages}
-              className="px-2.5 py-1 text-xs rounded-lg border border-stone-200 text-stone-600 hover:border-amber-300 hover:text-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="px-2.5 py-1 text-xs rounded-lg border border-stone-200 text-stone-600 hover:border-blue-300 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               Next →
             </button>

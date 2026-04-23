@@ -24,7 +24,7 @@ export default function PageHeader({ code, title, status, subtitle, actions, bre
           {crumbs ? (
             <Breadcrumb items={crumbs} />
           ) : back ? (
-            <Link to={back} className="inline-flex items-center gap-1 text-xs text-stone-400 hover:text-amber-600 transition-colors duration-150">
+            <Link to={back} className="inline-flex items-center gap-1 text-xs text-stone-400 hover:text-blue-600 transition-colors duration-150">
               <ArrowLeft className="w-3 h-3" /> Back
             </Link>
           ) : (

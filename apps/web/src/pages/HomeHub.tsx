@@ -33,14 +33,14 @@ export default function HomeHub() {
       description: 'Master catalog for products, components, pipes & fittings and tanks across all projects.',
       comingSoon: false,
       accent: {
-        glow: 'hover:shadow-amber-100/80',
-        border: 'hover:border-amber-300/60',
-        iconGradient: 'from-amber-500 to-amber-700',
-        iconShadow: 'shadow-amber-600/30',
-        badge: 'bg-amber-50 text-amber-700 border border-amber-200/80',
-        badgeDot: 'bg-amber-500',
-        btn: 'from-amber-500 to-amber-700 hover:from-amber-600 hover:to-amber-800 shadow-amber-600/25',
-        topBar: 'from-amber-400/20 to-transparent',
+        glow: 'hover:shadow-blue-100/80',
+        border: 'hover:border-blue-300/60',
+        iconGradient: 'from-blue-500 to-blue-700',
+        iconShadow: 'shadow-blue-600/30',
+        badge: 'bg-blue-50 text-blue-700 border border-blue-200/80',
+        badgeDot: 'bg-blue-500',
+        btn: 'from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-blue-600/25',
+        topBar: 'from-blue-400/20 to-transparent',
       },
       stats: [
         { label: 'Products', value: stats?.products ?? '—' },
@@ -202,11 +202,11 @@ export default function HomeHub() {
                 <button
                   key={l.href}
                   onClick={() => navigate(l.href)}
-                  className="flex items-center gap-2 text-sm text-stone-500 hover:text-amber-600 bg-white/80 border border-stone-200/80 hover:border-amber-300/60 rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow active:scale-95 group"
+                  className="flex items-center gap-2 text-sm text-stone-500 hover:text-blue-600 bg-white/80 border border-stone-200/80 hover:border-blue-300/60 rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow active:scale-95 group"
                 >
                   <Icon className="w-3.5 h-3.5 group-hover:scale-110 transition-transform duration-150" />
                   {l.label}
-                  <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all duration-150" />
+                  <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all duration-150" />
                 </button>
               );
             })}

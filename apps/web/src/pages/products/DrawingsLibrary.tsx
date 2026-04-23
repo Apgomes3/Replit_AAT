@@ -51,7 +51,7 @@ const typeBadge = (type: string) => {
     'As-Built Drawing': 'bg-slate-50 text-slate-700 border-slate-200',
     '3D Model': 'bg-cyan-50 text-cyan-700 border-cyan-100',
     'P&ID': 'bg-teal-50 text-teal-700 border-teal-100',
-    'Wiring Diagram': 'bg-amber-50 text-amber-700 border-amber-100',
+    'Wiring Diagram': 'bg-blue-50 text-blue-700 border-blue-100',
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${colors[type] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
@@ -103,12 +103,12 @@ export default function DrawingsLibrary() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input type="text" placeholder="Search drawings..." value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}
-            className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600" />
+            className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
         </div>
         <div className="flex items-center gap-0.5 text-sm">
           {DRAWING_TYPES.map(t => (
             <button key={t.value} onClick={() => { setDocType(t.value); setPage(1); }}
-              className={`px-3 py-1.5 transition-colors ${docType === t.value ? 'text-amber-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+              className={`px-3 py-1.5 transition-colors ${docType === t.value ? 'text-blue-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
               {t.label}
             </button>
           ))}
@@ -117,7 +117,7 @@ export default function DrawingsLibrary() {
         <div className="flex items-center gap-0.5 text-sm">
           {ENTITY_FILTERS.map(f => (
             <button key={f.value} onClick={() => { setEntityFilter(f.value); setPage(1); }}
-              className={`px-3 py-1.5 transition-colors ${entityFilter === f.value ? 'text-amber-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
+              className={`px-3 py-1.5 transition-colors ${entityFilter === f.value ? 'text-blue-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
               {f.label}
             </button>
           ))}
@@ -164,7 +164,7 @@ export default function DrawingsLibrary() {
                     <EntityCode code={doc.document_code} />
                   </td>
                   <td className="px-4 py-3">
-                    <Link to={`/documents/${doc.id}`} className="font-medium text-amber-600 hover:underline">
+                    <Link to={`/documents/${doc.id}`} className="font-medium text-blue-600 hover:underline">
                       {doc.document_title}
                     </Link>
                     {doc.discipline && <div className="text-xs text-slate-400">{doc.discipline}</div>}
@@ -198,7 +198,7 @@ export default function DrawingsLibrary() {
                   </td>
                   <td className="px-4 py-3">
                     <Link to={`/documents/${doc.id}`}
-                      className="flex items-center gap-1 text-xs text-slate-400 hover:text-amber-600">
+                      className="flex items-center gap-1 text-xs text-slate-400 hover:text-blue-600">
                       <Download className="w-3.5 h-3.5" /> View
                     </Link>
                   </td>

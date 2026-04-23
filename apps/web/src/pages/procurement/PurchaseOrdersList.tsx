@@ -12,7 +12,7 @@ import { exportCsv } from '../../lib/exportCsv';
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:              { label: 'Draft',              color: 'bg-slate-100 text-slate-600' },
-  pending_approval:   { label: 'Pending Approval',   color: 'bg-amber-100 text-amber-700' },
+  pending_approval:   { label: 'Pending Approval',   color: 'bg-blue-100 text-blue-700' },
   purchase_order:     { label: 'Purchase Order',     color: 'bg-blue-100 text-blue-700' },
   po_review:          { label: 'PO Review',          color: 'bg-indigo-100 text-indigo-700' },
   engineering_review: { label: 'Engineering Review', color: 'bg-purple-100 text-purple-700' },
@@ -80,7 +80,7 @@ export default function PurchaseOrdersList() {
                 { header: 'Date',         value: r => new Date(r.created_at).toLocaleDateString() },
               ], (data?.items ?? []) as PO[])}
               disabled={!data?.items?.length}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-amber-300 hover:text-amber-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-blue-300 hover:text-blue-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
@@ -95,12 +95,12 @@ export default function PurchaseOrdersList() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search by PO code or project…"
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-amber-600"
+          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600"
         />
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-600"
+          className="border border-slate-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-blue-600"
         >
           <option value="">All statuses</option>
           {Object.entries(STATUS_META).map(([k, v]) => (

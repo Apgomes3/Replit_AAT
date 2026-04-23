@@ -49,3 +49,11 @@ export function usePageTitle() {
     document.title = matched ? `${matched.title} | ${APP_NAME}` : APP_NAME;
   }, [pathname]);
 }
+
+export function useRecordTitle(name: string | undefined) {
+  useEffect(() => {
+    if (name) {
+      document.title = `${name} | ${APP_NAME}`;
+    }
+  }, [name]);
+}

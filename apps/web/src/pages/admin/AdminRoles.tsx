@@ -14,7 +14,7 @@ interface Role {
   sort_order: number;
 }
 
-const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-600 w-full';
+const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 w-full';
 
 export default function AdminRoles() {
   const qc = useQueryClient();
@@ -123,7 +123,7 @@ export default function AdminRoles() {
                           className={inputCls}
                           disabled={role.is_system}
                         />
-                        {role.is_system && <p className="text-xs text-amber-600 mt-1">Built-in role names cannot be changed</p>}
+                        {role.is_system && <p className="text-xs text-blue-600 mt-1">Built-in role names cannot be changed</p>}
                       </td>
                       <td className="px-3 py-2"><input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} className={inputCls} placeholder="Optional description" /></td>
                       <td className="px-3 py-2"><input type="number" value={editForm.sort_order} onChange={e => setEditForm(f => ({ ...f, sort_order: e.target.value }))} className={inputCls} /></td>
@@ -142,12 +142,12 @@ export default function AdminRoles() {
                       <td className="px-4 py-3 text-slate-500">{role.sort_order}</td>
                       <td className="px-4 py-3">
                         {role.is_system
-                          ? <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
+                          ? <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
                           : <span className="text-xs text-slate-400">Custom</span>}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <button onClick={() => startEdit(role)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-slate-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => startEdit(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                           {!role.is_system && (
                             <button onClick={() => handleDelete(role)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                           )}

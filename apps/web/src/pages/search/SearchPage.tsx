@@ -27,7 +27,7 @@ const typeColors: Record<string, string> = {
   equipment: 'bg-indigo-100 text-indigo-700',
   product: 'bg-green-100 text-green-700',
   material: 'bg-gray-100 text-gray-600',
-  document: 'bg-orange-100 text-orange-700',
+  document: 'bg-blue-100 text-blue-700',
 };
 
 export default function SearchPage() {
@@ -55,7 +55,7 @@ export default function SearchPage() {
         <div className="relative mb-6">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search across all entities..."
-            className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-amber-600 shadow-sm" />
+            className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-blue-600 shadow-sm" />
         </div>
       </form>
 
