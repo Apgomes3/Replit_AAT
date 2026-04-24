@@ -70,9 +70,9 @@ function useExchangeRates() {
   const [rates, setRates] = useState<Record<string, number>>({ USD: 1, ...PEGGED_RATES_FROM_USD });
   const [rateDate, setRateDate] = useState<string | null>(null);
   useEffect(() => {
-    fetch('https://api.frankfurter.app/latest?from=USD')
-      .then(r => r.json())
-      .then(d => {
+    api.get('/purchase-orders/exchange-rates')
+      .then(r => r.data)
+      .then((d: { rates: Record<string, number>; date: string }) => {
         setRates({ ...PEGGED_RATES_FROM_USD, ...d.rates, USD: 1 });
         setRateDate(d.date || null);
       })

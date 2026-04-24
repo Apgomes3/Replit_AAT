@@ -42,6 +42,18 @@ router.get('/purchase-orders/users', authenticate, async (_req: AuthRequest, res
   res.json({ items: r.rows });
 });
 
+// EXCHANGE RATES PROXY — fetches live rates from Frankfurter server-side (no browser CORS issues)
+router.get('/purchase-orders/exchange-rates', authenticate, async (_req: AuthRequest, res: Response) => {
+  try {
+    const response = await fetch('https://api.frankfurter.app/latest?from=USD');
+    if (!response.ok) throw new Error(`Frankfurter returned ${response.status}`);
+    const data = await response.json() as { rates: Record<string, number>; date: string };
+    res.json({ rates: data.rates, date: data.date });
+  } catch (err: any) {
+    res.status(502).json({ error: 'Failed to fetch exchange rates', detail: err?.message });
+  }
+});
+
 // SYSTEMS SEARCH (for system linking, accessible to all roles)
 router.get('/purchase-orders/systems-search', authenticate, async (req: AuthRequest, res: Response) => {
   const { q = '', page_size = '50', project_id } = req.query as any;
