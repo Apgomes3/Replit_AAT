@@ -61,20 +61,14 @@ function LifecycleBar({ status }: { status: string }) {
   );
 }
 
-const PEGGED_RATES_FROM_USD: Record<string, number> = {
-  AED: 3.6725,
-  SAR: 3.75,
-};
-
 function useExchangeRates() {
-  const [rates, setRates] = useState<Record<string, number>>({ USD: 1, ...PEGGED_RATES_FROM_USD });
+  const [rates, setRates] = useState<Record<string, number>>({ USD: 1, AED: 3.6725, SAR: 3.75 });
   const [rateDate, setRateDate] = useState<string | null>(null);
   useEffect(() => {
-    fetch('https://api.frankfurter.app/latest?from=USD')
-      .then(r => r.json())
-      .then(d => {
-        setRates({ ...PEGGED_RATES_FROM_USD, ...d.rates, USD: 1 });
-        setRateDate(d.date || null);
+    api.get('/purchase-orders/exchange-rates')
+      .then(r => {
+        setRates(r.data.rates);
+        setRateDate(r.data.date || null);
       })
       .catch(() => {});
   }, []);
