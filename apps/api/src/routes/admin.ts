@@ -18,7 +18,14 @@ router.post('/users', authenticate, requireRole('admin'), async (req: AuthReques
   const hash = await bcrypt.hash(password, 10);
   const result = await query('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email, first_name, last_name, role, created_at',
     [email, hash, first_name, last_name, role || 'viewer']);
-  res.status(201).json(result.rows[0]);
+  const created = result.rows[0];
+  await logAudit(req.user!.id, 'user', created.id, 'CREATE', {
+    target_email: created.email,
+    first_name: created.first_name,
+    last_name: created.last_name,
+    role: created.role,
+  });
+  res.status(201).json(created);
 });
 
 router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
