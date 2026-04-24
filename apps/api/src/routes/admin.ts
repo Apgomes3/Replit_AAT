@@ -3,7 +3,9 @@ import { query } from '../db';
 import pool from '../db';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { logAudit } from '../db/audit';
+import { sendPasswordResetEmail } from '../lib/email';
 
 const router = Router();
 
@@ -59,6 +61,35 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
     },
   });
   res.json(updated);
+});
+
+router.post('/users/:id/send-reset-link', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  if (req.user!.id === req.params.id) {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Use profile settings to reset your own password' } });
+  }
+  const existing = await query('SELECT id, email, first_name, last_name FROM users WHERE id=$1 AND is_active=true', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found or inactive' } });
+  const user = existing.rows[0];
+
+  await query('DELETE FROM password_reset_tokens WHERE user_id=$1', [req.params.id]);
+
+  const token = crypto.randomBytes(48).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  await query(
+    'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1,$2,$3)',
+    [req.params.id, token, expiresAt]
+  );
+
+  const domain = process.env.FRONTEND_URL ||
+    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : 'http://localhost:3000');
+  const resetUrl = `${domain}/reset-password?token=${token}`;
+
+  const userName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
+  const { sent } = await sendPasswordResetEmail(user.email, resetUrl, userName);
+
+  await logAudit(req.user!.id, 'user', req.params.id, 'SEND_RESET_LINK', { target_email: user.email, email_sent: sent });
+
+  res.json({ ok: true, email_sent: sent });
 });
 
 router.patch('/users/:id/password', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {

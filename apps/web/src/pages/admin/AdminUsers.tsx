@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound } from 'lucide-react';
+import { Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -20,6 +20,7 @@ export default function AdminUsers() {
   const [resetPasswordUser, setResetPasswordUser] = useState<UserRow | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [sendingResetLink, setSendingResetLink] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['admin-users'],
@@ -62,6 +63,24 @@ export default function AdminUsers() {
       toast.error(err?.response?.data?.error?.message || 'Failed to reset password');
     } finally {
       setLoadingId(null);
+    }
+  };
+
+  const handleSendResetLink = async (user: UserRow) => {
+    setSendingResetLink(true);
+    try {
+      const r = await api.post(`/admin/users/${user.id}/send-reset-link`, {});
+      if (r.data.email_sent) {
+        toast.success(`Reset link sent to ${user.email}`);
+      } else {
+        toast.success('Reset link generated — check server logs for the URL (no SMTP configured)');
+      }
+      setResetPasswordUser(null);
+      setNewPassword('');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to send reset link');
+    } finally {
+      setSendingResetLink(false);
     }
   };
 
@@ -191,26 +210,49 @@ export default function AdminUsers() {
             <div className="p-5">
               <h2 className="text-base font-semibold text-slate-800 mb-1">Reset Password</h2>
               <p className="text-sm text-slate-600 mb-4">
-                Set a new password for <strong>{resetPasswordUser.email}</strong>. Their existing sessions will be signed out.
+                Choose how to reset the password for <strong>{resetPasswordUser.email}</strong>.
               </p>
-              <label className="block text-xs font-medium text-slate-700 mb-1">New Password</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder="At least 8 characters"
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 mb-4">
+                <p className="text-xs font-medium text-blue-800 mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5" /> Send Reset Link (recommended)
+                </p>
+                <p className="text-xs text-blue-700 mb-2">
+                  Emails a one-time link to the user so they can choose their own new password. The link expires in 1 hour.
+                </p>
+                <Button
+                  variant="primary"
+                  onClick={() => handleSendResetLink(resetPasswordUser)}
+                  disabled={sendingResetLink || loadingId === resetPasswordUser.id}
+                >
+                  {sendingResetLink ? 'Sending…' : 'Send Reset Link'}
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs font-medium text-slate-700 mb-1">Set Password Directly</p>
+                <p className="text-xs text-slate-500 mb-2">
+                  Set a new password on their behalf. Their existing sessions will be signed out.
+                </p>
+                <label className="block text-xs font-medium text-slate-700 mb-1">New Password</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+                />
+                <Button
+                  variant="primary"
+                  onClick={() => handleResetPassword(resetPasswordUser, newPassword)}
+                  disabled={loadingId === resetPasswordUser.id || newPassword.length < 8 || sendingResetLink}
+                >
+                  {loadingId === resetPasswordUser.id ? 'Saving...' : 'Set Password'}
+                </Button>
+              </div>
             </div>
             <div className="flex justify-end gap-2 px-5 pb-5">
               <Button onClick={() => { setResetPasswordUser(null); setNewPassword(''); }}>Cancel</Button>
-              <Button
-                variant="primary"
-                onClick={() => handleResetPassword(resetPasswordUser, newPassword)}
-                disabled={loadingId === resetPasswordUser.id || newPassword.length < 8}
-              >
-                {loadingId === resetPasswordUser.id ? 'Saving...' : 'Reset Password'}
-              </Button>
             </div>
           </div>
         </div>

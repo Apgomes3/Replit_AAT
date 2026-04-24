@@ -713,6 +713,15 @@ ON CONFLICT (name) DO NOTHING;
 
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS document_url VARCHAR(500);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS document_name VARCHAR(500);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  token VARCHAR(128) UNIQUE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 `;
 
 async function migrate() {
