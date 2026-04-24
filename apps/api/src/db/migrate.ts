@@ -710,6 +710,9 @@ INSERT INTO system_types (name, sort_order) VALUES
   ('Marine Mammals', 9),
   ('Reptiles', 10)
 ON CONFLICT (name) DO NOTHING;
+
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS document_url VARCHAR(500);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS document_name VARCHAR(500);
 `;
 
 async function migrate() {

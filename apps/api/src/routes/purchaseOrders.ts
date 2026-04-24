@@ -1,6 +1,17 @@
 import { Router, Response } from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { query } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const docStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`),
+});
+const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -33,11 +44,17 @@ router.get('/purchase-orders/users', authenticate, async (_req: AuthRequest, res
 
 // SYSTEMS SEARCH (for system linking, accessible to all roles)
 router.get('/purchase-orders/systems-search', authenticate, async (req: AuthRequest, res: Response) => {
-  const { q = '', page_size = '50' } = req.query as any;
+  const { q = '', page_size = '50', project_id } = req.query as any;
+  const conditions: string[] = [];
+  const params: any[] = [];
+  let p = 1;
+  if (q) { conditions.push(`(s.system_code ILIKE $${p} OR s.system_name ILIKE $${p})`); params.push(`%${q}%`); p++; }
+  if (project_id) { conditions.push(`s.project_id = $${p++}`); params.push(project_id); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const r = await query(
     `SELECT s.id, s.system_code, s.system_name, p.project_code FROM systems s JOIN projects p ON s.project_id=p.id
-     WHERE s.system_code ILIKE $1 OR s.system_name ILIKE $1 ORDER BY s.system_code LIMIT $2`,
-    [`%${q}%`, parseInt(page_size)]
+     ${where} ORDER BY s.system_code LIMIT $${p}`,
+    [...params, parseInt(page_size)]
   );
   res.json({ items: r.rows });
 });
@@ -346,6 +363,20 @@ router.delete('/purchase-orders/:id/designated-users/:userId', authenticate, asy
   if (!canTransition(user.role)) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised' } });
   await query('DELETE FROM po_designated_users WHERE po_id=$1 AND user_id=$2', [id, userId]);
   res.json({ ok: true });
+});
+
+// ATTACH DOCUMENT FILE
+router.post('/purchase-orders/:id/document', authenticate, uploadDoc.single('document'), async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  if (!req.file) return res.status(400).json({ error: { code: 'NO_FILE', message: 'No file provided' } });
+  const docUrl = `/uploads/${req.file.filename}`;
+  const docName = req.file.originalname;
+  const result = await query(
+    'UPDATE purchase_orders SET document_url=$1, document_name=$2, updated_at=NOW() WHERE id=$3 RETURNING id, document_url, document_name',
+    [docUrl, docName, id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
+  res.json(result.rows[0]);
 });
 
 export default router;
