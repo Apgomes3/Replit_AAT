@@ -6,7 +6,6 @@ import { useAuthStore } from './store/authStore';
 import Shell from './components/layout/Shell';
 import CommandPalette from './components/ui/CommandPalette';
 import Login from './pages/auth/Login';
-import ResetPassword from './pages/auth/ResetPassword';
 import HomeHub from './pages/HomeHub';
 import Dashboard from './pages/Dashboard';
 import ProjectsList from './pages/projects/ProjectsList';
@@ -58,7 +57,6 @@ export default function App() {
         <CommandPalette />
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/" element={<AuthGuard><Shell /></AuthGuard>}>
             <Route index element={<HomeHub />} />
             <Route path="dashboard" element={<Dashboard />} />

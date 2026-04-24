@@ -3,9 +3,7 @@ import { query } from '../db';
 import pool from '../db';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import { logAudit } from '../db/audit';
-import { sendPasswordResetEmail } from '../lib/email';
 
 const router = Router();
 
@@ -35,7 +33,7 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   if (req.user!.id === req.params.id && is_active !== true) {
     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot block your own account' } });
   }
-  const existing = await query('SELECT first_name, last_name, role, is_active FROM users WHERE id=$1', [req.params.id]);
+  const existing = await query('SELECT is_active FROM users WHERE id=$1', [req.params.id]);
   const result = await query('UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4, updated_at=NOW() WHERE id=$5 RETURNING id, email, first_name, last_name, role, is_active',
     [first_name, last_name, role, is_active, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
@@ -47,49 +45,12 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   }
   await logAudit(req.user!.id, 'user', updated.id, action, {
     target_email: updated.email,
-    before: existing.rows[0] ? {
-      first_name: existing.rows[0].first_name,
-      last_name: existing.rows[0].last_name,
-      role: existing.rows[0].role,
-      is_active: existing.rows[0].is_active,
-    } : undefined,
-    after: {
-      first_name: updated.first_name,
-      last_name: updated.last_name,
-      role: updated.role,
-      is_active: updated.is_active,
-    },
+    first_name: updated.first_name,
+    last_name: updated.last_name,
+    role: updated.role,
+    is_active: updated.is_active,
   });
   res.json(updated);
-});
-
-router.post('/users/:id/send-reset-link', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  if (req.user!.id === req.params.id) {
-    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Use profile settings to reset your own password' } });
-  }
-  const existing = await query('SELECT id, email, first_name, last_name FROM users WHERE id=$1 AND is_active=true', [req.params.id]);
-  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found or inactive' } });
-  const user = existing.rows[0];
-
-  await query('DELETE FROM password_reset_tokens WHERE user_id=$1', [req.params.id]);
-
-  const token = crypto.randomBytes(48).toString('hex');
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-  await query(
-    'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1,$2,$3)',
-    [req.params.id, token, expiresAt]
-  );
-
-  const domain = process.env.FRONTEND_URL ||
-    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : 'http://localhost:3000');
-  const resetUrl = `${domain}/reset-password?token=${token}`;
-
-  const userName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
-  const { sent } = await sendPasswordResetEmail(user.email, resetUrl, userName);
-
-  await logAudit(req.user!.id, 'user', req.params.id, 'SEND_RESET_LINK', { target_email: user.email, email_sent: sent });
-
-  res.json({ ok: true, email_sent: sent });
 });
 
 router.patch('/users/:id/password', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
