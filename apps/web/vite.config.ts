@@ -17,6 +17,10 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true
       },
+      '/uploads': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
       '/__mockup': {
         target: 'http://localhost:23636',
         changeOrigin: true,
