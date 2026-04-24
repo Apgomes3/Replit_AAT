@@ -27,8 +27,9 @@ const ACTION_META: Record<string, { label: string; color: string; dot: string }>
   REJECT:           { label: 'Reject',     color: 'bg-red-50 text-red-700 ring-red-200',              dot: 'bg-red-400' },
   SUBMIT:           { label: 'Submit',     color: 'bg-purple-50 text-purple-700 ring-purple-200',     dot: 'bg-purple-400' },
   IMPORT:           { label: 'Import',     color: 'bg-stone-50 text-stone-600 ring-stone-200',        dot: 'bg-stone-400' },
-  BLOCK:            { label: 'Block',      color: 'bg-orange-50 text-orange-700 ring-orange-200',     dot: 'bg-orange-400' },
-  UNBLOCK:          { label: 'Unblock',    color: 'bg-emerald-50 text-emerald-700 ring-emerald-200',  dot: 'bg-emerald-400' },
+  BLOCK:            { label: 'Block',          color: 'bg-orange-50 text-orange-700 ring-orange-200',     dot: 'bg-orange-400' },
+  UNBLOCK:          { label: 'Unblock',        color: 'bg-emerald-50 text-emerald-700 ring-emerald-200',  dot: 'bg-emerald-400' },
+  RESET_PASSWORD:   { label: 'Reset Password', color: 'bg-purple-50 text-purple-700 ring-purple-200',     dot: 'bg-purple-400' },
 };
 
 const ENTITY_TYPES = ['project', 'system', 'product', 'component', 'document', 'material', 'purchase_order', 'user'];
