@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
+import { logAudit } from '../db/audit';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -112,11 +113,16 @@ router.post('/documents', authenticate, async (req: AuthRequest, res: Response) 
 
 router.put('/documents/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { document_title, document_type, discipline, status, owner, notes } = req.body;
+  const existing = await query('SELECT document_title, document_type, discipline, status, owner FROM documents WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
   const result = await query(
     'UPDATE documents SET document_title=$1, document_type=$2, discipline=$3, status=$4, owner=$5, notes=$6, updated_at=NOW() WHERE id=$7 RETURNING *',
     [document_title, document_type, discipline, status, owner, notes, req.params.id]
   );
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  await logAudit(req.user!.id, 'document', String(req.params.id), 'UPDATE', {
+    before: { document_title: existing.rows[0].document_title, document_type: existing.rows[0].document_type, discipline: existing.rows[0].discipline, status: existing.rows[0].status, owner: existing.rows[0].owner },
+    after: { document_title, document_type, discipline, status, owner },
+  });
   res.json(result.rows[0]);
 });
 
