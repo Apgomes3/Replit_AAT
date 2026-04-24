@@ -39,7 +39,18 @@ export default function PurchaseOrdersList() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '');
   const [showCreate, setShowCreate] = useState(false);
-  const [mineOnly, setMineOnly] = useState(false);
+  const mineOnly = searchParams.get('mine') === 'true';
+  const setMineOnly = (value: boolean) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value) {
+        next.set('mine', 'true');
+      } else {
+        next.delete('mine');
+      }
+      return next;
+    }, { replace: true });
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['purchase-orders', search, statusFilter, mineOnly],
