@@ -1,12 +1,76 @@
+import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import api from '../lib/api';
-import { Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight, Network, FileText, Search, Ruler, BookOpen } from 'lucide-react';
+import {
+  Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight,
+  Network, FileText, Search, Ruler, BookOpen, Plus, X, Settings,
+  Users, LayoutGrid, GitBranch, Layers, Wrench,
+} from 'lucide-react';
+
+const ALL_QUICK_LINKS = [
+  { label: 'Graph Explorer',  href: '/graph',                   icon: 'Network'     },
+  { label: 'Documents',       href: '/documents',               icon: 'FileText'    },
+  { label: 'Search',          href: '/search',                  icon: 'Search'      },
+  { label: 'Design Rules',    href: '/knowledge/design-rules',  icon: 'Ruler'       },
+  { label: 'Purchase Orders', href: '/purchase-orders',         icon: 'ShoppingCart'},
+  { label: 'Products',        href: '/pim/products',            icon: 'Package'     },
+  { label: 'Projects',        href: '/project-management',      icon: 'FolderOpen'  },
+  { label: 'PIM',             href: '/pim',                     icon: 'Layers'      },
+  { label: 'Components',      href: '/pim/components',          icon: 'Wrench'      },
+  { label: 'Admin',           href: '/admin',                   icon: 'Settings'    },
+  { label: 'Admin Users',     href: '/admin/users',             icon: 'Users'       },
+  { label: 'System Types',    href: '/admin/system-types',      icon: 'GitBranch'   },
+];
+
+const ICON_MAP: Record<string, any> = {
+  Network, FileText, Search, Ruler, ShoppingCart, Package,
+  FolderOpen, Layers, Wrench, Settings, Users, GitBranch,
+};
+
+const DEFAULT_HREFS = ['/graph', '/documents', '/search', '/knowledge/design-rules'];
+const LS_KEY = 'shark_quick_links';
+
+function loadSaved(): string[] {
+  try {
+    const v = localStorage.getItem(LS_KEY);
+    return v ? JSON.parse(v) : DEFAULT_HREFS;
+  } catch {
+    return DEFAULT_HREFS;
+  }
+}
 
 export default function HomeHub() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const [pinnedHrefs, setPinnedHrefs] = useState<string[]>(loadSaved);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem(LS_KEY, JSON.stringify(pinnedHrefs));
+  }, [pinnedHrefs]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [pickerOpen]);
+
+  const addLink = (href: string) => {
+    setPinnedHrefs(prev => prev.includes(href) ? prev : [...prev, href]);
+    setPickerOpen(false);
+  };
+
+  const removeLink = (href: string) => {
+    setPinnedHrefs(prev => prev.filter(h => h !== href));
+  };
 
   const { data: stats } = useQuery({
     queryKey: ['stats'],
@@ -43,7 +107,7 @@ export default function HomeHub() {
         topBar: 'from-blue-400/20 to-transparent',
       },
       stats: [
-        { label: 'Products', value: stats?.products ?? '—' },
+        { label: 'Products',   value: stats?.products   ?? '—' },
         { label: 'Components', value: stats?.components ?? '—' },
       ],
     },
@@ -65,7 +129,7 @@ export default function HomeHub() {
         topBar: 'from-blue-400/20 to-transparent',
       },
       stats: [
-        { label: 'Total POs', value: poTotal },
+        { label: 'Total POs',   value: poTotal   },
         { label: 'In Progress', value: activePOs },
       ],
     },
@@ -111,23 +175,22 @@ export default function HomeHub() {
     },
   ];
 
-  const quickLinks = [
-    { label: 'Graph Explorer', href: '/graph', icon: Network },
-    { label: 'Documents', href: '/documents', icon: FileText },
-    { label: 'Search', href: '/search', icon: Search },
-    { label: 'Design Rules', href: '/knowledge/design-rules', icon: Ruler },
-  ];
+  const pinnedLinks = pinnedHrefs
+    .map(href => ALL_QUICK_LINKS.find(l => l.href === href))
+    .filter(Boolean) as typeof ALL_QUICK_LINKS;
+
+  const unpinned = ALL_QUICK_LINKS.filter(l => !pinnedHrefs.includes(l.href));
 
   return (
     <div className="min-h-full" style={{ background: 'linear-gradient(160deg, #fafaf9 0%, #f5f3f0 100%)' }}>
       <div className="max-w-6xl mx-auto px-8 py-12">
+
         <div className="mb-10 animate-fade-in-up">
-          <p className="text-xs font-bold text-stone-400 uppercase tracking-[0.15em] mb-2">
+          <h1
+            className="text-3xl font-bold tracking-tight"
+            style={{ background: 'linear-gradient(135deg, #1c1917 0%, #44403c 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
+          >
             Welcome back, {firstName}
-          </p>
-          <h1 className="text-3xl font-bold tracking-tight"
-            style={{ background: 'linear-gradient(135deg, #1c1917 0%, #44403c 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            Shark OS
           </h1>
           <p className="text-stone-400 mt-1 text-sm">Choose a module to get started</p>
         </div>
@@ -143,7 +206,6 @@ export default function HomeHub() {
                   className="animate-fade-in-up text-left rounded-2xl border border-stone-200/60 bg-white/50 backdrop-blur-sm shadow-sm p-6 flex flex-col overflow-hidden relative cursor-default opacity-70"
                 >
                   <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r ${mod.accent.topBar}`} />
-
                   <div className="flex items-start justify-between mb-4">
                     <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${mod.accent.iconGradient} flex items-center justify-center shadow-md ${mod.accent.iconShadow} shrink-0`}>
                       <Icon className="w-6 h-6 text-white" />
@@ -152,7 +214,6 @@ export default function HomeHub() {
                       Coming Soon
                     </span>
                   </div>
-
                   <h2 className="text-base font-semibold text-stone-400 mb-2">{mod.title}</h2>
                   <p className="text-sm text-stone-300 leading-relaxed flex-1">{mod.description}</p>
                 </div>
@@ -167,14 +228,11 @@ export default function HomeHub() {
                 className={`animate-fade-in-up text-left rounded-2xl border border-stone-200/80 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-xl ${mod.accent.glow} ${mod.accent.border} transition-all duration-300 p-6 group cursor-pointer flex flex-col active:scale-[0.98] overflow-hidden relative`}
               >
                 <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r ${mod.accent.topBar}`} />
-
                 <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${mod.accent.iconGradient} flex items-center justify-center mb-4 shadow-lg ${mod.accent.iconShadow} shrink-0 group-hover:scale-105 group-hover:shadow-xl transition-all duration-300`}>
                   <Icon className="w-6 h-6 text-white" />
                 </div>
-
                 <h2 className="text-base font-semibold text-stone-800 mb-2 group-hover:text-stone-900 transition-colors">{mod.title}</h2>
                 <p className="text-sm text-stone-400 leading-relaxed mb-4 flex-1">{mod.description}</p>
-
                 <div className="flex flex-wrap gap-2 mb-5">
                   {mod.stats.map(s => (
                     <span key={s.label} className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${mod.accent.badge}`}>
@@ -183,7 +241,6 @@ export default function HomeHub() {
                     </span>
                   ))}
                 </div>
-
                 <div className={`inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg text-white bg-gradient-to-r ${mod.accent.btn} transition-all duration-200 w-fit shadow-md group-hover:shadow-lg group-hover:gap-3`}>
                   Open module
                   <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
@@ -194,22 +251,66 @@ export default function HomeHub() {
         </div>
 
         <div className="border-t border-stone-200/60 pt-6 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-          <p className="text-xs font-bold text-stone-400 uppercase tracking-[0.15em] mb-3">Quick Access</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-stone-400 uppercase tracking-[0.15em]">Quick Access</p>
+            <div className="relative" ref={pickerRef}>
+              <button
+                onClick={() => setPickerOpen(v => !v)}
+                className="flex items-center gap-1 text-xs text-stone-400 hover:text-blue-600 transition-colors"
+                title="Add shortcut"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add
+              </button>
+              {pickerOpen && (
+                <div className="absolute right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 w-52 py-1 overflow-hidden">
+                  {unpinned.length === 0 ? (
+                    <div className="px-4 py-3 text-xs text-slate-400 text-center">All shortcuts added</div>
+                  ) : (
+                    unpinned.map(l => {
+                      const Icon = ICON_MAP[l.icon] || LayoutGrid;
+                      return (
+                        <button
+                          key={l.href}
+                          onClick={() => addLink(l.href)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                        >
+                          <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          {l.label}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
-            {quickLinks.map(l => {
-              const Icon = l.icon;
+            {pinnedLinks.map(l => {
+              const Icon = ICON_MAP[l.icon] || LayoutGrid;
               return (
-                <button
-                  key={l.href}
-                  onClick={() => navigate(l.href)}
-                  className="flex items-center gap-2 text-sm text-stone-500 hover:text-blue-600 bg-white/80 border border-stone-200/80 hover:border-blue-300/60 rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow active:scale-95 group"
-                >
-                  <Icon className="w-3.5 h-3.5 group-hover:scale-110 transition-transform duration-150" />
-                  {l.label}
-                  <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all duration-150" />
-                </button>
+                <div key={l.href} className="group/ql relative">
+                  <button
+                    onClick={() => navigate(l.href)}
+                    className="flex items-center gap-2 text-sm text-stone-500 hover:text-blue-600 bg-white/80 border border-stone-200/80 hover:border-blue-300/60 rounded-lg px-3 py-2 transition-all duration-200 shadow-sm hover:shadow active:scale-95 group pr-7"
+                  >
+                    <Icon className="w-3.5 h-3.5 group-hover:scale-110 transition-transform duration-150" />
+                    {l.label}
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all duration-150" />
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); removeLink(l.href); }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover/ql:opacity-100 transition-opacity text-stone-300 hover:text-red-500 rounded p-0.5"
+                    title="Remove shortcut"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
               );
             })}
+            {pinnedLinks.length === 0 && (
+              <span className="text-xs text-stone-400 py-2">No shortcuts — click Add to pin pages here.</span>
+            )}
           </div>
         </div>
       </div>
