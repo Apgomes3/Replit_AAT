@@ -3,6 +3,7 @@ import { query } from '../db';
 import pool from '../db';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
+import { logAudit } from '../db/audit';
 
 const router = Router();
 
@@ -25,10 +26,24 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   if (req.user!.id === req.params.id && is_active !== true) {
     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot block your own account' } });
   }
+  const existing = await query('SELECT is_active FROM users WHERE id=$1', [req.params.id]);
   const result = await query('UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4, updated_at=NOW() WHERE id=$5 RETURNING id, email, first_name, last_name, role, is_active',
     [first_name, last_name, role, is_active, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
-  res.json(result.rows[0]);
+  const updated = result.rows[0];
+  let action = 'UPDATE';
+  if (existing.rows[0] && is_active !== undefined) {
+    if (!existing.rows[0].is_active && is_active === true) action = 'UNBLOCK';
+    else if (existing.rows[0].is_active && is_active === false) action = 'BLOCK';
+  }
+  await logAudit(req.user!.id, 'user', updated.id, action, {
+    target_email: updated.email,
+    first_name: updated.first_name,
+    last_name: updated.last_name,
+    role: updated.role,
+    is_active: updated.is_active,
+  });
+  res.json(updated);
 });
 
 router.delete('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
@@ -36,7 +51,7 @@ router.delete('/users/:id', authenticate, requireRole('admin'), async (req: Auth
   if (req.user!.id === userId) {
     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot delete your own account' } });
   }
-  const existing = await query('SELECT id FROM users WHERE id=$1', [userId]);
+  const existing = await query('SELECT id, email FROM users WHERE id=$1', [userId]);
   if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
 
   const client = await pool.connect();
@@ -65,6 +80,7 @@ router.delete('/users/:id', authenticate, requireRole('admin'), async (req: Auth
     // Finally delete the user
     await client.query('DELETE FROM users WHERE id=$1', [userId]);
     await client.query('COMMIT');
+    await logAudit(req.user!.id, 'user', userId, 'DELETE', { target_user_id: userId, target_email: existing.rows[0].email });
     res.status(204).end();
   } catch (err) {
     await client.query('ROLLBACK');
