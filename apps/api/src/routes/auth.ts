@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { query } from '../db';
 import { authenticate, AuthRequest, JWT_SECRET } from '../middleware/auth';
+import { logAudit } from '../db/audit';
 
 const router = Router();
 
@@ -42,6 +43,29 @@ router.put('/dashboard-prefs', authenticate, async (req: AuthRequest, res: Respo
   }
   await query('UPDATE users SET dashboard_prefs = $1 WHERE id = $2', [JSON.stringify(prefs), req.user!.id]);
   res.json({ ok: true });
+});
+
+router.patch('/change-password', authenticate, async (req: AuthRequest, res: Response) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Current and new password are required' } });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'New password must be at least 8 characters' } });
+  }
+  const result = await query('SELECT password_hash, email FROM users WHERE id = $1', [req.user!.id]);
+  const user = result.rows[0];
+  if (!user) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Current password is incorrect' } });
+  }
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await query('UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, req.user!.id]);
+  await logAudit(req.user!.id, 'user', req.user!.id, 'RESET_PASSWORD', { self_service: true, email: user.email });
+  res.status(204).end();
 });
 
 export default router;
