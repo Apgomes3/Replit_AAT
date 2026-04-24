@@ -7,7 +7,7 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download, Copy, User, ExternalLink } from 'lucide-react';
+import { Plus, Download, Copy, ExternalLink } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 
@@ -105,6 +105,24 @@ export default function PurchaseOrdersList() {
           </div>
         }
       />
+      <div className="px-4 border-b border-slate-200 bg-white flex gap-6">
+        {([['all', 'All'], ['mine', 'My POs']] as const).map(([key, label]) => {
+          const active = key === 'mine' ? mineOnly : !mineOnly;
+          return (
+            <button
+              key={key}
+              onClick={() => setMineOnly(key === 'mine')}
+              className={`py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                active
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
       <div className="p-4 border-b border-slate-200 bg-white flex gap-3 items-center flex-wrap">
         <input
           value={search}
@@ -122,16 +140,6 @@ export default function PurchaseOrdersList() {
             <option key={k} value={k}>{v.label}</option>
           ))}
         </select>
-        <button
-          onClick={() => setMineOnly(v => !v)}
-          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-            mineOnly
-              ? 'bg-blue-600 text-white border-blue-600'
-              : 'bg-white text-slate-600 border-slate-300 hover:border-blue-300 hover:text-blue-600'
-          }`}
-        >
-          <User className="w-3.5 h-3.5" />My POs
-        </button>
       </div>
       <div className="flex-1 bg-white overflow-auto">
         <DataTable
