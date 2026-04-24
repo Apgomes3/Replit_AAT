@@ -68,9 +68,69 @@ function relativeTime(iso: string) {
   return new Date(iso).toLocaleDateString();
 }
 
-function DetailsPanel({ details }: { details: Record<string, any> | null }) {
+function DetailsPanel({ details, action, entityType }: { details: Record<string, any> | null; action: string; entityType: string }) {
   if (!details || Object.keys(details).length === 0) return <span className="text-stone-300 text-xs">—</span>;
-  const entries = Object.entries(details);
+
+  if (entityType === 'user') {
+    const email = details.target_email ?? '—';
+    if (action === 'CREATE') {
+      return (
+        <span className="text-xs text-stone-600">
+          Created user <span className="font-medium text-stone-800">{email}</span>
+          {details.role && <> with role <span className="font-medium text-stone-800">{details.role}</span></>}
+        </span>
+      );
+    }
+    if (action === 'DELETE') {
+      return (
+        <span className="text-xs text-stone-600">
+          Deleted user <span className="font-medium text-stone-800">{email}</span>
+        </span>
+      );
+    }
+    if (action === 'BLOCK') {
+      return (
+        <span className="text-xs text-stone-600">
+          Blocked user <span className="font-medium text-stone-800">{email}</span>
+        </span>
+      );
+    }
+    if (action === 'UNBLOCK') {
+      return (
+        <span className="text-xs text-stone-600">
+          Unblocked user <span className="font-medium text-stone-800">{email}</span>
+        </span>
+      );
+    }
+    if (action === 'UPDATE') {
+      const before = details.before ?? {};
+      const after = details.after ?? {};
+      const changed: string[] = [];
+      if (before.role !== undefined && after.role !== undefined && before.role !== after.role) {
+        changed.push(`role: ${before.role} → ${after.role}`);
+      }
+      const beforeName = [before.first_name, before.last_name].filter(Boolean).join(' ');
+      const afterName = [after.first_name, after.last_name].filter(Boolean).join(' ');
+      if ((beforeName || afterName) && beforeName !== afterName) {
+        changed.push(`name: ${beforeName || '—'} → ${afterName || '—'}`);
+      }
+      return (
+        <span className="text-xs text-stone-600">
+          Updated <span className="font-medium text-stone-800">{email}</span>
+          {changed.length > 0 && <> · {changed.join(', ')}</>}
+        </span>
+      );
+    }
+    if (action === 'RESET_PASSWORD') {
+      return (
+        <span className="text-xs text-stone-600">
+          Reset password for <span className="font-medium text-stone-800">{email}</span>
+        </span>
+      );
+    }
+  }
+
+  const entries = Object.entries(details).filter(([k]) => k !== 'before' && k !== 'after');
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-0.5">
       {entries.map(([k, v]) => (
@@ -80,6 +140,121 @@ function DetailsPanel({ details }: { details: Record<string, any> | null }) {
         </span>
       ))}
     </div>
+  );
+}
+
+function UserDetailsExpanded({ details, action }: { details: Record<string, any>; action: string }) {
+  const email = details.target_email ?? '—';
+  const before = details.before ?? {};
+  const after = details.after ?? {};
+
+  if (action === 'CREATE') {
+    const rows = [
+      { label: 'Email', value: email },
+      { label: 'Name', value: [details.first_name, details.last_name].filter(Boolean).join(' ') || '—' },
+      { label: 'Role', value: details.role ?? '—' },
+    ];
+    return (
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">New user created</p>
+        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+          {rows.map(r => (
+            <div key={r.label} className="contents">
+              <span className="text-xs text-stone-400">{r.label}</span>
+              <span className="text-xs font-medium text-stone-700">{r.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (action === 'DELETE') {
+    return (
+      <div className="space-y-1">
+        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">User permanently deleted</p>
+        <p className="text-xs text-stone-600">Email: <span className="font-medium text-stone-800">{email}</span></p>
+      </div>
+    );
+  }
+
+  if (action === 'BLOCK' || action === 'UNBLOCK') {
+    const label = action === 'BLOCK' ? 'User blocked' : 'User unblocked';
+    return (
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">{label}</p>
+        <p className="text-xs text-stone-600">Email: <span className="font-medium text-stone-800">{email}</span></p>
+        {before.role && (
+          <p className="text-xs text-stone-600">Role: <span className="font-medium text-stone-700">{before.role}</span></p>
+        )}
+      </div>
+    );
+  }
+
+  if (action === 'UPDATE' && (before || after)) {
+    const FIELD_LABELS: Record<string, string> = {
+      first_name: 'First name',
+      last_name: 'Last name',
+      role: 'Role',
+      is_active: 'Active',
+    };
+    const fields = ['first_name', 'last_name', 'role', 'is_active'];
+    const changed = fields.filter(f => before[f] !== undefined && after[f] !== undefined && String(before[f]) !== String(after[f]));
+    const unchanged = fields.filter(f => !changed.includes(f) && (before[f] !== undefined || after[f] !== undefined));
+
+    return (
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
+          User updated · <span className="text-stone-400 font-normal normal-case">{email}</span>
+        </p>
+        {changed.length > 0 && (
+          <div>
+            <p className="text-[11px] text-stone-400 font-semibold uppercase tracking-wide mb-1.5">Changes</p>
+            <div className="space-y-1.5">
+              {changed.map(f => (
+                <div key={f} className="flex items-center gap-2 text-xs">
+                  <span className="text-stone-400 w-20 shrink-0">{FIELD_LABELS[f] ?? f}</span>
+                  <span className="text-stone-500 line-through">{before[f] != null ? String(before[f]) : '—'}</span>
+                  <span className="text-stone-400">→</span>
+                  <span className="font-medium text-stone-800">{after[f] != null ? String(after[f]) : '—'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {unchanged.length > 0 && (
+          <div>
+            <p className="text-[11px] text-stone-400 font-semibold uppercase tracking-wide mb-1.5">Unchanged</p>
+            <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              {unchanged.map(f => (
+                <div key={f} className="contents">
+                  <span className="text-xs text-stone-400">{FIELD_LABELS[f] ?? f}</span>
+                  <span className="text-xs text-stone-500">{String(after[f] ?? before[f] ?? '—')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {changed.length === 0 && unchanged.length === 0 && (
+          <p className="text-xs text-stone-400">No tracked field changes detected.</p>
+        )}
+      </div>
+    );
+  }
+
+  if (action === 'RESET_PASSWORD') {
+    return (
+      <div className="space-y-1">
+        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Password reset</p>
+        <p className="text-xs text-stone-600">Email: <span className="font-medium text-stone-800">{email}</span></p>
+      </div>
+    );
+  }
+
+  return (
+    <pre className="text-xs text-stone-600 font-mono bg-white border border-stone-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+      {JSON.stringify(details, null, 2)}
+    </pre>
   );
 }
 
@@ -127,7 +302,7 @@ function AuditRow({ log }: { log: AuditLog }) {
           </div>
         </td>
         <td className="px-3 py-3 max-w-xs">
-          <DetailsPanel details={log.details} />
+          <DetailsPanel details={log.details} action={log.action} entityType={log.entity_type} />
         </td>
         <td className="px-4 py-3 whitespace-nowrap text-right">
           <span className="text-xs text-stone-400" title={new Date(log.created_at).toLocaleString()}>
@@ -138,9 +313,15 @@ function AuditRow({ log }: { log: AuditLog }) {
       {expanded && hasDetails && (
         <tr className="bg-stone-50 border-b border-stone-100">
           <td colSpan={6} className="px-6 py-3">
-            <pre className="text-xs text-stone-600 font-mono bg-white border border-stone-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
-              {JSON.stringify(log.details, null, 2)}
-            </pre>
+            {log.entity_type === 'user' ? (
+              <div className="bg-white border border-stone-200 rounded-lg p-3">
+                <UserDetailsExpanded details={log.details!} action={log.action} />
+              </div>
+            ) : (
+              <pre className="text-xs text-stone-600 font-mono bg-white border border-stone-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(log.details, null, 2)}
+              </pre>
+            )}
             {log.ip_address && (
               <div className="mt-1.5 text-[11px] text-stone-400">IP: {log.ip_address}</div>
             )}

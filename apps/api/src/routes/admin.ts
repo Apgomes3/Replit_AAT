@@ -33,7 +33,7 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   if (req.user!.id === req.params.id && is_active !== true) {
     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot block your own account' } });
   }
-  const existing = await query('SELECT is_active FROM users WHERE id=$1', [req.params.id]);
+  const existing = await query('SELECT first_name, last_name, role, is_active FROM users WHERE id=$1', [req.params.id]);
   const result = await query('UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4, updated_at=NOW() WHERE id=$5 RETURNING id, email, first_name, last_name, role, is_active',
     [first_name, last_name, role, is_active, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
@@ -45,10 +45,18 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   }
   await logAudit(req.user!.id, 'user', updated.id, action, {
     target_email: updated.email,
-    first_name: updated.first_name,
-    last_name: updated.last_name,
-    role: updated.role,
-    is_active: updated.is_active,
+    before: existing.rows[0] ? {
+      first_name: existing.rows[0].first_name,
+      last_name: existing.rows[0].last_name,
+      role: existing.rows[0].role,
+      is_active: existing.rows[0].is_active,
+    } : undefined,
+    after: {
+      first_name: updated.first_name,
+      last_name: updated.last_name,
+      role: updated.role,
+      is_active: updated.is_active,
+    },
   });
   res.json(updated);
 });
