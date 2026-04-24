@@ -183,15 +183,11 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
   const costVal = cost != null && cost !== '' ? parseFloat(cost) : undefined;
   const sellVal = sell_price != null && sell_price !== '' ? parseFloat(sell_price) : undefined;
-  const existing = await query('SELECT product_name, standard_status, product_category FROM product_masters WHERE id=$1', [req.params.id]);
   const result = await query(
     `UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=COALESCE($21, cost), sell_price=COALESCE($22, sell_price), currency=$23, updated_at=NOW() WHERE id=$24 RETURNING *`,
     [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal ?? null, sellVal ?? null, currency || 'USD', req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', {
-    before: { product_name: existing.rows[0]?.product_name, standard_status: existing.rows[0]?.standard_status, product_category: existing.rows[0]?.product_category },
-    after: { product_name, standard_status, product_category },
-  });
+  await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', { product_name, standard_status });
   res.json(result.rows[0]);
 });
 
@@ -421,45 +417,33 @@ router.put('/components/:id', authenticate, async (req: AuthRequest, res: Respon
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
   const costVal = cost != null && cost !== '' ? parseFloat(cost) : undefined;
   const sellVal = sell_price != null && sell_price !== '' ? parseFloat(sell_price) : undefined;
-  const existing = await query('SELECT component_name, component_type, status FROM components WHERE id=$1', [req.params.id]);
   const result = await query(
     'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, cost=COALESCE($12, cost), sell_price=COALESCE($13, sell_price), updated_at=NOW() WHERE id=$14 RETURNING *',
     [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal ?? null, sellVal ?? null, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-  await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', {
-    before: { component_name: existing.rows[0]?.component_name, component_type: existing.rows[0]?.component_type, status: existing.rows[0]?.status },
-    after: { component_name, component_type, status },
-  });
+  await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', { component_name, component_type, status });
   res.json(result.rows[0]);
 });
 
 router.patch('/product-masters/:id/status', authenticate, async (req: AuthRequest, res: Response) => {
   const { standard_status } = req.body;
   if (!standard_status) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'standard_status required' } });
-  const existing = await query('SELECT standard_status FROM product_masters WHERE id=$1', [req.params.id]);
   const result = await query(
     'UPDATE product_masters SET standard_status=$1, updated_at=NOW() WHERE id=$2 RETURNING id, standard_status',
     [standard_status, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  await logAudit(req.user!.id, 'product', String(req.params.id), 'STATUS_CHANGE', {
-    before: { standard_status: existing.rows[0]?.standard_status },
-    after: { standard_status },
-  });
+  await logAudit(req.user!.id, 'product', String(req.params.id), 'STATUS_CHANGE', { from: undefined, to: standard_status });
   res.json(result.rows[0]);
 });
 
 router.patch('/components/:id/status', authenticate, async (req: AuthRequest, res: Response) => {
   const { status } = req.body;
   if (!status) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'status required' } });
-  const existing = await query('SELECT status FROM components WHERE id=$1', [req.params.id]);
   const result = await query(
     'UPDATE components SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING id, status',
     [status, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-  await logAudit(req.user!.id, 'component', String(req.params.id), 'STATUS_CHANGE', {
-    before: { status: existing.rows[0]?.status },
-    after: { status },
-  });
+  await logAudit(req.user!.id, 'component', String(req.params.id), 'STATUS_CHANGE', { to: status });
   res.json(result.rows[0]);
 });
 

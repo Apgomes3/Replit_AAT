@@ -15,26 +15,6 @@ const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 20 * 1024 * 
 
 const router = Router();
 
-// ── Exchange rates (server-side proxy with 6-hour cache) ─────────────────────
-const PEGGED: Record<string, number> = { AED: 3.6725, SAR: 3.75 };
-let ratesCache: { rates: Record<string, number>; date: string; fetched: number } | null = null;
-
-router.get('/purchase-orders/exchange-rates', authenticate, async (_req: AuthRequest, res: Response) => {
-  try {
-    const now = Date.now();
-    if (ratesCache && now - ratesCache.fetched < 6 * 60 * 60 * 1000) {
-      return res.json(ratesCache);
-    }
-    const r = await fetch('https://api.frankfurter.app/latest?from=USD');
-    const d = await r.json() as { rates: Record<string, number>; date: string };
-    ratesCache = { rates: { ...PEGGED, ...d.rates, USD: 1 }, date: d.date, fetched: now };
-    return res.json(ratesCache);
-  } catch {
-    const fallback = ratesCache ?? { rates: { ...PEGGED, USD: 1 }, date: 'cached', fetched: 0 };
-    return res.json(fallback);
-  }
-});
-
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
 
 function nextStage(current: string): string | null {
