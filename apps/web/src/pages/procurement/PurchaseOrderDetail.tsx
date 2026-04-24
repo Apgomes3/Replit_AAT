@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import {
-  Package, CheckCircle, XCircle, ArrowRight, Plus, Trash2, Users, Clock, ChevronRight, Search, Link2, X, FileText, Pencil
+  Package, CheckCircle, XCircle, ArrowRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
@@ -61,16 +61,24 @@ function LifecycleBar({ status }: { status: string }) {
   );
 }
 
-function useExchangeRates(base: string) {
-  const [rates, setRates] = useState<Record<string, number>>({ [base]: 1 });
+const PEGGED_RATES_FROM_USD: Record<string, number> = {
+  AED: 3.6725,
+  SAR: 3.75,
+};
+
+function useExchangeRates() {
+  const [rates, setRates] = useState<Record<string, number>>({ USD: 1, ...PEGGED_RATES_FROM_USD });
+  const [rateDate, setRateDate] = useState<string | null>(null);
   useEffect(() => {
-    if (!base) return;
-    fetch(`https://api.frankfurter.app/latest?from=${base}`)
+    fetch('https://api.frankfurter.app/latest?from=USD')
       .then(r => r.json())
-      .then(d => setRates({ ...d.rates, [base]: 1 }))
+      .then(d => {
+        setRates({ ...PEGGED_RATES_FROM_USD, ...d.rates, USD: 1 });
+        setRateDate(d.date || null);
+      })
       .catch(() => {});
-  }, [base]);
-  return rates;
+  }, []);
+  return { rates, rateDate };
 }
 
 function convertAmount(amount: number | null, fromCurrency: string, toCurrency: string, rates: Record<string, number>): number | null {
@@ -92,7 +100,7 @@ export default function PurchaseOrderDetail() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const [displayCurrency, setDisplayCurrency] = useState(() => localStorage.getItem('preferred_currency') || 'USD');
-  const rates = useExchangeRates('USD');
+  const { rates, rateDate } = useExchangeRates();
 
   const [commentModal, setCommentModal] = useState<null | 'approve' | 'reject' | 'advance'>(null);
   const [comment, setComment] = useState('');
@@ -102,14 +110,6 @@ export default function PurchaseOrderDetail() {
   const [productSearch, setProductSearch] = useState('');
   const [addingItem, setAddingItem] = useState(false);
   const addItemSearchRef = useRef<HTMLInputElement>(null);
-
-  const [showDesignated, setShowDesignated] = useState(false);
-  const [designatedUserId, setDesignatedUserId] = useState('');
-
-  // Systems management
-  const [systemSearch, setSystemSearch] = useState('');
-  const [showSystemResults, setShowSystemResults] = useState(false);
-  const [savingSystems, setSavingSystems] = useState(false);
 
   // Inline item editing
   const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price'; value: string } | null>(null);
@@ -187,17 +187,6 @@ export default function PurchaseOrderDetail() {
     queryKey: ['po-detail-product-search', productSearch],
     queryFn: () => api.get(`/product-masters?q=${encodeURIComponent(productSearch)}&page_size=20`).then(r => r.data),
     enabled: productSearch.length >= 1,
-  });
-
-  const { data: allUsers } = useQuery({
-    queryKey: ['users-list-po'],
-    queryFn: () => api.get('/purchase-orders/users').then(r => r.data),
-  });
-
-  const { data: systemSearchResults } = useQuery({
-    queryKey: ['po-systems-search-detail', systemSearch],
-    queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(systemSearch)}&page_size=20`).then(r => r.data),
-    enabled: systemSearch.length >= 1,
   });
 
   const { data: itemSysResults } = useQuery({
@@ -284,59 +273,6 @@ export default function PurchaseOrderDetail() {
     await api.delete(`/purchase-orders/${id}/items/${itemId}`);
     toast.success('Item removed');
     refetch();
-  };
-
-  const handleAddDesignated = async () => {
-    if (!designatedUserId) return;
-    await api.post(`/purchase-orders/${id}/designated-users`, { user_id: designatedUserId });
-    toast.success('User added');
-    setDesignatedUserId('');
-    refetch();
-  };
-
-  const handleRemoveDesignated = async (userId: string) => {
-    await api.delete(`/purchase-orders/${id}/designated-users/${userId}`);
-    toast.success('User removed');
-    refetch();
-  };
-
-  const handleAddSystem = async (system: { id: string; system_code: string; system_name: string }) => {
-    setSavingSystems(true);
-    setSystemSearch('');
-    setShowSystemResults(false);
-    try {
-      const currentIds = (po?.systems || []).map((s: any) => s.id);
-      if (currentIds.includes(system.id)) return;
-      await api.put(`/purchase-orders/${id}`, {
-        project_id: po?.project_id || null,
-        notes: po?.notes || null,
-        system_ids: [...currentIds, system.id],
-      });
-      toast.success(`${system.system_code} linked`);
-      refetch();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error?.message || 'Failed to link system');
-    } finally {
-      setSavingSystems(false);
-    }
-  };
-
-  const handleRemoveSystem = async (systemId: string) => {
-    setSavingSystems(true);
-    try {
-      const currentIds = (po?.systems || []).map((s: any) => s.id).filter((sid: string) => sid !== systemId);
-      await api.put(`/purchase-orders/${id}`, {
-        project_id: po?.project_id || null,
-        notes: po?.notes || null,
-        system_ids: currentIds,
-      });
-      toast.success('System unlinked');
-      refetch();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error?.message || 'Failed to unlink system');
-    } finally {
-      setSavingSystems(false);
-    }
   };
 
   const formatCurrency = (amount: number | null, from: string) => {
@@ -480,105 +416,6 @@ export default function PurchaseOrderDetail() {
               </div>
             </div>
 
-            {/* Systems */}
-            <div className="bg-white border border-slate-200 rounded-lg">
-              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                  <Link2 className="w-3.5 h-3.5 text-slate-400" />Systems ({po.systems?.length || 0})
-                </span>
-                {savingSystems && <span className="text-xs text-slate-400">Saving…</span>}
-              </div>
-              <div className="px-4 py-3 space-y-2">
-                {po.systems?.length === 0 && !isDraft
-                  ? <p className="text-sm text-slate-400">No systems linked</p>
-                  : po.systems?.map((s: any) => (
-                    <div key={s.id} className="flex items-center gap-1.5 text-sm">
-                      <EntityCode code={s.system_code} />
-                      <span className="text-slate-600 flex-1 truncate">{s.system_name}</span>
-                      {isDraft && (
-                        <button onClick={() => handleRemoveSystem(s.id)} className="text-red-300 hover:text-red-500 shrink-0" title="Unlink">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                }
-                {isDraft && (
-                  <div className="relative pt-1">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
-                      <input
-                        value={systemSearch}
-                        onChange={e => { setSystemSearch(e.target.value); setShowSystemResults(true); }}
-                        onFocus={() => setShowSystemResults(true)}
-                        placeholder="Add system…"
-                        className="w-full border border-slate-200 rounded pl-6 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-600"
-                      />
-                    </div>
-                    {showSystemResults && systemSearch.length >= 1 && (systemSearchResults?.items || []).length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 max-h-36 overflow-y-auto divide-y divide-slate-50">
-                        {(systemSearchResults?.items || [])
-                          .filter((s: any) => !po.systems?.find((x: any) => x.id === s.id))
-                          .map((s: any) => (
-                            <button key={s.id} onClick={() => handleAddSystem(s)}
-                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-2">
-                              <EntityCode code={s.system_code} />
-                              <span className="text-slate-600 truncate">{s.system_name}</span>
-                              <span className="text-slate-300 ml-auto shrink-0">{s.project_code}</span>
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Designated users */}
-            <div className="bg-white border border-slate-200 rounded-lg">
-              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-slate-400" />Designated Users
-                </span>
-                {canManage && (
-                  <button onClick={() => setShowDesignated(v => !v)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                    <Plus className="w-3 h-3" />Add
-                  </button>
-                )}
-              </div>
-              <div className="px-4 py-3 space-y-2">
-                {po.designated_users?.length === 0
-                  ? <p className="text-sm text-slate-400">None added</p>
-                  : po.designated_users.map((u: any) => (
-                    <div key={u.user_id} className="flex items-center justify-between text-sm">
-                      <span>{u.full_name} <span className="text-slate-400 text-xs">({u.role})</span></span>
-                      {canManage && (
-                        <button onClick={() => handleRemoveDesignated(u.user_id)} className="text-red-400 hover:text-red-600">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                }
-                {showDesignated && (
-                  <div className="flex gap-2 pt-1">
-                    <select
-                      value={designatedUserId}
-                      onChange={e => setDesignatedUserId(e.target.value)}
-                      className="flex-1 border rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-blue-600"
-                    >
-                      <option value="">— Select user —</option>
-                      {(allUsers?.items || [])
-                        .filter((u: any) => !po.designated_users?.find((d: any) => d.user_id === u.id))
-                        .map((u: any) => (
-                          <option key={u.id} value={u.id}>{u.first_name} {u.last_name} ({u.role})</option>
-                        ))}
-                    </select>
-                    <Button size="sm" variant="primary" onClick={handleAddDesignated} disabled={!designatedUserId}>Add</Button>
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
 
           {/* Right: items + history */}
@@ -591,6 +428,12 @@ export default function PurchaseOrderDetail() {
                   Line Items ({po.items?.length || 0})
                 </span>
                 <div className="flex items-center gap-3">
+                  {displayCurrency !== 'USD' && rateDate && (
+                    <span className="flex items-center gap-1 text-xs text-emerald-600" title={`Exchange rates as of ${rateDate}`}>
+                      <RefreshCw className="w-3 h-3" />
+                      Rate {rateDate}
+                    </span>
+                  )}
                   <span className="text-xs text-slate-400">Totals in <span className="font-medium text-slate-600">{displayCurrency}</span></span>
                   {isDraft && (
                     <button onClick={() => setShowAddItem(v => !v)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
