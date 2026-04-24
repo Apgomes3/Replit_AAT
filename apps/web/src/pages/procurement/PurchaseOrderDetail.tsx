@@ -114,6 +114,48 @@ export default function PurchaseOrderDetail() {
   // Inline item editing
   const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price'; value: string } | null>(null);
 
+  // Inline system picker
+  const [systemEdit, setSystemEdit] = useState<{ itemId: string; pos: { top: number; left: number } } | null>(null);
+  const [itemSysSearch, setItemSysSearch] = useState('');
+  const sysEditRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (systemEdit) setTimeout(() => sysEditRef.current?.focus(), 30);
+    else setItemSysSearch('');
+  }, [systemEdit?.itemId]);
+
+  useEffect(() => {
+    if (!systemEdit) return;
+    const close = (e: MouseEvent) => {
+      const el = document.getElementById('sys-picker-popup');
+      if (el && !el.contains(e.target as Node)) setSystemEdit(null);
+    };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setSystemEdit(null); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [systemEdit]);
+
+  const handleSaveSystem = async (itemId: string, systemId: string | null) => {
+    const item = (po?.items || []).find((i: Item) => i.id === itemId);
+    if (!item) { setSystemEdit(null); return; }
+    setSystemEdit(null);
+    setItemSysSearch('');
+    try {
+      await api.put(`/purchase-orders/${id}/items/${itemId}`, {
+        quantity: item.quantity,
+        cost_price: item.cost_price ?? '',
+        sell_price: item.sell_price ?? '',
+        currency: item.currency,
+        notes: item.notes,
+        system_id: systemId,
+      });
+      refetch();
+    } catch {
+      toast.error('Failed to update system');
+    }
+  };
+
   const handleSaveInline = async () => {
     if (!inlineEdit) return;
     const item = (po?.items || []).find((i: Item) => i.id === inlineEdit.itemId);
@@ -156,6 +198,12 @@ export default function PurchaseOrderDetail() {
     queryKey: ['po-systems-search-detail', systemSearch],
     queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(systemSearch)}&page_size=20`).then(r => r.data),
     enabled: systemSearch.length >= 1,
+  });
+
+  const { data: itemSysResults } = useQuery({
+    queryKey: ['item-sys-search', itemSysSearch],
+    queryFn: () => api.get(`/purchase-orders/systems-search?q=${encodeURIComponent(itemSysSearch)}&page_size=15`).then(r => r.data),
+    enabled: itemSysSearch.length >= 1 && systemEdit !== null,
   });
 
   useEffect(() => {
@@ -641,13 +689,24 @@ export default function PurchaseOrderDetail() {
                                 {item.notes && <div className="text-xs text-slate-400 mt-0.5">{item.notes}</div>}
                               </td>
                               <td className="px-3 py-3">
-                                {item.system_code
-                                  ? <span className="flex items-center gap-1">
-                                      <EntityCode code={item.system_code} />
-                                      <span className="text-slate-500 text-xs truncate max-w-[120px]">{item.system_name}</span>
-                                    </span>
-                                  : <span className="text-slate-300 text-xs">—</span>
-                                }
+                                <div
+                                  className={isDraft ? 'cursor-pointer group/sysCell flex items-center gap-1 min-w-[90px]' : 'flex items-center gap-1'}
+                                  onClick={isDraft ? e => {
+                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    setSystemEdit({ itemId: item.id, pos: { top: rect.bottom + 4, left: rect.left } });
+                                  } : undefined}
+                                >
+                                  {item.system_code
+                                    ? <>
+                                        <EntityCode code={item.system_code} />
+                                        <span className="text-slate-500 text-xs truncate max-w-[100px]">{item.system_name}</span>
+                                      </>
+                                    : <span className={`text-xs ${isDraft ? 'text-slate-300 group-hover/sysCell:text-blue-400' : 'text-slate-300'}`}>
+                                        {isDraft ? 'Add system…' : '—'}
+                                      </span>
+                                  }
+                                  {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/sysCell:opacity-40 ml-auto shrink-0" />}
+                                </div>
                               </td>
                               <td className="px-3 py-3 text-right font-mono text-xs">
                                 {isEditingQty ? (
@@ -777,7 +836,63 @@ export default function PurchaseOrderDetail() {
         </div>
       </div>
 
-      {/* Comment modal for approve/reject/advance */}
+      {/* Inline system picker popup */}
+      {systemEdit && (
+        <div
+          id="sys-picker-popup"
+          style={{ position: 'fixed', top: systemEdit.pos.top, left: systemEdit.pos.left, zIndex: 9999 }}
+          className="bg-white border border-slate-200 rounded-xl shadow-2xl w-72 overflow-hidden"
+        >
+          <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <input
+              ref={sysEditRef}
+              value={itemSysSearch}
+              onChange={e => setItemSysSearch(e.target.value)}
+              placeholder="Search system to link…"
+              className="flex-1 text-sm focus:outline-none bg-transparent"
+            />
+            <button onClick={() => setSystemEdit(null)} className="text-slate-400 hover:text-slate-600 shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="max-h-52 overflow-y-auto divide-y divide-slate-50">
+            {(() => {
+              const currentItem = (po?.items || []).find((i: Item) => i.id === systemEdit.itemId);
+              return (
+                <>
+                  {currentItem?.system_code && (
+                    <button
+                      onClick={() => handleSaveSystem(systemEdit.itemId, null)}
+                      className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 flex items-center gap-1.5"
+                    >
+                      <X className="w-3 h-3" />Unlink system
+                    </button>
+                  )}
+                  {itemSysSearch.length >= 1 && (itemSysResults?.items || []).length === 0 && (
+                    <div className="px-3 py-3 text-xs text-slate-400 text-center">No systems found</div>
+                  )}
+                  {(itemSysResults?.items || []).map((s: any) => (
+                    <button
+                      key={s.id}
+                      onClick={() => handleSaveSystem(systemEdit.itemId, s.id)}
+                      className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-blue-50 transition-colors group"
+                    >
+                      <EntityCode code={s.system_code} />
+                      <span className="flex-1 text-xs text-slate-700 truncate group-hover:text-blue-700">{s.system_name}</span>
+                      <span className="text-xs text-slate-300 shrink-0">{s.project_code}</span>
+                    </button>
+                  ))}
+                  {itemSysSearch.length === 0 && (
+                    <div className="px-3 py-3 text-xs text-slate-400 text-center">Type to search systems…</div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {commentModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-96 p-5">
