@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import {
-  Package, CheckCircle, XCircle, ArrowRight, Plus, Trash2, Users, Clock, ChevronRight, Search, Link2, X
+  Package, CheckCircle, XCircle, ArrowRight, Plus, Trash2, Users, Clock, ChevronRight, Search, Link2, X, FileText, Pencil
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
@@ -120,6 +120,30 @@ export default function PurchaseOrderDetail() {
   const [systemSearch, setSystemSearch] = useState('');
   const [showSystemResults, setShowSystemResults] = useState(false);
   const [savingSystems, setSavingSystems] = useState(false);
+
+  // Inline item editing
+  const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price'; value: string } | null>(null);
+
+  const handleSaveInline = async () => {
+    if (!inlineEdit) return;
+    const item = (po?.items || []).find((i: Item) => i.id === inlineEdit.itemId);
+    if (!item) { setInlineEdit(null); return; }
+    const snap = { ...inlineEdit };
+    setInlineEdit(null);
+    try {
+      await api.put(`/purchase-orders/${id}/items/${snap.itemId}`, {
+        quantity: snap.field === 'quantity' ? snap.value : item.quantity,
+        cost_price: snap.field === 'cost_price' ? snap.value : (item.cost_price ?? ''),
+        sell_price: snap.field === 'sell_price' ? snap.value : (item.sell_price ?? ''),
+        currency: item.currency,
+        notes: item.notes,
+        system_id: item.system_id,
+      });
+      refetch();
+    } catch {
+      toast.error('Failed to save');
+    }
+  };
 
   const { data: po, isLoading, refetch } = useQuery({
     queryKey: ['purchase-order', id],
@@ -292,6 +316,15 @@ export default function PurchaseOrderDetail() {
     return sum + (c || 0) * parseFloat(item.quantity);
   }, 0);
 
+  const totalMargin = totalSell - totalCost;
+  const marginPct = totalCost > 0 ? (totalMargin / totalCost) * 100 : 0;
+
+  const itemMargin = (item: Item) => {
+    const s = convertAmount(parseFloat(item.sell_price || '0'), item.currency, displayCurrency, rates) || 0;
+    const c = convertAmount(parseFloat(item.cost_price || '0'), item.currency, displayCurrency, rates) || 0;
+    return (s - c) * parseFloat(item.quantity);
+  };
+
   const formatTotal = (val: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: displayCurrency, minimumFractionDigits: 2 }).format(val);
 
@@ -389,6 +422,20 @@ export default function PurchaseOrderDetail() {
                   <div className="pt-2 border-t border-slate-100">
                     <div className="text-xs text-slate-400 mb-1">Notes</div>
                     <div className="text-slate-700 text-sm">{po.notes}</div>
+                  </div>
+                )}
+                {po.document_url && (
+                  <div className="pt-2 border-t border-slate-100">
+                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1"><FileText className="w-3 h-3" />Attachment</div>
+                    <a
+                      href={po.document_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline truncate"
+                    >
+                      <FileText className="w-3 h-3 shrink-0" />
+                      {po.document_name || 'View Document'}
+                    </a>
                   </div>
                 )}
               </div>
@@ -636,46 +683,110 @@ export default function PurchaseOrderDetail() {
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Cost ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Sell ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Total Sell</th>
+                          <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Margin</th>
                           {isDraft && <th className="w-8" />}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {po.items.map((item: Item) => (
-                          <tr key={item.id} className="hover:bg-slate-50">
-                            <td className="px-4 py-3">
-                              {item.product_code
-                                ? <span className="flex items-center gap-1.5">
-                                    <EntityCode code={item.product_code} />
-                                    <span className="text-slate-600 text-xs truncate max-w-[160px]">{item.product_name}</span>
-                                  </span>
-                                : <span className="text-slate-400 text-xs">Unknown product</span>
-                              }
-                              {item.notes && <div className="text-xs text-slate-400 mt-0.5">{item.notes}</div>}
-                            </td>
-                            <td className="px-3 py-3">
-                              {item.system_code
-                                ? <span className="flex items-center gap-1">
-                                    <EntityCode code={item.system_code} />
-                                    <span className="text-slate-500 text-xs truncate max-w-[120px]">{item.system_name}</span>
-                                  </span>
-                                : <span className="text-slate-300 text-xs">—</span>
-                              }
-                            </td>
-                            <td className="px-3 py-3 text-right font-mono text-xs">{parseFloat(item.quantity).toFixed(2)}</td>
-                            <td className="px-3 py-3 text-right text-xs text-slate-600">{formatCurrency(parseFloat(item.cost_price || '0'), item.currency)}</td>
-                            <td className="px-3 py-3 text-right text-xs text-slate-600">{formatCurrency(parseFloat(item.sell_price || '0'), item.currency)}</td>
-                            <td className="px-3 py-3 text-right text-xs font-medium text-slate-800">
-                              {formatCurrency(parseFloat(item.sell_price || '0') * parseFloat(item.quantity), item.currency)}
-                            </td>
-                            {isDraft && (
-                              <td className="px-2 py-3">
-                                <button onClick={() => handleDeleteItem(item.id)} className="text-red-300 hover:text-red-500">
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                        {po.items.map((item: Item) => {
+                          const isEditingQty = inlineEdit?.itemId === item.id && inlineEdit.field === 'quantity';
+                          const isEditingCost = inlineEdit?.itemId === item.id && inlineEdit.field === 'cost_price';
+                          const isEditingSell = inlineEdit?.itemId === item.id && inlineEdit.field === 'sell_price';
+                          const margin = itemMargin(item);
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50 group">
+                              <td className="px-4 py-3">
+                                {item.product_code
+                                  ? <span className="flex items-center gap-1.5">
+                                      <EntityCode code={item.product_code} />
+                                      <span className="text-slate-600 text-xs truncate max-w-[160px]">{item.product_name}</span>
+                                    </span>
+                                  : <span className="text-slate-400 text-xs">Unknown product</span>
+                                }
+                                {item.notes && <div className="text-xs text-slate-400 mt-0.5">{item.notes}</div>}
                               </td>
-                            )}
-                          </tr>
-                        ))}
+                              <td className="px-3 py-3">
+                                {item.system_code
+                                  ? <span className="flex items-center gap-1">
+                                      <EntityCode code={item.system_code} />
+                                      <span className="text-slate-500 text-xs truncate max-w-[120px]">{item.system_name}</span>
+                                    </span>
+                                  : <span className="text-slate-300 text-xs">—</span>
+                                }
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono text-xs">
+                                {isEditingQty ? (
+                                  <input autoFocus type="number" min="0" step="any"
+                                    value={inlineEdit!.value}
+                                    onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
+                                    onBlur={handleSaveInline}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                    className="w-20 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
+                                  />
+                                ) : (
+                                  <span
+                                    className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
+                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'quantity', value: item.quantity })}
+                                  >
+                                    {parseFloat(item.quantity).toFixed(2)}
+                                    {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs text-slate-600">
+                                {isEditingCost ? (
+                                  <input autoFocus type="number" min="0" step="any"
+                                    value={inlineEdit!.value}
+                                    onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
+                                    onBlur={handleSaveInline}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                    className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
+                                  />
+                                ) : (
+                                  <span
+                                    className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
+                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'cost_price', value: item.cost_price || '' })}
+                                  >
+                                    {formatCurrency(parseFloat(item.cost_price || '0'), item.currency)}
+                                    {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs text-slate-600">
+                                {isEditingSell ? (
+                                  <input autoFocus type="number" min="0" step="any"
+                                    value={inlineEdit!.value}
+                                    onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
+                                    onBlur={handleSaveInline}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                    className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
+                                  />
+                                ) : (
+                                  <span
+                                    className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
+                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'sell_price', value: item.sell_price || '' })}
+                                  >
+                                    {formatCurrency(parseFloat(item.sell_price || '0'), item.currency)}
+                                    {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs font-medium text-slate-800">
+                                {formatCurrency(parseFloat(item.sell_price || '0') * parseFloat(item.quantity), item.currency)}
+                              </td>
+                              <td className={`px-3 py-3 text-right text-xs font-medium ${margin >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                {formatTotal(margin)}
+                              </td>
+                              {isDraft && (
+                                <td className="px-2 py-3">
+                                  <button onClick={() => handleDeleteItem(item.id)} className="text-red-300 hover:text-red-500">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot>
                         <tr className="border-t border-slate-200 bg-slate-50">
@@ -683,6 +794,12 @@ export default function PurchaseOrderDetail() {
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700">{formatTotal(totalCost)}</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700" />
                           <td className="px-3 py-2.5 text-right text-sm font-bold text-blue-600">{formatTotal(totalSell)}</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold">
+                            <span className={totalMargin >= 0 ? 'text-green-600' : 'text-red-500'}>
+                              {formatTotal(totalMargin)}
+                            </span>
+                            <span className="text-slate-400 ml-1">({marginPct.toFixed(1)}%)</span>
+                          </td>
                           {isDraft && <td />}
                         </tr>
                       </tfoot>

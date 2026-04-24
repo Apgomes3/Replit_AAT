@@ -82,6 +82,8 @@ export default function OrderManagementDashboard() {
   }
 
   const totalActive = items.filter(i => !FINAL_STATUSES.has(i.status)).length;
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const newThisWeek = items.filter(i => new Date(i.created_at).getTime() > sevenDaysAgo).length;
 
   const filteredItems = items.filter(i => {
     if (activeTab === 'in_progress') return !FINAL_STATUSES.has(i.status);
@@ -128,9 +130,16 @@ export default function OrderManagementDashboard() {
       <div className="bg-white border border-stone-200/80 rounded-xl p-5 mb-5 shadow-sm hover:shadow-md transition-shadow duration-200">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-stone-700">PO Lifecycle Pipeline</h2>
-          <span className="text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-full px-2.5 py-0.5">
-            {items.length} total · <span className="text-blue-600 font-medium">{totalActive} in progress</span>
-          </span>
+          <div className="flex items-center gap-2">
+            {newThisWeek > 0 && (
+              <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-0.5 font-medium">
+                +{newThisWeek} new this week
+              </span>
+            )}
+            <span className="text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-full px-2.5 py-0.5">
+              {items.length} total · <span className="text-blue-600 font-medium">{totalActive} in progress</span>
+            </span>
+          </div>
         </div>
         <div className="flex items-stretch gap-0 overflow-x-auto pb-1">
           {STAGES.map((stage, idx) => {

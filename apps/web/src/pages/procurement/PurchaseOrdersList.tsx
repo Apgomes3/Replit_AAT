@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -7,8 +7,9 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download } from 'lucide-react';
+import { Plus, Download, Copy, User, ExternalLink } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
+import toast from 'react-hot-toast';
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:              { label: 'Draft',              color: 'bg-slate-100 text-slate-600' },
@@ -33,19 +34,32 @@ type PO = {
 
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '');
   const [showCreate, setShowCreate] = useState(false);
+  const [mineOnly, setMineOnly] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['purchase-orders', search, statusFilter],
+    queryKey: ['purchase-orders', search, statusFilter, mineOnly],
     queryFn: () => {
       const params = new URLSearchParams();
       if (search) params.set('q', search);
       if (statusFilter) params.set('status', statusFilter);
+      if (mineOnly) params.set('mine', 'true');
       return api.get(`/purchase-orders?${params}`).then(r => r.data);
     },
+  });
+
+  const cloneMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/clone`).then(r => r.data),
+    onSuccess: (newPo) => {
+      toast.success(`Cloned as ${newPo.po_code}`);
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      navigate(`/purchase-orders/${newPo.id}`);
+    },
+    onError: () => toast.error('Clone failed'),
   });
 
   const columns: Column<PO>[] = [
@@ -108,6 +122,16 @@ export default function PurchaseOrdersList() {
             <option key={k} value={k}>{v.label}</option>
           ))}
         </select>
+        <button
+          onClick={() => setMineOnly(v => !v)}
+          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
+            mineOnly
+              ? 'bg-blue-600 text-white border-blue-600'
+              : 'bg-white text-slate-600 border-slate-300 hover:border-blue-300 hover:text-blue-600'
+          }`}
+        >
+          <User className="w-3.5 h-3.5" />My POs
+        </button>
       </div>
       <div className="flex-1 bg-white overflow-auto">
         <DataTable
@@ -115,6 +139,19 @@ export default function PurchaseOrdersList() {
           data={data?.items || []}
           loading={isLoading}
           onRowClick={r => navigate(`/purchase-orders/${r.id}`)}
+          contextMenuItems={r => [
+            {
+              label: 'Open',
+              icon: <ExternalLink className="w-3.5 h-3.5" />,
+              onClick: () => navigate(`/purchase-orders/${r.id}`),
+            },
+            {
+              label: 'Clone PO',
+              icon: <Copy className="w-3.5 h-3.5" />,
+              divider: true,
+              onClick: () => cloneMutation.mutate(r.id),
+            },
+          ]}
         />
       </div>
 

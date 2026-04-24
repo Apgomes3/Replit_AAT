@@ -61,7 +61,7 @@ router.get('/purchase-orders/systems-search', authenticate, async (req: AuthRequ
 
 // LIST
 router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Response) => {
-  const { status, project_id, q, page = '1', page_size = '50' } = req.query as any;
+  const { status, project_id, q, mine, page = '1', page_size = '50' } = req.query as any;
   const offset = (parseInt(page) - 1) * parseInt(page_size);
   const conditions: string[] = [];
   const params: any[] = [];
@@ -69,6 +69,7 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
   if (status) { conditions.push(`po.status = $${p++}`); params.push(status); }
   if (project_id) { conditions.push(`po.project_id = $${p++}`); params.push(project_id); }
   if (q) { conditions.push(`(po.po_code ILIKE $${p} OR proj.project_name ILIKE $${p})`); params.push(`%${q}%`); p++; }
+  if (mine === 'true') { conditions.push(`(po.created_by = $${p} OR EXISTS (SELECT 1 FROM po_designated_users pdu WHERE pdu.po_id=po.id AND pdu.user_id=$${p}))`); params.push(req.user!.id); p++; }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const countRes = await query(
     `SELECT COUNT(*) FROM purchase_orders po LEFT JOIN projects proj ON po.project_id=proj.id ${where}`,
@@ -132,6 +133,34 @@ router.post('/purchase-orders', authenticate, async (req: AuthRequest, res: Resp
   );
 
   res.status(201).json(po);
+});
+
+// CLONE
+router.post('/purchase-orders/:id/clone', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const user = req.user!;
+  const orig = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
+  if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
+  const src = orig.rows[0];
+  const yearSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('po_code_seq') AS seq`);
+  const { yr, seq } = yearSeq.rows[0];
+  const po_code = `PO-${yr}-${String(seq).padStart(4, '0')}`;
+  const newPo = await query(
+    `INSERT INTO purchase_orders (po_code,project_id,status,notes,created_by) VALUES ($1,$2,'draft',$3,$4) RETURNING *`,
+    [po_code, src.project_id, src.notes ? `[Clone of ${src.po_code}] ${src.notes}` : `[Clone of ${src.po_code}]`, user.id]
+  );
+  const newId = newPo.rows[0].id;
+  const items = await query('SELECT * FROM po_items WHERE po_id=$1 ORDER BY sort_order, created_at', [id]);
+  for (const item of items.rows) {
+    await query(
+      `INSERT INTO po_items (po_id,product_master_id,quantity,cost_price,sell_price,currency,notes,sort_order,system_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [newId, item.product_master_id, item.quantity, item.cost_price, item.sell_price, item.currency, item.notes, item.sort_order, item.system_id]
+    );
+  }
+  await query(`INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,null,'draft',$2,$3)`,
+    [newId, user.id, `Cloned from ${src.po_code}`]);
+  res.status(201).json(newPo.rows[0]);
 });
 
 // DETAIL
