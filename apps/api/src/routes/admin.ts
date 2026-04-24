@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
+import pool from '../db';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
 
@@ -21,10 +22,56 @@ router.post('/users', authenticate, requireRole('admin'), async (req: AuthReques
 
 router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const { first_name, last_name, role, is_active } = req.body;
+  if (req.user!.id === req.params.id && is_active !== true) {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot block your own account' } });
+  }
   const result = await query('UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4, updated_at=NOW() WHERE id=$5 RETURNING id, email, first_name, last_name, role, is_active',
     [first_name, last_name, role, is_active, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
   res.json(result.rows[0]);
+});
+
+router.delete('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const userId = req.params.id;
+  if (req.user!.id === userId) {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot delete your own account' } });
+  }
+  const existing = await query('SELECT id FROM users WHERE id=$1', [userId]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Null out all nullable FK references
+    await client.query('UPDATE projects SET created_by=NULL WHERE created_by=$1', [userId]);
+    await client.query('UPDATE components SET created_by=NULL WHERE created_by=$1', [userId]);
+    await client.query('UPDATE documents SET created_by=NULL WHERE created_by=$1', [userId]);
+    await client.query('UPDATE document_project_links SET linked_by=NULL WHERE linked_by=$1', [userId]);
+    await client.query('UPDATE document_revisions SET issued_by=NULL WHERE issued_by=$1', [userId]);
+    await client.query('UPDATE document_revisions SET created_by=NULL WHERE created_by=$1', [userId]);
+    await client.query('UPDATE approvals SET approver_id=NULL WHERE approver_id=$1', [userId]);
+    await client.query('UPDATE release_packages SET created_by=NULL WHERE created_by=$1', [userId]);
+    await client.query('UPDATE lifecycle_transitions SET actor_id=NULL WHERE actor_id=$1', [userId]);
+    await client.query('UPDATE change_requests SET requested_by=NULL WHERE requested_by=$1', [userId]);
+    await client.query('UPDATE audit_logs SET actor_id=NULL WHERE actor_id=$1', [userId]);
+    await client.query('UPDATE bom_releases SET created_by=NULL WHERE created_by=$1', [userId]);
+    await client.query('UPDATE purchase_orders SET created_by=NULL WHERE created_by=$1', [userId]);
+    await client.query('UPDATE purchase_orders SET approved_by=NULL WHERE approved_by=$1', [userId]);
+    await client.query('UPDATE po_lifecycle_history SET changed_by=NULL WHERE changed_by=$1', [userId]);
+    // Delete rows in junction tables
+    await client.query('DELETE FROM po_designated_users WHERE user_id=$1', [userId]);
+    await client.query('DELETE FROM todos WHERE user_id=$1', [userId]);
+    await client.query('DELETE FROM refresh_tokens WHERE user_id=$1', [userId]);
+    // Finally delete the user
+    await client.query('DELETE FROM users WHERE id=$1', [userId]);
+    await client.query('COMMIT');
+    res.status(204).end();
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 router.get('/audit-logs', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {

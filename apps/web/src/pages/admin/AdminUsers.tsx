@@ -1,18 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Pencil, Ban, Trash2, Plus, CheckCircle } from 'lucide-react';
 import api from '../../lib/api';
+import { useAuthStore } from '../../store/authStore';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
 
 interface UserRow { id: string; email: string; first_name: string; last_name: string; role: string; is_active: boolean; created_at: string; }
 
 export default function AdminUsers() {
+  const currentUser = useAuthStore(s => s.user);
   const [showNew, setShowNew] = useState(false);
+  const [editUser, setEditUser] = useState<UserRow | null>(null);
+  const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['admin-users'],
     queryFn: () => api.get('/admin/users').then(r => r.data),
@@ -25,12 +31,78 @@ export default function AdminUsers() {
 
   const roleOptions: string[] = rolesData?.items?.map((r: any) => r.name) || ['admin', 'engineer', 'viewer'];
 
+  const handleBlock = async (user: UserRow) => {
+    setLoadingId(user.id);
+    try {
+      await api.put(`/admin/users/${user.id}`, {
+        first_name: user.first_name,
+        last_name: user.last_name,
+        role: user.role,
+        is_active: !user.is_active,
+      });
+      toast.success(user.is_active ? 'User blocked' : 'User unblocked');
+      refetch();
+    } catch {
+      toast.error('Failed to update user');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleDelete = async (user: UserRow) => {
+    setLoadingId(user.id);
+    try {
+      await api.delete(`/admin/users/${user.id}`);
+      toast.success('User deleted');
+      setDeleteUser(null);
+      refetch();
+    } catch {
+      toast.error('Failed to delete user');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   const columns: Column<UserRow>[] = [
     { key: 'email', header: 'Email', render: r => <span className="font-medium">{r.email}</span> },
     { key: 'first_name', header: 'Name', render: r => `${r.first_name || ''} ${r.last_name || ''}`.trim() || '—' },
     { key: 'role', header: 'Role', render: r => <span className="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded capitalize">{r.role}</span> },
-    { key: 'is_active', header: 'Status', render: r => <StatusBadge status={r.is_active ? 'Active' : 'Obsolete'} /> },
+    { key: 'is_active', header: 'Status', render: r => <StatusBadge status={r.is_active ? 'Active' : 'Blocked'} /> },
     { key: 'created_at', header: 'Created', render: r => new Date(r.created_at).toLocaleDateString() },
+    {
+      key: 'id', header: '', render: r => {
+        const isSelf = r.id === currentUser?.id;
+        const busy = loadingId === r.id;
+        return (
+          <div className="flex items-center gap-1 justify-end">
+            <button
+              onClick={() => !isSelf && setEditUser(r)}
+              disabled={isSelf}
+              className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Edit user"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => !isSelf && !busy && handleBlock(r)}
+              disabled={isSelf || busy}
+              className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={r.is_active ? 'Block user' : 'Unblock user'}
+            >
+              {r.is_active ? <Ban className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5 text-green-600" />}
+            </button>
+            <button
+              onClick={() => !isSelf && setDeleteUser(r)}
+              disabled={isSelf || busy}
+              className="p-1.5 rounded hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Delete user"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      }
+    },
   ];
 
   return (
@@ -41,6 +113,7 @@ export default function AdminUsers() {
       <div className="flex-1 bg-white overflow-auto">
         <DataTable columns={columns} data={data?.items || []} loading={isLoading} />
       </div>
+
       {showNew && (
         <NewEntityModal title="New User" onClose={() => setShowNew(false)}
           fields={[
@@ -57,6 +130,58 @@ export default function AdminUsers() {
             setShowNew(false);
           }}
         />
+      )}
+
+      {editUser && (
+        <NewEntityModal
+          title="Edit User"
+          submitLabel="Save Changes"
+          onClose={() => setEditUser(null)}
+          initialValues={{ first_name: editUser.first_name, last_name: editUser.last_name, role: editUser.role }}
+          fields={[
+            { name: 'first_name', label: 'First Name' },
+            { name: 'last_name', label: 'Last Name' },
+            { name: 'role', label: 'Role', options: roleOptions },
+          ]}
+          onSubmit={async (values) => {
+            try {
+              await api.put(`/admin/users/${editUser.id}`, {
+                first_name: values.first_name,
+                last_name: values.last_name,
+                role: values.role,
+                is_active: editUser.is_active,
+              });
+              toast.success('User updated');
+              refetch();
+              setEditUser(null);
+            } catch {
+              toast.error('Failed to update user');
+            }
+          }}
+        />
+      )}
+
+      {deleteUser && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
+            <div className="p-5">
+              <h2 className="text-base font-semibold text-slate-800 mb-1">Delete User</h2>
+              <p className="text-sm text-slate-600">
+                Are you sure you want to permanently delete <strong>{deleteUser.email}</strong>? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <Button onClick={() => setDeleteUser(null)}>Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={() => handleDelete(deleteUser)}
+                disabled={loadingId === deleteUser.id}
+              >
+                {loadingId === deleteUser.id ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
