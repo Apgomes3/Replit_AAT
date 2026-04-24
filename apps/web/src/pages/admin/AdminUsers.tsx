@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pencil, Ban, Trash2, Plus, CheckCircle } from 'lucide-react';
+import { Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -17,6 +17,8 @@ export default function AdminUsers() {
   const [showNew, setShowNew] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<UserRow | null>(null);
+  const [newPassword, setNewPassword] = useState('');
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
@@ -44,6 +46,20 @@ export default function AdminUsers() {
       refetch();
     } catch {
       toast.error('Failed to update user');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleResetPassword = async (user: UserRow, password: string) => {
+    setLoadingId(user.id);
+    try {
+      await api.patch(`/admin/users/${user.id}/password`, { password });
+      toast.success('Password reset successfully');
+      setResetPasswordUser(null);
+      setNewPassword('');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to reset password');
     } finally {
       setLoadingId(null);
     }
@@ -82,6 +98,14 @@ export default function AdminUsers() {
               title="Edit user"
             >
               <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => { if (!isSelf) { setResetPasswordUser(r); setNewPassword(''); } }}
+              disabled={isSelf}
+              className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Reset password"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => !isSelf && !busy && handleBlock(r)}
@@ -159,6 +183,37 @@ export default function AdminUsers() {
             }
           }}
         />
+      )}
+
+      {resetPasswordUser && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
+            <div className="p-5">
+              <h2 className="text-base font-semibold text-slate-800 mb-1">Reset Password</h2>
+              <p className="text-sm text-slate-600 mb-4">
+                Set a new password for <strong>{resetPasswordUser.email}</strong>. Their existing sessions will be signed out.
+              </p>
+              <label className="block text-xs font-medium text-slate-700 mb-1">New Password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <Button onClick={() => { setResetPasswordUser(null); setNewPassword(''); }}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => handleResetPassword(resetPasswordUser, newPassword)}
+                disabled={loadingId === resetPasswordUser.id || newPassword.length < 8}
+              >
+                {loadingId === resetPasswordUser.id ? 'Saving...' : 'Reset Password'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {deleteUser && (

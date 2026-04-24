@@ -46,6 +46,23 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   res.json(updated);
 });
 
+router.patch('/users/:id/password', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { password } = req.body;
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Password must be at least 8 characters' } });
+  }
+  if (req.user!.id === req.params.id) {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Use the profile settings to change your own password' } });
+  }
+  const existing = await query('SELECT id, email FROM users WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+  const hash = await bcrypt.hash(password, 10);
+  await query('UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, req.params.id]);
+  await query('DELETE FROM refresh_tokens WHERE user_id=$1', [req.params.id]);
+  await logAudit(req.user!.id, 'user', req.params.id, 'RESET_PASSWORD', { target_email: existing.rows[0].email });
+  res.status(204).end();
+});
+
 router.delete('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const userId = req.params.id;
   if (req.user!.id === userId) {
