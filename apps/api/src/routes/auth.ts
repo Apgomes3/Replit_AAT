@@ -59,7 +59,7 @@ router.patch('/change-password', authenticate, async (req: AuthRequest, res: Res
 
   const valid = await bcrypt.compare(currentPassword, user.password_hash);
   if (!valid) {
-    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Current password is incorrect' } });
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Current password is incorrect' } });
   }
 
   const hash = await bcrypt.hash(newPassword, 10);
