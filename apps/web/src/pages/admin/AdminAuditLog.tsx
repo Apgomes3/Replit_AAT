@@ -217,7 +217,7 @@ export default function AdminAuditLog() {
           className="h-8 pl-2.5 pr-7 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:border-blue-400 appearance-none"
         >
           <option value="">All Actions</option>
-          {ACTIONS.map(a => <option key={a} value={a}>{a.replace('_', ' ')}</option>)}
+          {ACTIONS.map(a => <option key={a} value={a}>{ACTION_META[a].label}</option>)}
         </select>
 
         <input
