@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
+import { useConfirm } from '../../hooks/useConfirm';
 import {
   Package, CheckCircle, XCircle, ArrowRight, ChevronRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw
 } from 'lucide-react';
@@ -110,6 +111,7 @@ export default function PurchaseOrderDetail() {
   const [productSearch, setProductSearch] = useState('');
   const [addingItem, setAddingItem] = useState(false);
   const addItemSearchRef = useRef<HTMLInputElement>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   // Inline item editing
   const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price'; value: string } | null>(null);
@@ -276,7 +278,7 @@ export default function PurchaseOrderDetail() {
     if (addingItem) return;
     const existingIds = (po?.items || []).map((i: Item) => i.product_master_id).filter(Boolean);
     if (existingIds.includes(prod.id)) {
-      const ok = window.confirm(`${prod.product_code} is already in this PO. Add it again?`);
+      const ok = await confirm({ message: `${prod.product_code} is already in this PO. Add it again?` });
       if (!ok) return;
     }
     setAddingItem(true);
@@ -299,10 +301,10 @@ export default function PurchaseOrderDetail() {
     } finally {
       setAddingItem(false);
     }
-  }, [id, addingItem, refetch, po?.items]);
+  }, [id, addingItem, refetch, po?.items, confirm]);
 
   const handleDeleteItem = async (itemId: string) => {
-    if (!window.confirm('Remove this item?')) return;
+    if (!await confirm({ message: 'Remove this item from the PO?', confirmLabel: 'Remove', danger: true })) return;
     await api.delete(`/purchase-orders/${id}/items/${itemId}`);
     toast.success('Item removed');
     refetch();
@@ -795,6 +797,7 @@ export default function PurchaseOrderDetail() {
         </div>
       )}
 
+      {confirmDialog}
       {commentModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-96 p-5">

@@ -223,7 +223,7 @@ export default function Dashboard() {
   const statCards = [
     { label: 'Projects', value: stats?.projects, icon: FolderOpen, href: '/projects', color: 'bg-blue-50 text-blue-600 border-blue-100' },
     { label: 'Products', value: stats?.products, icon: Package, href: '/products/masters', color: 'bg-green-50 text-green-600 border-green-100' },
-    { label: 'Components', value: stats?.components, icon: Boxes, href: '/products/components', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
+    { label: 'Components', value: stats?.components, icon: Boxes, href: '/products/components', color: 'bg-blue-50 text-blue-600 border-blue-100' },
   ];
 
   const docByStatus: { status: string; count: string }[] = stats?.document_by_status || [];

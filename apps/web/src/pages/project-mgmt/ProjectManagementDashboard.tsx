@@ -73,7 +73,7 @@ export default function ProjectManagementDashboard() {
         {isPrivileged && (
           <Link
             to="/projects"
-            className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 border border-emerald-200 hover:border-emerald-400 bg-white px-3 py-1.5 rounded-lg transition-all duration-150 shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-400 bg-white px-3 py-1.5 rounded-lg transition-all duration-150 shadow-sm hover:shadow active:scale-95"
           >
             <Plus className="w-3.5 h-3.5" /> All Projects
           </Link>

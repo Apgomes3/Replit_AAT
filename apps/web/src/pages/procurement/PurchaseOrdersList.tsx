@@ -2,14 +2,16 @@ import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
+import { useAuthStore } from '../../store/authStore';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download, Copy, User, ExternalLink, ArrowRight, X, CheckSquare2 } from 'lucide-react';
+import { Plus, Download, Copy, User, ExternalLink, ArrowRight, X, CheckSquare2, UserPlus } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
+import AssignUserModal from './AssignUserModal';
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:              { label: 'Draft',              color: 'bg-slate-100 text-slate-600' },
@@ -34,15 +36,19 @@ type PO = {
   item_count: string; created_at: string;
 };
 
+const CAN_BULK_ASSIGN = new Set(['admin', 'engineer', 'hq_manager']);
+
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuthStore();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '');
   const [showCreate, setShowCreate] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showAssign, setShowAssign] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery({
@@ -90,6 +96,20 @@ export default function PurchaseOrdersList() {
       navigate(`/purchase-orders/${newPo.id}`);
     },
     onError: () => toast.error('Clone failed'),
+  });
+
+  const bulkAssignMutation = useMutation({
+    mutationFn: ({ ids, userId }: { ids: string[]; userId: string }) =>
+      api.post('/purchase-orders/bulk-assign', { ids, userId }).then(r => r.data),
+    onSuccess: (res, { ids }) => {
+      const succeeded = res.results.filter((r: any) => r.ok).length;
+      const failed = res.results.filter((r: any) => r.error).length;
+      if (succeeded > 0) toast.success(`User assigned to ${succeeded} PO${succeeded > 1 ? 's' : ''}`);
+      if (failed > 0) toast.error(`${failed} PO${failed > 1 ? 's' : ''} could not be assigned`);
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      setShowAssign(false);
+    },
+    onError: () => toast.error('Bulk assign failed'),
   });
 
   const bulkTransitionMutation = useMutation({
@@ -259,6 +279,14 @@ export default function PurchaseOrdersList() {
                 Advance {transitionableCount} PO{transitionableCount > 1 ? 's' : ''} to next stage
               </button>
             )}
+            {CAN_BULK_ASSIGN.has(user?.role ?? '') && (
+              <button
+                onClick={() => setShowAssign(true)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600 bg-white transition-all"
+              >
+                <UserPlus className="w-3.5 h-3.5" /> Assign User
+              </button>
+            )}
           </div>
           <button onClick={clearSelection} className="text-slate-400 hover:text-slate-600 shrink-0" title="Clear selection">
             <X className="w-4 h-4" />
@@ -266,6 +294,14 @@ export default function PurchaseOrdersList() {
         </div>
       )}
 
+      {showAssign && (
+        <AssignUserModal
+          poIds={[...selectedIds]}
+          onClose={() => setShowAssign(false)}
+          onAssign={(userId) => bulkAssignMutation.mutate({ ids: [...selectedIds], userId })}
+          isPending={bulkAssignMutation.isPending}
+        />
+      )}
       {showCreate && <CreatePOModal onClose={() => setShowCreate(false)} />}
     </div>
   );

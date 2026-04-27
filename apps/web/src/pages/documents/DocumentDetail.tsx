@@ -12,6 +12,7 @@ import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus, Package, PackageX } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useConfirm } from '../../hooks/useConfirm';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -36,6 +37,7 @@ export default function DocumentDetail() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
+  const { confirm, dialog } = useConfirm();
   const [showIssue, setShowIssue] = useState(false);
   const [showApproval, setShowApproval] = useState(false);
   const [issueRev, setIssueRev] = useState('');
@@ -128,14 +130,26 @@ export default function DocumentDetail() {
   };
 
   const handleDeleteRevision = async (rev: any) => {
-    if (!window.confirm(`Delete revision ${rev.revision_code}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: 'Delete Revision',
+      message: `Delete revision ${rev.revision_code}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     await api.delete(`/documents/revisions/${rev.id}`);
     toast.success(`Revision ${rev.revision_code} deleted`);
     refetch();
   };
 
   const handleDeleteDocument = async () => {
-    if (!window.confirm(`Permanently delete document ${document.document_code}? All revisions and files will be removed.`)) return;
+    const ok = await confirm({
+      title: 'Delete Document',
+      message: `Permanently delete document ${document.document_code}? All revisions and files will be removed.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     await api.delete(`/documents/${id}`);
     toast.success(`Document ${document.document_code} deleted`);
     navigate('/documents');
@@ -176,7 +190,8 @@ export default function DocumentDetail() {
   };
 
   const handleRemoveProductLink = async () => {
-    if (!window.confirm('Remove the product link from this document?')) return;
+    const ok = await confirm({ message: 'Remove the product link from this document?' });
+    if (!ok) return;
     await api.delete(`/documents/${id}/product`);
     toast.success('Product link removed');
     refetch();
@@ -506,6 +521,7 @@ export default function DocumentDetail() {
           </button>
         </div>
       )}
+      {dialog}
     </div>
   );
 }

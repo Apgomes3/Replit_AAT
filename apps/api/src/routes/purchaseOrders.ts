@@ -474,6 +474,36 @@ router.delete('/purchase-orders/:id/items/:itemId', authenticate, async (req: Au
   res.json({ ok: true });
 });
 
+// BULK ASSIGN DESIGNATED USER
+router.post('/purchase-orders/bulk-assign', authenticate, async (req: AuthRequest, res: Response) => {
+  const { ids, userId } = req.body;
+  const user = req.user!;
+  if (!canTransition(user.role)) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised' } });
+  if (!Array.isArray(ids) || ids.length === 0 || !userId) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'ids and userId are required' } });
+  }
+  const results: { id: string; po_code?: string; ok?: boolean; error?: string }[] = [];
+  for (const id of ids) {
+    try {
+      const poRes = await query('SELECT po_code FROM purchase_orders WHERE id=$1', [id]);
+      if (!poRes.rows[0]) { results.push({ id, error: 'Not found' }); continue; }
+      await query('INSERT INTO po_designated_users (po_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [id, userId]);
+      await createNotification({
+        userId,
+        type: 'po_assigned',
+        title: 'You have been assigned to a PO',
+        body: `You have been assigned as a designated user on PO #${poRes.rows[0].po_code}.`,
+        entityType: 'purchase_order',
+        entityId: id,
+      });
+      results.push({ id, po_code: poRes.rows[0].po_code, ok: true });
+    } catch (e: any) {
+      results.push({ id, error: e?.message || 'Failed' });
+    }
+  }
+  res.json({ results });
+});
+
 // ADD DESIGNATED USER
 router.post('/purchase-orders/:id/designated-users', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;

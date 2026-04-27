@@ -12,6 +12,7 @@ import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
 import { Plus, Upload, FolderOpen, FolderX, ExternalLink, Paperclip, Trash2, Package, PackageX } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useConfirm } from '../../hooks/useConfirm';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -35,6 +36,7 @@ export default function DocumentsList() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
+  const { confirm, dialog } = useConfirm();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
 
@@ -161,7 +163,13 @@ export default function DocumentsList() {
   };
 
   const handleDeleteDocument = async (doc: Document) => {
-    if (!window.confirm(`Permanently delete ${doc.document_code}? All revisions and files will be removed.`)) return;
+    const ok = await confirm({
+      title: 'Delete Document',
+      message: `Permanently delete ${doc.document_code}? All revisions and files will be removed.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     await api.delete(`/documents/${doc.id}`);
     toast.success(`${doc.document_code} deleted`);
     refetch();
@@ -414,6 +422,7 @@ export default function DocumentsList() {
           </div>
         </div>
       )}
+      {dialog}
     </div>
   );
 }

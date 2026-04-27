@@ -77,19 +77,19 @@ export default function PIMDashboard() {
       label: 'Components',
       href: '/products/components',
       icon: Boxes,
-      color: 'text-indigo-600',
-      iconBg: 'from-indigo-500 to-indigo-700',
-      iconShadow: 'shadow-indigo-600/30',
-      headerBg: 'bg-indigo-50/50',
+      color: 'text-blue-600',
+      iconBg: 'from-blue-500 to-blue-700',
+      iconShadow: 'shadow-blue-600/30',
+      headerBg: 'bg-blue-50/50',
       count: stats?.components ?? '—',
       isLoading: loadingComponents,
       items: (componentsData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <Link key={item.id} to={`/products/components/${item.id}`}
-          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 border-transparent hover:border-indigo-400">
+          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 border-transparent hover:border-blue-400">
           <div className="min-w-0 flex items-center gap-2">
             <span className="font-mono text-xs text-stone-400">{item.component_code}</span>
-            <span className="text-sm text-stone-600 group-hover:text-indigo-700 truncate transition-colors">{item.component_name}</span>
+            <span className="text-sm text-stone-600 group-hover:text-blue-700 truncate transition-colors">{item.component_name}</span>
           </div>
           <StatusBadge status={item.status} />
         </Link>
@@ -100,19 +100,19 @@ export default function PIMDashboard() {
       label: 'Pipes & Fittings',
       href: '/products/piping',
       icon: Pipette,
-      color: 'text-cyan-600',
-      iconBg: 'from-cyan-500 to-cyan-700',
-      iconShadow: 'shadow-cyan-600/30',
-      headerBg: 'bg-cyan-50/50',
+      color: 'text-blue-600',
+      iconBg: 'from-blue-500 to-blue-700',
+      iconShadow: 'shadow-blue-600/30',
+      headerBg: 'bg-blue-50/50',
       count: pipingData?.total ?? pipingData?.items?.length ?? '—',
       isLoading: loadingPiping,
       items: (pipingData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <Link key={item.id} to={`/products/masters/${item.id}`}
-          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 border-transparent hover:border-cyan-400">
+          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 border-transparent hover:border-blue-400">
           <div className="min-w-0 flex items-center gap-2">
             <span className="font-mono text-xs text-stone-400">{item.product_code}</span>
-            <span className="text-sm text-stone-600 group-hover:text-cyan-700 truncate transition-colors">{item.product_name}</span>
+            <span className="text-sm text-stone-600 group-hover:text-blue-700 truncate transition-colors">{item.product_name}</span>
           </div>
           <StatusBadge status={item.standard_status} />
         </Link>
@@ -123,16 +123,16 @@ export default function PIMDashboard() {
       label: 'Tanks',
       href: '/products/tanks',
       icon: Container,
-      color: 'text-teal-600',
-      iconBg: 'from-teal-500 to-teal-700',
-      iconShadow: 'shadow-teal-600/30',
-      headerBg: 'bg-teal-50/50',
+      color: 'text-blue-600',
+      iconBg: 'from-blue-500 to-blue-700',
+      iconShadow: 'shadow-blue-600/30',
+      headerBg: 'bg-blue-50/50',
       count: tanksData?.items?.length ?? '—',
       isLoading: loadingTanks,
       items: (tanksData?.items ?? []).slice(0, 5),
       renderRow: (item: any) => (
         <div key={item.id}
-          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 border-l-2 border-transparent hover:border-teal-400">
+          className="flex items-center justify-between px-4 py-2.5 hover:bg-stone-50/80 transition-all duration-150 border-l-2 border-transparent hover:border-blue-400">
           <div className="min-w-0 flex items-center gap-2">
             <span className="font-mono text-xs text-stone-400">{item.code}</span>
             <span className="text-sm text-stone-600 truncate">{item.name}</span>
