@@ -68,4 +68,32 @@ router.patch('/change-password', authenticate, async (req: AuthRequest, res: Res
   res.status(204).end();
 });
 
+router.post('/reset-password', async (req: Request, res: Response) => {
+  const { token, password } = req.body;
+  if (!token || !password || password.length < 8) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Valid token and password (min 8 chars) are required' } });
+  }
+
+  const tokenResult = await query(
+    `SELECT prt.*, u.id as uid, u.email FROM password_reset_tokens prt
+     JOIN users u ON u.id = prt.user_id
+     WHERE prt.token = $1 AND prt.used_at IS NULL AND prt.expires_at > NOW()`,
+    [token]
+  );
+
+  if (!tokenResult.rows[0]) {
+    return res.status(400).json({ error: { code: 'INVALID_TOKEN', message: 'This reset link is invalid or has expired' } });
+  }
+
+  const { uid, email, id: tokenId } = tokenResult.rows[0];
+  const hash = await bcrypt.hash(password, 10);
+
+  await query('UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, uid]);
+  await query('UPDATE password_reset_tokens SET used_at=NOW() WHERE id=$1', [tokenId]);
+  await query('DELETE FROM refresh_tokens WHERE user_id=$1', [uid]);
+  await logAudit(uid, 'user', uid, 'RESET_PASSWORD', { via_reset_link: true, email });
+
+  res.json({ ok: true });
+});
+
 export default router;

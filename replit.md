@@ -29,8 +29,10 @@ workspace/
         middleware/
           auth.ts           # JWT authenticate + requireRole
           errors.ts         # Error handler + 404
+        lib/
+          email.ts          # Nodemailer helper; reads SMTP_* env vars; console fallback in dev
         routes/
-          auth.ts           # POST /login, GET /me
+          auth.ts           # POST /login, GET /me, POST /reset-password (public)
           projects.ts       # Projects, Areas, Exhibits, Tanks, Systems, Equipment
           products.ts       # Product Families, Masters, Variants, BOMs, Vendors
           knowledge.ts      # Materials, Specifications, Design Rules, Calc Templates
@@ -38,7 +40,7 @@ workspace/
           graph.ts          # Graph traversal, impact, reuse
           search.ts         # Cross-entity full-text search
           import.ts         # CSV bulk import (products, equipment, documents)
-          admin.ts          # User management, audit logs, stats
+          admin.ts          # User management, audit logs, stats; POST /users/:id/send-reset-link
         services/
           graphService.ts   # Recursive graph traversal + impact/reuse analysis
         uploads/            # Local file storage
@@ -52,6 +54,7 @@ workspace/
         store/authStore.ts  # Zustand auth store
         pages/
           auth/Login.tsx
+          auth/ResetPassword.tsx  # Public page — token-based password reset
           Dashboard.tsx
           projects/         # ProjectsList, ProjectDetail, SystemDetail, EquipmentDetail
           products/         # ProductFamiliesList, ProductMastersList, ProductMasterDetail
@@ -95,6 +98,21 @@ npm run dev        # Start both API (port 3000) + Web (port 5000) concurrently
 npm run migrate    # Run database migrations
 npm run seed       # Seed Taoyuan Aquarium demo data
 ```
+
+## Environment Secrets
+
+The following secrets must be configured in Replit Secrets (or as environment variables) for full functionality:
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `SMTP_HOST` | Yes (email) | SMTP server hostname, e.g. `smtp.sendgrid.net` |
+| `SMTP_PORT` | Yes (email) | SMTP port — `587` (STARTTLS) or `465` (SSL) |
+| `SMTP_USER` | Yes (email) | SMTP login username or API key |
+| `SMTP_PASS` | Yes (email) | SMTP password or API key secret |
+| `SMTP_FROM` | Yes (email) | Sender address, e.g. `noreply@yourcompany.com` |
+| `APP_URL` | Recommended | Public base URL of the app (e.g. `https://your-repl.repl.co`). Used to build password reset links. Falls back to `REPLIT_DEV_DOMAIN`. |
+
+If `SMTP_*` secrets are absent in development, reset URLs are logged to the server console instead of emailed. In production (`NODE_ENV=production`) the API returns an error if SMTP is unconfigured.
 
 ## Demo Credentials
 - **Admin**: admin@edp.com / admin123

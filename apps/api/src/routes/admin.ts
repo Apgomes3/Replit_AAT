@@ -3,7 +3,9 @@ import { query } from '../db';
 import pool from '../db';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { logAudit } from '../db/audit';
+import { sendPasswordResetEmail } from '../lib/email';
 
 const router = Router();
 
@@ -61,6 +63,27 @@ router.patch('/users/:id/password', authenticate, requireRole('admin'), async (r
   await query('DELETE FROM refresh_tokens WHERE user_id=$1', [req.params.id]);
   await logAudit(req.user!.id, 'user', req.params.id, 'RESET_PASSWORD', { target_email: existing.rows[0].email });
   res.status(204).end();
+});
+
+router.post('/users/:id/send-reset-link', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT id, email FROM users WHERE id=$1 AND is_active=true', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+
+  const token = crypto.randomBytes(48).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  await query(
+    'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
+    [existing.rows[0].id, token, expiresAt]
+  );
+
+  const appUrl = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'localhost:5173'}`;
+  const resetUrl = `${appUrl}/reset-password?token=${token}`;
+
+  await sendPasswordResetEmail(existing.rows[0].email, resetUrl);
+
+  await logAudit(req.user!.id, 'user', existing.rows[0].id, 'SEND_RESET_LINK', { target_email: existing.rows[0].email });
+  res.json({ ok: true });
 });
 
 router.delete('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {

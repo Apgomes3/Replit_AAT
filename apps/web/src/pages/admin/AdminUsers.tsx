@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound } from 'lucide-react';
+import { Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -65,6 +65,18 @@ export default function AdminUsers() {
     }
   };
 
+  const handleSendResetLink = async (user: UserRow) => {
+    setLoadingId(user.id);
+    try {
+      await api.post(`/admin/users/${user.id}/send-reset-link`);
+      toast.success(`Reset link sent to ${user.email}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to send reset link');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   const handleDelete = async (user: UserRow) => {
     setLoadingId(user.id);
     try {
@@ -103,9 +115,17 @@ export default function AdminUsers() {
               onClick={() => { if (!isSelf) { setResetPasswordUser(r); setNewPassword(''); } }}
               disabled={isSelf}
               className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Reset password"
+              title="Set password directly"
             >
               <KeyRound className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => { if (!isSelf && !busy) handleSendResetLink(r); }}
+              disabled={isSelf || busy}
+              className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Send password reset link by email"
+            >
+              <Mail className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => !isSelf && !busy && handleBlock(r)}
