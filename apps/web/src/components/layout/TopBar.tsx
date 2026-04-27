@@ -1,10 +1,48 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, LogOut, Bell, KeyRound, ChevronDown, X } from 'lucide-react';
+import { Search, LogOut, Bell, KeyRound, ChevronDown, X, Check, CheckCheck, ShoppingCart, ThumbsUp, ThumbsDown, ArrowRightLeft, Info } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+interface Notification {
+  id: string;
+  type: 'po_submitted' | 'po_approved' | 'po_rejected' | 'po_transitioned' | 'system';
+  title: string;
+  body: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+interface NotificationsResponse {
+  notifications: Notification[];
+  unread_count: number;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function notifIcon(type: Notification['type']) {
+  const base = 'w-7 h-7 rounded-full flex items-center justify-center shrink-0';
+  switch (type) {
+    case 'po_submitted':   return <span className={`${base} bg-blue-100`}><ShoppingCart className="w-3.5 h-3.5 text-blue-600" /></span>;
+    case 'po_approved':    return <span className={`${base} bg-green-100`}><ThumbsUp className="w-3.5 h-3.5 text-green-600" /></span>;
+    case 'po_rejected':    return <span className={`${base} bg-red-100`}><ThumbsDown className="w-3.5 h-3.5 text-red-500" /></span>;
+    case 'po_transitioned':return <span className={`${base} bg-violet-100`}><ArrowRightLeft className="w-3.5 h-3.5 text-violet-600" /></span>;
+    default:               return <span className={`${base} bg-slate-100`}><Info className="w-3.5 h-3.5 text-slate-500" /></span>;
+  }
+}
+
+// ── Change Password Modal ──────────────────────────────────────────────────────
 function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -95,6 +133,180 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Notification Bell ──────────────────────────────────────────────────────────
+function NotificationBell() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<NotificationsResponse>({ notifications: [], unread_count: 0 });
+  const [loading, setLoading] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await api.get<NotificationsResponse>('/notifications');
+      setData(res.data);
+    } catch {
+      // silent — don't spam toasts on polling errors
+    }
+  }, []);
+
+  // Initial fetch + 30s polling
+  useEffect(() => {
+    fetchNotifications();
+    const id = setInterval(fetchNotifications, 30_000);
+    return () => clearInterval(id);
+  }, [fetchNotifications]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const markRead = async (n: Notification) => {
+    if (!n.is_read) {
+      try {
+        await api.patch(`/notifications/${n.id}/read`);
+        setData(prev => ({
+          notifications: prev.notifications.map(x => x.id === n.id ? { ...x, is_read: true } : x),
+          unread_count: Math.max(0, prev.unread_count - 1),
+        }));
+      } catch { /* ignore */ }
+    }
+    if (n.entity_type === 'purchase_order' && n.entity_id) {
+      setOpen(false);
+      navigate(`/purchase-orders/${n.entity_id}`);
+    }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await api.patch('/notifications/read-all');
+      setData(prev => ({
+        notifications: prev.notifications.map(x => ({ ...x, is_read: true })),
+        unread_count: 0,
+      }));
+    } catch { /* ignore */ }
+  };
+
+  const deleteNotif = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await api.delete(`/notifications/${id}`);
+      setData(prev => {
+        const n = prev.notifications.find(x => x.id === id);
+        return {
+          notifications: prev.notifications.filter(x => x.id !== id),
+          unread_count: n && !n.is_read ? Math.max(0, prev.unread_count - 1) : prev.unread_count,
+        };
+      });
+    } catch { /* ignore */ }
+  };
+
+  const toggleOpen = () => {
+    setOpen(v => !v);
+    if (!open) {
+      setLoading(true);
+      fetchNotifications().finally(() => setLoading(false));
+    }
+  };
+
+  return (
+    <div className="relative" ref={panelRef}>
+      <button
+        onClick={toggleOpen}
+        className="relative p-2 text-stone-500 hover:text-stone-700 hover:bg-stone-100 rounded-full transition-colors"
+        aria-label="Notifications"
+      >
+        <Bell className="w-4 h-4" />
+        {data.unread_count > 0 && (
+          <span className="absolute top-1.5 right-1.5 min-w-[8px] h-2 bg-blue-600 rounded-full border border-white" />
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[420px]">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-800">Notifications</span>
+              {data.unread_count > 0 && (
+                <span className="text-xs bg-blue-600 text-white font-semibold rounded-full px-1.5 py-0.5 leading-none">
+                  {data.unread_count}
+                </span>
+              )}
+            </div>
+            {data.unread_count > 0 && (
+              <button
+                onClick={markAllRead}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+              >
+                <CheckCheck className="w-3.5 h-3.5" />
+                Mark all read
+              </button>
+            )}
+          </div>
+
+          {/* List */}
+          <div className="overflow-y-auto flex-1">
+            {loading && data.notifications.length === 0 ? (
+              <div className="py-10 text-center text-sm text-slate-400">Loading…</div>
+            ) : data.notifications.length === 0 ? (
+              <div className="py-10 text-center">
+                <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                <p className="text-sm text-slate-400">No notifications yet</p>
+              </div>
+            ) : (
+              data.notifications.map(n => (
+                <div
+                  key={n.id}
+                  onClick={() => markRead(n)}
+                  className={`flex gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 group ${!n.is_read ? 'bg-blue-50/40' : ''}`}
+                >
+                  {notifIcon(n.type)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className={`text-xs font-medium leading-snug ${n.is_read ? 'text-slate-700' : 'text-slate-900'}`}>
+                        {n.title}
+                        {!n.is_read && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-600 ml-1.5 mb-0.5 align-middle" />}
+                      </p>
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!n.is_read && (
+                          <button
+                            onClick={e => { e.stopPropagation(); markRead(n); }}
+                            title="Mark as read"
+                            className="p-0.5 text-slate-400 hover:text-blue-600"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          onClick={e => deleteNotif(e, n.id)}
+                          title="Dismiss"
+                          className="p-0.5 text-slate-400 hover:text-red-500"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    {n.body && <p className="text-xs text-slate-500 mt-0.5 leading-snug line-clamp-2">{n.body}</p>}
+                    <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── TopBar ─────────────────────────────────────────────────────────────────────
 export default function TopBar() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -138,10 +350,7 @@ export default function TopBar() {
           </div>
         </form>
 
-        <button className="relative p-2 text-stone-500 hover:text-stone-700 hover:bg-stone-100 rounded-full transition-colors">
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full border border-white" />
-        </button>
+        <NotificationBell />
 
         <div className="relative" ref={menuRef}>
           <button

@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { query } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { createNotification, notifyAdminsAndManagers } from '../db/notifications';
 
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -271,6 +272,19 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
     `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
     [id, 'draft', newStatus, user.id, user.role === 'hq_manager' ? 'Self-approved by HQ Manager' : 'Submitted for approval']
   );
+  if (newStatus === 'pending_approval') {
+    const actorRes = await query('SELECT first_name, last_name FROM users WHERE id=$1', [user.id]);
+    const actor = actorRes.rows[0];
+    const actorName = actor ? `${actor.first_name} ${actor.last_name}`.trim() : user.email;
+    await notifyAdminsAndManagers({
+      type: 'po_submitted',
+      title: 'PO Pending Approval',
+      body: `PO #${po.po_number} has been submitted for approval by ${actorName}.`,
+      entityType: 'purchase_order',
+      entityId: id,
+      excludeUserId: user.id,
+    });
+  }
   res.json({ status: newStatus });
 });
 
@@ -295,6 +309,16 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
     `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
     [id, 'pending_approval', 'purchase_order', user.id, comment || 'Approved']
   );
+  if (poRes.rows[0].created_by) {
+    await createNotification({
+      userId: poRes.rows[0].created_by,
+      type: 'po_approved',
+      title: 'PO Approved',
+      body: `Your PO #${poRes.rows[0].po_number} has been approved.`,
+      entityType: 'purchase_order',
+      entityId: id,
+    });
+  }
   res.json({ status: 'purchase_order' });
 });
 
@@ -314,6 +338,16 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
     `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,'draft',$3,$4)`,
     [id, fromStatus, user.id, comment || 'Sent back for corrections']
   );
+  if (poRes.rows[0].created_by) {
+    await createNotification({
+      userId: poRes.rows[0].created_by,
+      type: 'po_rejected',
+      title: 'PO Sent Back for Corrections',
+      body: `Your PO #${poRes.rows[0].po_number} was sent back for corrections${comment ? `: ${comment}` : '.'}`,
+      entityType: 'purchase_order',
+      entityId: id,
+    });
+  }
   res.json({ status: 'draft' });
 });
 
@@ -340,6 +374,16 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
     `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
     [id, po.status, next, user.id, comment || null]
   );
+  if (po.created_by && po.created_by !== user.id) {
+    await createNotification({
+      userId: po.created_by,
+      type: 'po_transitioned',
+      title: 'PO Stage Updated',
+      body: `Your PO #${po.po_number} has moved to stage: ${next.replace(/_/g, ' ')}.`,
+      entityType: 'purchase_order',
+      entityId: id,
+    });
+  }
   res.json({ status: next });
 });
 
