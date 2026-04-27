@@ -279,7 +279,7 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
     await notifyAdminsAndManagers({
       type: 'po_submitted',
       title: 'PO Pending Approval',
-      body: `PO #${po.po_number} has been submitted for approval by ${actorName}.`,
+      body: `PO #${po.po_code} has been submitted for approval by ${actorName}.`,
       entityType: 'purchase_order',
       entityId: id,
       excludeUserId: user.id,
@@ -314,7 +314,7 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
       userId: poRes.rows[0].created_by,
       type: 'po_approved',
       title: 'PO Approved',
-      body: `Your PO #${poRes.rows[0].po_number} has been approved.`,
+      body: `Your PO #${poRes.rows[0].po_code} has been approved.`,
       entityType: 'purchase_order',
       entityId: id,
     });
@@ -343,7 +343,7 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
       userId: poRes.rows[0].created_by,
       type: 'po_rejected',
       title: 'PO Sent Back for Corrections',
-      body: `Your PO #${poRes.rows[0].po_number} was sent back for corrections${comment ? `: ${comment}` : '.'}`,
+      body: `Your PO #${poRes.rows[0].po_code} was sent back for corrections${comment ? `: ${comment}` : '.'}`,
       entityType: 'purchase_order',
       entityId: id,
     });
@@ -379,7 +379,7 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
       userId: po.created_by,
       type: 'po_transitioned',
       title: 'PO Stage Updated',
-      body: `Your PO #${po.po_number} has moved to stage: ${next.replace(/_/g, ' ')}.`,
+      body: `Your PO #${po.po_code} has moved to stage: ${next.replace(/_/g, ' ')}.`,
       entityType: 'purchase_order',
       entityId: id,
     });
