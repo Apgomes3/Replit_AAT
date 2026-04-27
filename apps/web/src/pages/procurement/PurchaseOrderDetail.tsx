@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import {
-  Package, CheckCircle, XCircle, ArrowRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw
+  Package, CheckCircle, XCircle, ArrowRight, ChevronRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
