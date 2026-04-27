@@ -387,6 +387,49 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
   res.json({ status: next });
 });
 
+// BULK TRANSITION
+router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRequest, res: Response) => {
+  const { ids } = req.body;
+  const user = req.user!;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'No PO IDs provided' } });
+  }
+  const results: { id: string; po_code?: string; status?: string; error?: string }[] = [];
+  for (const id of ids) {
+    try {
+      const poRes = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
+      const po = poRes.rows[0];
+      if (!po) { results.push({ id, error: 'Not found' }); continue; }
+      const allowed = canTransition(user.role) || await isDesignated(id, user.id);
+      if (!allowed) { results.push({ id, po_code: po.po_code, error: 'Not authorised' }); continue; }
+      if (['draft', 'pending_approval'].includes(po.status)) {
+        results.push({ id, po_code: po.po_code, error: 'Submit or approve before transitioning' }); continue;
+      }
+      const next = nextStage(po.status);
+      if (!next) { results.push({ id, po_code: po.po_code, error: 'Already at final stage' }); continue; }
+      await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [next, id]);
+      await query(
+        `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
+        [id, po.status, next, user.id, 'Bulk transition']
+      );
+      if (po.created_by && po.created_by !== user.id) {
+        await createNotification({
+          userId: po.created_by,
+          type: 'po_transitioned',
+          title: 'PO Stage Updated',
+          body: `Your PO #${po.po_code} has moved to stage: ${next.replace(/_/g, ' ')}.`,
+          entityType: 'purchase_order',
+          entityId: id,
+        });
+      }
+      results.push({ id, po_code: po.po_code, status: next });
+    } catch (e: any) {
+      results.push({ id, error: e?.message || 'Failed' });
+    }
+  }
+  res.json({ results });
+});
+
 // ADD ITEM
 router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;

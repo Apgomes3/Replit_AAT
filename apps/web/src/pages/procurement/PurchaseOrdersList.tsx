@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
@@ -7,7 +7,7 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download, Copy, User, ExternalLink } from 'lucide-react';
+import { Plus, Download, Copy, User, ExternalLink, ArrowRight, X, CheckSquare2 } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 
@@ -19,6 +19,8 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   engineering_review: { label: 'Engineering Review', color: 'bg-purple-100 text-purple-700' },
   released:           { label: 'Released',           color: 'bg-green-100 text-green-700' },
 };
+
+const TRANSITIONABLE = new Set(['purchase_order', 'po_review', 'engineering_review']);
 
 function POStatusBadge({ status }: { status: string }) {
   const meta = STATUS_META[status] || { label: status, color: 'bg-slate-100 text-slate-600' };
@@ -35,11 +37,13 @@ type PO = {
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '');
   const [showCreate, setShowCreate] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['purchase-orders', search, statusFilter, mineOnly],
@@ -52,6 +56,32 @@ export default function PurchaseOrdersList() {
     },
   });
 
+  const allItems: PO[] = data?.items ?? [];
+  const allSelected = allItems.length > 0 && allItems.every(r => selectedIds.has(r.id));
+  const someSelected = selectedIds.size > 0 && !allSelected;
+  const selectedItems = allItems.filter(r => selectedIds.has(r.id));
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected;
+  });
+  const transitionableCount = selectedItems.filter(r => TRANSITIONABLE.has(r.status)).length;
+
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(allItems.map(r => r.id)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
   const cloneMutation = useMutation({
     mutationFn: (id: string) => api.post(`/purchase-orders/${id}/clone`).then(r => r.data),
     onSuccess: (newPo) => {
@@ -62,13 +92,54 @@ export default function PurchaseOrdersList() {
     onError: () => toast.error('Clone failed'),
   });
 
+  const bulkTransitionMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post('/purchase-orders/bulk-transition', { ids }).then(r => r.data),
+    onSuccess: (res) => {
+      const succeeded = res.results.filter((r: any) => r.status).length;
+      const failed = res.results.filter((r: any) => r.error).length;
+      if (succeeded > 0) toast.success(`${succeeded} PO${succeeded > 1 ? 's' : ''} advanced to next stage`);
+      if (failed > 0) toast.error(`${failed} PO${failed > 1 ? 's' : ''} could not be advanced`);
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      clearSelection();
+    },
+    onError: () => toast.error('Bulk transition failed'),
+  });
+
+  const handleExport = (items: PO[]) => exportCsv(
+    `purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`,
+    [
+      { header: 'PO Code',      value: r => r.po_code ?? '' },
+      { header: 'Project Code', value: r => r.project_code ?? '' },
+      { header: 'Project',      value: r => r.project_name ?? '' },
+      { header: 'Status',       value: r => STATUS_META[r.status]?.label ?? r.status },
+      { header: 'Items',        value: r => String(r.item_count ?? '') },
+      { header: 'Created By',   value: r => r.created_by_name ?? '' },
+      { header: 'Date',         value: r => new Date(r.created_at).toLocaleDateString() },
+    ],
+    items
+  );
+
   const columns: Column<PO>[] = [
+    {
+      key: '__select',
+      header: '',
+      render: r => (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(r.id)}
+          onChange={() => {}}
+          onClick={e => toggleSelect(r.id, e)}
+          className="w-4 h-4 accent-blue-600 cursor-pointer rounded"
+        />
+      ),
+    },
     { key: 'po_code', header: 'PO Code', sortable: true, render: r => <EntityCode code={r.po_code} /> },
-    { key: 'project_name' as any, header: 'Project', sortable: true, filterable: true,
+    {
+      key: 'project_name' as any, header: 'Project', sortable: true, filterable: true,
       filterValue: r => `${r.project_code ?? ''} ${r.project_name ?? ''}`,
       render: r => r.project_code
         ? <span><span className="font-mono text-xs text-slate-400 mr-1">{r.project_code}</span>{r.project_name}</span>
-        : <span className="text-slate-300 text-xs">—</span>
+        : <span className="text-slate-300 text-xs">—</span>,
     },
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status, render: r => <POStatusBadge status={r.status} /> },
     { key: 'item_count' as any, header: 'Items', sortable: true, sortValue: r => Number(r.item_count) || 0, render: r => <span className="text-sm text-slate-600">{r.item_count}</span> },
@@ -85,16 +156,8 @@ export default function PurchaseOrdersList() {
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => exportCsv(`purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`, [
-                { header: 'PO Code',      value: r => r.po_code ?? '' },
-                { header: 'Project Code', value: r => r.project_code ?? '' },
-                { header: 'Project',      value: r => r.project_name ?? '' },
-                { header: 'Status',       value: r => r.status ?? '' },
-                { header: 'Items',        value: r => String(r.item_count ?? '') },
-                { header: 'Created By',   value: r => r.created_by_name ?? '' },
-                { header: 'Date',         value: r => new Date(r.created_at).toLocaleDateString() },
-              ], (data?.items ?? []) as PO[])}
-              disabled={!data?.items?.length}
+              onClick={() => handleExport(allItems)}
+              disabled={!allItems.length}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-blue-300 hover:text-blue-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
@@ -105,7 +168,19 @@ export default function PurchaseOrdersList() {
           </div>
         }
       />
+
       <div className="p-4 border-b border-slate-200 bg-white flex gap-3 items-center flex-wrap">
+        <label className="flex items-center gap-2 cursor-pointer select-none shrink-0" title={allSelected ? 'Deselect all' : 'Select all'}>
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleAll}
+            className="w-4 h-4 accent-blue-600 cursor-pointer"
+            style={{ accentColor: someSelected ? '#2563eb' : undefined }}
+          />
+          <span className="text-xs text-slate-400">All</span>
+        </label>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -133,10 +208,11 @@ export default function PurchaseOrdersList() {
           <User className="w-3.5 h-3.5" />My POs
         </button>
       </div>
+
       <div className="flex-1 bg-white overflow-auto">
         <DataTable
           columns={columns}
-          data={data?.items || []}
+          data={allItems}
           loading={isLoading}
           onRowClick={r => navigate(`/purchase-orders/${r.id}`)}
           contextMenuItems={r => [
@@ -154,6 +230,41 @@ export default function PurchaseOrdersList() {
           ]}
         />
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="border-t border-slate-200 bg-white px-5 py-3 flex items-center gap-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-700 shrink-0">
+            <CheckSquare2 className="w-4 h-4 text-blue-600" />
+            {selectedIds.size} selected
+          </div>
+          <div className="flex items-center gap-2 flex-1 flex-wrap">
+            <button
+              onClick={() => handleExport(selectedItems)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600 bg-white transition-all"
+            >
+              <Download className="w-3.5 h-3.5" /> Export selected
+            </button>
+            {transitionableCount > 0 && (
+              <button
+                onClick={() => {
+                  const ids = selectedItems
+                    .filter(r => TRANSITIONABLE.has(r.status))
+                    .map(r => r.id);
+                  bulkTransitionMutation.mutate(ids);
+                }}
+                disabled={bulkTransitionMutation.isPending}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-all"
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+                Advance {transitionableCount} PO{transitionableCount > 1 ? 's' : ''} to next stage
+              </button>
+            )}
+          </div>
+          <button onClick={clearSelection} className="text-slate-400 hover:text-slate-600 shrink-0" title="Clear selection">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {showCreate && <CreatePOModal onClose={() => setShowCreate(false)} />}
     </div>

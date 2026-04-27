@@ -114,6 +114,12 @@ export default function PurchaseOrderDetail() {
   // Inline item editing
   const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price'; value: string } | null>(null);
 
+  // Inline currency editing (stores itemId being edited)
+  const [currencyEdit, setCurrencyEdit] = useState<string | null>(null);
+
+  // Auto-save indicator
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+
   // Inline system picker
   const [systemEdit, setSystemEdit] = useState<{ itemId: string; pos: { top: number; left: number } } | null>(null);
   const [itemSysSearch, setItemSysSearch] = useState('');
@@ -150,6 +156,7 @@ export default function PurchaseOrderDetail() {
         notes: item.notes,
         system_id: systemId,
       });
+      setSavedAt(new Date());
       refetch();
     } catch {
       toast.error('Failed to update system');
@@ -171,9 +178,30 @@ export default function PurchaseOrderDetail() {
         notes: item.notes,
         system_id: item.system_id,
       });
+      setSavedAt(new Date());
       refetch();
     } catch {
       toast.error('Failed to save');
+    }
+  };
+
+  const handleCurrencyChange = async (itemId: string, newCurrency: string) => {
+    setCurrencyEdit(null);
+    const item = (po?.items || []).find((i: Item) => i.id === itemId);
+    if (!item || item.currency === newCurrency) return;
+    try {
+      await api.put(`/purchase-orders/${id}/items/${itemId}`, {
+        quantity: item.quantity,
+        cost_price: item.cost_price ?? '',
+        sell_price: item.sell_price ?? '',
+        currency: newCurrency,
+        notes: item.notes,
+        system_id: item.system_id,
+      });
+      setSavedAt(new Date());
+      refetch();
+    } catch {
+      toast.error('Failed to update currency');
     }
   };
 
@@ -246,6 +274,11 @@ export default function PurchaseOrderDetail() {
 
   const handleQuickAdd = useCallback(async (prod: any) => {
     if (addingItem) return;
+    const existingIds = (po?.items || []).map((i: Item) => i.product_master_id).filter(Boolean);
+    if (existingIds.includes(prod.id)) {
+      const ok = window.confirm(`${prod.product_code} is already in this PO. Add it again?`);
+      if (!ok) return;
+    }
     setAddingItem(true);
     try {
       await api.post(`/purchase-orders/${id}/items`, {
@@ -266,7 +299,7 @@ export default function PurchaseOrderDetail() {
     } finally {
       setAddingItem(false);
     }
-  }, [id, addingItem, refetch]);
+  }, [id, addingItem, refetch, po?.items]);
 
   const handleDeleteItem = async (itemId: string) => {
     if (!window.confirm('Remove this item?')) return;
@@ -426,6 +459,11 @@ export default function PurchaseOrderDetail() {
                 <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
                   <Package className="w-3.5 h-3.5 text-slate-400" />
                   Line Items ({po.items?.length || 0})
+                  {savedAt && (
+                    <span className="text-[10px] font-normal text-green-600 flex items-center gap-0.5 ml-1">
+                      <CheckCircle className="w-3 h-3" /> Saved
+                    </span>
+                  )}
                 </span>
                 <div className="flex items-center gap-3">
                   {displayCurrency !== 'USD' && rateDate && (
@@ -571,23 +609,44 @@ export default function PurchaseOrderDetail() {
                                 )}
                               </td>
                               <td className="px-3 py-3 text-right text-xs text-slate-600">
-                                {isEditingCost ? (
-                                  <input autoFocus type="number" min="0" step="any"
-                                    value={inlineEdit!.value}
-                                    onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
-                                    onBlur={handleSaveInline}
-                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
-                                    className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
-                                  />
-                                ) : (
-                                  <span
-                                    className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
-                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'cost_price', value: item.cost_price || '' })}
-                                  >
-                                    {formatCurrency(parseFloat(item.cost_price || '0'), item.currency)}
-                                    {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
-                                  </span>
-                                )}
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {currencyEdit === item.id ? (
+                                    <select
+                                      autoFocus
+                                      value={item.currency}
+                                      onChange={e => handleCurrencyChange(item.id, e.target.value)}
+                                      onBlur={() => setCurrencyEdit(null)}
+                                      className="text-xs border border-blue-400 rounded px-1 py-0.5 bg-white focus:outline-none"
+                                    >
+                                      {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  ) : (
+                                    <span
+                                      onClick={isDraft ? () => setCurrencyEdit(item.id) : undefined}
+                                      title={isDraft ? 'Click to change currency' : item.currency}
+                                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded select-none ${isDraft ? 'bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-500 cursor-pointer' : 'bg-slate-50 text-slate-400'}`}
+                                    >
+                                      {item.currency}
+                                    </span>
+                                  )}
+                                  {isEditingCost ? (
+                                    <input autoFocus type="number" min="0" step="any"
+                                      value={inlineEdit!.value}
+                                      onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
+                                      onBlur={handleSaveInline}
+                                      onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                      className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
+                                    />
+                                  ) : (
+                                    <span
+                                      className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
+                                      onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'cost_price', value: item.cost_price || '' })}
+                                    >
+                                      {formatCurrency(parseFloat(item.cost_price || '0'), item.currency)}
+                                      {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-3 py-3 text-right text-xs text-slate-600">
                                 {isEditingSell ? (
