@@ -129,6 +129,11 @@ export default function PurchaseOrdersList() {
     setSearch(preset.search);
     setStatusFilter(preset.statusFilter);
     setMineOnly(preset.mineOnly);
+    const parts: string[] = [];
+    if (preset.search) parts.push(`search: "${preset.search}"`);
+    if (preset.statusFilter) parts.push(`status: ${STATUS_META[preset.statusFilter]?.label ?? preset.statusFilter}`);
+    if (preset.mineOnly) parts.push('My POs only');
+    toast.success(parts.length ? `Preset applied: ${parts.join(', ')}` : `Preset "${preset.name}" applied — no filters set`);
   };
 
   const handleDeletePreset = (name: string, e: React.MouseEvent) => {
@@ -289,38 +294,59 @@ export default function PurchaseOrdersList() {
                 Presets <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${showPresetsDropdown ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-600'}`}>{presets.length}</span>
               </button>
               {showPresetsDropdown && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-20 min-w-[200px] py-1">
-                  {presets.map(p => (
-                    <button
-                      key={p.name}
-                      onClick={() => { handleLoadPreset(p); setShowPresetsDropdown(false); }}
-                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 text-left"
-                    >
-                      <span className="truncate flex-1">{p.name}</span>
-                      <span
-                        className="ml-2 p-0.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                        onClick={e => handleDeletePreset(p.name, e)}
+                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-20 min-w-[220px] py-1">
+                  <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Saved filters</div>
+                  {presets.map(p => {
+                    const tags: string[] = [];
+                    if (p.search) tags.push(`"${p.search}"`);
+                    if (p.statusFilter) tags.push(STATUS_META[p.statusFilter]?.label ?? p.statusFilter);
+                    if (p.mineOnly) tags.push('My POs');
+                    return (
+                      <button
+                        key={p.name}
+                        onClick={() => { handleLoadPreset(p); setShowPresetsDropdown(false); }}
+                        className="w-full flex items-start justify-between px-3 py-2.5 hover:bg-blue-50 hover:text-blue-700 text-left group/item"
                       >
-                        <X className="w-3 h-3" />
-                      </span>
-                    </button>
-                  ))}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-slate-700 group-hover/item:text-blue-700 truncate">{p.name}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                            {tags.length ? tags.join(' · ') : 'No filters — shows all POs'}
+                          </div>
+                        </div>
+                        <span
+                          className="ml-2 mt-0.5 p-0.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                          onClick={e => { handleDeletePreset(p.name, e); if (presets.length === 1) setShowPresetsDropdown(false); }}
+                        >
+                          <X className="w-3 h-3" />
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
           {showPresetSave ? (
-            <div className="flex items-center gap-1.5">
-              <input
-                autoFocus
-                value={presetNameInput}
-                onChange={e => setPresetNameInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); if (e.key === 'Escape') setShowPresetSave(false); }}
-                placeholder="Preset name…"
-                className="border border-blue-400 rounded px-2.5 py-1.5 text-xs w-36 focus:outline-none bg-white"
-              />
-              <button onClick={handleSavePreset} className="text-xs px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all">Save</button>
-              <button onClick={() => setShowPresetSave(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={presetNameInput}
+                  onChange={e => setPresetNameInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); if (e.key === 'Escape') setShowPresetSave(false); }}
+                  placeholder="Preset name…"
+                  className="border border-blue-400 rounded px-2.5 py-1.5 text-xs w-36 focus:outline-none bg-white"
+                />
+                <button onClick={handleSavePreset} className="text-xs px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all">Save</button>
+                <button onClick={() => setShowPresetSave(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+              </div>
+              <div className="text-[10px] text-slate-400 pl-0.5">
+                Saves: {[
+                  search && `search "${search}"`,
+                  statusFilter && `status: ${STATUS_META[statusFilter]?.label}`,
+                  mineOnly && 'My POs'
+                ].filter(Boolean).join(' · ') || 'current filters (none active)'}
+              </div>
             </div>
           ) : (
             <button
