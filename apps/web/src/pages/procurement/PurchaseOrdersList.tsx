@@ -61,8 +61,21 @@ export default function PurchaseOrdersList() {
   const [showAssign, setShowAssign] = useState(false);
   const [presets, setPresets] = useState<Preset[]>(() => loadPresets(user?.id ?? ''));
   const [showPresetSave, setShowPresetSave] = useState(false);
+  const [showPresetsDropdown, setShowPresetsDropdown] = useState(false);
   const [presetNameInput, setPresetNameInput] = useState('');
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const presetsDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showPresetsDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (presetsDropdownRef.current && !presetsDropdownRef.current.contains(e.target as Node)) {
+        setShowPresetsDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPresetsDropdown]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['purchase-orders', search, statusFilter, mineOnly],
@@ -267,28 +280,33 @@ export default function PurchaseOrdersList() {
 
         <div className="flex items-center gap-1.5 ml-auto">
           {presets.length > 0 && (
-            <div className="relative group">
-              <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:border-blue-300 hover:text-blue-600 bg-white transition-all">
+            <div className="relative" ref={presetsDropdownRef}>
+              <button
+                onClick={() => setShowPresetsDropdown(v => !v)}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${showPresetsDropdown ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-300 hover:text-blue-600'}`}
+              >
                 <BookmarkCheck className="w-3.5 h-3.5" />
-                Presets <span className="bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none">{presets.length}</span>
+                Presets <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${showPresetsDropdown ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-600'}`}>{presets.length}</span>
               </button>
-              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-20 min-w-[180px] py-1 hidden group-hover:block">
-                {presets.map(p => (
-                  <button
-                    key={p.name}
-                    onClick={() => handleLoadPreset(p)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 text-left"
-                  >
-                    <span className="truncate flex-1">{p.name}</span>
-                    <span
-                      className="ml-2 text-slate-300 hover:text-red-500 transition-colors"
-                      onClick={e => handleDeletePreset(p.name, e)}
+              {showPresetsDropdown && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-20 min-w-[200px] py-1">
+                  {presets.map(p => (
+                    <button
+                      key={p.name}
+                      onClick={() => { handleLoadPreset(p); setShowPresetsDropdown(false); }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 text-left"
                     >
-                      <X className="w-3 h-3" />
-                    </span>
-                  </button>
-                ))}
-              </div>
+                      <span className="truncate flex-1">{p.name}</span>
+                      <span
+                        className="ml-2 p-0.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        onClick={e => handleDeletePreset(p.name, e)}
+                      >
+                        <X className="w-3 h-3" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {showPresetSave ? (
