@@ -93,8 +93,10 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
       proj.project_code, proj.project_name,
       u.first_name || ' ' || u.last_name AS created_by_name,
       a.first_name || ' ' || a.last_name AS approved_by_name,
-      po.approved_at,
-      (SELECT COUNT(*) FROM po_items WHERE po_id=po.id) AS item_count
+      po.approved_at, po.stage_due_date,
+      (SELECT COUNT(*) FROM po_items WHERE po_id=po.id) AS item_count,
+      (SELECT COALESCE(SUM(CAST(pi.cost_price AS NUMERIC) * CAST(pi.quantity AS NUMERIC)), 0)
+       FROM po_items pi WHERE pi.po_id=po.id) AS total_cost_usd
      FROM purchase_orders po
      LEFT JOIN projects proj ON po.project_id=proj.id
      LEFT JOIN users u ON po.created_by=u.id
@@ -452,14 +454,14 @@ router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest,
 // UPDATE ITEM
 router.put('/purchase-orders/:id/items/:itemId', authenticate, async (req: AuthRequest, res: Response) => {
   const { id, itemId } = req.params;
-  const { quantity, cost_price, sell_price, currency, notes, system_id } = req.body;
+  const { quantity, cost_price, sell_price, currency, notes, system_id, budget_amount } = req.body;
   const poRes = await query('SELECT status FROM purchase_orders WHERE id=$1', [id]);
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   if (poRes.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Items can only be edited on draft POs' } });
 
   const r = await query(
-    `UPDATE po_items SET quantity=$1,cost_price=$2,sell_price=$3,currency=$4,notes=$5,system_id=$6 WHERE id=$7 AND po_id=$8 RETURNING *`,
-    [quantity, cost_price || null, sell_price || null, currency || 'USD', notes || null, system_id || null, itemId, id]
+    `UPDATE po_items SET quantity=$1,cost_price=$2,sell_price=$3,currency=$4,notes=$5,system_id=$6,budget_amount=$7 WHERE id=$8 AND po_id=$9 RETURNING *`,
+    [quantity, cost_price || null, sell_price || null, currency || 'USD', notes || null, system_id || null, budget_amount != null ? budget_amount : null, itemId, id]
   );
   res.json(r.rows[0]);
 });
@@ -520,6 +522,105 @@ router.delete('/purchase-orders/:id/designated-users/:userId', authenticate, asy
   const user = req.user!;
   if (!canTransition(user.role)) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised' } });
   await query('DELETE FROM po_designated_users WHERE po_id=$1 AND user_id=$2', [id, userId]);
+  res.json({ ok: true });
+});
+
+// COMMENTS — LIST
+router.get('/purchase-orders/:id/comments', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const r = await query(
+    `SELECT c.id, c.message, c.created_at,
+       u.first_name || ' ' || u.last_name AS author_name, u.email AS author_email, u.role AS author_role, c.user_id
+     FROM po_comments c
+     LEFT JOIN users u ON c.user_id = u.id
+     WHERE c.po_id = $1
+     ORDER BY c.created_at ASC`,
+    [id]
+  );
+  res.json({ items: r.rows });
+});
+
+// COMMENTS — ADD
+router.post('/purchase-orders/:id/comments', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { message } = req.body;
+  const user = req.user!;
+  if (!message?.trim()) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Message is required' } });
+  const r = await query(
+    `INSERT INTO po_comments (po_id, user_id, message) VALUES ($1, $2, $3)
+     RETURNING id, message, created_at`,
+    [id, user.id, message.trim()]
+  );
+  res.status(201).json(r.rows[0]);
+});
+
+// COMMENTS — DELETE
+router.delete('/purchase-orders/:id/comments/:commentId', authenticate, async (req: AuthRequest, res: Response) => {
+  const { commentId } = req.params;
+  const user = req.user!;
+  const existing = await query('SELECT user_id FROM po_comments WHERE id=$1', [commentId]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Comment not found' } });
+  if (existing.rows[0].user_id !== user.id && user.role !== 'admin') {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot delete another user\'s comment' } });
+  }
+  await query('DELETE FROM po_comments WHERE id=$1', [commentId]);
+  res.json({ ok: true });
+});
+
+// ATTACHMENTS — LIST
+router.get('/purchase-orders/:id/attachments', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const r = await query(
+    `SELECT a.id, a.file_name, a.file_path, a.file_size, a.mime_type, a.created_at,
+       u.first_name || ' ' || u.last_name AS uploader_name, a.uploaded_by
+     FROM po_attachments a
+     LEFT JOIN users u ON a.uploaded_by = u.id
+     WHERE a.po_id = $1
+     ORDER BY a.created_at ASC`,
+    [id]
+  );
+  res.json({ items: r.rows });
+});
+
+// ATTACHMENTS — UPLOAD
+router.post('/purchase-orders/:id/attachments', authenticate, uploadDoc.single('file'), async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const user = req.user!;
+  if (!req.file) return res.status(400).json({ error: { code: 'NO_FILE', message: 'No file provided' } });
+  const filePath = `/uploads/${req.file.filename}`;
+  const r = await query(
+    `INSERT INTO po_attachments (po_id, file_name, file_path, file_size, mime_type, uploaded_by)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [id, req.file.originalname, filePath, req.file.size, req.file.mimetype, user.id]
+  );
+  res.status(201).json(r.rows[0]);
+});
+
+// ATTACHMENTS — DELETE
+router.delete('/purchase-orders/:id/attachments/:attachmentId', authenticate, async (req: AuthRequest, res: Response) => {
+  const { attachmentId } = req.params;
+  const user = req.user!;
+  const existing = await query('SELECT uploaded_by, file_path FROM po_attachments WHERE id=$1', [attachmentId]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Attachment not found' } });
+  if (existing.rows[0].uploaded_by !== user.id && user.role !== 'admin') {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot delete another user\'s attachment' } });
+  }
+  const filePath = path.join(__dirname, '../../', existing.rows[0].file_path);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  await query('DELETE FROM po_attachments WHERE id=$1', [attachmentId]);
+  res.json({ ok: true });
+});
+
+// DUE DATE — SET
+router.patch('/purchase-orders/:id/due-date', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { stage_due_date } = req.body;
+  const user = req.user!;
+  if (!canTransition(user.role)) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised' } });
+  await query(
+    'UPDATE purchase_orders SET stage_due_date=$1, updated_at=now() WHERE id=$2',
+    [stage_due_date || null, id]
+  );
   res.json({ ok: true });
 });
 

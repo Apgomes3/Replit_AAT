@@ -8,10 +8,19 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download, Copy, User, ExternalLink, ArrowRight, X, CheckSquare2, UserPlus } from 'lucide-react';
+import { Plus, Download, Copy, User, ExternalLink, X, CheckSquare2, UserPlus, Bookmark, BookmarkCheck, ArrowRight } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 import AssignUserModal from './AssignUserModal';
+
+type Preset = { name: string; search: string; statusFilter: string; mineOnly: boolean };
+
+function loadPresets(userId: string): Preset[] {
+  try { return JSON.parse(localStorage.getItem(`po-presets-${userId}`) || '[]'); } catch { return []; }
+}
+function savePresetsToStorage(userId: string, presets: Preset[]) {
+  localStorage.setItem(`po-presets-${userId}`, JSON.stringify(presets));
+}
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   draft:              { label: 'Draft',              color: 'bg-slate-100 text-slate-600' },
@@ -34,6 +43,7 @@ type PO = {
   project_code: string; project_name: string;
   created_by_name: string; approved_by_name: string;
   item_count: string; created_at: string;
+  total_cost_usd: string; stage_due_date: string | null;
 };
 
 const CAN_BULK_ASSIGN = new Set(['admin', 'engineer', 'hq_manager']);
@@ -49,6 +59,9 @@ export default function PurchaseOrdersList() {
   const [mineOnly, setMineOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showAssign, setShowAssign] = useState(false);
+  const [presets, setPresets] = useState<Preset[]>(() => loadPresets(user?.id ?? ''));
+  const [showPresetSave, setShowPresetSave] = useState(false);
+  const [presetNameInput, setPresetNameInput] = useState('');
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery({
@@ -87,6 +100,30 @@ export default function PurchaseOrdersList() {
   };
 
   const clearSelection = () => setSelectedIds(new Set());
+
+  const handleSavePreset = () => {
+    const name = presetNameInput.trim();
+    if (!name) return;
+    const updated = [...presets.filter(p => p.name !== name), { name, search, statusFilter, mineOnly }];
+    setPresets(updated);
+    savePresetsToStorage(user?.id ?? '', updated);
+    setPresetNameInput('');
+    setShowPresetSave(false);
+    toast.success(`Preset "${name}" saved`);
+  };
+
+  const handleLoadPreset = (preset: Preset) => {
+    setSearch(preset.search);
+    setStatusFilter(preset.statusFilter);
+    setMineOnly(preset.mineOnly);
+  };
+
+  const handleDeletePreset = (name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = presets.filter(p => p.name !== name);
+    setPresets(updated);
+    savePresetsToStorage(user?.id ?? '', updated);
+  };
 
   const cloneMutation = useMutation({
     mutationFn: (id: string) => api.post(`/purchase-orders/${id}/clone`).then(r => r.data),
@@ -227,6 +264,55 @@ export default function PurchaseOrdersList() {
         >
           <User className="w-3.5 h-3.5" />My POs
         </button>
+
+        <div className="flex items-center gap-1.5 ml-auto">
+          {presets.length > 0 && (
+            <div className="relative group">
+              <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:border-blue-300 hover:text-blue-600 bg-white transition-all">
+                <BookmarkCheck className="w-3.5 h-3.5" />
+                Presets <span className="bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none">{presets.length}</span>
+              </button>
+              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-20 min-w-[180px] py-1 hidden group-hover:block">
+                {presets.map(p => (
+                  <button
+                    key={p.name}
+                    onClick={() => handleLoadPreset(p)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 text-left"
+                  >
+                    <span className="truncate flex-1">{p.name}</span>
+                    <span
+                      className="ml-2 text-slate-300 hover:text-red-500 transition-colors"
+                      onClick={e => handleDeletePreset(p.name, e)}
+                    >
+                      <X className="w-3 h-3" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {showPresetSave ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={presetNameInput}
+                onChange={e => setPresetNameInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); if (e.key === 'Escape') setShowPresetSave(false); }}
+                placeholder="Preset name…"
+                className="border border-blue-400 rounded px-2.5 py-1.5 text-xs w-36 focus:outline-none bg-white"
+              />
+              <button onClick={handleSavePreset} className="text-xs px-2.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all">Save</button>
+              <button onClick={() => setShowPresetSave(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowPresetSave(true)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:border-blue-300 hover:text-blue-600 bg-white transition-all"
+            >
+              <Bookmark className="w-3.5 h-3.5" /> Save filter
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 bg-white overflow-auto">
@@ -250,6 +336,24 @@ export default function PurchaseOrdersList() {
           ]}
         />
       </div>
+
+      {!isLoading && allItems.length > 0 && (() => {
+        const totalSpend = allItems.reduce((sum, r) => sum + parseFloat(r.total_cost_usd || '0'), 0);
+        const overdue = allItems.filter(r => r.stage_due_date && new Date(r.stage_due_date) < new Date() && r.status !== 'released').length;
+        return (
+          <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-2 flex items-center gap-6 text-xs text-slate-500">
+            <span><span className="font-semibold text-slate-700">{allItems.length}</span> POs</span>
+            <span>
+              Total spend <span className="font-semibold text-slate-700">
+                {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(totalSpend)}
+              </span> <span className="text-slate-400">USD</span>
+            </span>
+            {overdue > 0 && (
+              <span className="text-amber-600 font-medium">{overdue} overdue stage{overdue > 1 ? 's' : ''}</span>
+            )}
+          </div>
+        );
+      })()}
 
       {selectedIds.size > 0 && (
         <div className="border-t border-slate-200 bg-white px-5 py-3 flex items-center gap-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">

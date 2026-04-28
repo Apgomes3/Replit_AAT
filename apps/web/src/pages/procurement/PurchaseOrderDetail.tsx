@@ -10,7 +10,8 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useConfirm } from '../../hooks/useConfirm';
 import {
-  Package, CheckCircle, XCircle, ArrowRight, ChevronRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw
+  Package, CheckCircle, XCircle, ArrowRight, ChevronRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw,
+  MessageSquare, Paperclip, AlertTriangle, CalendarClock, Send, Download
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
@@ -94,7 +95,11 @@ type Item = {
   id: string; product_master_id: string | null; product_code: string; product_name: string;
   quantity: string; cost_price: string | null; sell_price: string | null; currency: string; notes: string | null;
   system_id: string | null; system_code: string | null; system_name: string | null;
+  budget_amount: string | null;
 };
+
+type POComment = { id: string; comment: string; created_at: string; author_name: string; user_id: string };
+type POAttachment = { id: string; file_name: string; file_url: string; created_at: string; uploader_name: string; user_id: string };
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -114,10 +119,22 @@ export default function PurchaseOrderDetail() {
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   // Inline item editing
-  const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price'; value: string } | null>(null);
+  const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price' | 'budget_amount'; value: string } | null>(null);
 
   // Inline currency editing (stores itemId being edited)
   const [currencyEdit, setCurrencyEdit] = useState<string | null>(null);
+
+  // Comments
+  const [newComment, setNewComment] = useState('');
+  const [commentPosting, setCommentPosting] = useState(false);
+
+  // Attachments
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  // Due date editing
+  const [dueDateEditing, setDueDateEditing] = useState(false);
+  const [dueDateValue, setDueDateValue] = useState('');
 
   // Auto-save indicator
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -179,6 +196,7 @@ export default function PurchaseOrderDetail() {
         currency: item.currency,
         notes: item.notes,
         system_id: item.system_id,
+        budget_amount: snap.field === 'budget_amount' ? (snap.value === '' ? null : snap.value) : (item.budget_amount ?? null),
       });
       setSavedAt(new Date());
       refetch();
@@ -225,6 +243,18 @@ export default function PurchaseOrderDetail() {
     enabled: itemSysSearch.length >= 1 && systemEdit !== null,
   });
 
+  const { data: comments = [], refetch: refetchComments } = useQuery<POComment[]>({
+    queryKey: ['po-comments', id],
+    queryFn: () => api.get(`/purchase-orders/${id}/comments`).then(r => r.data),
+    enabled: !!id,
+  });
+
+  const { data: attachments = [], refetch: refetchAttachments } = useQuery<POAttachment[]>({
+    queryKey: ['po-attachments', id],
+    queryFn: () => api.get(`/purchase-orders/${id}/attachments`).then(r => r.data),
+    enabled: !!id,
+  });
+
   useEffect(() => {
     localStorage.setItem('preferred_currency', displayCurrency);
   }, [displayCurrency]);
@@ -247,6 +277,19 @@ export default function PurchaseOrderDetail() {
   const isReleased = po?.status === 'released';
   const stageIdx = STAGES.indexOf(po?.status || 'draft');
   const hasNextStage = stageIdx >= 2 && stageIdx < STAGES.length - 1;
+
+  const STALL_DAYS = 7;
+  const isStalled = po && !['draft', 'released'].includes(po.status) &&
+    (Date.now() - new Date(po.updated_at).getTime()) > STALL_DAYS * 86_400_000;
+
+  const stageDuePast = po?.stage_due_date && new Date(po.stage_due_date) < new Date() && po.status !== 'released';
+
+  const totalBudget = (po?.items || []).reduce((sum: number, item: Item) => {
+    if (!item.budget_amount) return sum;
+    const c = convertAmount(parseFloat(item.budget_amount), item.currency, displayCurrency, rates);
+    return sum + (c || 0) * parseFloat(item.quantity);
+  }, 0);
+  const hasBudget = (po?.items || []).some((item: Item) => item.budget_amount != null);
 
   const handleAction = async (action: 'submit' | 'approve' | 'reject' | 'advance') => {
     setSaving(true);
@@ -308,6 +351,52 @@ export default function PurchaseOrderDetail() {
     await api.delete(`/purchase-orders/${id}/items/${itemId}`);
     toast.success('Item removed');
     refetch();
+  };
+
+  const handleSaveDueDate = async () => {
+    try {
+      await api.patch(`/purchase-orders/${id}/due-date`, { stage_due_date: dueDateValue || null });
+      toast.success('Due date saved');
+      setDueDateEditing(false);
+      refetch();
+    } catch { toast.error('Failed to save due date'); }
+  };
+
+  const handlePostComment = async () => {
+    const text = newComment.trim();
+    if (!text) return;
+    setCommentPosting(true);
+    try {
+      await api.post(`/purchase-orders/${id}/comments`, { comment: text });
+      setNewComment('');
+      refetchComments();
+    } catch { toast.error('Failed to post comment'); }
+    finally { setCommentPosting(false); }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!await confirm({ message: 'Delete this comment?', confirmLabel: 'Delete', danger: true })) return;
+    await api.delete(`/purchase-orders/${id}/comments/${commentId}`);
+    refetchComments();
+  };
+
+  const handleUploadAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAttachmentUploading(true);
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      await api.post(`/purchase-orders/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      refetchAttachments();
+    } catch { toast.error('Failed to upload attachment'); }
+    finally { setAttachmentUploading(false); if (attachmentInputRef.current) attachmentInputRef.current.value = ''; }
+  };
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    if (!await confirm({ message: 'Delete this attachment?', confirmLabel: 'Delete', danger: true })) return;
+    await api.delete(`/purchase-orders/${id}/attachments/${attachmentId}`);
+    refetchAttachments();
   };
 
   const formatCurrency = (amount: number | null, from: string) => {
@@ -388,6 +477,25 @@ export default function PurchaseOrderDetail() {
       />
 
       <div className="flex-1 overflow-auto p-6 space-y-5 bg-[#F1F4F8]">
+        {isStalled && (
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+            <div>
+              <span className="font-semibold">PO appears stalled</span>
+              {' — '}no updates in over {STALL_DAYS} days. Consider advancing the stage or leaving a comment.
+            </div>
+          </div>
+        )}
+        {stageDuePast && (
+          <div className="flex items-start gap-3 bg-red-50 border border-red-200 text-red-800 rounded-lg px-4 py-3 text-sm">
+            <CalendarClock className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
+            <div>
+              <span className="font-semibold">Stage due date has passed</span>
+              {' — '}this stage was due on {new Date(po.stage_due_date).toLocaleDateString()}.
+            </div>
+          </div>
+        )}
+
         {/* Lifecycle bar */}
         <div className="bg-white border border-slate-200 rounded-lg px-5 pt-4 pb-5">
           <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Lifecycle</div>
@@ -415,6 +523,29 @@ export default function PurchaseOrderDetail() {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Created</span>
                   <span className="text-slate-500">{new Date(po.created_at).toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 flex items-center gap-1"><CalendarClock className="w-3 h-3" />Stage due</span>
+                  {dueDateEditing ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="date"
+                        value={dueDateValue}
+                        onChange={e => setDueDateValue(e.target.value)}
+                        className="text-xs border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none"
+                      />
+                      <button onClick={handleSaveDueDate} className="text-xs text-blue-600 hover:underline font-medium">Save</button>
+                      <button onClick={() => setDueDateEditing(false)} className="text-slate-400 hover:text-slate-600"><X className="w-3 h-3" /></button>
+                    </div>
+                  ) : (
+                    <span
+                      onClick={() => { setDueDateEditing(true); setDueDateValue(po.stage_due_date ? po.stage_due_date.slice(0, 10) : ''); }}
+                      className={`text-xs cursor-pointer hover:text-blue-600 flex items-center gap-1 group/due ${stageDuePast ? 'text-red-600 font-medium' : 'text-slate-500'}`}
+                    >
+                      {po.stage_due_date ? new Date(po.stage_due_date).toLocaleDateString() : <span className="text-slate-300">Set date…</span>}
+                      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/due:opacity-40" />
+                    </span>
+                  )}
                 </div>
                 {po.approved_by_name && (
                   <div className="flex justify-between">
@@ -546,6 +677,7 @@ export default function PurchaseOrderDetail() {
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Product</th>
                           <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500">System</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Qty</th>
+                          <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Budget ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Cost ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Sell ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Total Sell</th>
@@ -556,8 +688,14 @@ export default function PurchaseOrderDetail() {
                       <tbody className="divide-y divide-slate-50">
                         {po.items.map((item: Item) => {
                           const isEditingQty = inlineEdit?.itemId === item.id && inlineEdit.field === 'quantity';
+                          const isEditingBudget = inlineEdit?.itemId === item.id && inlineEdit.field === 'budget_amount';
                           const isEditingCost = inlineEdit?.itemId === item.id && inlineEdit.field === 'cost_price';
                           const isEditingSell = inlineEdit?.itemId === item.id && inlineEdit.field === 'sell_price';
+                          const budgetConverted = item.budget_amount != null
+                            ? convertAmount(parseFloat(item.budget_amount), item.currency, displayCurrency, rates)
+                            : null;
+                          const costConverted = convertAmount(parseFloat(item.cost_price || '0'), item.currency, displayCurrency, rates) || 0;
+                          const budgetVsCost = budgetConverted != null ? (costConverted - budgetConverted) * parseFloat(item.quantity) : null;
                           const margin = itemMargin(item);
                           return (
                             <tr key={item.id} className="hover:bg-slate-50 group">
@@ -608,6 +746,32 @@ export default function PurchaseOrderDetail() {
                                     {parseFloat(item.quantity).toFixed(2)}
                                     {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
                                   </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 text-right text-xs">
+                                {isEditingBudget ? (
+                                  <input autoFocus type="number" min="0" step="any"
+                                    value={inlineEdit!.value}
+                                    onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
+                                    onBlur={handleSaveInline}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                    className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
+                                  />
+                                ) : (
+                                  <div
+                                    className={isDraft ? 'cursor-pointer group/budgetcell' : ''}
+                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'budget_amount', value: item.budget_amount || '' })}
+                                  >
+                                    <span className={`flex items-center justify-end gap-1 ${item.budget_amount == null ? 'text-slate-200' : 'text-slate-600'}`}>
+                                      {item.budget_amount != null ? formatCurrency(parseFloat(item.budget_amount), item.currency) : (isDraft ? 'Set…' : '—')}
+                                      {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/budgetcell:opacity-40" />}
+                                    </span>
+                                    {budgetVsCost != null && (
+                                      <span className={`text-[10px] ${budgetVsCost > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                        {budgetVsCost > 0 ? '+' : ''}{formatTotal(budgetVsCost)} over
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                               <td className="px-3 py-3 text-right text-xs text-slate-600">
@@ -689,6 +853,18 @@ export default function PurchaseOrderDetail() {
                       <tfoot>
                         <tr className="border-t border-slate-200 bg-slate-50">
                           <td colSpan={3} className="px-4 py-2.5 text-xs font-medium text-slate-500 text-right">Totals</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700">
+                            {hasBudget ? (
+                              <div>
+                                <div>{formatTotal(totalBudget)}</div>
+                                {totalBudget > 0 && (
+                                  <div className={`text-[10px] ${totalCost > totalBudget ? 'text-red-500' : 'text-green-600'}`}>
+                                    {totalCost > totalBudget ? '+' : ''}{formatTotal(totalCost - totalBudget)} vs cost
+                                  </div>
+                                )}
+                              </div>
+                            ) : '—'}
+                          </td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700">{formatTotal(totalCost)}</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-700" />
                           <td className="px-3 py-2.5 text-right text-sm font-bold text-blue-600">{formatTotal(totalSell)}</td>
@@ -731,6 +907,110 @@ export default function PurchaseOrderDetail() {
                         {h.comment && <div className="text-xs text-slate-500 mt-0.5">{h.comment}</div>}
                         <div className="text-xs text-slate-300 mt-0.5">{new Date(h.changed_at).toLocaleString()}</div>
                       </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+
+            {/* Comments panel */}
+            <div className="bg-white border border-slate-200 rounded-lg">
+              <div className="px-4 py-3 border-b border-slate-100 text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
+                Comments
+                {comments.length > 0 && <span className="text-xs text-slate-400 font-normal">({comments.length})</span>}
+              </div>
+              <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                {comments.length === 0
+                  ? <div className="px-4 py-4 text-sm text-slate-400">No comments yet</div>
+                  : comments.map(c => (
+                    <div key={c.id} className="px-4 py-3 flex items-start gap-3 group">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold shrink-0 uppercase">
+                        {c.author_name?.charAt(0) || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-medium text-slate-700">{c.author_name}</span>
+                          <span className="text-xs text-slate-300">{new Date(c.created_at).toLocaleString()}</span>
+                        </div>
+                        <div className="text-xs text-slate-600 mt-0.5 whitespace-pre-wrap">{c.comment}</div>
+                      </div>
+                      {(c.user_id === user?.id || user?.role === 'admin') && (
+                        <button
+                          onClick={() => handleDeleteComment(c.id)}
+                          className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 shrink-0 transition-opacity"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))
+                }
+              </div>
+              <div className="px-4 py-3 border-t border-slate-100 flex items-end gap-2">
+                <textarea
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) handlePostComment(); }}
+                  placeholder="Add a comment… (⌘+Enter to post)"
+                  rows={2}
+                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-blue-400"
+                />
+                <button
+                  onClick={handlePostComment}
+                  disabled={commentPosting || !newComment.trim()}
+                  className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Attachments panel */}
+            <div className="bg-white border border-slate-200 rounded-lg">
+              <div className="px-4 py-3 border-b border-slate-100 text-sm font-medium text-slate-700 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5 text-slate-400" />
+                  Attachments
+                  {attachments.length > 0 && <span className="text-xs text-slate-400 font-normal">({attachments.length})</span>}
+                </span>
+                <button
+                  onClick={() => attachmentInputRef.current?.click()}
+                  disabled={attachmentUploading}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:underline disabled:opacity-40"
+                >
+                  <Plus className="w-3 h-3" />{attachmentUploading ? 'Uploading…' : 'Add file'}
+                </button>
+                <input ref={attachmentInputRef} type="file" className="hidden" onChange={handleUploadAttachment} />
+              </div>
+              <div className="divide-y divide-slate-50">
+                {attachments.length === 0
+                  ? <div className="px-4 py-4 text-sm text-slate-400">No attachments</div>
+                  : attachments.map(a => (
+                    <div key={a.id} className="px-4 py-3 flex items-center gap-3 group">
+                      <FileText className="w-4 h-4 text-slate-300 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <a
+                          href={a.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline truncate block"
+                        >
+                          {a.file_name}
+                        </a>
+                        <div className="text-[10px] text-slate-300 mt-0.5">{a.uploader_name} · {new Date(a.created_at).toLocaleDateString()}</div>
+                      </div>
+                      <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="text-slate-300 hover:text-blue-500 shrink-0">
+                        <Download className="w-3.5 h-3.5" />
+                      </a>
+                      {(a.user_id === user?.id || user?.role === 'admin') && (
+                        <button
+                          onClick={() => handleDeleteAttachment(a.id)}
+                          className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 shrink-0 transition-opacity"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))
                 }

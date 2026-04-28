@@ -724,6 +724,35 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
+
+-- PO COMMENTS
+CREATE TABLE IF NOT EXISTS po_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id),
+  message TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_comments_po ON po_comments(po_id);
+
+-- PO ATTACHMENTS (multi-file per PO, separate from single document_url)
+CREATE TABLE IF NOT EXISTS po_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  file_name VARCHAR(500) NOT NULL,
+  file_path TEXT NOT NULL,
+  file_size BIGINT,
+  mime_type VARCHAR(100),
+  uploaded_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_attachments_po ON po_attachments(po_id);
+
+-- STAGE DUE DATE (per-PO, for the current stage)
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS stage_due_date DATE;
+
+-- ITEM BUDGET (budgeted amount per line item)
+ALTER TABLE po_items ADD COLUMN IF NOT EXISTS budget_amount NUMERIC;
 `;
 
 async function migrate() {
