@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
-import { ChevronLeft, ArrowUpRight, ShoppingCart, Clock, CheckCircle2, FileCheck, Wrench, Send, FilePen, Plus, AlertTriangle, Package } from 'lucide-react';
+import { ChevronLeft, ArrowUpRight, ShoppingCart, Clock, CheckCircle2, FileCheck, Wrench, Send, FilePen, Plus, AlertTriangle, Package, ChevronRight } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import CreatePOModal from '../procurement/CreatePOModal';
+import { useAuthStore } from '../../store/authStore';
+import toast from 'react-hot-toast';
 
 const STAGES = [
   { key: 'draft',               label: 'Draft',            icon: FilePen,      colorClass: 'bg-stone-50  text-stone-500  border-stone-200',  dot: 'bg-stone-400',   border: 'border-l-stone-300'   },
@@ -65,14 +67,41 @@ const TABS = [
   { key: 'released',    label: 'Released' },
 ];
 
+const TRANSITIONABLE = new Set(['purchase_order', 'po_review', 'engineering_review']);
+const CAN_MANAGE_ROLES = new Set(['admin', 'engineer', 'hq_manager']);
+
 export default function OrderManagementDashboard() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { user } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
 
   const { data: posData, isLoading } = useQuery({
     queryKey: ['all-purchase-orders'],
     queryFn: () => api.get('/purchase-orders?page_size=200').then(r => r.data),
+  });
+
+  const canManage = CAN_MANAGE_ROLES.has(user?.role ?? '');
+
+  const submitMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/submit`),
+    onSuccess: (_, id) => {
+      const po = items.find((r: any) => r.id === id);
+      toast.success(`${po?.po_code ?? 'PO'} submitted for approval`);
+      qc.invalidateQueries({ queryKey: ['all-purchase-orders'] });
+    },
+    onError: () => toast.error('Submit failed'),
+  });
+
+  const advanceMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/transition`),
+    onSuccess: (_, id) => {
+      const po = items.find((r: any) => r.id === id);
+      toast.success(`${po?.po_code ?? 'PO'} advanced`);
+      qc.invalidateQueries({ queryKey: ['all-purchase-orders'] });
+    },
+    onError: () => toast.error('Advance failed'),
   });
 
   const items: any[] = posData?.items ?? [];
@@ -204,9 +233,14 @@ export default function OrderManagementDashboard() {
             recent.map((po: any) => {
               const stale = isStale(po);
               const borderColor = STAGE_BORDER[po.status] || 'border-l-stone-200';
+              const showSubmit = po.status === 'draft' && canManage;
+              const showAdvance = TRANSITIONABLE.has(po.status) && canManage;
               return (
-                <Link key={po.id} to={`/purchase-orders/${po.id}`}
-                  className={`flex items-center justify-between px-4 py-3 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 ${borderColor}`}>
+                <div
+                  key={po.id}
+                  onClick={() => navigate(`/purchase-orders/${po.id}`)}
+                  className={`flex items-center justify-between px-4 py-3 hover:bg-stone-50/80 transition-all duration-150 group border-l-2 cursor-pointer ${borderColor}`}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <ShoppingCart className="w-4 h-4 text-stone-300 shrink-0 group-hover:text-blue-400 transition-colors" />
                     <div className="min-w-0">
@@ -229,11 +263,35 @@ export default function OrderManagementDashboard() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-3">
+                  <div className="flex items-center gap-2 shrink-0 ml-3">
                     <span className="text-xs text-stone-400 shrink-0">{timeAgo(po.created_at)}</span>
                     <StatusBadge status={po.status} />
+                    {(showSubmit || showAdvance) && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                        {showSubmit && (
+                          <button
+                            onClick={() => submitMutation.mutate(po.id)}
+                            disabled={submitMutation.isPending}
+                            title="Submit for approval"
+                            className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 transition-all font-medium disabled:opacity-40"
+                          >
+                            <Send className="w-3 h-3" />Submit
+                          </button>
+                        )}
+                        {showAdvance && (
+                          <button
+                            onClick={() => advanceMutation.mutate(po.id)}
+                            disabled={advanceMutation.isPending}
+                            title="Advance to next stage"
+                            className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 transition-all font-medium disabled:opacity-40"
+                          >
+                            <ChevronRight className="w-3 h-3" />Advance
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </Link>
+                </div>
               );
             })
           )}

@@ -8,7 +8,7 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download, Copy, User, ExternalLink, X, CheckSquare2, UserPlus, Bookmark, BookmarkCheck, ArrowRight } from 'lucide-react';
+import { Plus, Download, Copy, User, ExternalLink, X, CheckSquare2, UserPlus, Bookmark, BookmarkCheck, ArrowRight, CheckCircle2, XCircle, Send, ChevronRight } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 import AssignUserModal from './AssignUserModal';
@@ -42,11 +42,40 @@ type PO = {
   id: string; po_code: string; status: string; notes: string;
   project_code: string; project_name: string;
   created_by_name: string; approved_by_name: string;
-  item_count: string; created_at: string;
+  item_count: string; created_at: string; updated_at: string;
   total_cost_usd: string; stage_due_date: string | null;
 };
 
+type InlineAction = {
+  poId: string; poCode: string; action: 'approve' | 'reject';
+  rect: { top: number; right: number };
+};
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return '1d ago';
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+function updatedColor(updatedAt: string, status: string): string {
+  if (status === 'draft' || status === 'released') return 'text-slate-400';
+  const days = (Date.now() - new Date(updatedAt).getTime()) / 86_400_000;
+  if (days < 1) return 'text-green-600';
+  if (days < 3) return 'text-slate-500';
+  if (days < 7) return 'text-amber-500';
+  return 'text-red-500 font-medium';
+}
+
 const CAN_BULK_ASSIGN = new Set(['admin', 'engineer', 'hq_manager']);
+const CAN_MANAGE = new Set(['admin', 'engineer', 'hq_manager']);
+const CAN_APPROVE = new Set(['admin', 'hq_manager']);
 
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
@@ -63,8 +92,16 @@ export default function PurchaseOrdersList() {
   const [showPresetSave, setShowPresetSave] = useState(false);
   const [showPresetsDropdown, setShowPresetsDropdown] = useState(false);
   const [presetNameInput, setPresetNameInput] = useState('');
+  const [inlineAction, setInlineAction] = useState<InlineAction | null>(null);
+  const [inlineComment, setInlineComment] = useState('');
+  const [inlineActioning, setInlineActioning] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const presetsDropdownRef = useRef<HTMLDivElement>(null);
+  const inlinePanelRef = useRef<HTMLDivElement>(null);
+
+  const canManageAny = CAN_MANAGE.has(user?.role ?? '');
+  const canApproveAny = CAN_APPROVE.has(user?.role ?? '');
 
   useEffect(() => {
     if (!showPresetsDropdown) return;
@@ -76,6 +113,29 @@ export default function PurchaseOrdersList() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showPresetsDropdown]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if (e.key === '/' && !inInput) { e.preventDefault(); searchInputRef.current?.focus(); }
+      if (e.key === 'n' && !inInput && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setShowCreate(true); }
+      if (e.key === 'Escape') { setInlineAction(null); setInlineComment(''); }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!inlineAction) return;
+    const handler = (e: MouseEvent) => {
+      if (inlinePanelRef.current && !inlinePanelRef.current.contains(e.target as Node)) {
+        setInlineAction(null); setInlineComment('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [inlineAction]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['purchase-orders', search, statusFilter, mineOnly],
@@ -148,6 +208,44 @@ export default function PurchaseOrdersList() {
     onError: () => toast.error('Clone failed'),
   });
 
+  const submitMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/submit`),
+    onSuccess: (_, id) => {
+      const po = allItems.find(r => r.id === id);
+      toast.success(`${po?.po_code ?? 'PO'} submitted for approval`);
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+    },
+    onError: () => toast.error('Submit failed'),
+  });
+
+  const advanceMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/transition`),
+    onSuccess: (_, id) => {
+      const po = allItems.find(r => r.id === id);
+      toast.success(`${po?.po_code ?? 'PO'} advanced to next stage`);
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+    },
+    onError: () => toast.error('Stage advance failed'),
+  });
+
+  const handleInlineAction = async () => {
+    if (!inlineAction) return;
+    setInlineActioning(true);
+    try {
+      if (inlineAction.action === 'approve') {
+        await api.post(`/purchase-orders/${inlineAction.poId}/approve`, { comment: inlineComment });
+        toast.success(`${inlineAction.poCode} approved`);
+      } else {
+        await api.post(`/purchase-orders/${inlineAction.poId}/reject`, { comment: inlineComment });
+        toast.success(`${inlineAction.poCode} sent back to draft`);
+      }
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      setInlineAction(null);
+      setInlineComment('');
+    } catch { toast.error('Action failed'); }
+    finally { setInlineActioning(false); }
+  };
+
   const bulkAssignMutation = useMutation({
     mutationFn: ({ ids, userId }: { ids: string[]; userId: string }) =>
       api.post('/purchase-orders/bulk-assign', { ids, userId }).then(r => r.data),
@@ -214,7 +312,68 @@ export default function PurchaseOrdersList() {
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status, render: r => <POStatusBadge status={r.status} /> },
     { key: 'item_count' as any, header: 'Items', sortable: true, sortValue: r => Number(r.item_count) || 0, render: r => <span className="text-sm text-slate-600">{r.item_count}</span> },
     { key: 'created_by_name' as any, header: 'Created By', sortable: true, filterable: true, render: r => <span className="text-sm text-slate-600">{r.created_by_name}</span> },
-    { key: 'created_at', header: 'Date', sortable: true, sortValue: r => new Date(r.created_at).getTime(), render: r => <span className="text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString()}</span> },
+    {
+      key: 'updated_at' as any, header: 'Updated', sortable: true, sortValue: r => new Date(r.updated_at || r.created_at).getTime(),
+      render: r => (
+        <span className={`text-xs ${updatedColor(r.updated_at || r.created_at, r.status)}`}>
+          {timeAgo(r.updated_at || r.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: '__action' as any, header: '',
+      render: r => {
+        const isSubmittable = r.status === 'draft' && canManageAny;
+        const isApprovable = r.status === 'pending_approval' && canApproveAny;
+        const isAdvanceable = TRANSITIONABLE.has(r.status) && canManageAny;
+        if (!isSubmittable && !isApprovable && !isAdvanceable) return null;
+        return (
+          <div
+            className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={e => e.stopPropagation()}
+          >
+            {isSubmittable && (
+              <button
+                onClick={() => submitMutation.mutate(r.id)}
+                disabled={submitMutation.isPending}
+                title="Submit for approval"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 transition-all font-medium disabled:opacity-40"
+              >
+                <Send className="w-3 h-3" />Submit
+              </button>
+            )}
+            {isApprovable && (
+              <>
+                <button
+                  onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setInlineAction({ poId: r.id, poCode: r.po_code, action: 'approve', rect: { top: rect.bottom + 4, right: window.innerWidth - rect.right } }); setInlineComment(''); }}
+                  title="Approve"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-green-50 text-green-700 hover:bg-green-600 hover:text-white border border-green-200 hover:border-green-600 transition-all font-medium"
+                >
+                  <CheckCircle2 className="w-3 h-3" />Approve
+                </button>
+                <button
+                  onClick={e => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setInlineAction({ poId: r.id, poCode: r.po_code, action: 'reject', rect: { top: rect.bottom + 4, right: window.innerWidth - rect.right } }); setInlineComment(''); }}
+                  title="Reject / send back"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 hover:border-red-600 transition-all font-medium"
+                >
+                  <XCircle className="w-3 h-3" />Reject
+                </button>
+              </>
+            )}
+            {isAdvanceable && (
+              <button
+                onClick={() => advanceMutation.mutate(r.id)}
+                disabled={advanceMutation.isPending}
+                title="Advance to next stage"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 transition-all font-medium disabled:opacity-40"
+              >
+                <ChevronRight className="w-3 h-3" />Advance
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
   ];
 
   return (
@@ -252,9 +411,10 @@ export default function PurchaseOrdersList() {
           <span className="text-xs text-slate-400">All</span>
         </label>
         <input
+          ref={searchInputRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by PO code or project…"
+          placeholder="Search… (press / to focus)"
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600"
         />
         <select
@@ -425,6 +585,47 @@ export default function PurchaseOrdersList() {
         />
       )}
       {showCreate && <CreatePOModal onClose={() => setShowCreate(false)} />}
+
+      {inlineAction && (
+        <div
+          ref={inlinePanelRef}
+          style={{ position: 'fixed', top: inlineAction.rect.top, right: inlineAction.rect.right, zIndex: 9999 }}
+          className="bg-white border border-slate-200 rounded-xl shadow-2xl w-72 p-4 space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-700">
+              {inlineAction.action === 'approve' ? '✓ Approve' : '✗ Reject'} {inlineAction.poCode}
+            </span>
+            <button onClick={() => { setInlineAction(null); setInlineComment(''); }} className="text-slate-300 hover:text-slate-500">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <textarea
+            autoFocus
+            value={inlineComment}
+            onChange={e => setInlineComment(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) handleInlineAction(); }}
+            placeholder="Optional comment… (⌘Enter to confirm)"
+            rows={2}
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-blue-400"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => { setInlineAction(null); setInlineComment(''); }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleInlineAction}
+              disabled={inlineActioning}
+              className={`text-xs px-3 py-1.5 rounded-lg text-white font-medium disabled:opacity-40 ${inlineAction.action === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+            >
+              {inlineActioning ? '…' : inlineAction.action === 'approve' ? 'Approve' : 'Send Back'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

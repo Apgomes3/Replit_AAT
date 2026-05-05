@@ -290,7 +290,7 @@ export default function DataTable<T extends Record<string, any>>({
                   ? e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, row }); }
                   : undefined}
                 className={clsx(
-                  'border-b border-stone-100 transition-colors duration-100',
+                  'border-b border-stone-100 transition-colors duration-100 group',
                   onRowClick && 'cursor-pointer hover:bg-blue-50/40 hover:border-l-2 hover:border-l-blue-300',
                   !onRowClick && contextMenuItems && 'hover:bg-stone-50',
                 )}
