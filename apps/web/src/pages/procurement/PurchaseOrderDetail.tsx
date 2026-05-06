@@ -245,13 +245,13 @@ export default function PurchaseOrderDetail() {
 
   const { data: comments = [], refetch: refetchComments } = useQuery<POComment[]>({
     queryKey: ['po-comments', id],
-    queryFn: () => api.get(`/purchase-orders/${id}/comments`).then(r => r.data),
+    queryFn: () => api.get(`/purchase-orders/${id}/comments`).then(r => r.data.items ?? []),
     enabled: !!id,
   });
 
   const { data: attachments = [], refetch: refetchAttachments } = useQuery<POAttachment[]>({
     queryKey: ['po-attachments', id],
-    queryFn: () => api.get(`/purchase-orders/${id}/attachments`).then(r => r.data),
+    queryFn: () => api.get(`/purchase-orders/${id}/attachments`).then(r => r.data.items ?? []),
     enabled: !!id,
   });
 

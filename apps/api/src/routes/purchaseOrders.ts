@@ -293,7 +293,7 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
 // APPROVE
 router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  const { comment } = req.body;
+  const { comment } = req.body ?? {};
   const user = req.user!;
   if (user.role !== 'hq_manager' && user.role !== 'admin') {
     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only HQ managers or admins can approve POs' } });
@@ -327,7 +327,7 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
 // REJECT (send back to draft)
 router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  const { comment } = req.body;
+  const { comment } = req.body ?? {};
   const user = req.user!;
   if (user.role !== 'hq_manager' && user.role !== 'admin') {
     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only HQ managers or admins can reject POs' } });

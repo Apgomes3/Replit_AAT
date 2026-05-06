@@ -3,9 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import {
-  Search, Plus, Archive, Clock, CheckCircle2, Square, CheckSquare,
-  ExternalLink, X, Check, Mail, MailOpen, MoreVertical, Reply,
-  Forward, Star, ShoppingCart, Package, Send, ArrowRight,
+  Search, Plus, CheckCircle2, Square, CheckSquare,
+  ExternalLink, X, Check, Mail, MailOpen, MoreVertical,
+  Package, Send, ArrowRight, Eye,
 } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import CreatePOModal from '../procurement/CreatePOModal';
@@ -54,15 +54,18 @@ function formatCurrency(val: any): string {
 function getSnippet(po: any, canManage: boolean, canApprove: boolean): string {
   if (po.status === 'draft' && canManage) return 'Draft — ready to submit';
   if (po.status === 'pending_approval' && canApprove) return 'Awaiting your approval';
-  if (TRANSITIONABLE.has(po.status) && canManage) return `${po.status.replace(/_/g, ' ')} — advance when ready`;
+  if (po.status === 'pending_approval') return 'Submitted — awaiting approval';
+  if (po.status === 'purchase_order') return 'Purchase Order — ready to advance';
+  if (po.status === 'po_review') return 'PO Review — ready to advance';
+  if (po.status === 'engineering_review') return 'Engineering Review — ready to advance';
   if (po.status === 'released') return 'Released';
   return po.status.replace(/_/g, ' ');
 }
 
 function getActionLabel(po: any, canManage: boolean, canApprove: boolean): string | null {
-  if (po.status === 'draft' && canManage) return 'Submit →';
-  if (po.status === 'pending_approval' && canApprove) return 'Approve ✓';
-  if (TRANSITIONABLE.has(po.status) && canManage) return 'Advance →';
+  if (po.status === 'draft' && canManage) return 'Submit';
+  if (po.status === 'pending_approval' && canApprove) return 'Approve';
+  if (TRANSITIONABLE.has(po.status) && canManage) return 'Advance';
   return null;
 }
 
@@ -73,12 +76,30 @@ function isNeedsAction(po: any, canManage: boolean, canApprove: boolean): boolea
   return false;
 }
 
+const TABS = [
+  {
+    key: 'needs-action' as const,
+    label: 'Needs Action',
+    subtitle: 'Requires your decision',
+  },
+  {
+    key: 'in-progress' as const,
+    label: 'In Progress',
+    subtitle: 'Moving through the pipeline',
+  },
+  {
+    key: 'released' as const,
+    label: 'Released',
+    subtitle: 'Fully approved & complete',
+  },
+];
+
 export default function OrderManagementDashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
-  const [activeTab, setActiveTab] = useState<'needs-action' | 'waiting' | 'done'>('needs-action');
+  const [activeTab, setActiveTab] = useState<'needs-action' | 'in-progress' | 'released'>('needs-action');
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
   const [activePOId, setActivePOId] = useState<string | null>(null);
   const [readPOs, setReadPOs] = useState<Set<string>>(new Set());
@@ -103,7 +124,7 @@ export default function OrderManagementDashboard() {
   });
 
   const advanceMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/transition`),
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/transition`, {}),
     onSuccess: (_, id) => {
       const po = items.find((r: any) => r.id === id);
       toast.success(`${po?.po_code ?? 'PO'} advanced`);
@@ -142,12 +163,18 @@ export default function OrderManagementDashboard() {
   }
 
   const needsAction = items.filter(po => isNeedsAction(po, canManage, canApprove));
-  const waiting = items.filter(po => !isNeedsAction(po, canManage, canApprove) && po.status !== 'released');
-  const done = items.filter(po => po.status === 'released');
+  const inProgress = items.filter(po => !isNeedsAction(po, canManage, canApprove) && po.status !== 'released');
+  const released = items.filter(po => po.status === 'released');
 
   const tabItems = activeTab === 'needs-action' ? needsAction
-    : activeTab === 'waiting' ? waiting
-    : done;
+    : activeTab === 'in-progress' ? inProgress
+    : released;
+
+  const tabCounts = {
+    'needs-action': needsAction.length,
+    'in-progress': inProgress.length,
+    'released': released.length,
+  };
 
   const filteredItems = search
     ? tabItems.filter(po =>
@@ -179,9 +206,13 @@ export default function OrderManagementDashboard() {
     );
   };
 
+  const markAllRead = () => {
+    setReadPOs(prev => new Set([...prev, ...filteredItems.map(p => p.id)]));
+  };
+
   const isUnread = (po: any) => {
-    const isNew = po.status === 'pending_approval' || (po.status === 'draft' && canManage);
-    return isNew && !readPOs.has(po.id);
+    const isActionable = isNeedsAction(po, canManage, canApprove);
+    return isActionable && !readPOs.has(po.id);
   };
 
   const handleQuickAction = (e: React.MouseEvent, po: any) => {
@@ -191,10 +222,8 @@ export default function OrderManagementDashboard() {
     else if (TRANSITIONABLE.has(po.status) && canManage) advanceMutation.mutate(po.id);
   };
 
-  const totalHandled = needsAction.length === 0 ? 0 : Math.max(0, items.length - needsAction.length - waiting.length);
-  const totalQueue = items.length;
-  const progressPct = totalQueue > 0 ? Math.round((done.length / totalQueue) * 100) : 0;
-  const progressFilled = Math.round((done.length / Math.max(totalQueue, 1)) * 14);
+  const progressPct = items.length > 0 ? Math.round((released.length / items.length) * 100) : 0;
+  const progressFilled = Math.round((released.length / Math.max(items.length, 1)) * 14);
 
   return (
     <div className="h-full overflow-hidden flex flex-col bg-slate-50 font-sans text-slate-900">
@@ -253,7 +282,7 @@ export default function OrderManagementDashboard() {
       {/* Progress banner */}
       <div className="bg-blue-50/60 border-b border-blue-100 px-5 py-2 flex items-center gap-3 shrink-0">
         <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
-          Queue: <strong className="text-slate-800">{done.length} of {totalQueue}</strong> completed
+          Released: <strong className="text-slate-800">{released.length} of {items.length}</strong> POs
         </span>
         <div className="flex gap-0.5 flex-1 max-w-xs">
           {Array.from({ length: 14 }).map((_, i) => (
@@ -265,8 +294,8 @@ export default function OrderManagementDashboard() {
         </div>
         <span className="text-xs font-bold text-blue-600 whitespace-nowrap">{progressPct}%</span>
         {needsAction.length > 0 && (
-          <span className="ml-auto text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-            {needsAction.length} need your action
+          <span className="ml-auto text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+            {needsAction.length} need{needsAction.length === 1 ? 's' : ''} your action
           </span>
         )}
       </div>
@@ -274,29 +303,28 @@ export default function OrderManagementDashboard() {
       {/* Body: inbox list + reading pane */}
       <div className="flex-1 flex overflow-hidden">
 
-        {/* LEFT PANEL: Inbox list */}
+        {/* LEFT PANEL */}
         <div className="w-[42%] flex flex-col bg-white border-r border-slate-200 shadow-[2px_0_16px_-8px_rgba(0,0,0,0.08)]">
 
           {/* Tabs */}
           <div className="flex px-4 pt-2.5 border-b border-slate-200 gap-5 shrink-0 bg-slate-50/50">
-            {([
-              { key: 'needs-action', label: 'Needs Action', count: needsAction.length },
-              { key: 'waiting',      label: 'Waiting on Others', count: waiting.length },
-              { key: 'done',         label: 'Done', count: done.length },
-            ] as const).map(tab => (
+            {TABS.map(tab => (
               <button
                 key={tab.key}
-                onClick={() => { setActiveTab(tab.key); setActivePOId(null); }}
-                className={`pb-2.5 text-sm font-medium border-b-2 transition-colors ${
+                onClick={() => { setActiveTab(tab.key); setActivePOId(null); setSelectedPOs(new Set()); }}
+                className={`pb-2.5 text-left transition-colors border-b-2 ${
                   activeTab === tab.key
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                    ? 'border-blue-600'
+                    : 'border-transparent'
                 }`}
               >
-                {tab.label}
-                <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                  activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
-                }`}>{tab.count}</span>
+                <div className={`text-sm font-medium ${activeTab === tab.key ? 'text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}>
+                  {tab.label}
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                    activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
+                  }`}>{tabCounts[tab.key]}</span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5 leading-none">{tab.subtitle}</div>
               </button>
             ))}
           </div>
@@ -304,29 +332,33 @@ export default function OrderManagementDashboard() {
           {/* Toolbar */}
           <div className="px-4 py-1.5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
             <div className="flex items-center gap-3">
-              <button onClick={toggleSelectAll} className="text-slate-400 hover:text-slate-600 p-1 transition-colors">
+              <button
+                onClick={toggleSelectAll}
+                className="text-slate-400 hover:text-slate-600 p-1 transition-colors"
+                title={selectedPOs.size === filteredItems.length && filteredItems.length > 0 ? 'Deselect all' : 'Select all'}
+              >
                 {selectedPOs.size > 0 && selectedPOs.size === filteredItems.length
-                  ? <CheckSquare className="w-4 h-4" />
+                  ? <CheckSquare className="w-4 h-4 text-blue-600" />
                   : <Square className="w-4 h-4" />}
               </button>
-              <div className="flex items-center gap-0.5 border-l border-slate-200 pl-3">
-                <button className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Archive">
-                  <Archive className="w-3.5 h-3.5" />
-                </button>
-                <button className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Snooze">
-                  <Clock className="w-3.5 h-3.5" />
-                </button>
-                <button className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Mark read">
+              <div className="border-l border-slate-200 pl-3">
+                <button
+                  onClick={markAllRead}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                  title="Mark all as read"
+                >
                   <MailOpen className="w-3.5 h-3.5" />
-                </button>
-                <button className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="More">
-                  <MoreVertical className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
-            <span className="text-xs text-slate-400">
-              {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
-            </span>
+            <div className="flex items-center gap-2">
+              {selectedPOs.size > 0 && (
+                <span className="text-xs text-blue-600 font-medium">{selectedPOs.size} selected</span>
+              )}
+              <span className="text-xs text-slate-400">
+                {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
+              </span>
+            </div>
           </div>
 
           {/* Rows */}
@@ -346,8 +378,16 @@ export default function OrderManagementDashboard() {
             ) : filteredItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3 p-8">
                 <Mail className="w-10 h-10 opacity-20" />
-                <p className="text-sm font-medium text-slate-500">All clear</p>
-                <p className="text-xs text-center">Nothing in this section right now.</p>
+                <p className="text-sm font-medium text-slate-500">
+                  {activeTab === 'needs-action' ? 'All caught up' :
+                   activeTab === 'in-progress' ? 'No POs in progress' :
+                   'No released POs yet'}
+                </p>
+                <p className="text-xs text-center text-slate-400">
+                  {activeTab === 'needs-action' ? 'Nothing needs your attention right now.' :
+                   activeTab === 'in-progress' ? 'POs that have been submitted and are moving through the pipeline will appear here.' :
+                   'POs reach this state when fully approved and released.'}
+                </p>
               </div>
             ) : (
               filteredItems.map((po: any) => {
@@ -376,13 +416,6 @@ export default function OrderManagementDashboard() {
                         {isSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                       </button>
 
-                      <button
-                        onClick={(e) => { e.stopPropagation(); }}
-                        className="shrink-0 text-slate-300 hover:text-amber-400 p-0.5 transition-colors"
-                      >
-                        <Star className="w-3.5 h-3.5" />
-                      </button>
-
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${av.color}`}>
                         {av.label}
                       </div>
@@ -391,7 +424,9 @@ export default function OrderManagementDashboard() {
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <span className={`text-sm truncate ${unread ? 'font-bold text-slate-900' : 'font-medium text-slate-700'}`}>
                             {po.po_code}
-                            {po.project_name && <span className="text-slate-400 font-normal"> · {po.project_name}</span>}
+                            {po.project_name && (
+                              <span className="text-slate-400 font-normal"> · {po.project_name}</span>
+                            )}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate">
@@ -407,12 +442,12 @@ export default function OrderManagementDashboard() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0 ml-2">
-                      <span className={`text-xs ${unread ? 'font-bold text-blue-600' : 'text-slate-400'}`}>
+                      <span className={`text-xs shrink-0 ${unread ? 'font-bold text-blue-600' : 'text-slate-400'}`}>
                         {timeAgo(po.updated_at || po.created_at)}
                       </span>
 
                       {actionLabel && (
-                        <div className={`opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'opacity-100' : ''}`}>
+                        <div className={`transition-opacity ${isActive || isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                           <button
                             onClick={(e) => handleQuickAction(e, po)}
                             className="text-[10px] font-semibold text-blue-700 hover:text-blue-800 hover:bg-blue-100 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded transition-colors whitespace-nowrap"
@@ -435,57 +470,45 @@ export default function OrderManagementDashboard() {
 
             {/* Reading pane toolbar */}
             <div className="px-5 py-2.5 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Mail className="w-3.5 h-3.5" />
-                <span>PO Thread</span>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${STATUS_AVATAR[activePO.status]?.color ?? 'bg-slate-100 text-slate-600'}`}>
+                  {STATUS_AVATAR[activePO.status]?.label ?? '??'}
+                </div>
+                <span className="font-medium text-slate-700">{activePO.po_code}</span>
+                <StatusBadge status={activePO.status} />
               </div>
-              <div className="flex items-center gap-1">
-                <button className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Reply">
-                  <Reply className="w-3.5 h-3.5" />
-                </button>
-                <button className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Forward">
-                  <Forward className="w-3.5 h-3.5" />
-                </button>
-                <div className="w-px h-4 bg-slate-200 mx-0.5" />
-                <button className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Archive">
-                  <Archive className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded transition-colors border border-slate-200 ml-1"
-                >
-                  Open full view <ExternalLink className="w-3 h-3 ml-0.5" />
-                </button>
-              </div>
+              <button
+                onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors border border-blue-200"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Open full detail
+                <ExternalLink className="w-3 h-3 ml-0.5" />
+              </button>
             </div>
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
-              <div className="max-w-2xl mx-auto px-7 py-7 space-y-7">
+              <div className="max-w-2xl mx-auto px-7 py-7 space-y-6">
 
                 {/* PO header */}
                 <div>
-                  <div className="flex items-start justify-between mb-4">
-                    <h2 className="text-xl font-bold text-slate-900 leading-tight">
-                      {activePO.po_code}
-                      {activePO.project_name && (
-                        <span className="text-slate-500 font-normal ml-2">· {activePO.project_name}</span>
-                      )}
-                    </h2>
-                    <StatusBadge status={activePO.status} />
-                  </div>
-
-                  <div className="flex items-center gap-4 bg-slate-50 rounded-lg px-4 py-3 border border-slate-100">
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${STATUS_AVATAR[activePO.status]?.color ?? 'bg-slate-100 text-slate-600'}`}>
-                      {(activePO.created_by_name ?? '??').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="font-semibold text-sm text-slate-900 truncate">{activePO.created_by_name ?? '—'}</span>
-                        <span className="text-xs text-slate-400 shrink-0">{timeAgo(activePO.created_at)}</span>
-                      </div>
-                      <div className="text-xs text-slate-500">to Procurement Team</div>
-                    </div>
+                  <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1">
+                    {activePO.po_code}
+                    {activePO.project_name && (
+                      <span className="text-slate-400 font-normal text-base ml-2">· {activePO.project_name}</span>
+                    )}
+                  </h2>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <span>Created by <strong className="text-slate-700">{activePO.created_by_name ?? '—'}</strong></span>
+                    <span>·</span>
+                    <span>{timeAgo(activePO.created_at)} ago</span>
+                    {activePO.approved_by_name && (
+                      <>
+                        <span>·</span>
+                        <span>Approved by <strong className="text-slate-700">{activePO.approved_by_name}</strong></span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -496,15 +519,13 @@ export default function OrderManagementDashboard() {
                     <div className="text-sm font-medium text-slate-800">{activePO.project_name || activePO.project_code || '—'}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Cost</div>
-                    <div className="text-lg font-bold text-slate-900">{formatCurrency(activePO.total_cost_usd)}</div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Cost (USD)</div>
+                    <div className="text-xl font-bold text-slate-900">{formatCurrency(activePO.total_cost_usd)}</div>
                   </div>
-                  {activePO.approved_by_name && (
-                    <div>
-                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Approved By</div>
-                      <div className="text-sm font-medium text-slate-800">{activePO.approved_by_name}</div>
-                    </div>
-                  )}
+                  <div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Status</div>
+                    <StatusBadge status={activePO.status} />
+                  </div>
                   {Number(activePO.item_count) > 0 && (
                     <div>
                       <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Line Items</div>
@@ -526,7 +547,7 @@ export default function OrderManagementDashboard() {
                   )}
                 </div>
 
-                {/* Timeline */}
+                {/* Activity timeline */}
                 <div>
                   <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Activity</div>
                   <div className="relative border-l-2 border-slate-200 ml-3 space-y-5 pb-1">
@@ -542,12 +563,14 @@ export default function OrderManagementDashboard() {
                       <div className="relative pl-5">
                         <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-100 border-blue-600" />
                         <div className="flex justify-between items-start">
-                          <div className="text-sm font-semibold text-slate-900">{activePO.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</div>
+                          <div className="text-sm font-semibold text-slate-900">
+                            {activePO.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                          </div>
                           <div className="text-xs text-slate-400">{timeAgo(activePO.updated_at)}</div>
                         </div>
                         {activePO.status === 'pending_approval' && (
                           <div className="text-xs text-slate-500 mt-1 bg-amber-50 border border-amber-100 rounded-md px-2.5 py-1.5 inline-block">
-                            Waiting for Procurement Manager approval
+                            Waiting for approval by an HQ Manager or Admin
                           </div>
                         )}
                       </div>
@@ -557,18 +580,12 @@ export default function OrderManagementDashboard() {
 
                 {/* Action area */}
                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 shadow-sm">
-                  <textarea
-                    className="w-full bg-white border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none mb-4"
-                    rows={2}
-                    placeholder="Add an internal note..."
-                  />
-
                   <div className="flex items-center justify-between">
                     <button
                       onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
                       className="text-sm text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1.5 transition-colors"
                     >
-                      <ArrowRight className="w-4 h-4" /> View full detail
+                      <ArrowRight className="w-4 h-4" /> View full detail & history
                     </button>
 
                     <div className="flex items-center gap-2.5">
@@ -595,7 +612,7 @@ export default function OrderManagementDashboard() {
                             disabled={approveMutation.isPending}
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50"
                           >
-                            <Check className="w-4 h-4" /> Approve this PO
+                            <Check className="w-4 h-4" /> Approve
                           </button>
                         </>
                       )}
@@ -613,7 +630,7 @@ export default function OrderManagementDashboard() {
                           onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
                           className="px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-100 transition-colors shadow-sm flex items-center gap-1.5"
                         >
-                          <CheckCircle2 className="w-4 h-4" /> Released — View
+                          <CheckCircle2 className="w-4 h-4" /> View Released PO
                         </button>
                       )}
                     </div>
@@ -624,10 +641,16 @@ export default function OrderManagementDashboard() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 text-slate-400 gap-3">
+          <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 text-slate-400 gap-3 p-8">
             <Mail className="w-14 h-14 opacity-15" />
-            <p className="text-base font-medium text-slate-500">Select an item to review</p>
-            <p className="text-sm">Click any PO in the list to see details here.</p>
+            <p className="text-base font-medium text-slate-500">Select a PO to review</p>
+            <p className="text-sm text-center max-w-xs">
+              {activeTab === 'needs-action'
+                ? 'Click any item to see its details and take action.'
+                : activeTab === 'in-progress'
+                ? 'These POs are moving through the pipeline. Click one to see where it stands.'
+                : 'Click a released PO to view its full detail.'}
+            </p>
           </div>
         )}
       </div>
