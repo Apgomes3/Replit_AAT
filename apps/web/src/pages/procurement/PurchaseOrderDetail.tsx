@@ -367,7 +367,7 @@ export default function PurchaseOrderDetail() {
     if (!text) return;
     setCommentPosting(true);
     try {
-      await api.post(`/purchase-orders/${id}/comments`, { comment: text });
+      await api.post(`/purchase-orders/${id}/comments`, { message: text });
       setNewComment('');
       refetchComments();
     } catch { toast.error('Failed to post comment'); }
