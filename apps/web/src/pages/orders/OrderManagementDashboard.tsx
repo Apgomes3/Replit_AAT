@@ -17,13 +17,19 @@ const CAN_MANAGE_ROLES = new Set(['admin', 'engineer', 'hq_manager']);
 const CAN_APPROVE_ROLES = new Set(['admin', 'hq_manager']);
 
 const PIPELINE_STAGES = [
-  { key: 'draft',              label: 'Draft',     color: 'bg-slate-100 text-slate-600 border-slate-200' },
-  { key: 'pending_approval',   label: 'Pending',   color: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { key: 'purchase_order',     label: 'PO',        color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { key: 'po_review',          label: 'Review',    color: 'bg-purple-50 text-purple-700 border-purple-200' },
-  { key: 'engineering_review', label: 'Eng',       color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  { key: 'released',           label: 'Released',  color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  { key: 'draft',              label: 'Draft',             color: 'bg-slate-100 text-slate-600 border-slate-200' },
+  { key: 'pending_approval',   label: 'Pending Approval',  color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { key: 'purchase_order',     label: 'Purchase Order',    color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { key: 'po_review',          label: 'PO Review',         color: 'bg-purple-50 text-purple-700 border-purple-200' },
+  { key: 'engineering_review', label: 'Eng. Review',       color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  { key: 'released',           label: 'Released',          color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 ];
+
+const ADVANCE_TO: Record<string, string> = {
+  purchase_order:     'PO Review',
+  po_review:          'Engineering Review',
+  engineering_review: 'Released',
+};
 
 const STATUS_AVATAR: Record<string, { label: string; color: string }> = {
   draft:              { label: 'DR', color: 'bg-slate-100 text-slate-600' },
@@ -114,30 +120,31 @@ export default function OrderManagementDashboard() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/submit`),
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/submit`, {}),
     onSuccess: (_, id) => {
       const po = items.find((r: any) => r.id === id);
-      toast.success(`${po?.po_code ?? 'PO'} submitted for approval`);
+      toast.success(`${po?.po_code ?? 'PO'} submitted — awaiting approval`);
       qc.invalidateQueries({ queryKey: ['all-purchase-orders'] });
     },
-    onError: () => toast.error('Submit failed'),
+    onError: (err: any) => toast.error(err?.response?.data?.error?.message ?? 'Submit failed'),
   });
 
   const advanceMutation = useMutation({
     mutationFn: (id: string) => api.post(`/purchase-orders/${id}/transition`, {}),
     onSuccess: (_, id) => {
       const po = items.find((r: any) => r.id === id);
-      toast.success(`${po?.po_code ?? 'PO'} advanced`);
+      const nextStage = ADVANCE_TO[po?.status ?? ''] ?? 'next stage';
+      toast.success(`${po?.po_code ?? 'PO'} advanced to ${nextStage}`);
       qc.invalidateQueries({ queryKey: ['all-purchase-orders'] });
     },
-    onError: () => toast.error('Advance failed'),
+    onError: (err: any) => toast.error(err?.response?.data?.error?.message ?? 'Advance failed'),
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/approve`),
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/approve`, {}),
     onSuccess: (_, id) => {
       const po = items.find((r: any) => r.id === id);
-      toast.success(`${po?.po_code ?? 'PO'} approved`);
+      toast.success(`${po?.po_code ?? 'PO'} approved — moved to Purchase Order`);
       qc.invalidateQueries({ queryKey: ['all-purchase-orders'] });
       setActivePOId(null);
     },
@@ -145,10 +152,10 @@ export default function OrderManagementDashboard() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/reject`),
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/reject`, {}),
     onSuccess: (_, id) => {
       const po = items.find((r: any) => r.id === id);
-      toast.success(`${po?.po_code ?? 'PO'} rejected`);
+      toast.success(`${po?.po_code ?? 'PO'} rejected — returned to Draft`);
       qc.invalidateQueries({ queryKey: ['all-purchase-orders'] });
       setActivePOId(null);
     },
