@@ -185,6 +185,11 @@ export default function OrderManagementDashboard() {
     onError: (err: any) => toast.error(err?.response?.data?.error?.message ?? 'Reject failed'),
   });
 
+  const { data: stageRoles = {} } = useQuery({
+    queryKey: ['po-stage-roles'],
+    queryFn: () => api.get('/purchase-orders/stage-roles').then(r => r.data),
+  });
+
   const items: any[] = posData?.items ?? [];
 
   const countsByStatus: Record<string, number> = {};
@@ -214,11 +219,6 @@ export default function OrderManagementDashboard() {
         po.notes?.toLowerCase().includes(search.toLowerCase())
       )
     : tabItems;
-
-  const { data: stageRoles = {} } = useQuery({
-    queryKey: ['po-stage-roles'],
-    queryFn: () => api.get('/purchase-orders/stage-roles').then(r => r.data),
-  });
 
   const { data: activePODetail } = useQuery({
     queryKey: ['po-detail-pane', activePOId],
