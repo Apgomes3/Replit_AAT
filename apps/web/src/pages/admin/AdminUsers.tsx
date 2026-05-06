@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail } from 'lucide-react';
+import { Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail, Eye, EyeOff } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -10,7 +10,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
 
-interface UserRow { id: string; email: string; first_name: string; last_name: string; role: string; is_active: boolean; created_at: string; }
+interface UserRow { id: string; email: string; first_name: string; last_name: string; role: string; is_active: boolean; can_see_all_pos: boolean; created_at: string; }
 
 export default function AdminUsers() {
   const currentUser = useAuthStore(s => s.user);
@@ -77,6 +77,19 @@ export default function AdminUsers() {
     }
   };
 
+  const handleTogglePOVisibility = async (user: UserRow) => {
+    setLoadingId(user.id);
+    try {
+      await api.patch(`/admin/users/${user.id}/po-visibility`, { can_see_all_pos: !user.can_see_all_pos });
+      toast.success(user.can_see_all_pos ? 'PO visibility restricted' : 'Can now see all POs');
+      refetch();
+    } catch {
+      toast.error('Failed to update PO visibility');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   const handleDelete = async (user: UserRow) => {
     setLoadingId(user.id);
     try {
@@ -94,8 +107,28 @@ export default function AdminUsers() {
   const columns: Column<UserRow>[] = [
     { key: 'email', header: 'Email', render: r => <span className="font-medium">{r.email}</span> },
     { key: 'first_name', header: 'Name', render: r => `${r.first_name || ''} ${r.last_name || ''}`.trim() || '—' },
-    { key: 'role', header: 'Role', render: r => <span className="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded capitalize">{r.role}</span> },
+    { key: 'role', header: 'Role', render: r => <span className="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded capitalize">{r.role?.replace(/_/g, ' ')}</span> },
     { key: 'is_active', header: 'Status', render: r => <StatusBadge status={r.is_active ? 'Active' : 'Blocked'} /> },
+    {
+      key: 'can_see_all_pos', header: 'See All POs', render: r => {
+        const isSelf = r.id === currentUser?.id;
+        const busy = loadingId === r.id;
+        return (
+          <button
+            onClick={() => !isSelf && !busy && handleTogglePOVisibility(r)}
+            disabled={isSelf || busy}
+            title={r.can_see_all_pos ? 'Click to restrict — will only see own POs' : 'Click to grant — will see all POs'}
+            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+              ${r.can_see_all_pos
+                ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+          >
+            {r.can_see_all_pos ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            {r.can_see_all_pos ? 'All POs' : 'Own only'}
+          </button>
+        );
+      }
+    },
     { key: 'created_at', header: 'Created', render: r => new Date(r.created_at).toLocaleDateString() },
     {
       key: 'id', header: '', render: r => {

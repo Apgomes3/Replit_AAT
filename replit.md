@@ -124,13 +124,20 @@ If `SMTP_*` secrets are absent in development, reset URLs are logged to the serv
 ## PO Pipeline Stage Roles
 Stage-specific actors enforced in API (`canAdvanceStage`):
 - **Draft → submit**: creator OR any `canManage` role (engineer/hq_manager/admin)
-- **Pending Approval → approve/reject**: hq_manager/admin only (hardcoded)
+- **Pending Approval → approve/reject**: `po_stage_assignees['pending_approval']` (default: admin + hq_manager); falls back to hq_manager/admin if list is empty
 - **Purchase Order → PO Review**: PO creator OR hq_manager/admin OR `po_stage_assignees['purchase_order']`
 - **PO Review → Engineering Review**: `po_stage_assignees['po_review']` (default: PMO user)
 - **Engineering Review → Released**: `po_stage_assignees['engineering_review']` (default: engineer user)
 
 Admin configures assignees at `/admin/po-stage-roles` (Platform Admin → Order Management → PO Stage Roles).
 Table: `po_stage_assignees (id, stage, user_id, created_by, created_at)` — UNIQUE(stage, user_id).
+
+## PO Visibility
+- `users.can_see_all_pos BOOLEAN DEFAULT false` — controls whether a user sees all POs or only their own/relevant ones
+- Admin and HQ Manager default to `true`; all other roles default to `false`
+- Users without `can_see_all_pos` only see POs where they are: creator, designated user, or stage assignee for current status
+- Toggle per user in Platform Admin → User Management ("See All POs" column)
+- API: `PATCH /admin/users/:id/po-visibility { can_see_all_pos: boolean }`
 
 ## Key API Endpoints
 - `POST /api/v1/auth/login` — Login

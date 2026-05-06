@@ -754,6 +754,9 @@ ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS stage_due_date DATE;
 -- ITEM BUDGET (budgeted amount per line item)
 ALTER TABLE po_items ADD COLUMN IF NOT EXISTS budget_amount NUMERIC;
 
+-- PO VISIBILITY FLAG (users who can see all POs regardless of ownership)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS can_see_all_pos BOOLEAN DEFAULT false;
+
 -- PO STAGE ASSIGNEES (admin-configurable actors per pipeline stage)
 CREATE TABLE IF NOT EXISTS po_stage_assignees (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

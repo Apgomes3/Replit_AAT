@@ -77,7 +77,12 @@ function getActionLabel(po: any, canManage: boolean, canApprove: boolean): strin
 
 function isNeedsAction(po: any, canManage: boolean, canApprove: boolean, userId: string, stageRoles: Record<string, any[]>): boolean {
   if (po.status === 'draft' && canManage) return true;
-  if (po.status === 'pending_approval' && canApprove) return true;
+  if (po.status === 'pending_approval') {
+    const pendingApprovers = stageRoles['pending_approval'] ?? [];
+    if (pendingApprovers.length > 0) {
+      if (pendingApprovers.some((a: any) => a.user_id === userId)) return true;
+    } else if (canApprove) return true;
+  }
   // purchase_order: creator OR hq_manager/admin OR in stage_assignees
   if (po.status === 'purchase_order') {
     if (canApprove) return true;

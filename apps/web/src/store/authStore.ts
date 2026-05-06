@@ -35,7 +35,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     try {
       const res = await api.get('/auth/me');
-      set({ user: { id: res.data.id, email: res.data.email, firstName: res.data.first_name, lastName: res.data.last_name, role: res.data.role }, isLoading: false });
+      set({ user: { id: res.data.id, email: res.data.email, firstName: res.data.first_name, lastName: res.data.last_name, role: res.data.role, canSeeAllPos: res.data.can_see_all_pos }, isLoading: false });
     } catch {
       localStorage.removeItem('edp_token');
       set({ user: null, token: null, isLoading: false });

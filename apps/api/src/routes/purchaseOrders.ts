@@ -92,6 +92,19 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
   const conditions: string[] = [];
   const params: any[] = [];
   let p = 1;
+
+  // Visibility: check if user can see all POs or only their own/relevant ones
+  const visRes = await query('SELECT can_see_all_pos FROM users WHERE id=$1', [req.user!.id]);
+  const canSeeAll = visRes.rows[0]?.can_see_all_pos ?? false;
+  if (!canSeeAll) {
+    conditions.push(`(
+      po.created_by = $${p}
+      OR EXISTS (SELECT 1 FROM po_designated_users pdu WHERE pdu.po_id=po.id AND pdu.user_id=$${p})
+      OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$${p})
+    )`);
+    params.push(req.user!.id); p++;
+  }
+
   if (status) { conditions.push(`po.status = $${p++}`); params.push(status); }
   if (project_id) { conditions.push(`po.project_id = $${p++}`); params.push(project_id); }
   if (q) { conditions.push(`(po.po_code ILIKE $${p} OR proj.project_name ILIKE $${p})`); params.push(`%${q}%`); p++; }
@@ -308,8 +321,15 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
   const { id } = req.params;
   const { comment } = req.body ?? {};
   const user = req.user!;
-  if (user.role !== 'hq_manager' && user.role !== 'admin') {
-    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only HQ managers or admins can approve POs' } });
+  // Check configured approvers; fall back to hq_manager/admin if none configured
+  const approverRows = await query('SELECT user_id FROM po_stage_assignees WHERE stage=$1', ['pending_approval']);
+  if (approverRows.rows.length > 0) {
+    const allowed = approverRows.rows.some((r: any) => r.user_id === user.id);
+    if (!allowed) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised to approve at this stage' } });
+  } else {
+    if (user.role !== 'hq_manager' && user.role !== 'admin') {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only HQ managers or admins can approve POs' } });
+    }
   }
   const poRes = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
@@ -342,8 +362,14 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
   const { id } = req.params;
   const { comment } = req.body ?? {};
   const user = req.user!;
-  if (user.role !== 'hq_manager' && user.role !== 'admin') {
-    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only HQ managers or admins can reject POs' } });
+  const approverRows = await query('SELECT user_id FROM po_stage_assignees WHERE stage=$1', ['pending_approval']);
+  if (approverRows.rows.length > 0) {
+    const allowed = approverRows.rows.some((r: any) => r.user_id === user.id);
+    if (!allowed) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised to reject at this stage' } });
+  } else {
+    if (user.role !== 'hq_manager' && user.role !== 'admin') {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only HQ managers or admins can reject POs' } });
+    }
   }
   const poRes = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });

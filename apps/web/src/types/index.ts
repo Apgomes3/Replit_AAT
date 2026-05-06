@@ -3,7 +3,8 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
-  role: 'admin' | 'engineer' | 'viewer';
+  role: 'admin' | 'engineer' | 'viewer' | 'hq_manager' | 'pmo';
+  canSeeAllPos?: boolean;
 }
 
 export interface Project {

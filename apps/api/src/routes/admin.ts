@@ -10,8 +10,21 @@ import { sendPasswordResetEmail } from '../lib/email';
 const router = Router();
 
 router.get('/users', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT id, email, first_name, last_name, role, is_active, created_at FROM users ORDER BY created_at');
+  const result = await query('SELECT id, email, first_name, last_name, role, is_active, can_see_all_pos, created_at FROM users ORDER BY created_at');
   res.json({ items: result.rows });
+});
+
+router.patch('/users/:id/po-visibility', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { can_see_all_pos } = req.body;
+  if (typeof can_see_all_pos !== 'boolean') {
+    return res.status(400).json({ error: { code: 'INVALID', message: 'can_see_all_pos must be boolean' } });
+  }
+  const result = await query(
+    'UPDATE users SET can_see_all_pos=$1, updated_at=NOW() WHERE id=$2 RETURNING id, email, can_see_all_pos',
+    [can_see_all_pos, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+  res.json(result.rows[0]);
 });
 
 router.post('/users', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {

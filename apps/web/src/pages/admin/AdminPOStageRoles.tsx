@@ -7,11 +7,17 @@ import { Plus, Trash2, Lock, ChevronRight, User } from 'lucide-react';
 
 const STAGE_CONFIG = [
   {
+    stage: 'pending_approval',
+    label: 'Pending Approval',
+    description: 'Who can approve or reject a submitted PO',
+    note: 'If no users are assigned here, any HQ Manager or Admin can approve. Assigning users overrides the default.',
+    color: 'amber',
+  },
+  {
     stage: 'purchase_order',
     label: 'Purchase Order',
     description: 'Who can advance a PO from Purchase Order → PO Review',
     note: 'The PO creator and any HQ Manager / Admin can also advance this stage regardless of this list.',
-    configurable: true,
     color: 'blue',
   },
   {
@@ -19,7 +25,6 @@ const STAGE_CONFIG = [
     label: 'PO Review',
     description: 'Who can advance a PO from PO Review → Engineering Review',
     note: null,
-    configurable: true,
     color: 'violet',
   },
   {
@@ -27,7 +32,6 @@ const STAGE_CONFIG = [
     label: 'Engineering Review',
     description: 'Who can advance a PO from Engineering Review → Released',
     note: null,
-    configurable: true,
     color: 'emerald',
   },
 ];
@@ -38,12 +42,6 @@ const FIXED_STAGES = [
     description: 'Submit for approval',
     actors: 'Any Procurement Manager, HQ Manager, or Admin who created the PO',
     color: 'stone',
-  },
-  {
-    label: 'Pending Approval',
-    description: 'Approve or reject',
-    actors: 'HQ Manager and Admin only (system enforced)',
-    color: 'amber',
   },
 ];
 
@@ -110,7 +108,7 @@ export default function AdminPOStageRoles() {
       <div className="flex items-center gap-1 flex-wrap text-xs font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
         {['Draft', 'Pending Approval', 'Purchase Order', 'PO Review', 'Engineering Review', 'Released'].map((s, i, arr) => (
           <span key={s} className="flex items-center gap-1">
-            <span className={i >= 2 && i <= 4 ? 'text-blue-600 font-semibold' : ''}>{s}</span>
+            <span className={i >= 1 && i <= 4 ? 'text-blue-600 font-semibold' : ''}>{s}</span>
             {i < arr.length - 1 && <ChevronRight className="w-3 h-3 text-slate-300" />}
           </span>
         ))}
@@ -118,7 +116,7 @@ export default function AdminPOStageRoles() {
       </div>
 
       {/* Fixed / system-enforced stages */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {FIXED_STAGES.map(s => {
           const c = COLOR[s.color];
           return (
