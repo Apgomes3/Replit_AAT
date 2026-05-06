@@ -108,8 +108,18 @@ export default function OrderManagementDashboard() {
   const [activeTab, setActiveTab] = useState<'needs-action' | 'in-progress' | 'released'>('needs-action');
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
   const [activePOId, setActivePOId] = useState<string | null>(null);
-  const [readPOs, setReadPOs] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+
+  // Persist last-seen status per PO in localStorage (per user).
+  // A PO is "unread" when its current status differs from what was last seen.
+  const seenKey = `po_seen_${user?.id ?? 'anon'}`;
+  const [seenStatuses, setSeenStatuses] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(seenKey) ?? '{}'); } catch { return {}; }
+  });
+  const persistSeen = (updated: Record<string, string>) => {
+    setSeenStatuses(updated);
+    localStorage.setItem(seenKey, JSON.stringify(updated));
+  };
 
   const canManage = CAN_MANAGE_ROLES.has(user?.role ?? '');
   const canApprove = CAN_APPROVE_ROLES.has(user?.role ?? '');
@@ -201,7 +211,8 @@ export default function OrderManagementDashboard() {
 
   const handleRowClick = (id: string) => {
     setActivePOId(id);
-    setReadPOs(prev => new Set([...prev, id]));
+    const po = items.find((p: any) => p.id === id);
+    if (po) persistSeen({ ...seenStatuses, [id]: po.status });
   };
 
   const toggleSelect = (id: string, e: React.MouseEvent) => {
@@ -220,13 +231,12 @@ export default function OrderManagementDashboard() {
   };
 
   const markAllRead = () => {
-    setReadPOs(prev => new Set([...prev, ...filteredItems.map(p => p.id)]));
+    const updated = { ...seenStatuses };
+    for (const po of filteredItems) updated[po.id] = po.status;
+    persistSeen(updated);
   };
 
-  const isUnread = (po: any) => {
-    const isActionable = isNeedsAction(po, canManage, canApprove);
-    return isActionable && !readPOs.has(po.id);
-  };
+  const isUnread = (po: any) => seenStatuses[po.id] !== po.status;
 
   const handleQuickAction = (e: React.MouseEvent, po: any) => {
     e.stopPropagation();
