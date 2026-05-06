@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import {
   Search, Plus, CheckCircle2, Square, CheckSquare,
-  ExternalLink, X, Check, Mail, MailOpen, MoreVertical,
-  Package, Send, ArrowRight, Eye,
+  ExternalLink, X, Check, Mail, MailOpen,
+  Package, Send, ArrowRight, Eye, MessageSquare,
 } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import CreatePOModal from '../procurement/CreatePOModal';
@@ -190,6 +190,12 @@ export default function OrderManagementDashboard() {
         po.notes?.toLowerCase().includes(search.toLowerCase())
       )
     : tabItems;
+
+  const { data: activePODetail } = useQuery({
+    queryKey: ['po-detail-pane', activePOId],
+    queryFn: () => api.get(`/purchase-orders/${activePOId}`).then(r => r.data),
+    enabled: !!activePOId,
+  });
 
   const activePO = items.find((p: any) => p.id === activePOId) ?? null;
 
@@ -556,33 +562,48 @@ export default function OrderManagementDashboard() {
 
                 {/* Activity timeline */}
                 <div>
-                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Activity</div>
-                  <div className="relative border-l-2 border-slate-200 ml-3 space-y-5 pb-1">
-                    <div className="relative pl-5">
-                      <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-white border-slate-300" />
-                      <div className="flex justify-between items-start">
-                        <div className="text-sm font-medium text-slate-700">Created</div>
-                        <div className="text-xs text-slate-400">{timeAgo(activePO.created_at)}</div>
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5">by {activePO.created_by_name ?? '—'}</div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Stage History</div>
+                  {!activePODetail ? (
+                    <div className="space-y-3">
+                      {[1,2].map(i => <div key={i} className="skeleton h-10 rounded-md" />)}
                     </div>
-                    {activePO.status !== 'draft' && (
-                      <div className="relative pl-5">
-                        <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-100 border-blue-600" />
-                        <div className="flex justify-between items-start">
-                          <div className="text-sm font-semibold text-slate-900">
-                            {activePO.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                  ) : (
+                    <div className="relative border-l-2 border-slate-200 ml-3 space-y-4 pb-1">
+                      {[...(activePODetail.history ?? [])].reverse().map((h: any, i: number, arr: any[]) => {
+                        const isLatest = i === arr.length - 1;
+                        const label = h.to_status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+                        const dotColor = isLatest
+                          ? h.to_status === 'released' ? 'bg-emerald-100 border-emerald-500'
+                            : 'bg-blue-100 border-blue-600'
+                          : 'bg-white border-slate-300';
+                        return (
+                          <div key={h.id ?? i} className="relative pl-5">
+                            <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 ${dotColor}`} />
+                            <div className="flex justify-between items-start gap-2">
+                              <div className={`text-sm ${isLatest ? 'font-semibold text-slate-900' : 'font-medium text-slate-600'}`}>
+                                {label}
+                              </div>
+                              <div className="text-xs text-slate-400 whitespace-nowrap shrink-0">{timeAgo(h.changed_at)}</div>
+                            </div>
+                            {h.actor_name && (
+                              <div className="text-xs text-slate-500 mt-0.5">by {h.actor_name}</div>
+                            )}
+                            {h.comment && h.comment !== 'Submitted for approval' && h.comment !== 'Approved' && (
+                              <div className="flex items-start gap-1 mt-1 text-xs text-slate-500 italic">
+                                <MessageSquare className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" />
+                                {h.comment}
+                              </div>
+                            )}
+                            {isLatest && h.to_status === 'pending_approval' && (
+                              <div className="text-xs text-amber-700 mt-1 bg-amber-50 border border-amber-100 rounded px-2 py-1 inline-block">
+                                Waiting for HQ Manager / Admin approval
+                              </div>
+                            )}
                           </div>
-                          <div className="text-xs text-slate-400">{timeAgo(activePO.updated_at)}</div>
-                        </div>
-                        {activePO.status === 'pending_approval' && (
-                          <div className="text-xs text-slate-500 mt-1 bg-amber-50 border border-amber-100 rounded-md px-2.5 py-1.5 inline-block">
-                            Waiting for approval by an HQ Manager or Admin
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* Action area */}
