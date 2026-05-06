@@ -356,7 +356,7 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
 // TRANSITION (advance to next stage)
 router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  const { comment } = req.body;
+  const { comment } = req.body ?? {};
   const user = req.user!;
   const poRes = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
