@@ -75,10 +75,18 @@ function getActionLabel(po: any, canManage: boolean, canApprove: boolean): strin
   return null;
 }
 
-function isNeedsAction(po: any, canManage: boolean, canApprove: boolean): boolean {
+function isNeedsAction(po: any, canManage: boolean, canApprove: boolean, userId: string, stageRoles: Record<string, any[]>): boolean {
   if (po.status === 'draft' && canManage) return true;
   if (po.status === 'pending_approval' && canApprove) return true;
-  if (TRANSITIONABLE.has(po.status) && canManage) return true;
+  // purchase_order: creator OR hq_manager/admin OR in stage_assignees
+  if (po.status === 'purchase_order') {
+    if (canApprove) return true;
+    if (po.created_by === userId) return true;
+    if ((stageRoles['purchase_order'] ?? []).some((a: any) => a.user_id === userId)) return true;
+  }
+  // po_review / engineering_review: stage_assignees only
+  if (po.status === 'po_review' && (stageRoles['po_review'] ?? []).some((a: any) => a.user_id === userId)) return true;
+  if (po.status === 'engineering_review' && (stageRoles['engineering_review'] ?? []).some((a: any) => a.user_id === userId)) return true;
   return false;
 }
 
@@ -179,8 +187,9 @@ export default function OrderManagementDashboard() {
     countsByStatus[item.status] = (countsByStatus[item.status] || 0) + 1;
   }
 
-  const needsAction = items.filter(po => isNeedsAction(po, canManage, canApprove));
-  const inProgress = items.filter(po => !isNeedsAction(po, canManage, canApprove) && po.status !== 'released');
+  const userId = user?.id ?? '';
+  const needsAction = items.filter(po => isNeedsAction(po, canManage, canApprove, userId, stageRoles));
+  const inProgress = items.filter(po => !isNeedsAction(po, canManage, canApprove, userId, stageRoles) && po.status !== 'released');
   const released = items.filter(po => po.status === 'released');
 
   const tabItems = activeTab === 'needs-action' ? needsAction
@@ -200,6 +209,11 @@ export default function OrderManagementDashboard() {
         po.notes?.toLowerCase().includes(search.toLowerCase())
       )
     : tabItems;
+
+  const { data: stageRoles = {} } = useQuery({
+    queryKey: ['po-stage-roles'],
+    queryFn: () => api.get('/purchase-orders/stage-roles').then(r => r.data),
+  });
 
   const { data: activePODetail } = useQuery({
     queryKey: ['po-detail-pane', activePOId],

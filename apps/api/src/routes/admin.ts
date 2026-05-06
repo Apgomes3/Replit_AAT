@@ -379,6 +379,53 @@ router.get('/system-types', authenticate, async (_req: AuthRequest, res: Respons
   res.json({ items: result.rows });
 });
 
+// ── PO STAGE ROLES ──────────────────────────────────────────────────────────
+
+router.get('/po-stage-roles', authenticate, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
+  const r = await query(
+    `SELECT psa.id, psa.stage, psa.user_id, psa.created_at,
+            u.first_name, u.last_name, u.email, u.role
+     FROM po_stage_assignees psa JOIN users u ON u.id = psa.user_id
+     ORDER BY psa.stage, u.first_name`,
+    []
+  );
+  const map: Record<string, any[]> = {};
+  for (const row of r.rows) {
+    if (!map[row.stage]) map[row.stage] = [];
+    map[row.stage].push(row);
+  }
+  res.json(map);
+});
+
+router.post('/po-stage-roles', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { stage, user_id } = req.body;
+  const VALID_STAGES = ['purchase_order', 'po_review', 'engineering_review'];
+  if (!stage || !VALID_STAGES.includes(stage)) {
+    return res.status(400).json({ error: { code: 'INVALID', message: 'Invalid stage' } });
+  }
+  if (!user_id) return res.status(400).json({ error: { code: 'INVALID', message: 'user_id required' } });
+  try {
+    const r = await query(
+      `INSERT INTO po_stage_assignees (stage, user_id, created_by) VALUES ($1,$2,$3)
+       RETURNING id, stage, user_id, created_at`,
+      [stage, user_id, req.user!.id]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (e: any) {
+    if (e.code === '23505') return res.status(400).json({ error: { code: 'DUPLICATE', message: 'User already assigned to this stage' } });
+    throw e;
+  }
+});
+
+router.delete('/po-stage-roles/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT id FROM po_stage_assignees WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Assignee not found' } });
+  await query('DELETE FROM po_stage_assignees WHERE id=$1', [req.params.id]);
+  res.status(204).end();
+});
+
+// ── SYSTEM TYPES ─────────────────────────────────────────────────────────────
+
 router.post('/system-types', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { name, description, sort_order } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'name is required' } });

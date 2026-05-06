@@ -21,10 +21,24 @@ async function seed() {
       ON CONFLICT (email) DO NOTHING
     `, [adminHash, engHash, viewHash]);
 
+    // PMO and HQ Manager demo users
+    const pmoHash = await bcrypt.hash('pmo123', 10);
+    const hqHash = await bcrypt.hash('hqmanager123', 10);
+    await client.query(`
+      INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES
+        ('pmo@edp.com',       $1, 'Project', 'Manager', 'pmo'),
+        ('hqmanager@edp.com', $2, 'HQ',      'Manager', 'hq_manager')
+      ON CONFLICT (email) DO NOTHING
+    `, [pmoHash, hqHash]);
+
     const adminRes = await client.query(`SELECT id FROM users WHERE email = 'admin@edp.com'`);
     const adminId = adminRes.rows[0].id;
     const engRes = await client.query(`SELECT id FROM users WHERE email = 'engineer@edp.com'`);
     const engId = engRes.rows[0].id;
+    const pmoRes = await client.query(`SELECT id FROM users WHERE email = 'pmo@edp.com'`);
+    const pmoId = pmoRes.rows[0].id;
+    const hqRes = await client.query(`SELECT id FROM users WHERE email = 'hqmanager@edp.com'`);
+    const hqId = hqRes.rows[0].id;
 
     // Materials
     await client.query(`
@@ -386,11 +400,23 @@ async function seed() {
       ON CONFLICT DO NOTHING
     `, [projId, adminId, doc2Res.rows[0].id]);
 
+    // Default PO stage assignees
+    await client.query(`
+      INSERT INTO po_stage_assignees (stage, user_id, created_by) VALUES
+        ('purchase_order',     $1, $1),
+        ('purchase_order',     $4, $1),
+        ('po_review',          $3, $1),
+        ('engineering_review', $2, $1)
+      ON CONFLICT (stage, user_id) DO NOTHING
+    `, [adminId, engId, pmoId, hqId]);
+
     console.log('Seed complete!');
     console.log('Demo credentials:');
-    console.log('  admin@edp.com / admin123');
-    console.log('  engineer@edp.com / engineer123');
-    console.log('  viewer@edp.com / viewer123');
+    console.log('  admin@edp.com / admin123 (admin)');
+    console.log('  hqmanager@edp.com / hqmanager123 (hq_manager)');
+    console.log('  pmo@edp.com / pmo123 (pmo)');
+    console.log('  engineer@edp.com / engineer123 (engineer)');
+    console.log('  viewer@edp.com / viewer123 (viewer)');
   } catch (err) {
     console.error('Seed failed:', err);
     process.exit(1);

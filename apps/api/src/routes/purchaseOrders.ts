@@ -25,12 +25,25 @@ function nextStage(current: string): string | null {
   return STAGES[idx + 1];
 }
 
-function canTransition(role: string): boolean {
-  return ['admin', 'engineer', 'hq_manager'].includes(role);
-}
-
 async function isDesignated(poId: string, userId: string): Promise<boolean> {
   const r = await query('SELECT 1 FROM po_designated_users WHERE po_id=$1 AND user_id=$2', [poId, userId]);
+  return r.rows.length > 0;
+}
+
+// Check whether a user may advance a PO from its current stage.
+// purchase_order: creator OR hq_manager/admin OR in stage_assignees
+// po_review / engineering_review: in stage_assignees only
+async function canAdvanceStage(
+  stage: string, userId: string, userRole: string, createdBy: string | null
+): Promise<boolean> {
+  if (stage === 'purchase_order') {
+    if (userId === createdBy) return true;
+    if (['hq_manager', 'admin'].includes(userRole)) return true;
+  }
+  const r = await query(
+    'SELECT 1 FROM po_stage_assignees WHERE stage=$1 AND user_id=$2',
+    [stage, userId]
+  );
   return r.rows.length > 0;
 }
 
@@ -353,6 +366,22 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
   res.json({ status: 'draft' });
 });
 
+// STAGE ROLES — public read for inbox filtering (accessible to all authenticated users)
+router.get('/purchase-orders/stage-roles', authenticate, async (_req: AuthRequest, res: Response) => {
+  const r = await query(
+    `SELECT psa.id, psa.stage, psa.user_id, u.first_name, u.last_name, u.email, u.role
+     FROM po_stage_assignees psa JOIN users u ON u.id = psa.user_id ORDER BY psa.stage, u.first_name`,
+    []
+  );
+  // Return as { stage: assignee[] } map
+  const map: Record<string, any[]> = {};
+  for (const row of r.rows) {
+    if (!map[row.stage]) map[row.stage] = [];
+    map[row.stage].push(row);
+  }
+  res.json(map);
+});
+
 // TRANSITION (advance to next stage)
 router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
@@ -362,8 +391,8 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   const po = poRes.rows[0];
 
-  const allowed = canTransition(user.role) || await isDesignated(id, user.id);
-  if (!allowed) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised to transition this PO' } });
+  const allowed = await canAdvanceStage(po.status, user.id, user.role, po.created_by);
+  if (!allowed) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised to advance this PO at this stage' } });
 
   if (['draft', 'pending_approval'].includes(po.status)) {
     return res.status(400).json({ error: { code: 'INVALID_STATE', message: 'Submit or approve this PO before advancing stages' } });
@@ -402,8 +431,8 @@ router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRe
       const poRes = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
       const po = poRes.rows[0];
       if (!po) { results.push({ id, error: 'Not found' }); continue; }
-      const allowed = canTransition(user.role) || await isDesignated(id, user.id);
-      if (!allowed) { results.push({ id, po_code: po.po_code, error: 'Not authorised' }); continue; }
+      const allowed = await canAdvanceStage(po.status, user.id, user.role, po.created_by);
+      if (!allowed) { results.push({ id, po_code: po.po_code, error: 'Not authorised for this stage' }); continue; }
       if (['draft', 'pending_approval'].includes(po.status)) {
         results.push({ id, po_code: po.po_code, error: 'Submit or approve before transitioning' }); continue;
       }

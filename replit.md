@@ -116,8 +116,21 @@ If `SMTP_*` secrets are absent in development, reset URLs are logged to the serv
 
 ## Demo Credentials
 - **Admin**: admin@edp.com / admin123
+- **HQ Manager**: hqmanager@edp.com / hqmanager123
+- **PMO**: pmo@edp.com / pmo123
 - **Engineer**: engineer@edp.com / engineer123
 - **Viewer**: viewer@edp.com / viewer123
+
+## PO Pipeline Stage Roles
+Stage-specific actors enforced in API (`canAdvanceStage`):
+- **Draft → submit**: creator OR any `canManage` role (engineer/hq_manager/admin)
+- **Pending Approval → approve/reject**: hq_manager/admin only (hardcoded)
+- **Purchase Order → PO Review**: PO creator OR hq_manager/admin OR `po_stage_assignees['purchase_order']`
+- **PO Review → Engineering Review**: `po_stage_assignees['po_review']` (default: PMO user)
+- **Engineering Review → Released**: `po_stage_assignees['engineering_review']` (default: engineer user)
+
+Admin configures assignees at `/admin/po-stage-roles` (Platform Admin → Order Management → PO Stage Roles).
+Table: `po_stage_assignees (id, stage, user_id, created_by, created_at)` — UNIQUE(stage, user_id).
 
 ## Key API Endpoints
 - `POST /api/v1/auth/login` — Login

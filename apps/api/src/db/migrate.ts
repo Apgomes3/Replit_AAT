@@ -753,6 +753,17 @@ ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS stage_due_date DATE;
 
 -- ITEM BUDGET (budgeted amount per line item)
 ALTER TABLE po_items ADD COLUMN IF NOT EXISTS budget_amount NUMERIC;
+
+-- PO STAGE ASSIGNEES (admin-configurable actors per pipeline stage)
+CREATE TABLE IF NOT EXISTS po_stage_assignees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stage VARCHAR(50) NOT NULL,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(stage, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_po_stage_assignees_stage ON po_stage_assignees(stage);
 `;
 
 async function migrate() {
