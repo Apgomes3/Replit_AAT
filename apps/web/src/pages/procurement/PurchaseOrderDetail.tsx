@@ -12,7 +12,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import {
   Package, CheckCircle, XCircle, ArrowRight, ChevronRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw,
   MessageSquare, Paperclip, AlertTriangle, CalendarClock, Send, Download, History, CheckCheck, Ban, RotateCcw, Zap, Flag,
-  Wrench, ClipboardCheck, ShoppingBag
+  Wrench, ClipboardCheck, ShoppingBag, Info, ExternalLink, Tag, Layers, Building2, Beaker
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
@@ -165,6 +165,21 @@ export default function PurchaseOrderDetail() {
   // Attachments
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  // Product quick-view flyout
+  const [quickViewProductId, setQuickViewProductId] = useState<string | null>(null);
+  const { data: quickViewProduct, isLoading: quickViewLoading } = useQuery({
+    queryKey: ['product-master-quick', quickViewProductId],
+    queryFn: () => api.get(`/product-masters/${quickViewProductId}`).then(r => r.data),
+    enabled: !!quickViewProductId,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (!quickViewProductId) return;
+    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') setQuickViewProductId(null); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [quickViewProductId]);
 
   // Right-column tab
   const [rightTab, setRightTab] = useState<'items' | 'timeline' | 'comments' | 'attachments'>('items');
@@ -805,10 +820,19 @@ export default function PurchaseOrderDetail() {
                             <tr key={item.id} className="hover:bg-slate-50 group">
                               <td className="px-4 py-3">
                                 {item.product_code
-                                  ? <span className="flex items-center gap-1.5">
+                                  ? <div className="flex items-center gap-1.5 group/prod">
                                       <EntityCode code={item.product_code} />
-                                      <span className="text-slate-600 text-xs truncate max-w-[160px]">{item.product_name}</span>
-                                    </span>
+                                      <span className="text-slate-600 text-xs truncate max-w-[140px]">{item.product_name}</span>
+                                      {item.product_master_id && (
+                                        <button
+                                          onClick={() => setQuickViewProductId(item.product_master_id)}
+                                          title="View product details"
+                                          className="opacity-0 group-hover/prod:opacity-100 transition-opacity text-slate-400 hover:text-blue-600 shrink-0"
+                                        >
+                                          <Info className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
                                   : <span className="text-slate-400 text-xs">Unknown product</span>
                                 }
                                 {item.notes && <div className="text-xs text-slate-400 mt-0.5">{item.notes}</div>}
@@ -1267,6 +1291,192 @@ export default function PurchaseOrderDetail() {
             })()}
           </div>
         </div>
+      )}
+
+      {/* Product quick-view flyout */}
+      {quickViewProductId && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setQuickViewProductId(null)}
+          />
+          {/* Panel */}
+          <div className="fixed right-0 top-0 h-full w-[420px] max-w-full bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
+              <div className="flex-1 min-w-0">
+                {quickViewLoading ? (
+                  <div className="h-5 w-32 bg-slate-100 rounded animate-pulse mb-1" />
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {quickViewProduct?.product_code && (
+                        <EntityCode code={quickViewProduct.product_code} />
+                      )}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        quickViewProduct?.standard_status === 'Active'
+                          ? 'bg-green-100 text-green-700'
+                          : quickViewProduct?.standard_status === 'Obsolete'
+                          ? 'bg-red-100 text-red-600'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>{quickViewProduct?.standard_status || '—'}</span>
+                    </div>
+                    <h2 className="text-base font-semibold text-slate-900 mt-1 leading-snug">
+                      {quickViewProduct?.product_name}
+                    </h2>
+                    {quickViewProduct?.product_family_name && (
+                      <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                        <Tag className="w-3 h-3" />{quickViewProduct.product_family_name}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {quickViewProduct && (
+                  <Link
+                    to={`/product-masters/${quickViewProductId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="Open full product page"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </Link>
+                )}
+                <button
+                  onClick={() => setQuickViewProductId(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body — scrollable */}
+            <div className="flex-1 overflow-y-auto">
+              {quickViewLoading ? (
+                <div className="p-5 space-y-3">
+                  {[1,2,3,4].map(i => <div key={i} className="h-8 bg-slate-100 rounded animate-pulse" />)}
+                </div>
+              ) : quickViewProduct ? (
+                <div className="divide-y divide-slate-50">
+
+                  {/* Key specs */}
+                  <div className="px-5 py-4">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2.5">Specifications</div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                      {[
+                        { label: 'Category',    value: quickViewProduct.product_category, icon: Layers },
+                        { label: 'Application', value: quickViewProduct.application_type,  icon: Beaker },
+                        { label: 'Material',    value: quickViewProduct.material_name || quickViewProduct.primary_material_code, icon: Wrench },
+                        { label: 'Flow (m³/h)', value: quickViewProduct.design_flow_m3h, icon: null },
+                        { label: 'Pressure (bar)', value: quickViewProduct.design_pressure_bar, icon: null },
+                        { label: 'Head (m)',    value: quickViewProduct.design_head_m, icon: null },
+                        { label: 'Power (kW)',  value: quickViewProduct.power_kw, icon: null },
+                      ].filter(r => r.value != null && r.value !== '').map(({ label, value, icon: SpecIcon }) => (
+                        <div key={label}>
+                          <div className="text-slate-400 text-[10px] mb-0.5">{label}</div>
+                          <div className="font-medium text-slate-700 flex items-center gap-1">
+                            {SpecIcon && <SpecIcon className="w-3 h-3 text-slate-400" />}
+                            {String(value)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {quickViewProduct.notes && (
+                      <div className="mt-3 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                        {quickViewProduct.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Variants */}
+                  {quickViewProduct.variants?.length > 0 && (
+                    <div className="px-5 py-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
+                        <Layers className="w-3 h-3" />Variants ({quickViewProduct.variants.length})
+                      </div>
+                      <div className="space-y-1.5">
+                        {quickViewProduct.variants.slice(0, 8).map((v: any) => (
+                          <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2">
+                            <span className="font-mono font-medium text-slate-600 text-[11px]">{v.variant_code}</span>
+                            <span className="text-slate-500 truncate ml-2">{v.variant_name}</span>
+                            {v.sell_price && (
+                              <span className="text-blue-600 font-medium ml-2 shrink-0">
+                                {new Intl.NumberFormat('en-US', { style: 'currency', currency: v.currency || 'USD', maximumFractionDigits: 0 }).format(parseFloat(v.sell_price))}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {quickViewProduct.variants.length > 8 && (
+                          <p className="text-[10px] text-slate-400 text-center">+{quickViewProduct.variants.length - 8} more — open full page</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Vendors */}
+                  {quickViewProduct.vendors?.length > 0 && (
+                    <div className="px-5 py-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
+                        <Building2 className="w-3 h-3" />Vendors ({quickViewProduct.vendors.length})
+                      </div>
+                      <div className="space-y-1.5">
+                        {quickViewProduct.vendors.slice(0, 5).map((v: any) => (
+                          <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2">
+                            <span className="text-slate-700 font-medium">{v.vendor_name}</span>
+                            <div className="flex items-center gap-2 text-slate-400 shrink-0 ml-2">
+                              {v.lead_time_days && <span>{v.lead_time_days}d lead</span>}
+                              {v.unit_price && (
+                                <span className="text-blue-600 font-medium">
+                                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: v.currency || 'USD', maximumFractionDigits: 0 }).format(parseFloat(v.unit_price))}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Project usage */}
+                  {quickViewProduct.projects?.length > 0 && (
+                    <div className="px-5 py-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2.5">Used in Projects</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {quickViewProduct.projects.map((p: any) => (
+                          <span key={p.project_code} className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                            {p.project_code}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              ) : (
+                <div className="p-5 text-sm text-slate-400 text-center">Product not found</div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {quickViewProduct && (
+              <div className="px-5 py-3 border-t border-slate-100 shrink-0">
+                <Link
+                  to={`/product-masters/${quickViewProductId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full text-sm text-blue-600 hover:text-blue-700 font-medium py-2 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Open full product page
+                </Link>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {confirmDialog}
