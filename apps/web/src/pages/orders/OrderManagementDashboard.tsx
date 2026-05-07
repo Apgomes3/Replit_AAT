@@ -568,6 +568,12 @@ export default function OrderManagementDashboard() {
                     <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Status</div>
                     <StatusBadge status={activePO.status} />
                   </div>
+                  {activePO.fo_number && (
+                    <div>
+                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Factory Order</div>
+                      <div className="text-sm font-bold text-emerald-700 font-mono tracking-wide">{activePO.fo_number}</div>
+                    </div>
+                  )}
                   {Number(activePO.item_count) > 0 && (
                     <div>
                       <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Line Items</div>

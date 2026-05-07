@@ -547,6 +547,12 @@ export default function PurchaseOrderDetail() {
                     </span>
                   )}
                 </div>
+                {po.fo_number && (
+                  <div className="flex justify-between items-center pt-1 mt-1 border-t border-slate-100">
+                    <span className="text-slate-500 font-medium">Factory Order</span>
+                    <span className="font-bold text-emerald-700 font-mono tracking-wide text-sm">{po.fo_number}</span>
+                  </div>
+                )}
                 {po.approved_by_name && (
                   <div className="flex justify-between">
                     <span className="text-slate-500">Approved by</span>

@@ -119,7 +119,7 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
       proj.project_code, proj.project_name,
       u.first_name || ' ' || u.last_name AS created_by_name,
       a.first_name || ' ' || a.last_name AS approved_by_name,
-      po.approved_at, po.stage_due_date,
+      po.approved_at, po.stage_due_date, po.fo_number,
       (SELECT COUNT(*) FROM po_items WHERE po_id=po.id) AS item_count,
       (SELECT COALESCE(SUM(CAST(pi.cost_price AS NUMERIC) * CAST(pi.quantity AS NUMERIC)), 0)
        FROM po_items pi WHERE pi.po_id=po.id) AS total_cost_usd
@@ -426,7 +426,14 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
   const next = nextStage(po.status);
   if (!next) return res.status(400).json({ error: { code: 'INVALID_STATE', message: 'PO is already at the final stage' } });
 
-  await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [next, id]);
+  if (next === 'released') {
+    const foSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('fo_code_seq') AS seq`);
+    const { yr, seq } = foSeq.rows[0];
+    const fo_number = `FO-${yr}-${String(seq).padStart(4, '0')}`;
+    await query(`UPDATE purchase_orders SET status=$1, fo_number=$2, updated_at=now() WHERE id=$3`, [next, fo_number, id]);
+  } else {
+    await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [next, id]);
+  }
   await query(
     `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
     [id, po.status, next, user.id, comment || null]
@@ -441,7 +448,8 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
       entityId: id,
     });
   }
-  res.json({ status: next });
+  const updated = await query('SELECT fo_number FROM purchase_orders WHERE id=$1', [id]);
+  res.json({ status: next, fo_number: updated.rows[0]?.fo_number ?? null });
 });
 
 // BULK TRANSITION
@@ -464,7 +472,14 @@ router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRe
       }
       const next = nextStage(po.status);
       if (!next) { results.push({ id, po_code: po.po_code, error: 'Already at final stage' }); continue; }
-      await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [next, id]);
+      if (next === 'released') {
+        const foSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('fo_code_seq') AS seq`);
+        const { yr, seq } = foSeq.rows[0];
+        const fo_number = `FO-${yr}-${String(seq).padStart(4, '0')}`;
+        await query(`UPDATE purchase_orders SET status=$1, fo_number=$2, updated_at=now() WHERE id=$3`, [next, fo_number, id]);
+      } else {
+        await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [next, id]);
+      }
       await query(
         `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
         [id, po.status, next, user.id, 'Bulk transition']
