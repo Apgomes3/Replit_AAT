@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,7 +11,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useConfirm } from '../../hooks/useConfirm';
 import {
   Package, CheckCircle, XCircle, ArrowRight, ChevronRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw,
-  MessageSquare, Paperclip, AlertTriangle, CalendarClock, Send, Download
+  MessageSquare, Paperclip, AlertTriangle, CalendarClock, Send, Download, History, CheckCheck, Ban, RotateCcw, Zap, Flag
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
@@ -131,6 +131,9 @@ export default function PurchaseOrderDetail() {
   // Attachments
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  // Right-column tab
+  const [rightTab, setRightTab] = useState<'items' | 'timeline' | 'comments' | 'attachments'>('items');
 
   // Due date editing
   const [dueDateEditing, setDueDateEditing] = useState(false);
@@ -603,35 +606,63 @@ export default function PurchaseOrderDetail() {
 
           </div>
 
-          {/* Right: items + history */}
+          {/* Right: tabbed panel */}
           <div className="md:col-span-2 space-y-4">
-            {/* Line items */}
-            <div className="bg-white border border-slate-200 rounded-lg">
-              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                  <Package className="w-3.5 h-3.5 text-slate-400" />
-                  Line Items ({po.items?.length || 0})
-                  {savedAt && (
-                    <span className="text-[10px] font-normal text-green-600 flex items-center gap-0.5 ml-1">
-                      <CheckCircle className="w-3 h-3" /> Saved
-                    </span>
-                  )}
-                </span>
-                <div className="flex items-center gap-3">
-                  {displayCurrency !== 'USD' && rateDate && (
-                    <span className="flex items-center gap-1 text-xs text-emerald-600" title={`Exchange rates as of ${rateDate}`}>
-                      <RefreshCw className="w-3 h-3" />
-                      Rate {rateDate}
-                    </span>
-                  )}
-                  <span className="text-xs text-slate-400">Totals in <span className="font-medium text-slate-600">{displayCurrency}</span></span>
-                  {isDraft && (
-                    <button onClick={() => setShowAddItem(v => !v)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                      <Plus className="w-3 h-3" />Add Item
-                    </button>
-                  )}
-                </div>
+            {/* Tab bar */}
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+              <div className="flex border-b border-slate-200">
+                {([
+                  { key: 'items',       label: 'Line Items',  icon: Package,       badge: po.items?.length || 0 },
+                  { key: 'timeline',    label: 'Timeline',    icon: History,       badge: po.history?.length || 0 },
+                  { key: 'comments',    label: 'Comments',    icon: MessageSquare, badge: comments.length },
+                  { key: 'attachments', label: 'Attachments', icon: Paperclip,     badge: attachments.length },
+                ] as { key: typeof rightTab; label: string; icon: any; badge: number }[]).map(({ key, label, icon: Icon, badge }) => (
+                  <button
+                    key={key}
+                    onClick={() => setRightTab(key)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                      rightTab === key
+                        ? 'border-blue-600 text-blue-600 bg-blue-50/40'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                    {badge > 0 && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                        rightTab === key ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
+                      }`}>{badge}</span>
+                    )}
+                  </button>
+                ))}
               </div>
+
+              {/* ── Items tab ── */}
+              {rightTab === 'items' && (
+                <div>
+                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                      {savedAt && (
+                        <span className="text-[10px] font-normal text-green-600 flex items-center gap-0.5 ml-1">
+                          <CheckCircle className="w-3 h-3" /> Saved
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      {displayCurrency !== 'USD' && rateDate && (
+                        <span className="flex items-center gap-1 text-xs text-emerald-600" title={`Exchange rates as of ${rateDate}`}>
+                          <RefreshCw className="w-3 h-3" />
+                          Rate {rateDate}
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-400">Totals in <span className="font-medium text-slate-600">{displayCurrency}</span></span>
+                      {isDraft && (
+                        <button onClick={() => setShowAddItem(v => !v)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                          <Plus className="w-3 h-3" />Add Item
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
               {showAddItem && (
                 <div className="border-b border-slate-100 bg-slate-50">
@@ -900,155 +931,228 @@ export default function PurchaseOrderDetail() {
                   </div>
                 </>
               )}
-            </div>
+                </div>
+              )}
 
-            {/* Lifecycle history */}
-            <div className="bg-white border border-slate-200 rounded-lg">
-              <div className="px-4 py-3 border-b border-slate-100 text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-slate-400" />History
-              </div>
-              <div className="divide-y divide-slate-50">
-                {po.history?.length === 0
-                  ? <div className="px-4 py-4 text-sm text-slate-400">No history</div>
-                  : po.history.map((h: any) => (
-                    <div key={h.id} className="px-4 py-3 flex items-start gap-3">
-                      {(() => {
-                        const isRejection = h.from_status && h.to_status === 'draft';
-                        return (
-                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isRejection ? 'bg-red-400' : 'bg-blue-600/40'}`} />
-                        );
-                      })()}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {(() => {
-                            const isRejection = h.from_status && h.to_status === 'draft';
-                            if (isRejection) {
-                              return (
-                                <>
-                                  <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">Rejected / Sent Back</span>
-                                  <span className="text-xs text-slate-400">from {STATUS_META[h.from_status]?.label || h.from_status}</span>
-                                </>
-                              );
-                            }
-                            return h.from_status
-                              ? <><span className="text-xs text-slate-400">{STATUS_META[h.from_status]?.label || h.from_status}</span>
-                                  <ChevronRight className="w-3 h-3 text-slate-300" />
-                                  <span className="text-xs font-medium text-slate-700">{STATUS_META[h.to_status]?.label || h.to_status}</span></>
-                              : <span className="text-xs font-medium text-slate-700">{STATUS_META[h.to_status]?.label || h.to_status}</span>;
-                          })()}
-                          <span className="text-xs text-slate-400">· {h.actor_name}</span>
+              {/* ── Timeline tab ── */}
+              {rightTab === 'timeline' && (
+                <div className="px-6 py-5">
+                  {(!po.history || po.history.length === 0) ? (
+                    <div className="text-sm text-slate-400 text-center py-6">No history yet</div>
+                  ) : (
+                    <div className="relative">
+                      {/* vertical spine */}
+                      <div className="absolute left-5 top-3 bottom-3 w-px bg-slate-200" />
+                      <div className="space-y-0">
+                        {[...po.history].reverse().map((h: any, idx: number) => {
+                          const isFirst = idx === 0;
+                          const isRejection = h.from_status && h.to_status === 'draft';
+                          const isCreation = !h.from_status;
+                          const isRelease = h.to_status === 'released';
+                          const isApproval = h.from_status === 'pending_approval' && h.to_status === 'purchase_order';
+
+                          let iconEl: React.ReactNode;
+                          let dotBg: string;
+                          let dotBorder: string;
+                          if (isRejection) {
+                            dotBg = 'bg-red-50'; dotBorder = 'border-red-400';
+                            iconEl = <Ban className="w-3 h-3 text-red-500" />;
+                          } else if (isRelease) {
+                            dotBg = 'bg-emerald-50'; dotBorder = 'border-emerald-500';
+                            iconEl = <Flag className="w-3 h-3 text-emerald-600" />;
+                          } else if (isApproval) {
+                            dotBg = 'bg-green-50'; dotBorder = 'border-green-500';
+                            iconEl = <CheckCheck className="w-3 h-3 text-green-600" />;
+                          } else if (isCreation) {
+                            dotBg = 'bg-slate-100'; dotBorder = 'border-slate-400';
+                            iconEl = <Zap className="w-3 h-3 text-slate-500" />;
+                          } else if (isFirst) {
+                            dotBg = 'bg-blue-50'; dotBorder = 'border-blue-500';
+                            iconEl = <ArrowRight className="w-3 h-3 text-blue-600" />;
+                          } else {
+                            dotBg = 'bg-white'; dotBorder = 'border-slate-300';
+                            iconEl = <ArrowRight className="w-3 h-3 text-slate-400" />;
+                          }
+
+                          const stageLabel = isRejection
+                            ? 'Rejected / Sent Back'
+                            : STATUS_META[h.to_status]?.label || h.to_status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+                          return (
+                            <div key={h.id ?? idx} className="relative flex gap-4 pb-7 last:pb-0">
+                              {/* icon dot */}
+                              <div className={`relative z-10 w-10 h-10 rounded-full border-2 flex items-center justify-center shrink-0 ${dotBg} ${dotBorder}`}>
+                                {iconEl}
+                              </div>
+                              {/* content */}
+                              <div className="flex-1 min-w-0 pt-1.5">
+                                <div className="flex items-start justify-between gap-3 flex-wrap">
+                                  <div>
+                                    <div className={`text-sm font-semibold ${isRejection ? 'text-red-600' : isRelease ? 'text-emerald-700' : isFirst ? 'text-slate-900' : 'text-slate-700'}`}>
+                                      {stageLabel}
+                                    </div>
+                                    {isRejection && h.from_status && (
+                                      <div className="text-xs text-slate-400 mt-0.5">
+                                        from {STATUS_META[h.from_status]?.label || h.from_status}
+                                      </div>
+                                    )}
+                                    {!isRejection && !isCreation && h.from_status && (
+                                      <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                                        <span>{STATUS_META[h.from_status]?.label || h.from_status}</span>
+                                        <ChevronRight className="w-3 h-3" />
+                                        <span className="font-medium text-slate-600">{STATUS_META[h.to_status]?.label || h.to_status}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <div className="text-xs font-medium text-slate-500">
+                                      {new Date(h.changed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </div>
+                                    <div className="text-[11px] text-slate-400">
+                                      {new Date(h.changed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* actor */}
+                                {h.actor_name && (
+                                  <div className="flex items-center gap-1.5 mt-1.5">
+                                    <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[9px] font-bold shrink-0 uppercase">
+                                      {h.actor_name.charAt(0)}
+                                    </div>
+                                    <span className="text-xs text-slate-500">{h.actor_name}</span>
+                                  </div>
+                                )}
+
+                                {/* comment */}
+                                {h.comment && (
+                                  <div className={`mt-2 text-xs rounded-lg px-3 py-2 border flex items-start gap-1.5 ${
+                                    isRejection
+                                      ? 'bg-red-50 border-red-100 text-red-700'
+                                      : 'bg-slate-50 border-slate-100 text-slate-600'
+                                  }`}>
+                                    <MessageSquare className="w-3 h-3 mt-0.5 shrink-0 opacity-60" />
+                                    <span className="italic">{h.comment}</span>
+                                  </div>
+                                )}
+
+                                {/* "current stage" badge for most recent */}
+                                {isFirst && (
+                                  <div className="mt-2">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                      Current stage
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Comments tab ── */}
+              {rightTab === 'comments' && (
+                <div>
+                  <div className="divide-y divide-slate-50 max-h-[480px] overflow-y-auto">
+                    {comments.length === 0
+                      ? <div className="px-4 py-8 text-sm text-slate-400 text-center">No comments yet</div>
+                      : comments.map(c => (
+                        <div key={c.id} className="px-4 py-3 flex items-start gap-3 group">
+                          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold shrink-0 uppercase">
+                            {c.author_name?.charAt(0) || '?'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-semibold text-slate-700">{c.author_name}</span>
+                              <span className="text-xs text-slate-300">{new Date(c.created_at).toLocaleString()}</span>
+                            </div>
+                            <div className="text-xs text-slate-600 mt-0.5 whitespace-pre-wrap">{c.comment}</div>
+                          </div>
+                          {(c.user_id === user?.id || user?.role === 'admin') && (
+                            <button
+                              onClick={() => handleDeleteComment(c.id)}
+                              className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 shrink-0 transition-opacity"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
-                        {h.comment && <div className="text-xs text-slate-500 mt-0.5 italic">"{h.comment}"</div>}
-                        <div className="text-xs text-slate-300 mt-0.5">{new Date(h.changed_at).toLocaleString()}</div>
-                      </div>
-                    </div>
-                  ))
-                }
-              </div>
-            </div>
+                      ))
+                    }
+                  </div>
+                  <div className="px-4 py-3 border-t border-slate-100 flex items-end gap-2">
+                    <textarea
+                      value={newComment}
+                      onChange={e => setNewComment(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) handlePostComment(); }}
+                      placeholder="Add a comment… (⌘+Enter to post)"
+                      rows={2}
+                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-blue-400"
+                    />
+                    <button
+                      onClick={handlePostComment}
+                      disabled={commentPosting || !newComment.trim()}
+                      className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
-            {/* Comments panel */}
-            <div className="bg-white border border-slate-200 rounded-lg">
-              <div className="px-4 py-3 border-b border-slate-100 text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-                Comments
-                {comments.length > 0 && <span className="text-xs text-slate-400 font-normal">({comments.length})</span>}
-              </div>
-              <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
-                {comments.length === 0
-                  ? <div className="px-4 py-4 text-sm text-slate-400">No comments yet</div>
-                  : comments.map(c => (
-                    <div key={c.id} className="px-4 py-3 flex items-start gap-3 group">
-                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold shrink-0 uppercase">
-                        {c.author_name?.charAt(0) || '?'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-medium text-slate-700">{c.author_name}</span>
-                          <span className="text-xs text-slate-300">{new Date(c.created_at).toLocaleString()}</span>
+              {/* ── Attachments tab ── */}
+              {rightTab === 'attachments' && (
+                <div>
+                  <div className="px-4 py-2.5 border-b border-slate-100 flex justify-end">
+                    <button
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={attachmentUploading}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:underline disabled:opacity-40"
+                    >
+                      <Plus className="w-3 h-3" />{attachmentUploading ? 'Uploading…' : 'Add file'}
+                    </button>
+                    <input ref={attachmentInputRef} type="file" className="hidden" onChange={handleUploadAttachment} />
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {attachments.length === 0
+                      ? <div className="px-4 py-8 text-sm text-slate-400 text-center">No attachments yet</div>
+                      : attachments.map(a => (
+                        <div key={a.id} className="px-4 py-3 flex items-center gap-3 group">
+                          <FileText className="w-4 h-4 text-slate-300 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <a
+                              href={a.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-600 hover:underline truncate block"
+                            >
+                              {a.file_name}
+                            </a>
+                            <div className="text-[10px] text-slate-300 mt-0.5">{a.uploader_name} · {new Date(a.created_at).toLocaleDateString()}</div>
+                          </div>
+                          <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="text-slate-300 hover:text-blue-500 shrink-0">
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+                          {(a.user_id === user?.id || user?.role === 'admin') && (
+                            <button
+                              onClick={() => handleDeleteAttachment(a.id)}
+                              className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 shrink-0 transition-opacity"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
-                        <div className="text-xs text-slate-600 mt-0.5 whitespace-pre-wrap">{c.comment}</div>
-                      </div>
-                      {(c.user_id === user?.id || user?.role === 'admin') && (
-                        <button
-                          onClick={() => handleDeleteComment(c.id)}
-                          className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 shrink-0 transition-opacity"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                }
-              </div>
-              <div className="px-4 py-3 border-t border-slate-100 flex items-end gap-2">
-                <textarea
-                  value={newComment}
-                  onChange={e => setNewComment(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) handlePostComment(); }}
-                  placeholder="Add a comment… (⌘+Enter to post)"
-                  rows={2}
-                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:border-blue-400"
-                />
-                <button
-                  onClick={handlePostComment}
-                  disabled={commentPosting || !newComment.trim()}
-                  className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              )}
 
-            {/* Attachments panel */}
-            <div className="bg-white border border-slate-200 rounded-lg">
-              <div className="px-4 py-3 border-b border-slate-100 text-sm font-medium text-slate-700 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Paperclip className="w-3.5 h-3.5 text-slate-400" />
-                  Attachments
-                  {attachments.length > 0 && <span className="text-xs text-slate-400 font-normal">({attachments.length})</span>}
-                </span>
-                <button
-                  onClick={() => attachmentInputRef.current?.click()}
-                  disabled={attachmentUploading}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:underline disabled:opacity-40"
-                >
-                  <Plus className="w-3 h-3" />{attachmentUploading ? 'Uploading…' : 'Add file'}
-                </button>
-                <input ref={attachmentInputRef} type="file" className="hidden" onChange={handleUploadAttachment} />
-              </div>
-              <div className="divide-y divide-slate-50">
-                {attachments.length === 0
-                  ? <div className="px-4 py-4 text-sm text-slate-400">No attachments</div>
-                  : attachments.map(a => (
-                    <div key={a.id} className="px-4 py-3 flex items-center gap-3 group">
-                      <FileText className="w-4 h-4 text-slate-300 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <a
-                          href={a.file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline truncate block"
-                        >
-                          {a.file_name}
-                        </a>
-                        <div className="text-[10px] text-slate-300 mt-0.5">{a.uploader_name} · {new Date(a.created_at).toLocaleDateString()}</div>
-                      </div>
-                      <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="text-slate-300 hover:text-blue-500 shrink-0">
-                        <Download className="w-3.5 h-3.5" />
-                      </a>
-                      {(a.user_id === user?.id || user?.role === 'admin') && (
-                        <button
-                          onClick={() => handleDeleteAttachment(a.id)}
-                          className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 shrink-0 transition-opacity"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                }
-              </div>
             </div>
           </div>
         </div>
