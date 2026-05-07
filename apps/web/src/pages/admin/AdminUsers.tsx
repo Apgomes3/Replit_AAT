@@ -14,6 +14,7 @@ interface UserRow { id: string; email: string; first_name: string; last_name: st
 
 export default function AdminUsers() {
   const currentUser = useAuthStore(s => s.user);
+  const isAdmin = currentUser?.role === 'admin';
   const [showNew, setShowNew] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
@@ -113,12 +114,14 @@ export default function AdminUsers() {
       key: 'can_see_all_pos', header: 'See All POs', render: r => {
         const isSelf = r.id === currentUser?.id;
         const busy = loadingId === r.id;
+        const clickable = isAdmin && !isSelf && !busy;
         return (
           <button
-            onClick={() => !isSelf && !busy && handleTogglePOVisibility(r)}
-            disabled={isSelf || busy}
-            title={r.can_see_all_pos ? 'Click to restrict — will only see own POs' : 'Click to grant — will see all POs'}
-            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+            onClick={() => clickable && handleTogglePOVisibility(r)}
+            disabled={!clickable}
+            title={isAdmin ? (r.can_see_all_pos ? 'Click to restrict — will only see own POs' : 'Click to grant — will see all POs') : undefined}
+            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium transition-colors disabled:opacity-40
+              ${isAdmin && !isSelf ? 'cursor-pointer' : 'cursor-default'}
               ${r.can_see_all_pos
                 ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
                 : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
@@ -130,8 +133,8 @@ export default function AdminUsers() {
       }
     },
     { key: 'created_at', header: 'Created', render: r => new Date(r.created_at).toLocaleDateString() },
-    {
-      key: 'id', header: '', render: r => {
+    ...(isAdmin ? [{
+      key: 'id' as keyof UserRow, header: '', render: (r: UserRow) => {
         const isSelf = r.id === currentUser?.id;
         const busy = loadingId === r.id;
         return (
@@ -179,13 +182,13 @@ export default function AdminUsers() {
           </div>
         );
       }
-    },
+    }] : []),
   ];
 
   return (
     <div className="h-full flex flex-col">
       <PageHeader title="User Management" subtitle="Platform users and roles"
-        actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New User</Button>}
+        actions={isAdmin ? <Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New User</Button> : undefined}
       />
       <div className="flex-1 bg-white overflow-auto">
         <DataTable columns={columns} data={data?.items || []} loading={isLoading} />

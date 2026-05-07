@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import api from '../../lib/api';
+import { useAuthStore } from '../../store/authStore';
 import PageHeader from '../../components/ui/PageHeader';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, Lock, ChevronRight, User } from 'lucide-react';
@@ -54,6 +55,8 @@ const COLOR: Record<string, { badge: string; dot: string; ring: string; header: 
 };
 
 export default function AdminPOStageRoles() {
+  const currentUser = useAuthStore(s => s.user);
+  const isAdmin = currentUser?.role === 'admin';
   const qc = useQueryClient();
   const [addingStage, setAddingStage] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -163,12 +166,14 @@ export default function AdminPOStageRoles() {
                     </div>
                     <p className="text-xs text-slate-500 mt-1 ml-4">{cfg.description}</p>
                   </div>
-                  <button
-                    onClick={() => { setAddingStage(cfg.stage); setSelectedUserId(''); }}
-                    className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 hover:bg-blue-50 rounded-lg px-3 py-1.5 transition-colors shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add User
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => { setAddingStage(cfg.stage); setSelectedUserId(''); }}
+                      className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 hover:bg-blue-50 rounded-lg px-3 py-1.5 transition-colors shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add User
+                    </button>
+                  )}
                 </div>
 
                 <div className="divide-y divide-slate-100">
@@ -191,13 +196,15 @@ export default function AdminPOStageRoles() {
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 font-medium capitalize">
                         {a.role?.replace(/_/g, ' ')}
                       </span>
-                      <button
-                        onClick={() => removeMutation.mutate(a.id)}
-                        disabled={removeMutation.isPending}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => removeMutation.mutate(a.id)}
+                          disabled={removeMutation.isPending}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))}
 

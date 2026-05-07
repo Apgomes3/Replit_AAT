@@ -9,7 +9,7 @@ import { sendPasswordResetEmail } from '../lib/email';
 
 const router = Router();
 
-router.get('/users', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.get('/users', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query('SELECT id, email, first_name, last_name, role, is_active, can_see_all_pos, created_at FROM users ORDER BY created_at');
   res.json({ items: result.rows });
 });
@@ -394,7 +394,7 @@ router.get('/system-types', authenticate, async (_req: AuthRequest, res: Respons
 
 // ── PO STAGE ROLES ──────────────────────────────────────────────────────────
 
-router.get('/po-stage-roles', authenticate, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
+router.get('/po-stage-roles', authenticate, async (_req: AuthRequest, res: Response) => {
   const r = await query(
     `SELECT psa.id, psa.stage, psa.user_id, psa.created_at,
             u.first_name, u.last_name, u.email, u.role
