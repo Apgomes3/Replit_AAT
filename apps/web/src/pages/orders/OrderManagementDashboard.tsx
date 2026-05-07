@@ -612,17 +612,27 @@ export default function OrderManagementDashboard() {
                     <div className="relative border-l-2 border-slate-200 ml-3 space-y-4 pb-1">
                       {[...(activePODetail.history ?? [])].reverse().map((h: any, i: number, arr: any[]) => {
                         const isLatest = i === arr.length - 1;
-                        const label = h.to_status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-                        const dotColor = isLatest
-                          ? h.to_status === 'released' ? 'bg-emerald-100 border-emerald-500'
-                            : 'bg-blue-100 border-blue-600'
-                          : 'bg-white border-slate-300';
+                        const isRejection = h.from_status && h.to_status === 'draft';
+                        const label = isRejection
+                          ? 'Rejected / Sent Back'
+                          : h.to_status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+                        const dotColor = isRejection
+                          ? 'bg-red-50 border-red-400'
+                          : isLatest
+                            ? h.to_status === 'released' ? 'bg-emerald-100 border-emerald-500'
+                              : 'bg-blue-100 border-blue-600'
+                            : 'bg-white border-slate-300';
                         return (
                           <div key={h.id ?? i} className="relative pl-5">
                             <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 ${dotColor}`} />
                             <div className="flex justify-between items-start gap-2">
-                              <div className={`text-sm ${isLatest ? 'font-semibold text-slate-900' : 'font-medium text-slate-600'}`}>
+                              <div className={`text-sm ${isRejection ? 'font-semibold text-red-600' : isLatest ? 'font-semibold text-slate-900' : 'font-medium text-slate-600'}`}>
                                 {label}
+                                {isRejection && h.from_status && (
+                                  <span className="text-xs font-normal text-slate-400 ml-1.5">
+                                    from {h.from_status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                                  </span>
+                                )}
                               </div>
                               <div className="text-xs text-slate-400 whitespace-nowrap shrink-0">{timeAgo(h.changed_at)}</div>
                             </div>

@@ -912,18 +912,33 @@ export default function PurchaseOrderDetail() {
                   ? <div className="px-4 py-4 text-sm text-slate-400">No history</div>
                   : po.history.map((h: any) => (
                     <div key={h.id} className="px-4 py-3 flex items-start gap-3">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-600/40 mt-1.5 shrink-0" />
+                      {(() => {
+                        const isRejection = h.from_status && h.to_status === 'draft';
+                        return (
+                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isRejection ? 'bg-red-400' : 'bg-blue-600/40'}`} />
+                        );
+                      })()}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          {h.from_status
-                            ? <><span className="text-xs text-slate-400">{STATUS_META[h.from_status]?.label || h.from_status}</span>
-                                <ChevronRight className="w-3 h-3 text-slate-300" />
-                                <span className="text-xs font-medium text-slate-700">{STATUS_META[h.to_status]?.label || h.to_status}</span></>
-                            : <span className="text-xs font-medium text-slate-700">{STATUS_META[h.to_status]?.label || h.to_status}</span>
-                          }
+                          {(() => {
+                            const isRejection = h.from_status && h.to_status === 'draft';
+                            if (isRejection) {
+                              return (
+                                <>
+                                  <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">Rejected / Sent Back</span>
+                                  <span className="text-xs text-slate-400">from {STATUS_META[h.from_status]?.label || h.from_status}</span>
+                                </>
+                              );
+                            }
+                            return h.from_status
+                              ? <><span className="text-xs text-slate-400">{STATUS_META[h.from_status]?.label || h.from_status}</span>
+                                  <ChevronRight className="w-3 h-3 text-slate-300" />
+                                  <span className="text-xs font-medium text-slate-700">{STATUS_META[h.to_status]?.label || h.to_status}</span></>
+                              : <span className="text-xs font-medium text-slate-700">{STATUS_META[h.to_status]?.label || h.to_status}</span>;
+                          })()}
                           <span className="text-xs text-slate-400">· {h.actor_name}</span>
                         </div>
-                        {h.comment && <div className="text-xs text-slate-500 mt-0.5">{h.comment}</div>}
+                        {h.comment && <div className="text-xs text-slate-500 mt-0.5 italic">"{h.comment}"</div>}
                         <div className="text-xs text-slate-300 mt-0.5">{new Date(h.changed_at).toLocaleString()}</div>
                       </div>
                     </div>
