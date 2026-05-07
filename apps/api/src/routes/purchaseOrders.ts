@@ -288,6 +288,16 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
   const po = poRes.rows[0];
   if (po.status !== 'draft') return res.status(400).json({ error: { code: 'INVALID_STATE', message: 'PO is not in draft' } });
 
+  // Stage gate validation
+  const itemsRes = await query('SELECT id, cost_price FROM po_items WHERE po_id=$1', [id]);
+  if (itemsRes.rows.length === 0) {
+    return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: 'PO must have at least one item before submitting.' } });
+  }
+  const missingCost = itemsRes.rows.filter((r: any) => !r.cost_price || parseFloat(r.cost_price) === 0);
+  if (missingCost.length > 0) {
+    return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: `${missingCost.length} item(s) are missing a cost price. Set all costs before submitting.` } });
+  }
+
   const newStatus = user.role === 'hq_manager' ? 'purchase_order' : 'pending_approval';
   const approvedBy = user.role === 'hq_manager' ? user.id : null;
 
@@ -361,6 +371,9 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
 router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const { comment } = req.body ?? {};
+  if (!comment || !comment.trim()) {
+    return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: 'A rejection reason is required so the creator knows what to fix.' } });
+  }
   const user = req.user!;
   const approverRows = await query('SELECT user_id FROM po_stage_assignees WHERE stage=$1', ['pending_approval']);
   if (approverRows.rows.length > 0) {
@@ -425,6 +438,16 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
   }
   const next = nextStage(po.status);
   if (!next) return res.status(400).json({ error: { code: 'INVALID_STATE', message: 'PO is already at the final stage' } });
+
+  // Stage gate validation
+  const gateItems = await query('SELECT id, cost_price FROM po_items WHERE po_id=$1', [id]);
+  if (gateItems.rows.length === 0) {
+    return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: 'PO must have at least one item before advancing.' } });
+  }
+  const gateMissing = gateItems.rows.filter((r: any) => !r.cost_price || parseFloat(r.cost_price) === 0);
+  if (gateMissing.length > 0) {
+    return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: `${gateMissing.length} item(s) are missing a cost price. Set all costs before advancing.` } });
+  }
 
   if (next === 'released') {
     const foSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('fo_code_seq') AS seq`);

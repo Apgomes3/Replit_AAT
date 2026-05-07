@@ -174,13 +174,19 @@ export default function OrderManagementDashboard() {
     onError: (err: any) => toast.error(err?.response?.data?.error?.message ?? 'Approve failed'),
   });
 
+  const [rejectModal, setRejectModal] = useState<{ id: string; po_code: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/reject`, {}),
-    onSuccess: (_, id) => {
+    mutationFn: ({ id, comment }: { id: string; comment: string }) =>
+      api.post(`/purchase-orders/${id}/reject`, { comment }),
+    onSuccess: (_, { id }) => {
       const po = items.find((r: any) => r.id === id);
       toast.success(`${po?.po_code ?? 'PO'} rejected — returned to Draft`);
       qc.invalidateQueries({ queryKey: ['all-purchase-orders'] });
       setActivePOId(null);
+      setRejectModal(null);
+      setRejectReason('');
     },
     onError: (err: any) => toast.error(err?.response?.data?.error?.message ?? 'Reject failed'),
   });
@@ -664,9 +670,8 @@ export default function OrderManagementDashboard() {
                       {activePO.status === 'pending_approval' && canApprove && (
                         <>
                           <button
-                            onClick={() => rejectMutation.mutate(activePO.id)}
-                            disabled={rejectMutation.isPending}
-                            className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                            onClick={() => setRejectModal({ id: activePO.id, po_code: activePO.po_code })}
+                            className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-1.5"
                           >
                             <X className="w-4 h-4" /> Reject
                           </button>
@@ -719,6 +724,45 @@ export default function OrderManagementDashboard() {
       </div>
 
       {showCreate && <CreatePOModal onClose={() => setShowCreate(false)} />}
+
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-5">
+              <h3 className="font-semibold text-slate-800 mb-1">Reject / Send Back</h3>
+              <p className="text-xs text-slate-400 mb-3">
+                Send <span className="font-medium text-slate-600">{rejectModal.po_code}</span> back to Draft. The creator will be notified with your reason.
+              </p>
+              <textarea
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                placeholder="Rejection reason (required)…"
+                rows={3}
+                autoFocus
+                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none resize-none ${!rejectReason.trim() ? 'border-red-300 focus:border-red-400' : 'border-slate-200 focus:border-blue-500'}`}
+              />
+              {!rejectReason.trim() && (
+                <p className="text-xs text-red-500 mt-1">A reason is required so the submitter knows what to correct.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <button
+                onClick={() => { setRejectModal(null); setRejectReason(''); }}
+                className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => rejectMutation.mutate({ id: rejectModal.id, comment: rejectReason })}
+                disabled={!rejectReason.trim() || rejectMutation.isPending}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {rejectMutation.isPending ? 'Sending back…' : 'Send Back'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

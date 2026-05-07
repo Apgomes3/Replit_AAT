@@ -292,6 +292,19 @@ export default function PurchaseOrderDetail() {
   const hasBudget = (po?.items || []).some((item: Item) => item.budget_amount != null);
 
   const handleAction = async (action: 'submit' | 'approve' | 'reject' | 'advance') => {
+    // Client-side gate validation
+    if (action === 'submit' || action === 'advance') {
+      const items = po?.items || [];
+      if (items.length === 0) {
+        toast.error('Add at least one item before submitting.');
+        return;
+      }
+      const missingCost = items.filter((i: Item) => !i.cost_price || parseFloat(String(i.cost_price)) === 0);
+      if (missingCost.length > 0) {
+        toast.error(`${missingCost.length} item(s) are missing a cost price — set all costs first.`);
+        return;
+      }
+    }
     setSaving(true);
     try {
       if (action === 'submit') {
@@ -1098,13 +1111,20 @@ export default function PurchaseOrderDetail() {
             <textarea
               value={comment}
               onChange={e => setComment(e.target.value)}
-              placeholder="Add a comment (optional)…"
+              placeholder={commentModal === 'reject' ? 'Rejection reason (required)…' : 'Add a comment (optional)…'}
               rows={3}
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-600 resize-none"
+              className={`w-full border rounded px-3 py-2 text-sm focus:outline-none resize-none ${commentModal === 'reject' && !comment.trim() ? 'border-red-300 focus:border-red-500' : 'focus:border-blue-600'}`}
             />
+            {commentModal === 'reject' && !comment.trim() && (
+              <p className="text-xs text-red-500 mt-1">A reason is required so the submitter knows what to correct.</p>
+            )}
             <div className="flex justify-end gap-2 mt-4">
               <Button onClick={() => { setCommentModal(null); setComment(''); }}>Cancel</Button>
-              <Button variant="primary" onClick={() => handleAction(commentModal)} disabled={saving}>
+              <Button
+                variant="primary"
+                onClick={() => handleAction(commentModal)}
+                disabled={saving || (commentModal === 'reject' && !comment.trim())}
+              >
                 {saving ? '…' : commentModal === 'approve' ? 'Approve' : commentModal === 'reject' ? 'Send Back' : 'Advance'}
               </Button>
             </div>
