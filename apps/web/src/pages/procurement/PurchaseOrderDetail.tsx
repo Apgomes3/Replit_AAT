@@ -11,7 +11,8 @@ import { useAuthStore } from '../../store/authStore';
 import { useConfirm } from '../../hooks/useConfirm';
 import {
   Package, CheckCircle, XCircle, ArrowRight, ChevronRight, Plus, Trash2, Clock, Search, X, FileText, Pencil, RefreshCw,
-  MessageSquare, Paperclip, AlertTriangle, CalendarClock, Send, Download, History, CheckCheck, Ban, RotateCcw, Zap, Flag
+  MessageSquare, Paperclip, AlertTriangle, CalendarClock, Send, Download, History, CheckCheck, Ban, RotateCcw, Zap, Flag,
+  Wrench, ClipboardCheck, ShoppingBag
 } from 'lucide-react';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
@@ -37,24 +38,57 @@ function POStatusBadge({ status }: { status: string }) {
   );
 }
 
+const STAGE_ICONS: Record<string, React.ElementType> = {
+  draft:              FileText,
+  pending_approval:   Clock,
+  purchase_order:     ShoppingBag,
+  po_review:          ClipboardCheck,
+  engineering_review: Wrench,
+  released:           Flag,
+};
+
 function LifecycleBar({ status }: { status: string }) {
   const idx = STAGES.indexOf(status);
   return (
-    <div className="flex items-center gap-0 mt-3 mb-1">
+    <div className="flex items-end gap-0 py-2">
       {STAGES.map((s, i) => {
         const meta = STATUS_META[s];
-        const done = i < idx;
+        const done   = i < idx;
         const active = i === idx;
+        const Icon   = STAGE_ICONS[s] ?? FileText;
         return (
           <div key={s} className="flex items-center flex-1 min-w-0">
-            <div className={`flex flex-col items-center flex-1 min-w-0`}>
-              <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${active ? 'border-blue-600 bg-blue-600' : done ? 'border-blue-600 bg-blue-600/30' : 'border-slate-200 bg-white'}`} />
-              <span className={`text-[10px] mt-1 text-center leading-tight hidden sm:block ${active ? 'text-blue-600 font-semibold' : done ? 'text-slate-400' : 'text-slate-300'}`}>
+            {/* Step */}
+            <div className="flex flex-col items-center flex-shrink-0" style={{ minWidth: 56 }}>
+              {/* Circle */}
+              <div className="relative">
+                {active && (
+                  <span className="absolute inset-0 rounded-full bg-green-400 opacity-30 animate-ping" />
+                )}
+                <div className={`relative w-11 h-11 rounded-full flex items-center justify-center border-2 transition-all ${
+                  active ? 'bg-green-500 border-green-500 shadow-md shadow-green-200'
+                         : done  ? 'bg-green-50 border-green-400'
+                                 : 'bg-white border-slate-200'
+                }`}>
+                  <Icon className={`w-5 h-5 ${
+                    active ? 'text-white'
+                           : done  ? 'text-green-500'
+                                   : 'text-slate-300'
+                  }`} />
+                </div>
+              </div>
+              {/* Label */}
+              <span className={`text-[10px] mt-1.5 text-center leading-tight hidden sm:block px-0.5 ${
+                active ? 'text-green-600 font-bold'
+                       : done  ? 'text-green-500 font-medium'
+                               : 'text-slate-300'
+              }`}>
                 {meta?.label}
               </span>
             </div>
+            {/* Connector */}
             {i < STAGES.length - 1 && (
-              <div className={`h-0.5 flex-1 ${i < idx ? 'bg-blue-600/40' : 'bg-slate-100'}`} />
+              <div className={`h-0.5 flex-1 mb-5 ${done || active ? 'bg-green-300' : 'bg-slate-100'}`} />
             )}
           </div>
         );
