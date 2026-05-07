@@ -135,6 +135,22 @@ export default function PurchaseOrderDetail() {
   // Right-column tab
   const [rightTab, setRightTab] = useState<'items' | 'timeline' | 'comments' | 'attachments'>('items');
 
+  // Keyboard shortcuts for tab switching (1/2/3/4)
+  useEffect(() => {
+    const TAB_KEYS: Record<string, typeof rightTab> = {
+      '1': 'items', '2': 'timeline', '3': 'comments', '4': 'attachments',
+    };
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const tab = TAB_KEYS[e.key];
+      if (tab) { e.preventDefault(); setRightTab(tab); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // Due date editing
   const [dueDateEditing, setDueDateEditing] = useState(false);
   const [dueDateValue, setDueDateValue] = useState('');
@@ -612,14 +628,15 @@ export default function PurchaseOrderDetail() {
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
               <div className="flex border-b border-slate-200">
                 {([
-                  { key: 'items',       label: 'Line Items',  icon: Package,       badge: po.items?.length || 0 },
-                  { key: 'timeline',    label: 'Timeline',    icon: History,       badge: po.history?.length || 0 },
-                  { key: 'comments',    label: 'Comments',    icon: MessageSquare, badge: comments.length },
-                  { key: 'attachments', label: 'Attachments', icon: Paperclip,     badge: attachments.length },
-                ] as { key: typeof rightTab; label: string; icon: any; badge: number }[]).map(({ key, label, icon: Icon, badge }) => (
+                  { key: 'items',       label: 'Line Items',  icon: Package,       badge: po.items?.length || 0,   shortcut: '1' },
+                  { key: 'timeline',    label: 'Timeline',    icon: History,       badge: po.history?.length || 0, shortcut: '2' },
+                  { key: 'comments',    label: 'Comments',    icon: MessageSquare, badge: comments.length,         shortcut: '3' },
+                  { key: 'attachments', label: 'Attachments', icon: Paperclip,     badge: attachments.length,      shortcut: '4' },
+                ] as { key: typeof rightTab; label: string; icon: any; badge: number; shortcut: string }[]).map(({ key, label, icon: Icon, badge, shortcut }) => (
                   <button
                     key={key}
                     onClick={() => setRightTab(key)}
+                    title={`${label} (press ${shortcut})`}
                     className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                       rightTab === key
                         ? 'border-blue-600 text-blue-600 bg-blue-50/40'
@@ -633,6 +650,9 @@ export default function PurchaseOrderDetail() {
                         rightTab === key ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
                       }`}>{badge}</span>
                     )}
+                    <kbd className={`ml-0.5 text-[9px] px-1 py-0.5 rounded border font-mono leading-none ${
+                      rightTab === key ? 'border-blue-200 text-blue-400 bg-blue-50' : 'border-slate-200 text-slate-300 bg-slate-50'
+                    }`}>{shortcut}</kbd>
                   </button>
                 ))}
               </div>
