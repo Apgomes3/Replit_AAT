@@ -292,9 +292,9 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
   const approvedBy = user.role === 'hq_manager' ? user.id : null;
 
   if (user.role === 'hq_manager') {
-    await query(`UPDATE purchase_orders SET status=$1, approved_by=$2, approved_at=now(), updated_at=now() WHERE id=$3`, [newStatus, approvedBy, id]);
+    await query(`UPDATE purchase_orders SET status=$1, approved_by=$2, approved_at=now(), stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$3`, [newStatus, approvedBy, id]);
   } else {
-    await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [newStatus, id]);
+    await query(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [newStatus, id]);
   }
   await query(
     `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
@@ -337,7 +337,7 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
     return res.status(400).json({ error: { code: 'INVALID_STATE', message: 'PO is not pending approval' } });
   }
   await query(
-    `UPDATE purchase_orders SET status='purchase_order', approved_by=$1, approved_at=now(), updated_at=now() WHERE id=$2`,
+    `UPDATE purchase_orders SET status='purchase_order', approved_by=$1, approved_at=now(), stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`,
     [user.id, id]
   );
   await query(
@@ -430,9 +430,9 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
     const foSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('fo_code_seq') AS seq`);
     const { yr, seq } = foSeq.rows[0];
     const fo_number = `FO-${yr}-${String(seq).padStart(4, '0')}`;
-    await query(`UPDATE purchase_orders SET status=$1, fo_number=$2, updated_at=now() WHERE id=$3`, [next, fo_number, id]);
+    await query(`UPDATE purchase_orders SET status=$1, fo_number=$2, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$3`, [next, fo_number, id]);
   } else {
-    await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [next, id]);
+    await query(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [next, id]);
   }
   await query(
     `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
@@ -476,9 +476,9 @@ router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRe
         const foSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('fo_code_seq') AS seq`);
         const { yr, seq } = foSeq.rows[0];
         const fo_number = `FO-${yr}-${String(seq).padStart(4, '0')}`;
-        await query(`UPDATE purchase_orders SET status=$1, fo_number=$2, updated_at=now() WHERE id=$3`, [next, fo_number, id]);
+        await query(`UPDATE purchase_orders SET status=$1, fo_number=$2, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$3`, [next, fo_number, id]);
       } else {
-        await query(`UPDATE purchase_orders SET status=$1, updated_at=now() WHERE id=$2`, [next, id]);
+        await query(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [next, id]);
       }
       await query(
         `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
