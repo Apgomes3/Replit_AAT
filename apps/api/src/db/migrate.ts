@@ -776,6 +776,21 @@ CREATE TABLE IF NOT EXISTS po_stage_assignees (
   UNIQUE(stage, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_po_stage_assignees_stage ON po_stage_assignees(stage);
+
+-- TANK COST RATES (admin-configurable cost per m² for shell fabrication estimates)
+CREATE TABLE IF NOT EXISTS tank_cost_rates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  material_code VARCHAR(50),
+  label VARCHAR(100) NOT NULL,
+  cost_per_sqm_usd NUMERIC NOT NULL DEFAULT 0,
+  currency VARCHAR(10) DEFAULT 'USD',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+INSERT INTO tank_cost_rates (material_code, label, cost_per_sqm_usd, notes)
+SELECT 'MAT-FRP-VE', 'FRP (Vinyl Ester)', 350, 'Base rate for FRP tank shell fabrication'
+WHERE NOT EXISTS (SELECT 1 FROM tank_cost_rates WHERE material_code = 'MAT-FRP-VE');
 `;
 
 async function migrate() {

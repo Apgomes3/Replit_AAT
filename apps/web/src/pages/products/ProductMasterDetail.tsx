@@ -180,6 +180,13 @@ export default function ProductMasterDetail() {
     enabled: !!product,
   });
 
+  const { data: costRatesData } = useQuery({
+    queryKey: ['tank-cost-rates'],
+    queryFn: () => api.get('/admin/tank-cost-rates').then(r => r.data),
+    staleTime: 120000,
+  });
+  const tankCostRates: any[] = costRatesData?.items || [];
+
   const { data: electricalData, refetch: refetchElectrical } = useQuery({
     queryKey: ['product-electrical', id],
     queryFn: () => api.get(`/product-masters/${id}/electrical`).then(r => r.data),
@@ -856,25 +863,35 @@ export default function ProductMasterDetail() {
                 'MAT-ALU':2700,'MAT-CONC':2400,
               };
 
-              const calcEstWeight = (shape: string, l: number, w: number, h: number, t: number, density: number|null): number|null => {
-                if (!(l>0 && h>0 && t>0) || density==null) return null;
-                let sa = 0;
+              const calcSurfaceAreaMm2 = (shape: string, l: number, w: number, h: number): number|null => {
+                if (!(l>0 && h>0)) return null;
                 const s = shape || 'Rectangular';
-                if (s === 'Cylindrical') {
-                  sa = Math.PI*(l/2)**2 + Math.PI*l*h;
-                } else if (s === 'Oval') {
+                if (s === 'Cylindrical') return Math.PI*(l/2)**2 + Math.PI*l*h;
+                if (s === 'Oval') {
                   if (!(w>0)) return null;
                   const a=l/2, b=w/2;
                   const perim = Math.PI*(3*(a+b)-Math.sqrt((3*a+b)*(a+3*b)));
-                  sa = Math.PI*a*b + perim*h;
-                } else if (s === 'Hexagonal') {
-                  const side=l/2;
-                  sa = (3*Math.sqrt(3)/2)*side*side + 6*side*h;
-                } else {
-                  if (!(w>0)) return null;
-                  sa = l*w + 2*l*h + 2*w*h;
+                  return Math.PI*a*b + perim*h;
                 }
+                if (s === 'Hexagonal') { const side=l/2; return (3*Math.sqrt(3)/2)*side*side + 6*side*h; }
+                if (!(w>0)) return null;
+                return l*w + 2*l*h + 2*w*h;
+              };
+
+              const calcEstWeight = (shape: string, l: number, w: number, h: number, t: number, density: number|null): number|null => {
+                const sa = calcSurfaceAreaMm2(shape, l, w, h);
+                if (sa == null || !(t>0) || density==null) return null;
                 return +(sa * t / 1e9 * density).toFixed(1);
+              };
+
+              const calcEstCost = (shape: string, l: number, w: number, h: number, matCode: string|null): { cost: number; rate: any } | null => {
+                const sa = calcSurfaceAreaMm2(shape, l, w, h);
+                if (sa == null) return null;
+                const sa_m2 = sa / 1e6;
+                const matchingRate = tankCostRates.find(r => r.material_code === matCode)
+                  || tankCostRates.find(r => !r.material_code);
+                if (!matchingRate) return null;
+                return { cost: +(sa_m2 * Number(matchingRate.cost_per_sqm_usd)).toFixed(0), rate: matchingRate };
               };
 
               const getDimLabels = (shape: string) => {
@@ -891,6 +908,7 @@ export default function ProductMasterDetail() {
                 const shape = product.shape_type || 'Rectangular';
                 const { gross, op } = calcTankShapeVolumes(shape, product.length_mm, product.width_mm, product.height_mm, product.design_water_level_mm);
                 const estWeight = calcEstWeight(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), Number(product.wall_thickness_mm), density);
+                const estCostResult = calcEstCost(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), product.primary_material_code);
 
                 const editShape = tankSpecsForm.shape_type || 'Rectangular';
                 const editLabels = getDimLabels(editShape);
@@ -904,6 +922,10 @@ export default function ProductMasterDetail() {
                 const editEstWeight = editingDimensions ? calcEstWeight(editShape,
                   Number(tankSpecsForm.length_mm), Number(tankSpecsForm.width_mm),
                   Number(tankSpecsForm.height_mm), Number(tankSpecsForm.wall_thickness_mm), editDensity,
+                ) : null;
+                const editEstCostResult = editingDimensions ? calcEstCost(editShape,
+                  Number(tankSpecsForm.length_mm), Number(tankSpecsForm.width_mm),
+                  Number(tankSpecsForm.height_mm), product.primary_material_code,
                 ) : null;
 
                 const viewLabels = getDimLabels(shape);
@@ -970,6 +992,20 @@ export default function ProductMasterDetail() {
                               </div>
                               {editDensity!=null && <div className="text-slate-400 mt-0.5">ρ = {editDensity} kg/m³ ({product.primary_material_code})</div>}
                             </div>
+                            <div className="col-span-2">
+                              <div className="text-slate-400 mb-0.5">Est. Material Cost <span className="text-slate-300">(SA×rate)</span></div>
+                              <div className={`rounded px-2 py-1 font-mono border ${editEstCostResult!=null?'bg-green-50 border-green-200 text-green-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                                {editEstCostResult!=null
+                                  ? `${Number(editEstCostResult.cost).toLocaleString()} ${editEstCostResult.rate.currency}`
+                                  : tankCostRates.length===0 ? 'no rates configured in admin' : 'enter dimensions'}
+                              </div>
+                              {editEstCostResult!=null && (
+                                <div className="text-slate-400 mt-0.5">
+                                  {editEstCostResult.rate.cost_per_sqm_usd} {editEstCostResult.rate.currency}/m² × {((calcSurfaceAreaMm2(editShape, Number(tankSpecsForm.length_mm), Number(tankSpecsForm.width_mm), Number(tankSpecsForm.height_mm)) || 0)/1e6).toFixed(2)} m²
+                                  {editEstCostResult.rate.material_code ? ` (${editEstCostResult.rate.material_code})` : ' (default rate)'}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -995,11 +1031,17 @@ export default function ProductMasterDetail() {
                             ].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
                               <div key={String(l)} className="flex justify-between"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u?<span className="text-slate-400 ml-1">{u}</span>:''}</span></div>
                             ))}
-                            {(gross!=null||op!=null||estWeight!=null||product.weight_kg!=null) && <div className="border-t border-slate-100 my-1"/>}
+                            {(gross!=null||op!=null||estWeight!=null||product.weight_kg!=null||estCostResult!=null) && <div className="border-t border-slate-100 my-1"/>}
                             {gross!=null && <div className="flex justify-between"><span className="text-slate-400">Gross Vol <span className="text-slate-300">({viewLabels.volFormula})</span></span><span className="font-mono text-blue-600 font-medium">{gross} m³</span></div>}
                             {op!=null && <div className="flex justify-between"><span className="text-slate-400">Op. Vol</span><span className="font-mono text-blue-600 font-medium">{op} m³</span></div>}
                             {estWeight!=null && <div className="flex justify-between"><span className="text-slate-400">Est. Weight <span className="text-slate-300">(shell)</span></span><span className="font-mono text-amber-600 font-medium">{estWeight} kg</span></div>}
                             {product.weight_kg!=null && <div className="flex justify-between"><span className="text-slate-400">Actual Weight</span><span className="font-mono text-slate-800 font-semibold">{product.weight_kg} kg</span></div>}
+                            {estCostResult!=null && (
+                              <div className="flex justify-between items-baseline">
+                                <span className="text-slate-400">Est. Cost <span className="text-slate-300">(shell)</span></span>
+                                <span className="font-mono text-green-700 font-semibold">{Number(estCostResult.cost).toLocaleString()} <span className="font-normal text-xs text-green-600">{estCostResult.rate.currency}</span></span>
+                              </div>
+                            )}
                           </>
                         }
                       </div>

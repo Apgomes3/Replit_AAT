@@ -477,4 +477,35 @@ router.delete('/system-types/:id', authenticate, requireRole('admin'), async (re
   res.status(204).end();
 });
 
+// ── Tank Cost Rates ──────────────────────────────────────────────────────────
+router.get('/tank-cost-rates', authenticate, async (_req, res: Response) => {
+  const result = await query('SELECT * FROM tank_cost_rates ORDER BY material_code NULLS LAST, label');
+  res.json({ items: result.rows });
+});
+
+router.post('/tank-cost-rates', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { material_code, label, cost_per_sqm_usd, currency, notes } = req.body;
+  if (!label?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'Label is required' } });
+  const result = await query(
+    'INSERT INTO tank_cost_rates (material_code, label, cost_per_sqm_usd, currency, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [material_code?.trim() || null, label.trim(), parseFloat(cost_per_sqm_usd) || 0, currency || 'USD', notes?.trim() || null]
+  );
+  res.status(201).json(result.rows[0]);
+});
+
+router.put('/tank-cost-rates/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { material_code, label, cost_per_sqm_usd, currency, notes } = req.body;
+  const result = await query(
+    'UPDATE tank_cost_rates SET material_code=$1, label=$2, cost_per_sqm_usd=$3, currency=$4, notes=$5, updated_at=NOW() WHERE id::text=$6 RETURNING *',
+    [material_code?.trim() || null, label?.trim(), parseFloat(cost_per_sqm_usd) || 0, currency || 'USD', notes?.trim() || null, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Rate not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/tank-cost-rates/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  await query('DELETE FROM tank_cost_rates WHERE id::text=$1', [req.params.id]);
+  res.status(204).end();
+});
+
 export default router;
