@@ -19,7 +19,7 @@ export default function AssignUserModal({ selectedCount, onAssign, onClose }: Pr
     queryFn: () => api.get('/purchase-orders/users').then(r => r.data),
   });
 
-  const users: any[] = Array.isArray(data) ? data : (data?.users ?? []);
+  const users: any[] = Array.isArray(data) ? data : (data?.items ?? []);
   const filtered = users.filter(u =>
     !search ||
     `${u.first_name || ''} ${u.last_name || ''} ${u.email}`.toLowerCase().includes(search.toLowerCase())
