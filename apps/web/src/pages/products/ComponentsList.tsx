@@ -41,6 +41,7 @@ export default function ComponentsList() {
   const [form, setForm] = useState({
     component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical',
     description: '', primary_material_code: '', standard_size: '', weight_kg: '', unit: 'EA', notes: '',
+    manufacturer: '', model: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [editRow, setEditRow] = useState<any>(null);
@@ -80,6 +81,8 @@ export default function ComponentsList() {
       unit: row.unit || 'EA',
       status: row.status || 'Active',
       notes: row.notes || '',
+      manufacturer: row.manufacturer || '',
+      model: row.model || '',
     });
   };
 
@@ -262,6 +265,18 @@ export default function ComponentsList() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
+                <input type="text" placeholder="e.g. Grundfos" value={form.manufacturer}
+                  onChange={e => setForm(f => ({ ...f, manufacturer: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                <input type="text" placeholder="e.g. CR 5-10" value={form.model}
+                  onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
                 <select value={form.component_type} onChange={e => setForm(f => ({ ...f, component_type: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
@@ -389,6 +404,18 @@ export default function ComponentsList() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Weight (kg)</label>
                 <input type="number" value={editForm.weight_kg} onChange={e => setEditForm((f: any) => ({ ...f, weight_kg: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
+                <input value={editForm.manufacturer} onChange={e => setEditForm((f: any) => ({ ...f, manufacturer: e.target.value }))}
+                  placeholder="e.g. Grundfos"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                <input value={editForm.model} onChange={e => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
+                  placeholder="e.g. CR 5-10"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div className="col-span-2">

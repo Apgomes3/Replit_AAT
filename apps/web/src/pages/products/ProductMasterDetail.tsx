@@ -284,6 +284,8 @@ export default function ProductMasterDetail() {
       cost: (product as any).cost != null ? String((product as any).cost) : '',
       sell_price: (product as any).sell_price != null ? String((product as any).sell_price) : '',
       currency: (product as any).currency || 'USD',
+      manufacturer: (product as any).manufacturer || '',
+      model: (product as any).model || '',
     });
     setEditing(true);
   };
@@ -304,6 +306,8 @@ export default function ProductMasterDetail() {
         cost: editForm.cost !== '' ? parseFloat(editForm.cost) : null,
         sell_price: editForm.sell_price !== '' ? parseFloat(editForm.sell_price) : null,
         currency: editForm.currency || 'USD',
+        manufacturer: editForm.manufacturer || null,
+        model: editForm.model || null,
       }));
       toast.success('Product updated');
       setEditing(false);
@@ -728,6 +732,8 @@ export default function ProductMasterDetail() {
                 { label: 'Category', value: product.product_category },
                 { label: 'Tank Type', value: product.application_type },
                 { label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null },
+                { label: 'Manufacturer', value: (product as any).manufacturer },
+                { label: 'Model', value: (product as any).model },
                 { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
                 ...(() => {
                   const shape = product.shape_type || 'Rectangular';
@@ -834,6 +840,18 @@ export default function ProductMasterDetail() {
                     {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
+                  <input value={editForm.manufacturer} onChange={e => setEditForm((f: any) => ({ ...f, manufacturer: e.target.value }))}
+                    placeholder="e.g. Grundfos"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                  <input value={editForm.model} onChange={e => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
+                    placeholder="e.g. CR 5-10"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
@@ -851,6 +869,8 @@ export default function ProductMasterDetail() {
                 action: <button onClick={() => setShowFamilyPicker(true)} disabled={familySaving}
                   className="text-xs text-blue-600 hover:underline whitespace-nowrap">{familySaving ? '...' : 'Change'}</button> },
               { label: 'Category', value: product.product_category },
+              { label: 'Manufacturer', value: (product as any).manufacturer },
+              { label: 'Model', value: (product as any).model },
               ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
               ...(!isPiping ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
               ...(!isPiping ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
@@ -926,6 +946,18 @@ export default function ProductMasterDetail() {
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white">
                     {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
+                  <input value={editForm.manufacturer} onChange={e => setEditForm((f: any) => ({ ...f, manufacturer: e.target.value }))}
+                    placeholder="e.g. Grundfos"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                  <input value={editForm.model} onChange={e => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
+                    placeholder="e.g. CR 5-10"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>

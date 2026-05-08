@@ -140,6 +140,8 @@ export default function ComponentDetail() {
       status: component.status,
       notes: component.notes || '',
       synonyms: component.synonyms || [],
+      manufacturer: component.manufacturer || '',
+      model: component.model || '',
     });
     setEditing(true);
   };
@@ -286,6 +288,8 @@ export default function ComponentDetail() {
                 <MetadataPanel title="Component Specifications" fields={[
                   { label: 'Type', value: component.component_type },
                   { label: 'Category', value: component.component_category },
+                  { label: 'Manufacturer', value: component.manufacturer },
+                  { label: 'Model', value: component.model },
                   { label: 'Description', value: component.description },
                   { label: 'Primary Material', value: component.primary_material_code
                     ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={component.primary_material_code} />{component.material_name && <span className="text-slate-500 text-xs">{component.material_name}</span>}</Link>
@@ -320,6 +324,18 @@ export default function ComponentDetail() {
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                         {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                       </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
+                      <input value={form.manufacturer} onChange={e => setForm((f: any) => ({ ...f, manufacturer: e.target.value }))}
+                        placeholder="e.g. Grundfos"
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                      <input value={form.model} onChange={e => setForm((f: any) => ({ ...f, model: e.target.value }))}
+                        placeholder="e.g. CR 5-10"
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                     </div>
                     <div className="col-span-2">
                       <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>

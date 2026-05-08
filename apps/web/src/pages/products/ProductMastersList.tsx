@@ -94,6 +94,8 @@ export default function ProductMastersList() {
       primary_material_code: row.primary_material_code || '',
       standard_status: row.standard_status || 'Concept',
       notes: (row as any).notes || '',
+      manufacturer: (row as any).manufacturer || '',
+      model: (row as any).model || '',
     });
   };
 
@@ -114,6 +116,8 @@ export default function ProductMastersList() {
         synonyms: (editRow as any).synonyms || [],
         image_url: (editRow as any).image_url || null,
         product_family_id: (editRow as any).product_family_id || null,
+        manufacturer: editForm.manufacturer || null,
+        model: editForm.model || null,
       });
       toast.success('Product updated');
       setEditRow(null);
@@ -212,6 +216,8 @@ export default function ProductMastersList() {
             { name: 'product_name', label: 'Product Name', required: true },
             { name: 'product_category', label: 'Category', options: categoryOptions, onCreateOption: createCategory },
             { name: 'application_type', label: 'Application Type' },
+            { name: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Grundfos' },
+            { name: 'model', label: 'Model', placeholder: 'e.g. CR 5-10' },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
             { name: 'power_kw', label: 'Power (kW)', type: 'number' },
             { name: 'primary_material_code', label: 'Primary Material', options: materialOptions },
@@ -312,6 +318,18 @@ export default function ProductMastersList() {
                     <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
+                <input value={editForm.manufacturer} onChange={e => setEditForm((f: any) => ({ ...f, manufacturer: e.target.value }))}
+                  placeholder="e.g. Grundfos"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                <input value={editForm.model} onChange={e => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
+                  placeholder="e.g. CR 5-10"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>

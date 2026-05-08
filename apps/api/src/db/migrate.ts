@@ -578,6 +578,11 @@ CREATE TABLE IF NOT EXISTS project_equipment_items (
 
 ALTER TABLE project_equipment_items ADD COLUMN IF NOT EXISTS component_id UUID REFERENCES components(id);
 
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS model VARCHAR(255);
+ALTER TABLE components ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
+ALTER TABLE components ADD COLUMN IF NOT EXISTS model VARCHAR(255);
+
 -- PROJECT PIPING ITEMS (pipes & fittings assigned to a project)
 CREATE TABLE IF NOT EXISTS project_piping_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
