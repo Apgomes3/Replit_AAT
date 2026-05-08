@@ -97,7 +97,10 @@ router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: 
               AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
           THEN COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0 * t.quantity
           ELSE 0 END
-      ), 0)::numeric AS total_volume_m3
+      ), 0)::numeric AS total_volume_m3,
+      COALESCE(SUM(
+        COALESCE(t.operating_volume_m3, pm.operating_volume_m3, 0) * COALESCE(t.quantity, 1)
+      ), 0)::numeric AS total_operating_volume_m3
      FROM systems s
      LEFT JOIN areas a ON s.area_id=a.id
      LEFT JOIN exhibits e ON s.exhibit_id=e.id

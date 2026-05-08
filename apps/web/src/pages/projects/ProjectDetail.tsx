@@ -787,10 +787,17 @@ export default function ProjectDetail() {
                     <span className="font-medium text-sm text-slate-800 flex-1">{sys.system_name}</span>
                     <span className="text-xs text-slate-400">{sys.system_type}</span>
                     {sys.water_type && <span className="text-xs bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5">{sys.water_type}</span>}
+                    {(sys as any).design_flow_m3h && parseFloat((sys as any).total_operating_volume_m3) > 0 && (
+                      <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-mono" title="Calculated turnover rate (design flow ÷ operating volume)">
+                        {(parseFloat((sys as any).design_flow_m3h) / parseFloat((sys as any).total_operating_volume_m3)).toFixed(1)} /hr
+                      </span>
+                    )}
                     {(sys as any).tank_count > 0 && (
                       <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 font-mono">
                         {(sys as any).tank_count} tank{(sys as any).tank_count !== 1 ? 's' : ''}
-                        {parseFloat((sys as any).total_volume_m3) > 0 ? ` · ${parseFloat((sys as any).total_volume_m3).toFixed(1)} m³` : ''}
+                        {parseFloat((sys as any).total_operating_volume_m3) > 0
+                          ? ` · ${parseFloat((sys as any).total_operating_volume_m3).toFixed(1)} m³ op.`
+                          : parseFloat((sys as any).total_volume_m3) > 0 ? ` · ${parseFloat((sys as any).total_volume_m3).toFixed(1)} m³` : ''}
                       </span>
                     )}
                     <StatusBadge status={sys.status} />
