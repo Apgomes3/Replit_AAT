@@ -98,7 +98,7 @@ export default function ProductMasterDetail() {
   const [hydraulicForm, setHydraulicForm] = useState<Record<string, any>>({});
   const [hydraulicSaving, setHydraulicSaving] = useState(false);
 
-  const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', gross_volume_m3: '', operating_volume_m3: '', wall_thickness_mm: '' });
+  const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', wall_thickness_mm: '', weight_kg: '' });
   const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
 
   const [showFamilyPicker, setShowFamilyPicker] = useState(false);
@@ -223,6 +223,7 @@ export default function ProductMasterDetail() {
     gross_volume_m3: product.gross_volume_m3,
     operating_volume_m3: product.operating_volume_m3,
     wall_thickness_mm: product.wall_thickness_mm,
+    weight_kg: product.weight_kg,
     product_family_id: product.product_family_id,
     tank_family_id: product.tank_family_id,
     synonyms: product.synonyms || [],
@@ -366,6 +367,29 @@ export default function ProductMasterDetail() {
     finally { setHydraulicSaving(false); }
   };
 
+  const calcTankShapeVolumes = (shape: string, L: number|null, W: number|null, H: number|null, WL: number|null) => {
+    const s = shape || 'Rectangular';
+    let grossV: number|null = null, opV: number|null = null;
+    if (s === 'Cylindrical') {
+      if (L && L > 0 && H && H > 0) grossV = Math.PI * (L/2)**2 * H;
+      if (L && L > 0 && WL && WL > 0) opV = Math.PI * (L/2)**2 * WL;
+    } else if (s === 'Oval') {
+      if (L && W && L > 0 && W > 0 && H && H > 0) grossV = Math.PI * (L/2) * (W/2) * H;
+      if (L && W && L > 0 && W > 0 && WL && WL > 0) opV = Math.PI * (L/2) * (W/2) * WL;
+    } else if (s === 'Hexagonal') {
+      const hexArea = (side: number) => (3 * Math.sqrt(3) / 2) * side * side;
+      if (L && L > 0 && H && H > 0) grossV = hexArea(L/2) * H;
+      if (L && L > 0 && WL && WL > 0) opV = hexArea(L/2) * WL;
+    } else {
+      if (L && W && L > 0 && W > 0 && H && H > 0) grossV = L * W * H;
+      if (L && W && L > 0 && W > 0 && WL && WL > 0) opV = L * W * WL;
+    }
+    return {
+      gross: grossV != null ? +(grossV / 1e9).toFixed(6) : null,
+      op: opV != null ? +(opV / 1e9).toFixed(6) : null,
+    };
+  };
+
   const handleSaveTankSpecs = async () => {
     setTankSpecsSubmitting(true);
     try {
@@ -373,14 +397,14 @@ export default function ProductMasterDetail() {
       const W = tankSpecsForm.width_mm ? Number(tankSpecsForm.width_mm) : null;
       const H = tankSpecsForm.height_mm ? Number(tankSpecsForm.height_mm) : null;
       const WL = tankSpecsForm.design_water_level_mm ? Number(tankSpecsForm.design_water_level_mm) : null;
-      const grossCalc = (L && W && H) ? +(L * W * H / 1e9).toFixed(6) : null;
-      const opCalc = (L && W && WL) ? +(L * W * WL / 1e9).toFixed(6) : null;
+      const { gross: grossCalc, op: opCalc } = calcTankShapeVolumes(tankSpecsForm.shape_type, L, W, H, WL);
       await api.put(`/product-masters/${id}`, productPutPayload({
         shape_type: tankSpecsForm.shape_type || null,
         length_mm: L, width_mm: W, height_mm: H, design_water_level_mm: WL,
         gross_volume_m3: grossCalc,
         operating_volume_m3: opCalc,
         wall_thickness_mm: tankSpecsForm.wall_thickness_mm ? Number(tankSpecsForm.wall_thickness_mm) : null,
+        weight_kg: tankSpecsForm.weight_kg ? Number(tankSpecsForm.weight_kg) : null,
       }));
       toast.success('Tank dimensions saved');
       setEditingDimensions(false);
@@ -831,56 +855,121 @@ export default function ProductMasterDetail() {
                 'MAT-CPVC':1540,'MAT-ACRY':1190,'MAT-GLASS':2500,'MAT-CS':7850,
                 'MAT-ALU':2700,'MAT-CONC':2400,
               };
-              const calcTankVolumes = (L:any,W:any,H:any,WL:any,T:any) => {
-                const l=parseFloat(L),w=parseFloat(W),h=parseFloat(H),wl=parseFloat(WL),t=parseFloat(T);
-                const gross = (l>0&&w>0&&h>0) ? +(l*w*h/1e9).toFixed(6) : null;
-                const op = (l>0&&w>0&&wl>0) ? +(l*w*wl/1e9).toFixed(6) : null;
-                const density = MAT_DENSITY[product.primary_material_code] ?? null;
-                const weight = (l>0&&w>0&&h>0&&t>0&&density!=null)
-                  ? +((l*w + 2*l*h + 2*w*h) * t / 1e9 * density).toFixed(1)
-                  : null;
-                return { gross, op, weight, density };
+
+              const calcEstWeight = (shape: string, l: number, w: number, h: number, t: number, density: number|null): number|null => {
+                if (!(l>0 && h>0 && t>0) || density==null) return null;
+                let sa = 0;
+                const s = shape || 'Rectangular';
+                if (s === 'Cylindrical') {
+                  sa = Math.PI*(l/2)**2 + Math.PI*l*h;
+                } else if (s === 'Oval') {
+                  if (!(w>0)) return null;
+                  const a=l/2, b=w/2;
+                  const perim = Math.PI*(3*(a+b)-Math.sqrt((3*a+b)*(a+3*b)));
+                  sa = Math.PI*a*b + perim*h;
+                } else if (s === 'Hexagonal') {
+                  const side=l/2;
+                  sa = (3*Math.sqrt(3)/2)*side*side + 6*side*h;
+                } else {
+                  if (!(w>0)) return null;
+                  sa = l*w + 2*l*h + 2*w*h;
+                }
+                return +(sa * t / 1e9 * density).toFixed(1);
               };
+
+              const getDimLabels = (shape: string) => {
+                switch(shape) {
+                  case 'Cylindrical': return { L:'Diameter (mm)', W:null, volFormula:'π×r²×H', weightFormula:'π×r²×t + π×D×H×t' };
+                  case 'Oval':        return { L:'Major Axis (mm)', W:'Minor Axis (mm)', volFormula:'π×a×b×H', weightFormula:'(π×a×b + perim×H)×t' };
+                  case 'Hexagonal':   return { L:'Diameter v-v (mm)', W:null, volFormula:'(3√3/2)×s²×H', weightFormula:'((3√3/2)×s² + 6×s×H)×t' };
+                  default:            return { L:'Length (mm)', W:'Width (mm)', volFormula:'L×W×H', weightFormula:'(L×W + 2LH + 2WH)×t' };
+                }
+              };
+
               if (isTank) {
-                const { gross, op, weight, density } = calcTankVolumes(product.length_mm,product.width_mm,product.height_mm,product.design_water_level_mm,product.wall_thickness_mm);
-                const editCalc = editingDimensions ? calcTankVolumes(tankSpecsForm.length_mm,tankSpecsForm.width_mm,tankSpecsForm.height_mm,tankSpecsForm.design_water_level_mm,tankSpecsForm.wall_thickness_mm) : null;
+                const density = MAT_DENSITY[product.primary_material_code] ?? null;
+                const shape = product.shape_type || 'Rectangular';
+                const { gross, op } = calcTankShapeVolumes(shape, product.length_mm, product.width_mm, product.height_mm, product.design_water_level_mm);
+                const estWeight = calcEstWeight(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), Number(product.wall_thickness_mm), density);
+
+                const editShape = tankSpecsForm.shape_type || 'Rectangular';
+                const editLabels = getDimLabels(editShape);
+                const editDensity = MAT_DENSITY[product.primary_material_code] ?? null;
+                const editVols = editingDimensions ? calcTankShapeVolumes(editShape,
+                  tankSpecsForm.length_mm ? Number(tankSpecsForm.length_mm) : null,
+                  tankSpecsForm.width_mm ? Number(tankSpecsForm.width_mm) : null,
+                  tankSpecsForm.height_mm ? Number(tankSpecsForm.height_mm) : null,
+                  tankSpecsForm.design_water_level_mm ? Number(tankSpecsForm.design_water_level_mm) : null,
+                ) : null;
+                const editEstWeight = editingDimensions ? calcEstWeight(editShape,
+                  Number(tankSpecsForm.length_mm), Number(tankSpecsForm.width_mm),
+                  Number(tankSpecsForm.height_mm), Number(tankSpecsForm.wall_thickness_mm), editDensity,
+                ) : null;
+
+                const viewLabels = getDimLabels(shape);
                 return (
                   <div className="bg-white border border-slate-200 rounded-lg mt-3">
                     <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                       <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Ruler className="w-3.5 h-3.5" />Dimensions</span>
                       {!editingDimensions
-                        ? <button onClick={() => { setTankSpecsForm({ shape_type: product.shape_type||'', length_mm: product.length_mm!=null?String(product.length_mm):'', width_mm: product.width_mm!=null?String(product.width_mm):'', height_mm: product.height_mm!=null?String(product.height_mm):'', design_water_level_mm: product.design_water_level_mm!=null?String(product.design_water_level_mm):'', gross_volume_m3: product.gross_volume_m3!=null?String(product.gross_volume_m3):'', operating_volume_m3: product.operating_volume_m3!=null?String(product.operating_volume_m3):'', wall_thickness_mm: product.wall_thickness_mm!=null?String(product.wall_thickness_mm):'' }); setEditingDimensions(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                        ? <button onClick={() => { setTankSpecsForm({ shape_type: product.shape_type||'', length_mm: product.length_mm!=null?String(product.length_mm):'', width_mm: product.width_mm!=null?String(product.width_mm):'', height_mm: product.height_mm!=null?String(product.height_mm):'', design_water_level_mm: product.design_water_level_mm!=null?String(product.design_water_level_mm):'', wall_thickness_mm: product.wall_thickness_mm!=null?String(product.wall_thickness_mm):'', weight_kg: product.weight_kg!=null?String(product.weight_kg):'' }); setEditingDimensions(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
                         : <div className="flex gap-2"><button onClick={() => setEditingDimensions(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveTankSpecs} disabled={tankSpecsSubmitting} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{tankSpecsSubmitting ? 'Saving…' : 'Save'}</button></div>}
                     </div>
                     {editingDimensions ? (
-                      <div className="p-3 space-y-2">
+                      <div className="p-3 space-y-2 text-xs">
                         <div>
-                          <label className="block text-xs text-slate-500 mb-0.5">Shape</label>
+                          <label className="block text-slate-500 mb-0.5">Shape</label>
                           <select value={tankSpecsForm.shape_type} onChange={e => setTankSpecsForm(f=>({...f,shape_type:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600">
                             <option value="">— Select —</option>
                             {['Rectangular','Cylindrical','Oval','Hexagonal','Custom'].map(o=><option key={o} value={o}>{o}</option>)}
                           </select>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                          {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['design_water_level_mm','Water Level (mm)'],['wall_thickness_mm','Wall Thickness (mm)']].map(([k,l])=>(
-                            <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={(tankSpecsForm as any)[k]} onChange={e=>setTankSpecsForm(f=>({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
-                          ))}
+                          <div>
+                            <label className="block text-slate-500 mb-0.5">{editLabels.L}</label>
+                            <input type="number" value={tankSpecsForm.length_mm} onChange={e=>setTankSpecsForm(f=>({...f,length_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                          </div>
+                          {editLabels.W != null ? (
+                            <div>
+                              <label className="block text-slate-500 mb-0.5">{editLabels.W}</label>
+                              <input type="number" value={tankSpecsForm.width_mm} onChange={e=>setTankSpecsForm(f=>({...f,width_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                            </div>
+                          ) : <div/>}
+                          <div>
+                            <label className="block text-slate-500 mb-0.5">Height (mm)</label>
+                            <input type="number" value={tankSpecsForm.height_mm} onChange={e=>setTankSpecsForm(f=>({...f,height_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                          </div>
+                          <div>
+                            <label className="block text-slate-500 mb-0.5">Water Level (mm)</label>
+                            <input type="number" value={tankSpecsForm.design_water_level_mm} onChange={e=>setTankSpecsForm(f=>({...f,design_water_level_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                          </div>
+                          <div>
+                            <label className="block text-slate-500 mb-0.5">Wall Thickness (mm)</label>
+                            <input type="number" value={tankSpecsForm.wall_thickness_mm} onChange={e=>setTankSpecsForm(f=>({...f,wall_thickness_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                          </div>
+                          <div>
+                            <label className="block text-slate-500 mb-0.5">Actual Weight (kg)</label>
+                            <input type="number" placeholder="measured weight" value={tankSpecsForm.weight_kg} onChange={e=>setTankSpecsForm(f=>({...f,weight_kg:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                          </div>
                         </div>
                         <div className="border-t border-slate-100 pt-2">
-                          <p className="text-xs text-slate-400 mb-1.5 font-medium">Calculated</p>
+                          <p className="text-slate-400 mb-1.5 font-medium">Calculated (estimated)</p>
                           <div className="grid grid-cols-2 gap-1.5">
-                            {[['Gross Vol',editCalc?.gross,'m³'],['Op. Vol',editCalc?.op,'m³'],['Est. Weight',editCalc?.weight,'kg']].map(([lbl,val,unit])=>(
-                              <div key={String(lbl)}>
-                                <div className="text-xs text-slate-400 mb-0.5">{lbl}</div>
-                                <div className={`rounded px-2 py-1 text-xs font-mono border ${val!=null?'bg-blue-50 border-blue-200 text-blue-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>{val!=null?`${val} ${unit}`:'—'}</div>
+                            <div>
+                              <div className="text-slate-400 mb-0.5">Gross Vol <span className="text-slate-300">({editLabels.volFormula})</span></div>
+                              <div className={`rounded px-2 py-1 font-mono border ${editVols?.gross!=null?'bg-blue-50 border-blue-200 text-blue-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>{editVols?.gross!=null?`${editVols.gross} m³`:'—'}</div>
+                            </div>
+                            <div>
+                              <div className="text-slate-400 mb-0.5">Op. Vol (water level)</div>
+                              <div className={`rounded px-2 py-1 font-mono border ${editVols?.op!=null?'bg-blue-50 border-blue-200 text-blue-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>{editVols?.op!=null?`${editVols.op} m³`:'—'}</div>
+                            </div>
+                            <div className="col-span-2">
+                              <div className="text-slate-400 mb-0.5">Est. Shell Weight <span className="text-slate-300">({editLabels.weightFormula})×ρ</span></div>
+                              <div className={`rounded px-2 py-1 font-mono border ${editEstWeight!=null?'bg-amber-50 border-amber-200 text-amber-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                                {editEstWeight!=null ? `${editEstWeight} kg` : editDensity==null ? `no density for ${product.primary_material_code||'material'}` : 'enter dims + wall thickness'}
                               </div>
-                            ))}
-                            {editCalc?.weight!=null && editCalc.density!=null && (
-                              <div className="col-span-2 text-xs text-slate-400">Density: {editCalc.density} kg/m³ from material code</div>
-                            )}
-                            {editCalc?.weight==null && tankSpecsForm.wall_thickness_mm && !MAT_DENSITY[product.primary_material_code] && (
-                              <div className="col-span-2 text-xs text-amber-500">No density for material code — weight estimate unavailable</div>
-                            )}
+                              {editDensity!=null && <div className="text-slate-400 mt-0.5">ρ = {editDensity} kg/m³ ({product.primary_material_code})</div>}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -888,8 +977,8 @@ export default function ProductMasterDetail() {
                       <div className="p-3 space-y-1 text-xs">
                         {[
                           ['Shape', product.shape_type, ''],
-                          ['Length', product.length_mm, 'mm'],
-                          ['Width', product.width_mm, 'mm'],
+                          [viewLabels.L.replace(' (mm)',''), product.length_mm, 'mm'],
+                          ...(viewLabels.W ? [[viewLabels.W.replace(' (mm)',''), product.width_mm, 'mm'] as [string,any,string]] : []),
                           ['Height', product.height_mm, 'mm'],
                           ['Water Level', product.design_water_level_mm, 'mm'],
                           ['Wall Thickness', product.wall_thickness_mm, 'mm'],
@@ -898,18 +987,19 @@ export default function ProductMasterDetail() {
                           : <>
                             {[
                               ['Shape', product.shape_type, ''],
-                              ['Length', product.length_mm, 'mm'],
-                              ['Width', product.width_mm, 'mm'],
+                              [viewLabels.L.replace(' (mm)',''), product.length_mm, 'mm'],
+                              ...(viewLabels.W ? [[viewLabels.W.replace(' (mm)',''), product.width_mm, 'mm'] as [string,any,string]] : []),
                               ['Height', product.height_mm, 'mm'],
                               ['Water Level', product.design_water_level_mm, 'mm'],
                               ['Wall Thickness', product.wall_thickness_mm, 'mm'],
                             ].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
                               <div key={String(l)} className="flex justify-between"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u?<span className="text-slate-400 ml-1">{u}</span>:''}</span></div>
                             ))}
-                            {(gross!=null||op!=null||weight!=null) && <div className="border-t border-slate-100 my-1"/>}
-                            {gross!=null && <div className="flex justify-between"><span className="text-slate-400">Gross Vol <span className="text-slate-300 text-xs">(L×W×H)</span></span><span className="font-mono text-blue-600 font-medium">{gross} m³</span></div>}
-                            {op!=null && <div className="flex justify-between"><span className="text-slate-400">Op. Vol <span className="text-slate-300 text-xs">(L×W×WL)</span></span><span className="font-mono text-blue-600 font-medium">{op} m³</span></div>}
-                            {weight!=null && <div className="flex justify-between"><span className="text-slate-400">Est. Weight <span className="text-slate-300 text-xs">(shell)</span></span><span className="font-mono text-blue-600 font-medium">{weight} kg</span></div>}
+                            {(gross!=null||op!=null||estWeight!=null||product.weight_kg!=null) && <div className="border-t border-slate-100 my-1"/>}
+                            {gross!=null && <div className="flex justify-between"><span className="text-slate-400">Gross Vol <span className="text-slate-300">({viewLabels.volFormula})</span></span><span className="font-mono text-blue-600 font-medium">{gross} m³</span></div>}
+                            {op!=null && <div className="flex justify-between"><span className="text-slate-400">Op. Vol</span><span className="font-mono text-blue-600 font-medium">{op} m³</span></div>}
+                            {estWeight!=null && <div className="flex justify-between"><span className="text-slate-400">Est. Weight <span className="text-slate-300">(shell)</span></span><span className="font-mono text-amber-600 font-medium">{estWeight} kg</span></div>}
+                            {product.weight_kg!=null && <div className="flex justify-between"><span className="text-slate-400">Actual Weight</span><span className="font-mono text-slate-800 font-semibold">{product.weight_kg} kg</span></div>}
                           </>
                         }
                       </div>
