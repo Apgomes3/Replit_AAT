@@ -833,16 +833,65 @@ export default function ProductMasterDetail() {
                     <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
                   ))}
                   <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={dimensionsForm.notes ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
+                  {isTank && (() => {
+                    const l = parseFloat(dimensionsForm.length_mm ?? product.length_mm);
+                    const w = parseFloat(dimensionsForm.width_mm ?? product.width_mm);
+                    const h = parseFloat(dimensionsForm.height_mm ?? product.height_mm);
+                    const wl = product.design_water_level_mm;
+                    const grossCalc = (l > 0 && w > 0 && h > 0) ? +(l * w * h / 1e9).toFixed(6) : null;
+                    const opCalc = (l > 0 && w > 0 && wl > 0) ? +(l * w * wl / 1e9).toFixed(6) : null;
+                    return (<>
+                      <div className="col-span-2 border-t border-slate-100 pt-2 mt-1">
+                        <p className="text-xs text-slate-400 mb-1.5 font-medium">Calculated Volumes</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-0.5">Gross Vol (m³) = L×W×H</label>
+                            <div className={`rounded px-2 py-1 text-xs font-mono border ${grossCalc != null ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>{grossCalc != null ? `${grossCalc} m³` : 'enter L, W, H'}</div>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-0.5">Op. Vol (m³) = L×W×WL</label>
+                            <div className={`rounded px-2 py-1 text-xs font-mono border ${opCalc != null ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>{opCalc != null ? `${opCalc} m³` : 'enter dims + water level'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </>);
+                  })()}
                 </div>
               ) : (
                 <div className="p-3">
-                  {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
-                    ? <p className="text-xs text-slate-300 text-center py-2">No dimensions recorded — click Edit to add</p>
-                    : <div className="space-y-1">
-                        {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                  {(() => {
+                    const baseRows: [string,any,string][] = [['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']];
+                    const L = product.length_mm, W = product.width_mm, H = product.height_mm, WL = product.design_water_level_mm;
+                    const grossCalc = (L > 0 && W > 0 && H > 0) ? +(L * W * H / 1e9).toFixed(6) : null;
+                    const opCalc = (L > 0 && W > 0 && WL > 0) ? +(L * W * WL / 1e9).toFixed(6) : null;
+                    const visibleBase = baseRows.filter(([,v]) => v != null && v !== '');
+                    const hasAnything = visibleBase.length > 0 || (isTank && (grossCalc != null || opCalc != null));
+                    if (!hasAnything) return <p className="text-xs text-slate-300 text-center py-2">No dimensions recorded — click Edit to add</p>;
+                    return (
+                      <div className="space-y-1">
+                        {visibleBase.map(([l,v,u]) => (
                           <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
                         ))}
-                      </div>}
+                        {isTank && (grossCalc != null || opCalc != null) && (
+                          <>
+                            {visibleBase.length > 0 && <div className="border-t border-slate-100 pt-1 mt-1" />}
+                            {grossCalc != null && (
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-400">Gross Vol <span className="text-slate-300">(L×W×H)</span></span>
+                                <span className="font-mono text-blue-600 font-medium">{grossCalc} m³</span>
+                              </div>
+                            )}
+                            {opCalc != null && (
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-400">Op. Vol <span className="text-slate-300">(L×W×WL)</span></span>
+                                <span className="font-mono text-blue-600 font-medium">{opCalc} m³</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
