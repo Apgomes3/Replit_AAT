@@ -309,7 +309,8 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
        WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [sysId]),
     query(
       `SELECT t.id, t.tank_code, t.tank_name, t.tank_type, t.quantity,
-              t.gross_volume_m3, t.operating_volume_m3,
+              COALESCE(t.gross_volume_m3, pm.gross_volume_m3)       AS gross_volume_m3,
+              COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS operating_volume_m3,
               t.length_mm, t.width_mm, t.height_mm,
               t.primary_material, t.status,
               pm.product_code, pm.product_name
