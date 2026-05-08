@@ -8,7 +8,7 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download, Copy, User, ExternalLink, X, CheckSquare2, UserPlus, Bookmark, BookmarkCheck, ArrowRight, CheckCircle2, XCircle, Send, ChevronRight } from 'lucide-react';
+import { Plus, Download, Copy, User, ExternalLink, X, CheckSquare2, UserPlus, Bookmark, BookmarkCheck, ArrowRight, CheckCircle2, XCircle, Send, ChevronRight, PackageCheck, List } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 import AssignUserModal from './AssignUserModal';
@@ -41,9 +41,10 @@ function POStatusBadge({ status }: { status: string }) {
 type PO = {
   id: string; po_code: string; status: string; notes: string;
   project_code: string; project_name: string;
-  created_by_name: string; approved_by_name: string;
+  created_by_name: string; approved_by_name: string | null;
   item_count: string; created_at: string; updated_at: string;
   total_cost_usd: string; stage_due_date: string | null;
+  fo_number: string | null;
 };
 
 type InlineAction = {
@@ -82,6 +83,7 @@ export default function PurchaseOrdersList() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const [searchParams] = useSearchParams();
+  const [viewTab, setViewTab] = useState<'all' | 'released'>(searchParams.get('tab') === 'released' ? 'released' : 'all');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '');
   const [showCreate, setShowCreate] = useState(false);
@@ -137,13 +139,16 @@ export default function PurchaseOrdersList() {
     return () => document.removeEventListener('mousedown', handler);
   }, [inlineAction]);
 
+  const effectiveStatus = viewTab === 'released' ? 'released' : statusFilter;
+
   const { data, isLoading } = useQuery({
-    queryKey: ['purchase-orders', search, statusFilter, mineOnly],
+    queryKey: ['purchase-orders', search, effectiveStatus, mineOnly, viewTab],
     queryFn: () => {
       const params = new URLSearchParams();
       if (search) params.set('q', search);
-      if (statusFilter) params.set('status', statusFilter);
+      if (effectiveStatus) params.set('status', effectiveStatus);
       if (mineOnly) params.set('mine', 'true');
+      params.set('page_size', '200');
       return api.get(`/purchase-orders?${params}`).then(r => r.data);
     },
   });
@@ -376,12 +381,45 @@ export default function PurchaseOrdersList() {
     },
   ];
 
+  const releasedColumns: Column<PO>[] = [
+    { key: 'po_code', header: 'PO Code', sortable: true, render: r => <EntityCode code={r.po_code} /> },
+    {
+      key: 'project_name' as any, header: 'Project', sortable: true,
+      render: r => r.project_code
+        ? <span><span className="font-mono text-xs text-slate-400 mr-1">{r.project_code}</span>{r.project_name}</span>
+        : <span className="text-slate-300 text-xs">—</span>,
+    },
+    {
+      key: 'fo_number' as any, header: 'FO Number', sortable: true,
+      render: r => r.fo_number
+        ? <span className="font-mono text-xs bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 rounded">{r.fo_number}</span>
+        : <span className="text-slate-300 text-xs">—</span>,
+    },
+    { key: 'item_count' as any, header: 'Items', sortable: true, sortValue: r => Number(r.item_count) || 0, render: r => <span className="text-sm text-slate-600">{r.item_count}</span> },
+    {
+      key: 'total_cost_usd' as any, header: 'Total Cost (USD)', sortable: true, sortValue: r => parseFloat(r.total_cost_usd || '0'),
+      render: r => parseFloat(r.total_cost_usd || '0') > 0
+        ? <span className="text-sm font-mono text-slate-700">{parseFloat(r.total_cost_usd).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+        : <span className="text-slate-300 text-xs">—</span>,
+    },
+    { key: 'approved_by_name' as any, header: 'Approved By', render: r => <span className="text-sm text-slate-600">{r.approved_by_name ?? '—'}</span> },
+    {
+      key: 'created_at' as any, header: 'Released Date', sortable: true, sortValue: r => new Date(r.updated_at || r.created_at).getTime(),
+      render: r => <span className="text-xs text-slate-500">{new Date(r.updated_at || r.created_at).toLocaleDateString()}</span>,
+    },
+    { key: 'created_by_name' as any, header: 'Created By', render: r => <span className="text-sm text-slate-600">{r.created_by_name}</span> },
+    {
+      key: '__open' as any, header: '',
+      render: _r => <ExternalLink className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors" />,
+    },
+  ];
+
   return (
     <div className="h-full flex flex-col">
       <PageHeader
         title="Purchase Orders"
         crumbs={[{ label: 'Order Management', href: '/order-management' }, { label: 'Purchase Orders' }]}
-        subtitle={`${data?.pagination?.total ?? 0} orders`}
+        subtitle={viewTab === 'released' ? `${data?.pagination?.total ?? 0} released` : `${data?.pagination?.total ?? 0} orders`}
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -391,25 +429,51 @@ export default function PurchaseOrdersList() {
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
-            <Button variant="primary" onClick={() => setShowCreate(true)}>
-              <Plus className="w-4 h-4" />New PO
-            </Button>
+            {viewTab === 'all' && (
+              <Button variant="primary" onClick={() => setShowCreate(true)}>
+                <Plus className="w-4 h-4" />New PO
+              </Button>
+            )}
           </div>
         }
       />
 
+      {/* Tab strip */}
+      <div className="bg-white border-b border-slate-200 px-4 flex items-center gap-1">
+        <button
+          onClick={() => setViewTab('all')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            viewTab === 'all' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <List className="w-4 h-4" />
+          All POs
+        </button>
+        <button
+          onClick={() => { setViewTab('released'); setSelectedIds(new Set()); }}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            viewTab === 'released' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <PackageCheck className="w-4 h-4" />
+          Released
+        </button>
+      </div>
+
       <div className="p-4 border-b border-slate-200 bg-white flex gap-3 items-center flex-wrap">
-        <label className="flex items-center gap-2 cursor-pointer select-none shrink-0" title={allSelected ? 'Deselect all' : 'Select all'}>
-          <input
-            ref={selectAllRef}
-            type="checkbox"
-            checked={allSelected}
-            onChange={toggleAll}
-            className="w-4 h-4 accent-blue-600 cursor-pointer"
-            style={{ accentColor: someSelected ? '#2563eb' : undefined }}
-          />
-          <span className="text-xs text-slate-400">All</span>
-        </label>
+        {viewTab === 'all' && (
+          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0" title={allSelected ? 'Deselect all' : 'Select all'}>
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="w-4 h-4 accent-blue-600 cursor-pointer"
+              style={{ accentColor: someSelected ? '#2563eb' : undefined }}
+            />
+            <span className="text-xs text-slate-400">All</span>
+          </label>
+        )}
         <input
           ref={searchInputRef}
           value={search}
@@ -417,16 +481,18 @@ export default function PurchaseOrdersList() {
           placeholder="Search… (press / to focus)"
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600"
         />
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-blue-600"
-        >
-          <option value="">All statuses</option>
-          {Object.entries(STATUS_META).map(([k, v]) => (
-            <option key={k} value={k}>{v.label}</option>
-          ))}
-        </select>
+        {viewTab === 'all' && (
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="border border-slate-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-blue-600"
+          >
+            <option value="">All statuses</option>
+            {Object.entries(STATUS_META).map(([k, v]) => (
+              <option key={k} value={k}>{v.label}</option>
+            ))}
+          </select>
+        )}
         <button
           onClick={() => setMineOnly(v => !v)}
           className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
@@ -494,29 +560,58 @@ export default function PurchaseOrdersList() {
       </div>
 
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable
-          columns={columns}
-          data={allItems}
-          loading={isLoading}
-          onRowClick={r => navigate(`/purchase-orders/${r.id}`)}
-          contextMenuItems={r => [
-            {
-              label: 'Open',
-              icon: <ExternalLink className="w-3.5 h-3.5" />,
-              onClick: () => navigate(`/purchase-orders/${r.id}`),
-            },
-            {
-              label: 'Clone PO',
-              icon: <Copy className="w-3.5 h-3.5" />,
-              divider: true,
-              onClick: () => cloneMutation.mutate(r.id),
-            },
-          ]}
-        />
+        {viewTab === 'released' ? (
+          <DataTable
+            columns={releasedColumns}
+            data={allItems}
+            loading={isLoading}
+            tableId="purchase-orders-released"
+            onRowClick={r => navigate(`/purchase-orders/${r.id}`)}
+            emptyMessage="No released purchase orders yet"
+            contextMenuItems={r => [
+              { label: 'Open', icon: <ExternalLink className="w-3.5 h-3.5" />, onClick: () => navigate(`/purchase-orders/${r.id}`) },
+              { label: 'Clone PO', icon: <Copy className="w-3.5 h-3.5" />, divider: true, onClick: () => cloneMutation.mutate(r.id) },
+            ]}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={allItems}
+            loading={isLoading}
+            onRowClick={r => navigate(`/purchase-orders/${r.id}`)}
+            contextMenuItems={r => [
+              {
+                label: 'Open',
+                icon: <ExternalLink className="w-3.5 h-3.5" />,
+                onClick: () => navigate(`/purchase-orders/${r.id}`),
+              },
+              {
+                label: 'Clone PO',
+                icon: <Copy className="w-3.5 h-3.5" />,
+                divider: true,
+                onClick: () => cloneMutation.mutate(r.id),
+              },
+            ]}
+          />
+        )}
       </div>
 
       {!isLoading && allItems.length > 0 && (() => {
         const totalSpend = allItems.reduce((sum, r) => sum + parseFloat(r.total_cost_usd || '0'), 0);
+        if (viewTab === 'released') {
+          const withFO = allItems.filter(r => r.fo_number).length;
+          return (
+            <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-2 flex items-center gap-6 text-xs text-slate-500">
+              <span><span className="font-semibold text-slate-700">{allItems.length}</span> released PO{allItems.length !== 1 ? 's' : ''}</span>
+              <span>
+                Total value <span className="font-semibold text-slate-700">
+                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(totalSpend)}
+                </span> <span className="text-slate-400">USD</span>
+              </span>
+              {withFO > 0 && <span className="text-green-600 font-medium">{withFO} with FO number</span>}
+            </div>
+          );
+        }
         const overdue = allItems.filter(r => r.stage_due_date && new Date(r.stage_due_date) < new Date() && r.status !== 'released').length;
         return (
           <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-2 flex items-center gap-6 text-xs text-slate-500">
@@ -533,7 +628,7 @@ export default function PurchaseOrdersList() {
         );
       })()}
 
-      {selectedIds.size > 0 && (
+      {viewTab === 'all' && selectedIds.size > 0 && (
         <div className="border-t border-slate-200 bg-white px-5 py-3 flex items-center gap-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-700 shrink-0">
             <CheckSquare2 className="w-4 h-4 text-blue-600" />
