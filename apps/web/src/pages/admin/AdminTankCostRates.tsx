@@ -39,6 +39,40 @@ const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:out
 
 const emptyForm = { material_code: '', label: '', cost_per_sqm_usd: '', currency: 'USD', notes: '' };
 
+function RateForm({ form, onChange }: { form: typeof emptyForm; onChange: (f: typeof emptyForm) => void }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Label <span className="text-red-400">*</span></label>
+          <input className={inputCls} value={form.label} onChange={e => onChange({ ...form, label: e.target.value })} placeholder="e.g. FRP (Vinyl Ester)" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Material Code</label>
+          <select className={inputCls} value={form.material_code} onChange={e => onChange({ ...form, material_code: e.target.value })}>
+            <option value="">— All / Default —</option>
+            {KNOWN_MATERIALS.map(m => <option key={m.code} value={m.code}>{m.code} — {m.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Cost per m²</label>
+          <input type="number" className={inputCls} value={form.cost_per_sqm_usd} onChange={e => onChange({ ...form, cost_per_sqm_usd: e.target.value })} placeholder="e.g. 350" min="0" step="0.01" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Currency</label>
+          <select className={inputCls} value={form.currency} onChange={e => onChange({ ...form, currency: e.target.value })}>
+            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-slate-500 mb-1">Notes</label>
+        <input className={inputCls} value={form.notes} onChange={e => onChange({ ...form, notes: e.target.value })} placeholder="Optional description or conditions" />
+      </div>
+    </div>
+  );
+}
+
 export default function AdminTankCostRates() {
   const qc = useQueryClient();
 
@@ -128,38 +162,6 @@ export default function AdminTankCostRates() {
       setDeleting(false);
     }
   };
-
-  const RateForm = ({ form, onChange }: { form: typeof emptyForm; onChange: (f: typeof emptyForm) => void }) => (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">Label <span className="text-red-400">*</span></label>
-          <input className={inputCls} value={form.label} onChange={e => onChange({ ...form, label: e.target.value })} placeholder="e.g. FRP (Vinyl Ester)" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">Material Code</label>
-          <select className={inputCls} value={form.material_code} onChange={e => onChange({ ...form, material_code: e.target.value })}>
-            <option value="">— All / Default —</option>
-            {KNOWN_MATERIALS.map(m => <option key={m.code} value={m.code}>{m.code} — {m.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">Cost per m²</label>
-          <input type="number" className={inputCls} value={form.cost_per_sqm_usd} onChange={e => onChange({ ...form, cost_per_sqm_usd: e.target.value })} placeholder="e.g. 350" min="0" step="0.01" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">Currency</label>
-          <select className={inputCls} value={form.currency} onChange={e => onChange({ ...form, currency: e.target.value })}>
-            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs text-slate-500 mb-1">Notes</label>
-        <input className={inputCls} value={form.notes} onChange={e => onChange({ ...form, notes: e.target.value })} placeholder="Optional description or conditions" />
-      </div>
-    </div>
-  );
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
