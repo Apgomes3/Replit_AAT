@@ -7,7 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
-import LifecycleHistory from '../../components/ui/LifecycleHistory';
+import ActivityLog from '../../components/ui/ActivityLog';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus, Package, PackageX } from 'lucide-react';
@@ -410,7 +410,7 @@ export default function DocumentDetail() {
           </div>
 
           <div className="space-y-3">
-            <LifecycleHistory items={history?.items || []} />
+            <ActivityLog entityType="document" entityId={document?.id} />
           </div>
         </div>
       </div>

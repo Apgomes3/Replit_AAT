@@ -6,7 +6,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
-import LifecycleHistory from '../../components/ui/LifecycleHistory';
+import ActivityLog from '../../components/ui/ActivityLog';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
@@ -221,7 +221,7 @@ export default function EquipmentDetail() {
           </div>
 
           <div className="space-y-3">
-            <LifecycleHistory items={history?.items || []} />
+            <ActivityLog entityType="equipment" entityId={equipment?.id} />
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Project Context</div>
               <div className="space-y-1.5 text-sm">

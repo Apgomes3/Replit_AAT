@@ -11,9 +11,10 @@ import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 import { Pencil, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus, Tag, Link2, Unlink } from 'lucide-react';
+import ActivityLog from '../../components/ui/ActivityLog';
 import { Document } from '../../types';
 
-type Tab = 'specs' | 'drawings' | 'documents' | 'variants';
+type Tab = 'specs' | 'drawings' | 'documents' | 'variants' | 'activity';
 
 const DRAWING_TYPE_VALUES = new Set(['Drawing', 'GA Drawing', 'Assembly Drawing', 'Fabrication Drawing', 'As-Built Drawing', '3D Model', 'P&ID', 'Wiring Diagram']);
 
@@ -238,6 +239,7 @@ export default function ComponentDetail() {
     { key: 'variants', label: `Variants${(compVariants?.items?.length ?? 0) > 0 ? ` (${compVariants.items.length})` : ''}` },
     { key: 'drawings', label: `Drawings (${drawings.length})` },
     { key: 'documents', label: `Documents (${nonDrawingDocs.length})` },
+    { key: 'activity', label: 'Activity' },
   ];
 
   return (
@@ -508,6 +510,9 @@ export default function ComponentDetail() {
             </div>
             <DataTable columns={docCols} data={nonDrawingDocs} emptyMessage="No documents attached — add a data sheet, certificate or test report above" />
           </div>
+        )}
+        {tab === 'activity' && (
+          <ActivityLog entityType="component" entityId={component.id} />
         )}
       </div>
 

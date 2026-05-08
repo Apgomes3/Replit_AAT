@@ -12,9 +12,10 @@ import { useState, useRef } from 'react';
 import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag, Pencil, Check } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
+import ActivityLog from '../../components/ui/ActivityLog';
 import toast from 'react-hot-toast';
 
-type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects';
+type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects' | 'activity';
 
 const DRAWING_TYPE_VALUES = new Set(['Drawing', 'GA Drawing', 'Assembly Drawing', 'Fabrication Drawing', 'As-Built Drawing', '3D Model', 'P&ID', 'Wiring Diagram']);
 
@@ -677,6 +678,7 @@ export default function ProductMasterDetail() {
     { key: 'drawings', label: `Drawings (${drawings.length})` },
     { key: 'documents', label: `Documents (${nonDrawingDocs.length})` },
     { key: 'projects', label: 'Projects' },
+    { key: 'activity', label: 'Activity' },
   ];
   const activeTab: Tab = tabs.find(t => t.key === tab) ? tab : (tabs[0]?.key ?? 'vendors');
 
@@ -1437,6 +1439,11 @@ export default function ProductMasterDetail() {
                     <StatusBadge status={p.project_status} />
                   </Link>
                 ))}
+            </div>
+          )}
+          {activeTab === 'activity' && (
+            <div className="p-4">
+              <ActivityLog entityType="product" entityId={product.id} />
             </div>
           )}
         </div>

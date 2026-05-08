@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
-import LifecycleHistory from '../../components/ui/LifecycleHistory';
+import ActivityLog from '../../components/ui/ActivityLog';
 import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
@@ -422,7 +422,7 @@ export default function SystemDetail() {
             )}
           </div>
           <div className="space-y-3">
-            <LifecycleHistory items={history?.items || []} />
+            <ActivityLog entityType="system" entityId={system?.id} />
           </div>
         </div>
 

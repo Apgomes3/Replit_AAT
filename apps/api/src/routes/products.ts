@@ -224,7 +224,7 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
     `UPDATE product_masters SET product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, updated_at=NOW() WHERE id=$28 RETURNING *`,
     [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', { product_name, standard_status });
+  await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', { product_name, standard_status, manufacturer: manufacturer || null, model: model || null, cost: costVal, sell_price: sellVal, primary_material_code: primary_material_code || null });
   res.json(result.rows[0]);
 });
 
@@ -463,7 +463,7 @@ router.put('/components/:id', authenticate, async (req: AuthRequest, res: Respon
     'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, cost=$12, sell_price=$13, manufacturer=$14, model=$15, updated_at=NOW() WHERE id=$16 RETURNING *',
     [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, manufacturer || null, model || null, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-  await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', { component_name, component_type, status });
+  await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', { component_name, component_type, status, manufacturer: manufacturer || null, model: model || null, cost: costVal, primary_material_code: primary_material_code || null });
   res.json(result.rows[0]);
 });
 

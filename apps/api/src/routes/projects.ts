@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { logAudit } from '../db/audit';
 
 const router = Router();
 
@@ -348,6 +349,7 @@ router.post('/systems', authenticate, async (req: AuthRequest, res: Response) =>
   const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type } = req.body;
   const result = await query('INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
     [system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type]);
+  await logAudit(req.user!.id, 'system', result.rows[0].id, 'CREATE', { system_code, system_name, system_type });
   res.status(201).json(result.rows[0]);
 });
 
@@ -358,6 +360,7 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
       'UPDATE systems SET system_code=COALESCE($1,system_code), system_name=$2, system_type=$3, design_flow_m3h=$4, turnover_rate_hr=$5, water_type=$6, status=$7, duty_description=$8, redundancy_strategy=$9, updated_at=NOW() WHERE id=$10 RETURNING *',
       [system_code || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status, duty_description, redundancy_strategy, req.params.id]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    await logAudit(req.user!.id, 'system', req.params.id, 'UPDATE', { system_name, system_type, status, design_flow_m3h, water_type });
     res.json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') {
@@ -402,6 +405,7 @@ router.post('/equipment-items', authenticate, async (req: AuthRequest, res: Resp
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [equip_code.trim().toUpperCase(), project_id, system_id || null, product_master_id || null,
        component_id || null, description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design']);
+    if (system_id) await logAudit(req.user!.id, 'system', system_id, 'ADD_EQUIPMENT', { equip_code: equip_code.trim().toUpperCase(), description, quantity, unit });
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Equipment code already exists in this project' } });
@@ -418,12 +422,16 @@ router.put('/equipment-items/:id', authenticate, async (req: AuthRequest, res: R
     [equip_code ? equip_code.trim().toUpperCase() : null, system_id || null, product_master_id || null,
      component_id || null, description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design', req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
+  if (system_id) await logAudit(req.user!.id, 'system', system_id, 'UPDATE_EQUIPMENT', { equip_code: result.rows[0].equip_code, description, quantity, status });
   res.json(result.rows[0]);
 });
 
 router.delete('/equipment-items/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT * FROM project_equipment_items WHERE id=$1', [req.params.id]);
+  const item = existing.rows[0];
   const result = await query('DELETE FROM project_equipment_items WHERE id=$1 RETURNING id', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
+  if (item?.system_id) await logAudit(req.user!.id, 'system', item.system_id, 'REMOVE_EQUIPMENT', { equip_code: item.equip_code, description: item.description });
   res.json({ success: true });
 });
 
@@ -470,6 +478,7 @@ router.post('/equipment-instances', authenticate, async (req: AuthRequest, res: 
       [product_master_id, eq.id, project_id]
     );
   }
+  await logAudit(req.user!.id, 'equipment', eq.id, 'CREATE', { equipment_code, equipment_name, equipment_type });
   res.status(201).json(eq);
 });
 
@@ -479,6 +488,7 @@ router.put('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
     'UPDATE equipment_instances SET equipment_name=$1, equipment_type=$2, design_flow_m3h=$3, design_head_m=$4, power_kw=$5, material_code=$6, status=$7, operational_duty=$8, serial_number=$9, installation_date=$10, commissioning_date=$11, updated_at=NOW() WHERE id=$12 RETURNING *',
     [equipment_name, equipment_type, design_flow_m3h, design_head_m, power_kw, material_code, status, operational_duty, serial_number, installation_date, commissioning_date, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
+  await logAudit(req.user!.id, 'equipment', req.params.id, 'UPDATE', { equipment_name, equipment_type, status, serial_number });
   res.json(result.rows[0]);
 });
 
@@ -508,6 +518,16 @@ router.post('/lifecycle/transition', authenticate, async (req: AuthRequest, res:
 router.get('/lifecycle/:entity_type/:entity_id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query(
     'SELECT lt.*, u.first_name || \' \' || u.last_name as actor_name FROM lifecycle_transitions lt LEFT JOIN users u ON lt.actor_id=u.id WHERE lt.entity_type=$1 AND lt.entity_id=$2::uuid ORDER BY lt.transitioned_at ASC',
+    [req.params.entity_type, req.params.entity_id]);
+  res.json({ items: result.rows });
+});
+
+router.get('/audit/:entity_type/:entity_id', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT al.*, u.first_name || ' ' || u.last_name as actor_name, u.email as actor_email
+     FROM audit_logs al LEFT JOIN users u ON al.actor_id=u.id
+     WHERE al.entity_type=$1 AND al.entity_id=$2
+     ORDER BY al.created_at DESC LIMIT 200`,
     [req.params.entity_type, req.params.entity_id]);
   res.json({ items: result.rows });
 });
