@@ -43,12 +43,21 @@ async function seed() {
     // Materials
     await client.query(`
       INSERT INTO materials (material_code, material_name, material_category, density, chemical_resistance, temperature_limit) VALUES
-        ('MAT-FRP-VE', 'Vinyl Ester FRP', 'Composite', 1800, 'Excellent - seawater, acids', 80),
-        ('MAT-SS316', 'Stainless Steel 316L', 'Metal', 7990, 'Good - seawater, chlorides', 400),
-        ('MAT-HDPE', 'High Density Polyethylene', 'Plastic', 960, 'Excellent - most chemicals', 60),
-        ('MAT-PP', 'Polypropylene', 'Plastic', 900, 'Good - dilute acids', 70),
-        ('MAT-ACRYLIC', 'Cast Acrylic', 'Plastic', 1190, 'Good - seawater', 60),
-        ('MAT-CPVC', 'CPVC', 'Plastic', 1540, 'Excellent - acids, bases', 95)
+        ('MAT-FRP-VE',  'Vinyl Ester FRP',           'Composite', 1800, 'Excellent - seawater, acids',            80),
+        ('MAT-FRP',     'FRP (General)',              'Composite', 1800, 'Good - seawater, dilute chemicals',       80),
+        ('MAT-GRP',     'GRP (Polyester Laminate)',   'Composite', 1700, 'Good - seawater',                        70),
+        ('MAT-SS316',   'Stainless Steel 316L',       'Metal',     7990, 'Good - seawater, chlorides',            400),
+        ('MAT-SS304',   'Stainless Steel 304',        'Metal',     7900, 'Moderate - freshwater, mild chemicals', 400),
+        ('MAT-CS',      'Carbon Steel',               'Metal',     7850, 'Low - requires coating/lining',         400),
+        ('MAT-ALU',     'Aluminium',                  'Metal',     2700, 'Good - freshwater, atmosphere',         150),
+        ('MAT-HDPE',    'High Density Polyethylene',  'Plastic',    960, 'Excellent - most chemicals',             60),
+        ('MAT-PP',      'Polypropylene',              'Plastic',    900, 'Good - dilute acids',                    70),
+        ('MAT-PVC',     'PVC (uPVC)',                 'Plastic',   1400, 'Good - acids, alkalis',                  60),
+        ('MAT-CPVC',    'CPVC',                       'Plastic',   1540, 'Excellent - acids, bases',               95),
+        ('MAT-ACRY',    'Cast Acrylic (PMMA)',        'Plastic',   1190, 'Good - seawater',                        60),
+        ('MAT-ACRYLIC', 'Cast Acrylic (PMMA)',        'Plastic',   1190, 'Good - seawater',                        60),
+        ('MAT-GLASS',   'Float / Toughened Glass',    'Glass',     2500, 'Excellent - seawater, chemicals',       200),
+        ('MAT-CONC',    'Reinforced Concrete',        'Concrete',  2400, 'Good - seawater (with coating)',        NULL)
       ON CONFLICT (material_code) DO NOTHING
     `);
 

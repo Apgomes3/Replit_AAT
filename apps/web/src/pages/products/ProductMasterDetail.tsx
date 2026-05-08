@@ -856,11 +856,15 @@ export default function ProductMasterDetail() {
 
             {/* Dimensions Card */}
             {(() => {
-              const MAT_DENSITY: Record<string,number> = {
-                'MAT-SS316':7900,'MAT-SS304':7900,'MAT-FRP-VE':1800,'MAT-FRP':1800,
-                'MAT-GRP':1700,'MAT-HDPE':950,'MAT-PP':910,'MAT-PVC':1400,
-                'MAT-CPVC':1540,'MAT-ACRY':1190,'MAT-GLASS':2500,'MAT-CS':7850,
-                'MAT-ALU':2700,'MAT-CONC':2400,
+              const matList: any[] = materialsData?.items ?? [];
+              const getMaterialDensity = (code: string | null | undefined): number | null => {
+                if (!code) return null;
+                const mat = matList.find((m: any) => m.material_code === code);
+                return mat?.density != null ? Number(mat.density) : null;
+              };
+              const getMaterialName = (code: string | null | undefined): string | null => {
+                if (!code) return null;
+                return matList.find((m: any) => m.material_code === code)?.material_name ?? null;
               };
 
               const calcSurfaceAreaMm2 = (shape: string, l: number, w: number, h: number): number|null => {
@@ -904,7 +908,7 @@ export default function ProductMasterDetail() {
               };
 
               if (isTank) {
-                const density = MAT_DENSITY[product.primary_material_code] ?? null;
+                const density = getMaterialDensity(product.primary_material_code);
                 const shape = product.shape_type || 'Rectangular';
                 const { gross, op } = calcTankShapeVolumes(shape, product.length_mm, product.width_mm, product.height_mm, product.design_water_level_mm);
                 const estWeight = calcEstWeight(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), Number(product.wall_thickness_mm), density);
@@ -912,7 +916,7 @@ export default function ProductMasterDetail() {
 
                 const editShape = tankSpecsForm.shape_type || 'Rectangular';
                 const editLabels = getDimLabels(editShape);
-                const editDensity = MAT_DENSITY[product.primary_material_code] ?? null;
+                const editDensity = getMaterialDensity(product.primary_material_code);
                 const editVols = editingDimensions ? calcTankShapeVolumes(editShape,
                   tankSpecsForm.length_mm ? Number(tankSpecsForm.length_mm) : null,
                   tankSpecsForm.width_mm ? Number(tankSpecsForm.width_mm) : null,
@@ -988,9 +992,19 @@ export default function ProductMasterDetail() {
                             <div className="col-span-2">
                               <div className="text-slate-400 mb-0.5">Est. Shell Weight <span className="text-slate-300">({editLabels.weightFormula})×ρ</span></div>
                               <div className={`rounded px-2 py-1 font-mono border ${editEstWeight!=null?'bg-amber-50 border-amber-200 text-amber-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>
-                                {editEstWeight!=null ? `${editEstWeight} kg` : editDensity==null ? `no density for ${product.primary_material_code||'material'}` : 'enter dims + wall thickness'}
+                                {editEstWeight!=null ? `${editEstWeight} kg`
+                                  : !product.primary_material_code ? 'set a Primary Material first'
+                                  : editDensity==null ? `no density for ${product.primary_material_code} — add in Admin → Materials`
+                                  : 'enter dims + wall thickness'}
                               </div>
-                              {editDensity!=null && <div className="text-slate-400 mt-0.5">ρ = {editDensity} kg/m³ ({product.primary_material_code})</div>}
+                              {editDensity!=null && (
+                                <div className="text-slate-400 mt-0.5">
+                                  ρ = {editDensity} kg/m³
+                                  {getMaterialName(product.primary_material_code)
+                                    ? <> · <span className="text-slate-500">{getMaterialName(product.primary_material_code)}</span></>
+                                    : <> ({product.primary_material_code})</>}
+                                </div>
+                              )}
                             </div>
                             <div className="col-span-2">
                               <div className="text-slate-400 mb-0.5">Est. Material Cost <span className="text-slate-300">(SA×rate)</span></div>
