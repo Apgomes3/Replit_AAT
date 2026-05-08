@@ -75,6 +75,7 @@ workspace/
 - **Project domain**: projects, areas, exhibits, tanks, systems, equipment_instances, project_piping_items
 - **BOM Releases**: bom_releases (project-level snapshot documents), bom_release_lines (equipment/tank/piping snapshot lines)
 - **Product Library**: product_families, product_masters, product_variants, standard_boms, bom_lines, vendor_options
+  - Tank fields on product_masters: shape_type, length_mm, width_mm, height_mm, design_water_level_mm, wall_thickness_mm, gross_volume_m3, operating_volume_m3
 - **Components**: components table (23 seeded) — component_code, type, category, material, specs; linked to bom_lines via component_id FK
 - **Bridge**: product_usages (links equipment instances to product masters)
 - **Knowledge**: materials, specifications, design_rules, calculation_templates

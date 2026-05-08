@@ -98,8 +98,7 @@ export default function ProductMasterDetail() {
   const [hydraulicForm, setHydraulicForm] = useState<Record<string, any>>({});
   const [hydraulicSaving, setHydraulicSaving] = useState(false);
 
-  const [showTankSpecsModal, setShowTankSpecsModal] = useState(false);
-  const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', gross_volume_m3: '', operating_volume_m3: '' });
+  const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', gross_volume_m3: '', operating_volume_m3: '', wall_thickness_mm: '' });
   const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
 
   const [showFamilyPicker, setShowFamilyPicker] = useState(false);
@@ -223,6 +222,7 @@ export default function ProductMasterDetail() {
     design_water_level_mm: product.design_water_level_mm,
     gross_volume_m3: product.gross_volume_m3,
     operating_volume_m3: product.operating_volume_m3,
+    wall_thickness_mm: product.wall_thickness_mm,
     product_family_id: product.product_family_id,
     tank_family_id: product.tank_family_id,
     synonyms: product.synonyms || [],
@@ -369,20 +369,24 @@ export default function ProductMasterDetail() {
   const handleSaveTankSpecs = async () => {
     setTankSpecsSubmitting(true);
     try {
+      const L = tankSpecsForm.length_mm ? Number(tankSpecsForm.length_mm) : null;
+      const W = tankSpecsForm.width_mm ? Number(tankSpecsForm.width_mm) : null;
+      const H = tankSpecsForm.height_mm ? Number(tankSpecsForm.height_mm) : null;
+      const WL = tankSpecsForm.design_water_level_mm ? Number(tankSpecsForm.design_water_level_mm) : null;
+      const grossCalc = (L && W && H) ? +(L * W * H / 1e9).toFixed(6) : null;
+      const opCalc = (L && W && WL) ? +(L * W * WL / 1e9).toFixed(6) : null;
       await api.put(`/product-masters/${id}`, productPutPayload({
         shape_type: tankSpecsForm.shape_type || null,
-        length_mm: tankSpecsForm.length_mm ? Number(tankSpecsForm.length_mm) : null,
-        width_mm: tankSpecsForm.width_mm ? Number(tankSpecsForm.width_mm) : null,
-        height_mm: tankSpecsForm.height_mm ? Number(tankSpecsForm.height_mm) : null,
-        design_water_level_mm: tankSpecsForm.design_water_level_mm ? Number(tankSpecsForm.design_water_level_mm) : null,
-        gross_volume_m3: tankSpecsForm.gross_volume_m3 ? Number(tankSpecsForm.gross_volume_m3) : null,
-        operating_volume_m3: tankSpecsForm.operating_volume_m3 ? Number(tankSpecsForm.operating_volume_m3) : null,
+        length_mm: L, width_mm: W, height_mm: H, design_water_level_mm: WL,
+        gross_volume_m3: grossCalc,
+        operating_volume_m3: opCalc,
+        wall_thickness_mm: tankSpecsForm.wall_thickness_mm ? Number(tankSpecsForm.wall_thickness_mm) : null,
       }));
-      toast.success('Tank specifications saved');
-      setShowTankSpecsModal(false);
+      toast.success('Tank dimensions saved');
+      setEditingDimensions(false);
       queryClient.invalidateQueries({ queryKey: ['product-master', id] });
     } catch {
-      toast.error('Failed to save tank specs');
+      toast.error('Failed to save tank dimensions');
     } finally {
       setTankSpecsSubmitting(false);
     }
@@ -820,81 +824,128 @@ export default function ProductMasterDetail() {
             )}
 
             {/* Dimensions Card */}
-            <div className="bg-white border border-slate-200 rounded-lg mt-3">
-              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Ruler className="w-3.5 h-3.5" />Dimensions</span>
-                {!editingDimensions
-                  ? <button onClick={() => { setDimensionsForm({ ...dimensionsData }); setEditingDimensions(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
-                  : <div className="flex gap-2"><button onClick={() => setEditingDimensions(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveDimensions} disabled={dimensionsSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{dimensionsSaving ? 'Saving…' : 'Save'}</button></div>}
-              </div>
-              {editingDimensions ? (
-                <div className="p-3 grid grid-cols-2 gap-2">
-                  {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['weight_kg','Weight (kg)'],['inlet_dn_mm','Inlet DN (mm)'],['outlet_dn_mm','Outlet DN (mm)']].map(([k,l]) => (
-                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
-                  ))}
-                  <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={dimensionsForm.notes ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
-                  {isTank && (() => {
-                    const l = parseFloat(dimensionsForm.length_mm ?? product.length_mm);
-                    const w = parseFloat(dimensionsForm.width_mm ?? product.width_mm);
-                    const h = parseFloat(dimensionsForm.height_mm ?? product.height_mm);
-                    const wl = product.design_water_level_mm;
-                    const grossCalc = (l > 0 && w > 0 && h > 0) ? +(l * w * h / 1e9).toFixed(6) : null;
-                    const opCalc = (l > 0 && w > 0 && wl > 0) ? +(l * w * wl / 1e9).toFixed(6) : null;
-                    return (<>
-                      <div className="col-span-2 border-t border-slate-100 pt-2 mt-1">
-                        <p className="text-xs text-slate-400 mb-1.5 font-medium">Calculated Volumes</p>
+            {(() => {
+              const MAT_DENSITY: Record<string,number> = {
+                'MAT-SS316':7900,'MAT-SS304':7900,'MAT-FRP-VE':1800,'MAT-FRP':1800,
+                'MAT-GRP':1700,'MAT-HDPE':950,'MAT-PP':910,'MAT-PVC':1400,
+                'MAT-CPVC':1540,'MAT-ACRY':1190,'MAT-GLASS':2500,'MAT-CS':7850,
+                'MAT-ALU':2700,'MAT-CONC':2400,
+              };
+              const calcTankVolumes = (L:any,W:any,H:any,WL:any,T:any) => {
+                const l=parseFloat(L),w=parseFloat(W),h=parseFloat(H),wl=parseFloat(WL),t=parseFloat(T);
+                const gross = (l>0&&w>0&&h>0) ? +(l*w*h/1e9).toFixed(6) : null;
+                const op = (l>0&&w>0&&wl>0) ? +(l*w*wl/1e9).toFixed(6) : null;
+                const density = MAT_DENSITY[product.primary_material_code] ?? null;
+                const weight = (l>0&&w>0&&h>0&&t>0&&density!=null)
+                  ? +((l*w + 2*l*h + 2*w*h) * t / 1e9 * density).toFixed(1)
+                  : null;
+                return { gross, op, weight, density };
+              };
+              if (isTank) {
+                const { gross, op, weight, density } = calcTankVolumes(product.length_mm,product.width_mm,product.height_mm,product.design_water_level_mm,product.wall_thickness_mm);
+                const editCalc = editingDimensions ? calcTankVolumes(tankSpecsForm.length_mm,tankSpecsForm.width_mm,tankSpecsForm.height_mm,tankSpecsForm.design_water_level_mm,tankSpecsForm.wall_thickness_mm) : null;
+                return (
+                  <div className="bg-white border border-slate-200 rounded-lg mt-3">
+                    <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                      <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Ruler className="w-3.5 h-3.5" />Dimensions</span>
+                      {!editingDimensions
+                        ? <button onClick={() => { setTankSpecsForm({ shape_type: product.shape_type||'', length_mm: product.length_mm!=null?String(product.length_mm):'', width_mm: product.width_mm!=null?String(product.width_mm):'', height_mm: product.height_mm!=null?String(product.height_mm):'', design_water_level_mm: product.design_water_level_mm!=null?String(product.design_water_level_mm):'', gross_volume_m3: product.gross_volume_m3!=null?String(product.gross_volume_m3):'', operating_volume_m3: product.operating_volume_m3!=null?String(product.operating_volume_m3):'', wall_thickness_mm: product.wall_thickness_mm!=null?String(product.wall_thickness_mm):'' }); setEditingDimensions(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                        : <div className="flex gap-2"><button onClick={() => setEditingDimensions(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveTankSpecs} disabled={tankSpecsSubmitting} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{tankSpecsSubmitting ? 'Saving…' : 'Save'}</button></div>}
+                    </div>
+                    {editingDimensions ? (
+                      <div className="p-3 space-y-2">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-0.5">Shape</label>
+                          <select value={tankSpecsForm.shape_type} onChange={e => setTankSpecsForm(f=>({...f,shape_type:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600">
+                            <option value="">— Select —</option>
+                            {['Rectangular','Cylindrical','Oval','Hexagonal','Custom'].map(o=><option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-slate-500 mb-0.5">Gross Vol (m³) = L×W×H</label>
-                            <div className={`rounded px-2 py-1 text-xs font-mono border ${grossCalc != null ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>{grossCalc != null ? `${grossCalc} m³` : 'enter L, W, H'}</div>
-                          </div>
-                          <div>
-                            <label className="block text-xs text-slate-500 mb-0.5">Op. Vol (m³) = L×W×WL</label>
-                            <div className={`rounded px-2 py-1 text-xs font-mono border ${opCalc != null ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>{opCalc != null ? `${opCalc} m³` : 'enter dims + water level'}</div>
+                          {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['design_water_level_mm','Water Level (mm)'],['wall_thickness_mm','Wall Thickness (mm)']].map(([k,l])=>(
+                            <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={(tankSpecsForm as any)[k]} onChange={e=>setTankSpecsForm(f=>({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
+                          ))}
+                        </div>
+                        <div className="border-t border-slate-100 pt-2">
+                          <p className="text-xs text-slate-400 mb-1.5 font-medium">Calculated</p>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {[['Gross Vol',editCalc?.gross,'m³'],['Op. Vol',editCalc?.op,'m³'],['Est. Weight',editCalc?.weight,'kg']].map(([lbl,val,unit])=>(
+                              <div key={String(lbl)}>
+                                <div className="text-xs text-slate-400 mb-0.5">{lbl}</div>
+                                <div className={`rounded px-2 py-1 text-xs font-mono border ${val!=null?'bg-blue-50 border-blue-200 text-blue-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>{val!=null?`${val} ${unit}`:'—'}</div>
+                              </div>
+                            ))}
+                            {editCalc?.weight!=null && editCalc.density!=null && (
+                              <div className="col-span-2 text-xs text-slate-400">Density: {editCalc.density} kg/m³ from material code</div>
+                            )}
+                            {editCalc?.weight==null && tankSpecsForm.wall_thickness_mm && !MAT_DENSITY[product.primary_material_code] && (
+                              <div className="col-span-2 text-xs text-amber-500">No density for material code — weight estimate unavailable</div>
+                            )}
                           </div>
                         </div>
                       </div>
-                    </>);
-                  })()}
-                </div>
-              ) : (
-                <div className="p-3">
-                  {(() => {
-                    const baseRows: [string,any,string][] = [['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']];
-                    const L = product.length_mm, W = product.width_mm, H = product.height_mm, WL = product.design_water_level_mm;
-                    const grossCalc = (L > 0 && W > 0 && H > 0) ? +(L * W * H / 1e9).toFixed(6) : null;
-                    const opCalc = (L > 0 && W > 0 && WL > 0) ? +(L * W * WL / 1e9).toFixed(6) : null;
-                    const visibleBase = baseRows.filter(([,v]) => v != null && v !== '');
-                    const hasAnything = visibleBase.length > 0 || (isTank && (grossCalc != null || opCalc != null));
-                    if (!hasAnything) return <p className="text-xs text-slate-300 text-center py-2">No dimensions recorded — click Edit to add</p>;
-                    return (
-                      <div className="space-y-1">
-                        {visibleBase.map(([l,v,u]) => (
-                          <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
-                        ))}
-                        {isTank && (grossCalc != null || opCalc != null) && (
-                          <>
-                            {visibleBase.length > 0 && <div className="border-t border-slate-100 pt-1 mt-1" />}
-                            {grossCalc != null && (
-                              <div className="flex justify-between text-xs">
-                                <span className="text-slate-400">Gross Vol <span className="text-slate-300">(L×W×H)</span></span>
-                                <span className="font-mono text-blue-600 font-medium">{grossCalc} m³</span>
-                              </div>
-                            )}
-                            {opCalc != null && (
-                              <div className="flex justify-between text-xs">
-                                <span className="text-slate-400">Op. Vol <span className="text-slate-300">(L×W×WL)</span></span>
-                                <span className="font-mono text-blue-600 font-medium">{opCalc} m³</span>
-                              </div>
-                            )}
+                    ) : (
+                      <div className="p-3 space-y-1 text-xs">
+                        {[
+                          ['Shape', product.shape_type, ''],
+                          ['Length', product.length_mm, 'mm'],
+                          ['Width', product.width_mm, 'mm'],
+                          ['Height', product.height_mm, 'mm'],
+                          ['Water Level', product.design_water_level_mm, 'mm'],
+                          ['Wall Thickness', product.wall_thickness_mm, 'mm'],
+                        ].filter(([,v])=>v!=null&&v!=='').length===0 && gross==null
+                          ? <p className="text-slate-300 text-center py-2">No dimensions recorded — click Edit to add</p>
+                          : <>
+                            {[
+                              ['Shape', product.shape_type, ''],
+                              ['Length', product.length_mm, 'mm'],
+                              ['Width', product.width_mm, 'mm'],
+                              ['Height', product.height_mm, 'mm'],
+                              ['Water Level', product.design_water_level_mm, 'mm'],
+                              ['Wall Thickness', product.wall_thickness_mm, 'mm'],
+                            ].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                              <div key={String(l)} className="flex justify-between"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u?<span className="text-slate-400 ml-1">{u}</span>:''}</span></div>
+                            ))}
+                            {(gross!=null||op!=null||weight!=null) && <div className="border-t border-slate-100 my-1"/>}
+                            {gross!=null && <div className="flex justify-between"><span className="text-slate-400">Gross Vol <span className="text-slate-300 text-xs">(L×W×H)</span></span><span className="font-mono text-blue-600 font-medium">{gross} m³</span></div>}
+                            {op!=null && <div className="flex justify-between"><span className="text-slate-400">Op. Vol <span className="text-slate-300 text-xs">(L×W×WL)</span></span><span className="font-mono text-blue-600 font-medium">{op} m³</span></div>}
+                            {weight!=null && <div className="flex justify-between"><span className="text-slate-400">Est. Weight <span className="text-slate-300 text-xs">(shell)</span></span><span className="font-mono text-blue-600 font-medium">{weight} kg</span></div>}
                           </>
-                        )}
+                        }
                       </div>
-                    );
-                  })()}
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <div className="bg-white border border-slate-200 rounded-lg mt-3">
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Ruler className="w-3.5 h-3.5" />Dimensions</span>
+                    {!editingDimensions
+                      ? <button onClick={() => { setDimensionsForm({ ...dimensionsData }); setEditingDimensions(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                      : <div className="flex gap-2"><button onClick={() => setEditingDimensions(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveDimensions} disabled={dimensionsSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{dimensionsSaving ? 'Saving…' : 'Save'}</button></div>}
+                  </div>
+                  {editingDimensions ? (
+                    <div className="p-3 grid grid-cols-2 gap-2">
+                      {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['weight_kg','Weight (kg)'],['inlet_dn_mm','Inlet DN (mm)'],['outlet_dn_mm','Outlet DN (mm)']].map(([k,l]) => (
+                        <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
+                      ))}
+                      <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={dimensionsForm.notes ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
+                    </div>
+                  ) : (
+                    <div className="p-3">
+                      {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                        ? <p className="text-xs text-slate-300 text-center py-2">No dimensions recorded — click Edit to add</p>
+                        : <div className="space-y-1">
+                            {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                              <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
+                            ))}
+                          </div>}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Hydraulic Card */}
             <div className="bg-white border border-slate-200 rounded-lg mt-3">
@@ -1001,42 +1052,6 @@ export default function ProductMasterDetail() {
                 : <div className="h-32 flex items-center justify-center bg-slate-50 text-slate-300 text-sm">No image</div>
               }
             </div>
-            {isTank && (
-              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
-                  <span className="text-xs text-slate-400 uppercase tracking-wide">Tank Specifications</span>
-                  <button
-                    onClick={() => {
-                      setTankSpecsForm({
-                        shape_type: product.shape_type || '',
-                        length_mm: product.length_mm != null ? String(product.length_mm) : '',
-                        width_mm: product.width_mm != null ? String(product.width_mm) : '',
-                        height_mm: product.height_mm != null ? String(product.height_mm) : '',
-                        design_water_level_mm: product.design_water_level_mm != null ? String(product.design_water_level_mm) : '',
-                        gross_volume_m3: product.gross_volume_m3 != null ? String(product.gross_volume_m3) : '',
-                        operating_volume_m3: product.operating_volume_m3 != null ? String(product.operating_volume_m3) : '',
-                      });
-                      setShowTankSpecsModal(true);
-                    }}
-                    className="text-xs text-blue-600 hover:underline"
-                  >Edit</button>
-                </div>
-                <div className="p-3 space-y-1.5 text-xs">
-                  {[
-                    { label: 'Shape', value: product.shape_type },
-                    { label: 'L × W × H', value: product.length_mm != null ? `${product.length_mm} × ${product.width_mm ?? '—'} × ${product.height_mm ?? '—'} mm` : null },
-                    { label: 'Water Level', value: product.design_water_level_mm != null ? `${product.design_water_level_mm} mm` : null },
-                    { label: 'Gross Volume', value: product.gross_volume_m3 != null ? `${product.gross_volume_m3} m³` : null },
-                    { label: 'Op. Volume', value: product.operating_volume_m3 != null ? `${product.operating_volume_m3} m³` : null },
-                  ].map(row => (
-                    <div key={row.label} className="flex justify-between gap-2">
-                      <span className="text-slate-400">{row.label}</span>
-                      <span className="text-slate-700 font-medium">{row.value ?? <span className="text-slate-300">—</span>}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1513,48 +1528,6 @@ export default function ProductMasterDetail() {
         </div>
       )}
 
-      {showTankSpecsModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-semibold text-slate-800">Tank Specifications</h2>
-              <button onClick={() => setShowTankSpecsModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 space-y-3">
-              {[
-                { key: 'shape_type', label: 'Shape', isSelect: true, options: ['Rectangular', 'Cylindrical', 'Oval', 'Hexagonal', 'Custom'] },
-                { key: 'length_mm', label: 'Length (mm)', placeholder: 'e.g. 2000' },
-                { key: 'width_mm', label: 'Width (mm)', placeholder: 'e.g. 800' },
-                { key: 'height_mm', label: 'Height (mm)', placeholder: 'e.g. 600' },
-                { key: 'design_water_level_mm', label: 'Design Water Level (mm)', placeholder: 'e.g. 550' },
-                { key: 'gross_volume_m3', label: 'Gross Volume (m³)', placeholder: 'e.g. 0.96' },
-                { key: 'operating_volume_m3', label: 'Operating Volume (m³)', placeholder: 'e.g. 0.88' },
-              ].map(field => (
-                <div key={field.key}>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
-                  {field.isSelect ? (
-                    <select value={(tankSpecsForm as any)[field.key]} onChange={e => setTankSpecsForm(f => ({ ...f, [field.key]: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                      <option value="">— Select —</option>
-                      {field.options?.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  ) : (
-                    <input type="number" placeholder={field.placeholder} value={(tankSpecsForm as any)[field.key]}
-                      onChange={e => setTankSpecsForm(f => ({ ...f, [field.key]: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <Button variant="ghost" onClick={() => setShowTankSpecsModal(false)}>Cancel</Button>
-              <Button onClick={handleSaveTankSpecs} disabled={tankSpecsSubmitting}>
-                {tankSpecsSubmitting ? 'Saving...' : 'Save Specifications'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showFamilyPicker && (
         <FamilyPickerModal

@@ -512,6 +512,7 @@ ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS height_mm NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS design_water_level_mm NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS gross_volume_m3 NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS operating_volume_m3 NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS wall_thickness_mm NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS product_master_id UUID REFERENCES product_masters(id);
 
 CREATE TABLE IF NOT EXISTS tank_families (
