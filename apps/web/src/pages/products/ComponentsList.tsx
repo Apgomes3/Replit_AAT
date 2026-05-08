@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -56,6 +56,16 @@ export default function ComponentsList() {
       return api.get(`/components?${p}`).then(r => r.data);
     },
   });
+
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const materials: { material_code: string; material_name: string }[] = useMemo(
+    () => materialsData?.items ?? [],
+    [materialsData]
+  );
 
   const openEdit = (row: any) => {
     setEditRow(row);
@@ -272,10 +282,15 @@ export default function ComponentsList() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
-                <input type="text" placeholder="e.g. FRP-VE" value={form.primary_material_code}
+                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
+                <select value={form.primary_material_code}
                   onChange={e => setForm(f => ({ ...f, primary_material_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">— None —</option>
+                  {materials.map(m => (
+                    <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Standard Size</label>
@@ -356,9 +371,15 @@ export default function ComponentsList() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Material Code</label>
-                <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
+                <select value={editForm.primary_material_code}
+                  onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">— None —</option>
+                  {materials.map(m => (
+                    <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Standard Size</label>

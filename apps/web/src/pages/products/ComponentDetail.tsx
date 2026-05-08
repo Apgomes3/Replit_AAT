@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { useRecordTitle } from '../../hooks/usePageTitle';
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
@@ -106,6 +106,16 @@ export default function ComponentDetail() {
     queryFn: () => api.get(`/components?search=${variantSearch}&page_size=8`).then(r => r.data),
     enabled: variantSearch.length >= 2 && !variantTarget,
   });
+
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const materials: { material_code: string; material_name: string }[] = useMemo(
+    () => materialsData?.items ?? [],
+    [materialsData]
+  );
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!component) return <div className="p-8 text-slate-400">Component not found</div>;
@@ -317,9 +327,15 @@ export default function ComponentDetail() {
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Material Code</label>
-                      <input value={form.primary_material_code} onChange={e => setForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
+                      <select value={form.primary_material_code}
+                        onChange={e => setForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                        <option value="">— None —</option>
+                        {materials.map((m: any) => (
+                          <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">Standard Size</label>
