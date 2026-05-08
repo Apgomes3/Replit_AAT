@@ -54,6 +54,7 @@ export default function ProjectDetail() {
   const [tankCode, setTankCode] = useState('');
   const [tankStatus, setTankStatus] = useState('Active');
   const [tankSystemId, setTankSystemId] = useState('');
+  const [tankQuantity, setTankQuantity] = useState(1);
   const [tankSubmitting, setTankSubmitting] = useState(false);
 
   const [showNewPiping, setShowNewPiping] = useState(false);
@@ -263,6 +264,7 @@ export default function ProjectDetail() {
   const tankCols: Column<Tank>[] = [
     { key: 'tank_code', header: 'Tag', render: r => <EntityCode code={r.tank_code} /> },
     { key: 'tank_name', header: 'Tank Name', render: r => <span className="font-medium">{r.tank_name}</span> },
+    { key: 'quantity' as any, header: 'Qty', render: (r: any) => <span className="font-mono text-sm">{r.quantity ?? 1}</span> },
     { key: 'system_code' as any, header: 'System', render: (r: any) => r.system_code
       ? <EntityCode code={r.system_code} />
       : <span className="text-slate-300">—</span>
@@ -323,6 +325,7 @@ export default function ProjectDetail() {
         product_master_id: selectedTankProduct.id,
         project_id: project.id,
         system_id: tankSystemId || null,
+        quantity: tankQuantity || 1,
         status: tankStatus,
       });
       toast.success('Tank added');
@@ -332,6 +335,7 @@ export default function ProjectDetail() {
       setTankCode('');
       setTankStatus('Active');
       setTankSystemId('');
+      setTankQuantity(1);
       qc.invalidateQueries({ queryKey: ['project-tanks'] });
       qc.invalidateQueries({ queryKey: ['project-systems'] });
     } catch {
@@ -898,14 +902,26 @@ export default function ProjectDetail() {
                 )}
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Project Tag Code *</label>
-                <input
-                  placeholder="e.g. TNK-DIS-001"
-                  value={tankCode}
-                  onChange={e => setTankCode(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Project Tag Code *</label>
+                  <input
+                    placeholder="e.g. TNK-DIS-001"
+                    value={tankCode}
+                    onChange={e => setTankCode(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={tankQuantity}
+                    onChange={e => setTankQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
+                  />
+                </div>
               </div>
 
               <div>

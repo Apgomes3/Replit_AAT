@@ -90,8 +90,8 @@ router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: 
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const result = await query(
     `SELECT s.*, a.area_name, e.exhibit_name,
-      COUNT(t.id)::int AS tank_count,
-      COALESCE(SUM(t.gross_volume_m3), 0)::numeric AS total_volume_m3
+      COALESCE(SUM(t.quantity), 0)::int AS tank_count,
+      COALESCE(SUM(t.gross_volume_m3 * t.quantity), 0)::numeric AS total_volume_m3
      FROM systems s
      LEFT JOIN areas a ON s.area_id=a.id
      LEFT JOIN exhibits e ON s.exhibit_id=e.id
@@ -204,11 +204,11 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
 });
 
 router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+  const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
   if (!tank_code || !project_id || !tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
   const result = await query(
-    'INSERT INTO tanks (tank_code, project_id, system_id, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *',
-    [tank_code, project_id, system_id || null, tank_name, tank_type || null, product_master_id || null, shape_type || null, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material || null, status || 'Active', notes || null]);
+    'INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
+    [tank_code, project_id, system_id || null, quantity || 1, tank_name, tank_type || null, product_master_id || null, shape_type || null, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material || null, status || 'Active', notes || null]);
   res.status(201).json(result.rows[0]);
 });
 
