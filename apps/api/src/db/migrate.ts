@@ -576,6 +576,8 @@ CREATE TABLE IF NOT EXISTS project_equipment_items (
   UNIQUE(project_id, equip_code)
 );
 
+ALTER TABLE project_equipment_items ADD COLUMN IF NOT EXISTS component_id UUID REFERENCES components(id);
+
 -- PROJECT PIPING ITEMS (pipes & fittings assigned to a project)
 CREATE TABLE IF NOT EXISTS project_piping_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -324,8 +324,10 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
   const sysId = result.rows[0].id;
   const [equipment, tanks] = await Promise.all([
     query(
-      `SELECT pei.*, pm.product_code, pm.product_name FROM project_equipment_items pei
+      `SELECT pei.*, pm.product_code, pm.product_name, c.component_code, c.component_name
+       FROM project_equipment_items pei
        LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
+       LEFT JOIN components c ON pei.component_id = c.id
        WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [sysId]),
     query(
       `SELECT t.id, t.tank_code, t.tank_name, t.tank_type, t.quantity,
@@ -392,14 +394,14 @@ router.post('/systems/:id/duplicate', authenticate, async (req: AuthRequest, res
 
 // EQUIPMENT ITEMS (direct product-to-project/system relationship)
 router.post('/equipment-items', authenticate, async (req: AuthRequest, res: Response) => {
-  const { equip_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status } = req.body;
+  const { equip_code, project_id, system_id, product_master_id, component_id, description, quantity, unit, notes, status } = req.body;
   if (!equip_code || !project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'equip_code and project_id are required' } });
   try {
     const result = await query(
-      `INSERT INTO project_equipment_items (equip_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      `INSERT INTO project_equipment_items (equip_code, project_id, system_id, product_master_id, component_id, description, quantity, unit, notes, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [equip_code.trim().toUpperCase(), project_id, system_id || null, product_master_id || null,
-       description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design']);
+       component_id || null, description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design']);
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Equipment code already exists in this project' } });
@@ -408,13 +410,13 @@ router.post('/equipment-items', authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.put('/equipment-items/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { equip_code, system_id, product_master_id, description, quantity, unit, notes, status } = req.body;
+  const { equip_code, system_id, product_master_id, component_id, description, quantity, unit, notes, status } = req.body;
   const result = await query(
     `UPDATE project_equipment_items SET equip_code=COALESCE($1,equip_code), system_id=$2, product_master_id=$3,
-     description=$4, quantity=$5, unit=$6, notes=$7, status=$8, updated_at=NOW()
-     WHERE id=$9 RETURNING *`,
+     component_id=$4, description=$5, quantity=$6, unit=$7, notes=$8, status=$9, updated_at=NOW()
+     WHERE id=$10 RETURNING *`,
     [equip_code ? equip_code.trim().toUpperCase() : null, system_id || null, product_master_id || null,
-     description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design', req.params.id]);
+     component_id || null, description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design', req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
   res.json(result.rows[0]);
 });

@@ -47,8 +47,11 @@ export default function SystemDetail() {
 
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [inlineForm, setInlineForm] = useState<any>(null);
+  const [inlineType, setInlineType] = useState<'product' | 'component'>('product');
   const [inlineProductSearch, setInlineProductSearch] = useState('');
   const [inlineSelectedProduct, setInlineSelectedProduct] = useState<any>(null);
+  const [inlineComponentSearch, setInlineComponentSearch] = useState('');
+  const [inlineSelectedComponent, setInlineSelectedComponent] = useState<any>(null);
   const [inlineSaving, setInlineSaving] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -74,6 +77,12 @@ export default function SystemDetail() {
     queryKey: ['product-search-inline', inlineProductSearch],
     queryFn: () => api.get(`/product-masters?q=${inlineProductSearch}&page_size=8`).then(r => r.data),
     enabled: inlineProductSearch.length >= 2 && !inlineSelectedProduct,
+  });
+
+  const { data: componentSearchResults } = useQuery({
+    queryKey: ['component-search-inline', inlineComponentSearch],
+    queryFn: () => api.get(`/components?search=${inlineComponentSearch}&page_size=8`).then(r => r.data),
+    enabled: inlineComponentSearch.length >= 2 && !inlineSelectedComponent,
   });
 
   useEffect(() => {
@@ -126,23 +135,33 @@ export default function SystemDetail() {
       unit: eq.unit || 'EA',
       status: eq.status || 'Design',
     });
+    const type = eq.component_id ? 'component' : 'product';
+    setInlineType(type);
     setInlineSelectedProduct(eq.product_master_id ? { id: eq.product_master_id, product_code: eq.product_code, product_name: eq.product_name } : null);
+    setInlineSelectedComponent(eq.component_id ? { id: eq.component_id, component_code: eq.component_code, component_name: eq.component_name } : null);
     setInlineProductSearch('');
+    setInlineComponentSearch('');
   };
 
   const startNewRow = () => {
     setInlineEditId(NEW_ROW_ID);
     setInlineForm({ equip_code: '', quantity: 1, unit: 'EA', status: 'Design' });
+    setInlineType('product');
     setInlineSelectedProduct(null);
+    setInlineSelectedComponent(null);
     setInlineProductSearch('');
+    setInlineComponentSearch('');
     setTimeout(() => searchRef.current?.focus(), 50);
   };
 
   const cancelInline = () => {
     setInlineEditId(null);
     setInlineForm(null);
+    setInlineType('product');
     setInlineSelectedProduct(null);
+    setInlineSelectedComponent(null);
     setInlineProductSearch('');
+    setInlineComponentSearch('');
   };
 
   const saveInlineRow = async () => {
@@ -153,8 +172,9 @@ export default function SystemDetail() {
         equip_code: inlineForm.equip_code.trim().toUpperCase(),
         project_id: system.project_id,
         system_id: system.id,
-        product_master_id: inlineSelectedProduct?.id || null,
-        description: !inlineSelectedProduct ? (inlineProductSearch || null) : null,
+        product_master_id: inlineType === 'product' ? (inlineSelectedProduct?.id || null) : null,
+        component_id: inlineType === 'component' ? (inlineSelectedComponent?.id || null) : null,
+        description: inlineType === 'product' && !inlineSelectedProduct ? (inlineProductSearch || null) : null,
         quantity: parseFloat(inlineForm.quantity) || 1,
         unit: inlineForm.unit,
         status: inlineForm.status,
@@ -182,6 +202,91 @@ export default function SystemDetail() {
   };
 
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
+
+  const inlineItemCell = () => (
+    <td className={cellCls + ' relative'}>
+      <div className="flex gap-1 mb-1.5" onClick={e => e.stopPropagation()}>
+        <button
+          onClick={() => { setInlineType('product'); setInlineSelectedComponent(null); setInlineComponentSearch(''); }}
+          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${inlineType === 'product' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+        >Product</button>
+        <button
+          onClick={() => { setInlineType('component'); setInlineSelectedProduct(null); setInlineProductSearch(''); }}
+          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${inlineType === 'component' ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+        >Component</button>
+      </div>
+      {inlineType === 'product' ? (
+        inlineSelectedProduct ? (
+          <div className="flex items-center gap-1.5 border border-blue-600 bg-blue-50 rounded px-2 py-1 text-sm">
+            <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
+            <button onClick={e => { e.stopPropagation(); setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+          </div>
+        ) : (
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <Search className="absolute left-2 top-1.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            <input
+              ref={searchRef}
+              value={inlineProductSearch}
+              onChange={e => setInlineProductSearch(e.target.value)}
+              placeholder="Search products…"
+              className={inputCls + ' pl-7'}
+              onKeyDown={e => { if (e.key === 'Escape') cancelInline(); }}
+            />
+            {productSearchResults?.items?.length > 0 && (
+              <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl mt-0.5 z-20 max-h-52 overflow-auto">
+                {productSearchResults.items.map((p: any) => (
+                  <button key={p.id} onMouseDown={e => e.preventDefault()} onClick={() => { setInlineSelectedProduct(p); setInlineProductSearch(''); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0">
+                    <EntityCode code={p.product_code} />
+                    <span className="text-sm text-slate-800 truncate">{p.product_name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      ) : (
+        inlineSelectedComponent ? (
+          <div className="flex items-center gap-1.5 border border-violet-600 bg-violet-50 rounded px-2 py-1 text-sm">
+            <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedComponent.component_name}</span>
+            <button onClick={e => { e.stopPropagation(); setInlineSelectedComponent(null); setInlineComponentSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+          </div>
+        ) : (
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <Search className="absolute left-2 top-1.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            <input
+              value={inlineComponentSearch}
+              onChange={e => setInlineComponentSearch(e.target.value)}
+              placeholder="Search components…"
+              className={inputCls + ' pl-7'}
+              onKeyDown={e => { if (e.key === 'Escape') cancelInline(); }}
+            />
+            {componentSearchResults?.items?.length > 0 && (
+              <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl mt-0.5 z-20 max-h-52 overflow-auto">
+                {componentSearchResults.items.map((c: any) => (
+                  <button key={c.id} onMouseDown={e => e.preventDefault()} onClick={() => { setInlineSelectedComponent(c); setInlineComponentSearch(''); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0">
+                    <EntityCode code={c.component_code} />
+                    <span className="text-sm text-slate-800 truncate">{c.component_name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      )}
+    </td>
+  );
+
+  const inlineCodeCell = () => (
+    <td className={cellCls}>
+      {inlineType === 'product' && inlineSelectedProduct
+        ? <EntityCode code={inlineSelectedProduct.product_code} />
+        : inlineType === 'component' && inlineSelectedComponent
+        ? <EntityCode code={inlineSelectedComponent.component_code} />
+        : <span className="text-slate-300 text-xs">—</span>}
+    </td>
+  );
 
   const inputCls = 'w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-600 bg-white';
   const cellCls = 'px-3 py-2.5';
@@ -337,7 +442,7 @@ export default function SystemDetail() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50">
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[130px]">Tag</th>
-                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Product</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Item</th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Code</th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[80px]">Qty</th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[80px]">Unit</th>
@@ -349,7 +454,7 @@ export default function SystemDetail() {
               {equipment.length === 0 && inlineEditId !== NEW_ROW_ID && (
                 <tr>
                   <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">
-                    No products yet — click <strong>Add Row</strong> to assign equipment to this system.
+                    No items yet — click <strong>Add Row</strong> to assign products or components to this system.
                   </td>
                 </tr>
               )}
@@ -373,48 +478,8 @@ export default function SystemDetail() {
                             onKeyDown={e => { if (e.key === 'Escape') cancelInline(); if (e.key === 'Enter') saveInlineRow(); }}
                           />
                         </td>
-                        <td className={cellCls + ' relative'}>
-                          {inlineSelectedProduct ? (
-                            <div className="flex items-center gap-1.5 border border-blue-600 bg-blue-50 rounded px-2 py-1 text-sm">
-                              <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
-                              <button onClick={e => { e.stopPropagation(); setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0">
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="relative" onClick={e => e.stopPropagation()}>
-                              <Search className="absolute left-2 top-1.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                              <input
-                                ref={searchRef}
-                                value={inlineProductSearch}
-                                onChange={e => setInlineProductSearch(e.target.value)}
-                                placeholder="Search or type description…"
-                                className={inputCls + ' pl-7'}
-                                onKeyDown={e => { if (e.key === 'Escape') cancelInline(); }}
-                              />
-                              {productSearchResults?.items?.length > 0 && (
-                                <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl mt-0.5 z-20 max-h-52 overflow-auto">
-                                  {productSearchResults.items.map((p: any) => (
-                                    <button
-                                      key={p.id}
-                                      onMouseDown={e => e.preventDefault()}
-                                      onClick={() => { setInlineSelectedProduct(p); setInlineProductSearch(''); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0"
-                                    >
-                                      <EntityCode code={p.product_code} />
-                                      <span className="text-sm text-slate-800 truncate">{p.product_name}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className={cellCls}>
-                          {inlineSelectedProduct
-                            ? <EntityCode code={inlineSelectedProduct.product_code} />
-                            : <span className="text-slate-300 text-xs">—</span>}
-                        </td>
+                        {inlineItemCell()}
+                        {inlineCodeCell()}
                         <td className={cellCls}>
                           <input type="number" min="0.001" step="any"
                             value={inlineForm.quantity}
@@ -448,7 +513,8 @@ export default function SystemDetail() {
                         <td className={cellCls}><EntityCode code={eq.equip_code} /></td>
                         <td className={cellCls + ' font-medium text-slate-800'}>
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="flex-1 truncate">{eq.product_name || eq.description || <span className="text-slate-300 font-normal">—</span>}</span>
+                            {eq.component_id && <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 uppercase tracking-wide">Comp</span>}
+                            <span className="flex-1 truncate">{eq.component_name || eq.product_name || eq.description || <span className="text-slate-300 font-normal">—</span>}</span>
                             {eq.product_master_id && (
                               <button
                                 onClick={e => { e.stopPropagation(); navigate(`/products/masters/${eq.product_master_id}`); }}
@@ -458,10 +524,19 @@ export default function SystemDetail() {
                                 <ExternalLink className="w-3 h-3" />
                               </button>
                             )}
+                            {eq.component_id && (
+                              <button
+                                onClick={e => { e.stopPropagation(); navigate(`/products/components/${eq.component_id}`); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 flex-shrink-0"
+                                title="Open component"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className={cellCls}>
-                          {eq.product_code ? <EntityCode code={eq.product_code} /> : <span className="text-slate-300">—</span>}
+                          {eq.component_code ? <EntityCode code={eq.component_code} /> : eq.product_code ? <EntityCode code={eq.product_code} /> : <span className="text-slate-300">—</span>}
                         </td>
                         <td className={cellCls + ' text-slate-600'}>{eq.quantity ?? 1}</td>
                         <td className={cellCls + ' text-slate-500'}>{eq.unit || 'EA'}</td>
@@ -499,48 +574,8 @@ export default function SystemDetail() {
                       onKeyDown={e => { if (e.key === 'Escape') cancelInline(); if (e.key === 'Enter') saveInlineRow(); }}
                     />
                   </td>
-                  <td className={cellCls + ' relative'}>
-                    {inlineSelectedProduct ? (
-                      <div className="flex items-center gap-1.5 border border-blue-600 bg-blue-50 rounded px-2 py-1 text-sm">
-                        <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
-                        <button onClick={() => { setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <Search className="absolute left-2 top-1.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                        <input
-                          ref={searchRef}
-                          value={inlineProductSearch}
-                          onChange={e => setInlineProductSearch(e.target.value)}
-                          placeholder="Search or type description…"
-                          className={inputCls + ' pl-7'}
-                          onKeyDown={e => { if (e.key === 'Escape') cancelInline(); }}
-                        />
-                        {productSearchResults?.items?.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-xl mt-0.5 z-20 max-h-52 overflow-auto">
-                            {productSearchResults.items.map((p: any) => (
-                              <button
-                                key={p.id}
-                                onMouseDown={e => e.preventDefault()}
-                                onClick={() => { setInlineSelectedProduct(p); setInlineProductSearch(''); }}
-                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0"
-                              >
-                                <EntityCode code={p.product_code} />
-                                <span className="text-sm text-slate-800 truncate">{p.product_name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className={cellCls}>
-                    {inlineSelectedProduct
-                      ? <EntityCode code={inlineSelectedProduct.product_code} />
-                      : <span className="text-slate-300 text-xs">—</span>}
-                  </td>
+                  {inlineItemCell()}
+                  {inlineCodeCell()}
                   <td className={cellCls}>
                     <input type="number" min="0.001" step="any"
                       value={inlineForm.quantity}
