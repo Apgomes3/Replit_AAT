@@ -226,12 +226,19 @@ router.post('/systems', authenticate, async (req: AuthRequest, res: Response) =>
 });
 
 router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
-  const result = await query(
-    'UPDATE systems SET system_code=COALESCE($1,system_code), system_name=$2, system_type=$3, design_flow_m3h=$4, turnover_rate_hr=$5, water_type=$6, status=$7, duty_description=$8, redundancy_strategy=$9, updated_at=NOW() WHERE id=$10 RETURNING *',
-    [system_code || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status, duty_description, redundancy_strategy, req.params.id]);
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-  res.json(result.rows[0]);
+  try {
+    const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
+    const result = await query(
+      'UPDATE systems SET system_code=COALESCE($1,system_code), system_name=$2, system_type=$3, design_flow_m3h=$4, turnover_rate_hr=$5, water_type=$6, status=$7, duty_description=$8, redundancy_strategy=$9, updated_at=NOW() WHERE id=$10 RETURNING *',
+      [system_code || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status, duty_description, redundancy_strategy, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: { code: 'CONFLICT', message: 'A system with that code already exists in this project.' } });
+    }
+    throw err;
+  }
 });
 
 router.delete('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {

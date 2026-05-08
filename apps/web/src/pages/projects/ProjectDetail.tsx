@@ -221,7 +221,9 @@ export default function ProjectDetail() {
       toast.success('System updated');
       qc.invalidateQueries({ queryKey: ['project-systems'] });
       setEditSystemRow(null);
-    } catch { toast.error('Save failed'); }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Save failed');
+    }
     finally { setEditSystemSaving(false); }
   };
 
