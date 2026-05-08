@@ -169,11 +169,25 @@ router.post('/product-masters/bulk-import', authenticate, async (req: AuthReques
 });
 
 router.post('/product-masters', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes } = req.body;
+  const {
+    product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
+    design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
+    shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3,
+  } = req.body;
   if (!product_code || !product_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_code and product_name required' } });
   const result = await query(
-    'INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
-    [product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status || 'Concept', notes]);
+    `INSERT INTO product_masters
+      (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
+       design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
+       shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+    [
+      product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
+      design_flow_m3h || null, design_pressure_bar || null, design_head_m || null, power_kw || null,
+      primary_material_code || null, standard_status || 'Concept', notes || null,
+      shape_type || null, length_mm || null, width_mm || null, height_mm || null,
+      design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null,
+    ]);
   await logAudit(req.user!.id, 'product', result.rows[0].id, 'CREATE', { product_code, product_name, standard_status: standard_status || 'Concept' });
   res.status(201).json(result.rows[0]);
 });
