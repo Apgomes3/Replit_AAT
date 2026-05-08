@@ -179,7 +179,7 @@ export default function ProductMasterDetail() {
 
   const { data: variantSearchResults } = useQuery({
     queryKey: ['product-variant-search', variantSearch],
-    queryFn: () => api.get(`/product-masters?search=${variantSearch}&page_size=8`).then(r => r.data),
+    queryFn: () => api.get(`/product-masters?q=${variantSearch}&page_size=8`).then(r => r.data),
     enabled: variantSearch.length >= 2 && !variantTarget,
   });
 
@@ -191,7 +191,7 @@ export default function ProductMasterDetail() {
 
   const { data: relSearchResults } = useQuery({
     queryKey: ['product-search', relSearch],
-    queryFn: () => api.get(`/product-masters?search=${relSearch}&page_size=8`).then(r => r.data),
+    queryFn: () => api.get(`/product-masters?q=${relSearch}&page_size=8`).then(r => r.data),
     enabled: relSearch.length >= 2,
   });
 
@@ -203,7 +203,7 @@ export default function ProductMasterDetail() {
 
   const { data: prodBomSearchResults } = useQuery({
     queryKey: ['prod-bom-search', prodSearch],
-    queryFn: () => api.get(`/product-masters?search=${prodSearch}&page_size=8`).then(r => r.data),
+    queryFn: () => api.get(`/product-masters?q=${prodSearch}&page_size=8`).then(r => r.data),
     enabled: prodSearch.length >= 2 && lineSourceType === 'product' && !selectedProd,
   });
 
