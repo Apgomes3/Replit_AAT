@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useState, lazy, Suspense, useRef, useEffect } from 'react';
+import { useState, lazy, Suspense, useRef, useEffect, Fragment } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
@@ -56,6 +56,9 @@ export default function ProjectDetail() {
   const [tankSystemId, setTankSystemId] = useState('');
   const [tankQuantity, setTankQuantity] = useState(1);
   const [tankSubmitting, setTankSubmitting] = useState(false);
+  const [expandedTanks, setExpandedTanks] = useState<Set<string>>(new Set());
+  const [editingInstance, setEditingInstance] = useState<{ id: string; value: string } | null>(null);
+  const [savingInstanceId, setSavingInstanceId] = useState<string | null>(null);
 
   const [showNewPiping, setShowNewPiping] = useState(false);
   const [pipingProductSearch, setPipingProductSearch] = useState('');
@@ -346,6 +349,29 @@ export default function ProjectDetail() {
       toast.error('Failed to add tank');
     } finally {
       setTankSubmitting(false);
+    }
+  };
+
+  const toggleTankExpand = (tankId: string) => {
+    setExpandedTanks(prev => {
+      const next = new Set(prev);
+      if (next.has(tankId)) { next.delete(tankId); } else { next.add(tankId); }
+      return next;
+    });
+  };
+
+  const handleSaveInstanceTag = async (instanceId: string, newTag: string) => {
+    if (!newTag.trim()) { toast.error('Tag cannot be empty'); return; }
+    setSavingInstanceId(instanceId);
+    try {
+      await api.patch(`/tank-instances/${instanceId}`, { tag: newTag.trim() });
+      toast.success('Tag updated');
+      setEditingInstance(null);
+      qc.invalidateQueries({ queryKey: ['project-tanks'] });
+    } catch {
+      toast.error('Failed to update tag');
+    } finally {
+      setSavingInstanceId(null);
     }
   };
 
@@ -794,7 +820,122 @@ export default function ProjectDetail() {
               </div>
             );
           })()}
-          {tab === 'tanks' && <DataTable columns={tankCols} data={tanks?.items || []} tableId="project-tanks" emptyMessage="No tanks added to this project yet — click Add Tank above" />}
+          {tab === 'tanks' && (() => {
+            const tankItems: any[] = tanks?.items || [];
+            if (tankItems.length === 0) return (
+              <div className="text-center py-16 text-slate-400 text-sm">No tanks added to this project yet — click Add Tank above</div>
+            );
+            const fmtV = (v?: number | null) => v != null ? <span className="font-mono text-xs">{parseFloat(String(v)).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">—</span>;
+            const fmtN = (v?: number | null) => v != null ? <span>{v}</span> : <span className="text-slate-300">—</span>;
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide w-8"></th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tag</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tank Name</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Qty</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">System</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Product</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Shape</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">L (mm)</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">W (mm)</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">H (mm)</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Gross Vol (m³)</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Design Vol (m³)</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Material</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tankItems.map((tank: any) => {
+                      const qty = tank.quantity ?? 1;
+                      const isExpanded = expandedTanks.has(tank.id);
+                      const instances: any[] = Array.isArray(tank.instances) ? tank.instances : [];
+                      return (
+                        <Fragment key={tank.id}>
+                          <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                            <td className="px-3 py-2.5">
+                              {qty > 1 ? (
+                                <button
+                                  onClick={() => toggleTankExpand(tank.id)}
+                                  className="text-slate-400 hover:text-blue-600 transition-colors p-0.5 rounded"
+                                  title={isExpanded ? 'Collapse individual tanks' : 'Expand individual tanks'}
+                                >
+                                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                </button>
+                              ) : <span />}
+                            </td>
+                            <td className="px-3 py-2.5"><EntityCode code={tank.tank_code} /></td>
+                            <td className="px-3 py-2.5 font-medium text-slate-800">{tank.tank_name}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={`font-mono text-sm ${qty > 1 ? 'text-blue-600 font-semibold' : 'text-slate-600'}`}>{qty}</span>
+                            </td>
+                            <td className="px-3 py-2.5">{tank.system_code ? <EntityCode code={tank.system_code} /> : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-3 py-2.5">{tank.product_code ? <Link to={`/products/masters/${tank.product_code}`} onClick={e => e.stopPropagation()} className="text-blue-600 hover:underline"><EntityCode code={tank.product_code} /></Link> : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-3 py-2.5">{tank.eff_shape ? <span>{tank.eff_shape}</span> : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-3 py-2.5">{fmtN(tank.eff_length_mm)}</td>
+                            <td className="px-3 py-2.5">{fmtN(tank.eff_width_mm)}</td>
+                            <td className="px-3 py-2.5">{fmtN(tank.eff_height_mm)}</td>
+                            <td className="px-3 py-2.5">{fmtV(tank.gross_volume_m3)}</td>
+                            <td className="px-3 py-2.5">{fmtV(tank.design_volume_m3)}</td>
+                            <td className="px-3 py-2.5">{tank.product_material ? <EntityCode code={tank.product_material} /> : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-3 py-2.5"><StatusBadge status={tank.status || 'Active'} /></td>
+                          </tr>
+                          {isExpanded && instances.map((inst: any) => {
+                            const isEditingThis = editingInstance?.id === inst.id;
+                            return (
+                              <tr key={inst.id} className="border-b border-blue-50 bg-blue-50/40">
+                                <td className="px-3 py-2"></td>
+                                <td className="px-3 py-2" colSpan={1}>
+                                  <div className="flex items-center gap-1.5 pl-4">
+                                    <div className="w-px h-4 bg-blue-200 mr-1" />
+                                    {isEditingThis ? (
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          autoFocus
+                                          value={editingInstance.value}
+                                          onChange={e => setEditingInstance({ id: inst.id, value: e.target.value.toUpperCase() })}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Enter') handleSaveInstanceTag(inst.id, editingInstance.value);
+                                            if (e.key === 'Escape') setEditingInstance(null);
+                                          }}
+                                          className="border border-blue-400 rounded px-2 py-0.5 text-xs font-mono w-36 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <button
+                                          onClick={() => handleSaveInstanceTag(inst.id, editingInstance.value)}
+                                          disabled={savingInstanceId === inst.id}
+                                          className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded disabled:opacity-50"
+                                        >{savingInstanceId === inst.id ? '…' : 'Save'}</button>
+                                        <button onClick={() => setEditingInstance(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1 py-0.5">✕</button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1.5 group">
+                                        <span className="font-mono text-xs bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 rounded">{inst.tag}</span>
+                                        <button
+                                          onClick={() => setEditingInstance({ id: inst.id, value: inst.tag })}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600"
+                                          title="Edit tag"
+                                        ><Pencil className="w-3 h-3" /></button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-xs text-slate-400 italic" colSpan={12}>
+                                  Unit {inst.instance_index} of {qty} — {tank.tank_name}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
           {tab === 'piping' && (
             <DataTable
               columns={[

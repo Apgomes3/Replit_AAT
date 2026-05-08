@@ -107,6 +107,16 @@ CREATE TABLE IF NOT EXISTS tanks (
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS system_id UUID REFERENCES systems(id) ON DELETE SET NULL;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
 
+CREATE TABLE IF NOT EXISTS tank_instances (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tank_id UUID NOT NULL REFERENCES tanks(id) ON DELETE CASCADE,
+  instance_index INT NOT NULL,
+  tag VARCHAR(100) NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(tank_id, instance_index)
+);
+
 CREATE TABLE IF NOT EXISTS systems (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   system_code VARCHAR(50) NOT NULL,
