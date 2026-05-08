@@ -53,6 +53,7 @@ export default function ProjectDetail() {
   const [selectedTankProduct, setSelectedTankProduct] = useState<any>(null);
   const [tankCode, setTankCode] = useState('');
   const [tankStatus, setTankStatus] = useState('Active');
+  const [tankSystemId, setTankSystemId] = useState('');
   const [tankSubmitting, setTankSubmitting] = useState(false);
 
   const [showNewPiping, setShowNewPiping] = useState(false);
@@ -262,16 +263,16 @@ export default function ProjectDetail() {
   const tankCols: Column<Tank>[] = [
     { key: 'tank_code', header: 'Tag', render: r => <EntityCode code={r.tank_code} /> },
     { key: 'tank_name', header: 'Tank Name', render: r => <span className="font-medium">{r.tank_name}</span> },
+    { key: 'system_code' as any, header: 'System', render: (r: any) => r.system_code
+      ? <EntityCode code={r.system_code} />
+      : <span className="text-slate-300">—</span>
+    },
     { key: 'product_code', header: 'Product', render: r => r.product_code
       ? <Link to={`/products/masters/${r.product_code}`} onClick={e => e.stopPropagation()} className="text-blue-600 hover:underline"><EntityCode code={r.product_code} /></Link>
       : <span className="text-slate-300">—</span>
     },
     { key: 'tank_type', header: 'Type', render: r => r.tank_type ? <span>{r.tank_type}</span> : <span className="text-slate-300">—</span> },
     { key: 'product_shape' as any, header: 'Shape', render: (r: any) => r.product_shape ? <span>{r.product_shape}</span> : <span className="text-slate-300">—</span> },
-    { key: 'product_length_mm' as any, header: 'L (mm)', render: (r: any) => fmt(r.product_length_mm) },
-    { key: 'product_width_mm' as any, header: 'W (mm)', render: (r: any) => fmt(r.product_width_mm) },
-    { key: 'product_height_mm' as any, header: 'H (mm)', render: (r: any) => fmt(r.product_height_mm) },
-    { key: 'product_water_level_mm' as any, header: 'Water Level (mm)', render: (r: any) => fmt(r.product_water_level_mm) },
     { key: 'product_gross_volume_m3' as any, header: 'Gross Vol (m³)', render: (r: any) => fmt(r.product_gross_volume_m3) },
     { key: 'product_operating_volume_m3' as any, header: 'Op. Vol (m³)', render: (r: any) => fmt(r.product_operating_volume_m3) },
     { key: 'product_material' as any, header: 'Material', render: (r: any) => r.product_material ? <EntityCode code={r.product_material} /> : <span className="text-slate-300">—</span> },
@@ -321,6 +322,7 @@ export default function ProjectDetail() {
         tank_type: selectedTankProduct.application_type || null,
         product_master_id: selectedTankProduct.id,
         project_id: project.id,
+        system_id: tankSystemId || null,
         status: tankStatus,
       });
       toast.success('Tank added');
@@ -329,7 +331,9 @@ export default function ProjectDetail() {
       setTankProductSearch('');
       setTankCode('');
       setTankStatus('Active');
+      setTankSystemId('');
       qc.invalidateQueries({ queryKey: ['project-tanks'] });
+      qc.invalidateQueries({ queryKey: ['project-systems'] });
     } catch {
       toast.error('Failed to add tank');
     } finally {
@@ -749,6 +753,12 @@ export default function ProjectDetail() {
                     <span className="font-medium text-sm text-slate-800 flex-1">{sys.system_name}</span>
                     <span className="text-xs text-slate-400">{sys.system_type}</span>
                     {sys.water_type && <span className="text-xs bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5">{sys.water_type}</span>}
+                    {(sys as any).tank_count > 0 && (
+                      <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 font-mono">
+                        {(sys as any).tank_count} tank{(sys as any).tank_count !== 1 ? 's' : ''}
+                        {parseFloat((sys as any).total_volume_m3) > 0 ? ` · ${parseFloat((sys as any).total_volume_m3).toFixed(1)} m³` : ''}
+                      </span>
+                    )}
                     <StatusBadge status={sys.status} />
                     <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
@@ -898,6 +908,16 @@ export default function ProjectDetail() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">System <span className="text-slate-400 font-normal">(optional)</span></label>
+                <select value={tankSystemId} onChange={e => setTankSystemId(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">— No system —</option>
+                  {(systems?.items || []).map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.system_code} – {s.system_name}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select value={tankStatus} onChange={e => setTankStatus(e.target.value)}

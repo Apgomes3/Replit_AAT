@@ -88,7 +88,18 @@ router.get('/projects/:id/areas', authenticate, async (req: AuthRequest, res: Re
 router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: Response) => {
   const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
-  const result = await query('SELECT s.*, a.area_name, e.exhibit_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id WHERE s.project_id = $1 ORDER BY s.system_code', [proj.rows[0].id]);
+  const result = await query(
+    `SELECT s.*, a.area_name, e.exhibit_name,
+      COUNT(t.id)::int AS tank_count,
+      COALESCE(SUM(t.gross_volume_m3), 0)::numeric AS total_volume_m3
+     FROM systems s
+     LEFT JOIN areas a ON s.area_id=a.id
+     LEFT JOIN exhibits e ON s.exhibit_id=e.id
+     LEFT JOIN tanks t ON t.system_id=s.id
+     WHERE s.project_id = $1
+     GROUP BY s.id, a.area_name, e.exhibit_name
+     ORDER BY s.system_code`,
+    [proj.rows[0].id]);
   res.json({ items: result.rows });
 });
 
@@ -157,17 +168,24 @@ router.post('/exhibits', authenticate, async (req: AuthRequest, res: Response) =
 
 // TANKS
 router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
-  let where = '', params: any[] = [];
-  if (req.query.project_id) { params.push(req.query.project_id); where = `WHERE t.project_id = $1`; }
+  const filters: string[] = [], params: any[] = [];
+  if (req.query.project_id) { params.push(req.query.project_id); filters.push(`t.project_id = $${params.length}`); }
+  if (req.query.system_id) { params.push(req.query.system_id); filters.push(`t.system_id = $${params.length}`); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const result = await query(
     `SELECT t.*, e.exhibit_name, p.project_code,
+      s.system_code, s.system_name,
       pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
       pm.shape_type as product_shape, pm.length_mm as product_length_mm, pm.width_mm as product_width_mm,
       pm.height_mm as product_height_mm, pm.design_water_level_mm as product_water_level_mm,
       pm.gross_volume_m3 as product_gross_volume_m3, pm.operating_volume_m3 as product_operating_volume_m3,
       pm.primary_material_code as product_material
-     FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
-     LEFT JOIN product_masters pm ON t.product_master_id=pm.id ${where} ORDER BY t.tank_code`, params);
+     FROM tanks t
+     LEFT JOIN exhibits e ON t.exhibit_id=e.id
+     JOIN projects p ON t.project_id=p.id
+     LEFT JOIN systems s ON t.system_id=s.id
+     LEFT JOIN product_masters pm ON t.product_master_id=pm.id
+     ${where} ORDER BY t.tank_code`, params);
   res.json({ items: result.rows });
 });
 
@@ -186,12 +204,23 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
 });
 
 router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, project_id, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+  const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
   if (!tank_code || !project_id || !tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
   const result = await query(
-    'INSERT INTO tanks (tank_code, project_id, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
-    [tank_code, project_id, tank_name, tank_type || null, product_master_id || null, shape_type || null, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material || null, status || 'Active', notes || null]);
+    'INSERT INTO tanks (tank_code, project_id, system_id, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *',
+    [tank_code, project_id, system_id || null, tank_name, tank_type || null, product_master_id || null, shape_type || null, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material || null, status || 'Active', notes || null]);
   res.status(201).json(result.rows[0]);
+});
+
+router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { system_id } = req.body;
+    const result = await query(
+      'UPDATE tanks SET system_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
+      [system_id || null, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+    res.json(result.rows[0]);
+  } catch (err: any) { throw err; }
 });
 
 // SYSTEMS

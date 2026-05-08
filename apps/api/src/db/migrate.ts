@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS tanks (
   project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
   area_id UUID REFERENCES areas(id),
   exhibit_id UUID REFERENCES exhibits(id),
+  system_id UUID REFERENCES systems(id) ON DELETE SET NULL,
   tank_name VARCHAR(255) NOT NULL,
   tank_type VARCHAR(100),
   shape_type VARCHAR(50),
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS tanks (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(project_id, tank_code)
 );
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS system_id UUID REFERENCES systems(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS systems (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
