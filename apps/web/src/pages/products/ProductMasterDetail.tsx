@@ -802,8 +802,11 @@ export default function ProductMasterDetail() {
                 </div>
                 <div className="col-span-2">
                   {(() => {
-                    const shape = product.shape_type || 'Rectangular';
-                    const est = calcEstCostFromRates(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), editForm.primary_material_code || null, tankCostRates);
+                    const shape = (editingDimensions ? tankSpecsForm.shape_type : product.shape_type) || 'Rectangular';
+                    const L = editingDimensions ? Number(tankSpecsForm.length_mm) : Number(product.length_mm);
+                    const W = editingDimensions ? Number(tankSpecsForm.width_mm) : Number(product.width_mm);
+                    const H = editingDimensions ? Number(tankSpecsForm.height_mm) : Number(product.height_mm);
+                    const est = calcEstCostFromRates(shape, L, W, H, editForm.primary_material_code || null, tankCostRates);
                     return (
                       <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-500 flex items-center justify-between">
                         <span>Est. Cost <span className="text-slate-400">(shell area × rate)</span></span>
