@@ -295,29 +295,6 @@ export default function SystemDetail() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Turnover Rate (/hr)</label>
-                    <input type="number" value={form.turnover_rate_hr} onChange={e => setForm((f: any) => ({ ...f, turnover_rate_hr: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
-                    {(() => {
-                      const tanks: any[] = system.tanks ?? [];
-                      const totalOp = tanks.reduce((s: number, t: any) => s + (parseFloat(t.operating_volume_m3 ?? 0) * parseInt(t.quantity ?? 1)), 0);
-                      const calcVal = form.design_flow_m3h && totalOp > 0
-                        ? (parseFloat(form.design_flow_m3h) / totalOp).toFixed(2)
-                        : null;
-                      if (!calcVal) return null;
-                      return (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-[10px] text-slate-400">Calc: <span className="font-mono text-slate-600">{calcVal} /hr</span> (flow ÷ op. vol.)</span>
-                          <button
-                            type="button"
-                            onClick={() => setForm((f: any) => ({ ...f, turnover_rate_hr: calcVal }))}
-                            className="text-[10px] text-blue-600 hover:underline font-medium"
-                          >← Use</button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                     <select value={form.status} onChange={e => setForm((f: any) => ({ ...f, status: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30">
