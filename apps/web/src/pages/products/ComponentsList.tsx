@@ -112,10 +112,11 @@ export default function ComponentsList() {
       await api.post('/components', { ...form, weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null });
       toast.success('Component created');
       setShowModal(false);
-      setForm({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', description: '', primary_material_code: '', standard_size: '', weight_kg: '', unit: 'EA', notes: '' });
+      setForm({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', description: '', primary_material_code: '', standard_size: '', weight_kg: '', unit: 'EA', notes: '', manufacturer: '', model: '' });
       qc.invalidateQueries({ queryKey: ['components'] });
-    } catch {
-      toast.error('Failed to create component');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || 'Failed to create component';
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -317,6 +318,18 @@ export default function ComponentsList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Weight (kg)</label>
                 <input type="number" placeholder="0.0" value={form.weight_kg}
                   onChange={e => setForm(f => ({ ...f, weight_kg: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
+                <input type="text" placeholder="e.g. Grundfos" value={form.manufacturer}
+                  onChange={e => setForm(f => ({ ...f, manufacturer: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                <input type="text" placeholder="e.g. CR 5-10" value={form.model}
+                  onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div className="col-span-2">

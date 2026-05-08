@@ -445,13 +445,21 @@ router.get('/components/:id', authenticate, async (req: AuthRequest, res: Respon
 });
 
 router.post('/components', authenticate, async (req: AuthRequest, res: Response) => {
-  const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, manufacturer, model } = req.body;
-  if (!component_code || !component_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'component_code and component_name required' } });
-  const result = await query(
-    'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost, manufacturer, model) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
-    [component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit || 'EA', status || 'Active', notes, req.user!.id, 0, manufacturer || null, model || null]);
-  await logAudit(req.user!.id, 'component', result.rows[0].id, 'CREATE', { component_code, component_name, component_type });
-  res.status(201).json(result.rows[0]);
+  try {
+    const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, manufacturer, model } = req.body;
+    if (!component_code || !component_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'component_code and component_name required' } });
+    const pmCode = primary_material_code || null;
+    const wkg = (weight_kg === '' || weight_kg === null || weight_kg === undefined) ? null : parseFloat(String(weight_kg));
+    const result = await query(
+      'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost, manufacturer, model) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
+      [component_code, component_name, component_type || 'Vessel', component_category || 'Mechanical', description || null, pmCode, standard_size || null, wkg, unit || 'EA', status || 'Active', notes || null, req.user!.id, 0, manufacturer || null, model || null]);
+    await logAudit(req.user!.id, 'component', result.rows[0].id, 'CREATE', { component_code, component_name, component_type });
+    res.status(201).json(result.rows[0]);
+  } catch (err: any) {
+    console.error('[POST /components] error:', err?.message || err);
+    if (err?.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE', message: `Component code already exists` } });
+    res.status(500).json({ error: { code: 'SERVER_ERROR', message: err?.message || 'Failed to create component' } });
+  }
 });
 
 router.put('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
