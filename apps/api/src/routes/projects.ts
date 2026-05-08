@@ -705,6 +705,40 @@ router.post('/bom-releases', authenticate, async (req: AuthRequest, res: Respons
   res.status(201).json(final.rows[0]);
 });
 
+router.get('/projects/:id/items-for-po', authenticate, async (req: AuthRequest, res: Response) => {
+  const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
+  if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+  const projectId = proj.rows[0].id;
+
+  const equipment = await query(
+    `SELECT pei.id, pei.equip_code AS tag_code,
+            COALESCE(pei.description, pm.product_name) AS description,
+            pm.id AS product_master_id, pm.product_code, pm.product_name,
+            pm.cost, pm.sell_price,
+            pei.quantity, pei.unit,
+            s.id AS system_id, s.system_code, s.system_name
+     FROM project_equipment_items pei
+     LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
+     LEFT JOIN systems s ON pei.system_id = s.id
+     WHERE pei.project_id = $1 AND pei.product_master_id IS NOT NULL
+     ORDER BY s.system_code NULLS LAST, pei.equip_code`,
+    [projectId]);
+
+  const tanks = await query(
+    `SELECT t.id, t.tank_code AS tag_code, t.tank_name AS description,
+            pm.id AS product_master_id, pm.product_code, pm.product_name,
+            pm.cost, pm.sell_price,
+            COALESCE(t.quantity, 1) AS quantity, 'EA' AS unit,
+            NULL::uuid AS system_id, NULL AS system_code, NULL AS system_name
+     FROM tanks t
+     LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+     WHERE t.project_id = $1 AND t.product_master_id IS NOT NULL
+     ORDER BY t.tank_code`,
+    [projectId]);
+
+  res.json({ equipment: equipment.rows, tanks: tanks.rows });
+});
+
 router.post('/bom-releases/:id/issue', authenticate, async (req: AuthRequest, res: Response) => {
   const { issued_date } = req.body;
   const result = await query(

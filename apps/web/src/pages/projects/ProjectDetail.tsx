@@ -11,14 +11,15 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink } from 'lucide-react';
 import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
+import ProjectReleasePOModal from './ProjectReleasePOModal';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release';
+type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'pos';
 
 
 type Tank = {
@@ -73,6 +74,8 @@ export default function ProjectDetail() {
   const [pmEditSearch, setPmEditSearch] = useState('');
   const [pmEditOpen, setPmEditOpen] = useState(false);
   const pmEditRef = useRef<HTMLDivElement>(null);
+
+  const [showReleasePOModal, setShowReleasePOModal] = useState(false);
 
   const [showNewBomRelease, setShowNewBomRelease] = useState(false);
   const [bomTitle, setBomTitle] = useState('');
@@ -142,6 +145,12 @@ export default function ProjectDetail() {
     queryKey: ['project-bom-releases', id],
     queryFn: () => api.get(`/projects/${id}/bom-releases`).then(r => r.data),
     enabled: tab === 'bom-release',
+  });
+
+  const { data: projectPOs } = useQuery({
+    queryKey: ['project-pos', id],
+    queryFn: () => api.get(`/purchase-orders?project_id=${id}&page_size=100`).then(r => r.data),
+    enabled: tab === 'pos',
   });
 
   const { data: usersData } = useQuery({
@@ -754,6 +763,7 @@ export default function ProjectDetail() {
               { key: 'tanks', label: 'Tanks' },
               { key: 'piping', label: 'Piping & Fittings' },
               { key: 'bom-release', label: 'BOM Releases' },
+              { key: 'pos', label: `Purchase Orders${projectPOs?.items?.length ? ` (${projectPOs.items.length})` : ''}` },
               { key: 'documents', label: 'Documents' },
               { key: 'changes', label: 'Changes' },
             ] as { key: Tab; label: string }[]).map(t => (
@@ -767,6 +777,7 @@ export default function ProjectDetail() {
               {tab === 'tanks' && <Button size="sm" variant="primary" onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); setTankCode(''); setTankStatus('Active'); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button>}
               {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
               {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setBomSections({ Products: true, Tank: true, Piping: true }); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
+              {tab === 'pos' && <Button size="sm" variant="primary" onClick={() => setShowReleasePOModal(true)}><ShoppingCart className="w-3.5 h-3.5" />Release PO</Button>}
             </div>
           </div>
 
@@ -969,10 +980,64 @@ export default function ProjectDetail() {
               />
             </div>
           )}
+          {tab === 'pos' && (() => {
+            const poItems: any[] = projectPOs?.items || [];
+            const formatStatus = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const statusColor = (s: string) => {
+              if (s === 'released') return 'bg-green-100 text-green-700 border-green-200';
+              if (s === 'draft') return 'bg-slate-100 text-slate-600 border-slate-200';
+              if (s === 'pending_approval') return 'bg-amber-100 text-amber-700 border-amber-200';
+              if (s === 'engineering_review' || s === 'po_review') return 'bg-blue-100 text-blue-700 border-blue-200';
+              return 'bg-slate-100 text-slate-600 border-slate-200';
+            };
+            if (poItems.length === 0) return (
+              <div className="py-16 text-center text-sm text-slate-400">
+                No purchase orders released for this project yet —
+                click <strong>Release PO</strong> to create one from the project's equipment and tanks.
+              </div>
+            );
+            return (
+              <div className="divide-y divide-slate-100">
+                {poItems.map((po: any) => (
+                  <div
+                    key={po.id}
+                    onClick={() => navigate(`/purchase-orders/${po.id}`)}
+                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 cursor-pointer group transition-colors"
+                  >
+                    <span className="font-mono text-sm font-semibold text-slate-800 w-36 shrink-0">{po.po_code}</span>
+                    <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium shrink-0 ${statusColor(po.status)}`}>
+                      {formatStatus(po.status)}
+                    </span>
+                    {po.fo_number && (
+                      <span className="text-xs font-mono bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 rounded shrink-0">{po.fo_number}</span>
+                    )}
+                    <span className="text-xs text-slate-400 shrink-0">{po.item_count} item{po.item_count !== 1 ? 's' : ''}</span>
+                    {po.total_cost_usd > 0 && (
+                      <span className="text-xs text-slate-500 font-mono shrink-0">
+                        {parseFloat(po.total_cost_usd).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
+                      </span>
+                    )}
+                    <span className="flex-1" />
+                    <span className="text-xs text-slate-400 shrink-0">{po.created_by_name}</span>
+                    <span className="text-xs text-slate-400 shrink-0">{po.created_at?.split('T')[0]}</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents" onRowClick={r => navigate(`/documents/${r.id}`)} />}
           {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes" />}
         </div>
       </div>
+
+      {showReleasePOModal && (
+        <ProjectReleasePOModal
+          projectId={project.id}
+          projectCode={project.project_code}
+          onClose={() => setShowReleasePOModal(false)}
+        />
+      )}
 
       {showNewSystem && (
         <NewEntityModal title="New System Instance" onClose={() => setShowNewSystem(false)}
