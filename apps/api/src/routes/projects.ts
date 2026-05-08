@@ -182,6 +182,23 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
   if (req.query.project_id) { params.push(req.query.project_id); filters.push(`t.project_id = $${params.length}`); }
   if (req.query.system_id) { params.push(req.query.system_id); filters.push(`t.system_id = $${params.length}`); }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+  // Auto-create missing tank_instances rows for multi-unit tanks (idempotent)
+  const instanceFilters = ['t.quantity > 1', ...filters];
+  await query(
+    `INSERT INTO tank_instances (tank_id, instance_index, tag)
+     SELECT t.id, gs.i,
+       t.tank_code || '-' || LPAD(gs.i::text, CASE WHEN t.quantity > 99 THEN 3 WHEN t.quantity > 9 THEN 2 ELSE 1 END, '0')
+     FROM tanks t
+     CROSS JOIN LATERAL generate_series(1, t.quantity) AS gs(i)
+     WHERE ${instanceFilters.join(' AND ')}
+       AND NOT EXISTS (
+         SELECT 1 FROM tank_instances ti WHERE ti.tank_id = t.id AND ti.instance_index = gs.i
+       )
+     ON CONFLICT (tank_id, instance_index) DO NOTHING`,
+    params
+  );
+
   const result = await query(
     `SELECT t.*, e.exhibit_name, p.project_code,
       s.system_code, s.system_name,
