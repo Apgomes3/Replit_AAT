@@ -197,7 +197,7 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
   const inUse = await query(
     `SELECT 1 FROM tanks WHERE product_master_id=$1
      UNION ALL SELECT 1 FROM equipment_instances WHERE product_master_id=$1
-     UNION ALL SELECT 1 FROM product_usages WHERE product_master_id=$1
+     UNION ALL SELECT 1 FROM product_usages WHERE product_id=$1
      LIMIT 1`, [id]);
   if (inUse.rows.length > 0) {
     return res.status(409).json({ error: { code: 'IN_USE', message: 'Cannot delete — product is linked to existing tanks, equipment, or usages. Remove those links first.' } });
