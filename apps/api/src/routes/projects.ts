@@ -91,11 +91,18 @@ router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: 
   const result = await query(
     `SELECT s.*, a.area_name, e.exhibit_name,
       COALESCE(SUM(t.quantity), 0)::int AS tank_count,
-      COALESCE(SUM(t.gross_volume_m3 * t.quantity), 0)::numeric AS total_volume_m3
+      COALESCE(SUM(
+        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+          THEN COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0 * t.quantity
+          ELSE 0 END
+      ), 0)::numeric AS total_volume_m3
      FROM systems s
      LEFT JOIN areas a ON s.area_id=a.id
      LEFT JOIN exhibits e ON s.exhibit_id=e.id
      LEFT JOIN tanks t ON t.system_id=s.id
+     LEFT JOIN product_masters pm ON t.product_master_id=pm.id
      WHERE s.project_id = $1
      GROUP BY s.id, a.area_name, e.exhibit_name
      ORDER BY s.system_code`,
@@ -176,10 +183,22 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
     `SELECT t.*, e.exhibit_name, p.project_code,
       s.system_code, s.system_name,
       pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
-      pm.shape_type as product_shape, pm.length_mm as product_length_mm, pm.width_mm as product_width_mm,
-      pm.height_mm as product_height_mm, pm.design_water_level_mm as product_water_level_mm,
-      pm.gross_volume_m3 as product_gross_volume_m3, pm.operating_volume_m3 as product_operating_volume_m3,
-      pm.primary_material_code as product_material
+      pm.primary_material_code as product_material,
+      COALESCE(t.shape_type, pm.shape_type) as eff_shape,
+      COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
+      COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
+      COALESCE(t.height_mm, pm.height_mm) as eff_height_mm,
+      COALESCE(t.design_water_level_mm, pm.design_water_level_mm) as eff_water_level_mm,
+      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+            AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
+        ELSE NULL END as gross_volume_m3,
+      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+            AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
+        ELSE NULL END as design_volume_m3
      FROM tanks t
      LEFT JOIN exhibits e ON t.exhibit_id=e.id
      JOIN projects p ON t.project_id=p.id
@@ -193,10 +212,22 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
   const result = await query(
     `SELECT t.*, e.exhibit_name, p.project_code, p.project_name,
       pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
-      pm.shape_type as product_shape, pm.length_mm as product_length_mm, pm.width_mm as product_width_mm,
-      pm.height_mm as product_height_mm, pm.design_water_level_mm as product_water_level_mm,
-      pm.gross_volume_m3 as product_gross_volume_m3, pm.operating_volume_m3 as product_operating_volume_m3,
-      pm.primary_material_code as product_material
+      pm.primary_material_code as product_material,
+      COALESCE(t.shape_type, pm.shape_type) as eff_shape,
+      COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
+      COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
+      COALESCE(t.height_mm, pm.height_mm) as eff_height_mm,
+      COALESCE(t.design_water_level_mm, pm.design_water_level_mm) as eff_water_level_mm,
+      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+            AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
+        ELSE NULL END as gross_volume_m3,
+      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+            AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
+        ELSE NULL END as design_volume_m3
      FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
      LEFT JOIN product_masters pm ON t.product_master_id=pm.id WHERE t.id=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });

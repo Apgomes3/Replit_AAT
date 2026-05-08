@@ -274,9 +274,13 @@ export default function ProjectDetail() {
       : <span className="text-slate-300">—</span>
     },
     { key: 'tank_type', header: 'Type', render: r => r.tank_type ? <span>{r.tank_type}</span> : <span className="text-slate-300">—</span> },
-    { key: 'product_shape' as any, header: 'Shape', render: (r: any) => r.product_shape ? <span>{r.product_shape}</span> : <span className="text-slate-300">—</span> },
-    { key: 'product_gross_volume_m3' as any, header: 'Gross Vol (m³)', render: (r: any) => fmt(r.product_gross_volume_m3) },
-    { key: 'product_operating_volume_m3' as any, header: 'Op. Vol (m³)', render: (r: any) => fmt(r.product_operating_volume_m3) },
+    { key: 'eff_shape' as any, header: 'Shape', render: (r: any) => r.eff_shape ? <span>{r.eff_shape}</span> : <span className="text-slate-300">—</span> },
+    { key: 'eff_length_mm' as any, header: 'L (mm)', render: (r: any) => fmt(r.eff_length_mm) },
+    { key: 'eff_width_mm' as any, header: 'W (mm)', render: (r: any) => fmt(r.eff_width_mm) },
+    { key: 'eff_height_mm' as any, header: 'H (mm)', render: (r: any) => fmt(r.eff_height_mm) },
+    { key: 'eff_water_level_mm' as any, header: 'Water Level (mm)', render: (r: any) => fmt(r.eff_water_level_mm) },
+    { key: 'gross_volume_m3' as any, header: 'Gross Vol (m³)', render: (r: any) => (r as any).gross_volume_m3 != null ? <span className="font-mono text-xs">{parseFloat((r as any).gross_volume_m3).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">no dims</span> },
+    { key: 'design_volume_m3' as any, header: 'Design Vol (m³)', render: (r: any) => (r as any).design_volume_m3 != null ? <span className="font-mono text-xs">{parseFloat((r as any).design_volume_m3).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">no dims</span> },
     { key: 'product_material' as any, header: 'Material', render: (r: any) => r.product_material ? <EntityCode code={r.product_material} /> : <span className="text-slate-300">—</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status || 'Active'} /> },
   ];
