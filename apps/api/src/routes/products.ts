@@ -192,6 +192,26 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
   res.status(201).json(result.rows[0]);
 });
 
+router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const inUse = await query(
+    `SELECT 1 FROM tanks WHERE product_master_id=$1
+     UNION ALL SELECT 1 FROM equipment_instances WHERE product_master_id=$1
+     UNION ALL SELECT 1 FROM product_usages WHERE product_master_id=$1
+     LIMIT 1`, [id]);
+  if (inUse.rows.length > 0) {
+    return res.status(409).json({ error: { code: 'IN_USE', message: 'Cannot delete — product is linked to existing tanks, equipment, or usages. Remove those links first.' } });
+  }
+  await query('DELETE FROM bom_lines WHERE standard_bom_id IN (SELECT id FROM standard_boms WHERE product_master_id=$1)', [id]);
+  await query('DELETE FROM standard_boms WHERE product_master_id=$1', [id]);
+  await query('DELETE FROM entity_relationships WHERE source_id=$1 OR target_id=$1', [id]);
+  await query('DELETE FROM documents WHERE product_id=$1', [id]);
+  const result = await query('DELETE FROM product_masters WHERE id::text=$1 RETURNING id, product_code', [id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  await logAudit(req.user!.id, 'product', id, 'DELETE', { product_code: result.rows[0].product_code });
+  res.json({ deleted: true });
+});
+
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, product_family_id, tank_family_id, synonyms, cost, sell_price, currency } = req.body;
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
