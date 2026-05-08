@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import api from '../../lib/api';
 import { ProductMaster } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -97,6 +97,17 @@ export default function PipingList() {
     { key: 'standard_status', header: 'Status', render: r => <StatusBadge status={r.standard_status} /> },
   ];
 
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const materials: { material_code: string; material_name: string }[] = useMemo(
+    () => materialsData?.items ?? [],
+    [materialsData]
+  );
+  const materialOptions = useMemo(() => materials.map(m => `${m.material_code} — ${m.material_name}`), [materials]);
+
   const newItemTypeOptions = tab === 'fittings' ? FITTING_TYPES : BRACKET_TYPES;
   const total = displayed.length;
 
@@ -178,7 +189,7 @@ export default function PipingList() {
             { name: 'product_name', label: 'Item Name', required: true },
             { name: 'product_family_id', label: 'Family', options: familyOptions },
             { name: 'application_type', label: 'Type', options: newItemTypeOptions },
-            { name: 'primary_material_code', label: 'Primary Material Code' },
+            { name: 'primary_material_code', label: 'Primary Material', options: materialOptions },
             { name: 'standard_status', label: 'Status', options: ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'] },
           ]}
           onSubmit={async (formData) => {
@@ -187,6 +198,7 @@ export default function PipingList() {
               ...formData,
               product_category: 'Piping',
               product_family_id: familyObj?.id ?? undefined,
+              primary_material_code: formData.primary_material_code?.split(' — ')[0] || null,
             });
             toast.success('Item created');
             refetch();
@@ -234,9 +246,15 @@ export default function PipingList() {
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
-                <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
+                <select value={editForm.primary_material_code}
+                  onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">— None —</option>
+                  {materials.map((m: any) => (
+                    <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
+                  ))}
+                </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>

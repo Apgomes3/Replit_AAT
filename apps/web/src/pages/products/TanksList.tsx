@@ -37,6 +37,16 @@ export default function TanksList() {
     return (l > 0 && w > 0 && wl > 0) ? +(l * w * wl / 1e9).toFixed(6) : null;
   }, [newForm.length_mm, newForm.width_mm, newForm.design_water_level_mm]);
 
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const materials: { material_code: string; material_name: string }[] = useMemo(
+    () => materialsData?.items ?? [],
+    [materialsData]
+  );
+
   const { data: familiesData } = useQuery({
     queryKey: ['tank-families'],
     queryFn: () => api.get('/tank-families').then(r => r.data),
@@ -258,8 +268,10 @@ export default function TanksList() {
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-slate-600">Primary Material</label>
                   <select value={newForm.primary_material_code} onChange={e => setNewForm(f => ({ ...f, primary_material_code: e.target.value }))} className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white">
-                    <option value="">— select —</option>
-                    {TANK_MATERIALS.map(m => <option key={m}>{m}</option>)}
+                    <option value="">— None —</option>
+                    {materials.map(m => (
+                      <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
+                    ))}
                   </select>
                 </div>
               </div>

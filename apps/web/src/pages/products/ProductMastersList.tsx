@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import api from '../../lib/api';
 import { ProductMaster } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -46,6 +46,17 @@ export default function ProductMastersList() {
     queryKey: ['product-categories'],
     queryFn: () => api.get('/admin/categories').then(r => r.data),
   });
+
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const materials: { material_code: string; material_name: string }[] = useMemo(
+    () => materialsData?.items ?? [],
+    [materialsData]
+  );
+  const materialOptions = useMemo(() => materials.map(m => `${m.material_code} — ${m.material_name}`), [materials]);
 
   const categoryOptions: string[] = categoriesData?.items?.map((c: any) => c.name) || ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Tank', 'Electrical', 'Other'];
   const familyOptions = families?.items?.map((f: any) => f.product_family_code) || [];
@@ -203,11 +214,14 @@ export default function ProductMastersList() {
             { name: 'application_type', label: 'Application Type' },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
             { name: 'power_kw', label: 'Power (kW)', type: 'number' },
-            { name: 'primary_material_code', label: 'Primary Material Code' },
+            { name: 'primary_material_code', label: 'Primary Material', options: materialOptions },
             { name: 'standard_status', label: 'Status', options: STATUSES },
           ]}
           onSubmit={async (data) => {
-            await api.post('/product-masters', data);
+            await api.post('/product-masters', {
+              ...data,
+              primary_material_code: data.primary_material_code?.split(' — ')[0] || null,
+            });
             toast.success('Product master created');
             refetch();
             setShowNew(false);
@@ -289,9 +303,15 @@ export default function ProductMastersList() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material Code</label>
-                <input value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
+                <select value={editForm.primary_material_code}
+                  onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">— None —</option>
+                  {materials.map(m => (
+                    <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
+                  ))}
+                </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
