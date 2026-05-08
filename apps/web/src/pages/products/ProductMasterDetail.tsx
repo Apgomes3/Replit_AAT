@@ -44,6 +44,30 @@ const EDGE_TYPES = [
   { value: 'upgrade_of', label: 'Upgrade Of' },
 ];
 
+function calcSurfaceAreaMm2(shape: string, l: number, w: number, h: number): number | null {
+  if (!(l > 0 && h > 0)) return null;
+  const s = shape || 'Rectangular';
+  if (s === 'Cylindrical') return Math.PI * (l / 2) ** 2 + Math.PI * l * h;
+  if (s === 'Oval') {
+    if (!(w > 0)) return null;
+    const a = l / 2, b = w / 2;
+    const perim = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+    return Math.PI * a * b + perim * h;
+  }
+  if (s === 'Hexagonal') { const side = l / 2; return (3 * Math.sqrt(3) / 2) * side * side + 6 * side * h; }
+  if (!(w > 0)) return null;
+  return l * w + 2 * l * h + 2 * w * h;
+}
+
+function calcEstCostFromRates(shape: string, l: number, w: number, h: number, matCode: string | null, rates: any[]): { cost: number; rate: any } | null {
+  const sa = calcSurfaceAreaMm2(shape, l, w, h);
+  if (sa == null) return null;
+  const sa_m2 = sa / 1e6;
+  const matchingRate = rates.find(r => r.material_code === matCode) || rates.find(r => !r.material_code);
+  if (!matchingRate) return null;
+  return { cost: +(sa_m2 * Number(matchingRate.cost_per_sqm_usd)).toFixed(0), rate: matchingRate };
+}
+
 const docTypeIcon = (type: string) => {
   switch (type) {
     case 'Technical Data Sheet': return <FileSearch className="w-4 h-4 text-blue-500" />;
@@ -668,7 +692,13 @@ export default function ProductMasterDetail() {
                 { label: 'Tank Type', value: product.application_type },
                 { label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null },
                 { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
-                ...((product as any).cost != null ? [{ label: 'Cost Price', value: `${Number((product as any).cost).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
+                ...(() => {
+                  const shape = product.shape_type || 'Rectangular';
+                  const est = calcEstCostFromRates(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), product.primary_material_code, tankCostRates);
+                  if (!est) return [];
+                  return [{ label: 'Est. Cost', value: <span className="font-mono text-green-700 font-semibold">{Number(est.cost).toLocaleString()} <span className="font-normal text-xs text-green-600">{est.rate.currency}</span><span className="text-slate-400 font-normal text-xs ml-1">(shell area)</span></span> }];
+                })(),
+                ...((product as any).cost != null ? [{ label: 'Cost Price', value: <span className="font-mono font-semibold text-slate-800">{Number((product as any).cost).toFixed(2)} <span className="font-normal text-xs text-slate-500">{(product as any).currency || 'USD'}</span></span> }] : []),
                 ...((product as any).sell_price != null ? [{ label: 'Sell Price', value: `${Number((product as any).sell_price).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
                 { label: 'Notes', value: product.notes },
               ]} />
@@ -733,9 +763,23 @@ export default function ProductMasterDetail() {
                     ))}
                   </select>
                 </div>
+                <div className="col-span-2">
+                  {(() => {
+                    const shape = product.shape_type || 'Rectangular';
+                    const est = calcEstCostFromRates(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), editForm.primary_material_code || null, tankCostRates);
+                    return (
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-500 flex items-center justify-between">
+                        <span>Est. Cost <span className="text-slate-400">(shell area × rate)</span></span>
+                        {est
+                          ? <span className="font-mono text-green-700 font-semibold">{Number(est.cost).toLocaleString()} {est.rate.currency}</span>
+                          : <span className="text-slate-300 italic">{tankCostRates.length === 0 ? 'no rates in admin' : 'enter dimensions first'}</span>}
+                      </div>
+                    );
+                  })()}
+                </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
-                  <input type="number" min="0" step="any" placeholder="0.00" value={editForm.cost} onChange={e => setEditForm((f: any) => ({ ...f, cost: e.target.value }))}
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price <span className="font-normal text-slate-400">(override)</span></label>
+                  <input type="number" min="0" step="any" placeholder="Leave blank to use estimate" value={editForm.cost} onChange={e => setEditForm((f: any) => ({ ...f, cost: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
                 <div>
@@ -867,35 +911,10 @@ export default function ProductMasterDetail() {
                 return matList.find((m: any) => m.material_code === code)?.material_name ?? null;
               };
 
-              const calcSurfaceAreaMm2 = (shape: string, l: number, w: number, h: number): number|null => {
-                if (!(l>0 && h>0)) return null;
-                const s = shape || 'Rectangular';
-                if (s === 'Cylindrical') return Math.PI*(l/2)**2 + Math.PI*l*h;
-                if (s === 'Oval') {
-                  if (!(w>0)) return null;
-                  const a=l/2, b=w/2;
-                  const perim = Math.PI*(3*(a+b)-Math.sqrt((3*a+b)*(a+3*b)));
-                  return Math.PI*a*b + perim*h;
-                }
-                if (s === 'Hexagonal') { const side=l/2; return (3*Math.sqrt(3)/2)*side*side + 6*side*h; }
-                if (!(w>0)) return null;
-                return l*w + 2*l*h + 2*w*h;
-              };
-
               const calcEstWeight = (shape: string, l: number, w: number, h: number, t: number, density: number|null): number|null => {
                 const sa = calcSurfaceAreaMm2(shape, l, w, h);
                 if (sa == null || !(t>0) || density==null) return null;
                 return +(sa * t / 1e9 * density).toFixed(1);
-              };
-
-              const calcEstCost = (shape: string, l: number, w: number, h: number, matCode: string|null): { cost: number; rate: any } | null => {
-                const sa = calcSurfaceAreaMm2(shape, l, w, h);
-                if (sa == null) return null;
-                const sa_m2 = sa / 1e6;
-                const matchingRate = tankCostRates.find(r => r.material_code === matCode)
-                  || tankCostRates.find(r => !r.material_code);
-                if (!matchingRate) return null;
-                return { cost: +(sa_m2 * Number(matchingRate.cost_per_sqm_usd)).toFixed(0), rate: matchingRate };
               };
 
               const getDimLabels = (shape: string) => {
@@ -912,7 +931,7 @@ export default function ProductMasterDetail() {
                 const shape = product.shape_type || 'Rectangular';
                 const { gross, op } = calcTankShapeVolumes(shape, product.length_mm, product.width_mm, product.height_mm, product.design_water_level_mm);
                 const estWeight = calcEstWeight(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), Number(product.wall_thickness_mm), density);
-                const estCostResult = calcEstCost(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), product.primary_material_code);
+                const estCostResult = calcEstCostFromRates(shape, Number(product.length_mm), Number(product.width_mm), Number(product.height_mm), product.primary_material_code, tankCostRates);
 
                 const editShape = tankSpecsForm.shape_type || 'Rectangular';
                 const editLabels = getDimLabels(editShape);
@@ -927,9 +946,9 @@ export default function ProductMasterDetail() {
                   Number(tankSpecsForm.length_mm), Number(tankSpecsForm.width_mm),
                   Number(tankSpecsForm.height_mm), Number(tankSpecsForm.wall_thickness_mm), editDensity,
                 ) : null;
-                const editEstCostResult = editingDimensions ? calcEstCost(editShape,
+                const editEstCostResult = editingDimensions ? calcEstCostFromRates(editShape,
                   Number(tankSpecsForm.length_mm), Number(tankSpecsForm.width_mm),
-                  Number(tankSpecsForm.height_mm), product.primary_material_code,
+                  Number(tankSpecsForm.height_mm), product.primary_material_code, tankCostRates,
                 ) : null;
 
                 const viewLabels = getDimLabels(shape);
