@@ -787,6 +787,9 @@ CREATE TABLE IF NOT EXISTS po_stage_assignees (
 );
 CREATE INDEX IF NOT EXISTS idx_po_stage_assignees_stage ON po_stage_assignees(stage);
 
+-- BOM sub-assembly support (product-as-BOM-line)
+ALTER TABLE bom_lines ADD COLUMN IF NOT EXISTS sub_product_id UUID REFERENCES product_masters(id);
+
 -- TANK COST RATES (admin-configurable cost per m² for shell fabrication estimates)
 CREATE TABLE IF NOT EXISTS tank_cost_rates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

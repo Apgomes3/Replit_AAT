@@ -270,7 +270,12 @@ router.get('/product-boms', authenticate, async (req: AuthRequest, res: Response
 router.get('/product-boms/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const bom = await query('SELECT sb.*, pm.product_code, pm.product_name FROM standard_boms sb JOIN product_masters pm ON sb.product_master_id=pm.id WHERE sb.id=$1', [req.params.id]);
   if (!bom.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'BOM not found' } });
-  const lines = await query('SELECT * FROM bom_lines WHERE standard_bom_id=$1 ORDER BY line_number', [req.params.id]);
+  const lines = await query(
+    `SELECT bl.*, pm.product_code AS sub_product_code, pm.product_name AS sub_product_name
+     FROM bom_lines bl
+     LEFT JOIN product_masters pm ON bl.sub_product_id = pm.id
+     WHERE bl.standard_bom_id=$1 ORDER BY bl.line_number`,
+    [req.params.id]);
   res.json({ ...bom.rows[0], lines: lines.rows });
 });
 
@@ -282,10 +287,10 @@ router.post('/product-boms', authenticate, async (req: AuthRequest, res: Respons
 });
 
 router.post('/product-boms/:id/lines', authenticate, async (req: AuthRequest, res: Response) => {
-  const { line_number, component_id, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks } = req.body;
+  const { line_number, component_id, sub_product_id, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks } = req.body;
   const result = await query(
-    'INSERT INTO bom_lines (standard_bom_id, component_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
-    [req.params.id, component_id || null, line_number, component_type, component_reference_code, component_name, quantity || 1, unit, is_optional || false, remarks]);
+    'INSERT INTO bom_lines (standard_bom_id, component_id, sub_product_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
+    [req.params.id, component_id || null, sub_product_id || null, line_number, component_type, component_reference_code, component_name, quantity || 1, unit, is_optional || false, remarks]);
   res.status(201).json(result.rows[0]);
 });
 

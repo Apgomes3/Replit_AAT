@@ -148,11 +148,14 @@ export default function ProductMasterDetail() {
   const [variantSubmitting, setVariantSubmitting] = useState(false);
 
   const [showAddLine, setShowAddLine] = useState(false);
+  const [lineSourceType, setLineSourceType] = useState<'component' | 'product'>('component');
   const [lineForm, setLineForm] = useState({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
   const [lineSubmitting, setLineSubmitting] = useState(false);
   const [creatingBom, setCreatingBom] = useState(false);
   const [compSearch, setCompSearch] = useState('');
   const [selectedComp, setSelectedComp] = useState<{ id: string; component_code: string; component_name: string } | null>(null);
+  const [prodSearch, setProdSearch] = useState('');
+  const [selectedProd, setSelectedProd] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product-master', id],
@@ -196,6 +199,12 @@ export default function ProductMasterDetail() {
     queryKey: ['comp-search', compSearch],
     queryFn: () => api.get(`/components?search=${compSearch}&page_size=8`).then(r => r.data),
     enabled: compSearch.length >= 2,
+  });
+
+  const { data: prodBomSearchResults } = useQuery({
+    queryKey: ['prod-bom-search', prodSearch],
+    queryFn: () => api.get(`/product-masters?search=${prodSearch}&page_size=8`).then(r => r.data),
+    enabled: prodSearch.length >= 2 && lineSourceType === 'product' && !selectedProd,
   });
 
   const { data: dimensionsData, refetch: refetchDimensions } = useQuery({
@@ -478,27 +487,46 @@ export default function ProductMasterDetail() {
     }
   };
 
+  const resetAddLineModal = () => {
+    setLineForm({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
+    setSelectedComp(null);
+    setCompSearch('');
+    setSelectedProd(null);
+    setProdSearch('');
+    setLineSourceType('component');
+  };
+
   const handleAddLine = async () => {
-    if (!lineForm.component_name || !lineForm.component_type) { toast.error('Type and name are required'); return; }
+    if (lineSourceType === 'component') {
+      if (!lineForm.component_name || !lineForm.component_type) { toast.error('Type and name are required'); return; }
+    } else {
+      if (!selectedProd) { toast.error('Select a product sub-assembly'); return; }
+    }
     setLineSubmitting(true);
     try {
       const nextLine = bomLines.length + 1;
-      await api.post(`/product-boms/${bom.id}/lines`, {
+      const payload: any = {
         line_number: nextLine,
-        component_id: selectedComp?.id || null,
-        component_type: lineForm.component_type,
-        component_name: lineForm.component_name,
-        component_reference_code: lineForm.component_reference_code || null,
         quantity: parseFloat(lineForm.quantity) || 1,
         unit: lineForm.unit,
         is_optional: lineForm.is_optional,
         remarks: lineForm.remarks || null,
-      });
+      };
+      if (lineSourceType === 'component') {
+        payload.component_id = selectedComp?.id || null;
+        payload.component_type = lineForm.component_type;
+        payload.component_name = lineForm.component_name;
+        payload.component_reference_code = lineForm.component_reference_code || null;
+      } else {
+        payload.sub_product_id = selectedProd!.id;
+        payload.component_type = 'Sub-Assembly';
+        payload.component_name = selectedProd!.product_name;
+        payload.component_reference_code = selectedProd!.product_code;
+      }
+      await api.post(`/product-boms/${bom.id}/lines`, payload);
       toast.success('Line added');
       setShowAddLine(false);
-      setLineForm({ component_type: 'Vessel', component_name: '', component_reference_code: '', quantity: '1', unit: 'EA', is_optional: false, remarks: '' });
-      setSelectedComp(null);
-      setCompSearch('');
+      resetAddLineModal();
       queryClient.invalidateQueries({ queryKey: ['bom-detail', bom.id] });
     } catch {
       toast.error('Failed to add line');
@@ -596,9 +624,18 @@ export default function ProductMasterDetail() {
 
   const bomCols: Column<BOMLine>[] = [
     { key: 'line_number', header: '#', className: 'w-10' },
-    { key: 'component_type', header: 'Type' },
-    { key: 'component_reference_code', header: 'Code', render: r => r.component_reference_code ? <EntityCode code={r.component_reference_code} /> : <span className="text-slate-300">—</span> },
-    { key: 'component_name', header: 'Component', render: r => <span className="font-medium">{r.component_name}</span> },
+    { key: 'component_type', header: 'Type', render: r => (
+      r.sub_product_id
+        ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-medium border border-green-200">Sub-Assembly</span>
+        : <span className="text-xs text-slate-600">{r.component_type}</span>
+    )},
+    { key: 'component_reference_code', header: 'Code', render: r => {
+      const code = r.sub_product_code || r.component_reference_code;
+      return code ? <EntityCode code={code} /> : <span className="text-slate-300">—</span>;
+    }},
+    { key: 'component_name', header: 'Item', render: r => (
+      <span className="font-medium">{r.sub_product_name || r.component_name}</span>
+    )},
     { key: 'quantity', header: 'Qty' },
     { key: 'unit', header: 'Unit' },
     { key: 'is_optional', header: 'Optional', render: r => r.is_optional ? <span className="text-blue-600 text-xs">Optional</span> : null },
@@ -1442,9 +1479,27 @@ export default function ProductMasterDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="font-semibold text-slate-800">Add BOM Line</h2>
-              <button onClick={() => setShowAddLine(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button onClick={() => { setShowAddLine(false); resetAddLineModal(); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
+              {/* Source type toggle */}
+              <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                <button
+                  onClick={() => { setLineSourceType('component'); setSelectedProd(null); setProdSearch(''); }}
+                  className={`flex-1 py-2 text-sm font-medium transition-colors ${lineSourceType === 'component' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  Component
+                </button>
+                <button
+                  onClick={() => { setLineSourceType('product'); setSelectedComp(null); setCompSearch(''); }}
+                  className={`flex-1 py-2 text-sm font-medium transition-colors ${lineSourceType === 'product' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  Sub-Assembly (Product)
+                </button>
+              </div>
+
+              {lineSourceType === 'component' ? (
+              <>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Search Component Library (optional)</label>
                 <input type="text" placeholder="Type to search components..."
@@ -1482,25 +1537,58 @@ export default function ProductMasterDetail() {
                 )}
               </div>
               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Component Type *</label>
+                  <select value={lineForm.component_type} onChange={e => setLineForm(f => ({ ...f, component_type: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                    {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Reference Code</label>
+                  <input type="text" placeholder="e.g. COMP-BLW-01" value={lineForm.component_reference_code}
+                    onChange={e => setLineForm(f => ({ ...f, component_reference_code: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
+                  <input type="text" placeholder="e.g. Air Blower" value={lineForm.component_name}
+                    onChange={e => setLineForm(f => ({ ...f, component_name: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                </div>
+              </div>
+              </>
+            ) : (
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Component Type *</label>
-                <select value={lineForm.component_type} onChange={e => setLineForm(f => ({ ...f, component_type: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Reference Code</label>
-                <input type="text" placeholder="e.g. PM-PUMP-22" value={lineForm.component_reference_code}
-                  onChange={e => setLineForm(f => ({ ...f, component_reference_code: e.target.value }))}
+                <label className="block text-xs font-medium text-slate-600 mb-1">Search Product Library *</label>
+                <input type="text" placeholder="Type product name or code..."
+                  value={prodSearch} onChange={e => { setProdSearch(e.target.value); if (selectedProd) setSelectedProd(null); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                {prodSearch.length >= 2 && !selectedProd && (
+                  <div className="border border-slate-200 rounded-lg mt-1 max-h-40 overflow-auto divide-y divide-slate-100 bg-white shadow-sm">
+                    {(prodBomSearchResults?.items || []).map((p: any) => (
+                      <button key={p.id} onClick={() => { setSelectedProd(p); setProdSearch(p.product_name); }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2">
+                        <EntityCode code={p.product_code} />
+                        <span className="text-sm truncate">{p.product_name}</span>
+                        {p.product_category && <span className="text-xs text-slate-400 ml-auto">{p.product_category}</span>}
+                      </button>
+                    ))}
+                    {(prodBomSearchResults?.items || []).length === 0 && <div className="p-3 text-sm text-slate-400">No products found</div>}
+                  </div>
+                )}
+                {selectedProd && (
+                  <div className="mt-1 px-3 py-2 bg-green-50 rounded-lg flex items-center gap-2 text-sm border border-green-200">
+                    <EntityCode code={selectedProd.product_code} />
+                    <span className="text-slate-700 text-xs">{selectedProd.product_name}</span>
+                    <button onClick={() => { setSelectedProd(null); setProdSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
               </div>
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
-                <input type="text" placeholder="e.g. Air Blower Pump" value={lineForm.component_name}
-                  onChange={e => setLineForm(f => ({ ...f, component_name: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
+            )}
+
+            {/* Shared fields: qty, unit, remarks, optional */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
                 <input type="number" min="0.01" step="0.01" value={lineForm.quantity}
@@ -1523,13 +1611,13 @@ export default function ProductMasterDetail() {
               <div className="col-span-2">
                 <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
                   <input type="checkbox" checked={lineForm.is_optional} onChange={e => setLineForm(f => ({ ...f, is_optional: e.target.checked }))} />
-                  Optional component
+                  Optional item
                 </label>
               </div>
             </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <Button variant="ghost" onClick={() => setShowAddLine(false)}>Cancel</Button>
+              <Button variant="ghost" onClick={() => { setShowAddLine(false); resetAddLineModal(); }}>Cancel</Button>
               <Button onClick={handleAddLine} disabled={lineSubmitting}>
                 {lineSubmitting ? 'Adding...' : 'Add Line'}
               </Button>

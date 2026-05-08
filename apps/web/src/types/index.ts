@@ -166,6 +166,9 @@ export interface BOMLine {
   unit?: string;
   is_optional: boolean;
   remarks?: string;
+  sub_product_id?: string;
+  sub_product_code?: string;
+  sub_product_name?: string;
 }
 
 export interface VendorOption {
