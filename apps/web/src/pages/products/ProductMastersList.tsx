@@ -9,10 +9,10 @@ import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
-import toast from 'react-hot-toast';
-import { Plus, Copy, Pencil, X, Download } from 'lucide-react';
-import { exportCsv, csvDate } from '../../lib/exportCsv';
 import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
+import toast from 'react-hot-toast';
+import { Plus, Copy, Pencil, X, Download, Package } from 'lucide-react';
+import { exportCsv } from '../../lib/exportCsv';
 
 const STATUSES = ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'];
 
@@ -24,6 +24,7 @@ export default function ProductMastersList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [editRow, setEditRow] = useState<ProductMaster | null>(null);
   const [editForm, setEditForm] = useState<any>(null);
@@ -34,10 +35,14 @@ export default function ProductMastersList() {
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['product-masters', search],
-    queryFn: () => api.get(`/product-masters${search ? `?q=${search}` : ''}`).then(r => r.data),
+    queryFn: () => {
+      const p = new URLSearchParams({ page_size: '500' });
+      if (search) p.set('q', search);
+      return api.get(`/product-masters?${p}`).then(r => r.data);
+    },
   });
 
-  const { data: families } = useQuery({
+  const { data: familiesData } = useQuery({
     queryKey: ['product-families'],
     queryFn: () => api.get('/product-families').then(r => r.data),
   });
@@ -52,14 +57,23 @@ export default function ProductMastersList() {
     queryFn: () => api.get('/materials').then(r => r.data),
     staleTime: 5 * 60 * 1000,
   });
+
   const materials: { material_code: string; material_name: string }[] = useMemo(
-    () => materialsData?.items ?? [],
-    [materialsData]
+    () => materialsData?.items ?? [], [materialsData]
   );
   const materialOptions = useMemo(() => materials.map(m => `${m.material_code} — ${m.material_name}`), [materials]);
 
+  const families: any[] = familiesData?.items?.filter((f: any) => f.category_code !== 'PIPING' && f.category_code !== 'TANK') || [];
   const categoryOptions: string[] = categoriesData?.items?.map((c: any) => c.name) || ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Tank', 'Electrical', 'Other'];
-  const familyOptions = families?.items?.map((f: any) => f.product_family_code) || [];
+  const familyOptions = familiesData?.items?.map((f: any) => f.product_family_code) || [];
+
+  const allItems: ProductMaster[] = useMemo(() => {
+    const items = (data?.items ?? []).filter((p: any) => p.product_category !== 'Tank' && p.product_category !== 'Piping');
+    if (!selectedFamilyId) return items;
+    return items.filter((p: any) => p.product_family_id === selectedFamilyId);
+  }, [data?.items, selectedFamilyId]);
+
+  const selectedFamily = families.find((f: any) => f.id === selectedFamilyId);
 
   async function createCategory(name: string): Promise<string> {
     const code = deriveCode(name);
@@ -154,22 +168,24 @@ export default function ProductMastersList() {
 
   return (
     <div className="h-full flex flex-col">
-      <PageHeader title="Product Masters" subtitle={`${data?.pagination?.total ?? 0} products in Shark OS`}
+      <PageHeader
+        title={selectedFamily ? selectedFamily.product_family_name : 'Products'}
         crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Products' }]}
+        subtitle={selectedFamily ? selectedFamily.description || `${allItems.length} products` : `${allItems.length} products in catalog`}
         actions={
           <div className="flex items-center gap-2">
             <button
               onClick={() => exportCsv(`products-${new Date().toISOString().slice(0, 10)}.csv`, [
-                { header: 'Code',        value: r => r.product_code ?? '' },
-                { header: 'Name',        value: r => r.product_name ?? '' },
-                { header: 'Family',      value: r => (r as any).product_family_name ?? '' },
-                { header: 'Category',    value: r => r.product_category ?? '' },
-                { header: 'Status',      value: r => r.standard_status ?? '' },
-                { header: 'Material',    value: r => r.primary_material_code ?? '' },
-                { header: 'Cost',        value: r => r.cost != null ? String(r.cost) : '' },
-                { header: 'Sell Price',  value: r => r.sell_price != null ? String(r.sell_price) : '' },
-              ], (data?.items ?? []) as ProductMaster[])}
-              disabled={!data?.items?.length}
+                { header: 'Code',       value: r => r.product_code ?? '' },
+                { header: 'Name',       value: r => r.product_name ?? '' },
+                { header: 'Family',     value: r => (r as any).product_family_name ?? '' },
+                { header: 'Category',   value: r => r.product_category ?? '' },
+                { header: 'Status',     value: r => r.standard_status ?? '' },
+                { header: 'Material',   value: r => r.primary_material_code ?? '' },
+                { header: 'Cost',       value: r => r.cost != null ? String(r.cost) : '' },
+                { header: 'Sell Price', value: r => r.sell_price != null ? String(r.sell_price) : '' },
+              ], allItems as ProductMaster[])}
+              disabled={!allItems.length}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-blue-300 hover:text-blue-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
@@ -178,35 +194,76 @@ export default function ProductMastersList() {
           </div>
         }
       />
-      <div className="p-4 border-b border-slate-200 bg-white">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600" />
-      </div>
-      <div className="flex-1 bg-white overflow-auto">
-        <DataTable
-          columns={columns} data={data?.items || []} loading={isLoading} tableId="products-list"
-          onRowClick={r => navigate(`/products/masters/${r.id}`)}
-          contextMenuItems={row => [
-            {
-              label: 'Edit',
-              icon: <Pencil className="w-3.5 h-3.5" />,
-              onClick: () => openEdit(row),
-            },
-            {
-              label: 'Duplicate',
-              icon: <Copy className="w-3.5 h-3.5" />,
-              divider: true,
-              onClick: async () => {
-                try {
-                  const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
-                  toast.success('Product duplicated');
-                  refetch();
-                  navigate(`/products/masters/${res.data.id}`);
-                } catch { toast.error('Duplicate failed'); }
-              },
-            },
-          ]}
-        />
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Family sidebar */}
+        <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 overflow-auto">
+          <div className="px-3 py-2.5 border-b border-slate-100">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Families</span>
+          </div>
+          <div className="py-1">
+            <button
+              onClick={() => setSelectedFamilyId(null)}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                selectedFamilyId === null
+                  ? 'bg-blue-600/10 text-blue-600 font-medium'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">All Products</span>
+              <span className="ml-auto text-xs text-slate-400">{(data?.items ?? []).filter((p: any) => p.product_category !== 'Tank' && p.product_category !== 'Piping').length || ''}</span>
+            </button>
+            {families.map((fam: any) => (
+              <button
+                key={fam.id}
+                onClick={() => setSelectedFamilyId(fam.id === selectedFamilyId ? null : fam.id)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                  selectedFamilyId === fam.id
+                    ? 'bg-blue-600/10 text-blue-600 font-medium'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                <span className="truncate">{fam.product_family_name}</span>
+                <span className="ml-auto text-xs text-slate-400">{fam.product_count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0 bg-white overflow-hidden">
+          <div className="p-3 border-b border-slate-200">
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or code..."
+              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600"
+            />
+          </div>
+          <div className="flex-1 overflow-auto">
+            <DataTable
+              columns={columns} data={allItems} loading={isLoading} tableId="products-list"
+              onRowClick={r => navigate(`/products/masters/${r.id}`)}
+              emptyMessage="No products — add a product or select a different family"
+              contextMenuItems={row => [
+                { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
+                {
+                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />, divider: true,
+                  onClick: async () => {
+                    try {
+                      const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                      toast.success('Product duplicated');
+                      refetch();
+                      navigate(`/products/masters/${res.data.id}`);
+                    } catch { toast.error('Duplicate failed'); }
+                  },
+                },
+              ]}
+            />
+          </div>
+        </div>
       </div>
 
       {showNew && (
@@ -223,10 +280,10 @@ export default function ProductMastersList() {
             { name: 'primary_material_code', label: 'Primary Material', options: materialOptions },
             { name: 'standard_status', label: 'Status', options: STATUSES },
           ]}
-          onSubmit={async (data) => {
+          onSubmit={async (formData) => {
             await api.post('/product-masters', {
-              ...data,
-              primary_material_code: data.primary_material_code?.split(' — ')[0] || null,
+              ...formData,
+              primary_material_code: formData.primary_material_code?.split(' — ')[0] || null,
             });
             toast.success('Product master created');
             refetch();
@@ -255,10 +312,7 @@ export default function ProductMastersList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
                 {creatingEditCategory ? (
                   <div className="space-y-1.5">
-                    <input
-                      autoFocus
-                      type="text"
-                      value={newCategoryName}
+                    <input autoFocus type="text" value={newCategoryName}
                       onChange={e => setNewCategoryName(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateEditCategory(); } if (e.key === 'Escape') setCreatingEditCategory(false); }}
                       placeholder="New category name…"
@@ -273,7 +327,8 @@ export default function ProductMastersList() {
                     </div>
                   </div>
                 ) : (
-                  <select value={editForm.product_category} onChange={e => { if (e.target.value === '__CREATE_NEW__') { setCreatingEditCategory(true); setNewCategoryName(''); } else { setEditForm((f: any) => ({ ...f, product_category: e.target.value })); } }}
+                  <select value={editForm.product_category}
+                    onChange={e => { if (e.target.value === '__CREATE_NEW__') { setCreatingEditCategory(true); setNewCategoryName(''); } else { setEditForm((f: any) => ({ ...f, product_category: e.target.value })); } }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                     <option value="">— None —</option>
                     {categoryOptions.map(c => <option key={c}>{c}</option>)}
@@ -310,13 +365,10 @@ export default function ProductMastersList() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
-                <select value={editForm.primary_material_code}
-                  onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
+                <select value={editForm.primary_material_code} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                   <option value="">— None —</option>
-                  {materials.map(m => (
-                    <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
-                  ))}
+                  {materials.map(m => <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>)}
                 </select>
               </div>
               <div>
@@ -339,9 +391,7 @@ export default function ProductMastersList() {
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 sticky bottom-0 bg-white">
               <Button variant="ghost" onClick={() => setEditRow(null)}>Cancel</Button>
-              <Button onClick={handleEditSave} disabled={editSaving}>
-                {editSaving ? 'Saving...' : 'Save Changes'}
-              </Button>
+              <Button onClick={handleEditSave} disabled={editSaving}>{editSaving ? 'Saving...' : 'Save Changes'}</Button>
             </div>
           </div>
         </div>

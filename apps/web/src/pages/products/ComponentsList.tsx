@@ -8,7 +8,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import { Component } from '../../types';
-import { Plus, X, Copy, Pencil, Download } from 'lucide-react';
+import { Plus, X, Copy, Pencil, Download, Boxes } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 import toast from 'react-hot-toast';
@@ -36,7 +36,7 @@ export default function ComponentsList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
     component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical',
@@ -49,12 +49,11 @@ export default function ComponentsList() {
   const [editSaving, setEditSaving] = useState(false);
 
   const { data } = useQuery({
-    queryKey: ['components', search, typeFilter],
+    queryKey: ['components', search],
     queryFn: () => {
       const p = new URLSearchParams();
       if (search) p.set('search', search);
-      if (typeFilter) p.set('component_type', typeFilter);
-      return api.get(`/components?${p}`).then(r => r.data);
+      return api.get(`/components?${p}&page_size=500`).then(r => r.data);
     },
   });
 
@@ -64,9 +63,24 @@ export default function ComponentsList() {
     staleTime: 5 * 60 * 1000,
   });
   const materials: { material_code: string; material_name: string }[] = useMemo(
-    () => materialsData?.items ?? [],
-    [materialsData]
+    () => materialsData?.items ?? [], [materialsData]
   );
+
+  const allComponents: Component[] = data?.items || [];
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of allComponents) {
+      const cat = (c as any).component_category || 'Other';
+      counts[cat] = (counts[cat] || 0) + 1;
+    }
+    return counts;
+  }, [allComponents]);
+
+  const components: Component[] = useMemo(() => {
+    if (!selectedCategory) return allComponents;
+    return allComponents.filter((c: any) => c.component_category === selectedCategory);
+  }, [allComponents, selectedCategory]);
 
   const openEdit = (row: any) => {
     setEditRow(row);
@@ -122,13 +136,6 @@ export default function ComponentsList() {
     }
   };
 
-  const components: Component[] = data?.items || [];
-
-  const typeCounts = COMPONENT_TYPES.reduce((acc: Record<string, number>, t) => {
-    acc[t] = components.filter(c => c.component_type === t).length;
-    return acc;
-  }, {});
-
   const fmtCurrency = (val: any) =>
     val != null ? `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-slate-300">—</span>;
 
@@ -158,25 +165,25 @@ export default function ComponentsList() {
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="h-full flex flex-col">
       <PageHeader
-        title="Component Library"
-        subtitle={`${components.length} components · structural sub-assemblies and parts`}
+        title={selectedCategory ? selectedCategory : 'Component Library'}
         crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Components' }]}
+        subtitle={selectedCategory ? `${components.length} components` : `${allComponents.length} components · structural sub-assemblies and parts`}
         actions={
           <div className="flex items-center gap-2">
             <button
               onClick={() => exportCsv(`components-${new Date().toISOString().slice(0, 10)}.csv`, [
-                { header: 'Code',        value: r => r.component_code ?? '' },
-                { header: 'Name',        value: r => r.component_name ?? '' },
-                { header: 'Type',        value: r => r.component_type ?? '' },
-                { header: 'Category',    value: r => r.component_category ?? '' },
-                { header: 'Material',    value: r => r.primary_material_code ?? '' },
-                { header: 'Size',        value: r => r.standard_size ?? '' },
-                { header: 'Unit',        value: r => r.unit ?? '' },
-                { header: 'Status',      value: r => r.status ?? '' },
-                { header: 'Cost',        value: r => r.cost != null ? String(r.cost) : '' },
-                { header: 'Sell Price',  value: r => r.sell_price != null ? String(r.sell_price) : '' },
+                { header: 'Code',       value: r => r.component_code ?? '' },
+                { header: 'Name',       value: r => r.component_name ?? '' },
+                { header: 'Type',       value: r => r.component_type ?? '' },
+                { header: 'Category',   value: r => r.component_category ?? '' },
+                { header: 'Material',   value: r => r.primary_material_code ?? '' },
+                { header: 'Size',       value: r => r.standard_size ?? '' },
+                { header: 'Unit',       value: r => r.unit ?? '' },
+                { header: 'Status',     value: r => r.status ?? '' },
+                { header: 'Cost',       value: r => r.cost != null ? String(r.cost) : '' },
+                { header: 'Sell Price', value: r => r.sell_price != null ? String(r.sell_price) : '' },
               ], components ?? [])}
               disabled={!components?.length}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-blue-300 hover:text-blue-600 bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
@@ -188,56 +195,79 @@ export default function ComponentsList() {
         }
       />
 
-      <div className="flex-1 overflow-auto p-4">
-        <div className="flex items-center gap-6 mb-4">
-          <input
-            type="text" placeholder="Search components..." value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600 w-56"
-          />
-          <div className="flex items-center gap-4">
-            <button onClick={() => setTypeFilter('')}
-              className={`text-xs transition-colors ${!typeFilter ? 'text-blue-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
-              All <span className="text-slate-400 font-normal">({components.length})</span>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Category sidebar */}
+        <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 overflow-auto">
+          <div className="px-3 py-2.5 border-b border-slate-100">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Categories</span>
+          </div>
+          <div className="py-1">
+            <button
+              onClick={() => setSelectedCategory(null)}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                selectedCategory === null
+                  ? 'bg-blue-600/10 text-blue-600 font-medium'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Boxes className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">All Components</span>
+              <span className="ml-auto text-xs text-slate-400">{allComponents.length || ''}</span>
             </button>
-            {COMPONENT_TYPES.filter(t => typeCounts[t] > 0).map(t => (
-              <button key={t} onClick={() => setTypeFilter(typeFilter === t ? '' : t)}
-                className={`text-xs transition-colors ${typeFilter === t ? 'text-blue-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
-                {t} <span className="text-slate-400 font-normal">({typeCounts[t]})</span>
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                  selectedCategory === cat
+                    ? 'bg-blue-600/10 text-blue-600 font-medium'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Boxes className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                <span className="truncate">{cat}</span>
+                {categoryCounts[cat] != null && (
+                  <span className="ml-auto text-xs text-slate-400">{categoryCounts[cat]}</span>
+                )}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg">
-          <DataTable
-            columns={columns} data={components} tableId="components-list"
-            emptyMessage="No components yet — create your first component above"
-            onRowClick={r => navigate(`/products/components/${r.id}`)}
-            contextMenuItems={row => [
-              {
-                label: 'Edit',
-                icon: <Pencil className="w-3.5 h-3.5" />,
-                onClick: () => openEdit(row),
-              },
-              {
-                label: 'Duplicate',
-                icon: <Copy className="w-3.5 h-3.5" />,
-                divider: true,
-                onClick: async () => {
-                  try {
-                    const res = await api.post(`/components/${row.id}/duplicate`, {});
-                    toast.success('Component duplicated');
-                    qc.invalidateQueries({ queryKey: ['components'] });
-                    navigate(`/products/components/${res.data.id}`);
-                  } catch { toast.error('Duplicate failed'); }
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0 bg-white overflow-hidden">
+          <div className="p-3 border-b border-slate-200">
+            <input
+              type="text" placeholder="Search components..." value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600"
+            />
+          </div>
+          <div className="flex-1 overflow-auto">
+            <DataTable
+              columns={columns} data={components} tableId="components-list"
+              emptyMessage="No components — create your first component or select a different category"
+              onRowClick={r => navigate(`/products/components/${r.id}`)}
+              contextMenuItems={row => [
+                { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
+                {
+                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />, divider: true,
+                  onClick: async () => {
+                    try {
+                      const res = await api.post(`/components/${row.id}/duplicate`, {});
+                      toast.success('Component duplicated');
+                      qc.invalidateQueries({ queryKey: ['components'] });
+                      navigate(`/products/components/${res.data.id}`);
+                    } catch { toast.error('Duplicate failed'); }
+                  },
                 },
-              },
-            ]}
-          />
+              ]}
+            />
+          </div>
         </div>
       </div>
 
+      {/* Create modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
@@ -321,18 +351,6 @@ export default function ComponentsList() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Manufacturer</label>
-                <input type="text" placeholder="e.g. Grundfos" value={form.manufacturer}
-                  onChange={e => setForm(f => ({ ...f, manufacturer: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
-                <input type="text" placeholder="e.g. CR 5-10" value={form.model}
-                  onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
-              <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <input type="text" placeholder="Optional notes" value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -349,6 +367,7 @@ export default function ComponentsList() {
         </div>
       )}
 
+      {/* Edit modal */}
       {editRow && editForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">

@@ -11,22 +11,29 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import PipingCsvImport from './PipingCsvImport';
 import toast from 'react-hot-toast';
-import { Plus, Upload, Copy, Pencil, X } from 'lucide-react';
+import { Plus, Upload, Copy, Pencil, X, Pipette } from 'lucide-react';
 
 const FITTING_TYPES = ['Pipe', 'Fitting', 'Valve', 'Flange', 'Coupling', 'Reducer', 'Union', 'Elbow', 'Tee', 'Cap', 'Other'];
 const BRACKET_TYPES = ['Bracket', 'Support', 'Clamp', 'Hanger', 'Saddle', 'Shoe', 'Strut'];
 const ALL_PIPE_TYPES = [...FITTING_TYPES, ...BRACKET_TYPES];
 
-const fittingTypeSet = new Set(FITTING_TYPES);
 const bracketTypeSet = new Set(BRACKET_TYPES);
 
 function isBracketing(item: ProductMaster) {
   return item.application_type ? bracketTypeSet.has(item.application_type) : false;
 }
 
+const SIDEBAR_GROUPS = [
+  { key: 'all-fittings', label: 'Piping Fittings', filter: (items: ProductMaster[]) => items.filter(i => !isBracketing(i)) },
+  { key: 'all-bracketing', label: 'Bracketing', filter: (items: ProductMaster[]) => items.filter(i => isBracketing(i)) },
+];
+
+const TYPE_GROUPS = FITTING_TYPES.map(t => ({ key: t, label: t, type: 'fitting' as const }));
+const BRACKET_GROUPS = BRACKET_TYPES.map(t => ({ key: t, label: t, type: 'bracket' as const }));
+
 export default function PipingList() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'fittings' | 'bracketing'>('fittings');
+  const [selectedKey, setSelectedKey] = useState<string>('all-fittings');
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -44,13 +51,40 @@ export default function PipingList() {
     queryFn: () => api.get('/product-families').then(r => r.data),
   });
 
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const materials: { material_code: string; material_name: string }[] = useMemo(
+    () => materialsData?.items ?? [], [materialsData]
+  );
+  const materialOptions = useMemo(() => materials.map(m => `${m.material_code} — ${m.material_name}`), [materials]);
+
   const pipingFamilies = families?.items?.filter((f: any) => f.category_code === 'PIPING') || [];
   const familyOptions = pipingFamilies.map((f: any) => f.product_family_code);
 
   const allItems: ProductMaster[] = data?.items || [];
   const fittings = allItems.filter(i => !isBracketing(i));
   const bracketing = allItems.filter(i => isBracketing(i));
-  const displayed = tab === 'fittings' ? fittings : bracketing;
+
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of allItems) {
+      const t = item.application_type || 'Other';
+      counts[t] = (counts[t] || 0) + 1;
+    }
+    return counts;
+  }, [allItems]);
+
+  const displayed: ProductMaster[] = useMemo(() => {
+    if (selectedKey === 'all-fittings') return fittings;
+    if (selectedKey === 'all-bracketing') return bracketing;
+    return allItems.filter(i => i.application_type === selectedKey);
+  }, [allItems, fittings, bracketing, selectedKey]);
+
+  const isInBracketingMode = selectedKey === 'all-bracketing' || BRACKET_TYPES.includes(selectedKey);
+  const newItemTypeOptions = isInBracketingMode ? BRACKET_TYPES : FITTING_TYPES;
 
   const openEdit = (row: any) => {
     setEditRow(row);
@@ -88,6 +122,11 @@ export default function PipingList() {
     }
   };
 
+  const selectedLabel =
+    selectedKey === 'all-fittings' ? 'Piping Fittings' :
+    selectedKey === 'all-bracketing' ? 'Bracketing' :
+    selectedKey;
+
   const columns: Column<ProductMaster>[] = [
     { key: 'product_code', header: 'Code', render: r => <EntityCode code={r.product_code} /> },
     { key: 'product_name', header: 'Item Name', render: r => <span className="font-medium">{r.product_name}</span> },
@@ -97,29 +136,15 @@ export default function PipingList() {
     { key: 'standard_status', header: 'Status', render: r => <StatusBadge status={r.standard_status} /> },
   ];
 
-  const { data: materialsData } = useQuery({
-    queryKey: ['materials-list'],
-    queryFn: () => api.get('/materials').then(r => r.data),
-    staleTime: 5 * 60 * 1000,
-  });
-  const materials: { material_code: string; material_name: string }[] = useMemo(
-    () => materialsData?.items ?? [],
-    [materialsData]
-  );
-  const materialOptions = useMemo(() => materials.map(m => `${m.material_code} — ${m.material_name}`), [materials]);
-
-  const newItemTypeOptions = tab === 'fittings' ? FITTING_TYPES : BRACKET_TYPES;
-  const total = displayed.length;
-
   return (
     <div className="h-full flex flex-col">
       <PageHeader
-        title="Pipes & Fittings"
+        title={selectedLabel}
         crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Pipes & Fittings' }]}
-        subtitle={`${data?.pagination?.total ?? 0} items in piping library`}
+        subtitle={`${displayed.length} items`}
         actions={
           <div className="flex gap-2">
-            {tab === 'fittings' && (
+            {!isInBracketingMode && (
               <Button variant="secondary" onClick={() => setShowImport(true)}>
                 <Upload className="w-4 h-4" /> Import CSV
               </Button>
@@ -131,61 +156,112 @@ export default function PipingList() {
         }
       />
 
-      <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6">
-        <div className="flex items-center gap-0.5 text-sm">
-          <button onClick={() => setTab('fittings')}
-            className={`px-3 py-1.5 transition-colors ${tab === 'fittings' ? 'text-blue-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
-            Piping Fittings
-            <span className={`ml-1.5 text-xs font-normal ${tab === 'fittings' ? 'text-blue-600/70' : 'text-slate-300'}`}>{fittings.length}</span>
-          </button>
-          <button onClick={() => setTab('bracketing')}
-            className={`px-3 py-1.5 transition-colors ${tab === 'bracketing' ? 'text-blue-600 font-semibold' : 'text-slate-400 hover:text-slate-600'}`}>
-            Bracketing
-            <span className={`ml-1.5 text-xs font-normal ${tab === 'bracketing' ? 'text-blue-600/70' : 'text-slate-300'}`}>{bracketing.length}</span>
-          </button>
-        </div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
-          className="border border-slate-300 rounded px-3 py-1.5 text-sm w-56 focus:outline-none focus:border-blue-600" />
-        <span className="text-xs text-slate-400 ml-auto">{total} {tab === 'fittings' ? 'fitting' : 'bracket'}{total !== 1 ? 's' : ''}</span>
-      </div>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 overflow-auto">
+          {/* Fittings group */}
+          <div className="px-3 py-2.5 border-b border-slate-100">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Pipes & Fittings</span>
+          </div>
+          <div className="py-1">
+            <button
+              onClick={() => setSelectedKey('all-fittings')}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                selectedKey === 'all-fittings' ? 'bg-blue-600/10 text-blue-600 font-medium' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Pipette className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">All Fittings</span>
+              <span className="ml-auto text-xs text-slate-400">{fittings.length || ''}</span>
+            </button>
+            {TYPE_GROUPS.filter(g => (typeCounts[g.key] ?? 0) > 0).map(g => (
+              <button
+                key={g.key}
+                onClick={() => setSelectedKey(selectedKey === g.key ? 'all-fittings' : g.key)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                  selectedKey === g.key ? 'bg-blue-600/10 text-blue-600 font-medium' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Pipette className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                <span className="truncate">{g.label}</span>
+                <span className="ml-auto text-xs text-slate-400">{typeCounts[g.key] || ''}</span>
+              </button>
+            ))}
+          </div>
 
-      <div className="flex-1 bg-white overflow-auto">
-        <DataTable
-          columns={columns} data={displayed} loading={isLoading}
-          tableId={tab === 'fittings' ? 'piping-fittings' : 'piping-bracketing'}
-          onRowClick={r => navigate(`/products/masters/${r.id}`)}
-          emptyMessage={tab === 'fittings'
-            ? 'No piping fittings — add one manually or import from CSV'
-            : 'No bracketing items — add a bracket, support or clamp'}
-          contextMenuItems={row => [
-            {
-              label: 'Edit',
-              icon: <Pencil className="w-3.5 h-3.5" />,
-              onClick: () => openEdit(row),
-            },
-            {
-              label: 'Duplicate',
-              icon: <Copy className="w-3.5 h-3.5" />,
-              divider: true,
-              onClick: async () => {
-                try {
-                  const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
-                  toast.success('Item duplicated');
-                  refetch();
-                  navigate(`/products/masters/${res.data.id}`);
-                } catch { toast.error('Duplicate failed'); }
-              },
-            },
-          ]}
-        />
+          {/* Bracketing group */}
+          <div className="px-3 py-2.5 border-b border-t border-slate-100 mt-1">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Bracketing</span>
+          </div>
+          <div className="py-1">
+            <button
+              onClick={() => setSelectedKey('all-bracketing')}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                selectedKey === 'all-bracketing' ? 'bg-blue-600/10 text-blue-600 font-medium' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Pipette className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">All Bracketing</span>
+              <span className="ml-auto text-xs text-slate-400">{bracketing.length || ''}</span>
+            </button>
+            {BRACKET_GROUPS.filter(g => (typeCounts[g.key] ?? 0) > 0).map(g => (
+              <button
+                key={g.key}
+                onClick={() => setSelectedKey(selectedKey === g.key ? 'all-bracketing' : g.key)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                  selectedKey === g.key ? 'bg-blue-600/10 text-blue-600 font-medium' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Pipette className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                <span className="truncate">{g.label}</span>
+                <span className="ml-auto text-xs text-slate-400">{typeCounts[g.key] || ''}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0 bg-white overflow-hidden">
+          <div className="p-3 border-b border-slate-200 flex items-center gap-3">
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or code..."
+              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600"
+            />
+            <span className="text-xs text-slate-400 ml-auto">{displayed.length} item{displayed.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex-1 overflow-auto">
+            <DataTable
+              columns={columns} data={displayed} loading={isLoading}
+              tableId={`piping-${selectedKey}`}
+              onRowClick={r => navigate(`/products/masters/${r.id}`)}
+              emptyMessage="No items in this category — add one or select a different type"
+              contextMenuItems={row => [
+                { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
+                {
+                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />, divider: true,
+                  onClick: async () => {
+                    try {
+                      const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                      toast.success('Item duplicated');
+                      refetch();
+                      navigate(`/products/masters/${res.data.id}`);
+                    } catch { toast.error('Duplicate failed'); }
+                  },
+                },
+              ]}
+            />
+          </div>
+        </div>
       </div>
 
       {showNew && (
         <NewEntityModal
-          title={tab === 'fittings' ? 'New Pipe / Fitting' : 'New Bracket / Support'}
+          title={isInBracketingMode ? 'New Bracket / Support' : 'New Pipe / Fitting'}
           onClose={() => setShowNew(false)}
           fields={[
-            { name: 'product_code', label: 'Product Code', required: true, placeholder: tab === 'fittings' ? 'PM-FIT-SS-001' : 'PM-BKT-SS-001' },
+            { name: 'product_code', label: 'Product Code', required: true, placeholder: isInBracketingMode ? 'PM-BKT-SS-001' : 'PM-FIT-SS-001' },
             { name: 'product_name', label: 'Item Name', required: true },
             { name: 'product_family_id', label: 'Family', options: familyOptions },
             { name: 'application_type', label: 'Type', options: newItemTypeOptions },
@@ -219,7 +295,7 @@ export default function PipingList() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 sticky top-0 bg-white">
               <div>
-                <h2 className="font-semibold text-slate-800">Edit {tab === 'fittings' ? 'Fitting' : 'Bracket'}</h2>
+                <h2 className="font-semibold text-slate-800">Edit {isInBracketingMode ? 'Bracket' : 'Fitting'}</h2>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">{editRow.product_code}</p>
               </div>
               <button onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
