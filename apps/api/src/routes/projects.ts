@@ -226,11 +226,25 @@ router.post('/systems', authenticate, async (req: AuthRequest, res: Response) =>
 });
 
 router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
-  const result = await query('UPDATE systems SET system_name=$1, system_type=$2, design_flow_m3h=$3, turnover_rate_hr=$4, water_type=$5, status=$6, duty_description=$7, redundancy_strategy=$8, updated_at=NOW() WHERE id=$9 RETURNING *',
-    [system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status, duty_description, redundancy_strategy, req.params.id]);
+  const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
+  const result = await query(
+    'UPDATE systems SET system_code=COALESCE($1,system_code), system_name=$2, system_type=$3, design_flow_m3h=$4, turnover_rate_hr=$5, water_type=$6, status=$7, duty_description=$8, redundancy_strategy=$9, updated_at=NOW() WHERE id=$10 RETURNING *',
+    [system_code || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status, duty_description, redundancy_strategy, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   res.json(result.rows[0]);
+});
+
+router.delete('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query('DELETE FROM systems WHERE id=$1 RETURNING id, system_code', [req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    res.json({ deleted: true, id: result.rows[0].id });
+  } catch (err: any) {
+    if (err.code === '23503') {
+      return res.status(409).json({ error: { code: 'CONFLICT', message: 'Cannot delete system — it has equipment or other items linked to it. Remove those first.' } });
+    }
+    throw err;
+  }
 });
 
 router.post('/systems/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {

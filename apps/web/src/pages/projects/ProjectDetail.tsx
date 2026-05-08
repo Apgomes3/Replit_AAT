@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import MetadataPanel from '../../components/ui/MetadataPanel';
@@ -11,7 +11,8 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User } from 'lucide-react';
+import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 
@@ -42,6 +43,7 @@ export default function ProjectDetail() {
   const [editSystemRow, setEditSystemRow] = useState<any>(null);
   const [editSystemForm, setEditSystemForm] = useState<any>(null);
   const [editSystemSaving, setEditSystemSaving] = useState(false);
+  const [deletingSystemId, setDeletingSystemId] = useState<string | null>(null);
   const [editingProject, setEditingProject] = useState(false);
   const [projectForm, setProjectForm] = useState<any>(null);
   const [projectSaving, setProjectSaving] = useState(false);
@@ -61,6 +63,11 @@ export default function ProjectDetail() {
   const [pipingUnit, setPipingUnit] = useState('EA');
   const [pipingDesc, setPipingDesc] = useState('');
   const [pipingSubmitting, setPipingSubmitting] = useState(false);
+
+  const [pmEditMode, setPmEditMode] = useState<'pick' | 'manual'>('pick');
+  const [pmEditSearch, setPmEditSearch] = useState('');
+  const [pmEditOpen, setPmEditOpen] = useState(false);
+  const pmEditRef = useRef<HTMLDivElement>(null);
 
   const [showNewBomRelease, setShowNewBomRelease] = useState(false);
   const [bomTitle, setBomTitle] = useState('');
@@ -132,6 +139,20 @@ export default function ProjectDetail() {
     enabled: tab === 'bom-release',
   });
 
+  const { data: usersData } = useQuery({
+    queryKey: ['admin-users-list'],
+    queryFn: () => api.get('/admin/users').then(r => r.data),
+    staleTime: 60_000,
+  });
+  const allUsers: any[] = usersData?.items || [];
+
+  useEffect(() => {
+    if (!pmEditOpen) return;
+    const h = (e: MouseEvent) => { if (!pmEditRef.current?.contains(e.target as Node)) setPmEditOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [pmEditOpen]);
+
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!project) return <div className="p-8 text-slate-400">Project not found</div>;
 
@@ -180,6 +201,7 @@ export default function ProjectDetail() {
   const openEditSystem = (row: any) => {
     setEditSystemRow(row);
     setEditSystemForm({
+      system_code: row.system_code || '',
       system_name: row.system_name || '',
       system_type: row.system_type || '',
       water_type: row.water_type || '',
@@ -201,6 +223,20 @@ export default function ProjectDetail() {
       setEditSystemRow(null);
     } catch { toast.error('Save failed'); }
     finally { setEditSystemSaving(false); }
+  };
+
+  const handleDeleteSystem = async (sys: System) => {
+    if (!window.confirm(`Delete system "${sys.system_code} – ${sys.system_name}"? This cannot be undone.`)) return;
+    setDeletingSystemId(sys.id);
+    try {
+      await api.delete(`/systems/${sys.id}`);
+      toast.success('System deleted');
+      qc.invalidateQueries({ queryKey: ['project-systems'] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to delete system');
+    } finally {
+      setDeletingSystemId(null);
+    }
   };
 
   const sysCols: Column<System>[] = [
@@ -461,8 +497,7 @@ export default function ProjectDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Country</label>
-                    <input value={projectForm.country} onChange={e => setProjectForm((f: any) => ({ ...f, country: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+                    <CountryCombobox value={projectForm.country} onChange={v => setProjectForm((f: any) => ({ ...f, country: v }))} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">City</label>
@@ -497,9 +532,64 @@ export default function ProjectDetail() {
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Project Manager</label>
-                    <input value={projectForm.project_manager} onChange={e => setProjectForm((f: any) => ({ ...f, project_manager: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-medium text-slate-600">Project Manager</label>
+                      <button type="button" onClick={() => { setPmEditMode(m => m === 'pick' ? 'manual' : 'pick'); setPmEditSearch(''); }}
+                        className="text-[11px] text-blue-600 hover:underline">
+                        {pmEditMode === 'pick' ? 'Type manually' : 'Pick from users'}
+                      </button>
+                    </div>
+                    {pmEditMode === 'manual' ? (
+                      <input value={projectForm.project_manager} onChange={e => setProjectForm((f: any) => ({ ...f, project_manager: e.target.value }))}
+                        placeholder="Enter full name…"
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+                    ) : (
+                      <div ref={pmEditRef} className="relative">
+                        <div className="flex items-center border border-slate-200 rounded-lg px-3 py-2 text-sm cursor-pointer focus-within:ring-2 focus-within:ring-blue-600/30"
+                          onClick={() => setPmEditOpen(o => !o)}>
+                          <User className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
+                          {pmEditOpen ? (
+                            <input autoFocus value={pmEditSearch} onChange={e => setPmEditSearch(e.target.value)}
+                              placeholder={projectForm.project_manager || 'Search users…'}
+                              className="flex-1 outline-none text-sm bg-transparent"
+                              onKeyDown={e => { if (e.key === 'Escape') setPmEditOpen(false); }} />
+                          ) : (
+                            <span className={`flex-1 ${projectForm.project_manager ? 'text-slate-800' : 'text-slate-400'}`}>
+                              {projectForm.project_manager || 'Select project manager…'}
+                            </span>
+                          )}
+                          {projectForm.project_manager && !pmEditOpen && (
+                            <button type="button" onClick={e => { e.stopPropagation(); setProjectForm((f: any) => ({ ...f, project_manager: '' })); }}
+                              className="text-slate-300 hover:text-slate-500 ml-1"><X className="w-3.5 h-3.5" /></button>
+                          )}
+                        </div>
+                        {pmEditOpen && (
+                          <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                            {(pmEditSearch ? allUsers.filter(u => `${u.first_name} ${u.last_name}`.toLowerCase().includes(pmEditSearch.toLowerCase())) : allUsers).map((u: any) => {
+                              const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
+                              return (
+                                <button key={u.id} type="button"
+                                  onMouseDown={() => { setProjectForm((f: any) => ({ ...f, project_manager: name })); setPmEditOpen(false); setPmEditSearch(''); }}
+                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2.5 border-b border-slate-50 last:border-0">
+                                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+                                    {(u.first_name?.[0] || u.email[0]).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-medium text-slate-800">{name}</div>
+                                    <div className="text-xs text-slate-400">{u.role}</div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                            <button type="button"
+                              onMouseDown={() => { setPmEditMode('manual'); setPmEditOpen(false); }}
+                              className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 border-t border-slate-100 font-medium">
+                              + Enter a name not in the system
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Engineering Manager</label>
@@ -672,6 +762,12 @@ export default function ProjectDetail() {
                         }}
                         className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100"
                       >Duplicate</button>
+                      <button
+                        onClick={() => handleDeleteSystem(sys)}
+                        disabled={deletingSystemId === sys.id}
+                        className="text-xs text-red-400 hover:text-red-600 px-1.5 py-0.5 border border-red-100 rounded hover:bg-red-50 disabled:opacity-50"
+                        title="Delete system"
+                      >{deletingSystemId === sys.id ? '…' : 'Delete'}</button>
                     </div>
                   </div>
                 ))}
@@ -1060,6 +1156,18 @@ export default function ProjectDetail() {
               <button onClick={() => setEditSystemRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">System Code</label>
+                <input value={editSystemForm.system_code} onChange={e => setEditSystemForm((f: any) => ({ ...f, system_code: e.target.value.toUpperCase() }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select value={editSystemForm.status} onChange={e => setEditSystemForm((f: any) => ({ ...f, status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30">
+                  {['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'].map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">System Name</label>
                 <input value={editSystemForm.system_name} onChange={e => setEditSystemForm((f: any) => ({ ...f, system_name: e.target.value }))}
@@ -1090,13 +1198,6 @@ export default function ProjectDetail() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Turnover Rate (/hr)</label>
                 <input type="number" value={editSystemForm.turnover_rate_hr} onChange={e => setEditSystemForm((f: any) => ({ ...f, turnover_rate_hr: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={editSystemForm.status} onChange={e => setEditSystemForm((f: any) => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30">
-                  {['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'].map(t => <option key={t}>{t}</option>)}
-                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Redundancy Strategy</label>

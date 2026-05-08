@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import { Project } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -8,23 +8,50 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
-import { Plus, List, Map, Download } from 'lucide-react';
+import CountryCombobox from '../../components/ui/CountryCombobox';
+import { Plus, List, Map, Download, X, Search, User } from 'lucide-react';
 import { exportCsv, csvDate } from '../../lib/exportCsv';
-import NewEntityModal from '../../components/ui/NewEntityModal';
 import toast from 'react-hot-toast';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
+
+const EMPTY_FORM = { project_code: '', project_name: '', client_name: '', country: '', city: '', project_manager: '' };
 
 export default function ProjectsList() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [view, setView] = useState<'table' | 'map'>('table');
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+
+  const [pmMode, setPmMode] = useState<'pick' | 'manual'>('pick');
+  const [pmSearch, setPmSearch] = useState('');
+  const [pmOpen, setPmOpen] = useState(false);
+  const pmRef = useRef<HTMLDivElement>(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['projects', search],
     queryFn: () => api.get(`/projects${search ? `?q=${search}` : ''}`).then(r => r.data),
   });
+
+  const { data: usersData } = useQuery({
+    queryKey: ['admin-users-list'],
+    queryFn: () => api.get('/admin/users').then(r => r.data),
+    enabled: showNew,
+    staleTime: 60_000,
+  });
+  const allUsers: any[] = usersData?.items || [];
+  const pmFiltered = pmSearch.trim()
+    ? allUsers.filter(u => `${u.first_name} ${u.last_name}`.toLowerCase().includes(pmSearch.toLowerCase()))
+    : allUsers;
+
+  useEffect(() => {
+    if (!pmOpen) return;
+    const h = (e: MouseEvent) => { if (!pmRef.current?.contains(e.target as Node)) setPmOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [pmOpen]);
 
   const columns: Column<Project>[] = [
     { key: 'project_code', header: 'Code', sortable: true, render: r => <EntityCode code={r.project_code} /> },
@@ -36,22 +63,35 @@ export default function ProjectsList() {
     { key: 'target_completion_date', header: 'Target', sortable: true, sortValue: r => r.target_completion_date ?? '', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
   ];
 
+  const openNew = () => { setForm(EMPTY_FORM); setPmMode('pick'); setPmSearch(''); setShowNew(true); };
+  const closeNew = () => setShowNew(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.project_code.trim() || !form.project_name.trim()) return;
+    setSaving(true);
+    try {
+      await api.post('/projects', form);
+      toast.success('Project created');
+      refetch();
+      closeNew();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to create project');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       <PageHeader title="Projects" crumbs={[{ label: 'Project Management', href: '/project-management' }, { label: 'Projects' }]} subtitle={`${data?.pagination?.total ?? 0} projects`}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setView('table')}
-                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'table' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-              >
+              <button onClick={() => setView('table')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'table' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
                 <List className="w-3.5 h-3.5" /> List
               </button>
-              <button
-                onClick={() => setView('map')}
-                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'map' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-              >
+              <button onClick={() => setView('map')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'map' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
                 <Map className="w-3.5 h-3.5" /> Map
               </button>
             </div>
@@ -70,7 +110,7 @@ export default function ProjectsList() {
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
-            <Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Project</Button>
+            <Button variant="primary" onClick={openNew}><Plus className="w-4 h-4" />New Project</Button>
           </div>
         }
       />
@@ -96,22 +136,114 @@ export default function ProjectsList() {
       )}
 
       {showNew && (
-        <NewEntityModal title="New Project" onClose={() => setShowNew(false)}
-          fields={[
-            { name: 'project_code', label: 'Project Code', required: true, placeholder: 'PRJ-TY-002' },
-            { name: 'project_name', label: 'Project Name', required: true },
-            { name: 'client_name', label: 'Client' },
-            { name: 'country', label: 'Country' },
-            { name: 'city', label: 'City' },
-            { name: 'project_manager', label: 'Project Manager' },
-          ]}
-          onSubmit={async (data) => {
-            await api.post('/projects', data);
-            toast.success('Project created');
-            refetch();
-            setShowNew(false);
-          }}
-        />
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <h2 className="text-base font-semibold text-slate-800">New Project</h2>
+              <button onClick={closeNew} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Project Code <span className="text-red-400">*</span></label>
+                <input autoFocus required value={form.project_code} onChange={e => setForm(f => ({ ...f, project_code: e.target.value }))}
+                  placeholder="PRJ-TY-002"
+                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Project Name <span className="text-red-400">*</span></label>
+                <input required value={form.project_name} onChange={e => setForm(f => ({ ...f, project_name: e.target.value }))}
+                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Client</label>
+                <input value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))}
+                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Country</label>
+                <CountryCombobox value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">City</label>
+                <input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
+                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+              </div>
+
+              {/* Project Manager picker */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Project Manager</label>
+                  <button type="button" onClick={() => { setPmMode(m => m === 'pick' ? 'manual' : 'pick'); setForm(f => ({ ...f, project_manager: '' })); setPmSearch(''); }}
+                    className="text-[11px] text-blue-600 hover:underline">
+                    {pmMode === 'pick' ? 'Type name manually' : 'Pick from users'}
+                  </button>
+                </div>
+                {pmMode === 'manual' ? (
+                  <input value={form.project_manager} onChange={e => setForm(f => ({ ...f, project_manager: e.target.value }))}
+                    placeholder="Enter full name…"
+                    className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+                ) : (
+                  <div ref={pmRef} className="relative">
+                    <div className="flex items-center border border-slate-300 rounded px-3 py-1.5 text-sm cursor-pointer focus-within:border-blue-600"
+                      onClick={() => setPmOpen(o => !o)}>
+                      <User className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
+                      {pmOpen ? (
+                        <input autoFocus value={pmSearch} onChange={e => setPmSearch(e.target.value)}
+                          placeholder={form.project_manager || 'Search users…'}
+                          className="flex-1 outline-none text-sm bg-transparent"
+                          onKeyDown={e => { if (e.key === 'Escape') setPmOpen(false); }} />
+                      ) : (
+                        <span className={`flex-1 ${form.project_manager ? 'text-slate-800' : 'text-slate-400'}`}>
+                          {form.project_manager || 'Select project manager…'}
+                        </span>
+                      )}
+                      {form.project_manager && !pmOpen && (
+                        <button type="button" onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, project_manager: '' })); }}
+                          className="text-slate-300 hover:text-slate-500 ml-1"><X className="w-3.5 h-3.5" /></button>
+                      )}
+                    </div>
+                    {pmOpen && (
+                      <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {pmFiltered.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-slate-400">No users found</div>
+                        ) : (
+                          pmFiltered.map((u: any) => {
+                            const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
+                            return (
+                              <button key={u.id} type="button"
+                                onMouseDown={() => { setForm(f => ({ ...f, project_manager: name })); setPmOpen(false); setPmSearch(''); }}
+                                className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0">
+                                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+                                  {(u.first_name?.[0] || u.email[0]).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-slate-800">{name}</div>
+                                  <div className="text-xs text-slate-400">{u.role}</div>
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                        <button type="button"
+                          onMouseDown={() => { setPmMode('manual'); setPmOpen(false); setForm(f => ({ ...f, project_manager: '' })); }}
+                          className="w-full text-left px-4 py-2.5 text-xs text-blue-600 hover:bg-blue-50 border-t border-slate-100 font-medium">
+                          + Enter a name not in the system
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" onClick={closeNew}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={saving || !form.project_code.trim() || !form.project_name.trim()}>
+                  {saving ? 'Creating…' : 'Create Project'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
