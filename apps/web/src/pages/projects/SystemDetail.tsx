@@ -9,7 +9,7 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
-import { Network, Pencil, Plus, Trash2, Check, X, Search } from 'lucide-react';
+import { Network, Pencil, Plus, Trash2, Check, X, Search, Droplets, Container, Zap, FlaskConical } from 'lucide-react';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 
 const UNITS = ['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'];
@@ -530,6 +530,129 @@ export default function SystemDetail() {
             </button>
           </div>
         </div>
+
+        {/* Tanks section */}
+        {(() => {
+          const tanks: any[] = system.tanks ?? [];
+          const totalGross = tanks.reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3 ?? 0) * (parseInt(t.quantity ?? 1))), 0);
+          const totalOp = tanks.reduce((s: number, t: any) => s + (parseFloat(t.operating_volume_m3 ?? 0) * (parseInt(t.quantity ?? 1))), 0);
+          const totalQty = tanks.reduce((s: number, t: any) => s + parseInt(t.quantity ?? 1), 0);
+          const calcTurnover = system.design_flow_m3h && totalOp > 0
+            ? (parseFloat(system.design_flow_m3h) / totalOp).toFixed(2)
+            : null;
+
+          return (
+            <>
+              {/* Volume summary strip */}
+              {tanks.length > 0 && (
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { icon: Container, label: 'Tanks', value: `${tanks.length} type${tanks.length !== 1 ? 's' : ''}`, sub: `${totalQty} unit${totalQty !== 1 ? 's' : ''}`, color: 'text-blue-600', bg: 'bg-blue-50' },
+                    { icon: Droplets, label: 'Total Gross Volume', value: totalGross > 0 ? `${totalGross.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-cyan-600', bg: 'bg-cyan-50' },
+                    { icon: FlaskConical, label: 'Total Operating Volume', value: totalOp > 0 ? `${totalOp.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                    { icon: Zap, label: 'Calc. Turnover Rate', value: calcTurnover ? `${calcTurnover} /hr` : '—', sub: system.design_flow_m3h ? `flow ${system.design_flow_m3h} m³/h ÷ op. vol.` : 'set design flow to calculate', color: 'text-amber-600', bg: 'bg-amber-50' },
+                  ].map(({ icon: Icon, label, value, sub, color, bg }) => (
+                    <div key={label} className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
+                      <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0 mt-0.5`}>
+                        <Icon className={`w-4 h-4 ${color}`} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
+                        <div className="text-base font-bold text-slate-800 leading-tight">{value}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">{sub}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Tanks table */}
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Tanks</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {tanks.length === 0
+                        ? 'No tanks linked to this system yet — assign a system on the Tanks tab in the project.'
+                        : `${tanks.length} tank type${tanks.length !== 1 ? 's' : ''} · ${totalQty} unit${totalQty !== 1 ? 's' : ''} total`}
+                    </p>
+                  </div>
+                  <Link
+                    to={`/projects/${system.project_id}?tab=tanks`}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                  >
+                    Manage in Project →
+                  </Link>
+                </div>
+
+                {tanks.length === 0 ? (
+                  <div className="px-5 py-10 text-center text-sm text-slate-400">
+                    No tanks linked — go to the project and assign this system to a tank.
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/50">
+                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[120px]">Code</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Tank</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Product</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[60px]">Qty</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Gross Vol.</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Op. Vol.</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Total Op.</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[120px]">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {tanks.map((t: any) => {
+                        const qty = parseInt(t.quantity ?? 1);
+                        const opVol = parseFloat(t.operating_volume_m3 ?? 0);
+                        const totalOpVol = opVol * qty;
+                        return (
+                          <tr key={t.id} className="hover:bg-slate-50">
+                            <td className="px-3 py-2.5"><EntityCode code={t.tank_code} /></td>
+                            <td className="px-3 py-2.5">
+                              <div className="font-medium text-slate-800">{t.tank_name}</div>
+                              {t.tank_type && <div className="text-xs text-slate-400">{t.tank_type}{t.primary_material ? ` · ${t.primary_material}` : ''}</div>}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              {t.product_code
+                                ? <EntityCode code={t.product_code} />
+                                : <span className="text-slate-300 text-xs">—</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-slate-600 text-center">{qty}</td>
+                            <td className="px-3 py-2.5 text-right text-slate-600 font-mono text-xs">
+                              {t.gross_volume_m3 ? `${parseFloat(t.gross_volume_m3).toFixed(2)} m³` : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-right text-slate-600 font-mono text-xs">
+                              {t.operating_volume_m3 ? `${opVol.toFixed(2)} m³` : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-slate-800 font-mono text-xs">
+                              {totalOpVol > 0 ? `${totalOpVol.toFixed(2)} m³` : <span className="text-slate-300 font-normal">—</span>}
+                            </td>
+                            <td className="px-3 py-2.5"><StatusBadge status={t.status || 'Active'} /></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {tanks.length > 1 && (
+                      <tfoot>
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/70">
+                          <td colSpan={3} className="px-3 py-2 text-xs font-semibold text-slate-500">Totals</td>
+                          <td className="px-3 py-2 text-center text-xs font-semibold text-slate-700">{totalQty}</td>
+                          <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700 font-mono">{totalGross > 0 ? `${totalGross.toFixed(2)} m³` : '—'}</td>
+                          <td className="px-3 py-2" />
+                          <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700 font-mono">{totalOp > 0 ? `${totalOp.toFixed(2)} m³` : '—'}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                )}
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* Transition State Modal */}

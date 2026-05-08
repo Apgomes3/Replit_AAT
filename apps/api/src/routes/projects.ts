@@ -301,11 +301,24 @@ router.get('/systems', authenticate, async (req: AuthRequest, res: Response) => 
 router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query('SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id WHERE s.id::text=$1 OR s.system_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-  const equipment = await query(
-    `SELECT pei.*, pm.product_code, pm.product_name FROM project_equipment_items pei
-     LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
-     WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [result.rows[0].id]);
-  res.json({ ...result.rows[0], equipment: equipment.rows });
+  const sysId = result.rows[0].id;
+  const [equipment, tanks] = await Promise.all([
+    query(
+      `SELECT pei.*, pm.product_code, pm.product_name FROM project_equipment_items pei
+       LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
+       WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [sysId]),
+    query(
+      `SELECT t.id, t.tank_code, t.tank_name, t.tank_type, t.quantity,
+              t.gross_volume_m3, t.operating_volume_m3,
+              t.length_mm, t.width_mm, t.height_mm,
+              t.primary_material, t.status,
+              pm.product_code, pm.product_name
+       FROM tanks t
+       LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+       WHERE t.system_id = $1
+       ORDER BY t.tank_code`, [sysId]),
+  ]);
+  res.json({ ...result.rows[0], equipment: equipment.rows, tanks: tanks.rows });
 });
 
 router.post('/systems', authenticate, async (req: AuthRequest, res: Response) => {
