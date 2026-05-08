@@ -179,14 +179,14 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
     `INSERT INTO product_masters
       (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
        design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
-       shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+       shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, cost)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
     [
       product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
       design_flow_m3h || null, design_pressure_bar || null, design_head_m || null, power_kw || null,
       primary_material_code || null, standard_status || 'Concept', notes || null,
       shape_type || null, length_mm || null, width_mm || null, height_mm || null,
-      design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null,
+      design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, 0,
     ]);
   await logAudit(req.user!.id, 'product', result.rows[0].id, 'CREATE', { product_code, product_name, standard_status: standard_status || 'Concept' });
   res.status(201).json(result.rows[0]);
@@ -214,7 +214,7 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency } = req.body;
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
-  const costVal = (cost === null || cost === undefined || cost === '') ? null : parseFloat(String(cost));
+  const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
   const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
   const weightVal = weight_kg != null && weight_kg !== '' ? parseFloat(weight_kg) : null;
   const result = await query(
@@ -445,8 +445,8 @@ router.post('/components', authenticate, async (req: AuthRequest, res: Response)
   const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes } = req.body;
   if (!component_code || !component_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'component_code and component_name required' } });
   const result = await query(
-    'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
-    [component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit || 'EA', status || 'Active', notes, req.user!.id]);
+    'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *',
+    [component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit || 'EA', status || 'Active', notes, req.user!.id, 0]);
   await logAudit(req.user!.id, 'component', result.rows[0].id, 'CREATE', { component_code, component_name, component_type });
   res.status(201).json(result.rows[0]);
 });
@@ -454,7 +454,7 @@ router.post('/components', authenticate, async (req: AuthRequest, res: Response)
 router.put('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, cost, sell_price } = req.body;
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
-  const costVal = (cost === null || cost === undefined || cost === '') ? null : parseFloat(String(cost));
+  const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
   const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
   const result = await query(
     'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, cost=$12, sell_price=$13, updated_at=NOW() WHERE id=$14 RETURNING *',
