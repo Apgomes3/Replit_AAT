@@ -16,6 +16,24 @@ const UNITS = ['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'];
 const STATUSES = ['Design', 'Procurement', 'Installed', 'Commissioned', 'Active', 'Decommissioned'];
 const NEW_ROW_ID = '__new__';
 
+const FLOW_UNITS = [
+  { value: 'm3h', label: 'm³/h' },
+  { value: 'ls',  label: 'L/s'  },
+  { value: 'gpm', label: 'GPM'  },
+] as const;
+type FlowUnit = typeof FLOW_UNITS[number]['value'];
+
+function toFlowUnit(m3h: number, unit: FlowUnit): string {
+  if (unit === 'ls')  return (m3h / 3.6).toFixed(3);
+  if (unit === 'gpm') return (m3h * 4.40287).toFixed(2);
+  return String(m3h);
+}
+function fromFlowUnit(val: number, unit: FlowUnit): number {
+  if (unit === 'ls')  return +(val * 3.6).toFixed(6);
+  if (unit === 'gpm') return +(val / 4.40287).toFixed(6);
+  return val;
+}
+
 export default function SystemDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -25,6 +43,7 @@ export default function SystemDetail() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<any>(null);
+  const [flowUnit, setFlowUnit] = useState<FlowUnit>('m3h');
 
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [inlineForm, setInlineForm] = useState<any>(null);
@@ -201,7 +220,14 @@ export default function SystemDetail() {
                 <MetadataPanel fields={[
                   { label: 'System Type', value: system.system_type },
                   { label: 'Water Type', value: system.water_type },
-                  { label: 'Design Flow', value: system.design_flow_m3h ? `${system.design_flow_m3h} m³/h` : null },
+                  { label: 'Design Flow', value: system.design_flow_m3h ? (
+                    <span>
+                      <span className="font-semibold">{system.design_flow_m3h} m³/h</span>
+                      <span className="text-slate-400 text-xs ml-2">
+                        {(system.design_flow_m3h / 3.6).toFixed(2)} L/s · {(system.design_flow_m3h * 4.40287).toFixed(1)} GPM
+                      </span>
+                    </span>
+                  ) : null },
                   { label: 'Turnover Rate', value: system.turnover_rate_hr ? `${system.turnover_rate_hr} /hr` : null },
                   { label: 'Area', value: system.area_name },
                   { label: 'Exhibit', value: system.exhibit_name },
@@ -244,14 +270,52 @@ export default function SystemDetail() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
-                    <input type="number" value={form.design_flow_m3h} onChange={e => setForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow</label>
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        value={form.design_flow_m3h !== '' ? toFlowUnit(parseFloat(form.design_flow_m3h) || 0, flowUnit) : ''}
+                        onChange={e => {
+                          const raw = parseFloat(e.target.value);
+                          setForm((f: any) => ({ ...f, design_flow_m3h: isNaN(raw) ? '' : String(fromFlowUnit(raw, flowUnit)) }));
+                        }}
+                        className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30"
+                        placeholder="0"
+                      />
+                      <select
+                        value={flowUnit}
+                        onChange={e => setFlowUnit(e.target.value as FlowUnit)}
+                        className="border border-slate-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30 bg-white text-slate-600 font-medium"
+                      >
+                        {FLOW_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                      </select>
+                    </div>
+                    {form.design_flow_m3h !== '' && flowUnit !== 'm3h' && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">= {parseFloat(form.design_flow_m3h).toFixed(3)} m³/h stored</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Turnover Rate (/hr)</label>
                     <input type="number" value={form.turnover_rate_hr} onChange={e => setForm((f: any) => ({ ...f, turnover_rate_hr: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+                    {(() => {
+                      const tanks: any[] = system.tanks ?? [];
+                      const totalOp = tanks.reduce((s: number, t: any) => s + (parseFloat(t.operating_volume_m3 ?? 0) * parseInt(t.quantity ?? 1)), 0);
+                      const calcVal = form.design_flow_m3h && totalOp > 0
+                        ? (parseFloat(form.design_flow_m3h) / totalOp).toFixed(2)
+                        : null;
+                      if (!calcVal) return null;
+                      return (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[10px] text-slate-400">Calc: <span className="font-mono text-slate-600">{calcVal} /hr</span> (flow ÷ op. vol.)</span>
+                          <button
+                            type="button"
+                            onClick={() => setForm((f: any) => ({ ...f, turnover_rate_hr: calcVal }))}
+                            className="text-[10px] text-blue-600 hover:underline font-medium"
+                          >← Use</button>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
@@ -550,7 +614,6 @@ export default function SystemDetail() {
                     { icon: Container, label: 'Tanks', value: `${tanks.length} type${tanks.length !== 1 ? 's' : ''}`, sub: `${totalQty} unit${totalQty !== 1 ? 's' : ''}`, color: 'text-blue-600', bg: 'bg-blue-50' },
                     { icon: Droplets, label: 'Total Gross Volume', value: totalGross > 0 ? `${totalGross.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-cyan-600', bg: 'bg-cyan-50' },
                     { icon: FlaskConical, label: 'Total Operating Volume', value: totalOp > 0 ? `${totalOp.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-indigo-600', bg: 'bg-indigo-50' },
-                    { icon: Zap, label: 'Calc. Turnover Rate', value: calcTurnover ? `${calcTurnover} /hr` : '—', sub: system.design_flow_m3h ? `flow ${system.design_flow_m3h} m³/h ÷ op. vol.` : 'set design flow to calculate', color: 'text-amber-600', bg: 'bg-amber-50' },
                   ].map(({ icon: Icon, label, value, sub, color, bg }) => (
                     <div key={label} className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
                       <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0 mt-0.5`}>
@@ -563,6 +626,31 @@ export default function SystemDetail() {
                       </div>
                     </div>
                   ))}
+                  {/* Calc Turnover Rate — rendered separately for the Apply button */}
+                  <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                      <Zap className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Calc. Turnover Rate</div>
+                      <div className="text-base font-bold text-slate-800 leading-tight">{calcTurnover ? `${calcTurnover} /hr` : '—'}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                        {system.design_flow_m3h ? `flow ${system.design_flow_m3h} m³/h ÷ op. vol.` : 'set design flow to calculate'}
+                      </div>
+                      {calcTurnover && (
+                        <button
+                          onClick={() => {
+                            if (!editing) startEdit();
+                            setForm((f: any) => ({ ...(f ?? {}), system_name: system.system_name || '', system_type: system.system_type || '', water_type: system.water_type || '', design_flow_m3h: system.design_flow_m3h ?? '', turnover_rate_hr: calcTurnover, status: system.status || 'Draft', duty_description: system.duty_description || '', redundancy_strategy: system.redundancy_strategy || '' }));
+                            setEditing(true);
+                          }}
+                          className="mt-1 text-[10px] text-blue-600 hover:underline font-medium"
+                        >
+                          ← Apply to system
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
