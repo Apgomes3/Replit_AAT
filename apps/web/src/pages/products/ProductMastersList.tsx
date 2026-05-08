@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../../lib/api';
@@ -16,13 +16,21 @@ import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 
 const STATUSES = ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'];
 
+function deriveCode(name: string): string {
+  return name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
 export default function ProductMastersList() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [editRow, setEditRow] = useState<ProductMaster | null>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [editSaving, setEditSaving] = useState(false);
+  const [creatingEditCategory, setCreatingEditCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryLoading, setNewCategoryLoading] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['product-masters', search],
@@ -41,6 +49,27 @@ export default function ProductMastersList() {
 
   const categoryOptions: string[] = categoriesData?.items?.map((c: any) => c.name) || ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Tank', 'Electrical', 'Other'];
   const familyOptions = families?.items?.map((f: any) => f.product_family_code) || [];
+
+  async function createCategory(name: string): Promise<string> {
+    const code = deriveCode(name);
+    await api.post('/admin/categories', { name, code });
+    await qc.invalidateQueries({ queryKey: ['product-categories'] });
+    toast.success(`Category "${name}" created`);
+    return name;
+  }
+
+  async function handleCreateEditCategory() {
+    if (!newCategoryName.trim()) return;
+    setNewCategoryLoading(true);
+    try {
+      const name = await createCategory(newCategoryName.trim());
+      setEditForm((f: any) => ({ ...f, product_category: name }));
+      setCreatingEditCategory(false);
+      setNewCategoryName('');
+    } finally {
+      setNewCategoryLoading(false);
+    }
+  }
 
   const openEdit = (row: ProductMaster) => {
     setEditRow(row);
@@ -170,7 +199,7 @@ export default function ProductMastersList() {
           fields={[
             { name: 'product_code', label: 'Product Code', required: true, placeholder: 'PM-XX-000' },
             { name: 'product_name', label: 'Product Name', required: true },
-            { name: 'product_category', label: 'Category', options: categoryOptions },
+            { name: 'product_category', label: 'Category', options: categoryOptions, onCreateOption: createCategory },
             { name: 'application_type', label: 'Application Type' },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
             { name: 'power_kw', label: 'Power (kW)', type: 'number' },
@@ -204,11 +233,33 @@ export default function ProductMastersList() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
-                <select value={editForm.product_category} onChange={e => setEditForm((f: any) => ({ ...f, product_category: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  <option value="">— None —</option>
-                  {categoryOptions.map(c => <option key={c}>{c}</option>)}
-                </select>
+                {creatingEditCategory ? (
+                  <div className="space-y-1.5">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={newCategoryName}
+                      onChange={e => setNewCategoryName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateEditCategory(); } if (e.key === 'Escape') setCreatingEditCategory(false); }}
+                      placeholder="New category name…"
+                      className="w-full border border-blue-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button type="button" disabled={newCategoryLoading || !newCategoryName.trim()} onClick={handleCreateEditCategory}
+                        className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 disabled:opacity-50 font-medium">
+                        {newCategoryLoading ? 'Creating…' : '+ Create'}
+                      </button>
+                      <button type="button" onClick={() => setCreatingEditCategory(false)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <select value={editForm.product_category} onChange={e => { if (e.target.value === '__CREATE_NEW__') { setCreatingEditCategory(true); setNewCategoryName(''); } else { setEditForm((f: any) => ({ ...f, product_category: e.target.value })); } }}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                    <option value="">— None —</option>
+                    {categoryOptions.map(c => <option key={c}>{c}</option>)}
+                    <option value="__CREATE_NEW__">＋ Add new Category…</option>
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>

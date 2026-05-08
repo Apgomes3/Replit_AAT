@@ -12,6 +12,10 @@ import toast from 'react-hot-toast';
 import { useState } from 'react';
 import { Plus, Pencil, SlidersHorizontal } from 'lucide-react';
 
+function deriveCode(name: string): string {
+  return name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
 export default function ProductFamiliesList() {
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
@@ -30,6 +34,14 @@ export default function ProductFamiliesList() {
 
   const categoryCodeOptions: string[] = categoriesData?.items?.map((c: any) => c.code) || ['FILTRATION', 'PUMPING', 'DISINFECTION', 'THERMAL', 'PIPING', 'CONTROL', 'STRUCTURAL', 'TANK', 'ELECTRICAL', 'OTHER'];
   const statusOptions = ['Active', 'Inactive', 'Draft'];
+
+  async function createCategory(name: string): Promise<string> {
+    const code = deriveCode(name);
+    await api.post('/admin/categories', { name, code });
+    await qc.invalidateQueries({ queryKey: ['product-categories'] });
+    toast.success(`Category "${name}" created`);
+    return code;
+  }
 
   const columns: Column<ProductFamily>[] = [
     { key: 'product_family_code', header: 'Code', render: r => <EntityCode code={r.product_family_code} /> },
@@ -66,7 +78,7 @@ export default function ProductFamiliesList() {
           fields={[
             { name: 'product_family_code', label: 'Family Code', required: true, placeholder: 'PFM-XX' },
             { name: 'product_family_name', label: 'Family Name', required: true },
-            { name: 'category_code', label: 'Category', options: categoryCodeOptions },
+            { name: 'category_code', label: 'Category', options: categoryCodeOptions, onCreateOption: createCategory },
             { name: 'description', label: 'Description' },
           ]}
           onSubmit={async (data) => {
@@ -95,7 +107,7 @@ export default function ProductFamiliesList() {
           }}
           fields={[
             { name: 'product_family_name', label: 'Family Name', required: true },
-            { name: 'category_code', label: 'Category', options: categoryCodeOptions },
+            { name: 'category_code', label: 'Category', options: categoryCodeOptions, onCreateOption: createCategory },
             { name: 'description', label: 'Description' },
             { name: 'status', label: 'Status', options: statusOptions },
           ]}
