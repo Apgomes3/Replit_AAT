@@ -152,7 +152,7 @@ export default function EquipmentDetail() {
 
       <div className="flex-1 overflow-auto p-4">
         {equipment.product_code ? (
-          <Link to={`/products/masters/${equipment.product_code}`}
+          <Link to={`/products/masters/${equipment.product_master_id}`}
             className="flex items-center gap-3 mb-4 px-4 py-3 bg-blue-600/5 border border-blue-600/20 rounded-lg hover:bg-blue-600/10 transition-colors group">
             <div className="w-8 h-8 rounded-md bg-blue-600/10 flex items-center justify-center shrink-0">
               <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>

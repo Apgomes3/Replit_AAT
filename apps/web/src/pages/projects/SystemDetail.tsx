@@ -9,7 +9,7 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
-import { Network, Pencil, Plus, Trash2, Check, X, Search, Droplets, Container, Zap, FlaskConical } from 'lucide-react';
+import { Network, Pencil, Plus, Trash2, Check, X, Search, Droplets, Container, Zap, FlaskConical, ExternalLink } from 'lucide-react';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 
 const UNITS = ['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'];
@@ -446,7 +446,20 @@ export default function SystemDetail() {
                     ) : (
                       <>
                         <td className={cellCls}><EntityCode code={eq.equip_code} /></td>
-                        <td className={cellCls + ' font-medium text-slate-800'}>{eq.product_name || eq.description || <span className="text-slate-300">—</span>}</td>
+                        <td className={cellCls + ' font-medium text-slate-800'}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="flex-1 truncate">{eq.product_name || eq.description || <span className="text-slate-300 font-normal">—</span>}</span>
+                            {eq.product_master_id && (
+                              <button
+                                onClick={e => { e.stopPropagation(); navigate(`/products/masters/${eq.product_master_id}`); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 flex-shrink-0"
+                                title="Open product sheet"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         <td className={cellCls}>
                           {eq.product_code ? <EntityCode code={eq.product_code} /> : <span className="text-slate-300">—</span>}
                         </td>
