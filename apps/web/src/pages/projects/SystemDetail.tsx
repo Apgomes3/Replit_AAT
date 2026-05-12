@@ -9,7 +9,7 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
-import { Network, Pencil, Plus, Trash2, Check, X, Search, Droplets, Container, Zap, FlaskConical, ExternalLink, ShoppingCart } from 'lucide-react';
+import { Network, Pencil, Plus, Trash2, Check, X, Search, Droplets, Container, Zap, FlaskConical, ExternalLink, ShoppingCart, MousePointerClick } from 'lucide-react';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 
 const UNITS = ['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'];
@@ -56,6 +56,13 @@ export default function SystemDetail() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showQuickPO, setShowQuickPO] = useState(false);
+  const [quickPOCurrency, setQuickPOCurrency] = useState('USD');
+  const [quickPONotes, setQuickPONotes] = useState('');
+  const [quickPOSaving, setQuickPOSaving] = useState(false);
+
   const { data: system, isLoading, refetch } = useQuery({
     queryKey: ['system', id],
     queryFn: () => api.get(`/systems/${id}`).then(r => r.data),
@@ -94,6 +101,15 @@ export default function SystemDetail() {
     window.addEventListener('click', handler);
     return () => window.removeEventListener('click', handler);
   }, [deleteConfirmId]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCtxMenu(null); };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('keydown', onKey); };
+  }, [ctxMenu]);
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!system) return <div className="p-8 text-slate-400">System not found</div>;
@@ -190,6 +206,49 @@ export default function SystemDetail() {
       cancelInline();
     } catch { toast.error('Save failed'); }
     finally { setInlineSaving(false); }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, eq: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (eq.product_master_id && !eq.released_po_id && !selectedIds.has(eq.id)) {
+      setSelectedIds(prev => new Set([...prev, eq.id]));
+    }
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleQuickPO = async () => {
+    const eligible = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+    if (eligible.length === 0) { toast.error('No eligible items selected'); return; }
+    setQuickPOSaving(true);
+    try {
+      const poRes = await api.post('/purchase-orders', { project_id: system.project_id, notes: quickPONotes || null });
+      const poId = poRes.data.id;
+      await Promise.all(eligible.map((item: any, idx: number) =>
+        api.post(`/purchase-orders/${poId}/items`, {
+          product_master_id: item.product_master_id,
+          quantity: item.quantity ?? 1,
+          currency: quickPOCurrency,
+          notes: item.equip_code || null,
+          system_id: system.id,
+          sort_order: idx,
+          project_equipment_item_id: item.id,
+        })
+      ));
+      toast.success(`${poRes.data.po_code} created with ${eligible.length} item${eligible.length !== 1 ? 's' : ''}`);
+      navigate(`/purchase-orders/${poId}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to create PO');
+      setQuickPOSaving(false);
+    }
   };
 
   const handleDeleteRow = async (eqId: string) => {
@@ -427,20 +486,58 @@ export default function SystemDetail() {
         </div>
 
         {/* Products inline grid */}
+        {(() => {
+          const selectableEq = equipment.filter((eq: any) => eq.product_master_id && !eq.released_po_id);
+          const eligibleSelected = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+          const allChecked = selectableEq.length > 0 && selectableEq.every((eq: any) => selectedIds.has(eq.id));
+          const someChecked = selectableEq.some((eq: any) => selectedIds.has(eq.id));
+          return (
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Products</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Equipment items assigned to this system — click any row to edit</p>
+              {eligibleSelected.length > 0 ? (
+                <p className="text-xs text-blue-600 mt-0.5 font-medium">{eligibleSelected.length} item{eligibleSelected.length !== 1 ? 's' : ''} selected — right-click or use button to add to PO</p>
+              ) : (
+                <p className="text-xs text-slate-400 mt-0.5">Right-click any row to add to PO · Click to edit</p>
+              )}
             </div>
-            <Button size="sm" variant="primary" onClick={startNewRow} disabled={inlineEditId === NEW_ROW_ID}>
-              <Plus className="w-3.5 h-3.5" />Add Row
-            </Button>
+            <div className="flex items-center gap-2">
+              {eligibleSelected.length > 0 && (
+                <button
+                  onClick={() => setShowQuickPO(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  Add {eligibleSelected.length} to PO
+                </button>
+              )}
+              {selectedIds.size > 0 && (
+                <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5">Clear</button>
+              )}
+              <Button size="sm" variant="primary" onClick={startNewRow} disabled={inlineEditId === NEW_ROW_ID}>
+                <Plus className="w-3.5 h-3.5" />Add Row
+              </Button>
+            </div>
           </div>
 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50">
+                <th className="w-10 px-3 py-2.5">
+                  {selectableEq.length > 0 && (
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      ref={el => { if (el) el.indeterminate = someChecked && !allChecked; }}
+                      onChange={e => {
+                        if (e.target.checked) setSelectedIds(new Set(selectableEq.map((eq: any) => eq.id)));
+                        else setSelectedIds(new Set());
+                      }}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                    />
+                  )}
+                </th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[130px]">Tag</th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Item</th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Code</th>
@@ -454,7 +551,7 @@ export default function SystemDetail() {
             <tbody className="divide-y divide-slate-100">
               {equipment.length === 0 && inlineEditId !== NEW_ROW_ID && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">
                     No items yet — click <strong>Add Row</strong> to assign products or components to this system.
                   </td>
                 </tr>
@@ -462,14 +559,18 @@ export default function SystemDetail() {
 
               {equipment.map((eq: any) => {
                 const isEditing = inlineEditId === eq.id;
+                const isSelectable = !!(eq.product_master_id && !eq.released_po_id);
+                const isSelected = selectedIds.has(eq.id);
                 return (
                   <tr
                     key={eq.id}
-                    className={`group ${isEditing ? 'bg-blue-50/40' : 'hover:bg-slate-50 cursor-pointer'}`}
+                    className={`group ${isEditing ? 'bg-blue-50/40' : isSelected ? 'bg-blue-50 hover:bg-blue-50/80' : 'hover:bg-slate-50'} ${!isEditing ? 'cursor-pointer' : ''}`}
                     onClick={() => { if (!isEditing) startInlineEdit(eq); }}
+                    onContextMenu={e => handleContextMenu(e, eq)}
                   >
                     {isEditing ? (
                       <>
+                        <td className={cellCls} />
                         <td className={cellCls}>
                           <input
                             value={inlineForm.equip_code}
@@ -512,6 +613,20 @@ export default function SystemDetail() {
                       </>
                     ) : (
                       <>
+                        <td className="w-10 px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                          {isSelectable ? (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(eq.id)}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                            />
+                          ) : (
+                            eq.released_po_id
+                              ? <span title="Already in a PO" className="block w-3.5 h-3.5 rounded bg-slate-100 border border-slate-200" />
+                              : null
+                          )}
+                        </td>
                         <td className={cellCls}><EntityCode code={eq.equip_code} /></td>
                         <td className={cellCls + ' font-medium text-slate-800'}>
                           <div className="flex items-center gap-1.5 min-w-0">
@@ -581,6 +696,7 @@ export default function SystemDetail() {
               {/* New row being added */}
               {inlineEditId === NEW_ROW_ID && (
                 <tr className="bg-blue-50/40 border-t-2 border-blue-600/20">
+                  <td className={cellCls} />
                   <td className={cellCls}>
                     <input
                       value={inlineForm.equip_code}
@@ -636,6 +752,8 @@ export default function SystemDetail() {
             </button>
           </div>
         </div>
+          );
+        })()}
 
         {/* Tanks section */}
         {(() => {
@@ -784,6 +902,111 @@ export default function SystemDetail() {
           );
         })()}
       </div>
+
+      {/* Right-click context menu */}
+      {ctxMenu && (
+        <div
+          className="fixed z-[100] bg-white border border-slate-200 rounded-xl shadow-2xl py-1 min-w-[200px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onClick={e => e.stopPropagation()}
+        >
+          {(() => {
+            const eligible = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+            return (
+              <>
+                <div className="px-3 py-2 border-b border-slate-100">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                    {selectedIds.size} selected · {eligible.length} eligible
+                  </p>
+                </div>
+                <button
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors ${eligible.length > 0 ? 'hover:bg-blue-50 text-slate-700 hover:text-blue-700' : 'text-slate-300 cursor-not-allowed'}`}
+                  disabled={eligible.length === 0}
+                  onClick={() => { if (eligible.length > 0) { setCtxMenu(null); setShowQuickPO(true); } }}
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  <span>Add to PO <span className="text-xs text-slate-400">({eligible.length} item{eligible.length !== 1 ? 's' : ''})</span></span>
+                </button>
+                <div className="border-t border-slate-100 mt-1 pt-1">
+                  <button
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                    onClick={() => { setSelectedIds(new Set()); setCtxMenu(null); }}
+                  >
+                    <X className="w-4 h-4" />
+                    Clear selection
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Quick Add to PO modal */}
+      {showQuickPO && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6">
+            <h3 className="font-semibold text-slate-800 mb-1">Create Purchase Order</h3>
+            {(() => {
+              const eligible = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+              return (
+                <>
+                  <p className="text-sm text-slate-500 mb-4">{eligible.length} item{eligible.length !== 1 ? 's' : ''} from <span className="font-medium text-slate-700">{system.system_name}</span></p>
+                  <div className="bg-slate-50 rounded-lg border border-slate-200 mb-4 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Tag</th>
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Product</th>
+                          <th className="text-right px-3 py-2 text-xs font-medium text-slate-500">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {eligible.map((eq: any) => (
+                          <tr key={eq.id}>
+                            <td className="px-3 py-2"><EntityCode code={eq.equip_code} /></td>
+                            <td className="px-3 py-2 text-slate-700 truncate max-w-[180px]">{eq.product_name}</td>
+                            <td className="px-3 py-2 text-right text-slate-500">{eq.quantity ?? 1} {eq.unit || 'EA'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex gap-3 mb-4">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+                      <select
+                        value={quickPOCurrency}
+                        onChange={e => setQuickPOCurrency(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-600"
+                      >
+                        {['USD', 'EUR', 'GBP', 'TWD', 'JPY', 'CNY', 'SGD'].map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mb-5">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Notes (optional)</label>
+                    <textarea
+                      value={quickPONotes}
+                      onChange={e => setQuickPONotes(e.target.value)}
+                      rows={2}
+                      placeholder="Add notes to the purchase order…"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-600 resize-none"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => { setShowQuickPO(false); setQuickPONotes(''); }} disabled={quickPOSaving}>Cancel</Button>
+                    <Button variant="primary" onClick={handleQuickPO} disabled={quickPOSaving || eligible.length === 0}>
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      {quickPOSaving ? 'Creating…' : `Create PO (${eligible.length} item${eligible.length !== 1 ? 's' : ''})`}
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Transition State Modal */}
       {showTransition && (
