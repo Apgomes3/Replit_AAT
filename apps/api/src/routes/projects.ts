@@ -332,10 +332,10 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
        LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
        LEFT JOIN components c ON pei.component_id = c.id
        LEFT JOIN LATERAL (
-         SELECT purchase_order_id FROM po_items
+         SELECT po_id FROM po_items
          WHERE project_equipment_item_id = pei.id LIMIT 1
        ) poi ON true
-       LEFT JOIN purchase_orders po ON po.id = poi.purchase_order_id
+       LEFT JOIN purchase_orders po ON po.id = poi.po_id
        WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [sysId]),
     query(
       `SELECT t.id, t.tank_code, t.tank_name, t.tank_type, t.quantity,
