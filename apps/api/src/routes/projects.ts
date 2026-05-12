@@ -711,27 +711,47 @@ router.get('/projects/:id/items-for-po', authenticate, async (req: AuthRequest, 
   const projectId = proj.rows[0].id;
 
   const equipment = await query(
-    `SELECT pei.id, pei.equip_code AS tag_code,
+    `WITH released_eq AS (
+       SELECT DISTINCT ON (pi.project_equipment_item_id)
+         pi.project_equipment_item_id, pi.po_id, po.po_code
+       FROM po_items pi
+       JOIN purchase_orders po ON pi.po_id = po.id
+       WHERE pi.project_equipment_item_id IS NOT NULL
+       ORDER BY pi.project_equipment_item_id, pi.created_at DESC
+     )
+     SELECT pei.id, pei.equip_code AS tag_code,
             COALESCE(pei.description, pm.product_name) AS description,
             pm.id AS product_master_id, pm.product_code, pm.product_name,
             pm.cost, pm.sell_price,
             pei.quantity, pei.unit,
-            s.id AS system_id, s.system_code, s.system_name
+            s.id AS system_id, s.system_code, s.system_name,
+            r.po_id AS released_po_id, r.po_code AS released_po_code
      FROM project_equipment_items pei
      LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
      LEFT JOIN systems s ON pei.system_id = s.id
+     LEFT JOIN released_eq r ON r.project_equipment_item_id = pei.id
      WHERE pei.project_id = $1 AND pei.product_master_id IS NOT NULL
      ORDER BY s.system_code NULLS LAST, pei.equip_code`,
     [projectId]);
 
   const tanks = await query(
-    `SELECT t.id, t.tank_code AS tag_code, t.tank_name AS description,
+    `WITH released_tanks AS (
+       SELECT DISTINCT ON (pi.tank_id)
+         pi.tank_id, pi.po_id, po.po_code
+       FROM po_items pi
+       JOIN purchase_orders po ON pi.po_id = po.id
+       WHERE pi.tank_id IS NOT NULL
+       ORDER BY pi.tank_id, pi.created_at DESC
+     )
+     SELECT t.id, t.tank_code AS tag_code, t.tank_name AS description,
             pm.id AS product_master_id, pm.product_code, pm.product_name,
             pm.cost, pm.sell_price,
             COALESCE(t.quantity, 1) AS quantity, 'EA' AS unit,
-            NULL::uuid AS system_id, NULL AS system_code, NULL AS system_name
+            NULL::uuid AS system_id, NULL AS system_code, NULL AS system_name,
+            r.po_id AS released_po_id, r.po_code AS released_po_code
      FROM tanks t
      LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+     LEFT JOIN released_tanks r ON r.tank_id = t.id
      WHERE t.project_id = $1 AND t.product_master_id IS NOT NULL
      ORDER BY t.tank_code`,
     [projectId]);

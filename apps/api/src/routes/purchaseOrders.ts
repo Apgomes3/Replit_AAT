@@ -528,7 +528,7 @@ router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRe
 // ADD ITEM
 router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  const { product_master_id, quantity, cost_price, sell_price, currency, notes, system_id } = req.body;
+  const { product_master_id, quantity, cost_price, sell_price, currency, notes, system_id, project_equipment_item_id, tank_id } = req.body;
   const poRes = await query('SELECT status FROM purchase_orders WHERE id=$1', [id]);
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   if (poRes.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Items can only be added to draft POs' } });
@@ -537,9 +537,9 @@ router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest,
   const sortOrder = parseInt(maxSort.rows[0].m) + 10;
 
   const r = await query(
-    `INSERT INTO po_items (po_id,product_master_id,quantity,cost_price,sell_price,currency,notes,sort_order,system_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [id, product_master_id || null, quantity || 1, cost_price || null, sell_price || null, currency || 'USD', notes || null, sortOrder, system_id || null]
+    `INSERT INTO po_items (po_id,product_master_id,quantity,cost_price,sell_price,currency,notes,sort_order,system_id,project_equipment_item_id,tank_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [id, product_master_id || null, quantity || 1, cost_price || null, sell_price || null, currency || 'USD', notes || null, sortOrder, system_id || null, project_equipment_item_id || null, tank_id || null]
   );
   res.status(201).json(r.rows[0]);
 });

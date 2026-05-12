@@ -797,6 +797,12 @@ CREATE INDEX IF NOT EXISTS idx_po_stage_assignees_stage ON po_stage_assignees(st
 -- BOM sub-assembly support (product-as-BOM-line)
 ALTER TABLE bom_lines ADD COLUMN IF NOT EXISTS sub_product_id UUID REFERENCES product_masters(id);
 
+-- PO item source tracking: link each PO line back to the project item it was released from
+ALTER TABLE po_items ADD COLUMN IF NOT EXISTS project_equipment_item_id UUID REFERENCES project_equipment_items(id) ON DELETE SET NULL;
+ALTER TABLE po_items ADD COLUMN IF NOT EXISTS tank_id UUID REFERENCES tanks(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_po_items_pei ON po_items(project_equipment_item_id) WHERE project_equipment_item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_po_items_tank ON po_items(tank_id) WHERE tank_id IS NOT NULL;
+
 -- TANK COST RATES (admin-configurable cost per m² for shell fabrication estimates)
 CREATE TABLE IF NOT EXISTS tank_cost_rates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

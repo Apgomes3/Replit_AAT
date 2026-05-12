@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
-import { X, ShoppingCart } from 'lucide-react';
+import { X, ShoppingCart, Lock } from 'lucide-react';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
 
@@ -22,6 +22,9 @@ type Item = {
   system_id: string | null;
   system_code: string | null;
   system_name: string | null;
+  released_po_id: string | null;
+  released_po_code: string | null;
+  item_type: 'equipment' | 'tank';
 };
 
 export default function ProjectReleasePOModal({ projectId, projectCode, onClose }: {
@@ -41,28 +44,33 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
     queryFn: () => api.get(`/projects/${projectId}/items-for-po`).then(r => r.data),
   });
 
-  const equipment: Item[] = data?.equipment || [];
-  const tanks: Item[] = data?.tanks || [];
+  const equipment: Item[] = (data?.equipment || []).map((i: any) => ({ ...i, item_type: 'equipment' }));
+  const tanks: Item[] = (data?.tanks || []).map((i: any) => ({ ...i, item_type: 'tank' }));
   const allItems = [...equipment, ...tanks];
 
   if (!initialized && allItems.length > 0) {
-    const all: Record<string, boolean> = {};
-    allItems.forEach(i => { all[i.id] = true; });
-    setSelected(all);
+    const defaults: Record<string, boolean> = {};
+    allItems.forEach(i => {
+      defaults[i.id] = !i.released_po_id;
+    });
+    setSelected(defaults);
     setInitialized(true);
   }
+
+  const availableItems = allItems.filter(i => !i.released_po_id);
+  const lockedItems = allItems.filter(i => !!i.released_po_id);
 
   const toggleSection = (items: Item[], val: boolean) =>
     setSelected(prev => {
       const next = { ...prev };
-      items.forEach(i => { next[i.id] = val; });
+      items.filter(i => !i.released_po_id).forEach(i => { next[i.id] = val; });
       return next;
     });
 
-  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const selectedCount = availableItems.filter(i => selected[i.id]).length;
 
   const handleCreate = async () => {
-    const picked = allItems.filter(i => selected[i.id]);
+    const picked = availableItems.filter(i => selected[i.id]);
     if (picked.length === 0) { toast.error('Select at least one item'); return; }
     setSaving(true);
     try {
@@ -81,6 +89,8 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
           notes: item.tag_code || null,
           system_id: item.system_id || null,
           sort_order: idx,
+          project_equipment_item_id: item.item_type === 'equipment' ? item.id : null,
+          tank_id: item.item_type === 'tank' ? item.id : null,
         })
       ));
       toast.success(`${poRes.data.po_code} created`);
@@ -92,54 +102,88 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
   };
 
   const SectionHeader = ({ label, count, items }: { label: string; count: number; items: Item[] }) => {
-    const allOn = items.every(i => selected[i.id]);
-    const someOn = items.some(i => selected[i.id]);
+    const free = items.filter(i => !i.released_po_id);
+    const allOn = free.length > 0 && free.every(i => selected[i.id]);
+    const someOn = free.some(i => selected[i.id]);
     return (
-      <div className="flex items-center justify-between px-6 py-2 bg-slate-50 border-b border-slate-100 sticky top-0">
+      <div className="flex items-center justify-between px-6 py-2 bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
         <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={allOn}
-            ref={el => { if (el) el.indeterminate = someOn && !allOn; }}
-            onChange={e => toggleSection(items, e.target.checked)}
-            className="w-4 h-4 rounded border-slate-300 text-blue-600"
-          />
+          {free.length > 0 && (
+            <input
+              type="checkbox"
+              checked={allOn}
+              ref={el => { if (el) el.indeterminate = someOn && !allOn; }}
+              onChange={e => toggleSection(items, e.target.checked)}
+              className="w-4 h-4 rounded border-slate-300 text-blue-600"
+            />
+          )}
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label} ({count})</span>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => toggleSection(items, true)} className="text-xs text-blue-600 hover:underline">All</button>
-          <button onClick={() => toggleSection(items, false)} className="text-xs text-slate-400 hover:underline">None</button>
-        </div>
+        {free.length > 0 && (
+          <div className="flex gap-2">
+            <button onClick={() => toggleSection(items, true)} className="text-xs text-blue-600 hover:underline">All</button>
+            <button onClick={() => toggleSection(items, false)} className="text-xs text-slate-400 hover:underline">None</button>
+          </div>
+        )}
       </div>
     );
   };
 
-  const ItemRow = ({ item }: { item: Item }) => (
-    <label className={`flex items-center gap-3 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50 transition-colors ${selected[item.id] ? '' : 'opacity-50'}`}>
-      <input
-        type="checkbox"
-        checked={!!selected[item.id]}
-        onChange={e => setSelected(prev => ({ ...prev, [item.id]: e.target.checked }))}
-        className="w-4 h-4 rounded border-slate-300 text-blue-600 shrink-0"
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <EntityCode code={item.tag_code} />
-          {item.product_code && <EntityCode code={item.product_code} />}
-          <span className="text-sm text-slate-700 truncate">{item.description || item.product_name}</span>
+  const ItemRow = ({ item }: { item: Item }) => {
+    const locked = !!item.released_po_id;
+    return (
+      <label className={`flex items-center gap-3 px-6 py-3 border-b border-slate-50 transition-colors ${
+        locked ? 'bg-slate-50/60 cursor-default' : `cursor-pointer hover:bg-slate-50 ${selected[item.id] ? '' : 'opacity-50'}`
+      }`}>
+        {locked ? (
+          <Lock className="w-4 h-4 text-slate-300 shrink-0" />
+        ) : (
+          <input
+            type="checkbox"
+            checked={!!selected[item.id]}
+            onChange={e => setSelected(prev => ({ ...prev, [item.id]: e.target.checked }))}
+            className="w-4 h-4 rounded border-slate-300 text-blue-600 shrink-0"
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <EntityCode code={item.tag_code} />
+            {item.product_code && <EntityCode code={item.product_code} />}
+            <span className="text-sm text-slate-700 truncate">{item.description || item.product_name}</span>
+          </div>
+          {item.system_code && (
+            <div className="text-xs text-slate-400 mt-0.5">System: {item.system_code} — {item.system_name}</div>
+          )}
+          {locked && item.released_po_code && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <Lock className="w-3 h-3 text-slate-400" />
+              <span className="text-xs text-slate-500">Released in</span>
+              <button
+                type="button"
+                onClick={e => { e.preventDefault(); navigate(`/purchase-orders/${item.released_po_id}`); }}
+                className="text-xs font-mono text-blue-600 hover:underline"
+              >
+                {item.released_po_code}
+              </button>
+            </div>
+          )}
         </div>
-        {item.system_code && (
-          <div className="text-xs text-slate-400 mt-0.5">System: {item.system_code} — {item.system_name}</div>
-        )}
-      </div>
-      <div className="text-right shrink-0">
-        <div className="text-sm font-mono text-slate-600">{item.quantity} {item.unit}</div>
-        {item.sell_price && (
-          <div className="text-xs text-slate-400">{parseFloat(item.sell_price).toLocaleString()} {currency}</div>
-        )}
-      </div>
-    </label>
-  );
+        <div className="text-right shrink-0">
+          <div className="text-sm font-mono text-slate-600">{item.quantity} {item.unit}</div>
+          {item.sell_price && !locked && (
+            <div className="text-xs text-slate-400">{parseFloat(item.sell_price).toLocaleString()} {currency}</div>
+          )}
+          {locked && (
+            <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">In PO</span>
+          )}
+        </div>
+      </label>
+    );
+  };
+
+  const totalItems = allItems.length;
+  const availableCount = availableItems.length;
+  const lockedCount = lockedItems.length;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -148,7 +192,12 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
             <h2 className="text-base font-semibold text-slate-800">Release Purchase Order</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Select items from {projectCode} to include</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Select items from {projectCode} to include
+              {lockedCount > 0 && (
+                <span className="ml-1.5 text-amber-600 font-medium">· {lockedCount} already in a PO</span>
+              )}
+            </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
@@ -172,9 +221,16 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
         <div className="flex-1 overflow-y-auto">
           {isLoading && <div className="p-8 text-center text-sm text-slate-400">Loading project items…</div>}
 
-          {!isLoading && allItems.length === 0 && (
+          {!isLoading && totalItems === 0 && (
             <div className="p-10 text-center text-sm text-slate-400">
               No products or tanks with catalogue references are assigned to this project yet.
+            </div>
+          )}
+
+          {!isLoading && availableCount === 0 && lockedCount > 0 && (
+            <div className="px-6 py-4 text-sm text-slate-500 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+              All items in this project have already been released into a PO.
             </div>
           )}
 
@@ -195,7 +251,9 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
 
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
           <span className="text-xs text-slate-400">
-            {selectedCount} item{selectedCount !== 1 ? 's' : ''} selected · {currency}
+            {selectedCount} of {availableCount} available item{availableCount !== 1 ? 's' : ''} selected
+            {lockedCount > 0 && <span className="text-slate-300 ml-1">· {lockedCount} locked</span>}
+            {selectedCount > 0 && <span className="ml-1">· {currency}</span>}
           </span>
           <div className="flex gap-2">
             <button onClick={onClose} disabled={saving}
