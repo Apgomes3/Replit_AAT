@@ -344,6 +344,37 @@ async function seed() {
       ON CONFLICT DO NOTHING
     `, [projId, ff1500Id, pump55Id]);
 
+    // Project Equipment Items (used by Release PO modal and system detail PO tracking)
+    const sys3Res = await client.query(`SELECT id FROM systems WHERE project_id=$1 AND system_code='SYS-LSS-JELLY-01'`, [projId]);
+    const jellyId = sys3Res.rows[0].id;
+    const ff800Res  = await client.query(`SELECT id FROM product_masters WHERE product_code='PM-FF-800'`);
+    const pump22Res = await client.query(`SELECT id FROM product_masters WHERE product_code='PM-PUMP-CIR-22'`);
+    const drum60Res = await client.query(`SELECT id FROM product_masters WHERE product_code='PM-DRUM-60HZ'`);
+    const uv120Res  = await client.query(`SELECT id FROM product_masters WHERE product_code='PM-UV-120'`);
+    const ff800Id   = ff800Res.rows[0]?.id  ?? null;
+    const pump22Id  = pump22Res.rows[0]?.id ?? null;
+    const drum60Id  = drum60Res.rows[0]?.id ?? null;
+    const uv120Id   = uv120Res.rows[0]?.id  ?? null;
+
+    await client.query(`
+      INSERT INTO project_equipment_items (equip_code, project_id, system_id, product_master_id, description, quantity, unit, status) VALUES
+        -- Shark LSS ($2)
+        ('TAG-SHARK-FF-01',   $1, $2, $5, 'Foam Fractionator FF-1500 (Duty)',    1, 'EA', 'Design'),
+        ('TAG-SHARK-FF-02',   $1, $2, $5, 'Foam Fractionator FF-1500 (Standby)', 1, 'EA', 'Design'),
+        ('TAG-SHARK-PUMP-01', $1, $2, $6, 'Circulation Pump 55kW (Duty)',        1, 'EA', 'Design'),
+        ('TAG-SHARK-PUMP-02', $1, $2, $6, 'Circulation Pump 55kW (Standby)',     1, 'EA', 'Design'),
+        ('TAG-SHARK-DRUM-01', $1, $2, $8, 'Drum Filter 60Hz',                    1, 'EA', 'Design'),
+        ('TAG-SHARK-UV-01',   $1, $2, $9, 'UV Sterilizer 120W',                  1, 'EA', 'Design'),
+        -- Tropical LSS ($3)
+        ('TAG-TROP-FF-01',   $1, $3, $7, 'Foam Fractionator FF-800',             1, 'EA', 'Design'),
+        ('TAG-TROP-PUMP-01', $1, $3, $6, 'Circulation Pump 55kW',                1, 'EA', 'Design'),
+        -- Jellyfish LSS ($4)
+        ('TAG-JELLY-FF-01',   $1, $4, $5, 'Foam Fractionator FF-1500',           1, 'EA', 'Design'),
+        ('TAG-JELLY-FF-02',   $1, $4, $7, 'Foam Fractionator FF-800 (Skimmer)',  1, 'EA', 'Design'),
+        ('TAG-JELLY-UV-01',   $1, $4, $9, 'UV Sterilizer 120W',                  1, 'EA', 'Design')
+      ON CONFLICT DO NOTHING
+    `, [projId, sys1Id, sys2Id, jellyId, ff1500Id, pump55Id, ff800Id, drum60Id, uv120Id]);
+
     // Documents
     await client.query(`
       INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, system_id, status, created_by) VALUES

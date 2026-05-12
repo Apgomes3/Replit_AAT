@@ -9,7 +9,7 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
-import { Network, Pencil, Plus, Trash2, Check, X, Search, Droplets, Container, Zap, FlaskConical, ExternalLink } from 'lucide-react';
+import { Network, Pencil, Plus, Trash2, Check, X, Search, Droplets, Container, Zap, FlaskConical, ExternalLink, ShoppingCart } from 'lucide-react';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 
 const UNITS = ['EA', 'SET', 'M', 'M2', 'M3', 'KG', 'L', 'LOT'];
@@ -447,6 +447,7 @@ export default function SystemDetail() {
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[80px]">Qty</th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[80px]">Unit</th>
                 <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[140px]">Status</th>
+                <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[120px]">PO</th>
                 <th className="w-[80px]" />
               </tr>
             </thead>
@@ -497,6 +498,7 @@ export default function SystemDetail() {
                             {STATUSES.map(s => <option key={s}>{s}</option>)}
                           </select>
                         </td>
+                        <td className={cellCls} />
                         <td className={cellCls} onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
                             <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
@@ -541,6 +543,20 @@ export default function SystemDetail() {
                         <td className={cellCls + ' text-slate-600'}>{eq.quantity ?? 1}</td>
                         <td className={cellCls + ' text-slate-500'}>{eq.unit || 'EA'}</td>
                         <td className={cellCls}><StatusBadge status={eq.status || 'Design'} /></td>
+                        <td className={cellCls} onClick={e => e.stopPropagation()}>
+                          {eq.released_po_id ? (
+                            <button
+                              onClick={e => { e.stopPropagation(); navigate(`/purchase-orders/${eq.released_po_id}`); }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                              title={`Released in ${eq.released_po_code}`}
+                            >
+                              <ShoppingCart className="w-2.5 h-2.5" />
+                              {eq.released_po_code}
+                            </button>
+                          ) : (
+                            <span className="text-slate-300 text-xs">—</span>
+                          )}
+                        </td>
                         <td className={cellCls} onClick={e => e.stopPropagation()}>
                           {deleteConfirmId === eq.id ? (
                             <div className="flex items-center gap-1" data-delete-row>
@@ -593,6 +609,7 @@ export default function SystemDetail() {
                       {STATUSES.map(s => <option key={s}>{s}</option>)}
                     </select>
                   </td>
+                  <td className={cellCls} />
                   <td className={cellCls}>
                     <div className="flex items-center gap-1">
                       <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">

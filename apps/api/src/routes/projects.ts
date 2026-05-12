@@ -325,10 +325,17 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
   const sysId = result.rows[0].id;
   const [equipment, tanks] = await Promise.all([
     query(
-      `SELECT pei.*, pm.product_code, pm.product_name, c.component_code, c.component_name
+      `SELECT pei.*, pm.product_code, pm.product_name, c.component_code, c.component_name,
+              po.id   AS released_po_id,
+              po.po_code AS released_po_code
        FROM project_equipment_items pei
        LEFT JOIN product_masters pm ON pei.product_master_id = pm.id
        LEFT JOIN components c ON pei.component_id = c.id
+       LEFT JOIN LATERAL (
+         SELECT purchase_order_id FROM po_items
+         WHERE project_equipment_item_id = pei.id LIMIT 1
+       ) poi ON true
+       LEFT JOIN purchase_orders po ON po.id = poi.purchase_order_id
        WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [sysId]),
     query(
       `SELECT t.id, t.tank_code, t.tank_name, t.tank_type, t.quantity,
