@@ -339,13 +339,20 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
        WHERE pei.system_id = $1 ORDER BY pei.equip_code`, [sysId]),
     query(
       `SELECT t.id, t.tank_code, t.tank_name, t.tank_type, t.quantity,
+              t.product_master_id,
               COALESCE(t.gross_volume_m3, pm.gross_volume_m3)       AS gross_volume_m3,
               COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS operating_volume_m3,
               t.length_mm, t.width_mm, t.height_mm,
               t.primary_material, t.status,
-              pm.product_code, pm.product_name
+              pm.product_code, pm.product_name,
+              po.id      AS released_po_id,
+              po.po_code AS released_po_code
        FROM tanks t
        LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+       LEFT JOIN LATERAL (
+         SELECT po_id FROM po_items WHERE tank_id = t.id LIMIT 1
+       ) poi ON true
+       LEFT JOIN purchase_orders po ON po.id = poi.po_id
        WHERE t.system_id = $1
        ORDER BY t.tank_code`, [sysId]),
   ]);

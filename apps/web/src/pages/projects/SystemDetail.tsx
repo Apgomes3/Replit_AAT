@@ -57,6 +57,7 @@ export default function SystemDetail() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedTankIds, setSelectedTankIds] = useState<Set<string>>(new Set());
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [showQuickPO, setShowQuickPO] = useState(false);
   const [quickPOCurrency, setQuickPOCurrency] = useState('USD');
@@ -216,34 +217,64 @@ export default function SystemDetail() {
     });
   };
 
-  const handleContextMenu = (e: React.MouseEvent, eq: any) => {
+  const toggleTank = (id: string) => {
+    setSelectedTankIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, item: any, type: 'equipment' | 'tank') => {
     e.preventDefault();
     e.stopPropagation();
-    if (eq.product_master_id && !eq.released_po_id && !selectedIds.has(eq.id)) {
-      setSelectedIds(prev => new Set([...prev, eq.id]));
+    if (type === 'equipment') {
+      if (item.product_master_id && !item.released_po_id && !selectedIds.has(item.id)) {
+        setSelectedIds(prev => new Set([...prev, item.id]));
+      }
+    } else {
+      if (item.product_master_id && !item.released_po_id && !selectedTankIds.has(item.id)) {
+        setSelectedTankIds(prev => new Set([...prev, item.id]));
+      }
     }
     setCtxMenu({ x: e.clientX, y: e.clientY });
   };
 
   const handleQuickPO = async () => {
-    const eligible = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
-    if (eligible.length === 0) { toast.error('No eligible items selected'); return; }
+    const allTanks: any[] = system.tanks ?? [];
+    const eligibleEquip = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+    const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+    const total = eligibleEquip.length + eligibleTanks.length;
+    if (total === 0) { toast.error('No eligible items selected'); return; }
     setQuickPOSaving(true);
     try {
       const poRes = await api.post('/purchase-orders', { project_id: system.project_id, notes: quickPONotes || null });
       const poId = poRes.data.id;
-      await Promise.all(eligible.map((item: any, idx: number) =>
-        api.post(`/purchase-orders/${poId}/items`, {
-          product_master_id: item.product_master_id,
-          quantity: item.quantity ?? 1,
-          currency: quickPOCurrency,
-          notes: item.equip_code || null,
-          system_id: system.id,
-          sort_order: idx,
-          project_equipment_item_id: item.id,
-        })
-      ));
-      toast.success(`${poRes.data.po_code} created with ${eligible.length} item${eligible.length !== 1 ? 's' : ''}`);
+      await Promise.all([
+        ...eligibleEquip.map((item: any, idx: number) =>
+          api.post(`/purchase-orders/${poId}/items`, {
+            product_master_id: item.product_master_id,
+            quantity: item.quantity ?? 1,
+            currency: quickPOCurrency,
+            notes: item.equip_code || null,
+            system_id: system.id,
+            sort_order: idx,
+            project_equipment_item_id: item.id,
+          })
+        ),
+        ...eligibleTanks.map((t: any, idx: number) =>
+          api.post(`/purchase-orders/${poId}/items`, {
+            product_master_id: t.product_master_id,
+            quantity: t.quantity ?? 1,
+            currency: quickPOCurrency,
+            notes: t.tank_code || null,
+            system_id: system.id,
+            sort_order: eligibleEquip.length + idx,
+            tank_id: t.id,
+          })
+        ),
+      ]);
+      toast.success(`${poRes.data.po_code} created with ${total} item${total !== 1 ? 's' : ''}`);
       navigate(`/purchase-orders/${poId}`);
     } catch (e: any) {
       toast.error(e?.response?.data?.error?.message || 'Failed to create PO');
@@ -566,7 +597,7 @@ export default function SystemDetail() {
                     key={eq.id}
                     className={`group ${isEditing ? 'bg-blue-50/40' : isSelected ? 'bg-blue-50 hover:bg-blue-50/80' : 'hover:bg-slate-50'} ${!isEditing ? 'cursor-pointer' : ''}`}
                     onClick={() => { if (!isEditing) startInlineEdit(eq); }}
-                    onContextMenu={e => handleContextMenu(e, eq)}
+                    onContextMenu={e => handleContextMenu(e, eq, 'equipment')}
                   >
                     {isEditing ? (
                       <>
@@ -815,22 +846,50 @@ export default function SystemDetail() {
               )}
 
               {/* Tanks table */}
+              {(() => {
+                const selectableTanks = tanks.filter((t: any) => t.product_master_id && !t.released_po_id);
+                const eligibleTankSelected = tanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+                const allTanksChecked = selectableTanks.length > 0 && selectableTanks.every((t: any) => selectedTankIds.has(t.id));
+                const someTanksChecked = selectableTanks.some((t: any) => selectedTankIds.has(t.id));
+                const eligibleEquipSelected = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+                const combinedCount = eligibleTankSelected.length + eligibleEquipSelected.length;
+                return (
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-800">Tanks</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {tanks.length === 0
-                        ? 'No tanks linked to this system yet — assign a system on the Tanks tab in the project.'
-                        : `${tanks.length} tank type${tanks.length !== 1 ? 's' : ''} · ${totalQty} unit${totalQty !== 1 ? 's' : ''} total`}
-                    </p>
+                    {eligibleTankSelected.length > 0 ? (
+                      <p className="text-xs text-blue-600 mt-0.5 font-medium">
+                        {eligibleTankSelected.length} tank{eligibleTankSelected.length !== 1 ? 's' : ''} selected{combinedCount > eligibleTankSelected.length ? ` · ${combinedCount} total with equipment` : ''} — right-click or use button to add to PO
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {tanks.length === 0
+                          ? 'No tanks linked to this system yet.'
+                          : `${tanks.length} tank type${tanks.length !== 1 ? 's' : ''} · ${totalQty} unit${totalQty !== 1 ? 's' : ''} total · right-click to add to PO`}
+                      </p>
+                    )}
                   </div>
-                  <Link
-                    to={`/projects/${system.project_id}?tab=tanks`}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                  >
-                    Manage in Project →
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    {combinedCount > 0 && (
+                      <button
+                        onClick={() => setShowQuickPO(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                        Add {combinedCount} to PO
+                      </button>
+                    )}
+                    {selectedTankIds.size > 0 && (
+                      <button onClick={() => setSelectedTankIds(new Set())} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5">Clear</button>
+                    )}
+                    <Link
+                      to={`/projects/${system.project_id}?tab=tanks`}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                    >
+                      Manage →
+                    </Link>
+                  </div>
                 </div>
 
                 {tanks.length === 0 ? (
@@ -841,14 +900,29 @@ export default function SystemDetail() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/50">
+                        <th className="w-10 px-3 py-2.5">
+                          {selectableTanks.length > 0 && (
+                            <input
+                              type="checkbox"
+                              checked={allTanksChecked}
+                              ref={el => { if (el) el.indeterminate = someTanksChecked && !allTanksChecked; }}
+                              onChange={e => {
+                                if (e.target.checked) setSelectedTankIds(new Set(selectableTanks.map((t: any) => t.id)));
+                                else setSelectedTankIds(new Set());
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                            />
+                          )}
+                        </th>
                         <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[120px]">Code</th>
                         <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Tank</th>
                         <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Product</th>
                         <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[60px]">Qty</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Gross Vol.</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Op. Vol.</th>
-                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">Total Op.</th>
-                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[120px]">Status</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[100px]">Gross Vol.</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[100px]">Op. Vol.</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[100px]">Total Op.</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[100px]">Status</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-[110px]">PO</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -856,8 +930,29 @@ export default function SystemDetail() {
                         const qty = parseInt(t.quantity ?? 1);
                         const opVol = parseFloat(t.operating_volume_m3 ?? 0);
                         const totalOpVol = opVol * qty;
+                        const isTankSelectable = !!(t.product_master_id && !t.released_po_id);
+                        const isTankSelected = selectedTankIds.has(t.id);
                         return (
-                          <tr key={t.id} className="hover:bg-slate-50">
+                          <tr
+                            key={t.id}
+                            className={`group cursor-pointer ${isTankSelected ? 'bg-blue-50 hover:bg-blue-50/80' : 'hover:bg-slate-50'}`}
+                            onContextMenu={e => handleContextMenu(e, t, 'tank')}
+                            onClick={() => { if (isTankSelectable) toggleTank(t.id); }}
+                          >
+                            <td className="w-10 px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                              {isTankSelectable ? (
+                                <input
+                                  type="checkbox"
+                                  checked={isTankSelected}
+                                  onChange={() => toggleTank(t.id)}
+                                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600"
+                                />
+                              ) : (
+                                t.released_po_id
+                                  ? <span title="Already in a PO" className="block w-3.5 h-3.5 rounded bg-slate-100 border border-slate-200" />
+                                  : null
+                              )}
+                            </td>
                             <td className="px-3 py-2.5"><EntityCode code={t.tank_code} /></td>
                             <td className="px-3 py-2.5">
                               <div className="font-medium text-slate-800">{t.tank_name}</div>
@@ -879,6 +974,20 @@ export default function SystemDetail() {
                               {totalOpVol > 0 ? `${totalOpVol.toFixed(2)} m³` : <span className="text-slate-300 font-normal">—</span>}
                             </td>
                             <td className="px-3 py-2.5"><StatusBadge status={t.status || 'Active'} /></td>
+                            <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                              {t.released_po_id ? (
+                                <button
+                                  onClick={() => navigate(`/purchase-orders/${t.released_po_id}`)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                                  title={`Released in ${t.released_po_code}`}
+                                >
+                                  <ShoppingCart className="w-2.5 h-2.5" />
+                                  {t.released_po_code}
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-xs">—</span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -886,18 +995,20 @@ export default function SystemDetail() {
                     {tanks.length > 1 && (
                       <tfoot>
                         <tr className="border-t-2 border-slate-200 bg-slate-50/70">
-                          <td colSpan={3} className="px-3 py-2 text-xs font-semibold text-slate-500">Totals</td>
+                          <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-slate-500">Totals</td>
                           <td className="px-3 py-2 text-center text-xs font-semibold text-slate-700">{totalQty}</td>
                           <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700 font-mono">{totalGross > 0 ? `${totalGross.toFixed(2)} m³` : '—'}</td>
                           <td className="px-3 py-2" />
                           <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700 font-mono">{totalOp > 0 ? `${totalOp.toFixed(2)} m³` : '—'}</td>
-                          <td />
+                          <td /><td />
                         </tr>
                       </tfoot>
                     )}
                   </table>
                 )}
               </div>
+                );
+              })()}
             </>
           );
         })()}
@@ -906,34 +1017,38 @@ export default function SystemDetail() {
       {/* Right-click context menu */}
       {ctxMenu && (
         <div
-          className="fixed z-[100] bg-white border border-slate-200 rounded-xl shadow-2xl py-1 min-w-[200px]"
+          className="fixed z-[100] bg-white border border-slate-200 rounded-xl shadow-2xl py-1 min-w-[210px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onClick={e => e.stopPropagation()}
         >
           {(() => {
-            const eligible = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+            const allTanks: any[] = system.tanks ?? [];
+            const eligibleEquip = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+            const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+            const total = eligibleEquip.length + eligibleTanks.length;
+            const totalSelected = selectedIds.size + selectedTankIds.size;
             return (
               <>
                 <div className="px-3 py-2 border-b border-slate-100">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    {selectedIds.size} selected · {eligible.length} eligible
+                    {totalSelected} selected · {total} eligible for PO
                   </p>
                 </div>
                 <button
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors ${eligible.length > 0 ? 'hover:bg-blue-50 text-slate-700 hover:text-blue-700' : 'text-slate-300 cursor-not-allowed'}`}
-                  disabled={eligible.length === 0}
-                  onClick={() => { if (eligible.length > 0) { setCtxMenu(null); setShowQuickPO(true); } }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors ${total > 0 ? 'hover:bg-blue-50 text-slate-700 hover:text-blue-700' : 'text-slate-300 cursor-not-allowed'}`}
+                  disabled={total === 0}
+                  onClick={() => { if (total > 0) { setCtxMenu(null); setShowQuickPO(true); } }}
                 >
                   <ShoppingCart className="w-4 h-4" />
-                  <span>Add to PO <span className="text-xs text-slate-400">({eligible.length} item{eligible.length !== 1 ? 's' : ''})</span></span>
+                  <span>Add to PO <span className="text-xs text-slate-400">({total} item{total !== 1 ? 's' : ''})</span></span>
                 </button>
                 <div className="border-t border-slate-100 mt-1 pt-1">
                   <button
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-                    onClick={() => { setSelectedIds(new Set()); setCtxMenu(null); }}
+                    onClick={() => { setSelectedIds(new Set()); setSelectedTankIds(new Set()); setCtxMenu(null); }}
                   >
                     <X className="w-4 h-4" />
-                    Clear selection
+                    Clear all selection
                   </button>
                 </div>
               </>
@@ -945,28 +1060,45 @@ export default function SystemDetail() {
       {/* Quick Add to PO modal */}
       {showQuickPO && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6">
+          <div className="bg-white rounded-xl shadow-2xl w-[460px] p-6">
             <h3 className="font-semibold text-slate-800 mb-1">Create Purchase Order</h3>
             {(() => {
-              const eligible = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+              const allTanks: any[] = system.tanks ?? [];
+              const eligibleEquip = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
+              const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+              const total = eligibleEquip.length + eligibleTanks.length;
               return (
                 <>
-                  <p className="text-sm text-slate-500 mb-4">{eligible.length} item{eligible.length !== 1 ? 's' : ''} from <span className="font-medium text-slate-700">{system.system_name}</span></p>
-                  <div className="bg-slate-50 rounded-lg border border-slate-200 mb-4 overflow-hidden">
+                  <p className="text-sm text-slate-500 mb-4">
+                    {total} item{total !== 1 ? 's' : ''} from <span className="font-medium text-slate-700">{system.system_name}</span>
+                  </p>
+                  <div className="bg-slate-50 rounded-lg border border-slate-200 mb-4 overflow-hidden max-h-52 overflow-y-auto">
                     <table className="w-full text-sm">
-                      <thead>
+                      <thead className="sticky top-0 bg-slate-100">
                         <tr className="border-b border-slate-200">
-                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Tag</th>
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Tag / Code</th>
                           <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Product</th>
                           <th className="text-right px-3 py-2 text-xs font-medium text-slate-500">Qty</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {eligible.map((eq: any) => (
+                        {eligibleEquip.map((eq: any) => (
                           <tr key={eq.id}>
                             <td className="px-3 py-2"><EntityCode code={eq.equip_code} /></td>
-                            <td className="px-3 py-2 text-slate-700 truncate max-w-[180px]">{eq.product_name}</td>
+                            <td className="px-3 py-2 text-slate-700 truncate max-w-[200px]">{eq.product_name}</td>
                             <td className="px-3 py-2 text-right text-slate-500">{eq.quantity ?? 1} {eq.unit || 'EA'}</td>
+                          </tr>
+                        ))}
+                        {eligibleTanks.length > 0 && eligibleEquip.length > 0 && (
+                          <tr className="bg-slate-100/50">
+                            <td colSpan={3} className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Tanks</td>
+                          </tr>
+                        )}
+                        {eligibleTanks.map((t: any) => (
+                          <tr key={t.id}>
+                            <td className="px-3 py-2"><EntityCode code={t.tank_code} /></td>
+                            <td className="px-3 py-2 text-slate-700 truncate max-w-[200px]">{t.product_name || t.tank_name}</td>
+                            <td className="px-3 py-2 text-right text-slate-500">{t.quantity ?? 1} EA</td>
                           </tr>
                         ))}
                       </tbody>
@@ -996,9 +1128,9 @@ export default function SystemDetail() {
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button onClick={() => { setShowQuickPO(false); setQuickPONotes(''); }} disabled={quickPOSaving}>Cancel</Button>
-                    <Button variant="primary" onClick={handleQuickPO} disabled={quickPOSaving || eligible.length === 0}>
+                    <Button variant="primary" onClick={handleQuickPO} disabled={quickPOSaving || total === 0}>
                       <ShoppingCart className="w-3.5 h-3.5" />
-                      {quickPOSaving ? 'Creating…' : `Create PO (${eligible.length} item${eligible.length !== 1 ? 's' : ''})`}
+                      {quickPOSaving ? 'Creating…' : `Create PO (${total} item${total !== 1 ? 's' : ''})`}
                     </Button>
                   </div>
                 </>
