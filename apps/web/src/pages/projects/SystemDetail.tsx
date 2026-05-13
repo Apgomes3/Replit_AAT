@@ -275,7 +275,17 @@ export default function SystemDetail() {
         ),
       ]);
       toast.success(`${poRes.data.po_code} created with ${total} item${total !== 1 ? 's' : ''}`);
-      navigate(`/purchase-orders/${poId}`);
+      navigate(`/purchase-orders/${poId}`, {
+        state: {
+          from: 'system',
+          systemId: system.id,
+          systemName: system.system_name,
+          systemCode: system.system_code,
+          projectId: system.project_id,
+          projectCode: system.project_code,
+          projectName: system.project_name,
+        },
+      });
     } catch (e: any) {
       toast.error(e?.response?.data?.error?.message || 'Failed to create PO');
       setQuickPOSaving(false);

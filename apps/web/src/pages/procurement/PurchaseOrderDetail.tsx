@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
@@ -137,6 +137,8 @@ type POAttachment = { id: string; file_name: string; file_url: string; created_a
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const fromSystem = location.state?.from === 'system' ? location.state : null;
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const [displayCurrency, setDisplayCurrency] = useState(() => localStorage.getItem('preferred_currency') || 'USD');
@@ -557,8 +559,13 @@ export default function PurchaseOrderDetail() {
         title={<span className="flex items-center gap-2"><EntityCode code={po.po_code} /><POStatusBadge status={po.status} /></span>}
         subtitle={po.project_name ? `${po.project_code} — ${po.project_name}` : 'No project linked'}
         crumbs={[
-          { label: 'Order Management', href: '/order-management' },
-          { label: 'Purchase Orders', href: '/purchase-orders' },
+          ...(fromSystem ? [
+            { label: fromSystem.projectCode ? `${fromSystem.projectCode} — ${fromSystem.projectName}` : (fromSystem.projectName || 'Project'), href: `/projects/${fromSystem.projectId}` },
+            { label: fromSystem.systemCode ? `${fromSystem.systemCode} — ${fromSystem.systemName}` : (fromSystem.systemName || 'System'), href: `/systems/${fromSystem.systemId}` },
+          ] : [
+            { label: 'Order Management', href: '/order-management' },
+            { label: 'Purchase Orders', href: '/purchase-orders' },
+          ]),
           { label: po.po_code },
         ]}
         actions={
