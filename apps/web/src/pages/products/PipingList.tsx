@@ -43,6 +43,8 @@ export default function PipingList() {
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ product_code: string; product_name: string; application_type: string; standard_status: string }>({ product_code: '', product_name: '', application_type: '', standard_status: 'Concept' });
   const dupFormRef = useRef(dupForm);
+  const dupCodeRef = useRef<HTMLInputElement>(null);
+  const dupNameRef = useRef<HTMLInputElement>(null);
   const [dupSaving, setDupSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -272,8 +274,7 @@ export default function PipingList() {
             <div className="p-6 grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
-                <input autoFocus value={dupForm.product_code}
-                  onChange={e => { const v = e.target.value.toUpperCase(); dupFormRef.current = { ...dupFormRef.current, product_code: v }; setDupForm(f => ({ ...f, product_code: v })); }}
+                <input ref={dupCodeRef} autoFocus defaultValue={dupForm.product_code}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
@@ -285,8 +286,7 @@ export default function PipingList() {
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Item Name *</label>
-                <input value={dupForm.product_name}
-                  onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, product_name: v }; setDupForm(f => ({ ...f, product_name: v })); }}
+                <input ref={dupNameRef} defaultValue={dupForm.product_name}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
@@ -301,10 +301,9 @@ export default function PipingList() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <button onClick={() => setDupSourceId(null)} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
               <button onClick={async () => {
-                const { product_code, product_name, standard_status } = dupFormRef.current;
-                const code = product_code.trim();
-                const name = product_name.trim();
-                const status = standard_status;
+                const code = (dupCodeRef.current?.value ?? '').trim().toUpperCase();
+                const name = (dupNameRef.current?.value ?? '').trim();
+                const status = dupFormRef.current.standard_status;
                 const srcId = dupSourceId;
                 if (!code || !name) { toast.error('Code and name are required'); return; }
                 setDupSaving(true);

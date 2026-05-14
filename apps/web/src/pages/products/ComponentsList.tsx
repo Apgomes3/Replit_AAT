@@ -47,6 +47,8 @@ export default function ComponentsList() {
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ component_code: string; component_name: string; component_type: string; component_category: string; status: string }>({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', status: 'Active' });
   const dupFormRef = useRef(dupForm);
+  const dupCodeRef = useRef<HTMLInputElement>(null);
+  const dupNameRef = useRef<HTMLInputElement>(null);
   const [dupSaving, setDupSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -283,8 +285,7 @@ export default function ComponentsList() {
             <div className="p-6 grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Code *</label>
-                <input autoFocus value={dupForm.component_code}
-                  onChange={e => { const v = e.target.value.toUpperCase(); dupFormRef.current = { ...dupFormRef.current, component_code: v }; setDupForm(f => ({ ...f, component_code: v })); }}
+                <input ref={dupCodeRef} autoFocus defaultValue={dupForm.component_code}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
@@ -296,8 +297,7 @@ export default function ComponentsList() {
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
-                <input value={dupForm.component_name}
-                  onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, component_name: v }; setDupForm(f => ({ ...f, component_name: v })); }}
+                <input ref={dupNameRef} defaultValue={dupForm.component_name}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
@@ -318,9 +318,9 @@ export default function ComponentsList() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <button onClick={() => setDupSourceId(null)} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
               <button onClick={async () => {
-                const { component_code, component_name, component_type, component_category, status } = dupFormRef.current;
-                const code = component_code.trim();
-                const name = component_name.trim();
+                const code = (dupCodeRef.current?.value ?? '').trim().toUpperCase();
+                const name = (dupNameRef.current?.value ?? '').trim();
+                const { component_type, component_category, status } = dupFormRef.current;
                 const srcId = dupSourceId;
                 if (!code || !name) { toast.error('Code and name are required'); return; }
                 setDupSaving(true);
