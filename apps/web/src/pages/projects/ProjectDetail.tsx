@@ -664,11 +664,23 @@ export default function ProjectDetail() {
     if (!tanks?.items) return;
     const ids: string[] = tanks.items.map((t: any) => t.id);
     setTankDisplayOrder(prev => {
-      if (prev.length === 0) return ids;
-      if (prev.length === ids.length && ids.every(id => prev.includes(id))) return prev;
-      const kept = prev.filter(id => ids.includes(id));
-      const added = ids.filter(id => !prev.includes(id));
-      return [...kept, ...added];
+      if (prev.length > 0) {
+        if (prev.length === ids.length && ids.every(pid => prev.includes(pid))) return prev;
+        const kept = prev.filter(pid => ids.includes(pid));
+        const added = ids.filter(pid => !prev.includes(pid));
+        return [...kept, ...added];
+      }
+      const storageKey = `tank-order-${id}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        try {
+          const storedIds: string[] = JSON.parse(stored);
+          const kept = storedIds.filter(pid => ids.includes(pid));
+          const added = ids.filter(pid => !storedIds.includes(pid));
+          return [...kept, ...added];
+        } catch { /* fall through */ }
+      }
+      return ids;
     });
   }, [tanks?.items]);
 
@@ -694,8 +706,12 @@ export default function ProjectDetail() {
     const next = [...tankDisplayOrder];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
-    setTankDisplayOrder(next);
-    try { await api.patch('/tanks/reorder', { orderedIds: next }); }
+    const allIds: string[] = (tanks?.items || []).map((t: any) => t.id);
+    const missing = allIds.filter(tid => !next.includes(tid));
+    const fullOrder = [...next, ...missing];
+    setTankDisplayOrder(fullOrder);
+    localStorage.setItem(`tank-order-${id}`, JSON.stringify(fullOrder));
+    try { await api.patch('/tanks/reorder', { orderedIds: fullOrder }); }
     catch { toast.error('Failed to save order'); }
   };
 
