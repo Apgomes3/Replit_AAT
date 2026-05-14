@@ -26,7 +26,8 @@ export default function TanksList() {
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [dupModal, setDupModal] = useState<{ sourceId: string; product_code: string; product_name: string; shape_type: string; standard_status: string } | null>(null);
+  const [dupSourceId, setDupSourceId] = useState<string | null>(null);
+  const [dupForm, setDupForm] = useState<{ product_code: string; product_name: string; shape_type: string; standard_status: string }>({ product_code: '', product_name: '', shape_type: 'Rectangular', standard_status: 'Concept' });
   const [dupSaving, setDupSaving] = useState(false);
 
   const calcGross = useMemo(() => {
@@ -168,7 +169,7 @@ export default function TanksList() {
                   label: 'Duplicate',
                   icon: <Copy className="w-3.5 h-3.5" />,
                   divider: true,
-                  onClick: () => setDupModal({ sourceId: row.id, product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, shape_type: row.shape_type || 'Rectangular', standard_status: row.standard_status || 'Concept' }),
+                  onClick: () => { setDupForm({ product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, shape_type: (row as any).shape_type || 'Rectangular', standard_status: row.standard_status || 'Concept' }); setDupSourceId(row.id); },
                 },
               ]}
             />
@@ -176,7 +177,7 @@ export default function TanksList() {
         </div>
       </div>
 
-      {dupModal && (
+      {dupSourceId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
@@ -184,45 +185,49 @@ export default function TanksList() {
                 <h2 className="font-semibold text-slate-800">Duplicate Tank</h2>
                 <p className="text-xs text-slate-400 mt-0.5">Review and edit before creating the copy</p>
               </div>
-              <button onClick={() => setDupModal(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button onClick={() => setDupSourceId(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
-                <input autoFocus value={dupModal.product_code}
-                  onChange={e => setDupModal(f => f && ({ ...f, product_code: e.target.value.toUpperCase() }))}
+                <input autoFocus value={dupForm.product_code}
+                  onChange={e => setDupForm(f => ({ ...f, product_code: e.target.value.toUpperCase() }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={dupModal.standard_status} onChange={e => setDupModal(f => f && ({ ...f, standard_status: e.target.value }))}
+                <select value={dupForm.standard_status} onChange={e => setDupForm(f => ({ ...f, standard_status: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                   {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Tank Name *</label>
-                <input value={dupModal.product_name}
-                  onChange={e => setDupModal(f => f && ({ ...f, product_name: e.target.value }))}
+                <input value={dupForm.product_name}
+                  onChange={e => setDupForm(f => ({ ...f, product_name: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Shape</label>
-                <select value={dupModal.shape_type} onChange={e => setDupModal(f => f && ({ ...f, shape_type: e.target.value }))}
+                <select value={dupForm.shape_type} onChange={e => setDupForm(f => ({ ...f, shape_type: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                   {TANK_SHAPES.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <Button variant="ghost" onClick={() => setDupModal(null)}>Cancel</Button>
-              <Button onClick={async () => {
-                if (!dupModal.product_code.trim() || !dupModal.product_name.trim()) { toast.error('Code and name are required'); return; }
+              <Button variant="ghost" onClick={() => setDupSourceId(null)}>Cancel</Button>
+              <Button variant="primary" onClick={async () => {
+                const code = dupForm.product_code.trim();
+                const name = dupForm.product_name.trim();
+                const status = dupForm.standard_status;
+                const srcId = dupSourceId;
+                if (!code || !name) { toast.error('Code and name are required'); return; }
                 setDupSaving(true);
                 try {
-                  const res = await api.post(`/product-masters/${dupModal.sourceId}/duplicate`, { product_code: dupModal.product_code.trim(), product_name: dupModal.product_name.trim(), standard_status: dupModal.standard_status });
+                  const res = await api.post(`/product-masters/${srcId}/duplicate`, { product_code: code, product_name: name, standard_status: status });
                   toast.success('Tank duplicated');
-                  setDupModal(null);
+                  setDupSourceId(null);
                   refetch();
                   navigate(`/products/masters/${res.data.id}`);
                 } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
