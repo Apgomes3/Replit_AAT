@@ -220,14 +220,17 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
   const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
   const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
   const weightVal = weight_kg != null && weight_kg !== '' ? parseFloat(weight_kg) : null;
+  // Normalise the incoming code — null means "don't change"
+  const newCode = (product_code && String(product_code).trim()) ? String(product_code).trim().toUpperCase() : null;
   // If a new product_code is supplied, check for uniqueness (ignore self)
-  if (product_code) {
-    const conflict = await query('SELECT id FROM product_masters WHERE product_code=$1 AND id::text!=$2', [product_code.trim().toUpperCase(), req.params.id]);
-    if (conflict.rows.length > 0) return res.status(409).json({ error: { code: 'CONFLICT', message: `Product code ${product_code} is already in use` } });
+  if (newCode) {
+    const conflict = await query('SELECT id FROM product_masters WHERE product_code=$1 AND id::text!=$2', [newCode, req.params.id]);
+    if (conflict.rows.length > 0) return res.status(409).json({ error: { code: 'CONFLICT', message: `Product code ${newCode} is already in use` } });
   }
+  // product_code=$29 uses COALESCE so null means "keep existing"
   const result = await query(
-    `UPDATE product_masters SET ${product_code ? 'product_code=$29,' : ''} product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, updated_at=NOW() WHERE id=$28 RETURNING *`,
-    [...[product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, req.params.id], ...(product_code ? [product_code.trim().toUpperCase()] : [])]);
+    `UPDATE product_masters SET product_code=COALESCE($29, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, updated_at=NOW() WHERE id=$28 RETURNING *`,
+    [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, req.params.id, newCode]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', { product_code: product_code || undefined, product_name, standard_status, manufacturer: manufacturer || null, model: model || null, cost: costVal, sell_price: sellVal, primary_material_code: primary_material_code || null });
   res.json(result.rows[0]);
