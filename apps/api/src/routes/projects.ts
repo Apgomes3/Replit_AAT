@@ -2,6 +2,25 @@ import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { logAudit } from '../db/audit';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
+
+const uploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const logoStorage = multer.diskStorage({
+  destination: uploadsDir,
+  filename: (_, file, cb) => {
+    const unique = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+    cb(null, `logo-${unique}${path.extname(file.originalname)}`);
+  },
+});
+const uploadLogo = multer({
+  storage: logoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => { cb(null, file.mimetype.startsWith('image/')); },
+});
 
 const router = Router();
 
@@ -76,6 +95,17 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
 router.delete('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {
   await query('DELETE FROM projects WHERE id = $1', [req.params.id]);
   res.status(204).end();
+});
+
+router.post('/projects/:id/logo', authenticate, uploadLogo.single('logo'), async (req: AuthRequest, res: Response) => {
+  if (!req.file) return res.status(400).json({ error: { code: 'NO_FILE', message: 'Image file required' } });
+  const logoUrl = `/uploads/${req.file.filename}`;
+  const result = await query(
+    'UPDATE projects SET logo_url=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
+    [logoUrl, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+  res.json(result.rows[0]);
 });
 
 // AREAS

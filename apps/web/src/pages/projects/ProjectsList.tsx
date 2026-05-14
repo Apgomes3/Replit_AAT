@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import CountryCombobox from '../../components/ui/CountryCombobox';
-import { Plus, List, Map, Download, X, Search, User } from 'lucide-react';
+import { Plus, List, Map, Download, X, Search, User, ImagePlus } from 'lucide-react';
 import { exportCsv, csvDate } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 
@@ -24,6 +24,8 @@ export default function ProjectsList() {
   const [view, setView] = useState<'table' | 'map'>('table');
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [pmMode, setPmMode] = useState<'pick' | 'manual'>('pick');
   const [pmSearch, setPmSearch] = useState('');
@@ -63,18 +65,24 @@ export default function ProjectsList() {
     { key: 'target_completion_date', header: 'Target', sortable: true, sortValue: r => r.target_completion_date ?? '', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
   ];
 
-  const openNew = () => { setForm(EMPTY_FORM); setPmMode('pick'); setPmSearch(''); setShowNew(true); };
-  const closeNew = () => setShowNew(false);
+  const openNew = () => { setForm(EMPTY_FORM); setPmMode('pick'); setPmSearch(''); setLogoFile(null); setShowNew(true); };
+  const closeNew = () => { setShowNew(false); setLogoFile(null); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.project_code.trim() || !form.project_name.trim()) return;
     setSaving(true);
     try {
-      await api.post('/projects', form);
+      const res = await api.post('/projects', form);
+      const newProject = res.data;
+      if (logoFile) {
+        const fd = new FormData();
+        fd.append('logo', logoFile);
+        await api.post(`/projects/${newProject.id}/logo`, fd);
+      }
       toast.success('Project created');
-      refetch();
       closeNew();
+      navigate(`/projects/${newProject.id}`);
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message || 'Failed to create project');
     } finally {
@@ -232,6 +240,31 @@ export default function ProjectsList() {
                       </div>
                     )}
                   </div>
+                )}
+              </div>
+
+              {/* Logo upload */}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
+                  Client Logo <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => { setLogoFile(e.target.files?.[0] || null); if (logoInputRef.current) logoInputRef.current.value = ''; }} />
+                {logoFile ? (
+                  <div className="flex items-center gap-3 border border-slate-200 rounded-lg p-3 bg-slate-50">
+                    <img src={URL.createObjectURL(logoFile)} alt="preview" className="h-12 w-20 object-contain rounded bg-white border border-slate-100 p-1" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-slate-700 font-medium truncate">{logoFile.name}</div>
+                      <div className="text-[11px] text-slate-400">{(logoFile.size / 1024).toFixed(0)} KB</div>
+                    </div>
+                    <button type="button" onClick={() => setLogoFile(null)}
+                      className="text-slate-300 hover:text-red-400 transition-colors"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => logoInputRef.current?.click()}
+                    className="flex items-center gap-2 w-full border-2 border-dashed border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors">
+                    <ImagePlus className="w-4 h-4" /> Upload client logo
+                  </button>
                 )}
               </div>
 

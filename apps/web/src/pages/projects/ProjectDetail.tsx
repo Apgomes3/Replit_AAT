@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus } from 'lucide-react';
 import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
@@ -49,6 +49,8 @@ export default function ProjectDetail() {
   const [projectForm, setProjectForm] = useState<any>(null);
   const [projectSaving, setProjectSaving] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [tankProductSearch, setTankProductSearch] = useState('');
   const [selectedTankProduct, setSelectedTankProduct] = useState<any>(null);
@@ -651,6 +653,22 @@ export default function ProjectDetail() {
     }
   };
 
+  const handleLogoUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+    setLogoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('logo', file);
+      await api.post(`/projects/${project.id}/logo`, fd);
+      toast.success('Logo updated');
+      qc.invalidateQueries({ queryKey: ['project', id] });
+    } catch {
+      toast.error('Failed to upload logo');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   const toggleSection = (section: string) =>
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
 
@@ -831,6 +849,34 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="space-y-3">
+            {/* Client Logo Card */}
+            <div className="bg-white border border-slate-200 rounded-lg p-4">
+              <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Client Logo</div>
+              <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); if (logoInputRef.current) logoInputRef.current.value = ''; }} />
+              {project.logo_url ? (
+                <div className="flex flex-col items-center gap-3">
+                  <img src={project.logo_url} alt="Client logo"
+                    className="max-h-20 max-w-full object-contain rounded" />
+                  {isPrivileged && (
+                    <button onClick={() => logoInputRef.current?.click()} disabled={logoUploading}
+                      className="text-xs text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-50">
+                      {logoUploading ? 'Uploading…' : 'Change logo'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => isPrivileged && logoInputRef.current?.click()}
+                  disabled={logoUploading || !isPrivileged}
+                  className={`flex flex-col items-center justify-center gap-2 w-full border-2 border-dashed rounded-lg py-6 transition-colors
+                    ${isPrivileged ? 'border-slate-200 hover:border-blue-300 hover:text-blue-500 text-slate-400 cursor-pointer' : 'border-slate-100 text-slate-300 cursor-default'}`}>
+                  <ImagePlus className="w-6 h-6" />
+                  <span className="text-xs">{logoUploading ? 'Uploading…' : isPrivileged ? 'Upload client logo' : 'No logo'}</span>
+                </button>
+              )}
+            </div>
+
             {/* Status Card with workflow popup */}
             <div className="bg-white border border-slate-200 rounded-lg p-4 relative">
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-2">Status</div>
