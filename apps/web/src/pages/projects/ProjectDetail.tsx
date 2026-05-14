@@ -958,13 +958,16 @@ export default function ProjectDetail() {
               <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); if (logoInputRef.current) logoInputRef.current.value = ''; }} />
               {project.logo_url ? (
-                <div className="flex flex-col items-center gap-3">
+                <div className="relative w-full aspect-square rounded-lg overflow-hidden group">
                   <img src={project.logo_url} alt="Client logo"
-                    className="max-h-20 max-w-full object-contain rounded" />
+                    className="w-full h-full object-cover" />
                   {isPrivileged && (
-                    <button onClick={() => logoInputRef.current?.click()} disabled={logoUploading}
-                      className="text-xs text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-50">
-                      {logoUploading ? 'Uploading…' : 'Change logo'}
+                    <button
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={logoUploading}
+                      className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 cursor-pointer">
+                      <ImagePlus className="w-5 h-5 text-white" />
+                      <span className="text-xs text-white font-medium">{logoUploading ? 'Uploading…' : 'Change logo'}</span>
                     </button>
                   )}
                 </div>
@@ -972,7 +975,7 @@ export default function ProjectDetail() {
                 <button
                   onClick={() => isPrivileged && logoInputRef.current?.click()}
                   disabled={logoUploading || !isPrivileged}
-                  className={`flex flex-col items-center justify-center gap-2 w-full border-2 border-dashed rounded-lg py-6 transition-colors
+                  className={`flex flex-col items-center justify-center gap-2 w-full aspect-square border-2 border-dashed rounded-lg transition-colors
                     ${isPrivileged ? 'border-slate-200 hover:border-blue-300 hover:text-blue-500 text-slate-400 cursor-pointer' : 'border-slate-100 text-slate-300 cursor-default'}`}>
                   <ImagePlus className="w-6 h-6" />
                   <span className="text-xs">{logoUploading ? 'Uploading…' : isPrivileged ? 'Upload client logo' : 'No logo'}</span>
