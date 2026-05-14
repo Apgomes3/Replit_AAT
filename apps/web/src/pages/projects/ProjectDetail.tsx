@@ -79,6 +79,9 @@ export default function ProjectDetail() {
   const [saveTankDbName, setSaveTankDbName] = useState('');
   const [saveTankDbFamilyId, setSaveTankDbFamilyId] = useState('');
   const [saveTankDbSubmitting, setSaveTankDbSubmitting] = useState(false);
+  const [editTankModal, setEditTankModal] = useState<any>(null);
+  const [editTankForm, setEditTankForm] = useState<any>({});
+  const [editTankSubmitting, setEditTankSubmitting] = useState(false);
 
   const [showNewPiping, setShowNewPiping] = useState(false);
   const [pipingProductSearch, setPipingProductSearch] = useState('');
@@ -459,6 +462,39 @@ export default function ProjectDetail() {
       toast.error('Failed to update tag');
     } finally {
       setSavingInstanceId(null);
+    }
+  };
+
+  const openEditTank = (tank: any) => {
+    setEditTankModal(tank);
+    setEditTankForm({
+      tank_code: tank.tank_code || '',
+      tank_name: tank.tank_name || '',
+      tank_type: tank.tank_type || '',
+      shape_type: tank.eff_shape || tank.shape_type || '',
+      length_mm: tank.eff_length_mm ?? tank.length_mm ?? '',
+      width_mm: tank.eff_width_mm ?? tank.width_mm ?? '',
+      height_mm: tank.eff_height_mm ?? tank.height_mm ?? '',
+      design_water_level_mm: tank.eff_water_level_mm ?? tank.design_water_level_mm ?? '',
+      primary_material: tank.primary_material || '',
+      status: tank.status || 'Active',
+      quantity: tank.quantity ?? 1,
+      notes: tank.notes || '',
+    });
+  };
+
+  const handleSaveTankEdit = async () => {
+    if (!editTankModal) return;
+    setEditTankSubmitting(true);
+    try {
+      await api.put(`/tanks/${editTankModal.id}`, editTankForm);
+      toast.success('Tank updated');
+      qc.invalidateQueries({ queryKey: ['project-tanks'] });
+      setEditTankModal(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to update tank');
+    } finally {
+      setEditTankSubmitting(false);
     }
   };
 
@@ -1034,11 +1070,20 @@ export default function ProjectDetail() {
                             <td className="px-3 py-2.5">
                               <div className="flex items-center gap-1">
                                 {!tank.product_code && (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); openSaveTankToDb(tank); }}
-                                    className="text-xs text-amber-600 hover:text-amber-800 border border-amber-200 hover:border-amber-400 px-1.5 py-0.5 rounded hover:bg-amber-50 whitespace-nowrap"
-                                    title="Save this tank to the Tank Database as a product master"
-                                  >+ DB</button>
+                                  <>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); openEditTank(tank); }}
+                                      className="text-slate-300 hover:text-blue-500 p-1 rounded transition-colors"
+                                      title="Edit tank"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); openSaveTankToDb(tank); }}
+                                      className="text-xs text-amber-600 hover:text-amber-800 border border-amber-200 hover:border-amber-400 px-1.5 py-0.5 rounded hover:bg-amber-50 whitespace-nowrap"
+                                      title="Save this tank to the Tank Database as a product master"
+                                    >+ DB</button>
+                                  </>
                                 )}
                                 <button
                                   onClick={e => { e.stopPropagation(); handleDeleteTank(tank); }}
@@ -1779,6 +1824,140 @@ export default function ProjectDetail() {
               <Button onClick={() => setEditSystemRow(null)}>Cancel</Button>
               <Button variant="primary" onClick={handleEditSystemSave} disabled={editSystemSaving}>
                 {editSystemSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editTankModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-semibold text-slate-800">Edit Tank</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Only available while this tank is not yet in the Tank Database</p>
+              </div>
+              <button onClick={() => setEditTankModal(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded">✕</button>
+            </div>
+            <div className="px-5 py-4 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Tag / Code</label>
+                <input
+                  value={editTankForm.tank_code}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, tank_code: e.target.value.toUpperCase() }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Tank Name <span className="text-red-400">*</span></label>
+                <input
+                  value={editTankForm.tank_name}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, tank_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Tank Type</label>
+                <select
+                  value={editTankForm.tank_type}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, tank_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                >
+                  <option value="">— None —</option>
+                  {['Display', 'Sump', 'Filter', 'Holding', 'Quarantine', 'Treatment', 'Header', 'Reservoir', 'Other'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Shape</label>
+                <select
+                  value={editTankForm.shape_type}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, shape_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                >
+                  <option value="">— None —</option>
+                  {['Rectangular', 'Cylindrical', 'Oval', 'D-Shape', 'Irregular'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Length (mm)</label>
+                <input type="number" value={editTankForm.length_mm}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, length_mm: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Width (mm)</label>
+                <input type="number" value={editTankForm.width_mm}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, width_mm: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Height (mm)</label>
+                <input type="number" value={editTankForm.height_mm}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, height_mm: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Design Water Level (mm)</label>
+                <input type="number" value={editTankForm.design_water_level_mm}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, design_water_level_mm: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Material</label>
+                <select
+                  value={editTankForm.primary_material}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, primary_material: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                >
+                  <option value="">— None —</option>
+                  {materials.map(m => (
+                    <option key={m.material_code} value={m.material_code}>{m.material_name} ({m.material_code})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select
+                  value={editTankForm.status}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                >
+                  {['Active', 'Inactive', 'Draft', 'On Hold'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
+                <input type="number" min={1} value={editTankForm.quantity}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, quantity: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                <textarea value={editTankForm.notes}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              {(editTankForm.length_mm && editTankForm.width_mm && editTankForm.height_mm) && (
+                <div className="col-span-2 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 flex gap-6">
+                  <span>Gross Vol: <span className="font-mono font-medium">{(parseFloat(editTankForm.length_mm) * parseFloat(editTankForm.width_mm) * parseFloat(editTankForm.height_mm) / 1e9).toFixed(4)} m³</span></span>
+                  {editTankForm.design_water_level_mm && (
+                    <span>Operating Vol: <span className="font-mono font-medium">{(parseFloat(editTankForm.length_mm) * parseFloat(editTankForm.width_mm) * parseFloat(editTankForm.design_water_level_mm) / 1e9).toFixed(4)} m³</span></span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <Button onClick={() => setEditTankModal(null)}>Cancel</Button>
+              <Button variant="primary" onClick={handleSaveTankEdit} disabled={editTankSubmitting || !editTankForm.tank_name?.trim()}>
+                {editTankSubmitting ? 'Saving…' : 'Save Changes'}
               </Button>
             </div>
           </div>

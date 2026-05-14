@@ -311,6 +311,32 @@ router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response)
   } catch (err: any) { throw err; }
 });
 
+router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity } = req.body;
+  if (!tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
+  const l = length_mm ? parseFloat(length_mm) : null;
+  const w = width_mm ? parseFloat(width_mm) : null;
+  const h = height_mm ? parseFloat(height_mm) : null;
+  const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
+  const calcGross = l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null;
+  const calcOp = l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null;
+  const qty = Math.max(1, parseInt(quantity) || 1);
+  const result = await query(
+    `UPDATE tanks SET
+      tank_code=COALESCE($1, tank_code), tank_name=$2, tank_type=$3, shape_type=$4,
+      length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
+      gross_volume_m3=$9, operating_volume_m3=$10,
+      primary_material=$11, status=$12, notes=$13, quantity=$14,
+      updated_at=NOW()
+    WHERE id=$15 RETURNING *`,
+    [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
+     l, w, h, wl, calcGross, calcOp,
+     primary_material || null, status || 'Active', notes || null, qty,
+     req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+  res.json(result.rows[0]);
+});
+
 router.delete('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
   await query('DELETE FROM tank_instances WHERE tank_id=$1', [req.params.id]);
   const result = await query('DELETE FROM tanks WHERE id=$1 RETURNING id, tank_code', [req.params.id]);
