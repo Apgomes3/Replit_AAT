@@ -1376,14 +1376,16 @@ export default function ProjectDetail() {
                   <div>
                     <p className="text-xs font-medium text-slate-600 mb-2">Dimensions (mm)</p>
                     <div className="grid grid-cols-3 gap-2">
+                      {tankShapeType !== 'Cylindrical' && (
+                        <div>
+                          <label className="block text-[11px] text-slate-500 mb-1">Length</label>
+                          <input type="number" min={0} placeholder="e.g. 5000" value={tankLengthMm} onChange={e => setTankLengthMm(e.target.value)}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                        </div>
+                      )}
                       <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Length</label>
-                        <input type="number" min={0} placeholder="e.g. 5000" value={tankLengthMm} onChange={e => setTankLengthMm(e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Width</label>
-                        <input type="number" min={0} placeholder="e.g. 2000" value={tankWidthMm} onChange={e => setTankWidthMm(e.target.value)}
+                        <label className="block text-[11px] text-slate-500 mb-1">{tankShapeType === 'Cylindrical' ? 'Diameter' : 'Width'}</label>
+                        <input type="number" min={0} placeholder={tankShapeType === 'Cylindrical' ? 'e.g. 2000' : 'e.g. 2000'} value={tankWidthMm} onChange={e => setTankWidthMm(e.target.value)}
                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
                       </div>
                       <div>
@@ -1415,14 +1417,30 @@ export default function ProjectDetail() {
                       </div>
                     </div>
                     {/* Live volume preview */}
-                    {tankLengthMm && tankWidthMm && tankHeightMm && (
-                      <div className="mt-2 flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-                        <span>Gross: <strong className="text-slate-700">{(parseFloat(tankLengthMm) * parseFloat(tankWidthMm) * parseFloat(tankHeightMm) / 1e9).toFixed(3)} m³</strong></span>
-                        {tankDesignWaterLevel && (
-                          <span>Operating: <strong className="text-slate-700">{(parseFloat(tankLengthMm) * parseFloat(tankWidthMm) * parseFloat(tankDesignWaterLevel) / 1e9).toFixed(3)} m³</strong></span>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const cyl = tankShapeType === 'Cylindrical';
+                      const d = parseFloat(tankWidthMm);
+                      const l = parseFloat(tankLengthMm);
+                      const w = parseFloat(tankWidthMm);
+                      const h = parseFloat(tankHeightMm);
+                      const wl = parseFloat(tankDesignWaterLevel);
+                      const hasGross = cyl ? (d > 0 && h > 0) : (l > 0 && w > 0 && h > 0);
+                      if (!hasGross) return null;
+                      const gross = cyl
+                        ? Math.PI * (d / 2) * (d / 2) * h / 1e9
+                        : l * w * h / 1e9;
+                      const op = cyl
+                        ? (wl > 0 ? Math.PI * (d / 2) * (d / 2) * wl / 1e9 : null)
+                        : (wl > 0 ? l * w * wl / 1e9 : null);
+                      return (
+                        <div className="mt-2 flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                          <span>{cyl ? '¼π·D²·H' : 'L×W×H'}: <strong className="text-slate-700">{gross.toFixed(3)} m³</strong></span>
+                          {op != null && (
+                            <span>Operating: <strong className="text-slate-700">{op.toFixed(3)} m³</strong></span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Save to Tank Family */}
@@ -1883,14 +1901,16 @@ export default function ProjectDetail() {
                   ))}
                 </select>
               </div>
+              {editTankForm.shape_type !== 'Cylindrical' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Length (mm)</label>
+                  <input type="number" value={editTankForm.length_mm}
+                    onChange={e => setEditTankForm((f: any) => ({ ...f, length_mm: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                </div>
+              )}
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Length (mm)</label>
-                <input type="number" value={editTankForm.length_mm}
-                  onChange={e => setEditTankForm((f: any) => ({ ...f, length_mm: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Width (mm)</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">{editTankForm.shape_type === 'Cylindrical' ? 'Diameter (mm)' : 'Width (mm)'}</label>
                 <input type="number" value={editTankForm.width_mm}
                   onChange={e => setEditTankForm((f: any) => ({ ...f, width_mm: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
@@ -1945,14 +1965,28 @@ export default function ProjectDetail() {
                   rows={2}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
               </div>
-              {(editTankForm.length_mm && editTankForm.width_mm && editTankForm.height_mm) && (
-                <div className="col-span-2 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 flex gap-6">
-                  <span>Gross Vol: <span className="font-mono font-medium">{(parseFloat(editTankForm.length_mm) * parseFloat(editTankForm.width_mm) * parseFloat(editTankForm.height_mm) / 1e9).toFixed(4)} m³</span></span>
-                  {editTankForm.design_water_level_mm && (
-                    <span>Operating Vol: <span className="font-mono font-medium">{(parseFloat(editTankForm.length_mm) * parseFloat(editTankForm.width_mm) * parseFloat(editTankForm.design_water_level_mm) / 1e9).toFixed(4)} m³</span></span>
-                  )}
-                </div>
-              )}
+              {(() => {
+                const cyl = editTankForm.shape_type === 'Cylindrical';
+                const d = parseFloat(editTankForm.width_mm);
+                const l = parseFloat(editTankForm.length_mm);
+                const w = parseFloat(editTankForm.width_mm);
+                const h = parseFloat(editTankForm.height_mm);
+                const wl = parseFloat(editTankForm.design_water_level_mm);
+                const hasGross = cyl ? (d > 0 && h > 0) : (l > 0 && w > 0 && h > 0);
+                if (!hasGross) return null;
+                const gross = cyl
+                  ? Math.PI * (d / 2) * (d / 2) * h / 1e9
+                  : l * w * h / 1e9;
+                const op = cyl
+                  ? (wl > 0 ? Math.PI * (d / 2) * (d / 2) * wl / 1e9 : null)
+                  : (wl > 0 ? l * w * wl / 1e9 : null);
+                return (
+                  <div className="col-span-2 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 flex gap-6">
+                    <span>Gross Vol: <span className="font-mono font-medium">{gross.toFixed(4)} m³</span></span>
+                    {op != null && <span>Operating Vol: <span className="font-mono font-medium">{op.toFixed(4)} m³</span></span>}
+                  </div>
+                );
+              })()}
             </div>
             <div className="flex justify-end gap-2 px-5 pb-5">
               <Button onClick={() => setEditTankModal(null)}>Cancel</Button>

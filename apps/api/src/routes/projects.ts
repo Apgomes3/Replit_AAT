@@ -269,12 +269,17 @@ router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
   const h = height_mm ? parseFloat(height_mm) : null;
   const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
   // Auto-calculate volumes from dimensions when not explicitly provided
+  const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
   const calcGross = (gross_volume_m3 != null && gross_volume_m3 !== '')
     ? parseFloat(gross_volume_m3)
-    : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
+    : isCyl
+      ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
+      : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
   const calcOp = (operating_volume_m3 != null && operating_volume_m3 !== '')
     ? parseFloat(operating_volume_m3)
-    : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
+    : isCyl
+      ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
+      : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
   const result = await query(
     'INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
     [tank_code, project_id, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
@@ -318,8 +323,13 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
   const w = width_mm ? parseFloat(width_mm) : null;
   const h = height_mm ? parseFloat(height_mm) : null;
   const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
-  const calcGross = l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null;
-  const calcOp = l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null;
+  const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
+  const calcGross = isCyl
+    ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
+    : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
+  const calcOp = isCyl
+    ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
+    : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
   const qty = Math.max(1, parseInt(quantity) || 1);
   const result = await query(
     `UPDATE tanks SET
