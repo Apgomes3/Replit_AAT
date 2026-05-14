@@ -273,6 +273,7 @@ export default function ProductMasterDetail() {
 
   const startEdit = () => {
     setEditForm({
+      product_code: product.product_code || '',
       product_name: product.product_name || '',
       standard_status: product.standard_status || 'Concept',
       application_type: product.application_type || '',
@@ -292,9 +293,11 @@ export default function ProductMasterDetail() {
   };
 
   const handleSave = async () => {
+    if (!editForm.product_code?.trim()) { toast.error('Product code is required'); return; }
     setSaving(true);
     try {
       await api.put(`/product-masters/${id}`, productPutPayload({
+        product_code: editForm.product_code.trim().toUpperCase(),
         product_name: editForm.product_name,
         standard_status: editForm.standard_status,
         application_type: editForm.application_type || null,
@@ -750,8 +753,13 @@ export default function ProductMasterDetail() {
               ) : (
               <div className="p-4">
                 <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
+                  <input value={editForm.product_code} onChange={e => setEditForm((f: any) => ({ ...f, product_code: e.target.value.toUpperCase() }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Name *</label>
                   <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>

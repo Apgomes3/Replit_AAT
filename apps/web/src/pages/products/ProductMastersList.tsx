@@ -99,6 +99,7 @@ export default function ProductMastersList() {
   const openEdit = (row: ProductMaster) => {
     setEditRow(row);
     setEditForm({
+      product_code: row.product_code || '',
       product_name: row.product_name || '',
       product_category: row.product_category || '',
       application_type: (row as any).application_type || '',
@@ -115,9 +116,11 @@ export default function ProductMastersList() {
 
   const handleEditSave = async () => {
     if (!editRow) return;
+    if (!editForm.product_code?.trim()) { toast.error('Product code is required'); return; }
     setEditSaving(true);
     try {
       await api.put(`/product-masters/${editRow.id}`, {
+        product_code: editForm.product_code.trim().toUpperCase(),
         product_name: editForm.product_name,
         product_category: editForm.product_category || null,
         application_type: editForm.application_type || null,
@@ -303,8 +306,13 @@ export default function ProductMastersList() {
               <button onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
+                <input value={editForm.product_code} onChange={e => setEditForm((f: any) => ({ ...f, product_code: e.target.value.toUpperCase() }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Product Name *</label>
                 <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
