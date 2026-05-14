@@ -64,6 +64,7 @@ export default function ProductMastersList() {
     () => materialsData?.items ?? [], [materialsData]
   );
   const materialOptions = useMemo(() => materials.map(m => `${m.material_code} — ${m.material_name}`), [materials]);
+  const familyNewOptions = useMemo(() => (familiesData?.items || []).filter((f: any) => f.category_code !== 'PIPING' && f.category_code !== 'TANK').map((f: any) => `${f.id} — ${f.product_family_name}`), [familiesData]);
 
   const families: any[] = familiesData?.items?.filter((f: any) => f.category_code !== 'PIPING' && f.category_code !== 'TANK') || [];
   const categoryOptions: string[] = categoriesData?.items?.map((c: any) => c.name) || ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Tank', 'Electrical', 'Other'];
@@ -319,6 +320,7 @@ export default function ProductMastersList() {
           fields={[
             { name: 'product_code', label: 'Product Code', required: true, placeholder: 'PM-XX-000' },
             { name: 'product_name', label: 'Product Name', required: true },
+            { name: 'product_family_id', label: 'Product Family', options: familyNewOptions },
             { name: 'product_category', label: 'Category', options: categoryOptions, onCreateOption: createCategory },
             { name: 'application_type', label: 'Application Type' },
             { name: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Grundfos' },
@@ -331,6 +333,7 @@ export default function ProductMastersList() {
           onSubmit={async (formData) => {
             await api.post('/product-masters', {
               ...formData,
+              product_family_id: formData.product_family_id ? formData.product_family_id.split(' — ')[0] : null,
               primary_material_code: formData.primary_material_code?.split(' — ')[0] || null,
             });
             toast.success('Product master created');
