@@ -57,6 +57,19 @@ export default function ProjectDetail() {
   const [tankSystemId, setTankSystemId] = useState('');
   const [tankQuantity, setTankQuantity] = useState(1);
   const [tankSubmitting, setTankSubmitting] = useState(false);
+  const [tankMode, setTankMode] = useState<'search' | 'manual'>('search');
+  const [tankName, setTankName] = useState('');
+  const [tankType, setTankType] = useState('');
+  const [tankShapeType, setTankShapeType] = useState('');
+  const [tankLengthMm, setTankLengthMm] = useState('');
+  const [tankWidthMm, setTankWidthMm] = useState('');
+  const [tankHeightMm, setTankHeightMm] = useState('');
+  const [tankDesignWaterLevel, setTankDesignWaterLevel] = useState('');
+  const [tankWallThickness, setTankWallThickness] = useState('');
+  const [tankMaterial, setTankMaterial] = useState('');
+  const [tankSaveToFamily, setTankSaveToFamily] = useState(false);
+  const [tankFamilyId, setTankFamilyId] = useState('');
+  const [tankNewProductCode, setTankNewProductCode] = useState('');
   const [expandedTanks, setExpandedTanks] = useState<Set<string>>(new Set());
   const [editingInstance, setEditingInstance] = useState<{ id: string; value: string } | null>(null);
   const [savingInstanceId, setSavingInstanceId] = useState<string | null>(null);
@@ -121,6 +134,12 @@ export default function ProjectDetail() {
     queryKey: ['tank-product-search', tankProductSearch],
     queryFn: () => api.get(`/product-masters?q=${tankProductSearch}&category=Tank&page_size=8`).then(r => r.data),
     enabled: tankProductSearch.length >= 2 && !selectedTankProduct,
+  });
+
+  const { data: tankFamilies } = useQuery({
+    queryKey: ['tank-families'],
+    queryFn: () => api.get('/tank-families').then(r => r.data),
+    enabled: showNewTank && tankMode === 'manual' && tankSaveToFamily,
   });
 
   const { data: piping } = useQuery({
@@ -329,33 +348,78 @@ export default function ProjectDetail() {
     { key: 'created_by_name', header: 'Created By' },
   ];
 
+  const resetTankForm = () => {
+    setSelectedTankProduct(null); setTankProductSearch('');
+    setTankCode(''); setTankStatus('Active'); setTankSystemId(''); setTankQuantity(1);
+    setTankMode('search'); setTankName(''); setTankType(''); setTankShapeType('');
+    setTankLengthMm(''); setTankWidthMm(''); setTankHeightMm('');
+    setTankDesignWaterLevel(''); setTankWallThickness(''); setTankMaterial('');
+    setTankSaveToFamily(false); setTankFamilyId(''); setTankNewProductCode('');
+  };
+
   const handleAddTank = async () => {
     if (!tankCode.trim()) { toast.error('Tank tag code is required'); return; }
-    if (!selectedTankProduct) { toast.error('Select a tank product from the Shark OS'); return; }
+    if (tankMode === 'search' && !selectedTankProduct) { toast.error('Select a tank product from the Shark OS'); return; }
+    if (tankMode === 'manual' && !tankName.trim()) { toast.error('Tank name is required'); return; }
+    if (tankMode === 'manual' && tankSaveToFamily && !tankNewProductCode.trim()) { toast.error('Product code is required to save to Tank Families'); return; }
     setTankSubmitting(true);
     try {
-      await api.post('/tanks', {
-        tank_code: tankCode.trim().toUpperCase(),
-        tank_name: selectedTankProduct.product_name,
-        tank_type: selectedTankProduct.application_type || null,
-        product_master_id: selectedTankProduct.id,
-        project_id: project.id,
-        system_id: tankSystemId || null,
-        quantity: tankQuantity || 1,
-        status: tankStatus,
-      });
+      if (tankMode === 'search') {
+        await api.post('/tanks', {
+          tank_code: tankCode.trim().toUpperCase(),
+          tank_name: selectedTankProduct.product_name,
+          tank_type: selectedTankProduct.application_type || null,
+          product_master_id: selectedTankProduct.id,
+          project_id: project.id,
+          system_id: tankSystemId || null,
+          quantity: tankQuantity || 1,
+          status: tankStatus,
+        });
+      } else {
+        let productMasterId: string | null = null;
+        if (tankSaveToFamily) {
+          const pmRes = await api.post('/product-masters', {
+            product_code: tankNewProductCode.trim().toUpperCase(),
+            product_name: tankName.trim(),
+            product_category: 'Tank',
+            application_type: tankType || null,
+            shape_type: tankShapeType || null,
+            length_mm: tankLengthMm ? parseFloat(tankLengthMm) : null,
+            width_mm: tankWidthMm ? parseFloat(tankWidthMm) : null,
+            height_mm: tankHeightMm ? parseFloat(tankHeightMm) : null,
+            design_water_level_mm: tankDesignWaterLevel ? parseFloat(tankDesignWaterLevel) : null,
+            wall_thickness_mm: tankWallThickness ? parseFloat(tankWallThickness) : null,
+            primary_material_code: tankMaterial || null,
+            tank_family_id: tankFamilyId || null,
+            standard_status: 'Concept',
+          });
+          productMasterId = pmRes.data.id;
+          toast.success(`Saved to Tank Families as ${tankNewProductCode.trim().toUpperCase()}`);
+        }
+        await api.post('/tanks', {
+          tank_code: tankCode.trim().toUpperCase(),
+          tank_name: tankName.trim(),
+          tank_type: tankType || null,
+          product_master_id: productMasterId,
+          project_id: project.id,
+          system_id: tankSystemId || null,
+          quantity: tankQuantity || 1,
+          status: tankStatus,
+          shape_type: !productMasterId ? (tankShapeType || null) : null,
+          length_mm: !productMasterId ? (tankLengthMm ? parseFloat(tankLengthMm) : null) : null,
+          width_mm: !productMasterId ? (tankWidthMm ? parseFloat(tankWidthMm) : null) : null,
+          height_mm: !productMasterId ? (tankHeightMm ? parseFloat(tankHeightMm) : null) : null,
+          design_water_level_mm: !productMasterId ? (tankDesignWaterLevel ? parseFloat(tankDesignWaterLevel) : null) : null,
+          primary_material: !productMasterId ? (tankMaterial || null) : null,
+        });
+      }
       toast.success('Tank added');
+      resetTankForm();
       setShowNewTank(false);
-      setSelectedTankProduct(null);
-      setTankProductSearch('');
-      setTankCode('');
-      setTankStatus('Active');
-      setTankSystemId('');
-      setTankQuantity(1);
       qc.invalidateQueries({ queryKey: ['project-tanks'] });
       qc.invalidateQueries({ queryKey: ['project-systems'] });
-    } catch {
-      toast.error('Failed to add tank');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to add tank');
     } finally {
       setTankSubmitting(false);
     }
@@ -774,7 +838,7 @@ export default function ProjectDetail() {
             ))}
             <div className="ml-auto p-2 flex items-center gap-2">
               {tab === 'systems' && <Button size="sm" variant="primary" onClick={() => setShowNewSystem(true)}><Plus className="w-3.5 h-3.5" />System</Button>}
-              {tab === 'tanks' && <Button size="sm" variant="primary" onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); setTankCode(''); setTankStatus('Active'); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button>}
+              {tab === 'tanks' && <Button size="sm" variant="primary" onClick={() => { resetTankForm(); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button>}
               {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
               {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setBomSections({ Products: true, Tank: true, Piping: true }); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
               {tab === 'pos' && <Button size="sm" variant="primary" onClick={() => setShowReleasePOModal(true)}><ShoppingCart className="w-3.5 h-3.5" />Release PO</Button>}
@@ -1058,67 +1122,211 @@ export default function ProjectDetail() {
       )}
 
       {showNewTank && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
               <h2 className="text-lg font-semibold text-slate-800">Add Tank to Project</h2>
-              <button onClick={() => setShowNewTank(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button onClick={() => { resetTankForm(); setShowNewTank(false); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Tank Product (Shark OS) *</label>
-                {selectedTankProduct ? (
-                  <div className="border border-blue-600 rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <EntityCode code={selectedTankProduct.product_code} />
-                        <span className="text-sm font-medium text-slate-800">{selectedTankProduct.product_name}</span>
+
+            {/* Mode toggle */}
+            <div className="px-6 pt-4 flex-shrink-0">
+              <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                <button
+                  className={`flex-1 py-2 font-medium transition-colors ${tankMode === 'search' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  onClick={() => setTankMode('search')}
+                >
+                  Find Existing
+                </button>
+                <button
+                  className={`flex-1 py-2 font-medium transition-colors ${tankMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  onClick={() => setTankMode('manual')}
+                >
+                  Enter Dimensions
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+
+              {/* ── SEARCH MODE ── */}
+              {tankMode === 'search' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tank Product (Shark OS) *</label>
+                  {selectedTankProduct ? (
+                    <div className="border border-blue-600 rounded-lg p-3 bg-blue-50 flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <EntityCode code={selectedTankProduct.product_code} />
+                          <span className="text-sm font-medium text-slate-800">{selectedTankProduct.product_name}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {selectedTankProduct.application_type || 'Tank'}
+                          {selectedTankProduct.shape_type ? ' · ' + selectedTankProduct.shape_type : ''}
+                          {selectedTankProduct.length_mm != null ? ` · ${selectedTankProduct.length_mm}×${selectedTankProduct.width_mm ?? '?'}×${selectedTankProduct.height_mm ?? '?'} mm` : ''}
+                          {selectedTankProduct.gross_volume_m3 != null ? ` · ${selectedTankProduct.gross_volume_m3} m³` : ''}
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        {selectedTankProduct.application_type || 'Tank'}
-                        {selectedTankProduct.shape_type ? ' · ' + selectedTankProduct.shape_type : ''}
-                        {selectedTankProduct.length_mm != null ? ` · ${selectedTankProduct.length_mm}×${selectedTankProduct.width_mm ?? '?'}×${selectedTankProduct.height_mm ?? '?'} mm` : ''}
-                        {selectedTankProduct.gross_volume_m3 != null ? ` · ${selectedTankProduct.gross_volume_m3} m³` : ''}
+                      <button onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); }} className="text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        autoFocus
+                        placeholder="Search tank products by name or code..."
+                        value={tankProductSearch}
+                        onChange={e => setTankProductSearch(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                      {tankProductResults?.items?.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 z-10 max-h-48 overflow-auto">
+                          {tankProductResults.items.map((p: any) => (
+                            <button key={p.id} onClick={() => setSelectedTankProduct(p)}
+                              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                              <div className="flex items-center gap-2">
+                                <EntityCode code={p.product_code} />
+                                <span className="text-sm font-medium">{p.product_name}</span>
+                              </div>
+                              <div className="text-xs text-slate-400 mt-0.5">
+                                {p.application_type || 'Tank'}
+                                {p.shape_type ? ' · ' + p.shape_type : ''}
+                                {p.length_mm != null ? ` · ${p.length_mm}×${p.width_mm ?? '?'}×${p.height_mm ?? '?'} mm` : ''}
+                                {p.gross_volume_m3 != null ? ` · ${p.gross_volume_m3} m³` : ''}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {tankProductSearch.length >= 2 && !tankProductResults?.items?.length && (
+                        <div className="mt-2 text-xs text-slate-400">No tank products found. Switch to "Enter Dimensions" to create one on the fly.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── MANUAL / DIMENSIONS MODE ── */}
+              {tankMode === 'manual' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Tank Name *</label>
+                      <input
+                        autoFocus
+                        placeholder="e.g. Display Tank — Shark Exhibit"
+                        value={tankName}
+                        onChange={e => setTankName(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Shape</label>
+                      <select value={tankShapeType} onChange={e => setTankShapeType(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                        <option value="">— Select —</option>
+                        {['Rectangular', 'Cylindrical', 'Custom'].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Type / Application</label>
+                      <input
+                        placeholder="e.g. Display, Sump, Quarantine"
+                        value={tankType}
+                        onChange={e => setTankType(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dimensions */}
+                  <div>
+                    <p className="text-xs font-medium text-slate-600 mb-2">Dimensions (mm)</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-1">Length</label>
+                        <input type="number" min={0} placeholder="e.g. 5000" value={tankLengthMm} onChange={e => setTankLengthMm(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-1">Width</label>
+                        <input type="number" min={0} placeholder="e.g. 2000" value={tankWidthMm} onChange={e => setTankWidthMm(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-1">Height</label>
+                        <input type="number" min={0} placeholder="e.g. 1500" value={tankHeightMm} onChange={e => setTankHeightMm(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-1">Water Level</label>
+                        <input type="number" min={0} placeholder="e.g. 1300" value={tankDesignWaterLevel} onChange={e => setTankDesignWaterLevel(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-1">Wall Thickness</label>
+                        <input type="number" min={0} placeholder="e.g. 20" value={tankWallThickness} onChange={e => setTankWallThickness(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500 mb-1">Material</label>
+                        <input placeholder="e.g. FRP, Acrylic" value={tankMaterial} onChange={e => setTankMaterial(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                       </div>
                     </div>
-                    <button onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); }} className="text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-4 h-4" /></button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      autoFocus
-                      placeholder="Search tank products by name or code..."
-                      value={tankProductSearch}
-                      onChange={e => setTankProductSearch(e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    />
-                    {tankProductResults?.items?.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 z-10 max-h-48 overflow-auto">
-                        {tankProductResults.items.map((p: any) => (
-                          <button key={p.id} onClick={() => setSelectedTankProduct(p)}
-                            className="w-full text-left px-4 py-2.5 hover:bg-slate-50 border-b border-slate-100 last:border-0">
-                            <div className="flex items-center gap-2">
-                              <EntityCode code={p.product_code} />
-                              <span className="text-sm font-medium">{p.product_name}</span>
-                            </div>
-                            <div className="text-xs text-slate-400 mt-0.5">
-                              {p.application_type || 'Tank'}
-                              {p.shape_type ? ' · ' + p.shape_type : ''}
-                              {p.length_mm != null ? ` · ${p.length_mm}×${p.width_mm ?? '?'}×${p.height_mm ?? '?'} mm` : ''}
-                              {p.gross_volume_m3 != null ? ` · ${p.gross_volume_m3} m³` : ''}
-                            </div>
-                          </button>
-                        ))}
+                    {/* Live volume preview */}
+                    {tankLengthMm && tankWidthMm && tankHeightMm && (
+                      <div className="mt-2 flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                        <span>Gross: <strong className="text-slate-700">{(parseFloat(tankLengthMm) * parseFloat(tankWidthMm) * parseFloat(tankHeightMm) / 1e9).toFixed(3)} m³</strong></span>
+                        {tankDesignWaterLevel && (
+                          <span>Operating: <strong className="text-slate-700">{(parseFloat(tankLengthMm) * parseFloat(tankWidthMm) * parseFloat(tankDesignWaterLevel) / 1e9).toFixed(3)} m³</strong></span>
+                        )}
                       </div>
                     )}
-                    {tankProductSearch.length >= 2 && !tankProductResults?.items?.length && (
-                      <div className="mt-2 text-xs text-slate-400">No tank products found — add them in the Shark OS first</div>
+                  </div>
+
+                  {/* Save to Tank Family */}
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <label className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50">
+                      <input type="checkbox" checked={tankSaveToFamily} onChange={e => setTankSaveToFamily(e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                      <div>
+                        <div className="text-sm font-medium text-slate-800">Also add to Tank Families</div>
+                        <div className="text-xs text-slate-500">Creates a reusable product master with these dimensions</div>
+                      </div>
+                    </label>
+                    {tankSaveToFamily && (
+                      <div className="border-t border-slate-200 px-4 pb-4 pt-3 space-y-3 bg-slate-50">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
+                            <input
+                              placeholder="e.g. TNK-DIS-5000"
+                              value={tankNewProductCode}
+                              onChange={e => setTankNewProductCode(e.target.value.toUpperCase())}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 mb-1">Tank Family <span className="text-slate-400 font-normal">(optional)</span></label>
+                            <select value={tankFamilyId} onChange={e => setTankFamilyId(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white">
+                              <option value="">— None —</option>
+                              {(Array.isArray(tankFamilies) ? tankFamilies : []).map((f: any) => (
+                                <option key={f.id} value={f.id}>{f.code} – {f.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
 
+              {/* ── SHARED FIELDS (both modes) ── */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Project Tag Code *</label>
@@ -1132,39 +1340,48 @@ export default function ProjectDetail() {
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
                   <input
-                    type="number"
-                    min={1}
-                    value={tankQuantity}
+                    type="number" min={1} value={tankQuantity}
                     onChange={e => setTankQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
                   />
                 </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">System <span className="text-slate-400 font-normal">(optional)</span></label>
-                <select value={tankSystemId} onChange={e => setTankSystemId(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  <option value="">— No system —</option>
-                  {(systems?.items || []).map((s: any) => (
-                    <option key={s.id} value={s.id}>{s.system_code} – {s.system_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={tankStatus} onChange={e => setTankStatus(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {['Design', 'Procurement', 'Installation', 'Commissioning', 'Active', 'Decommissioned'].map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">System <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <select value={tankSystemId} onChange={e => setTankSystemId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                    <option value="">— No system —</option>
+                    {(systems?.items || []).map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.system_code} – {s.system_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                  <select value={tankStatus} onChange={e => setTankStatus(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                    {['Design', 'Procurement', 'Installation', 'Commissioning', 'Active', 'Decommissioned'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <Button variant="ghost" onClick={() => setShowNewTank(false)}>Cancel</Button>
-              <Button onClick={handleAddTank} disabled={tankSubmitting || !selectedTankProduct || !tankCode.trim()}>
-                {tankSubmitting ? 'Adding...' : 'Add Tank'}
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 flex-shrink-0">
+              <Button variant="ghost" onClick={() => { resetTankForm(); setShowNewTank(false); }}>Cancel</Button>
+              <Button
+                onClick={handleAddTank}
+                disabled={
+                  tankSubmitting || !tankCode.trim() ||
+                  (tankMode === 'search' && !selectedTankProduct) ||
+                  (tankMode === 'manual' && !tankName.trim()) ||
+                  (tankMode === 'manual' && tankSaveToFamily && !tankNewProductCode.trim())
+                }
+              >
+                {tankSubmitting ? 'Adding...' : tankMode === 'manual' && tankSaveToFamily ? 'Add Tank & Save to Families' : 'Add Tank'}
               </Button>
             </div>
           </div>
