@@ -64,6 +64,11 @@ export default function SystemDetail() {
   const [quickPONotes, setQuickPONotes] = useState('');
   const [quickPOSaving, setQuickPOSaving] = useState(false);
 
+  const [showAssignTank, setShowAssignTank] = useState(false);
+  const [assigningTankId, setAssigningTankId] = useState<string | null>(null);
+  const [unassigningTankId, setUnassigningTankId] = useState<string | null>(null);
+  const [assignSearch, setAssignSearch] = useState('');
+
   const { data: system, isLoading, refetch } = useQuery({
     queryKey: ['system', id],
     queryFn: () => api.get(`/systems/${id}`).then(r => r.data),
@@ -91,6 +96,12 @@ export default function SystemDetail() {
     queryKey: ['component-search-inline', inlineComponentSearch],
     queryFn: () => api.get(`/components?search=${inlineComponentSearch}&page_size=8`).then(r => r.data),
     enabled: inlineComponentSearch.length >= 2 && !inlineSelectedComponent,
+  });
+
+  const { data: allProjectTanks, refetch: refetchAllTanks } = useQuery({
+    queryKey: ['project-tanks-all', system?.project_id],
+    queryFn: () => api.get(`/tanks?project_id=${system!.project_id}&page_size=500`).then(r => r.data),
+    enabled: showAssignTank && !!system?.project_id,
   });
 
   useEffect(() => {
@@ -299,6 +310,56 @@ export default function SystemDetail() {
       refetch();
       setDeleteConfirmId(null);
     } catch { toast.error('Delete failed'); }
+  };
+
+  const assignTank = async (tank: any) => {
+    setAssigningTankId(tank.id);
+    try {
+      await api.put(`/tanks/${tank.id}`, {
+        tank_name: tank.tank_name || '',
+        tank_code: tank.tank_code || '',
+        tank_type: tank.tank_type || '',
+        shape_type: tank.shape_type || '',
+        length_mm: tank.length_mm ?? '',
+        width_mm: tank.width_mm ?? '',
+        height_mm: tank.height_mm ?? '',
+        design_water_level_mm: tank.design_water_level_mm ?? '',
+        primary_material: tank.primary_material || '',
+        status: tank.status || 'Active',
+        quantity: tank.quantity ?? 1,
+        notes: tank.notes || '',
+        system_id: system.id,
+      });
+      refetch();
+      refetchAllTanks();
+      toast.success(`${tank.tank_code} assigned to ${system.system_code}`);
+    } catch { toast.error('Failed to assign tank'); }
+    finally { setAssigningTankId(null); }
+  };
+
+  const unassignTank = async (tank: any) => {
+    setUnassigningTankId(tank.id);
+    try {
+      await api.put(`/tanks/${tank.id}`, {
+        tank_name: tank.tank_name || '',
+        tank_code: tank.tank_code || '',
+        tank_type: tank.tank_type || '',
+        shape_type: tank.shape_type || '',
+        length_mm: tank.length_mm ?? '',
+        width_mm: tank.width_mm ?? '',
+        height_mm: tank.height_mm ?? '',
+        design_water_level_mm: tank.design_water_level_mm ?? '',
+        primary_material: tank.primary_material || '',
+        status: tank.status || 'Active',
+        quantity: tank.quantity ?? 1,
+        notes: tank.notes || '',
+        system_id: null,
+      });
+      refetch();
+      refetchAllTanks();
+      toast.success(`${tank.tank_code} removed from ${system.system_code}`);
+    } catch { toast.error('Failed to remove tank'); }
+    finally { setUnassigningTankId(null); }
   };
 
   const transitions = ['Draft', 'Internal Review', 'Approved', 'Released', 'Superseded', 'Obsolete'];
@@ -893,6 +954,12 @@ export default function SystemDetail() {
                     {selectedTankIds.size > 0 && (
                       <button onClick={() => setSelectedTankIds(new Set())} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5">Clear</button>
                     )}
+                    <button
+                      onClick={() => { setShowAssignTank(v => !v); setAssignSearch(''); }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${showAssignTank ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />Assign Tank
+                    </button>
                     <Link
                       to={`/projects/${system.project_id}?tab=tanks`}
                       className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
@@ -902,9 +969,62 @@ export default function SystemDetail() {
                   </div>
                 </div>
 
+                {/* Unallocated tank picker */}
+                {showAssignTank && (() => {
+                  const unallocated = (allProjectTanks?.items || [])
+                    .filter((t: any) => !t.system_id)
+                    .filter((t: any) => !assignSearch ||
+                      t.tank_code?.toLowerCase().includes(assignSearch.toLowerCase()) ||
+                      t.tank_name?.toLowerCase().includes(assignSearch.toLowerCase()));
+                  return (
+                    <div className="border-b border-blue-100 bg-blue-50/60 px-4 py-3">
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <div className="relative flex-1 max-w-xs">
+                          <Search className="absolute left-2 top-1.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                          <input
+                            autoFocus
+                            value={assignSearch}
+                            onChange={e => setAssignSearch(e.target.value)}
+                            placeholder="Filter unassigned tanks…"
+                            className="w-full pl-7 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <span className="text-xs text-slate-400">
+                          {!allProjectTanks ? 'Loading…' : `${(allProjectTanks?.items || []).filter((t: any) => !t.system_id).length} unassigned`}
+                        </span>
+                      </div>
+                      {!allProjectTanks ? null : unallocated.length === 0 ? (
+                        <p className="text-xs text-slate-400 py-1">
+                          {assignSearch ? 'No tanks match your search.' : 'All tanks in this project are already assigned to a system.'}
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {unallocated.map((t: any) => (
+                            <button
+                              key={t.id}
+                              disabled={assigningTankId === t.id}
+                              onClick={() => assignTank(t)}
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-blue-500 hover:bg-blue-50 transition-colors text-sm disabled:opacity-50 group"
+                            >
+                              <EntityCode code={t.tank_code} />
+                              <span className="text-slate-700 font-medium">{t.tank_name}</span>
+                              {t.gross_volume_m3 && (
+                                <span className="text-xs text-slate-400 font-mono">{parseFloat(t.gross_volume_m3).toFixed(2)} m³</span>
+                              )}
+                              {assigningTankId === t.id
+                                ? <span className="text-xs text-slate-400">…</span>
+                                : <Plus className="w-3 h-3 text-slate-300 group-hover:text-blue-500" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {tanks.length === 0 ? (
                   <div className="px-5 py-10 text-center text-sm text-slate-400">
-                    No tanks linked — go to the project and assign this system to a tank.
+                    No tanks linked yet — click <strong>Assign Tank</strong> above to add one from this project.
                   </div>
                 ) : (
                   <table className="w-full text-sm">
@@ -985,18 +1105,28 @@ export default function SystemDetail() {
                             </td>
                             <td className="px-3 py-2.5"><StatusBadge status={t.status || 'Active'} /></td>
                             <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
-                              {t.released_po_id ? (
+                              <div className="flex items-center gap-2">
+                                {t.released_po_id ? (
+                                  <button
+                                    onClick={() => navigate(`/purchase-orders/${t.released_po_id}`)}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                                    title={`Released in ${t.released_po_code}`}
+                                  >
+                                    <ShoppingCart className="w-2.5 h-2.5" />
+                                    {t.released_po_code}
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-300 text-xs">—</span>
+                                )}
                                 <button
-                                  onClick={() => navigate(`/purchase-orders/${t.released_po_id}`)}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
-                                  title={`Released in ${t.released_po_code}`}
+                                  onClick={() => unassignTank(t)}
+                                  disabled={unassigningTankId === t.id}
+                                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-300 hover:text-red-400 hover:bg-red-50 transition-opacity disabled:opacity-50"
+                                  title="Remove from this system"
                                 >
-                                  <ShoppingCart className="w-2.5 h-2.5" />
-                                  {t.released_po_code}
+                                  {unassigningTankId === t.id ? <span className="text-xs">…</span> : <X className="w-3 h-3" />}
                                 </button>
-                              ) : (
-                                <span className="text-slate-300 text-xs">—</span>
-                              )}
+                              </div>
                             </td>
                           </tr>
                         );
