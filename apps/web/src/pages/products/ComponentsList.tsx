@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -46,6 +46,8 @@ export default function ComponentsList() {
   const [submitting, setSubmitting] = useState(false);
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ component_code: string; component_name: string; component_type: string; component_category: string; status: string }>({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', status: 'Active' });
+  const dupFormRef = useRef(dupForm);
+  dupFormRef.current = dupForm;
   const [dupSaving, setDupSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -317,13 +319,14 @@ export default function ComponentsList() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <button onClick={() => setDupSourceId(null)} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
               <button onClick={async () => {
-                const code = dupForm.component_code.trim();
-                const name = dupForm.component_name.trim();
+                const { component_code, component_name, component_type, component_category, status } = dupFormRef.current;
+                const code = component_code.trim();
+                const name = component_name.trim();
                 const srcId = dupSourceId;
                 if (!code || !name) { toast.error('Code and name are required'); return; }
                 setDupSaving(true);
                 try {
-                  const res = await api.post(`/components/${srcId}/duplicate`, { component_code: code, component_name: name, component_type: dupForm.component_type, component_category: dupForm.component_category, status: dupForm.status });
+                  const res = await api.post(`/components/${srcId}/duplicate`, { component_code: code, component_name: name, component_type, component_category, status });
                   toast.success('Component duplicated');
                   setDupSourceId(null);
                   qc.invalidateQueries({ queryKey: ['components'] });

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import api from '../../lib/api';
 import { ProductMaster } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -31,6 +31,8 @@ export default function ProductMastersList() {
   const [editSaving, setEditSaving] = useState(false);
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ product_code: string; product_name: string; standard_status: string }>({ product_code: '', product_name: '', standard_status: 'Concept' });
+  const dupFormRef = useRef(dupForm);
+  dupFormRef.current = dupForm;
   const [dupSaving, setDupSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -306,9 +308,10 @@ export default function ProductMastersList() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
               <Button variant="ghost" onClick={() => setDupSourceId(null)}>Cancel</Button>
               <Button variant="primary" onClick={async () => {
-                const code = dupForm.product_code.trim();
-                const name = dupForm.product_name.trim();
-                const status = dupForm.standard_status;
+                const { product_code, product_name, standard_status } = dupFormRef.current;
+                const code = product_code.trim();
+                const name = product_name.trim();
+                const status = standard_status;
                 const srcId = dupSourceId;
                 if (!code || !name) { toast.error('Code and name are required'); return; }
                 setDupSaving(true);
