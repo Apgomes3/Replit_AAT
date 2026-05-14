@@ -268,6 +268,11 @@ export default function ProductMasterDetail() {
     product_family_id: product.product_family_id,
     tank_family_id: product.tank_family_id,
     synonyms: product.synonyms || [],
+    manufacturer: (product as any).manufacturer || null,
+    model: (product as any).model || null,
+    cost: (product as any).cost ?? null,
+    sell_price: (product as any).sell_price ?? null,
+    currency: (product as any).currency || 'USD',
     ...overrides,
   });
 
