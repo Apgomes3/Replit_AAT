@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 import toast from 'react-hot-toast';
-import { Plus, Copy, Pencil, X, Download, Package } from 'lucide-react';
+import { Plus, Copy, Pencil, X, Download, Package, Trash2 } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 
 const STATUSES = ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'];
@@ -32,6 +32,8 @@ export default function ProductMastersList() {
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ product_code: string; product_name: string; standard_status: string }>({ product_code: '', product_name: '', standard_status: 'Concept' });
   const [dupSaving, setDupSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [creatingEditCategory, setCreatingEditCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryLoading, setNewCategoryLoading] = useState(false);
@@ -257,8 +259,12 @@ export default function ProductMastersList() {
               contextMenuItems={row => [
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
-                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />, divider: true,
+                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
                   onClick: () => { setDupForm({ product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, standard_status: row.standard_status || 'Concept' }); setDupSourceId(row.id); },
+                },
+                {
+                  label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
+                  onClick: () => setConfirmDelete({ id: row.id, name: row.product_code }),
                 },
               ]}
             />
@@ -315,6 +321,39 @@ export default function ProductMastersList() {
                 } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
                 finally { setDupSaving(false); }
               }} disabled={dupSaving}>{dupSaving ? 'Creating…' : 'Duplicate'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-96 flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-base font-semibold text-slate-800">Delete product?</h3>
+              <p className="text-sm text-slate-500">
+                <span className="font-medium text-slate-700">{confirmDelete.name}</span> will be permanently removed. This cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+                className="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button disabled={deleting} onClick={async () => {
+                const id = confirmDelete.id;
+                setDeleting(true);
+                try {
+                  await api.delete(`/product-masters/${id}`);
+                  toast.success('Product deleted');
+                  setConfirmDelete(null);
+                  refetch();
+                } catch (err: any) {
+                  toast.error(err?.response?.data?.error?.message || 'Delete failed');
+                } finally { setDeleting(false); }
+              }} className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 font-medium">
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

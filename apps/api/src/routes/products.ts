@@ -543,6 +543,21 @@ router.post('/components/:id/duplicate', authenticate, async (req: AuthRequest, 
   res.status(201).json(result.rows[0]);
 });
 
+router.delete('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const inUse = await query(
+    `SELECT 1 FROM bom_lines WHERE component_id=$1 LIMIT 1`, [id]);
+  if (inUse.rows.length > 0) {
+    return res.status(409).json({ error: { code: 'IN_USE', message: 'Cannot delete — component is linked to BOM lines. Remove those links first.' } });
+  }
+  await query('DELETE FROM documents WHERE component_id=$1', [id]);
+  await query('DELETE FROM entity_relationships WHERE source_id=$1 OR target_id=$1', [id]);
+  const result = await query('DELETE FROM components WHERE id::text=$1 RETURNING id, component_code', [id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+  await logAudit(req.user!.id, 'component', id, 'DELETE', { component_code: result.rows[0].component_code });
+  res.json({ deleted: true });
+});
+
 // FAMILY CLASSIFIERS
 router.get('/product-families/:id/classifiers', authenticate, async (req: AuthRequest, res: Response) => {
   const fam = await query('SELECT id FROM product_families WHERE id::text=$1 OR product_family_code=$1', [req.params.id]);

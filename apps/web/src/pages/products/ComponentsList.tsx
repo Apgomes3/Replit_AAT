@@ -8,7 +8,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import { Component } from '../../types';
-import { Plus, X, Copy, Pencil, Download, Boxes } from 'lucide-react';
+import { Plus, X, Copy, Pencil, Download, Boxes, Trash2 } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 import toast from 'react-hot-toast';
@@ -47,6 +47,8 @@ export default function ComponentsList() {
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ component_code: string; component_name: string; component_type: string; component_category: string; status: string }>({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', status: 'Active' });
   const [dupSaving, setDupSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [editRow, setEditRow] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [editSaving, setEditSaving] = useState(false);
@@ -254,8 +256,12 @@ export default function ComponentsList() {
               contextMenuItems={row => [
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
-                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />, divider: true,
+                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
                   onClick: () => { setDupForm({ component_code: row.component_code + '-COPY', component_name: 'Copy of ' + row.component_name, component_type: row.component_type || 'Vessel', component_category: row.component_category || 'Mechanical', status: row.status || 'Active' }); setDupSourceId(row.id); },
+                },
+                {
+                  label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
+                  onClick: () => setConfirmDelete({ id: row.id, name: row.component_code }),
                 },
               ]}
             />
@@ -325,6 +331,39 @@ export default function ComponentsList() {
                 } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
                 finally { setDupSaving(false); }
               }} disabled={dupSaving} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">{dupSaving ? 'Creating…' : 'Duplicate'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-96 flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-base font-semibold text-slate-800">Delete component?</h3>
+              <p className="text-sm text-slate-500">
+                <span className="font-medium text-slate-700">{confirmDelete.name}</span> will be permanently removed. This cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+                className="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button disabled={deleting} onClick={async () => {
+                const id = confirmDelete.id;
+                setDeleting(true);
+                try {
+                  await api.delete(`/components/${id}`);
+                  toast.success('Component deleted');
+                  setConfirmDelete(null);
+                  qc.invalidateQueries({ queryKey: ['components'] });
+                } catch (err: any) {
+                  toast.error(err?.response?.data?.error?.message || 'Delete failed');
+                } finally { setDeleting(false); }
+              }} className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 font-medium">
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

@@ -168,8 +168,14 @@ export default function TanksList() {
                 {
                   label: 'Duplicate',
                   icon: <Copy className="w-3.5 h-3.5" />,
-                  divider: true,
                   onClick: () => { setDupForm({ product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, shape_type: (row as any).shape_type || 'Rectangular', standard_status: row.standard_status || 'Concept' }); setDupSourceId(row.id); },
+                },
+                {
+                  label: 'Delete',
+                  icon: <Trash2 className="w-3.5 h-3.5" />,
+                  divider: true,
+                  danger: true,
+                  onClick: () => setConfirmDelete({ id: row.id, name: row.product_code }),
                 },
               ]}
             />
