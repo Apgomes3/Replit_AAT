@@ -317,19 +317,24 @@ router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity } = req.body;
+  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3 } = req.body;
   if (!tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
   const l = length_mm ? parseFloat(length_mm) : null;
   const w = width_mm ? parseFloat(width_mm) : null;
   const h = height_mm ? parseFloat(height_mm) : null;
   const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
+  const isCustom = (shape_type || '').toLowerCase() === 'custom';
   const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
-  const calcGross = isCyl
-    ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
-    : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
-  const calcOp = isCyl
-    ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
-    : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
+  const calcGross = isCustom
+    ? (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null)
+    : isCyl
+      ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
+      : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
+  const calcOp = isCustom
+    ? (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null)
+    : isCyl
+      ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
+      : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
   const qty = Math.max(1, parseInt(quantity) || 1);
   const result = await query(
     `UPDATE tanks SET

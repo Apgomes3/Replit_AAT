@@ -67,6 +67,8 @@ export default function ProjectDetail() {
   const [tankDesignWaterLevel, setTankDesignWaterLevel] = useState('');
   const [tankWallThickness, setTankWallThickness] = useState('');
   const [tankMaterial, setTankMaterial] = useState('');
+  const [tankGrossVolume, setTankGrossVolume] = useState('');
+  const [tankOperatingVolume, setTankOperatingVolume] = useState('');
   const [tankSaveToFamily, setTankSaveToFamily] = useState(false);
   const [tankFamilyId, setTankFamilyId] = useState('');
   const [tankNewProductCode, setTankNewProductCode] = useState('');
@@ -371,6 +373,7 @@ export default function ProjectDetail() {
     setTankMode('search'); setTankName(''); setTankType(''); setTankShapeType('');
     setTankLengthMm(''); setTankWidthMm(''); setTankHeightMm('');
     setTankDesignWaterLevel(''); setTankWallThickness(''); setTankMaterial('');
+    setTankGrossVolume(''); setTankOperatingVolume('');
     setTankSaveToFamily(false); setTankFamilyId(''); setTankNewProductCode('');
   };
 
@@ -428,6 +431,8 @@ export default function ProjectDetail() {
           height_mm: !productMasterId ? (tankHeightMm ? parseFloat(tankHeightMm) : null) : null,
           design_water_level_mm: !productMasterId ? (tankDesignWaterLevel ? parseFloat(tankDesignWaterLevel) : null) : null,
           primary_material: !productMasterId ? (tankMaterial || null) : null,
+          gross_volume_m3: (!productMasterId && tankShapeType === 'Custom' && tankGrossVolume) ? parseFloat(tankGrossVolume) : undefined,
+          operating_volume_m3: (!productMasterId && tankShapeType === 'Custom' && tankOperatingVolume) ? parseFloat(tankOperatingVolume) : undefined,
         });
       }
       toast.success('Tank added');
@@ -1372,75 +1377,111 @@ export default function ProjectDetail() {
                     </div>
                   </div>
 
-                  {/* Dimensions */}
+                  {/* Dimensions / Volumes */}
                   <div>
-                    <p className="text-xs font-medium text-slate-600 mb-2">Dimensions (mm)</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {tankShapeType !== 'Cylindrical' && (
-                        <div>
-                          <label className="block text-[11px] text-slate-500 mb-1">Length</label>
-                          <input type="number" min={0} placeholder="e.g. 5000" value={tankLengthMm} onChange={e => setTankLengthMm(e.target.value)}
-                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                    {tankShapeType === 'Custom' ? (
+                      <>
+                        <p className="text-xs font-medium text-slate-600 mb-2">Volumes (m³) — enter manually</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">Gross Volume (m³)</label>
+                            <input type="number" min={0} step="0.001" placeholder="e.g. 12.500" value={tankGrossVolume} onChange={e => setTankGrossVolume(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">Operating Volume (m³)</label>
+                            <input type="number" min={0} step="0.001" placeholder="e.g. 10.500" value={tankOperatingVolume} onChange={e => setTankOperatingVolume(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">Material</label>
+                            <select value={tankMaterial} onChange={e => setTankMaterial(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                              <option value="">— Select material —</option>
+                              {materials.map(m => (
+                                <option key={m.material_code} value={m.material_code}>{m.material_code} — {m.material_name}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
-                      )}
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">{tankShapeType === 'Cylindrical' ? 'Diameter' : 'Width'}</label>
-                        <input type="number" min={0} placeholder={tankShapeType === 'Cylindrical' ? 'e.g. 2000' : 'e.g. 2000'} value={tankWidthMm} onChange={e => setTankWidthMm(e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Height</label>
-                        <input type="number" min={0} placeholder="e.g. 1500" value={tankHeightMm} onChange={e => setTankHeightMm(e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Water Level</label>
-                        <input type="number" min={0} placeholder="e.g. 1300" value={tankDesignWaterLevel} onChange={e => setTankDesignWaterLevel(e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Wall Thickness</label>
-                        <input type="number" min={0} placeholder="e.g. 20" value={tankWallThickness} onChange={e => setTankWallThickness(e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Material</label>
-                        <select value={tankMaterial} onChange={e => setTankMaterial(e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                          <option value="">— Select material —</option>
-                          {materials.map(m => (
-                            <option key={m.material_code} value={m.material_code}>
-                              {m.material_code} — {m.material_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    {/* Live volume preview */}
-                    {(() => {
-                      const cyl = tankShapeType === 'Cylindrical';
-                      const d = parseFloat(tankWidthMm);
-                      const l = parseFloat(tankLengthMm);
-                      const w = parseFloat(tankWidthMm);
-                      const h = parseFloat(tankHeightMm);
-                      const wl = parseFloat(tankDesignWaterLevel);
-                      const hasGross = cyl ? (d > 0 && h > 0) : (l > 0 && w > 0 && h > 0);
-                      if (!hasGross) return null;
-                      const gross = cyl
-                        ? Math.PI * (d / 2) * (d / 2) * h / 1e9
-                        : l * w * h / 1e9;
-                      const op = cyl
-                        ? (wl > 0 ? Math.PI * (d / 2) * (d / 2) * wl / 1e9 : null)
-                        : (wl > 0 ? l * w * wl / 1e9 : null);
-                      return (
-                        <div className="mt-2 flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-                          <span>{cyl ? '¼π·D²·H' : 'L×W×H'}: <strong className="text-slate-700">{gross.toFixed(3)} m³</strong></span>
-                          {op != null && (
-                            <span>Operating: <strong className="text-slate-700">{op.toFixed(3)} m³</strong></span>
+                        {(tankGrossVolume || tankOperatingVolume) && (
+                          <div className="mt-2 flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                            {tankGrossVolume && <span>Gross: <strong className="text-slate-700">{parseFloat(tankGrossVolume).toFixed(3)} m³</strong></span>}
+                            {tankOperatingVolume && <span>Operating: <strong className="text-slate-700">{parseFloat(tankOperatingVolume).toFixed(3)} m³</strong></span>}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-medium text-slate-600 mb-2">Dimensions (mm)</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {tankShapeType !== 'Cylindrical' && (
+                            <div>
+                              <label className="block text-[11px] text-slate-500 mb-1">Length</label>
+                              <input type="number" min={0} placeholder="e.g. 5000" value={tankLengthMm} onChange={e => setTankLengthMm(e.target.value)}
+                                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                            </div>
                           )}
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">{tankShapeType === 'Cylindrical' ? 'Diameter' : 'Width'}</label>
+                            <input type="number" min={0} placeholder="e.g. 2000" value={tankWidthMm} onChange={e => setTankWidthMm(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">Height</label>
+                            <input type="number" min={0} placeholder="e.g. 1500" value={tankHeightMm} onChange={e => setTankHeightMm(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">Water Level</label>
+                            <input type="number" min={0} placeholder="e.g. 1300" value={tankDesignWaterLevel} onChange={e => setTankDesignWaterLevel(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">Wall Thickness</label>
+                            <input type="number" min={0} placeholder="e.g. 20" value={tankWallThickness} onChange={e => setTankWallThickness(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-slate-500 mb-1">Material</label>
+                            <select value={tankMaterial} onChange={e => setTankMaterial(e.target.value)}
+                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                              <option value="">— Select material —</option>
+                              {materials.map(m => (
+                                <option key={m.material_code} value={m.material_code}>
+                                  {m.material_code} — {m.material_name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
-                      );
-                    })()}
+                        {/* Live volume preview */}
+                        {(() => {
+                          const cyl = tankShapeType === 'Cylindrical';
+                          const d = parseFloat(tankWidthMm);
+                          const l = parseFloat(tankLengthMm);
+                          const w = parseFloat(tankWidthMm);
+                          const h = parseFloat(tankHeightMm);
+                          const wl = parseFloat(tankDesignWaterLevel);
+                          const hasGross = cyl ? (d > 0 && h > 0) : (l > 0 && w > 0 && h > 0);
+                          if (!hasGross) return null;
+                          const gross = cyl
+                            ? Math.PI * (d / 2) * (d / 2) * h / 1e9
+                            : l * w * h / 1e9;
+                          const op = cyl
+                            ? (wl > 0 ? Math.PI * (d / 2) * (d / 2) * wl / 1e9 : null)
+                            : (wl > 0 ? l * w * wl / 1e9 : null);
+                          return (
+                            <div className="mt-2 flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                              <span>{cyl ? '¼π·D²·H' : 'L×W×H'}: <strong className="text-slate-700">{gross.toFixed(3)} m³</strong></span>
+                              {op != null && (
+                                <span>Operating: <strong className="text-slate-700">{op.toFixed(3)} m³</strong></span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
                   </div>
 
                   {/* Save to Tank Family */}
@@ -1896,37 +1937,56 @@ export default function ProjectDetail() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 >
                   <option value="">— None —</option>
-                  {['Rectangular', 'Cylindrical', 'Oval', 'D-Shape', 'Irregular'].map(s => (
+                  {['Rectangular', 'Cylindrical', 'Oval', 'D-Shape', 'Irregular', 'Custom'].map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
-              {editTankForm.shape_type !== 'Cylindrical' && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Length (mm)</label>
-                  <input type="number" value={editTankForm.length_mm}
-                    onChange={e => setEditTankForm((f: any) => ({ ...f, length_mm: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-                </div>
+              {editTankForm.shape_type === 'Custom' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Gross Volume (m³)</label>
+                    <input type="number" min={0} step="0.001" value={editTankForm.gross_volume_m3 ?? ''}
+                      onChange={e => setEditTankForm((f: any) => ({ ...f, gross_volume_m3: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Operating Volume (m³)</label>
+                    <input type="number" min={0} step="0.001" value={editTankForm.operating_volume_m3 ?? ''}
+                      onChange={e => setEditTankForm((f: any) => ({ ...f, operating_volume_m3: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {editTankForm.shape_type !== 'Cylindrical' && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Length (mm)</label>
+                      <input type="number" value={editTankForm.length_mm}
+                        onChange={e => setEditTankForm((f: any) => ({ ...f, length_mm: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">{editTankForm.shape_type === 'Cylindrical' ? 'Diameter (mm)' : 'Width (mm)'}</label>
+                    <input type="number" value={editTankForm.width_mm}
+                      onChange={e => setEditTankForm((f: any) => ({ ...f, width_mm: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Height (mm)</label>
+                    <input type="number" value={editTankForm.height_mm}
+                      onChange={e => setEditTankForm((f: any) => ({ ...f, height_mm: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Water Level (mm)</label>
+                    <input type="number" value={editTankForm.design_water_level_mm}
+                      onChange={e => setEditTankForm((f: any) => ({ ...f, design_water_level_mm: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                  </div>
+                </>
               )}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">{editTankForm.shape_type === 'Cylindrical' ? 'Diameter (mm)' : 'Width (mm)'}</label>
-                <input type="number" value={editTankForm.width_mm}
-                  onChange={e => setEditTankForm((f: any) => ({ ...f, width_mm: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Height (mm)</label>
-                <input type="number" value={editTankForm.height_mm}
-                  onChange={e => setEditTankForm((f: any) => ({ ...f, height_mm: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Design Water Level (mm)</label>
-                <input type="number" value={editTankForm.design_water_level_mm}
-                  onChange={e => setEditTankForm((f: any) => ({ ...f, design_water_level_mm: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Material</label>
                 <select
@@ -1966,7 +2026,19 @@ export default function ProjectDetail() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
               </div>
               {(() => {
+                const isCustom = editTankForm.shape_type === 'Custom';
                 const cyl = editTankForm.shape_type === 'Cylindrical';
+                if (isCustom) {
+                  const gv = parseFloat(editTankForm.gross_volume_m3);
+                  const ov = parseFloat(editTankForm.operating_volume_m3);
+                  if (!gv && !ov) return null;
+                  return (
+                    <div className="col-span-2 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 flex gap-6">
+                      {gv > 0 && <span>Gross Vol: <span className="font-mono font-medium">{gv.toFixed(4)} m³</span></span>}
+                      {ov > 0 && <span>Operating Vol: <span className="font-mono font-medium">{ov.toFixed(4)} m³</span></span>}
+                    </div>
+                  );
+                }
                 const d = parseFloat(editTankForm.width_mm);
                 const l = parseFloat(editTankForm.length_mm);
                 const w = parseFloat(editTankForm.width_mm);
