@@ -57,9 +57,9 @@ export default function ProjectsList() {
 
   const columns: Column<Project>[] = [
     {
-      key: 'logo_url', header: '', render: r => r.logo_url
-        ? <img src={r.logo_url} alt="" className="w-8 h-8 rounded object-contain bg-slate-50 border border-slate-100" />
-        : <div className="w-8 h-8 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-400 uppercase">{(r.project_name?.[0] ?? r.project_code?.[0] ?? '?')}</div>
+      key: 'logo_url', header: '', className: 'py-1.5 w-[72px]', render: r => r.logo_url
+        ? <img src={r.logo_url} alt="" className="w-16 h-12 rounded-md object-contain bg-slate-50 border border-slate-100" />
+        : <div className="w-16 h-12 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-lg font-bold text-slate-400 uppercase">{(r.project_name?.[0] ?? r.project_code?.[0] ?? '?')}</div>
     },
     { key: 'project_code', header: 'Code', sortable: true, render: r => <EntityCode code={r.project_code} /> },
     { key: 'project_name', header: 'Project Name', sortable: true, filterable: true, render: r => <span className="font-medium">{r.project_name}</span> },
