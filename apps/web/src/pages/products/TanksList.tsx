@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useRef } from 'react';
+import FormulaInput from '../../components/ui/FormulaInput';
 import api from '../../lib/api';
 import { ProductMaster } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -354,10 +355,9 @@ export default function TanksList() {
                   ].map(({ key, label }) => (
                     <div key={key} className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-slate-600">{label}</label>
-                      <input
-                        type="number" min="0"
+                      <FormulaInput
                         value={(newForm as any)[key]}
-                        onChange={e => setNewForm(f => ({ ...f, [key]: e.target.value }))}
+                        onChange={v => setNewForm(f => ({ ...f, [key]: v }))}
                         placeholder="mm"
                         className="border border-slate-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
                       />

@@ -9,6 +9,7 @@ import DataTable, { Column } from '../../components/ui/DataTable';
 import { VendorOption, BOMLine, Document } from '../../types';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useState, useRef } from 'react';
+import FormulaInput from '../../components/ui/FormulaInput';
 import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag, Pencil, Check } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
@@ -1066,25 +1067,25 @@ export default function ProductMasterDetail() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-slate-500 mb-0.5">{editLabels.L}</label>
-                            <input type="number" value={tankSpecsForm.length_mm} onChange={e=>setTankSpecsForm(f=>({...f,length_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                            <FormulaInput value={tankSpecsForm.length_mm} onChange={v=>setTankSpecsForm(f=>({...f,length_mm:v}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
                           </div>
                           {editLabels.W != null ? (
                             <div>
                               <label className="block text-slate-500 mb-0.5">{editLabels.W}</label>
-                              <input type="number" value={tankSpecsForm.width_mm} onChange={e=>setTankSpecsForm(f=>({...f,width_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                              <FormulaInput value={tankSpecsForm.width_mm} onChange={v=>setTankSpecsForm(f=>({...f,width_mm:v}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
                             </div>
                           ) : <div/>}
                           <div>
                             <label className="block text-slate-500 mb-0.5">Height (mm)</label>
-                            <input type="number" value={tankSpecsForm.height_mm} onChange={e=>setTankSpecsForm(f=>({...f,height_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                            <FormulaInput value={tankSpecsForm.height_mm} onChange={v=>setTankSpecsForm(f=>({...f,height_mm:v}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
                           </div>
                           <div>
                             <label className="block text-slate-500 mb-0.5">Water Level (mm)</label>
-                            <input type="number" value={tankSpecsForm.design_water_level_mm} onChange={e=>setTankSpecsForm(f=>({...f,design_water_level_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                            <FormulaInput value={tankSpecsForm.design_water_level_mm} onChange={v=>setTankSpecsForm(f=>({...f,design_water_level_mm:v}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
                           </div>
                           <div>
                             <label className="block text-slate-500 mb-0.5">Wall Thickness (mm)</label>
-                            <input type="number" value={tankSpecsForm.wall_thickness_mm} onChange={e=>setTankSpecsForm(f=>({...f,wall_thickness_mm:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
+                            <FormulaInput value={tankSpecsForm.wall_thickness_mm} onChange={v=>setTankSpecsForm(f=>({...f,wall_thickness_mm:v}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"/>
                           </div>
                           <div>
                             <label className="block text-slate-500 mb-0.5">Actual Weight (kg)</label>
