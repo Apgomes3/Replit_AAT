@@ -32,7 +32,6 @@ export default function ProductMastersList() {
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ product_code: string; product_name: string; standard_status: string }>({ product_code: '', product_name: '', standard_status: 'Concept' });
   const dupFormRef = useRef(dupForm);
-  dupFormRef.current = dupForm;
   const [dupSaving, setDupSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -262,7 +261,7 @@ export default function ProductMastersList() {
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
                   label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
-                  onClick: () => { setDupForm({ product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, standard_status: row.standard_status || 'Concept' }); setDupSourceId(row.id); },
+                  onClick: () => { const f = { product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, standard_status: row.standard_status || 'Concept' }; dupFormRef.current = f; setDupForm(f); setDupSourceId(row.id); },
                 },
                 {
                   label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
@@ -288,12 +287,12 @@ export default function ProductMastersList() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
                 <input autoFocus value={dupForm.product_code}
-                  onChange={e => setDupForm(f => ({ ...f, product_code: e.target.value.toUpperCase() }))}
+                  onChange={e => { const v = e.target.value.toUpperCase(); dupFormRef.current = { ...dupFormRef.current, product_code: v }; setDupForm(f => ({ ...f, product_code: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={dupForm.standard_status} onChange={e => setDupForm(f => ({ ...f, standard_status: e.target.value }))}
+                <select value={dupForm.standard_status} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, standard_status: v }; setDupForm(f => ({ ...f, standard_status: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                   {STATUSES.map(s => <option key={s}>{s}</option>)}
                 </select>
@@ -301,7 +300,7 @@ export default function ProductMastersList() {
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Product Name *</label>
                 <input value={dupForm.product_name}
-                  onChange={e => setDupForm(f => ({ ...f, product_name: e.target.value }))}
+                  onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, product_name: v }; setDupForm(f => ({ ...f, product_name: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
             </div>

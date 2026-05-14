@@ -47,7 +47,6 @@ export default function ComponentsList() {
   const [dupSourceId, setDupSourceId] = useState<string | null>(null);
   const [dupForm, setDupForm] = useState<{ component_code: string; component_name: string; component_type: string; component_category: string; status: string }>({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', status: 'Active' });
   const dupFormRef = useRef(dupForm);
-  dupFormRef.current = dupForm;
   const [dupSaving, setDupSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -259,7 +258,7 @@ export default function ComponentsList() {
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
                   label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
-                  onClick: () => { setDupForm({ component_code: row.component_code + '-COPY', component_name: 'Copy of ' + row.component_name, component_type: row.component_type || 'Vessel', component_category: row.component_category || 'Mechanical', status: row.status || 'Active' }); setDupSourceId(row.id); },
+                  onClick: () => { const f = { component_code: row.component_code + '-COPY', component_name: 'Copy of ' + row.component_name, component_type: row.component_type || 'Vessel', component_category: row.component_category || 'Mechanical', status: row.status || 'Active' }; dupFormRef.current = f; setDupForm(f); setDupSourceId(row.id); },
                 },
                 {
                   label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
@@ -285,12 +284,12 @@ export default function ComponentsList() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Code *</label>
                 <input autoFocus value={dupForm.component_code}
-                  onChange={e => setDupForm(f => ({ ...f, component_code: e.target.value.toUpperCase() }))}
+                  onChange={e => { const v = e.target.value.toUpperCase(); dupFormRef.current = { ...dupFormRef.current, component_code: v }; setDupForm(f => ({ ...f, component_code: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={dupForm.status} onChange={e => setDupForm(f => ({ ...f, status: e.target.value }))}
+                <select value={dupForm.status} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, status: v }; setDupForm(f => ({ ...f, status: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                   {STATUSES.map(s => <option key={s}>{s}</option>)}
                 </select>
@@ -298,19 +297,19 @@ export default function ComponentsList() {
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
                 <input value={dupForm.component_name}
-                  onChange={e => setDupForm(f => ({ ...f, component_name: e.target.value }))}
+                  onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, component_name: v }; setDupForm(f => ({ ...f, component_name: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
-                <select value={dupForm.component_type} onChange={e => setDupForm(f => ({ ...f, component_type: e.target.value }))}
+                <select value={dupForm.component_type} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, component_type: v }; setDupForm(f => ({ ...f, component_type: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                   {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
-                <select value={dupForm.component_category} onChange={e => setDupForm(f => ({ ...f, component_category: e.target.value }))}
+                <select value={dupForm.component_category} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, component_category: v }; setDupForm(f => ({ ...f, component_category: v })); }}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
                   {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                 </select>
