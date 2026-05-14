@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus, GripVertical } from 'lucide-react';
 import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
@@ -51,6 +51,12 @@ export default function ProjectDetail() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const [tankDisplayOrder, setTankDisplayOrder] = useState<string[]>([]);
+  const tankDragIdx = useRef<number | null>(null);
+  const tankOverIdx = useRef<number | null>(null);
+  const [draggingTankId, setDraggingTankId] = useState<string | null>(null);
+  const [overTankId, setOverTankId] = useState<string | null>(null);
 
   const [tankProductSearch, setTankProductSearch] = useState('');
   const [selectedTankProduct, setSelectedTankProduct] = useState<any>(null);
@@ -654,6 +660,47 @@ export default function ProjectDetail() {
     }
   };
 
+  useEffect(() => {
+    if (!tanks?.items) return;
+    const ids: string[] = tanks.items.map((t: any) => t.id);
+    setTankDisplayOrder(prev => {
+      if (prev.length === ids.length && ids.every(id => prev.includes(id))) return prev;
+      return ids;
+    });
+  }, [tanks?.items]);
+
+  const handleTankDragStart = (e: React.DragEvent, idx: number) => {
+    tankDragIdx.current = idx;
+    setDraggingTankId(tankDisplayOrder[idx] ?? null);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleTankDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    tankOverIdx.current = idx;
+    setOverTankId(tankDisplayOrder[idx] ?? null);
+  };
+
+  const handleTankDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const from = tankDragIdx.current, to = tankOverIdx.current;
+    tankDragIdx.current = null; tankOverIdx.current = null;
+    setDraggingTankId(null); setOverTankId(null);
+    if (from === null || to === null || from === to) return;
+    const next = [...tankDisplayOrder];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setTankDisplayOrder(next);
+    try { await api.patch('/tanks/reorder', { orderedIds: next }); }
+    catch { toast.error('Failed to save order'); }
+  };
+
+  const handleTankDragEnd = () => {
+    setDraggingTankId(null); setOverTankId(null);
+    tankDragIdx.current = null; tankOverIdx.current = null;
+  };
+
   const handleLogoUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
     setLogoUploading(true);
@@ -1061,6 +1108,9 @@ export default function ProjectDetail() {
             if (tankItems.length === 0) return (
               <div className="text-center py-16 text-slate-400 text-sm">No tanks added to this project yet — click Add Tank above</div>
             );
+            const sortedTankItems = tankDisplayOrder.length > 0
+              ? tankDisplayOrder.map(tid => tankItems.find((t: any) => t.id === tid)).filter(Boolean)
+              : tankItems;
             const fmtV = (v?: number | null) => v != null ? <span className="font-mono text-xs">{parseFloat(String(v)).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">—</span>;
             const fmtN = (v?: number | null) => v != null ? <span>{v}</span> : <span className="text-slate-300">—</span>;
             return (
@@ -1068,7 +1118,7 @@ export default function ProjectDetail() {
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide w-8"></th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide w-10"></th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tag</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tank Name</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Qty</th>
@@ -1086,23 +1136,39 @@ export default function ProjectDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tankItems.map((tank: any) => {
+                    {sortedTankItems.map((tank: any, idx: number) => {
                       const qty = tank.quantity ?? 1;
                       const isExpanded = expandedTanks.has(tank.id);
                       const instances: any[] = Array.isArray(tank.instances) ? tank.instances : [];
+                      const isDragging = draggingTankId === tank.id;
+                      const isOver = overTankId === tank.id && draggingTankId !== tank.id;
                       return (
                         <Fragment key={tank.id}>
-                          <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                            <td className="px-3 py-2.5">
-                              {qty > 1 ? (
-                                <button
-                                  onClick={() => toggleTankExpand(tank.id)}
-                                  className="text-slate-400 hover:text-blue-600 transition-colors p-0.5 rounded"
-                                  title={isExpanded ? 'Collapse individual tanks' : 'Expand individual tanks'}
-                                >
-                                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                </button>
-                              ) : <span />}
+                          <tr
+                            draggable
+                            onDragStart={e => handleTankDragStart(e, idx)}
+                            onDragOver={e => handleTankDragOver(e, idx)}
+                            onDrop={handleTankDrop}
+                            onDragEnd={handleTankDragEnd}
+                            className={`border-b transition-colors
+                              ${isDragging ? 'opacity-40 bg-slate-50' : 'hover:bg-slate-50'}
+                              ${isOver ? 'border-t-2 border-t-blue-400 border-b-slate-100' : 'border-b-slate-100'}`}
+                          >
+                            <td className="px-2 py-2.5">
+                              <div className="flex items-center gap-0.5">
+                                <span className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 transition-colors">
+                                  <GripVertical className="w-3.5 h-3.5" />
+                                </span>
+                                {qty > 1 ? (
+                                  <button
+                                    onClick={() => toggleTankExpand(tank.id)}
+                                    className="text-slate-400 hover:text-blue-600 transition-colors p-0.5 rounded"
+                                    title={isExpanded ? 'Collapse individual tanks' : 'Expand individual tanks'}
+                                  >
+                                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                  </button>
+                                ) : null}
+                              </div>
                             </td>
                             <td className="px-3 py-2.5"><EntityCode code={tank.tank_code} /></td>
                             <td className="px-3 py-2.5 font-medium text-slate-800">{tank.tank_name}</td>

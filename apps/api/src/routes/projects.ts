@@ -259,7 +259,7 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
      JOIN projects p ON t.project_id=p.id
      LEFT JOIN systems s ON t.system_id=s.id
      LEFT JOIN product_masters pm ON t.product_master_id=pm.id
-     ${where} ORDER BY t.tank_code`, params);
+     ${where} ORDER BY t.sort_order, t.tank_code`, params);
   res.json({ items: result.rows });
 });
 
@@ -380,6 +380,15 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
      req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
+});
+
+router.patch('/tanks/reorder', authenticate, async (req: AuthRequest, res: Response) => {
+  const { orderedIds } = req.body;
+  if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
+  for (let i = 0; i < orderedIds.length; i++) {
+    await query('UPDATE tanks SET sort_order=$1 WHERE id=$2', [i, orderedIds[i]]);
+  }
+  res.json({ ok: true });
 });
 
 router.delete('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
