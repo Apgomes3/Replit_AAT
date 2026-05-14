@@ -73,6 +73,12 @@ export default function ProjectDetail() {
   const [expandedTanks, setExpandedTanks] = useState<Set<string>>(new Set());
   const [editingInstance, setEditingInstance] = useState<{ id: string; value: string } | null>(null);
   const [savingInstanceId, setSavingInstanceId] = useState<string | null>(null);
+  const [deletingTankId, setDeletingTankId] = useState<string | null>(null);
+  const [saveTankDbModal, setSaveTankDbModal] = useState<any>(null);
+  const [saveTankDbCode, setSaveTankDbCode] = useState('');
+  const [saveTankDbName, setSaveTankDbName] = useState('');
+  const [saveTankDbFamilyId, setSaveTankDbFamilyId] = useState('');
+  const [saveTankDbSubmitting, setSaveTankDbSubmitting] = useState(false);
 
   const [showNewPiping, setShowNewPiping] = useState(false);
   const [pipingProductSearch, setPipingProductSearch] = useState('');
@@ -139,7 +145,7 @@ export default function ProjectDetail() {
   const { data: tankFamilies } = useQuery({
     queryKey: ['tank-families'],
     queryFn: () => api.get('/tank-families').then(r => r.data),
-    enabled: showNewTank && tankMode === 'manual' && tankSaveToFamily,
+    enabled: (showNewTank && tankMode === 'manual' && tankSaveToFamily) || saveTankDbModal != null,
   });
 
   const { data: materialsData } = useQuery({
@@ -453,6 +459,58 @@ export default function ProjectDetail() {
       toast.error('Failed to update tag');
     } finally {
       setSavingInstanceId(null);
+    }
+  };
+
+  const handleDeleteTank = async (tank: any) => {
+    if (!window.confirm(`Remove tank "${tank.tank_code} – ${tank.tank_name}" from this project? This cannot be undone.`)) return;
+    setDeletingTankId(tank.id);
+    try {
+      await api.delete(`/tanks/${tank.id}`);
+      toast.success('Tank removed');
+      qc.invalidateQueries({ queryKey: ['project-tanks'] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to remove tank');
+    } finally {
+      setDeletingTankId(null);
+    }
+  };
+
+  const openSaveTankToDb = (tank: any) => {
+    setSaveTankDbModal(tank);
+    setSaveTankDbCode(tank.tank_code);
+    setSaveTankDbName(tank.tank_name);
+    setSaveTankDbFamilyId('');
+  };
+
+  const handleSaveTankToDb = async () => {
+    if (!saveTankDbModal || !saveTankDbCode.trim()) return;
+    setSaveTankDbSubmitting(true);
+    try {
+      const t = saveTankDbModal;
+      const pm = await api.post('/product-masters', {
+        product_code: saveTankDbCode.trim().toUpperCase(),
+        product_name: saveTankDbName.trim() || t.tank_name,
+        product_category: 'Tank',
+        tank_family_id: saveTankDbFamilyId || null,
+        shape_type: t.eff_shape || t.shape_type || null,
+        length_mm: t.eff_length_mm || t.length_mm || null,
+        width_mm: t.eff_width_mm || t.width_mm || null,
+        height_mm: t.eff_height_mm || t.height_mm || null,
+        design_water_level_mm: t.eff_water_level_mm || t.design_water_level_mm || null,
+        gross_volume_m3: t.gross_volume_m3 || null,
+        operating_volume_m3: t.operating_volume_m3 || null,
+        primary_material_code: t.product_material || t.primary_material || null,
+        standard_status: 'Concept',
+      });
+      await api.patch(`/tanks/${t.id}`, { product_master_id: pm.data.id });
+      toast.success(`Saved as ${pm.data.product_code} in Tank Database`);
+      qc.invalidateQueries({ queryKey: ['project-tanks'] });
+      setSaveTankDbModal(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Save to Tank Database failed');
+    } finally {
+      setSaveTankDbSubmitting(false);
     }
   };
 
@@ -936,6 +994,7 @@ export default function ProjectDetail() {
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Design Vol (m³)</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Material</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Status</th>
+                      <th className="px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide w-20"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -972,6 +1031,25 @@ export default function ProjectDetail() {
                             <td className="px-3 py-2.5">{fmtV(tank.design_volume_m3)}</td>
                             <td className="px-3 py-2.5">{tank.product_material ? <EntityCode code={tank.product_material} /> : <span className="text-slate-300">—</span>}</td>
                             <td className="px-3 py-2.5"><StatusBadge status={tank.status || 'Active'} /></td>
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-1">
+                                {!tank.product_code && (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); openSaveTankToDb(tank); }}
+                                    className="text-xs text-amber-600 hover:text-amber-800 border border-amber-200 hover:border-amber-400 px-1.5 py-0.5 rounded hover:bg-amber-50 whitespace-nowrap"
+                                    title="Save this tank to the Tank Database as a product master"
+                                  >+ DB</button>
+                                )}
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleDeleteTank(tank); }}
+                                  disabled={deletingTankId === tank.id}
+                                  className="text-slate-300 hover:text-red-500 p-1 rounded disabled:opacity-50 transition-colors"
+                                  title="Remove tank from project"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                           {isExpanded && instances.map((inst: any) => {
                             const isEditingThis = editingInstance?.id === inst.id;
@@ -1012,7 +1090,7 @@ export default function ProjectDetail() {
                                     )}
                                   </div>
                                 </td>
-                                <td className="px-3 py-2 text-xs text-slate-400 italic" colSpan={12}>
+                                <td className="px-3 py-2 text-xs text-slate-400 italic" colSpan={13}>
                                   Unit {inst.instance_index} of {qty} — {tank.tank_name}
                                 </td>
                               </tr>
@@ -1701,6 +1779,72 @@ export default function ProjectDetail() {
               <Button onClick={() => setEditSystemRow(null)}>Cancel</Button>
               <Button variant="primary" onClick={handleEditSystemSave} disabled={editSystemSaving}>
                 {editSystemSaving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saveTankDbModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-semibold text-slate-800">Save to Tank Database</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Creates a new Tank product master from this tank's dimensions</p>
+              </div>
+              <button onClick={() => setSaveTankDbModal(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded">✕</button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Code <span className="text-red-400">*</span></label>
+                  <input
+                    value={saveTankDbCode}
+                    onChange={e => setSaveTankDbCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. TK-FW-001"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tank Family</label>
+                  <select
+                    value={saveTankDbFamilyId}
+                    onChange={e => setSaveTankDbFamilyId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400"
+                  >
+                    <option value="">— None —</option>
+                    {(tankFamilies?.items || []).map((f: any) => (
+                      <option key={f.id} value={f.id}>{f.family_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
+                <input
+                  value={saveTankDbName}
+                  onChange={e => setSaveTankDbName(e.target.value)}
+                  placeholder="Tank product name"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400"
+                />
+              </div>
+              <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600 space-y-1">
+                <div className="font-medium text-slate-700 mb-1">Dimensions to be saved:</div>
+                {saveTankDbModal.eff_shape && <div>Shape: <span className="font-mono">{saveTankDbModal.eff_shape}</span></div>}
+                {saveTankDbModal.eff_length_mm && <div>L × W × H: <span className="font-mono">{saveTankDbModal.eff_length_mm} × {saveTankDbModal.eff_width_mm} × {saveTankDbModal.eff_height_mm} mm</span></div>}
+                {saveTankDbModal.gross_volume_m3 && <div>Gross Vol: <span className="font-mono">{parseFloat(saveTankDbModal.gross_volume_m3).toFixed(4)} m³</span></div>}
+                {!saveTankDbModal.eff_length_mm && <div className="text-slate-400 italic">No dimensions stored on this tank</div>}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5">
+              <Button onClick={() => setSaveTankDbModal(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={handleSaveTankToDb}
+                disabled={saveTankDbSubmitting || !saveTankDbCode.trim()}
+              >
+                {saveTankDbSubmitting ? 'Saving…' : 'Save to Tank Database'}
               </Button>
             </div>
           </div>

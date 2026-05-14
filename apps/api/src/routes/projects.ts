@@ -297,13 +297,25 @@ router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
 
 router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { system_id } = req.body;
-    const result = await query(
-      'UPDATE tanks SET system_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
-      [system_id || null, req.params.id]);
+    const { system_id, product_master_id } = req.body;
+    const hasPM = 'product_master_id' in req.body;
+    const result = hasPM
+      ? await query(
+          'UPDATE tanks SET system_id=$1, product_master_id=$2, updated_at=NOW() WHERE id=$3 RETURNING *',
+          [system_id !== undefined ? (system_id || null) : undefined, product_master_id || null, req.params.id])
+      : await query(
+          'UPDATE tanks SET system_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
+          [system_id || null, req.params.id]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
     res.json(result.rows[0]);
   } catch (err: any) { throw err; }
+});
+
+router.delete('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  await query('DELETE FROM tank_instances WHERE tank_id=$1', [req.params.id]);
+  const result = await query('DELETE FROM tanks WHERE id=$1 RETURNING id, tank_code', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+  res.json({ deleted: true });
 });
 
 router.patch('/tank-instances/:id', authenticate, async (req: AuthRequest, res: Response) => {
