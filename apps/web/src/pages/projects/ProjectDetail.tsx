@@ -72,6 +72,11 @@ export default function ProjectDetail() {
   const [editSystemForm, setEditSystemForm] = useState<any>(null);
   const [editSystemSaving, setEditSystemSaving] = useState(false);
   const [deletingSystemId, setDeletingSystemId] = useState<string | null>(null);
+  const [sysCellEdit, setSysCellEdit] = useState<{ sysId: string; field: string; value: string } | null>(null);
+  const [sysCellSaving, setSysCellSaving] = useState(false);
+  const inlineNewSysDefault = () => ({ system_code: '', system_name: '', system_type: '', water_type: '', design_flow_m3h: '', status: 'Draft' });
+  const [inlineNewSys, setInlineNewSys] = useState<ReturnType<typeof inlineNewSysDefault> | null>(null);
+  const [inlineNewSysSaving, setInlineNewSysSaving] = useState(false);
   const [editingProject, setEditingProject] = useState(false);
   const [projectForm, setProjectForm] = useState<any>(null);
   const [projectSaving, setProjectSaving] = useState(false);
@@ -332,6 +337,58 @@ export default function ProjectDetail() {
       toast.error(err?.response?.data?.error?.message || 'Save failed');
     }
     finally { setEditSystemSaving(false); }
+  };
+
+  const handleSysCellSave = async (sys: any, field: string, value: string) => {
+    setSysCellSaving(true);
+    try {
+      await api.put(`/systems/${sys.id}`, {
+        system_code: sys.system_code,
+        system_name: sys.system_name,
+        system_type: sys.system_type || '',
+        design_flow_m3h: sys.design_flow_m3h ?? '',
+        turnover_rate_hr: sys.turnover_rate_hr ?? '',
+        water_type: sys.water_type || '',
+        status: sys.status || 'Draft',
+        duty_description: sys.duty_description || '',
+        redundancy_strategy: sys.redundancy_strategy || '',
+        [field]: value,
+      });
+      qc.invalidateQueries({ queryKey: ['project-systems'] });
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to save');
+    } finally {
+      setSysCellSaving(false);
+      setSysCellEdit(null);
+    }
+  };
+
+  const handleInlineSaveSystem = async (row: ReturnType<typeof inlineNewSysDefault>, addAnother: boolean) => {
+    if (!row.system_code.trim()) { toast.error('System code is required'); return; }
+    if (!row.system_name.trim()) { toast.error('System name is required'); return; }
+    setInlineNewSysSaving(true);
+    try {
+      await api.post('/systems', {
+        system_code: row.system_code.trim().toUpperCase(),
+        system_name: row.system_name.trim(),
+        project_id: project.id,
+        system_type: row.system_type || null,
+        water_type: row.water_type || null,
+        design_flow_m3h: row.design_flow_m3h ? parseFloat(row.design_flow_m3h) : null,
+        status: row.status,
+      });
+      qc.invalidateQueries({ queryKey: ['project-systems'] });
+      if (addAnother) {
+        setInlineNewSys(inlineNewSysDefault());
+        setTimeout(() => (document.getElementById('inline-sys-code') as HTMLInputElement)?.focus(), 50);
+      } else {
+        setInlineNewSys(null);
+      }
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to add system');
+    } finally {
+      setInlineNewSysSaving(false);
+    }
   };
 
   const handleDeleteSystem = async (sys: System) => {
@@ -1299,75 +1356,190 @@ export default function ProjectDetail() {
 
           {tab === 'systems' && (() => {
             const sysItems: System[] = systems?.items || [];
-            if (sysItems.length === 0) return (
-              <div className="p-8 text-center text-sm text-slate-400">No systems added yet — click <strong>System</strong> to add one</div>
-            );
             const sortedSysItems = sysDisplayOrder.length > 0
               ? sysDisplayOrder.map(sid => sysItems.find((s: any) => s.id === sid)).filter(Boolean) as System[]
               : sysItems;
+            const inCls = "border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400 bg-white";
             return (
               <div className="divide-y divide-slate-100">
+                {sortedSysItems.length === 0 && !inlineNewSys && (
+                  <div className="p-8 text-center text-sm text-slate-400">No systems added yet — click <strong>+ Add row</strong> below or <strong>System</strong> above</div>
+                )}
                 {sortedSysItems.map((sys, idx) => {
                   const isDragging = draggingSysId === sys.id;
                   const isOver = overSysId === sys.id && draggingSysId !== sys.id;
+                  const activeEdit = sysCellEdit?.sysId === sys.id;
+                  const editing = (f: string) => activeEdit && sysCellEdit!.field === f;
+                  const cellSave = (f: string) => () => handleSysCellSave(sys, f, sysCellEdit!.value);
+                  const cellKeyDown = (f: string) => (e: React.KeyboardEvent) => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleSysCellSave(sys, f, sysCellEdit!.value); }
+                    if (e.key === 'Escape') { e.preventDefault(); setSysCellEdit(null); }
+                  };
                   return (
                   <div
                     key={sys.id}
-                    draggable
+                    draggable={!activeEdit}
                     onDragStart={e => handleSysDragStart(e, idx)}
                     onDragOver={e => handleSysDragOver(e, idx)}
                     onDrop={handleSysDrop}
                     onDragEnd={handleSysDragEnd}
-                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer group transition-colors
+                    className={`flex items-center gap-3 px-4 py-2.5 group transition-colors
                       ${isDragging ? 'opacity-40 bg-slate-50' : 'hover:bg-slate-50'}
-                      ${isOver ? 'border-t-2 border-t-blue-400' : ''}`}
-                    onClick={() => navigate(`/systems/${sys.id}`)}
+                      ${isOver ? 'border-t-2 border-t-blue-400' : ''}
+                      ${activeEdit ? '' : 'cursor-pointer'}`}
+                    onClick={() => { if (activeEdit) return; navigate(`/systems/${sys.id}`); }}
                   >
                     <span className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 transition-colors shrink-0" onClick={e => e.stopPropagation()}>
                       <GripVertical className="w-3.5 h-3.5" />
                     </span>
-                    <EntityCode code={sys.system_code} />
-                    <span className="font-medium text-sm text-slate-800 flex-1">{sys.system_name}</span>
-                    <span className="text-xs text-slate-400">{sys.system_type}</span>
-                    {sys.water_type && <span className="text-xs bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5">{sys.water_type}</span>}
+
+                    {editing('system_code') ? (
+                      <input autoFocus value={sysCellEdit!.value}
+                        onChange={e => setSysCellEdit(c => c && { ...c, value: e.target.value.toUpperCase() })}
+                        onBlur={cellSave('system_code')} onKeyDown={cellKeyDown('system_code')}
+                        onClick={e => e.stopPropagation()}
+                        className="border border-blue-400 rounded px-2 py-0.5 text-xs font-mono w-28 focus:outline-none shrink-0" />
+                    ) : (
+                      <span onClick={e => { e.stopPropagation(); setSysCellEdit({ sysId: sys.id, field: 'system_code', value: sys.system_code }); }}
+                        className="font-mono text-xs bg-slate-100 border border-slate-200 text-slate-700 px-1.5 py-0.5 rounded cursor-text hover:bg-blue-50 hover:border-blue-300 shrink-0"
+                        title="Click to edit code">{sys.system_code}</span>
+                    )}
+
+                    {editing('system_name') ? (
+                      <input autoFocus value={sysCellEdit!.value}
+                        onChange={e => setSysCellEdit(c => c && { ...c, value: e.target.value })}
+                        onBlur={cellSave('system_name')} onKeyDown={cellKeyDown('system_name')}
+                        onClick={e => e.stopPropagation()}
+                        className="flex-1 border border-blue-400 rounded px-2 py-0.5 text-sm font-medium focus:outline-none min-w-0" />
+                    ) : (
+                      <span onClick={e => { e.stopPropagation(); setSysCellEdit({ sysId: sys.id, field: 'system_name', value: sys.system_name }); }}
+                        className="font-medium text-sm text-slate-800 flex-1 cursor-text hover:text-blue-700 truncate"
+                        title="Click to edit name">{sys.system_name}</span>
+                    )}
+
+                    {editing('system_type') ? (
+                      <select autoFocus value={sysCellEdit!.value}
+                        onChange={e => setSysCellEdit(c => c && { ...c, value: e.target.value })}
+                        onBlur={cellSave('system_type')} onKeyDown={cellKeyDown('system_type')}
+                        onClick={e => e.stopPropagation()}
+                        className="border border-blue-400 rounded px-2 py-0.5 text-xs bg-white focus:outline-none w-36 shrink-0">
+                        <option value="">— None —</option>
+                        {systemTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    ) : (
+                      <span onClick={e => { e.stopPropagation(); setSysCellEdit({ sysId: sys.id, field: 'system_type', value: sys.system_type || '' }); }}
+                        className="text-xs text-slate-400 cursor-text hover:text-blue-600 w-32 truncate shrink-0"
+                        title="Click to edit type">{sys.system_type || <span className="text-slate-300 italic">type</span>}</span>
+                    )}
+
+                    {editing('water_type') ? (
+                      <select autoFocus value={sysCellEdit!.value}
+                        onChange={e => setSysCellEdit(c => c && { ...c, value: e.target.value })}
+                        onBlur={cellSave('water_type')} onKeyDown={cellKeyDown('water_type')}
+                        onClick={e => e.stopPropagation()}
+                        className="border border-blue-400 rounded px-2 py-0.5 text-xs bg-white focus:outline-none w-28 shrink-0">
+                        <option value="">— None —</option>
+                        {['Freshwater', 'Marine', 'Brackish', 'Other'].map(w => <option key={w} value={w}>{w}</option>)}
+                      </select>
+                    ) : sys.water_type ? (
+                      <span onClick={e => { e.stopPropagation(); setSysCellEdit({ sysId: sys.id, field: 'water_type', value: sys.water_type }); }}
+                        className="text-xs bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5 cursor-text hover:border-blue-400 shrink-0"
+                        title="Click to edit water type">{sys.water_type}</span>
+                    ) : (
+                      <span onClick={e => { e.stopPropagation(); setSysCellEdit({ sysId: sys.id, field: 'water_type', value: '' }); }}
+                        className="text-xs text-slate-300 italic cursor-text hover:text-blue-500 shrink-0">water</span>
+                    )}
+
                     {(sys as any).design_flow_m3h && parseFloat((sys as any).total_operating_volume_m3) > 0 && (
-                      <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-mono" title="Calculated turnover rate (design flow ÷ operating volume)">
+                      <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-mono shrink-0" title="Calculated turnover rate">
                         {(parseFloat((sys as any).design_flow_m3h) / parseFloat((sys as any).total_operating_volume_m3)).toFixed(1)} /hr
                       </span>
                     )}
                     {(sys as any).tank_count > 0 && (
-                      <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 font-mono">
+                      <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 font-mono shrink-0">
                         {(sys as any).tank_count} tank{(sys as any).tank_count !== 1 ? 's' : ''}
                         {parseFloat((sys as any).total_operating_volume_m3) > 0
-                          ? ` · ${parseFloat((sys as any).total_operating_volume_m3).toFixed(1)} m³ op.`
+                          ? ` · ${parseFloat((sys as any).total_operating_volume_m3).toFixed(1)} m³`
                           : parseFloat((sys as any).total_volume_m3) > 0 ? ` · ${parseFloat((sys as any).total_volume_m3).toFixed(1)} m³` : ''}
                       </span>
                     )}
-                    <StatusBadge status={sys.status} />
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => openEditSystem(sys)}
-                        className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100"
-                      >Edit</button>
-                      <button
-                        onClick={async () => {
-                          await api.post(`/systems/${sys.id}/duplicate`, {});
-                          toast.success('System duplicated');
-                          qc.invalidateQueries({ queryKey: ['project-systems'] });
-                        }}
-                        className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100"
-                      >Duplicate</button>
-                      <button
-                        onClick={() => handleDeleteSystem(sys)}
-                        disabled={deletingSystemId === sys.id}
+
+                    {editing('status') ? (
+                      <select autoFocus value={sysCellEdit!.value}
+                        onChange={e => setSysCellEdit(c => c && { ...c, value: e.target.value })}
+                        onBlur={cellSave('status')} onKeyDown={cellKeyDown('status')}
+                        onClick={e => e.stopPropagation()}
+                        className="border border-blue-400 rounded px-2 py-0.5 text-xs bg-white focus:outline-none w-28 shrink-0">
+                        {['Draft', 'Active', 'Design', 'Construction', 'Completed', 'Inactive'].map(s => <option key={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <span onClick={e => { e.stopPropagation(); setSysCellEdit({ sysId: sys.id, field: 'status', value: sys.status || 'Draft' }); }}
+                        className="shrink-0 cursor-text" title="Click to edit status">
+                        <StatusBadge status={sys.status} />
+                      </span>
+                    )}
+
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors shrink-0" />
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => openEditSystem(sys)}
+                        className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100">Edit</button>
+                      <button onClick={async () => { await api.post(`/systems/${sys.id}/duplicate`, {}); toast.success('System duplicated'); qc.invalidateQueries({ queryKey: ['project-systems'] }); }}
+                        className="text-xs text-slate-400 hover:text-slate-700 px-1.5 py-0.5 border border-slate-200 rounded hover:bg-slate-100">Duplicate</button>
+                      <button onClick={() => handleDeleteSystem(sys)} disabled={deletingSystemId === sys.id}
                         className="text-xs text-red-400 hover:text-red-600 px-1.5 py-0.5 border border-red-100 rounded hover:bg-red-50 disabled:opacity-50"
-                        title="Delete system"
-                      >{deletingSystemId === sys.id ? '…' : 'Delete'}</button>
+                        title="Delete system">{deletingSystemId === sys.id ? '…' : 'Delete'}</button>
                     </div>
                   </div>
                   );
                 })}
+
+                {inlineNewSys && (() => {
+                  const upd = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+                    setInlineNewSys((r: any) => r && ({ ...r, [f]: f === 'system_code' ? e.target.value.toUpperCase() : e.target.value }));
+                  const escKey = (e: React.KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); setInlineNewSys(null); } };
+                  return (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-blue-50/40 border-t border-blue-100">
+                      <GripVertical className="w-3.5 h-3.5 text-slate-200 shrink-0" />
+                      <input id="inline-sys-code" autoFocus value={inlineNewSys.system_code} onChange={upd('system_code')}
+                        placeholder="SYS-XX" className={`${inCls} font-mono uppercase w-28 shrink-0`} onKeyDown={escKey} />
+                      <input value={inlineNewSys.system_name} onChange={upd('system_name')}
+                        placeholder="System name" className={`${inCls} flex-1`} onKeyDown={escKey} />
+                      <select value={inlineNewSys.system_type} onChange={upd('system_type')} className={`${inCls} w-36 shrink-0`}>
+                        <option value="">— Type —</option>
+                        {systemTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <select value={inlineNewSys.water_type} onChange={upd('water_type')} className={`${inCls} w-28 shrink-0`}>
+                        <option value="">— Water —</option>
+                        {['Freshwater', 'Marine', 'Brackish', 'Other'].map(w => <option key={w} value={w}>{w}</option>)}
+                      </select>
+                      <input type="number" min={0} value={inlineNewSys.design_flow_m3h} onChange={upd('design_flow_m3h')}
+                        placeholder="Flow m³/h" className={`${inCls} w-24 shrink-0`} onKeyDown={escKey} />
+                      <select value={inlineNewSys.status} onChange={upd('status')} className={`${inCls} w-24 shrink-0`}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') { e.preventDefault(); setInlineNewSys(null); }
+                          if (e.key === 'Enter') { e.preventDefault(); handleInlineSaveSystem(inlineNewSys, true); }
+                          if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); handleInlineSaveSystem(inlineNewSys, true); }
+                        }}>
+                        {['Draft', 'Active', 'Design', 'Construction', 'Completed', 'Inactive'].map(s => <option key={s}>{s}</option>)}
+                      </select>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => handleInlineSaveSystem(inlineNewSys, false)} disabled={inlineNewSysSaving}
+                          className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded disabled:opacity-50"
+                          title="Save (Tab on Status for new row)">{inlineNewSysSaving ? '…' : '✓'}</button>
+                        <button onClick={() => setInlineNewSys(null)}
+                          className="text-xs text-slate-400 hover:text-red-500 px-1 py-1 rounded" title="Cancel (Esc)">✕</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {isPrivileged && (
+                  <button
+                    onClick={() => { setInlineNewSys(inlineNewSysDefault()); setTimeout(() => (document.getElementById('inline-sys-code') as HTMLInputElement)?.focus(), 50); }}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-600 px-4 py-2 w-full border-t border-slate-100 hover:bg-blue-50/40 transition-colors">
+                    <Plus className="w-3.5 h-3.5" /> Add row
+                  </button>
+                )}
               </div>
             );
           })()}
