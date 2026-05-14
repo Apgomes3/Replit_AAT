@@ -123,6 +123,8 @@ export default function ProjectDetail() {
   const [editTankModal, setEditTankModal] = useState<any>(null);
   const [editTankForm, setEditTankForm] = useState<any>({});
   const [editTankSubmitting, setEditTankSubmitting] = useState(false);
+  const [cellEdit, setCellEdit] = useState<{ tankId: string; field: string; value: string } | null>(null);
+  const [cellSaving, setCellSaving] = useState(false);
 
   const [showNewPiping, setShowNewPiping] = useState(false);
   const [pipingProductSearch, setPipingProductSearch] = useState('');
@@ -584,6 +586,34 @@ export default function ProjectDetail() {
       toast.error(err?.response?.data?.error?.message || 'Failed to update tank');
     } finally {
       setEditTankSubmitting(false);
+    }
+  };
+
+  const saveCellEdit = async (tank: any, field: string, value: string) => {
+    setCellSaving(true);
+    try {
+      await api.put(`/tanks/${tank.id}`, {
+        tank_code: tank.tank_code || '',
+        tank_name: tank.tank_name || '',
+        tank_type: tank.tank_type || '',
+        shape_type: tank.eff_shape || tank.shape_type || '',
+        length_mm: tank.eff_length_mm ?? tank.length_mm ?? '',
+        width_mm: tank.eff_width_mm ?? tank.width_mm ?? '',
+        height_mm: tank.eff_height_mm ?? tank.height_mm ?? '',
+        design_water_level_mm: tank.eff_water_level_mm ?? tank.design_water_level_mm ?? '',
+        primary_material: tank.primary_material || '',
+        status: tank.status || 'Active',
+        quantity: tank.quantity ?? 1,
+        notes: tank.notes || '',
+        system_id: tank.system_id || '',
+        [field]: value,
+      });
+      qc.invalidateQueries({ queryKey: ['project-tanks', id] });
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to save');
+    } finally {
+      setCellSaving(false);
+      setCellEdit(null);
     }
   };
 
@@ -1265,6 +1295,40 @@ export default function ProjectDetail() {
             const fmtV = (v?: number | null) => v != null ? <span className="font-mono text-xs">{parseFloat(String(v)).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">—</span>;
             const fmtN = (v?: number | null) => v != null ? <span>{v}</span> : <span className="text-slate-300">—</span>;
 
+            const isActive = (tank: any, field: string) => cellEdit?.tankId === tank.id && cellEdit?.field === field;
+            const startCell = (tank: any, field: string, val: string) => {
+              if (!isPrivileged) return;
+              setCellEdit({ tankId: tank.id, field, value: val });
+            };
+            const inCls = "w-full bg-white border border-blue-400 rounded px-1.5 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500";
+            const hoverCls = "cursor-pointer hover:bg-blue-50/50 transition-colors";
+            const cellTxt = (tank: any, field: string, val: string) => (
+              <input autoFocus type="text" value={cellEdit?.value ?? ''} disabled={cellSaving}
+                className={inCls}
+                onChange={e => setCellEdit(f => f ? { ...f, value: e.target.value } : f)}
+                onBlur={() => saveCellEdit(tank, field, cellEdit?.value ?? '')}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveCellEdit(tank, field, cellEdit?.value ?? ''); } if (e.key === 'Escape') { e.preventDefault(); setCellEdit(null); } }}
+              />
+            );
+            const cellNum = (tank: any, field: string) => (
+              <input autoFocus type="number" value={cellEdit?.value ?? ''} disabled={cellSaving}
+                className={inCls}
+                onChange={e => setCellEdit(f => f ? { ...f, value: e.target.value } : f)}
+                onBlur={() => saveCellEdit(tank, field, cellEdit?.value ?? '')}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveCellEdit(tank, field, cellEdit?.value ?? ''); } if (e.key === 'Escape') { e.preventDefault(); setCellEdit(null); } }}
+              />
+            );
+            const cellSel = (tank: any, field: string, opts: { value: string; label: string }[]) => (
+              <select autoFocus value={cellEdit?.value ?? ''} disabled={cellSaving}
+                className={inCls}
+                onChange={e => { saveCellEdit(tank, field, e.target.value); }}
+                onBlur={() => setCellEdit(null)}
+                onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setCellEdit(null); } }}
+              >
+                {opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            );
+
             const renderTankRow = (tank: any, idx: number) => {
               const qty = tank.quantity ?? 1;
               const isExpanded = expandedTanks.has(tank.id);
@@ -1299,25 +1363,62 @@ export default function ProjectDetail() {
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5"><EntityCode code={tank.tank_code} /></td>
-                    <td className="px-3 py-2.5 font-medium text-slate-800">{tank.tank_name}</td>
-                    <td className="px-3 py-2.5">
-                      <span className={`font-mono text-sm ${qty > 1 ? 'text-blue-600 font-semibold' : 'text-slate-600'}`}>{qty}</span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {tank.system_code
-                        ? <EntityCode code={tank.system_code} />
-                        : <span className="text-slate-300">—</span>}
-                    </td>
+                    {/* Tag */}
+                    {isActive(tank, 'tank_code')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellTxt(tank, 'tank_code', tank.tank_code || '')}</td>
+                      : <td className={`px-3 py-2.5 ${isPrivileged ? hoverCls : ''}`} title={isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); startCell(tank, 'tank_code', tank.tank_code || ''); }}><EntityCode code={tank.tank_code} /></td>}
+                    {/* Tank Name */}
+                    {!tank.product_code && isActive(tank, 'tank_name')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellTxt(tank, 'tank_name', tank.tank_name || '')}</td>
+                      : <td className={`px-3 py-2.5 font-medium text-slate-800 ${!tank.product_code && isPrivileged ? hoverCls : ''}`} title={!tank.product_code && isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); if (!tank.product_code) startCell(tank, 'tank_name', tank.tank_name || ''); }}>{tank.tank_name}</td>}
+                    {/* Qty */}
+                    {isActive(tank, 'quantity')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellNum(tank, 'quantity')}</td>
+                      : <td className={`px-3 py-2.5 ${isPrivileged ? hoverCls : ''}`} title={isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); startCell(tank, 'quantity', String(tank.quantity ?? 1)); }}>
+                          <span className={`font-mono text-sm ${qty > 1 ? 'text-blue-600 font-semibold' : 'text-slate-600'}`}>{qty}</span>
+                        </td>}
+                    {/* LSS System */}
+                    {isActive(tank, 'system_id')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellSel(tank, 'system_id', [{ value: '', label: '—' }, ...(systems?.items || []).map((s: any) => ({ value: s.id, label: s.system_code }))])}</td>
+                      : <td className={`px-3 py-2.5 ${isPrivileged ? hoverCls : ''}`} title={isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); startCell(tank, 'system_id', tank.system_id || ''); }}>
+                          {tank.system_code ? <EntityCode code={tank.system_code} /> : <span className="text-slate-300">—</span>}
+                        </td>}
+                    {/* Product — not editable */}
                     <td className="px-3 py-2.5">{tank.product_code ? <Link to={`/products/masters/${tank.product_code}`} onClick={e => e.stopPropagation()} className="text-blue-600 hover:underline"><EntityCode code={tank.product_code} /></Link> : <span className="text-slate-300">—</span>}</td>
-                    <td className="px-3 py-2.5">{tank.eff_shape ? <span>{tank.eff_shape}</span> : <span className="text-slate-300">—</span>}</td>
-                    <td className="px-3 py-2.5">{fmtN(tank.eff_length_mm)}</td>
-                    <td className="px-3 py-2.5">{fmtN(tank.eff_width_mm)}</td>
-                    <td className="px-3 py-2.5">{fmtN(tank.eff_height_mm)}</td>
+                    {/* Shape */}
+                    {!tank.product_code && isActive(tank, 'shape_type')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellSel(tank, 'shape_type', ['Rectangular','Cylindrical','Oval','D-Shape','Custom'].map(s => ({ value: s, label: s })))}</td>
+                      : <td className={`px-3 py-2.5 ${!tank.product_code && isPrivileged ? hoverCls : ''}`} title={!tank.product_code && isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); if (!tank.product_code) startCell(tank, 'shape_type', tank.eff_shape || tank.shape_type || 'Rectangular'); }}>
+                          {tank.eff_shape ? <span>{tank.eff_shape}</span> : <span className="text-slate-300">—</span>}
+                        </td>}
+                    {/* L mm */}
+                    {!tank.product_code && isActive(tank, 'length_mm')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellNum(tank, 'length_mm')}</td>
+                      : <td className={`px-3 py-2.5 ${!tank.product_code && isPrivileged ? hoverCls : ''}`} title={!tank.product_code && isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); if (!tank.product_code) startCell(tank, 'length_mm', String(tank.eff_length_mm ?? tank.length_mm ?? '')); }}>{fmtN(tank.eff_length_mm)}</td>}
+                    {/* W mm */}
+                    {!tank.product_code && isActive(tank, 'width_mm')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellNum(tank, 'width_mm')}</td>
+                      : <td className={`px-3 py-2.5 ${!tank.product_code && isPrivileged ? hoverCls : ''}`} title={!tank.product_code && isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); if (!tank.product_code) startCell(tank, 'width_mm', String(tank.eff_width_mm ?? tank.width_mm ?? '')); }}>{fmtN(tank.eff_width_mm)}</td>}
+                    {/* H mm */}
+                    {!tank.product_code && isActive(tank, 'height_mm')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellNum(tank, 'height_mm')}</td>
+                      : <td className={`px-3 py-2.5 ${!tank.product_code && isPrivileged ? hoverCls : ''}`} title={!tank.product_code && isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); if (!tank.product_code) startCell(tank, 'height_mm', String(tank.eff_height_mm ?? tank.height_mm ?? '')); }}>{fmtN(tank.eff_height_mm)}</td>}
+                    {/* Gross Vol — computed, read-only */}
                     <td className="px-3 py-2.5">{fmtV(tank.gross_volume_m3)}</td>
+                    {/* Design Vol — computed, read-only */}
                     <td className="px-3 py-2.5">{fmtV(tank.design_volume_m3)}</td>
-                    <td className="px-3 py-2.5">{tank.product_material ? <EntityCode code={tank.product_material} /> : <span className="text-slate-300">—</span>}</td>
-                    <td className="px-3 py-2.5"><StatusBadge status={tank.status || 'Active'} /></td>
+                    {/* Material */}
+                    {!tank.product_code && isActive(tank, 'primary_material')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellTxt(tank, 'primary_material', tank.primary_material || '')}</td>
+                      : <td className={`px-3 py-2.5 ${!tank.product_code && isPrivileged ? hoverCls : ''}`} title={!tank.product_code && isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); if (!tank.product_code) startCell(tank, 'primary_material', tank.primary_material || ''); }}>
+                          {tank.product_material ? <EntityCode code={tank.product_material} /> : <span className="text-slate-300">—</span>}
+                        </td>}
+                    {/* Status */}
+                    {isActive(tank, 'status')
+                      ? <td className="px-1 py-1" onClick={e => e.stopPropagation()}>{cellSel(tank, 'status', ['Active','Inactive','Design','Construction','Completed'].map(s => ({ value: s, label: s })))}</td>
+                      : <td className={`px-3 py-2.5 ${isPrivileged ? hoverCls : ''}`} title={isPrivileged ? 'Click to edit' : undefined} onClick={e => { e.stopPropagation(); startCell(tank, 'status', tank.status || 'Active'); }}>
+                          <StatusBadge status={tank.status || 'Active'} />
+                        </td>}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1">
                         {!tank.product_code && (
