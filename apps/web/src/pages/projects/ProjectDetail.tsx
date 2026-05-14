@@ -660,7 +660,7 @@ export default function ProjectDetail() {
     try {
       const fd = new FormData();
       fd.append('logo', file);
-      await api.post(`/projects/${project.id}/logo`, fd);
+      await api.post(`/projects/${project.id}/logo`, fd, { headers: { 'Content-Type': undefined } });
       toast.success('Logo updated');
       qc.invalidateQueries({ queryKey: ['project', id] });
     } catch {

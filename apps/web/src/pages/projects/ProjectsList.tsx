@@ -78,7 +78,7 @@ export default function ProjectsList() {
       if (logoFile) {
         const fd = new FormData();
         fd.append('logo', logoFile);
-        await api.post(`/projects/${newProject.id}/logo`, fd);
+        await api.post(`/projects/${newProject.id}/logo`, fd, { headers: { 'Content-Type': undefined } });
       }
       toast.success('Project created');
       closeNew();
