@@ -142,6 +142,14 @@ export default function ProjectDetail() {
     enabled: showNewTank && tankMode === 'manual' && tankSaveToFamily,
   });
 
+  const { data: materialsData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    enabled: showNewTank && tankMode === 'manual',
+    staleTime: 5 * 60 * 1000,
+  });
+  const materials: { material_code: string; material_name: string }[] = materialsData?.items ?? [];
+
   const { data: piping } = useQuery({
     queryKey: ['project-piping', id],
     queryFn: () => api.get(`/projects/${id}/piping`).then(r => r.data),
@@ -1272,8 +1280,15 @@ export default function ProjectDetail() {
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-500 mb-1">Material</label>
-                        <input placeholder="e.g. FRP, Acrylic" value={tankMaterial} onChange={e => setTankMaterial(e.target.value)}
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                        <select value={tankMaterial} onChange={e => setTankMaterial(e.target.value)}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                          <option value="">— Select material —</option>
+                          {materials.map(m => (
+                            <option key={m.material_code} value={m.material_code}>
+                              {m.material_code} — {m.material_name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                     {/* Live volume preview */}
