@@ -296,7 +296,7 @@ export default function ProductMasterDetail() {
     if (!editForm.product_code?.trim()) { toast.error('Product code is required'); return; }
     setSaving(true);
     try {
-      await api.put(`/product-masters/${id}`, productPutPayload({
+      const { data: updated } = await api.put(`/product-masters/${id}`, productPutPayload({
         product_code: editForm.product_code.trim().toUpperCase(),
         product_name: editForm.product_name,
         standard_status: editForm.standard_status,
@@ -315,7 +315,9 @@ export default function ProductMasterDetail() {
       }));
       toast.success('Product updated');
       setEditing(false);
+      if (updated) queryClient.setQueryData(['product-master', id], (old: any) => ({ ...old, ...updated }));
       queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+      queryClient.invalidateQueries({ queryKey: ['product-masters'] });
     } catch {
       toast.error('Failed to save changes');
     } finally {
