@@ -44,6 +44,8 @@ export default function ComponentsList() {
     manufacturer: '', model: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [dupModal, setDupModal] = useState<{ sourceId: string; component_code: string; component_name: string; component_type: string; component_category: string; status: string } | null>(null);
+  const [dupSaving, setDupSaving] = useState(false);
   const [editRow, setEditRow] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [editSaving, setEditSaving] = useState(false);
@@ -252,20 +254,77 @@ export default function ComponentsList() {
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
                   label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />, divider: true,
-                  onClick: async () => {
-                    try {
-                      const res = await api.post(`/components/${row.id}/duplicate`, {});
-                      toast.success('Component duplicated');
-                      qc.invalidateQueries({ queryKey: ['components'] });
-                      navigate(`/products/components/${res.data.id}`);
-                    } catch { toast.error('Duplicate failed'); }
-                  },
+                  onClick: () => setDupModal({ sourceId: row.id, component_code: row.component_code + '-COPY', component_name: 'Copy of ' + row.component_name, component_type: row.component_type || 'Vessel', component_category: row.component_category || 'Mechanical', status: row.status || 'Active' }),
                 },
               ]}
             />
           </div>
         </div>
       </div>
+
+      {dupModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div>
+                <h2 className="font-semibold text-slate-800">Duplicate Component</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Review and edit before creating the copy</p>
+              </div>
+              <button onClick={() => setDupModal(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Component Code *</label>
+                <input autoFocus value={dupModal.component_code}
+                  onChange={e => setDupModal(f => f && ({ ...f, component_code: e.target.value.toUpperCase() }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select value={dupModal.status} onChange={e => setDupModal(f => f && ({ ...f, status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  {STATUSES.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
+                <input value={dupModal.component_name}
+                  onChange={e => setDupModal(f => f && ({ ...f, component_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
+                <select value={dupModal.component_type} onChange={e => setDupModal(f => f && ({ ...f, component_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
+                <select value={dupModal.component_category} onChange={e => setDupModal(f => f && ({ ...f, component_category: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <button onClick={() => setDupModal(null)} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
+              <button onClick={async () => {
+                if (!dupModal.component_code.trim() || !dupModal.component_name.trim()) { toast.error('Code and name are required'); return; }
+                setDupSaving(true);
+                try {
+                  const res = await api.post(`/components/${dupModal.sourceId}/duplicate`, { component_code: dupModal.component_code.trim(), component_name: dupModal.component_name.trim(), component_type: dupModal.component_type, component_category: dupModal.component_category, status: dupModal.status });
+                  toast.success('Component duplicated');
+                  setDupModal(null);
+                  qc.invalidateQueries({ queryKey: ['components'] });
+                  navigate(`/products/components/${res.data.id}`);
+                } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
+                finally { setDupSaving(false); }
+              }} disabled={dupSaving} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">{dupSaving ? 'Creating…' : 'Duplicate'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create modal */}
       {showModal && (

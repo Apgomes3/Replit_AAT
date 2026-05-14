@@ -40,6 +40,8 @@ export default function PipingList() {
   const [editRow, setEditRow] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [editSaving, setEditSaving] = useState(false);
+  const [dupModal, setDupModal] = useState<{ sourceId: string; product_code: string; product_name: string; application_type: string; standard_status: string } | null>(null);
+  const [dupSaving, setDupSaving] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['product-masters-piping', search],
@@ -241,20 +243,71 @@ export default function PipingList() {
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
                   label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />, divider: true,
-                  onClick: async () => {
-                    try {
-                      const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
-                      toast.success('Item duplicated');
-                      refetch();
-                      navigate(`/products/masters/${res.data.id}`);
-                    } catch { toast.error('Duplicate failed'); }
-                  },
+                  onClick: () => setDupModal({ sourceId: row.id, product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, application_type: row.application_type || '', standard_status: row.standard_status || 'Concept' }),
                 },
               ]}
             />
           </div>
         </div>
       </div>
+
+      {dupModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div>
+                <h2 className="font-semibold text-slate-800">Duplicate Item</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Review and edit before creating the copy</p>
+              </div>
+              <button onClick={() => setDupModal(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
+                <input autoFocus value={dupModal.product_code}
+                  onChange={e => setDupModal(f => f && ({ ...f, product_code: e.target.value.toUpperCase() }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select value={dupModal.standard_status} onChange={e => setDupModal(f => f && ({ ...f, standard_status: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Item Name *</label>
+                <input value={dupModal.product_name}
+                  onChange={e => setDupModal(f => f && ({ ...f, product_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
+                <select value={dupModal.application_type} onChange={e => setDupModal(f => f && ({ ...f, application_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">— None —</option>
+                  {ALL_PIPE_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
+              <button onClick={() => setDupModal(null)} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
+              <button onClick={async () => {
+                if (!dupModal.product_code.trim() || !dupModal.product_name.trim()) { toast.error('Code and name are required'); return; }
+                setDupSaving(true);
+                try {
+                  const res = await api.post(`/product-masters/${dupModal.sourceId}/duplicate`, { product_code: dupModal.product_code.trim(), product_name: dupModal.product_name.trim(), standard_status: dupModal.standard_status });
+                  toast.success('Item duplicated');
+                  setDupModal(null);
+                  refetch();
+                  navigate(`/products/masters/${res.data.id}`);
+                } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
+                finally { setDupSaving(false); }
+              }} disabled={dupSaving} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">{dupSaving ? 'Creating…' : 'Duplicate'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showNew && (
         <NewEntityModal
