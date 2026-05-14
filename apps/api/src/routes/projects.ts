@@ -264,9 +264,20 @@ router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
   const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
   if (!tank_code || !project_id || !tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
   const qty = Math.max(1, parseInt(quantity) || 1);
+  const l = length_mm ? parseFloat(length_mm) : null;
+  const w = width_mm ? parseFloat(width_mm) : null;
+  const h = height_mm ? parseFloat(height_mm) : null;
+  const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
+  // Auto-calculate volumes from dimensions when not explicitly provided
+  const calcGross = (gross_volume_m3 != null && gross_volume_m3 !== '')
+    ? parseFloat(gross_volume_m3)
+    : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
+  const calcOp = (operating_volume_m3 != null && operating_volume_m3 !== '')
+    ? parseFloat(operating_volume_m3)
+    : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
   const result = await query(
     'INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
-    [tank_code, project_id, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, gross_volume_m3 || null, operating_volume_m3 || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, primary_material || null, status || 'Active', notes || null]);
+    [tank_code, project_id, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
   const tank = result.rows[0];
   if (qty > 1) {
     const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
