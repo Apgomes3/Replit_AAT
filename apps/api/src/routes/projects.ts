@@ -239,16 +239,22 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
       COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
       COALESCE(t.height_mm, pm.height_mm) as eff_height_mm,
       COALESCE(t.design_water_level_mm, pm.design_water_level_mm) as eff_water_level_mm,
-      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-            AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
-        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
-        ELSE NULL END as gross_volume_m3,
-      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-            AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
-        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
-        ELSE NULL END as design_volume_m3,
+      COALESCE(
+        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
+          ELSE NULL END,
+        t.gross_volume_m3, pm.gross_volume_m3
+      ) as gross_volume_m3,
+      COALESCE(
+        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
+          ELSE NULL END,
+        t.operating_volume_m3, pm.operating_volume_m3
+      ) as design_volume_m3,
       COALESCE(
         (SELECT json_agg(ti ORDER BY ti.instance_index)
          FROM tank_instances ti WHERE ti.tank_id = t.id),
@@ -273,16 +279,22 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
       COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
       COALESCE(t.height_mm, pm.height_mm) as eff_height_mm,
       COALESCE(t.design_water_level_mm, pm.design_water_level_mm) as eff_water_level_mm,
-      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-            AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
-        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
-        ELSE NULL END as gross_volume_m3,
-      CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-            AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-            AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
-        THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
-        ELSE NULL END as design_volume_m3
+      COALESCE(
+        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
+          ELSE NULL END,
+        t.gross_volume_m3, pm.gross_volume_m3
+      ) as gross_volume_m3,
+      COALESCE(
+        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
+          ELSE NULL END,
+        t.operating_volume_m3, pm.operating_volume_m3
+      ) as design_volume_m3
      FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
      LEFT JOIN product_masters pm ON t.product_master_id=pm.id WHERE t.id=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
