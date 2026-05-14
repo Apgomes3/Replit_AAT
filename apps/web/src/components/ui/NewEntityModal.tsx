@@ -26,6 +26,7 @@ const CREATE_SENTINEL = '__CREATE_NEW__';
 export default function NewEntityModal({ title, fields, onSubmit, onClose, initialValues, submitLabel }: NewEntityModalProps) {
   const [values, setValues] = useState<Record<string, any>>(initialValues || {});
   const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
   const [createInput, setCreateInput] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
@@ -33,7 +34,15 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try { await onSubmit(values); } finally { setLoading(false); }
+    setSubmitError(null);
+    try {
+      await onSubmit(values);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || 'Something went wrong. Please try again.';
+      setSubmitError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSelectChange = (field: Field, value: string) => {
@@ -128,6 +137,11 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
               )}
             </div>
           ))}
+          {submitError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+              {submitError}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={loading}>{loading ? 'Saving...' : (submitLabel || 'Create')}</Button>

@@ -409,11 +409,21 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.post('/systems', authenticate, async (req: AuthRequest, res: Response) => {
-  const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type } = req.body;
-  const result = await query('INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
-    [system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type]);
-  await logAudit(req.user!.id, 'system', result.rows[0].id, 'CREATE', { system_code, system_name, system_type });
-  res.status(201).json(result.rows[0]);
+  try {
+    const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type } = req.body;
+    if (!system_code || !project_id || !system_name) {
+      return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'system_code, project_id and system_name are required' } });
+    }
+    const result = await query('INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+      [system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type]);
+    await logAudit(req.user!.id, 'system', result.rows[0].id, 'CREATE', { system_code, system_name, system_type });
+    res.status(201).json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: { code: 'CONFLICT', message: `System code "${req.body.system_code}" already exists in this project. Use a different code.` } });
+    }
+    throw err;
+  }
 });
 
 router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
