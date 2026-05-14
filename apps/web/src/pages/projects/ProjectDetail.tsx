@@ -85,6 +85,12 @@ export default function ProjectDetail() {
   const [draggingTankId, setDraggingTankId] = useState<string | null>(null);
   const [overTankId, setOverTankId] = useState<string | null>(null);
 
+  const [sysDisplayOrder, setSysDisplayOrder] = useState<string[]>([]);
+  const sysDragIdx = useRef<number | null>(null);
+  const sysOverIdx = useRef<number | null>(null);
+  const [draggingSysId, setDraggingSysId] = useState<string | null>(null);
+  const [overSysId, setOverSysId] = useState<string | null>(null);
+
   const [tankProductSearch, setTankProductSearch] = useState('');
   const [selectedTankProduct, setSelectedTankProduct] = useState<any>(null);
   const [tankCode, setTankCode] = useState('');
@@ -811,6 +817,66 @@ export default function ProjectDetail() {
     return () => obs.disconnect();
   }, [addTankBtnRef.current]);
 
+  useEffect(() => {
+    if (!systems?.items) return;
+    const ids: string[] = systems.items.map((s: any) => s.id);
+    setSysDisplayOrder(prev => {
+      if (prev.length > 0) {
+        if (prev.length === ids.length && ids.every(pid => prev.includes(pid))) return prev;
+        const kept = prev.filter(pid => ids.includes(pid));
+        const added = ids.filter(pid => !prev.includes(pid));
+        return [...kept, ...added];
+      }
+      const storageKey = `sys-order-${id}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        try {
+          const storedIds: string[] = JSON.parse(stored);
+          const kept = storedIds.filter(pid => ids.includes(pid));
+          const added = ids.filter(pid => !storedIds.includes(pid));
+          return [...kept, ...added];
+        } catch { /* fall through */ }
+      }
+      return ids;
+    });
+  }, [systems?.items]);
+
+  const handleSysDragStart = (e: React.DragEvent, idx: number) => {
+    sysDragIdx.current = idx;
+    setDraggingSysId(sysDisplayOrder[idx] ?? null);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleSysDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    sysOverIdx.current = idx;
+    setOverSysId(sysDisplayOrder[idx] ?? null);
+  };
+
+  const handleSysDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const from = sysDragIdx.current, to = sysOverIdx.current;
+    sysDragIdx.current = null; sysOverIdx.current = null;
+    setDraggingSysId(null); setOverSysId(null);
+    if (from === null || to === null || from === to) return;
+    const next = [...sysDisplayOrder];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    const allIds: string[] = (systems?.items || []).map((s: any) => s.id);
+    const missing = allIds.filter(sid => !next.includes(sid));
+    const fullOrder = [...next, ...missing];
+    setSysDisplayOrder(fullOrder);
+    localStorage.setItem(`sys-order-${id}`, JSON.stringify(fullOrder));
+    try { await api.patch('/systems/reorder', { orderedIds: fullOrder }); }
+    catch { toast.error('Failed to save order'); }
+  };
+
+  const handleSysDragEnd = () => {
+    setDraggingSysId(null); setOverSysId(null);
+    sysDragIdx.current = null; sysOverIdx.current = null;
+  };
+
   const handleTankDragStart = (e: React.DragEvent, idx: number) => {
     tankDragIdx.current = idx;
     setDraggingTankId(tankDisplayOrder[idx] ?? null);
@@ -1232,14 +1298,30 @@ export default function ProjectDetail() {
             if (sysItems.length === 0) return (
               <div className="p-8 text-center text-sm text-slate-400">No systems added yet — click <strong>System</strong> to add one</div>
             );
+            const sortedSysItems = sysDisplayOrder.length > 0
+              ? sysDisplayOrder.map(sid => sysItems.find((s: any) => s.id === sid)).filter(Boolean) as System[]
+              : sysItems;
             return (
               <div className="divide-y divide-slate-100">
-                {sysItems.map(sys => (
+                {sortedSysItems.map((sys, idx) => {
+                  const isDragging = draggingSysId === sys.id;
+                  const isOver = overSysId === sys.id && draggingSysId !== sys.id;
+                  return (
                   <div
                     key={sys.id}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer group"
+                    draggable
+                    onDragStart={e => handleSysDragStart(e, idx)}
+                    onDragOver={e => handleSysDragOver(e, idx)}
+                    onDrop={handleSysDrop}
+                    onDragEnd={handleSysDragEnd}
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer group transition-colors
+                      ${isDragging ? 'opacity-40 bg-slate-50' : 'hover:bg-slate-50'}
+                      ${isOver ? 'border-t-2 border-t-blue-400' : ''}`}
                     onClick={() => navigate(`/systems/${sys.id}`)}
                   >
+                    <span className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 transition-colors shrink-0" onClick={e => e.stopPropagation()}>
+                      <GripVertical className="w-3.5 h-3.5" />
+                    </span>
                     <EntityCode code={sys.system_code} />
                     <span className="font-medium text-sm text-slate-800 flex-1">{sys.system_name}</span>
                     <span className="text-xs text-slate-400">{sys.system_type}</span>
@@ -1280,7 +1362,8 @@ export default function ProjectDetail() {
                       >{deletingSystemId === sys.id ? '…' : 'Delete'}</button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })()}

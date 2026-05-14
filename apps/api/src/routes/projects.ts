@@ -138,7 +138,7 @@ router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: 
      LEFT JOIN product_masters pm ON t.product_master_id=pm.id
      WHERE s.project_id = $1
      GROUP BY s.id, a.area_name, e.exhibit_name
-     ORDER BY s.system_code`,
+     ORDER BY s.sort_order, s.system_code`,
     [proj.rows[0].id]);
   res.json({ items: result.rows });
 });
@@ -371,6 +371,15 @@ router.post('/tanks/:id/duplicate', authenticate, async (req: AuthRequest, res: 
     }
   }
   res.status(201).json(newTank);
+});
+
+router.patch('/systems/reorder', authenticate, async (req: AuthRequest, res: Response) => {
+  const { orderedIds } = req.body;
+  if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
+  for (let i = 0; i < orderedIds.length; i++) {
+    await query('UPDATE systems SET sort_order=$1 WHERE id=$2', [i, orderedIds[i]]);
+  }
+  res.json({ ok: true });
 });
 
 router.patch('/tanks/reorder', authenticate, async (req: AuthRequest, res: Response) => {
