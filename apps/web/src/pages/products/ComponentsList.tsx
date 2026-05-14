@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -44,12 +44,7 @@ export default function ComponentsList() {
     manufacturer: '', model: '',
   });
   const [submitting, setSubmitting] = useState(false);
-  const [dupSourceId, setDupSourceId] = useState<string | null>(null);
-  const [dupForm, setDupForm] = useState<{ component_code: string; component_name: string; component_type: string; component_category: string; status: string }>({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', status: 'Active' });
-  const dupFormRef = useRef(dupForm);
-  const dupCodeRef = useRef<HTMLInputElement>(null);
-  const dupNameRef = useRef<HTMLInputElement>(null);
-  const [dupSaving, setDupSaving] = useState(false);
+  const [dupSaving, setDupSaving] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [editRow, setEditRow] = useState<any>(null);
@@ -259,8 +254,18 @@ export default function ComponentsList() {
               contextMenuItems={row => [
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
-                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
-                  onClick: () => { const f = { component_code: row.component_code + '-COPY', component_name: 'Copy of ' + row.component_name, component_type: row.component_type || 'Vessel', component_category: row.component_category || 'Mechanical', status: row.status || 'Active' }; dupFormRef.current = f; setDupForm(f); setDupSourceId(row.id); },
+                  label: dupSaving === row.id ? 'Duplicating…' : 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
+                  onClick: async () => {
+                    if (dupSaving) return;
+                    setDupSaving(row.id);
+                    try {
+                      const res = await api.post(`/components/${row.id}/duplicate`, {});
+                      toast.success('Component duplicated');
+                      qc.invalidateQueries({ queryKey: ['components'] });
+                      navigate(`/products/components/${res.data.id}`);
+                    } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
+                    finally { setDupSaving(null); }
+                  },
                 },
                 {
                   label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
@@ -272,71 +277,6 @@ export default function ComponentsList() {
         </div>
       </div>
 
-      {dupSourceId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <div>
-                <h2 className="font-semibold text-slate-800">Duplicate Component</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Review and edit before creating the copy</p>
-              </div>
-              <button onClick={() => setDupSourceId(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Component Code *</label>
-                <input ref={dupCodeRef} autoFocus defaultValue={dupForm.component_code}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={dupForm.status} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, status: v }; setDupForm(f => ({ ...f, status: v })); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {STATUSES.map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Component Name *</label>
-                <input ref={dupNameRef} defaultValue={dupForm.component_name}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
-                <select value={dupForm.component_type} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, component_type: v }; setDupForm(f => ({ ...f, component_type: v })); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {COMPONENT_TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
-                <select value={dupForm.component_category} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, component_category: v }; setDupForm(f => ({ ...f, component_category: v })); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <button onClick={() => setDupSourceId(null)} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
-              <button onClick={async () => {
-                const code = (dupCodeRef.current?.value ?? '').trim().toUpperCase();
-                const name = (dupNameRef.current?.value ?? '').trim();
-                const { component_type, component_category, status } = dupFormRef.current;
-                const srcId = dupSourceId;
-                if (!code || !name) { toast.error('Code and name are required'); return; }
-                setDupSaving(true);
-                try {
-                  const res = await api.post(`/components/${srcId}/duplicate`, { component_code: code, component_name: name, component_type, component_category, status });
-                  toast.success('Component duplicated');
-                  setDupSourceId(null);
-                  qc.invalidateQueries({ queryKey: ['components'] });
-                  navigate(`/products/components/${res.data.id}`);
-                } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
-                finally { setDupSaving(false); }
-              }} disabled={dupSaving} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">{dupSaving ? 'Creating…' : 'Duplicate'}</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">

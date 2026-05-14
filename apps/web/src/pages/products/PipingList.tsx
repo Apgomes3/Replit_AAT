@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import api from '../../lib/api';
 import { ProductMaster } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -40,12 +40,7 @@ export default function PipingList() {
   const [editRow, setEditRow] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [editSaving, setEditSaving] = useState(false);
-  const [dupSourceId, setDupSourceId] = useState<string | null>(null);
-  const [dupForm, setDupForm] = useState<{ product_code: string; product_name: string; application_type: string; standard_status: string }>({ product_code: '', product_name: '', application_type: '', standard_status: 'Concept' });
-  const dupFormRef = useRef(dupForm);
-  const dupCodeRef = useRef<HTMLInputElement>(null);
-  const dupNameRef = useRef<HTMLInputElement>(null);
-  const [dupSaving, setDupSaving] = useState(false);
+  const [dupSaving, setDupSaving] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -248,8 +243,18 @@ export default function PipingList() {
               contextMenuItems={row => [
                 { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                 {
-                  label: 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
-                  onClick: () => { const f = { product_code: row.product_code + '-COPY', product_name: 'Copy of ' + row.product_name, application_type: row.application_type || '', standard_status: row.standard_status || 'Concept' }; dupFormRef.current = f; setDupForm(f); setDupSourceId(row.id); },
+                  label: dupSaving === row.id ? 'Duplicating…' : 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
+                  onClick: async () => {
+                    if (dupSaving) return;
+                    setDupSaving(row.id);
+                    try {
+                      const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                      toast.success('Item duplicated');
+                      refetch();
+                      navigate(`/products/masters/${res.data.id}`);
+                    } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
+                    finally { setDupSaving(null); }
+                  },
                 },
                 {
                   label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
@@ -261,65 +266,6 @@ export default function PipingList() {
         </div>
       </div>
 
-      {dupSourceId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <div>
-                <h2 className="font-semibold text-slate-800">Duplicate Item</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Review and edit before creating the copy</p>
-              </div>
-              <button onClick={() => setDupSourceId(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
-                <input ref={dupCodeRef} autoFocus defaultValue={dupForm.product_code}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-                <select value={dupForm.standard_status} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, standard_status: v }; setDupForm(f => ({ ...f, standard_status: v })); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'].map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1">Item Name *</label>
-                <input ref={dupNameRef} defaultValue={dupForm.product_name}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
-                <select value={dupForm.application_type} onChange={e => { const v = e.target.value; dupFormRef.current = { ...dupFormRef.current, application_type: v }; setDupForm(f => ({ ...f, application_type: v })); }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  <option value="">— None —</option>
-                  {ALL_PIPE_TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200">
-              <button onClick={() => setDupSourceId(null)} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
-              <button onClick={async () => {
-                const code = (dupCodeRef.current?.value ?? '').trim().toUpperCase();
-                const name = (dupNameRef.current?.value ?? '').trim();
-                const status = dupFormRef.current.standard_status;
-                const srcId = dupSourceId;
-                if (!code || !name) { toast.error('Code and name are required'); return; }
-                setDupSaving(true);
-                try {
-                  const res = await api.post(`/product-masters/${srcId}/duplicate`, { product_code: code, product_name: name, standard_status: status });
-                  toast.success('Item duplicated');
-                  setDupSourceId(null);
-                  refetch();
-                  navigate(`/products/masters/${res.data.id}`);
-                } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
-                finally { setDupSaving(false); }
-              }} disabled={dupSaving} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">{dupSaving ? 'Creating…' : 'Duplicate'}</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
