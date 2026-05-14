@@ -41,6 +41,8 @@ export default function ProjectDetail() {
   const [tab, setTab] = useState<Tab>('systems');
   const [showNewSystem, setShowNewSystem] = useState(false);
   const [showNewTank, setShowNewTank] = useState(false);
+  const addTankBtnRef = useRef<HTMLSpanElement | null>(null);
+  const [addTankBtnVisible, setAddTankBtnVisible] = useState(true);
   const [editSystemRow, setEditSystemRow] = useState<any>(null);
   const [editSystemForm, setEditSystemForm] = useState<any>(null);
   const [editSystemSaving, setEditSystemSaving] = useState(false);
@@ -710,6 +712,14 @@ export default function ProjectDetail() {
     });
   }, [tanks?.items]);
 
+  useEffect(() => {
+    const el = addTankBtnRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => setAddTankBtnVisible(entry.isIntersecting), { threshold: 0.5 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [addTankBtnRef.current]);
+
   const handleTankDragStart = (e: React.DragEvent, idx: number) => {
     tankDragIdx.current = idx;
     setDraggingTankId(tankDisplayOrder[idx] ?? null);
@@ -1084,7 +1094,7 @@ export default function ProjectDetail() {
             ))}
             <div className="ml-auto p-2 flex items-center gap-2">
               {tab === 'systems' && <Button size="sm" variant="primary" onClick={() => setShowNewSystem(true)}><Plus className="w-3.5 h-3.5" />System</Button>}
-              {tab === 'tanks' && <Button size="sm" variant="primary" onClick={() => { resetTankForm(); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button>}
+              {tab === 'tanks' && <span ref={addTankBtnRef}><Button size="sm" variant="primary" onClick={() => { resetTankForm(); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button></span>}
               {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
               {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setBomSections({ Products: true, Tank: true, Piping: true }); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
               {tab === 'pos' && <Button size="sm" variant="primary" onClick={() => setShowReleasePOModal(true)}><ShoppingCart className="w-3.5 h-3.5" />Release PO</Button>}
@@ -2366,6 +2376,17 @@ export default function ProjectDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {tab === 'tanks' && isPrivileged && !addTankBtnVisible && (
+        <button
+          onClick={() => { resetTankForm(); setShowNewTank(true); }}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all"
+          title="Add Tank"
+        >
+          <Plus className="w-4 h-4" />
+          Add Tank
+        </button>
       )}
     </div>
   );
