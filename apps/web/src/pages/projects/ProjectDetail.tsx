@@ -43,6 +43,31 @@ export default function ProjectDetail() {
   const [showNewTank, setShowNewTank] = useState(false);
   const addTankBtnRef = useRef<HTMLSpanElement | null>(null);
   const [addTankBtnVisible, setAddTankBtnVisible] = useState(true);
+  const [tankColWidths, setTankColWidths] = useState<number[]>([40, 100, 180, 60, 120, 110, 80, 80, 80, 80, 110, 110, 90, 90, 80]);
+  const tankResizeRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+  const startTankColResize = (e: React.MouseEvent, colIdx: number) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = tankColWidths[colIdx];
+    tankResizeRef.current = { colIdx, startX, startW };
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!tankResizeRef.current) return;
+      const { colIdx: ci, startX: sx, startW: sw } = tankResizeRef.current;
+      const newW = Math.max(40, sw + (ev.clientX - sx));
+      setTankColWidths(prev => { const n = [...prev]; n[ci] = newW; return n; });
+    };
+    const onMouseUp = () => {
+      tankResizeRef.current = null;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
   const [editSystemRow, setEditSystemRow] = useState<any>(null);
   const [editSystemForm, setEditSystemForm] = useState<any>(null);
   const [editSystemSaving, setEditSystemSaving] = useState(false);
@@ -1331,26 +1356,30 @@ export default function ProjectDetail() {
               );
             };
 
+            const thCls = "text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide overflow-hidden whitespace-nowrap";
+            const resizeHandle = (ci: number) => (
+              <div
+                onMouseDown={e => startTankColResize(e, ci)}
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 transition-opacity z-10"
+              />
+            );
+            const totalW = tankColWidths.reduce((a, b) => a + b, 0);
             return (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
+                <table className="text-sm border-collapse" style={{ tableLayout: 'fixed', width: totalW }}>
+                  <colgroup>
+                    {tankColWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide w-10"></th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tag</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tank Name</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Qty</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">LSS System</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Product</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Shape</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">L (mm)</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">W (mm)</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">H (mm)</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Gross Vol (m³)</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Design Vol (m³)</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Material</th>
-                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Status</th>
-                      <th className="px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide w-20"></th>
+                      <th className={thCls} style={{ position: 'relative', width: tankColWidths[0] }}></th>
+                      {(['Tag','Tank Name','Qty','LSS System','Product','Shape','L (mm)','W (mm)','H (mm)','Gross Vol (m³)','Design Vol (m³)','Material','Status'] as const).map((label, i) => (
+                        <th key={label} className={thCls} style={{ position: 'relative', width: tankColWidths[i + 1] }}>
+                          {label}
+                          {resizeHandle(i + 1)}
+                        </th>
+                      ))}
+                      <th className={thCls} style={{ position: 'relative', width: tankColWidths[14] }}></th>
                     </tr>
                   </thead>
                   <tbody>
