@@ -107,6 +107,9 @@ export default function ProjectDetail() {
   const [tankSaveToFamily, setTankSaveToFamily] = useState(false);
   const [tankFamilyId, setTankFamilyId] = useState('');
   const [tankNewProductCode, setTankNewProductCode] = useState('');
+  const inlineTankDefault = () => ({ tank_code: '', tank_name: '', qty: '1', system_id: '', shape_type: 'Rectangular', length_mm: '', width_mm: '', height_mm: '', material: '', status: 'Active' });
+  const [inlineNewTank, setInlineNewTank] = useState<ReturnType<typeof inlineTankDefault> | null>(null);
+  const [inlineTankSaving, setInlineTankSaving] = useState(false);
   const [expandedTanks, setExpandedTanks] = useState<Set<string>>(new Set());
   const [editingInstance, setEditingInstance] = useState<{ id: string; tag: string; display_name: string } | null>(null);
   const [savingInstanceId, setSavingInstanceId] = useState<string | null>(null);
@@ -488,6 +491,39 @@ export default function ProjectDetail() {
       toast.error(e?.response?.data?.error?.message || 'Failed to add tank');
     } finally {
       setTankSubmitting(false);
+    }
+  };
+
+  const handleInlineSaveTank = async (row: ReturnType<typeof inlineTankDefault>, addAnother: boolean) => {
+    if (!row.tank_code.trim()) { toast.error('Tank tag is required'); return; }
+    if (!row.tank_name.trim()) { toast.error('Tank name is required'); return; }
+    setInlineTankSaving(true);
+    try {
+      await api.post('/tanks', {
+        tank_code: row.tank_code.trim().toUpperCase(),
+        tank_name: row.tank_name.trim(),
+        project_id: project.id,
+        system_id: row.system_id || null,
+        quantity: parseInt(row.qty) || 1,
+        status: row.status,
+        shape_type: row.shape_type || null,
+        length_mm: row.length_mm ? parseFloat(row.length_mm) : null,
+        width_mm: row.width_mm ? parseFloat(row.width_mm) : null,
+        height_mm: row.height_mm ? parseFloat(row.height_mm) : null,
+        primary_material: row.material || null,
+      });
+      qc.invalidateQueries({ queryKey: ['project-tanks', id] });
+      if (addAnother) {
+        const next = inlineTankDefault();
+        setInlineNewTank(next);
+        setTimeout(() => { (document.getElementById('inline-tank-code') as HTMLInputElement)?.focus(); }, 50);
+      } else {
+        setInlineNewTank(null);
+      }
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Failed to add tank');
+    } finally {
+      setInlineTankSaving(false);
     }
   };
 
@@ -1384,8 +1420,100 @@ export default function ProjectDetail() {
                   </thead>
                   <tbody>
                     {sortedTankItems.map((tank, idx) => renderTankRow(tank, idx))}
+                    {inlineNewTank && (() => {
+                      const inCls = "w-full bg-transparent border-0 border-b border-blue-300 focus:border-blue-500 focus:outline-none text-sm px-1 py-0.5 min-w-0";
+                      const onKey = (e: React.KeyboardEvent) => {
+                        if (e.key === 'Escape') { e.preventDefault(); setInlineNewTank(null); }
+                        if (e.key === 'Enter') { e.preventDefault(); handleInlineSaveTank(inlineNewTank, true); }
+                      };
+                      const upd = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+                        setInlineNewTank(f => f ? { ...f, [field]: e.target.value } : f);
+                      return (
+                        <tr className="border-b border-blue-100 bg-blue-50/60">
+                          <td className="px-2 py-1.5"></td>
+                          <td className="px-1 py-1.5">
+                            <input id="inline-tank-code" autoFocus value={inlineNewTank.tank_code}
+                              onChange={upd('tank_code')} onKeyDown={onKey}
+                              placeholder="ST-01" className={inCls} style={{ fontFamily: 'monospace' }} />
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <input value={inlineNewTank.tank_name} onChange={upd('tank_name')} onKeyDown={onKey}
+                              placeholder="Tank name" className={inCls} />
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <input type="number" min={1} value={inlineNewTank.qty} onChange={upd('qty')} onKeyDown={onKey}
+                              className={inCls} style={{ width: 48 }} />
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <select value={inlineNewTank.system_id} onChange={upd('system_id')} onKeyDown={onKey}
+                              className={inCls}>
+                              <option value="">—</option>
+                              {(systems?.items || []).map((s: any) => (
+                                <option key={s.id} value={s.id}>{s.system_code}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-1 py-1.5 text-slate-300 text-xs">—</td>
+                          <td className="px-1 py-1.5">
+                            <select value={inlineNewTank.shape_type} onChange={upd('shape_type')} onKeyDown={onKey}
+                              className={inCls}>
+                              {['Rectangular','Cylindrical','Oval','D-Shape','Custom'].map(s => <option key={s}>{s}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <input type="number" min={0} value={inlineNewTank.length_mm} onChange={upd('length_mm')} onKeyDown={onKey}
+                              placeholder="mm" className={inCls} />
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <input type="number" min={0} value={inlineNewTank.width_mm} onChange={upd('width_mm')} onKeyDown={onKey}
+                              placeholder="mm" className={inCls} />
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <input type="number" min={0} value={inlineNewTank.height_mm} onChange={upd('height_mm')} onKeyDown={onKey}
+                              placeholder="mm" className={inCls} />
+                          </td>
+                          <td className="px-1 py-1.5 text-slate-300 text-xs">—</td>
+                          <td className="px-1 py-1.5 text-slate-300 text-xs">—</td>
+                          <td className="px-1 py-1.5">
+                            <input value={inlineNewTank.material} onChange={upd('material')} onKeyDown={onKey}
+                              placeholder="e.g. FRP" className={inCls} />
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <select value={inlineNewTank.status} onChange={upd('status')}
+                              onKeyDown={e => {
+                                if (e.key === 'Escape') { e.preventDefault(); setInlineNewTank(null); }
+                                if (e.key === 'Enter') { e.preventDefault(); handleInlineSaveTank(inlineNewTank, true); }
+                                if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); handleInlineSaveTank(inlineNewTank, true); }
+                              }}
+                              className={inCls}>
+                              {['Active','Inactive','Design','Construction','Completed'].map(s => <option key={s}>{s}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-1 py-1.5">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleInlineSaveTank(inlineNewTank, false)}
+                                disabled={inlineTankSaving}
+                                className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded disabled:opacity-50"
+                                title="Save (Enter for new row)"
+                              >{inlineTankSaving ? '…' : '✓'}</button>
+                              <button onClick={() => setInlineNewTank(null)}
+                                className="text-xs text-slate-400 hover:text-red-500 px-1 py-0.5 rounded" title="Cancel (Esc)">✕</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })()}
                   </tbody>
                 </table>
+                {isPrivileged && (
+                  <button
+                    onClick={() => { setInlineNewTank(inlineTankDefault()); setTimeout(() => (document.getElementById('inline-tank-code') as HTMLInputElement)?.focus(), 50); }}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-600 px-4 py-2 w-full border-t border-slate-100 hover:bg-blue-50/40 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add row
+                  </button>
+                )}
               </div>
             );
           })()}
