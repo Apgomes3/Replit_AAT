@@ -19,7 +19,6 @@ const logoStorage = multer.diskStorage({
 const uploadLogo = multer({
   storage: logoStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_, file, cb) => { cb(null, file.mimetype.startsWith('image/')); },
 });
 
 const router = Router();
