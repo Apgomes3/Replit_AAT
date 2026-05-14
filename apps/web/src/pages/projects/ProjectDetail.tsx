@@ -1172,17 +1172,6 @@ export default function ProjectDetail() {
             const fmtV = (v?: number | null) => v != null ? <span className="font-mono text-xs">{parseFloat(String(v)).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">—</span>;
             const fmtN = (v?: number | null) => v != null ? <span>{v}</span> : <span className="text-slate-300">—</span>;
 
-            const tankGroups: { sysKey: string; sysCode: string; sysName: string; tanks: any[] }[] = [];
-            const sysKeyMap = new Map<string, number>();
-            for (const tank of sortedTankItems) {
-              const sysKey = tank.system_id || '__none__';
-              if (!sysKeyMap.has(sysKey)) {
-                sysKeyMap.set(sysKey, tankGroups.length);
-                tankGroups.push({ sysKey, sysCode: tank.system_code || '', sysName: tank.system_name || '', tanks: [] });
-              }
-              tankGroups[sysKeyMap.get(sysKey)!].tanks.push(tank);
-            }
-
             const renderTankRow = (tank: any, idx: number) => {
               const qty = tank.quantity ?? 1;
               const isExpanded = expandedTanks.has(tank.id);
@@ -1221,6 +1210,11 @@ export default function ProjectDetail() {
                     <td className="px-3 py-2.5 font-medium text-slate-800">{tank.tank_name}</td>
                     <td className="px-3 py-2.5">
                       <span className={`font-mono text-sm ${qty > 1 ? 'text-blue-600 font-semibold' : 'text-slate-600'}`}>{qty}</span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {tank.system_code
+                        ? <EntityCode code={tank.system_code} />
+                        : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-2.5">{tank.product_code ? <Link to={`/products/masters/${tank.product_code}`} onClick={e => e.stopPropagation()} className="text-blue-600 hover:underline"><EntityCode code={tank.product_code} /></Link> : <span className="text-slate-300">—</span>}</td>
                     <td className="px-3 py-2.5">{tank.eff_shape ? <span>{tank.eff_shape}</span> : <span className="text-slate-300">—</span>}</td>
@@ -1275,7 +1269,7 @@ export default function ProjectDetail() {
                     return (
                       <tr key={inst.id} className="border-b border-blue-50 bg-blue-50/40">
                         <td className="px-3 py-2"></td>
-                        <td className="px-3 py-2 pl-7" colSpan={isEditingThis ? 13 : 1}>
+                        <td className="px-3 py-2 pl-7" colSpan={isEditingThis ? 14 : 1}>
                           <div className="flex items-center gap-1.5">
                             <div className="w-px h-4 bg-blue-200 mr-1 shrink-0" />
                             {isEditingThis ? (
@@ -1326,7 +1320,7 @@ export default function ProjectDetail() {
                           </div>
                         </td>
                         {!isEditingThis && (
-                          <td className="px-3 py-2 text-xs text-slate-400 italic" colSpan={12}>
+                          <td className="px-3 py-2 text-xs text-slate-400 italic" colSpan={13}>
                             Unit {inst.instance_index} of {qty} — {tank.tank_name}
                           </td>
                         )}
@@ -1346,6 +1340,7 @@ export default function ProjectDetail() {
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tag</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Tank Name</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Qty</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">LSS System</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Product</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">Shape</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-slate-500 uppercase tracking-wide">L (mm)</th>
@@ -1359,27 +1354,7 @@ export default function ProjectDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tankGroups.map((group, gi) => (
-                      <Fragment key={group.sysKey}>
-                        <tr className="border-b border-slate-200 bg-slate-100/60">
-                          <td colSpan={14} className="px-3 py-1.5">
-                            <div className="flex items-center gap-2">
-                              {group.sysCode
-                                ? <>
-                                    <EntityCode code={group.sysCode} />
-                                    {group.sysName && <span className="text-xs text-slate-600 font-medium">{group.sysName}</span>}
-                                  </>
-                                : <span className="text-xs text-slate-400 italic">No LSS System assigned</span>
-                              }
-                              <span className="text-xs text-slate-400 ml-1">
-                                · {group.tanks.reduce((s: number, t: any) => s + (t.quantity ?? 1), 0)} unit{group.tanks.reduce((s: number, t: any) => s + (t.quantity ?? 1), 0) !== 1 ? 's' : ''}
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                        {group.tanks.map((tank, idx) => renderTankRow(tank, gi * 1000 + idx))}
-                      </Fragment>
-                    ))}
+                    {sortedTankItems.map((tank, idx) => renderTankRow(tank, idx))}
                   </tbody>
                 </table>
               </div>
