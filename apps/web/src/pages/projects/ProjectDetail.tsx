@@ -664,8 +664,11 @@ export default function ProjectDetail() {
     if (!tanks?.items) return;
     const ids: string[] = tanks.items.map((t: any) => t.id);
     setTankDisplayOrder(prev => {
+      if (prev.length === 0) return ids;
       if (prev.length === ids.length && ids.every(id => prev.includes(id))) return prev;
-      return ids;
+      const kept = prev.filter(id => ids.includes(id));
+      const added = ids.filter(id => !prev.includes(id));
+      return [...kept, ...added];
     });
   }, [tanks?.items]);
 

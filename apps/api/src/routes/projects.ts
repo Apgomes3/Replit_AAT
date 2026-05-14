@@ -329,6 +329,15 @@ router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
   res.status(201).json(tank);
 });
 
+router.patch('/tanks/reorder', authenticate, async (req: AuthRequest, res: Response) => {
+  const { orderedIds } = req.body;
+  if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
+  for (let i = 0; i < orderedIds.length; i++) {
+    await query('UPDATE tanks SET sort_order=$1 WHERE id=$2', [i, orderedIds[i]]);
+  }
+  res.json({ ok: true });
+});
+
 router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { system_id, product_master_id } = req.body;
@@ -380,15 +389,6 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
      req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
-});
-
-router.patch('/tanks/reorder', authenticate, async (req: AuthRequest, res: Response) => {
-  const { orderedIds } = req.body;
-  if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
-  for (let i = 0; i < orderedIds.length; i++) {
-    await query('UPDATE tanks SET sort_order=$1 WHERE id=$2', [i, orderedIds[i]]);
-  }
-  res.json({ ok: true });
 });
 
 router.delete('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
