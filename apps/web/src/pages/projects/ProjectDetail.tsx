@@ -1140,6 +1140,38 @@ export default function ProjectDetail() {
           </div>
         </div>
 
+        {(() => {
+          const sysItems: any[] = systems?.items || [];
+          const tankItems: any[] = tanks?.items || [];
+          const sysByWater = Object.fromEntries(sysItems.map((s: any) => [s.id, s.water_type || '']));
+          let totalM3 = 0, freshM3 = 0, marineM3 = 0;
+          for (const t of tankItems) {
+            const vol = (parseFloat(t.gross_volume_m3) || 0) * (t.quantity ?? 1);
+            totalM3 += vol;
+            const wt = sysByWater[t.system_id] || '';
+            if (wt === 'Freshwater') freshM3 += vol;
+            else if (wt === 'Marine') marineM3 += vol;
+          }
+          const fmtM3 = (v: number) => v > 0 ? `${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m³` : '—';
+          const fmtL = (v: number) => v > 0 ? `${Math.round(v * 1000).toLocaleString()} L` : null;
+          return (
+            <div className="grid grid-cols-4 gap-3 mb-3">
+              {[
+                { label: 'Systems', value: sysItems.length || '—', sub: null },
+                { label: 'Total Volume', value: fmtM3(totalM3), sub: fmtL(totalM3) },
+                { label: 'Freshwater', value: fmtM3(freshM3), sub: fmtL(freshM3) },
+                { label: 'Marine (SW)', value: fmtM3(marineM3), sub: fmtL(marineM3) },
+              ].map(s => (
+                <div key={s.label} className="bg-white border border-slate-200 rounded-lg px-4 py-3">
+                  <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">{s.label}</div>
+                  <div className="text-lg font-semibold text-slate-800">{s.value}</div>
+                  {s.sub && <div className="text-xs text-slate-400 mt-0.5">{s.sub}</div>}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         <div className="bg-white border border-slate-200 rounded-lg">
           <div className="flex border-b border-slate-200">
             {([
