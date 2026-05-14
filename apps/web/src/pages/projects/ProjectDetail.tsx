@@ -265,6 +265,62 @@ export default function ProjectDetail() {
     return () => document.removeEventListener('mousedown', h);
   }, [pmEditOpen]);
 
+  useEffect(() => {
+    if (!tanks?.items) return;
+    const ids: string[] = tanks.items.map((t: any) => t.id);
+    setTankDisplayOrder(prev => {
+      if (prev.length > 0) {
+        if (prev.length === ids.length && ids.every(pid => prev.includes(pid))) return prev;
+        const kept = prev.filter(pid => ids.includes(pid));
+        const added = ids.filter(pid => !prev.includes(pid));
+        return [...kept, ...added];
+      }
+      const storageKey = `tank-order-${id}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        try {
+          const storedIds: string[] = JSON.parse(stored);
+          const kept = storedIds.filter(pid => ids.includes(pid));
+          const added = ids.filter(pid => !storedIds.includes(pid));
+          return [...kept, ...added];
+        } catch { /* fall through */ }
+      }
+      return ids;
+    });
+  }, [tanks?.items]);
+
+  useEffect(() => {
+    const el = addTankBtnRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => setAddTankBtnVisible(entry.isIntersecting), { threshold: 0.5 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [addTankBtnRef.current]);
+
+  useEffect(() => {
+    if (!systems?.items) return;
+    const ids: string[] = systems.items.map((s: any) => s.id);
+    setSysDisplayOrder(prev => {
+      if (prev.length > 0) {
+        if (prev.length === ids.length && ids.every(pid => prev.includes(pid))) return prev;
+        const kept = prev.filter(pid => ids.includes(pid));
+        const added = ids.filter(pid => !prev.includes(pid));
+        return [...kept, ...added];
+      }
+      const storageKey = `sys-order-${id}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        try {
+          const storedIds: string[] = JSON.parse(stored);
+          const kept = storedIds.filter(pid => ids.includes(pid));
+          const added = ids.filter(pid => !storedIds.includes(pid));
+          return [...kept, ...added];
+        } catch { /* fall through */ }
+      }
+      return ids;
+    });
+  }, [systems?.items]);
+
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!project) return <div className="p-8 text-slate-400">Project not found</div>;
 
@@ -845,62 +901,6 @@ export default function ProjectDetail() {
       toast.error('Failed to load release');
     }
   };
-
-  useEffect(() => {
-    if (!tanks?.items) return;
-    const ids: string[] = tanks.items.map((t: any) => t.id);
-    setTankDisplayOrder(prev => {
-      if (prev.length > 0) {
-        if (prev.length === ids.length && ids.every(pid => prev.includes(pid))) return prev;
-        const kept = prev.filter(pid => ids.includes(pid));
-        const added = ids.filter(pid => !prev.includes(pid));
-        return [...kept, ...added];
-      }
-      const storageKey = `tank-order-${id}`;
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        try {
-          const storedIds: string[] = JSON.parse(stored);
-          const kept = storedIds.filter(pid => ids.includes(pid));
-          const added = ids.filter(pid => !storedIds.includes(pid));
-          return [...kept, ...added];
-        } catch { /* fall through */ }
-      }
-      return ids;
-    });
-  }, [tanks?.items]);
-
-  useEffect(() => {
-    const el = addTankBtnRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([entry]) => setAddTankBtnVisible(entry.isIntersecting), { threshold: 0.5 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [addTankBtnRef.current]);
-
-  useEffect(() => {
-    if (!systems?.items) return;
-    const ids: string[] = systems.items.map((s: any) => s.id);
-    setSysDisplayOrder(prev => {
-      if (prev.length > 0) {
-        if (prev.length === ids.length && ids.every(pid => prev.includes(pid))) return prev;
-        const kept = prev.filter(pid => ids.includes(pid));
-        const added = ids.filter(pid => !prev.includes(pid));
-        return [...kept, ...added];
-      }
-      const storageKey = `sys-order-${id}`;
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        try {
-          const storedIds: string[] = JSON.parse(stored);
-          const kept = storedIds.filter(pid => ids.includes(pid));
-          const added = ids.filter(pid => !storedIds.includes(pid));
-          return [...kept, ...added];
-        } catch { /* fall through */ }
-      }
-      return ids;
-    });
-  }, [systems?.items]);
 
   const handleSysDragStart = (e: React.DragEvent, idx: number) => {
     sysDragIdx.current = idx;
