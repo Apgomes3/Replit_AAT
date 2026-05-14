@@ -894,8 +894,13 @@ export default function ProductMasterDetail() {
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Edit Details</div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Code *</label>
+                  <input value={editForm.product_code} onChange={e => setEditForm((f: any) => ({ ...f, product_code: e.target.value.toUpperCase() }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Name *</label>
                   <input value={editForm.product_name} onChange={e => setEditForm((f: any) => ({ ...f, product_name: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
