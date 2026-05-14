@@ -20,6 +20,7 @@ export interface Project {
   target_completion_date?: string;
   project_manager?: string;
   engineering_manager?: string;
+  logo_url?: string;
   created_at: string;
 }
 
