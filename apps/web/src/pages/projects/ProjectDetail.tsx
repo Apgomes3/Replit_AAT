@@ -372,7 +372,7 @@ export default function ProjectDetail() {
   const resetTankForm = () => {
     setSelectedTankProduct(null); setTankProductSearch('');
     setTankCode(''); setTankStatus('Active'); setTankSystemId(''); setTankQuantity(1);
-    setTankMode('search'); setTankName(''); setTankType(''); setTankShapeType('');
+    setTankMode('search'); setTankName(''); setTankType('Display'); setTankShapeType('Rectangular');
     setTankLengthMm(''); setTankWidthMm(''); setTankHeightMm('');
     setTankDesignWaterLevel(''); setTankWallThickness(''); setTankMaterial('');
     setTankGrossVolume(''); setTankOperatingVolume('');
@@ -487,6 +487,7 @@ export default function ProjectDetail() {
       status: tank.status || 'Active',
       quantity: tank.quantity ?? 1,
       notes: tank.notes || '',
+      system_id: tank.system_id || '',
     });
   };
 
@@ -1414,12 +1415,13 @@ export default function ProjectDetail() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">Type / Application</label>
-                      <input
-                        placeholder="e.g. Display, Sump, Quarantine"
-                        value={tankType}
-                        onChange={e => setTankType(e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      />
+                      <select value={tankType} onChange={e => setTankType(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                        <option value="">— None —</option>
+                        {['Display', 'Sump', 'Filter', 'Holding', 'Quarantine', 'Treatment', 'Header', 'Reservoir', 'Other'].map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
@@ -1961,6 +1963,19 @@ export default function ProjectDetail() {
                   onChange={e => setEditTankForm((f: any) => ({ ...f, tank_name: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">System <span className="text-slate-400 font-normal">(optional)</span></label>
+                <select
+                  value={editTankForm.system_id || ''}
+                  onChange={e => setEditTankForm((f: any) => ({ ...f, system_id: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                >
+                  <option value="">— No system —</option>
+                  {(systems?.items || []).map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.system_code} – {s.system_name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Tank Type</label>

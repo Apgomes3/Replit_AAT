@@ -346,7 +346,7 @@ router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3 } = req.body;
+  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id } = req.body;
   if (!tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
   const l = length_mm ? parseFloat(length_mm) : null;
   const w = width_mm ? parseFloat(width_mm) : null;
@@ -371,11 +371,12 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
       length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
       gross_volume_m3=$9, operating_volume_m3=$10,
       primary_material=$11, status=$12, notes=$13, quantity=$14,
-      updated_at=NOW()
-    WHERE id=$15 RETURNING *`,
+      system_id=$15, updated_at=NOW()
+    WHERE id=$16 RETURNING *`,
     [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
      l, w, h, wl, calcGross, calcOp,
      primary_material || null, status || 'Active', notes || null, qty,
+     system_id || null,
      req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
