@@ -81,7 +81,7 @@ export default function ProjectDetail() {
   const [tankFamilyId, setTankFamilyId] = useState('');
   const [tankNewProductCode, setTankNewProductCode] = useState('');
   const [expandedTanks, setExpandedTanks] = useState<Set<string>>(new Set());
-  const [editingInstance, setEditingInstance] = useState<{ id: string; value: string } | null>(null);
+  const [editingInstance, setEditingInstance] = useState<{ id: string; tag: string; display_name: string; exhibit_id: string } | null>(null);
   const [savingInstanceId, setSavingInstanceId] = useState<string | null>(null);
   const [deletingTankId, setDeletingTankId] = useState<string | null>(null);
   const [saveTankDbModal, setSaveTankDbModal] = useState<any>(null);
@@ -168,6 +168,14 @@ export default function ProjectDetail() {
     staleTime: 5 * 60 * 1000,
   });
   const materials: { material_code: string; material_name: string }[] = materialsData?.items ?? [];
+
+  const { data: exhibitsData } = useQuery({
+    queryKey: ['project-exhibits', id],
+    queryFn: () => api.get(`/exhibits?project_id=${id}`).then(r => r.data),
+    enabled: tab === 'tanks',
+    staleTime: 5 * 60 * 1000,
+  });
+  const projectExhibits: any[] = exhibitsData?.items ?? [];
 
   const { data: piping } = useQuery({
     queryKey: ['project-piping', id],
@@ -463,16 +471,20 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleSaveInstanceTag = async (instanceId: string, newTag: string) => {
-    if (!newTag.trim()) { toast.error('Tag cannot be empty'); return; }
-    setSavingInstanceId(instanceId);
+  const handleSaveInstance = async (inst: { id: string; tag: string; display_name: string; exhibit_id: string }) => {
+    if (!inst.tag.trim()) { toast.error('Tag cannot be empty'); return; }
+    setSavingInstanceId(inst.id);
     try {
-      await api.patch(`/tank-instances/${instanceId}`, { tag: newTag.trim() });
-      toast.success('Tag updated');
+      await api.patch(`/tank-instances/${inst.id}`, {
+        tag: inst.tag.trim(),
+        display_name: inst.display_name.trim() || null,
+        exhibit_id: inst.exhibit_id || null,
+      });
+      toast.success('Unit updated');
       setEditingInstance(null);
       qc.invalidateQueries({ queryKey: ['project-tanks'] });
     } catch {
-      toast.error('Failed to update tag');
+      toast.error('Failed to update unit');
     } finally {
       setSavingInstanceId(null);
     }
@@ -1238,43 +1250,79 @@ export default function ProjectDetail() {
                             return (
                               <tr key={inst.id} className="border-b border-blue-50 bg-blue-50/40">
                                 <td className="px-3 py-2"></td>
-                                <td className="px-3 py-2" colSpan={1}>
-                                  <div className="flex items-center gap-1.5 pl-4">
-                                    <div className="w-px h-4 bg-blue-200 mr-1" />
+                                <td className="px-3 py-2 pl-7" colSpan={isEditingThis ? 14 : 1}>
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-px h-4 bg-blue-200 mr-1 shrink-0" />
                                     {isEditingThis ? (
-                                      <div className="flex items-center gap-1">
-                                        <input
-                                          autoFocus
-                                          value={editingInstance.value}
-                                          onChange={e => setEditingInstance({ id: inst.id, value: e.target.value.toUpperCase() })}
-                                          onKeyDown={e => {
-                                            if (e.key === 'Enter') handleSaveInstanceTag(inst.id, editingInstance.value);
-                                            if (e.key === 'Escape') setEditingInstance(null);
-                                          }}
-                                          className="border border-blue-400 rounded px-2 py-0.5 text-xs font-mono w-36 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        />
-                                        <button
-                                          onClick={() => handleSaveInstanceTag(inst.id, editingInstance.value)}
-                                          disabled={savingInstanceId === inst.id}
-                                          className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded disabled:opacity-50"
-                                        >{savingInstanceId === inst.id ? '…' : 'Save'}</button>
-                                        <button onClick={() => setEditingInstance(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1 py-0.5">✕</button>
+                                      <div className="flex flex-wrap items-center gap-2 py-1">
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-[10px] text-slate-400 uppercase tracking-wide">Tag</span>
+                                          <input
+                                            autoFocus
+                                            value={editingInstance.tag}
+                                            onChange={e => setEditingInstance(f => f && ({ ...f, tag: e.target.value.toUpperCase() }))}
+                                            onKeyDown={e => { if (e.key === 'Escape') setEditingInstance(null); }}
+                                            className="border border-blue-400 rounded px-2 py-0.5 text-xs font-mono w-32 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          />
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-[10px] text-slate-400 uppercase tracking-wide">Display Name</span>
+                                          <input
+                                            value={editingInstance.display_name}
+                                            onChange={e => setEditingInstance(f => f && ({ ...f, display_name: e.target.value }))}
+                                            onKeyDown={e => { if (e.key === 'Escape') setEditingInstance(null); }}
+                                            placeholder="e.g. Shark Tank North"
+                                            className="border border-slate-300 rounded px-2 py-0.5 text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          />
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-[10px] text-slate-400 uppercase tracking-wide">Exhibit</span>
+                                          <select
+                                            value={editingInstance.exhibit_id}
+                                            onChange={e => setEditingInstance(f => f && ({ ...f, exhibit_id: e.target.value }))}
+                                            className="border border-slate-300 rounded px-2 py-0.5 text-xs w-44 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                                          >
+                                            <option value="">— No exhibit —</option>
+                                            {projectExhibits.map((ex: any) => (
+                                              <option key={ex.id} value={ex.id}>{ex.exhibit_name} ({ex.exhibit_code})</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="flex items-end gap-1 pb-0.5">
+                                          <button
+                                            onClick={() => handleSaveInstance(editingInstance)}
+                                            disabled={savingInstanceId === inst.id}
+                                            className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded disabled:opacity-50"
+                                          >{savingInstanceId === inst.id ? '…' : 'Save'}</button>
+                                          <button onClick={() => setEditingInstance(null)} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 border border-slate-200 rounded">Cancel</button>
+                                        </div>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center gap-1.5 group">
-                                        <span className="font-mono text-xs bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 rounded">{inst.tag}</span>
+                                      <div className="flex items-center gap-2 group">
+                                        <span className="font-mono text-xs bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 rounded shrink-0">{inst.tag}</span>
+                                        {inst.display_name && (
+                                          <span className="text-xs text-slate-700 font-medium">{inst.display_name}</span>
+                                        )}
+                                        {inst.exhibit_name && (
+                                          <span className="text-xs text-slate-400 italic">· {inst.exhibit_name}</span>
+                                        )}
+                                        {!inst.display_name && !inst.exhibit_name && (
+                                          <span className="text-xs text-slate-400 italic">Unit {inst.instance_index} of {qty}</span>
+                                        )}
                                         <button
-                                          onClick={() => setEditingInstance({ id: inst.id, value: inst.tag })}
-                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600"
-                                          title="Edit tag"
+                                          onClick={() => setEditingInstance({ id: inst.id, tag: inst.tag, display_name: inst.display_name || '', exhibit_id: inst.exhibit_id || '' })}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600 ml-1"
+                                          title="Edit unit"
                                         ><Pencil className="w-3 h-3" /></button>
                                       </div>
                                     )}
                                   </div>
                                 </td>
-                                <td className="px-3 py-2 text-xs text-slate-400 italic" colSpan={13}>
-                                  Unit {inst.instance_index} of {qty} — {tank.tank_name}
-                                </td>
+                                {!isEditingThis && (
+                                  <td className="px-3 py-2 text-xs text-slate-400 italic" colSpan={13}>
+                                    Unit {inst.instance_index} of {qty} — {tank.tank_name}
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}

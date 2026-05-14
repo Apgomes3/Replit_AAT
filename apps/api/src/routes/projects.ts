@@ -189,7 +189,10 @@ router.post('/areas', authenticate, async (req: AuthRequest, res: Response) => {
 
 // EXHIBITS
 router.get('/exhibits', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT e.*, a.area_name, p.project_code FROM exhibits e JOIN areas a ON e.area_id=a.id JOIN projects p ON e.project_id=p.id ORDER BY e.exhibit_code');
+  const filters: string[] = [], params: any[] = [];
+  if (req.query.project_id) { params.push(req.query.project_id); filters.push(`e.project_id = $${params.length}`); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await query(`SELECT e.*, a.area_name, p.project_code FROM exhibits e JOIN areas a ON e.area_id=a.id JOIN projects p ON e.project_id=p.id ${where} ORDER BY e.exhibit_code`, params);
   res.json({ items: result.rows });
 });
 
@@ -256,8 +259,13 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
         t.operating_volume_m3, pm.operating_volume_m3
       ) as design_volume_m3,
       COALESCE(
-        (SELECT json_agg(ti ORDER BY ti.instance_index)
-         FROM tank_instances ti WHERE ti.tank_id = t.id),
+        (SELECT json_agg(
+          json_build_object(
+            'id', ti.id, 'tank_id', ti.tank_id, 'instance_index', ti.instance_index,
+            'tag', ti.tag, 'notes', ti.notes, 'display_name', ti.display_name,
+            'exhibit_id', ti.exhibit_id, 'exhibit_name', ex.exhibit_name
+          ) ORDER BY ti.instance_index
+        ) FROM tank_instances ti LEFT JOIN exhibits ex ON ti.exhibit_id = ex.id WHERE ti.tank_id = t.id),
         '[]'::json
       ) AS instances
      FROM tanks t
@@ -411,11 +419,15 @@ router.delete('/tanks/:id', authenticate, async (req: AuthRequest, res: Response
 });
 
 router.patch('/tank-instances/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tag } = req.body;
-  if (!tag || !tag.trim()) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tag is required' } });
+  const { tag, display_name, exhibit_id } = req.body;
+  if (tag !== undefined && (!tag || !tag.trim())) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tag cannot be empty' } });
   const result = await query(
-    'UPDATE tank_instances SET tag=$1 WHERE id=$2 RETURNING *',
-    [tag.trim().toUpperCase(), req.params.id]);
+    `UPDATE tank_instances SET
+      tag = COALESCE($1, tag),
+      display_name = $2,
+      exhibit_id = $3
+    WHERE id=$4 RETURNING *`,
+    [tag ? tag.trim().toUpperCase() : null, display_name || null, exhibit_id || null, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank instance not found' } });
   res.json(result.rows[0]);
 });
