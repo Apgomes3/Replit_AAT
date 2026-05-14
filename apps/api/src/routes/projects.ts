@@ -349,6 +349,30 @@ router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
   res.status(201).json(tank);
 });
 
+router.post('/tanks/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+  const orig = await query('SELECT * FROM tanks WHERE id=$1', [req.params.id]);
+  if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+  const t = orig.rows[0];
+  const existing = await query('SELECT tank_code FROM tanks WHERE project_id=$1', [t.project_id]);
+  const usedCodes = new Set(existing.rows.map((r: any) => r.tank_code.toUpperCase()));
+  let newCode = `${t.tank_code}-2`;
+  let n = 2;
+  while (usedCodes.has(newCode.toUpperCase())) { n++; newCode = `${t.tank_code}-${n}`; }
+  const qty = t.quantity ?? 1;
+  const result = await query(
+    'INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
+    [newCode.toUpperCase(), t.project_id, t.system_id, qty, `${t.tank_name} (Copy)`, t.tank_type, t.product_master_id, t.shape_type, t.gross_volume_m3, t.operating_volume_m3, t.length_mm, t.width_mm, t.height_mm, t.design_water_level_mm, t.primary_material, t.status || 'Active', t.notes]);
+  const newTank = result.rows[0];
+  if (qty > 1) {
+    const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
+    for (let i = 1; i <= qty; i++) {
+      await query('INSERT INTO tank_instances (tank_id, instance_index, tag) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [newTank.id, i, `${newCode.toUpperCase()}-${String(i).padStart(pad, '0')}`]);
+    }
+  }
+  res.status(201).json(newTank);
+});
+
 router.patch('/tanks/reorder', authenticate, async (req: AuthRequest, res: Response) => {
   const { orderedIds } = req.body;
   if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });

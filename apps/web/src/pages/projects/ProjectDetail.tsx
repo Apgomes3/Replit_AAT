@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus, GripVertical } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus, GripVertical, Copy } from 'lucide-react';
 import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
@@ -84,6 +84,7 @@ export default function ProjectDetail() {
   const [editingInstance, setEditingInstance] = useState<{ id: string; tag: string; display_name: string } | null>(null);
   const [savingInstanceId, setSavingInstanceId] = useState<string | null>(null);
   const [deletingTankId, setDeletingTankId] = useState<string | null>(null);
+  const [duplicatingTankId, setDuplicatingTankId] = useState<string | null>(null);
   const [saveTankDbModal, setSaveTankDbModal] = useState<any>(null);
   const [saveTankDbCode, setSaveTankDbCode] = useState('');
   const [saveTankDbName, setSaveTankDbName] = useState('');
@@ -534,6 +535,20 @@ export default function ProjectDetail() {
       toast.error(err?.response?.data?.error?.message || 'Failed to remove tank');
     } finally {
       setDeletingTankId(null);
+    }
+  };
+
+  const handleDuplicateTank = async (tank: any) => {
+    setDuplicatingTankId(tank.id);
+    try {
+      const res = await api.post(`/tanks/${tank.id}/duplicate`);
+      await qc.invalidateQueries({ queryKey: ['project-tanks', id] });
+      toast.success(`Duplicated as ${res.data.tank_code}`);
+      openEditTank(res.data);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to duplicate tank');
+    } finally {
+      setDuplicatingTankId(null);
     }
   };
 
@@ -1221,6 +1236,16 @@ export default function ProjectDetail() {
                             >+ DB</button>
                           </>
                         )}
+                        <button
+                          onClick={e => { e.stopPropagation(); handleDuplicateTank(tank); }}
+                          disabled={duplicatingTankId === tank.id}
+                          className="text-slate-300 hover:text-green-600 p-1 rounded disabled:opacity-50 transition-colors"
+                          title="Duplicate tank"
+                        >
+                          {duplicatingTankId === tank.id
+                            ? <span className="text-xs text-slate-400">…</span>
+                            : <Copy className="w-3.5 h-3.5" />}
+                        </button>
                         <button
                           onClick={e => { e.stopPropagation(); handleDeleteTank(tank); }}
                           disabled={deletingTankId === tank.id}
