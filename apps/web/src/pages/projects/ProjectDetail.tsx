@@ -19,7 +19,7 @@ import ProjectReleasePOModal from './ProjectReleasePOModal';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'waterproofing' | 'theming' | 'acrylic';
+type Tab = 'systems' | 'tanks' | 'piping' | 'bom-release' | 'waterproofing' | 'theming' | 'acrylic';
 
 const ALL_SCOPES = ['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic'] as const;
 type ScopeKey = typeof ALL_SCOPES[number];
@@ -197,13 +197,13 @@ export default function ProjectDetail() {
   const { data: documents } = useQuery({
     queryKey: ['project-docs', id],
     queryFn: () => api.get(`/documents?project_id=${id}&page_size=200`).then(r => r.data),
-    enabled: tab === 'documents',
+    enabled: !!id,
   });
 
   const { data: changes } = useQuery({
     queryKey: ['project-changes', id],
     queryFn: () => api.get(`/change-requests?project_id=${id}&page_size=200`).then(r => r.data),
-    enabled: tab === 'changes',
+    enabled: !!id,
   });
 
   const { data: tankProductResults } = useQuery({
@@ -344,8 +344,8 @@ export default function ProjectDetail() {
       return true;
     };
     if (!isVisible(tab)) {
-      const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'documents', 'changes'];
-      setTab(allKeys.find(t => isVisible(t)) ?? 'documents');
+      const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release'];
+      setTab(allKeys.find(t => isVisible(t)) ?? 'systems');
     }
   }, [project?.project_scopes]);
 
@@ -401,14 +401,14 @@ export default function ProjectDetail() {
     if (next.length === 0) { toast.error('At least one scope must remain active'); return; }
     setOptimisticScopes(next);
     setScopeSaving(true);
-    const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'documents', 'changes'];
+    const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release'];
     const isVis = (key: Tab) => {
       for (const [s, tabs] of Object.entries(SCOPE_TABS)) {
         if ((tabs as string[]).includes(key)) return next.includes(s);
       }
       return true;
     };
-    if (!isVis(tab)) setTab(allKeys.find(t => isVis(t)) ?? 'documents');
+    if (!isVis(tab)) setTab(allKeys.find(t => isVis(t)) ?? 'systems');
     try {
       await api.patch(`/projects/${id}/scopes`, { scopes: next });
       await refetch();
@@ -1433,8 +1433,6 @@ export default function ProjectDetail() {
               { key: 'theming', label: 'Theming' },
               { key: 'acrylic', label: 'Acrylic' },
               { key: 'bom-release', label: 'BOM Releases' },
-              { key: 'documents', label: 'Documents' },
-              { key: 'changes', label: 'Changes' },
             ] as { key: Tab; label: string }[]).filter(t => isScopeTabVisible(t.key)).map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
@@ -2030,8 +2028,6 @@ export default function ProjectDetail() {
               />
             </div>
           )}
-          {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents" onRowClick={r => navigate(`/documents/${r.id}`)} />}
-          {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes" />}
           {tab === 'waterproofing' && (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
               <div className="w-12 h-12 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4">
@@ -2058,6 +2054,42 @@ export default function ProjectDetail() {
               <div className="text-sm font-medium text-slate-600 mb-1">Acrylic scope</div>
               <div className="text-xs text-slate-400 text-center max-w-xs">Track acrylic panel specifications, viewing window designs and manufacturing for this project</div>
             </div>
+          )}
+        </div>
+
+        {/* Documents section */}
+        <div className="bg-white border border-slate-200 rounded-lg mt-4">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-semibold text-slate-700">Documents</span>
+              {(documents?.items?.length ?? 0) > 0 && (
+                <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">{documents.items.length}</span>
+              )}
+            </div>
+          </div>
+          {(documents?.items?.length ?? 0) === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-400">No documents associated with this project yet.</div>
+          ) : (
+            <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents-section" onRowClick={r => navigate(`/documents/${r.id}`)} />
+          )}
+        </div>
+
+        {/* Changes section */}
+        <div className="bg-white border border-slate-200 rounded-lg mt-4">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-semibold text-slate-700">Change Requests</span>
+              {(changes?.items?.length ?? 0) > 0 && (
+                <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">{changes.items.length}</span>
+              )}
+            </div>
+          </div>
+          {(changes?.items?.length ?? 0) === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-400">No change requests for this project yet.</div>
+          ) : (
+            <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes-section" />
           )}
         </div>
 
