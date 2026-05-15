@@ -93,11 +93,20 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
 });
 
 router.patch('/projects/:id/scopes', authenticate, async (req: AuthRequest, res: Response) => {
-  const { scopes } = req.body;
-  if (!Array.isArray(scopes) || scopes.length === 0) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'scopes must be a non-empty array' } });
-  const result = await query('UPDATE projects SET project_scopes=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [scopes, req.params.id]);
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
-  res.json(result.rows[0]);
+  try {
+    const { scopes } = req.body;
+    if (!Array.isArray(scopes) || scopes.length === 0) {
+      return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'scopes must be a non-empty array' } });
+    }
+    const result = await query(
+      'UPDATE projects SET project_scopes=$1::text[], updated_at=NOW() WHERE id=$2 RETURNING id, project_scopes',
+      [scopes, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'SERVER_ERROR', message: err.message } });
+  }
 });
 
 router.delete('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {

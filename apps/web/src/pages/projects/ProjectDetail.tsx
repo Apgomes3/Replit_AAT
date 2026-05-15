@@ -86,6 +86,7 @@ export default function ProjectDetail() {
   const [sysCellEdit, setSysCellEdit] = useState<{ sysId: string; field: string; value: string } | null>(null);
   const [sysCellSaving, setSysCellSaving] = useState(false);
   const [scopeSaving, setScopeSaving] = useState(false);
+  const [optimisticScopes, setOptimisticScopes] = useState<string[] | null>(null);
   const inlineNewSysDefault = () => ({ system_code: '', system_name: '', system_type: '', water_type: '', design_flow_m3h: '', status: 'Draft' });
   const [inlineNewSys, setInlineNewSys] = useState<ReturnType<typeof inlineNewSysDefault> | null>(null);
   const [inlineNewSysSaving, setInlineNewSysSaving] = useState(false);
@@ -383,7 +384,8 @@ export default function ProjectDetail() {
     finally { setProjectSaving(false); }
   };
 
-  const activeScopes: string[] = (project.project_scopes?.length) ? project.project_scopes : [...ALL_SCOPES];
+  const serverScopes: string[] = (project.project_scopes?.length) ? project.project_scopes : [...ALL_SCOPES];
+  const activeScopes: string[] = optimisticScopes ?? serverScopes;
 
   const isScopeTabVisible = (key: Tab): boolean => {
     for (const [scope, tabs] of Object.entries(SCOPE_TABS)) {
@@ -397,20 +399,27 @@ export default function ProjectDetail() {
       ? activeScopes.filter(s => s !== scope)
       : [...activeScopes, scope];
     if (next.length === 0) { toast.error('At least one scope must remain active'); return; }
+    setOptimisticScopes(next);
     setScopeSaving(true);
+    const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'pos', 'documents', 'changes'];
+    const isVis = (key: Tab) => {
+      for (const [s, tabs] of Object.entries(SCOPE_TABS)) {
+        if ((tabs as string[]).includes(key)) return next.includes(s);
+      }
+      return true;
+    };
+    if (!isVis(tab)) setTab(allKeys.find(t => isVis(t)) ?? 'documents');
     try {
       await api.patch(`/projects/${id}/scopes`, { scopes: next });
-      refetch();
-      const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'pos', 'documents', 'changes'];
-      const isVis = (key: Tab) => {
-        for (const [s, tabs] of Object.entries(SCOPE_TABS)) {
-          if ((tabs as string[]).includes(key)) return next.includes(s);
-        }
-        return true;
-      };
-      if (!isVis(tab)) setTab(allKeys.find(t => isVis(t)) ?? 'documents');
-    } catch { toast.error('Failed to update scopes'); }
-    finally { setScopeSaving(false); }
+      await refetch();
+    } catch {
+      toast.error('Failed to update scopes');
+      setOptimisticScopes(serverScopes);
+    }
+    finally {
+      setOptimisticScopes(null);
+      setScopeSaving(false);
+    }
   };
 
   const handleStatusChange = async (newStatus: string) => {
