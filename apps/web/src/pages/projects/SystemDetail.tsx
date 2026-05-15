@@ -244,7 +244,7 @@ export default function SystemDetail() {
         setSelectedIds(prev => new Set([...prev, item.id]));
       }
     } else {
-      if (item.product_master_id && !item.released_po_id && !selectedTankIds.has(item.id)) {
+      if (!item.released_po_id && !selectedTankIds.has(item.id)) {
         setSelectedTankIds(prev => new Set([...prev, item.id]));
       }
     }
@@ -254,7 +254,7 @@ export default function SystemDetail() {
   const handleQuickPO = async () => {
     const allTanks: any[] = system.tanks ?? [];
     const eligibleEquip = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
-    const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+    const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && !t.released_po_id);
     const total = eligibleEquip.length + eligibleTanks.length;
     if (total === 0) { toast.error('No eligible items selected'); return; }
     setQuickPOSaving(true);
@@ -918,8 +918,8 @@ export default function SystemDetail() {
 
               {/* Tanks table */}
               {(() => {
-                const selectableTanks = tanks.filter((t: any) => t.product_master_id && !t.released_po_id);
-                const eligibleTankSelected = tanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+                const selectableTanks = tanks.filter((t: any) => !t.released_po_id);
+                const eligibleTankSelected = tanks.filter((t: any) => selectedTankIds.has(t.id) && !t.released_po_id);
                 const allTanksChecked = selectableTanks.length > 0 && selectableTanks.every((t: any) => selectedTankIds.has(t.id));
                 const someTanksChecked = selectableTanks.some((t: any) => selectedTankIds.has(t.id));
                 const eligibleEquipSelected = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
@@ -1060,7 +1060,7 @@ export default function SystemDetail() {
                         const qty = parseInt(t.quantity ?? 1);
                         const opVol = parseFloat(t.operating_volume_m3 ?? 0);
                         const totalOpVol = opVol * qty;
-                        const isTankSelectable = !!(t.product_master_id && !t.released_po_id);
+                        const isTankSelectable = !t.released_po_id;
                         const isTankSelected = selectedTankIds.has(t.id);
                         return (
                           <tr
@@ -1164,7 +1164,7 @@ export default function SystemDetail() {
           {(() => {
             const allTanks: any[] = system.tanks ?? [];
             const eligibleEquip = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
-            const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+            const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && !t.released_po_id);
             const total = eligibleEquip.length + eligibleTanks.length;
             const totalSelected = selectedIds.size + selectedTankIds.size;
             return (
@@ -1205,7 +1205,7 @@ export default function SystemDetail() {
             {(() => {
               const allTanks: any[] = system.tanks ?? [];
               const eligibleEquip = equipment.filter((eq: any) => selectedIds.has(eq.id) && eq.product_master_id && !eq.released_po_id);
-              const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && t.product_master_id && !t.released_po_id);
+              const eligibleTanks = allTanks.filter((t: any) => selectedTankIds.has(t.id) && !t.released_po_id);
               const total = eligibleEquip.length + eligibleTanks.length;
               return (
                 <>
