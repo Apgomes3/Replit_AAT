@@ -1427,7 +1427,7 @@ export default function ProjectDetail() {
           <div className="flex border-b border-slate-200 overflow-x-auto">
             {([
               { key: 'systems', label: 'Systems' },
-              { key: 'tanks', label: 'Tanks' },
+              { key: 'tanks', label: 'Exhibits' },
               { key: 'piping', label: 'Piping & Fittings' },
               { key: 'waterproofing', label: 'Waterproofing' },
               { key: 'theming', label: 'Theming' },
