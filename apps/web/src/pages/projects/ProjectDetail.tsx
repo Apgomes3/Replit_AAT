@@ -1092,8 +1092,36 @@ export default function ProjectDetail() {
                 { label: 'Engineering Manager', value: project.engineering_manager },
                 { label: 'QA Owner', value: project.qa_owner },
               ]} />
-            ) : (
-              <div className="bg-white border border-slate-200 rounded-lg p-5">
+            ) : null}
+
+            {/* Scope bar — below the info card */}
+            {!editingProject && (
+              <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-3 mt-3">
+                <span className="text-xs font-medium text-slate-400 uppercase tracking-wide shrink-0">Scope</span>
+                <div className="flex items-center gap-2 flex-wrap flex-1">
+                  {ALL_SCOPES.map(scope => {
+                    const active = activeScopes.includes(scope);
+                    return (
+                      <button key={scope} type="button"
+                        onClick={() => isPrivileged ? handleToggleScope(scope) : undefined}
+                        disabled={!isPrivileged || scopeSaving}
+                        title={isPrivileged ? (active ? `Remove ${scope} scope` : `Add ${scope} scope`) : 'Contact admin to modify scopes'}
+                        className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                          active
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-slate-400 border-slate-200'
+                        } ${isPrivileged && !scopeSaving ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>
+                        {scope === 'LSS' ? 'LSS (Systems)' : scope}
+                      </button>
+                    );
+                  })}
+                </div>
+                {isPrivileged && <span className="text-[11px] text-slate-400 shrink-0">Click to toggle</span>}
+              </div>
+            )}
+
+            {editingProject && (
+              <div className="bg-white border border-slate-200 rounded-lg p-5 mt-3">
                 <div className="text-xs text-slate-400 uppercase tracking-wide mb-4">Edit Project Details</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
@@ -1385,30 +1413,6 @@ export default function ProjectDetail() {
             </div>
           );
         })()}
-
-        {/* Scope bar */}
-        <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-3 mb-3">
-          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide shrink-0">Scope</span>
-          <div className="flex items-center gap-2 flex-wrap flex-1">
-            {ALL_SCOPES.map(scope => {
-              const active = activeScopes.includes(scope);
-              return (
-                <button key={scope} type="button"
-                  onClick={() => isPrivileged ? handleToggleScope(scope) : undefined}
-                  disabled={!isPrivileged || scopeSaving}
-                  title={isPrivileged ? (active ? `Remove ${scope} scope` : `Add ${scope} scope`) : 'Contact admin to modify scopes'}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-                    active
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-slate-400 border-slate-200'
-                  } ${isPrivileged && !scopeSaving ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>
-                  {scope === 'LSS' ? 'LSS (Systems)' : scope}
-                </button>
-              );
-            })}
-          </div>
-          {isPrivileged && <span className="text-[11px] text-slate-400 shrink-0">Click to toggle</span>}
-        </div>
 
         <div className="bg-white border border-slate-200 rounded-lg">
           <div className="flex border-b border-slate-200 overflow-x-auto">
