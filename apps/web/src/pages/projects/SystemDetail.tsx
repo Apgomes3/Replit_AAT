@@ -587,6 +587,63 @@ export default function SystemDetail() {
           </div>
         </div>
 
+        {/* Tank volume summary strip — above Products */}
+        {(() => {
+          const tanks: any[] = system.tanks ?? [];
+          if (tanks.length === 0) return null;
+          const totalGross = tanks.reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3 ?? 0) * (parseInt(t.quantity ?? 1))), 0);
+          const totalOp = tanks.reduce((s: number, t: any) => s + (parseFloat(t.operating_volume_m3 ?? 0) * (parseInt(t.quantity ?? 1))), 0);
+          const totalQty = tanks.reduce((s: number, t: any) => s + parseInt(t.quantity ?? 1), 0);
+          const calcTurnover = system.design_flow_m3h && totalOp > 0
+            ? (parseFloat(system.design_flow_m3h) / totalOp).toFixed(2)
+            : null;
+          return (
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { icon: Container, label: 'Tanks', value: `${tanks.length} type${tanks.length !== 1 ? 's' : ''}`, sub: `${totalQty} unit${totalQty !== 1 ? 's' : ''}`, color: 'text-blue-600', bg: 'bg-blue-50' },
+                { icon: Droplets, label: 'Total Gross Volume', value: totalGross > 0 ? `${totalGross.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-cyan-600', bg: 'bg-cyan-50' },
+                { icon: FlaskConical, label: 'Total Operating Volume', value: totalOp > 0 ? `${totalOp.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-indigo-600', bg: 'bg-indigo-50' },
+              ].map(({ icon: Icon, label, value, sub, color, bg }) => (
+                <div key={label} className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
+                  <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0 mt-0.5`}>
+                    <Icon className={`w-4 h-4 ${color}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
+                    <div className="text-base font-bold text-slate-800 leading-tight">{value}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 truncate">{sub}</div>
+                  </div>
+                </div>
+              ))}
+              {/* Calc Turnover Rate */}
+              <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <Zap className="w-4 h-4 text-amber-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Calc. Turnover Rate</div>
+                  <div className="text-base font-bold text-slate-800 leading-tight">{calcTurnover ? `${calcTurnover} /hr` : '—'}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                    {system.design_flow_m3h ? `flow ${system.design_flow_m3h} m³/h ÷ op. vol.` : 'set design flow to calculate'}
+                  </div>
+                  {calcTurnover && (
+                    <button
+                      onClick={() => {
+                        if (!editing) startEdit();
+                        setForm((f: any) => ({ ...(f ?? {}), system_name: system.system_name || '', system_type: system.system_type || '', water_type: system.water_type || '', design_flow_m3h: system.design_flow_m3h ?? '', turnover_rate_hr: calcTurnover, status: system.status || 'Draft', duty_description: system.duty_description || '', redundancy_strategy: system.redundancy_strategy || '' }));
+                        setEditing(true);
+                      }}
+                      className="mt-1 text-[10px] text-blue-600 hover:underline font-medium"
+                    >
+                      ← Apply to system
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Products inline grid */}
         {(() => {
           const selectableEq = equipment.filter((eq: any) => eq.product_master_id && !eq.released_po_id);
@@ -869,53 +926,6 @@ export default function SystemDetail() {
 
           return (
             <>
-              {/* Volume summary strip */}
-              {tanks.length > 0 && (
-                <div className="grid grid-cols-4 gap-3">
-                  {[
-                    { icon: Container, label: 'Tanks', value: `${tanks.length} type${tanks.length !== 1 ? 's' : ''}`, sub: `${totalQty} unit${totalQty !== 1 ? 's' : ''}`, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { icon: Droplets, label: 'Total Gross Volume', value: totalGross > 0 ? `${totalGross.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-cyan-600', bg: 'bg-cyan-50' },
-                    { icon: FlaskConical, label: 'Total Operating Volume', value: totalOp > 0 ? `${totalOp.toFixed(2)} m³` : '—', sub: 'sum of all tanks × qty', color: 'text-indigo-600', bg: 'bg-indigo-50' },
-                  ].map(({ icon: Icon, label, value, sub, color, bg }) => (
-                    <div key={label} className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
-                      <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0 mt-0.5`}>
-                        <Icon className={`w-4 h-4 ${color}`} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
-                        <div className="text-base font-bold text-slate-800 leading-tight">{value}</div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">{sub}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {/* Calc Turnover Rate — rendered separately for the Apply button */}
-                  <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
-                      <Zap className="w-4 h-4 text-amber-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Calc. Turnover Rate</div>
-                      <div className="text-base font-bold text-slate-800 leading-tight">{calcTurnover ? `${calcTurnover} /hr` : '—'}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                        {system.design_flow_m3h ? `flow ${system.design_flow_m3h} m³/h ÷ op. vol.` : 'set design flow to calculate'}
-                      </div>
-                      {calcTurnover && (
-                        <button
-                          onClick={() => {
-                            if (!editing) startEdit();
-                            setForm((f: any) => ({ ...(f ?? {}), system_name: system.system_name || '', system_type: system.system_type || '', water_type: system.water_type || '', design_flow_m3h: system.design_flow_m3h ?? '', turnover_rate_hr: calcTurnover, status: system.status || 'Draft', duty_description: system.duty_description || '', redundancy_strategy: system.redundancy_strategy || '' }));
-                            setEditing(true);
-                          }}
-                          className="mt-1 text-[10px] text-blue-600 hover:underline font-medium"
-                        >
-                          ← Apply to system
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Tanks table */}
               {(() => {
                 const selectableTanks = tanks.filter((t: any) => !t.released_po_id);
