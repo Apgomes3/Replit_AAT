@@ -817,6 +817,8 @@ CREATE TABLE IF NOT EXISTS tank_cost_rates (
 INSERT INTO tank_cost_rates (material_code, label, cost_per_sqm_usd, notes)
 SELECT 'MAT-FRP-VE', 'FRP (Vinyl Ester)', 350, 'Base rate for FRP tank shell fabrication'
 WHERE NOT EXISTS (SELECT 1 FROM tank_cost_rates WHERE material_code = 'MAT-FRP-VE');
+
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_scopes TEXT[] DEFAULT ARRAY['LSS','Tanks','Waterproofing','Theming','Acrylic'];
 `;
 
 async function migrate() {

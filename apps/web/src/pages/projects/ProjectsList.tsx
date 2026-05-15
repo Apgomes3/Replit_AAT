@@ -17,6 +17,14 @@ const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
 const EMPTY_FORM = { project_code: '', project_name: '', client_name: '', country: '', city: '', project_manager: '' };
 
+const ALL_SCOPES = [
+  { key: 'LSS', label: 'LSS', description: 'Life Support Systems' },
+  { key: 'Tanks', label: 'Tanks', description: 'Tank engineering' },
+  { key: 'Waterproofing', label: 'Waterproofing', description: 'Waterproofing scope' },
+  { key: 'Theming', label: 'Theming', description: 'Theming & decoration' },
+  { key: 'Acrylic', label: 'Acrylic', description: 'Acrylic panels & viewing windows' },
+] as const;
+
 export default function ProjectsList() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -26,6 +34,8 @@ export default function ProjectsList() {
   const [saving, setSaving] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const [selectedScopes, setSelectedScopes] = useState<string[]>(['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic']);
 
   const [pmMode, setPmMode] = useState<'pick' | 'manual'>('pick');
   const [pmSearch, setPmSearch] = useState('');
@@ -70,7 +80,7 @@ export default function ProjectsList() {
     { key: 'target_completion_date', header: 'Target', sortable: true, sortValue: r => r.target_completion_date ?? '', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
   ];
 
-  const openNew = () => { setForm(EMPTY_FORM); setPmMode('pick'); setPmSearch(''); setLogoFile(null); setShowNew(true); };
+  const openNew = () => { setForm(EMPTY_FORM); setPmMode('pick'); setPmSearch(''); setLogoFile(null); setSelectedScopes(['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic']); setShowNew(true); };
   const closeNew = () => { setShowNew(false); setLogoFile(null); };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -78,7 +88,7 @@ export default function ProjectsList() {
     if (!form.project_code.trim() || !form.project_name.trim()) return;
     setSaving(true);
     try {
-      const res = await api.post('/projects', form);
+      const res = await api.post('/projects', { ...form, scopes: selectedScopes });
       const newProject = res.data;
       if (logoFile) {
         const fd = new FormData();
@@ -273,9 +283,32 @@ export default function ProjectsList() {
                 )}
               </div>
 
+              {/* Scope selection */}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Project Scopes <span className="text-red-400">*</span></label>
+                <div className="flex flex-wrap gap-2">
+                  {ALL_SCOPES.map(scope => {
+                    const active = selectedScopes.includes(scope.key);
+                    return (
+                      <button key={scope.key} type="button"
+                        onClick={() => setSelectedScopes(prev => active ? prev.filter(s => s !== scope.key) : [...prev, scope.key])}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                          active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-300 hover:border-blue-400 hover:text-blue-600'
+                        }`}>
+                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${active ? 'bg-white border-white' : 'border-slate-300'}`}>
+                          {active && <span className="w-2 h-2 rounded-full bg-blue-600 block" />}
+                        </span>
+                        {scope.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">Tabs inside the project only appear for selected scopes</p>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" onClick={closeNew}>Cancel</Button>
-                <Button type="submit" variant="primary" disabled={saving || !form.project_code.trim() || !form.project_name.trim()}>
+                <Button type="submit" variant="primary" disabled={saving || !form.project_code.trim() || !form.project_name.trim() || selectedScopes.length === 0}>
                   {saving ? 'Creating…' : 'Create Project'}
                 </Button>
               </div>

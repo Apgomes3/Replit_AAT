@@ -19,7 +19,18 @@ import ProjectReleasePOModal from './ProjectReleasePOModal';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'pos';
+type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'pos' | 'waterproofing' | 'theming' | 'acrylic';
+
+const ALL_SCOPES = ['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic'] as const;
+type ScopeKey = typeof ALL_SCOPES[number];
+
+const SCOPE_TABS: Record<ScopeKey, Tab[]> = {
+  LSS: ['systems', 'piping'],
+  Tanks: ['tanks'],
+  Waterproofing: ['waterproofing'],
+  Theming: ['theming'],
+  Acrylic: ['acrylic'],
+};
 
 
 type Tank = {
@@ -74,6 +85,7 @@ export default function ProjectDetail() {
   const [deletingSystemId, setDeletingSystemId] = useState<string | null>(null);
   const [sysCellEdit, setSysCellEdit] = useState<{ sysId: string; field: string; value: string } | null>(null);
   const [sysCellSaving, setSysCellSaving] = useState(false);
+  const [scopeSaving, setScopeSaving] = useState(false);
   const inlineNewSysDefault = () => ({ system_code: '', system_name: '', system_type: '', water_type: '', design_flow_m3h: '', status: 'Draft' });
   const [inlineNewSys, setInlineNewSys] = useState<ReturnType<typeof inlineNewSysDefault> | null>(null);
   const [inlineNewSysSaving, setInlineNewSysSaving] = useState(false);
@@ -321,6 +333,21 @@ export default function ProjectDetail() {
     });
   }, [systems?.items]);
 
+  useEffect(() => {
+    if (!project?.project_scopes) return;
+    const active: string[] = project.project_scopes.length ? project.project_scopes : [...ALL_SCOPES];
+    const isVisible = (key: Tab) => {
+      for (const [scope, tabs] of Object.entries(SCOPE_TABS)) {
+        if ((tabs as string[]).includes(key)) return active.includes(scope);
+      }
+      return true;
+    };
+    if (!isVisible(tab)) {
+      const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'pos', 'documents', 'changes'];
+      setTab(allKeys.find(t => isVisible(t)) ?? 'documents');
+    }
+  }, [project?.project_scopes]);
+
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
   if (!project) return <div className="p-8 text-slate-400">Project not found</div>;
 
@@ -354,6 +381,36 @@ export default function ProjectDetail() {
       setEditingProject(false);
     } catch { toast.error('Save failed'); }
     finally { setProjectSaving(false); }
+  };
+
+  const activeScopes: string[] = (project.project_scopes?.length) ? project.project_scopes : [...ALL_SCOPES];
+
+  const isScopeTabVisible = (key: Tab): boolean => {
+    for (const [scope, tabs] of Object.entries(SCOPE_TABS)) {
+      if ((tabs as string[]).includes(key)) return activeScopes.includes(scope);
+    }
+    return true;
+  };
+
+  const handleToggleScope = async (scope: string) => {
+    const next = activeScopes.includes(scope)
+      ? activeScopes.filter(s => s !== scope)
+      : [...activeScopes, scope];
+    if (next.length === 0) { toast.error('At least one scope must remain active'); return; }
+    setScopeSaving(true);
+    try {
+      await api.patch(`/projects/${id}/scopes`, { scopes: next });
+      refetch();
+      const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'pos', 'documents', 'changes'];
+      const isVis = (key: Tab) => {
+        for (const [s, tabs] of Object.entries(SCOPE_TABS)) {
+          if ((tabs as string[]).includes(key)) return next.includes(s);
+        }
+        return true;
+      };
+      if (!isVis(tab)) setTab(allKeys.find(t => isVis(t)) ?? 'documents');
+    } catch { toast.error('Failed to update scopes'); }
+    finally { setScopeSaving(false); }
   };
 
   const handleStatusChange = async (newStatus: string) => {
@@ -1329,23 +1386,50 @@ export default function ProjectDetail() {
           );
         })()}
 
+        {/* Scope bar */}
+        <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-3 mb-3">
+          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide shrink-0">Scope</span>
+          <div className="flex items-center gap-2 flex-wrap flex-1">
+            {ALL_SCOPES.map(scope => {
+              const active = activeScopes.includes(scope);
+              return (
+                <button key={scope} type="button"
+                  onClick={() => isPrivileged ? handleToggleScope(scope) : undefined}
+                  disabled={!isPrivileged || scopeSaving}
+                  title={isPrivileged ? (active ? `Remove ${scope} scope` : `Add ${scope} scope`) : 'Contact admin to modify scopes'}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-400 border-slate-200'
+                  } ${isPrivileged && !scopeSaving ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}>
+                  {scope === 'LSS' ? 'LSS (Systems)' : scope}
+                </button>
+              );
+            })}
+          </div>
+          {isPrivileged && <span className="text-[11px] text-slate-400 shrink-0">Click to toggle</span>}
+        </div>
+
         <div className="bg-white border border-slate-200 rounded-lg">
-          <div className="flex border-b border-slate-200">
+          <div className="flex border-b border-slate-200 overflow-x-auto">
             {([
               { key: 'systems', label: 'Systems' },
               { key: 'tanks', label: 'Tanks' },
               { key: 'piping', label: 'Piping & Fittings' },
+              { key: 'waterproofing', label: 'Waterproofing' },
+              { key: 'theming', label: 'Theming' },
+              { key: 'acrylic', label: 'Acrylic' },
               { key: 'bom-release', label: 'BOM Releases' },
               { key: 'pos', label: `Purchase Orders${projectPOs?.items?.length ? ` (${projectPOs.items.length})` : ''}` },
               { key: 'documents', label: 'Documents' },
               { key: 'changes', label: 'Changes' },
-            ] as { key: Tab; label: string }[]).map(t => (
+            ] as { key: Tab; label: string }[]).filter(t => isScopeTabVisible(t.key)).map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {t.label}
               </button>
             ))}
-            <div className="ml-auto p-2 flex items-center gap-2">
+            <div className="ml-auto p-2 flex items-center gap-2 shrink-0">
               {tab === 'systems' && <Button size="sm" variant="primary" onClick={() => setShowNewSystem(true)}><Plus className="w-3.5 h-3.5" />System</Button>}
               {tab === 'tanks' && <span ref={addTankBtnRef}><Button size="sm" variant="primary" onClick={() => { resetTankForm(); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button></span>}
               {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
@@ -1983,6 +2067,33 @@ export default function ProjectDetail() {
           })()}
           {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents" onRowClick={r => navigate(`/documents/${r.id}`)} />}
           {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes" />}
+          {tab === 'waterproofing' && (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <div className="w-12 h-12 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1M3 12h1m16 0h1M5.6 5.6l.7.7m11.4-.7-.7.7M5.6 18.4l.7-.7m11.4.7-.7-.7M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+              </div>
+              <div className="text-sm font-medium text-slate-600 mb-1">Waterproofing scope</div>
+              <div className="text-xs text-slate-400 text-center max-w-xs">Track waterproofing specifications, inspection records and product selections for this project</div>
+            </div>
+          )}
+          {tab === 'theming' && (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42"/></svg>
+              </div>
+              <div className="text-sm font-medium text-slate-600 mb-1">Theming scope</div>
+              <div className="text-xs text-slate-400 text-center max-w-xs">Manage theming design, fabrication items and decoration schedules for this project</div>
+            </div>
+          )}
+          {tab === 'acrylic' && (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <div className="w-12 h-12 rounded-full bg-cyan-50 border border-cyan-100 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z"/></svg>
+              </div>
+              <div className="text-sm font-medium text-slate-600 mb-1">Acrylic scope</div>
+              <div className="text-xs text-slate-400 text-center max-w-xs">Track acrylic panel specifications, viewing window designs and manufacturing for this project</div>
+            </div>
+          )}
         </div>
       </div>
 

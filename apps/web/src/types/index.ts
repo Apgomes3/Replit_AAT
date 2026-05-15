@@ -21,6 +21,7 @@ export interface Project {
   project_manager?: string;
   engineering_manager?: string;
   logo_url?: string;
+  project_scopes?: string[];
   created_at: string;
 }
 
