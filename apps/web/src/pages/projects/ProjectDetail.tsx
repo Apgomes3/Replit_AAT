@@ -19,7 +19,7 @@ import ProjectReleasePOModal from './ProjectReleasePOModal';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'pos' | 'waterproofing' | 'theming' | 'acrylic';
+type Tab = 'systems' | 'tanks' | 'piping' | 'documents' | 'changes' | 'bom-release' | 'waterproofing' | 'theming' | 'acrylic';
 
 const ALL_SCOPES = ['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic'] as const;
 type ScopeKey = typeof ALL_SCOPES[number];
@@ -261,7 +261,7 @@ export default function ProjectDetail() {
   const { data: projectPOs } = useQuery({
     queryKey: ['project-pos', id],
     queryFn: () => api.get(`/purchase-orders?project_id=${id}&page_size=100`).then(r => r.data),
-    enabled: tab === 'pos',
+    enabled: !!id,
   });
 
   const { data: usersData } = useQuery({
@@ -344,7 +344,7 @@ export default function ProjectDetail() {
       return true;
     };
     if (!isVisible(tab)) {
-      const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'pos', 'documents', 'changes'];
+      const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'documents', 'changes'];
       setTab(allKeys.find(t => isVisible(t)) ?? 'documents');
     }
   }, [project?.project_scopes]);
@@ -401,7 +401,7 @@ export default function ProjectDetail() {
     if (next.length === 0) { toast.error('At least one scope must remain active'); return; }
     setOptimisticScopes(next);
     setScopeSaving(true);
-    const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'pos', 'documents', 'changes'];
+    const allKeys: Tab[] = ['systems', 'tanks', 'piping', 'waterproofing', 'theming', 'acrylic', 'bom-release', 'documents', 'changes'];
     const isVis = (key: Tab) => {
       for (const [s, tabs] of Object.entries(SCOPE_TABS)) {
         if ((tabs as string[]).includes(key)) return next.includes(s);
@@ -1433,7 +1433,6 @@ export default function ProjectDetail() {
               { key: 'theming', label: 'Theming' },
               { key: 'acrylic', label: 'Acrylic' },
               { key: 'bom-release', label: 'BOM Releases' },
-              { key: 'pos', label: `Purchase Orders${projectPOs?.items?.length ? ` (${projectPOs.items.length})` : ''}` },
               { key: 'documents', label: 'Documents' },
               { key: 'changes', label: 'Changes' },
             ] as { key: Tab; label: string }[]).filter(t => isScopeTabVisible(t.key)).map(t => (
@@ -1447,7 +1446,6 @@ export default function ProjectDetail() {
               {tab === 'tanks' && <span ref={addTankBtnRef}><Button size="sm" variant="primary" onClick={() => { resetTankForm(); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button></span>}
               {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
               {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setBomSections({ Products: true, Tank: true, Piping: true }); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
-              {tab === 'pos' && <Button size="sm" variant="primary" onClick={() => setShowReleasePOModal(true)}><ShoppingCart className="w-3.5 h-3.5" />Release PO</Button>}
             </div>
           </div>
 
@@ -2032,52 +2030,6 @@ export default function ProjectDetail() {
               />
             </div>
           )}
-          {tab === 'pos' && (() => {
-            const poItems: any[] = projectPOs?.items || [];
-            const formatStatus = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            const statusColor = (s: string) => {
-              if (s === 'released') return 'bg-green-100 text-green-700 border-green-200';
-              if (s === 'draft') return 'bg-slate-100 text-slate-600 border-slate-200';
-              if (s === 'pending_approval') return 'bg-amber-100 text-amber-700 border-amber-200';
-              if (s === 'engineering_review' || s === 'po_review') return 'bg-blue-100 text-blue-700 border-blue-200';
-              return 'bg-slate-100 text-slate-600 border-slate-200';
-            };
-            if (poItems.length === 0) return (
-              <div className="py-16 text-center text-sm text-slate-400">
-                No purchase orders released for this project yet —
-                click <strong>Release PO</strong> to create one from the project's equipment and tanks.
-              </div>
-            );
-            return (
-              <div className="divide-y divide-slate-100">
-                {poItems.map((po: any) => (
-                  <div
-                    key={po.id}
-                    onClick={() => navigate(`/purchase-orders/${po.id}`)}
-                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 cursor-pointer group transition-colors"
-                  >
-                    <span className="font-mono text-sm font-semibold text-slate-800 w-36 shrink-0">{po.po_code}</span>
-                    <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium shrink-0 ${statusColor(po.status)}`}>
-                      {formatStatus(po.status)}
-                    </span>
-                    {po.fo_number && (
-                      <span className="text-xs font-mono bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 rounded shrink-0">{po.fo_number}</span>
-                    )}
-                    <span className="text-xs text-slate-400 shrink-0">{po.item_count} item{po.item_count !== 1 ? 's' : ''}</span>
-                    {po.total_cost_usd > 0 && (
-                      <span className="text-xs text-slate-500 font-mono shrink-0">
-                        {parseFloat(po.total_cost_usd).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
-                      </span>
-                    )}
-                    <span className="flex-1" />
-                    <span className="text-xs text-slate-400 shrink-0">{po.created_by_name}</span>
-                    <span className="text-xs text-slate-400 shrink-0">{po.created_at?.split('T')[0]}</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
           {tab === 'documents' && <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents" onRowClick={r => navigate(`/documents/${r.id}`)} />}
           {tab === 'changes' && <DataTable columns={crCols} data={changes?.items || []} tableId="project-changes" />}
           {tab === 'waterproofing' && (
@@ -2108,6 +2060,67 @@ export default function ProjectDetail() {
             </div>
           )}
         </div>
+
+        {/* Purchase Orders section */}
+        {(() => {
+          const poItems: any[] = projectPOs?.items || [];
+          const formatStatus = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          const statusColor = (s: string) => {
+            if (s === 'released') return 'bg-green-100 text-green-700 border-green-200';
+            if (s === 'draft') return 'bg-slate-100 text-slate-600 border-slate-200';
+            if (s === 'pending_approval') return 'bg-amber-100 text-amber-700 border-amber-200';
+            if (s === 'engineering_review' || s === 'po_review') return 'bg-blue-100 text-blue-700 border-blue-200';
+            return 'bg-slate-100 text-slate-600 border-slate-200';
+          };
+          return (
+            <div className="bg-white border border-slate-200 rounded-lg mt-4">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4 text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-700">Purchase Orders</span>
+                  {poItems.length > 0 && (
+                    <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">{poItems.length}</span>
+                  )}
+                </div>
+                {isPrivileged && (
+                  <Button size="sm" variant="primary" onClick={() => setShowReleasePOModal(true)}>
+                    <ShoppingCart className="w-3.5 h-3.5" />Release PO
+                  </Button>
+                )}
+              </div>
+              {poItems.length === 0 ? (
+                <div className="py-10 text-center text-sm text-slate-400">
+                  No purchase orders for this project yet.{isPrivileged && <> Click <strong>Release PO</strong> to create one.</>}
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {poItems.map((po: any) => (
+                    <div key={po.id} onClick={() => navigate(`/purchase-orders/${po.id}`)}
+                      className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 cursor-pointer group transition-colors">
+                      <span className="font-mono text-sm font-semibold text-slate-800 w-36 shrink-0">{po.po_code}</span>
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium shrink-0 ${statusColor(po.status)}`}>
+                        {formatStatus(po.status)}
+                      </span>
+                      {po.fo_number && (
+                        <span className="text-xs font-mono bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 rounded shrink-0">{po.fo_number}</span>
+                      )}
+                      <span className="text-xs text-slate-400 shrink-0">{po.item_count} item{po.item_count !== 1 ? 's' : ''}</span>
+                      {po.total_cost_usd > 0 && (
+                        <span className="text-xs text-slate-500 font-mono shrink-0">
+                          {parseFloat(po.total_cost_usd).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} USD
+                        </span>
+                      )}
+                      <span className="flex-1" />
+                      <span className="text-xs text-slate-400 shrink-0">{po.created_by_name}</span>
+                      <span className="text-xs text-slate-400 shrink-0">{po.created_at?.split('T')[0]}</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {showReleasePOModal && (
