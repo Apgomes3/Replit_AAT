@@ -5,28 +5,29 @@ import { useAuthStore } from '../store/authStore';
 import api from '../lib/api';
 import {
   Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight,
-  Network, FileText, Search, Ruler, BookOpen, Plus, X, Settings,
+  Network, FileText, Search, Ruler, BookOpen, BookMarked, Plus, X, Settings,
   Users, LayoutGrid, GitBranch, Layers, Wrench,
 } from 'lucide-react';
 
 const ALL_QUICK_LINKS = [
-  { label: 'Graph Explorer',  href: '/graph',                   icon: 'Network'     },
-  { label: 'Documents',       href: '/documents',               icon: 'FileText'    },
-  { label: 'Search',          href: '/search',                  icon: 'Search'      },
-  { label: 'Design Rules',    href: '/knowledge/design-rules',  icon: 'Ruler'       },
-  { label: 'Purchase Orders', href: '/purchase-orders',         icon: 'ShoppingCart'},
-  { label: 'Products',        href: '/pim/products',            icon: 'Package'     },
-  { label: 'Projects',        href: '/project-management',      icon: 'FolderOpen'  },
-  { label: 'PIM',             href: '/pim',                     icon: 'Layers'      },
-  { label: 'Components',      href: '/pim/components',          icon: 'Wrench'      },
-  { label: 'Admin',           href: '/admin',                   icon: 'Settings'    },
-  { label: 'Admin Users',     href: '/admin/users',             icon: 'Users'       },
-  { label: 'System Types',    href: '/admin/system-types',      icon: 'GitBranch'   },
+  { label: 'Graph Explorer',  href: '/graph',                   icon: 'Network'      },
+  { label: 'Documents',       href: '/documents',               icon: 'FileText'     },
+  { label: 'Search',          href: '/search',                  icon: 'Search'       },
+  { label: 'Design Rules',    href: '/knowledge/design-rules',  icon: 'Ruler'        },
+  { label: 'Purchase Orders', href: '/purchase-orders',         icon: 'ShoppingCart' },
+  { label: 'Products',        href: '/pim/products',            icon: 'Package'      },
+  { label: 'Projects',        href: '/project-management',      icon: 'FolderOpen'   },
+  { label: 'PIM',             href: '/pim',                     icon: 'Layers'       },
+  { label: 'Components',      href: '/pim/components',          icon: 'Wrench'       },
+  { label: 'Design Books',    href: '/design-books',            icon: 'BookMarked'   },
+  { label: 'Admin',           href: '/admin',                   icon: 'Settings'     },
+  { label: 'Admin Users',     href: '/admin/users',             icon: 'Users'        },
+  { label: 'System Types',    href: '/admin/system-types',      icon: 'GitBranch'    },
 ];
 
 const ICON_MAP: Record<string, any> = {
   Network, FileText, Search, Ruler, ShoppingCart, Package,
-  FolderOpen, Layers, Wrench, Settings, Users, GitBranch,
+  FolderOpen, Layers, Wrench, Settings, Users, GitBranch, BookMarked,
 };
 
 const DEFAULT_HREFS = ['/graph', '/documents', '/search', '/knowledge/design-rules'];
@@ -80,6 +81,11 @@ export default function HomeHub() {
   const { data: posData } = useQuery({
     queryKey: ['po-summary'],
     queryFn: () => api.get('/purchase-orders?page_size=200').then(r => r.data),
+  });
+
+  const { data: booksData } = useQuery({
+    queryKey: ['design-books-summary'],
+    queryFn: () => api.get('/design-books').then(r => r.data),
   });
 
   const poTotal = posData?.total ?? posData?.items?.length ?? 0;
@@ -156,22 +162,24 @@ export default function HomeHub() {
     },
     {
       id: 'design-book-engine',
-      href: '',
-      icon: BookOpen,
+      href: '/design-book-engine',
+      icon: BookMarked,
       title: 'Design Book Engine',
-      description: 'Generate, manage and version engineering design books with automated calculations, drawings and specifications.',
-      comingSoon: true,
+      description: 'Generate, manage and version engineering design books with exhibits, LSS calculations and specifications.',
+      comingSoon: false,
       accent: {
-        glow: '',
-        border: '',
-        iconGradient: 'from-violet-300 to-violet-400',
-        iconShadow: 'shadow-violet-300/20',
-        badge: 'bg-violet-50 text-violet-400 border border-violet-200/60',
-        badgeDot: 'bg-violet-300',
-        btn: '',
-        topBar: 'from-violet-300/10 to-transparent',
+        glow: 'hover:shadow-violet-100/80',
+        border: 'hover:border-violet-300/60',
+        iconGradient: 'from-violet-500 to-violet-700',
+        iconShadow: 'shadow-violet-600/30',
+        badge: 'bg-violet-50 text-violet-700 border border-violet-200/80',
+        badgeDot: 'bg-violet-500',
+        btn: 'from-violet-500 to-violet-700 hover:from-violet-600 hover:to-violet-800 shadow-violet-600/25',
+        topBar: 'from-violet-400/20 to-transparent',
       },
-      stats: [],
+      stats: [
+        { label: 'Design Books', value: (booksData?.items?.length ?? '—') },
+      ],
     },
   ];
 

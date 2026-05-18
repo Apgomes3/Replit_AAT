@@ -6,9 +6,11 @@ const router = Router();
 
 router.get('/design-books', authenticate, async (req: AuthRequest, res: Response) => {
   const q = req.query.q as string | undefined;
+  const projectId = req.query.project_id as string | undefined;
   const params: any[] = [];
   const filters: string[] = [];
   if (q) { params.push(`%${q}%`); filters.push(`(db.book_code ILIKE $${params.length} OR db.book_title ILIKE $${params.length} OR p.project_name ILIKE $${params.length})`); }
+  if (projectId) { params.push(projectId); filters.push(`db.project_id = $${params.length}`); }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const result = await query(
     `SELECT db.*, p.project_code, p.project_name, p.client_name,

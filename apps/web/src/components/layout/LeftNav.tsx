@@ -23,6 +23,11 @@ const SECTIONS: { id: string; label: string; hub: string; items: NavItemDef[] }[
     id: 'projects', label: 'Project Management', hub: '/project-management',
     items: [
       { id: 'projects', to: '/projects', icon: FolderOpen, label: 'Projects' },
+    ],
+  },
+  {
+    id: 'design-book-engine', label: 'Design Book Engine', hub: '/design-book-engine',
+    items: [
       { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
     ],
   },

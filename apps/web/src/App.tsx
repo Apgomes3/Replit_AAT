@@ -43,6 +43,7 @@ import OrderManagementDashboard from './pages/orders/OrderManagementDashboard';
 import ProjectManagementDashboard from './pages/project-mgmt/ProjectManagementDashboard';
 import DesignBooksList from './pages/design-books/DesignBooksList';
 import DesignBookDetail from './pages/design-books/DesignBookDetail';
+import DesignBookEngineDashboard from './pages/design-books/DesignBookEngineDashboard';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -98,6 +99,7 @@ export default function App() {
             <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
             <Route path="purchase-orders" element={<PurchaseOrdersList />} />
             <Route path="purchase-orders/:id" element={<PurchaseOrderDetail />} />
+            <Route path="design-book-engine" element={<DesignBookEngineDashboard />} />
             <Route path="design-books" element={<DesignBooksList />} />
             <Route path="design-books/:id" element={<DesignBookDetail />} />
           </Route>

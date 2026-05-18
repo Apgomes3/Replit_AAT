@@ -11,7 +11,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus, GripVertical, Copy } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus, GripVertical, Copy, BookMarked } from 'lucide-react';
 import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
@@ -191,6 +191,12 @@ export default function ProjectDetail() {
   const { data: tanks } = useQuery({
     queryKey: ['project-tanks', id],
     queryFn: () => api.get(`/tanks?project_id=${id}`).then(r => r.data),
+    enabled: !!id,
+  });
+
+  const { data: linkedDesignBooks } = useQuery({
+    queryKey: ['project-design-books', id],
+    queryFn: () => api.get(`/design-books?project_id=${id}`).then(r => r.data),
     enabled: !!id,
   });
 
@@ -1067,6 +1073,11 @@ export default function ProjectDetail() {
         crumbs={[{ label: 'Projects', href: '/projects' }, { label: project.project_code }]}
         actions={
           <div className="flex gap-2">
+            {(linkedDesignBooks?.items?.length > 0) && (
+              <Button size="sm" onClick={() => navigate(`/design-books/${linkedDesignBooks.items[0].id}`)}>
+                <BookMarked className="w-3.5 h-3.5" />Design Book
+              </Button>
+            )}
             <Button size="sm" onClick={() => navigate(`/graph?start=${project.id}&type=project`)}>
               <Network className="w-3.5 h-3.5" />Graph
             </Button>
