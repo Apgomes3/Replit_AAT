@@ -116,19 +116,33 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
     />
   );
 
-  const totalBiomass = species.reduce((s, sp) => s + (parseFloat(sp.biomass_kg) || 0), 0);
+  // Total biomass = sum of (quantity × biomass per unit) for each species
+  const totalBiomass = species.reduce((s, sp) => {
+    const perUnit = parseFloat(sp.biomass_kg) || 0;
+    const qty = parseFloat(sp.quantity) || 0;
+    return s + perUnit * qty;
+  }, 0);
+
+  // Preview total for the add-row
+  const previewTotal = (() => {
+    const perUnit = parseFloat(row.biomass_kg) || 0;
+    const qty = parseFloat(row.quantity) || 0;
+    return perUnit > 0 && qty > 0 ? perUnit * qty : null;
+  })();
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-emerald-50/30">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Fish className="w-4 h-4 text-emerald-600" />
           <span className="text-sm font-semibold text-emerald-800">Species Allocation</span>
           {species.length > 0 && (
             <span className="text-xs bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5">{species.length}</span>
           )}
-          {species.some(s => s.biomass_kg != null) && (
-            <span className="text-xs text-emerald-600 font-mono ml-2">Total biomass: {totalBiomass.toFixed(2)} kg</span>
+          {totalBiomass > 0 && (
+            <span className="text-xs text-emerald-600 font-mono ml-1 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              Total biomass: <strong>{totalBiomass.toFixed(2)} kg</strong>
+            </span>
           )}
         </div>
         {!showRow && (
@@ -150,33 +164,51 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Common Name</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Qty</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Avg Size (cm)</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Biomass (kg)</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                  Biomass/unit (kg)
+                </th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-emerald-600 uppercase tracking-wide bg-emerald-50/60">
+                  Total Biomass (kg)
+                </th>
                 <th className="w-10" />
               </tr>
             </thead>
             <tbody>
-              {species.map(sp => (
-                <tr key={sp.id} className="border-t border-stone-100 hover:bg-emerald-50/20 transition-colors group">
-                  <td className="px-5 py-3 italic text-stone-700">{sp.species_name}</td>
-                  <td className="px-4 py-3 text-stone-600">{sp.common_name || <span className="text-stone-300">—</span>}</td>
-                  <td className="px-4 py-3 text-right font-mono text-stone-700">{sp.quantity ?? <span className="text-stone-300">—</span>}</td>
-                  <td className="px-4 py-3 text-right font-mono text-stone-600">
-                    {sp.avg_size_cm != null ? parseFloat(sp.avg_size_cm).toFixed(1) : <span className="text-stone-300">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-stone-600">
-                    {sp.biomass_kg != null ? parseFloat(sp.biomass_kg).toFixed(2) : <span className="text-stone-300">—</span>}
-                  </td>
-                  <td className="px-3 py-3">
-                    <button
-                      onClick={() => handleDelete(sp.id)}
-                      disabled={deletingId === sp.id}
-                      className="opacity-0 group-hover:opacity-100 text-stone-300 hover:text-red-500 transition-all p-0.5 rounded"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {species.map(sp => {
+                const perUnit = sp.biomass_kg != null ? parseFloat(sp.biomass_kg) : null;
+                const qty = sp.quantity != null ? parseFloat(sp.quantity) : null;
+                const rowTotal = perUnit != null && qty != null ? perUnit * qty : null;
+
+                return (
+                  <tr key={sp.id} className="border-t border-stone-100 hover:bg-emerald-50/20 transition-colors group">
+                    <td className="px-5 py-3 italic text-stone-700">{sp.species_name}</td>
+                    <td className="px-4 py-3 text-stone-600">{sp.common_name || <span className="text-stone-300">—</span>}</td>
+                    <td className="px-4 py-3 text-right font-mono text-stone-700">
+                      {qty != null ? qty : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-stone-600">
+                      {sp.avg_size_cm != null ? parseFloat(sp.avg_size_cm).toFixed(1) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-stone-600">
+                      {perUnit != null ? perUnit.toFixed(3) : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold bg-emerald-50/40">
+                      {rowTotal != null
+                        ? <span className="text-emerald-800">{rowTotal.toFixed(2)}</span>
+                        : <span className="text-stone-300">—</span>}
+                    </td>
+                    <td className="px-3 py-3">
+                      <button
+                        onClick={() => handleDelete(sp.id)}
+                        disabled={deletingId === sp.id}
+                        className="opacity-0 group-hover:opacity-100 text-stone-300 hover:text-red-500 transition-all p-0.5 rounded"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {showRow && (
                 <tr className="border-t-2 border-emerald-300 bg-emerald-50/50">
@@ -184,7 +216,12 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
                   <td className="px-4 py-2.5">{inCell('common_name', 'text', 'Common name')}</td>
                   <td className="px-4 py-2.5">{inCell('quantity', 'number', '0')}</td>
                   <td className="px-4 py-2.5">{inCell('avg_size_cm', 'number', '0.0')}</td>
-                  <td className="px-4 py-2.5">{inCell('biomass_kg', 'number', '0.00')}</td>
+                  <td className="px-4 py-2.5">{inCell('biomass_kg', 'number', '0.000')}</td>
+                  <td className="px-4 py-2.5 text-right bg-emerald-50/40">
+                    {previewTotal != null
+                      ? <span className="font-mono text-sm font-semibold text-emerald-700">{previewTotal.toFixed(2)}</span>
+                      : <span className="text-stone-300 text-xs">auto</span>}
+                  </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-0.5">
                       <button
@@ -207,10 +244,14 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
                 </tr>
               )}
 
-              {species.some(s => s.biomass_kg != null) && (
-                <tr className="border-t-2 border-emerald-200 bg-emerald-50/40">
-                  <td colSpan={4} className="px-5 py-2 text-xs font-semibold text-emerald-700 uppercase tracking-wide">Total Biomass</td>
-                  <td className="px-4 py-2 text-right font-mono font-semibold text-emerald-800">{totalBiomass.toFixed(2)} kg</td>
+              {totalBiomass > 0 && (
+                <tr className="border-t-2 border-emerald-300 bg-emerald-100/50">
+                  <td colSpan={5} className="px-5 py-2.5 text-xs font-bold text-emerald-700 uppercase tracking-wide">
+                    Grand Total Biomass
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-900 text-base">
+                    {totalBiomass.toFixed(2)} kg
+                  </td>
                   <td />
                 </tr>
               )}
