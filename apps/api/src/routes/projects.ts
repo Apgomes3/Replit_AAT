@@ -140,11 +140,19 @@ router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: 
     `SELECT s.*, a.area_name, e.exhibit_name,
       COALESCE(SUM(t.quantity), 0)::int AS tank_count,
       COALESCE(SUM(
-        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-              AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
-          THEN COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0 * t.quantity
-          ELSE 0 END
+        CASE
+          WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+            THEN PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2)
+                      * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0 * t.quantity
+          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+               AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+            THEN COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0 * t.quantity
+          ELSE 0
+        END
       ), 0)::numeric AS total_volume_m3,
       COALESCE(SUM(
         COALESCE(t.operating_volume_m3, pm.operating_volume_m3, 0) * COALESCE(t.quantity, 1)
@@ -261,19 +269,33 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
       COALESCE(t.height_mm, pm.height_mm) as eff_height_mm,
       COALESCE(t.design_water_level_mm, pm.design_water_level_mm) as eff_water_level_mm,
       COALESCE(
-        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-              AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
-          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
-          ELSE NULL END,
+        CASE
+          WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+            THEN ROUND(PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0, 4)
+          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+               AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+            THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0, 4)
+          ELSE NULL
+        END,
         t.gross_volume_m3, pm.gross_volume_m3
       ) as gross_volume_m3,
       COALESCE(
-        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-              AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
-          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
-          ELSE NULL END,
+        CASE
+          WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+            THEN ROUND(PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.design_water_level_mm, pm.design_water_level_mm) / 1000000000.0, 4)
+          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+               AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+            THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0, 4)
+          ELSE NULL
+        END,
         t.operating_volume_m3, pm.operating_volume_m3
       ) as design_volume_m3,
       COALESCE(
@@ -306,19 +328,33 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
       COALESCE(t.height_mm, pm.height_mm) as eff_height_mm,
       COALESCE(t.design_water_level_mm, pm.design_water_level_mm) as eff_water_level_mm,
       COALESCE(
-        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-              AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
-          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0,4)
-          ELSE NULL END,
+        CASE
+          WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+            THEN ROUND(PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0, 4)
+          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+               AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
+            THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0, 4)
+          ELSE NULL
+        END,
         t.gross_volume_m3, pm.gross_volume_m3
       ) as gross_volume_m3,
       COALESCE(
-        CASE WHEN COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
-              AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
-              AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
-          THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0,4)
-          ELSE NULL END,
+        CASE
+          WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+            THEN ROUND(PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.design_water_level_mm, pm.design_water_level_mm) / 1000000000.0, 4)
+          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+               AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+               AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
+            THEN ROUND(COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0, 4)
+          ELSE NULL
+        END,
         t.operating_volume_m3, pm.operating_volume_m3
       ) as design_volume_m3
      FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
