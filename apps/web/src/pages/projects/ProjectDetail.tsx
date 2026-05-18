@@ -191,7 +191,7 @@ export default function ProjectDetail() {
   const { data: tanks } = useQuery({
     queryKey: ['project-tanks', id],
     queryFn: () => api.get(`/tanks?project_id=${id}`).then(r => r.data),
-    enabled: tab === 'tanks',
+    enabled: !!id,
   });
 
   const { data: documents } = useQuery({
@@ -229,7 +229,7 @@ export default function ProjectDetail() {
   const { data: exhibitsData } = useQuery({
     queryKey: ['project-exhibits', id],
     queryFn: () => api.get(`/exhibits?project_id=${id}`).then(r => r.data),
-    enabled: tab === 'tanks',
+    enabled: !!id,
     staleTime: 5 * 60 * 1000,
   });
   const projectExhibits: any[] = exhibitsData?.items ?? [];
