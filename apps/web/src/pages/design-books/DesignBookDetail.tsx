@@ -10,7 +10,7 @@ import {
   Droplets, ThermometerSun, FlaskConical, Layers,
   ChevronDown, ChevronUp, Waves, AlertCircle,
   Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2,
-  LinkIcon, SquarePlus
+  LinkIcon, SquarePlus, Check, CheckCircle2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -72,6 +72,8 @@ function fmtNum(v?: number | null, decimals = 1) {
 }
 
 // ─── Species Section inside each Exhibit ────────────────────────────────────
+const BLANK_SPECIES = { species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '' };
+
 function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
   bookId: string;
   exhibitId: string;
@@ -79,27 +81,27 @@ function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
   onRefresh: () => void;
 }) {
   const mySpecies = allSpecies.filter(s => s.exhibit_id === exhibitId);
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '', notes: '' });
+  const [showRow, setShowRow] = useState(false);
+  const [row, setRow] = useState({ ...BLANK_SPECIES });
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const setR = (k: string, v: string) => setRow(r => ({ ...r, [k]: v }));
+
   const handleAdd = async () => {
-    if (!form.species_name.trim()) return toast.error('Scientific name required');
+    if (!row.species_name.trim()) return toast.error('Scientific name required');
     setSaving(true);
     try {
       await api.post(`/design-books/${bookId}/species`, {
         exhibit_id: exhibitId,
-        species_name: form.species_name.trim(),
-        common_name: form.common_name || null,
-        quantity: form.quantity ? parseInt(form.quantity) : null,
-        avg_size_cm: form.avg_size_cm ? parseFloat(form.avg_size_cm) : null,
-        biomass_kg: form.biomass_kg ? parseFloat(form.biomass_kg) : null,
-        notes: form.notes || null,
+        species_name: row.species_name.trim(),
+        common_name: row.common_name || null,
+        quantity: row.quantity ? parseInt(row.quantity) : null,
+        avg_size_cm: row.avg_size_cm ? parseFloat(row.avg_size_cm) : null,
+        biomass_kg: row.biomass_kg ? parseFloat(row.biomass_kg) : null,
       });
       toast.success('Species added');
-      setForm({ species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '', notes: '' });
-      setShowAdd(false);
+      setRow({ ...BLANK_SPECIES });
       onRefresh();
     } catch {
       toast.error('Failed to add species');
@@ -108,12 +110,16 @@ function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
+    if (e.key === 'Escape') { setShowRow(false); setRow({ ...BLANK_SPECIES }); }
+  };
+
   const handleDelete = async (speciesId: string) => {
     if (!confirm('Remove this species entry?')) return;
     setDeletingId(speciesId);
     try {
       await api.delete(`/design-books/${bookId}/species/${speciesId}`);
-      toast.success('Removed');
       onRefresh();
     } catch {
       toast.error('Failed to remove');
@@ -121,6 +127,18 @@ function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
       setDeletingId(null);
     }
   };
+
+  const inCell = (k: string, type = 'text', placeholder = '') => (
+    <input
+      type={type}
+      step={type === 'number' ? '0.1' : undefined}
+      placeholder={placeholder}
+      value={(row as any)[k]}
+      onChange={e => setR(k, e.target.value)}
+      onKeyDown={handleKeyDown}
+      className="w-full bg-transparent border-b border-emerald-400 focus:outline-none text-xs py-0.5 placeholder-stone-300 text-stone-800"
+    />
+  );
 
   return (
     <div className="border-t border-stone-100 bg-emerald-50/20">
@@ -133,73 +151,18 @@ function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
             <span className="text-xs bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5">{mySpecies.length}</span>
           )}
         </div>
-        <button
-          onClick={() => setShowAdd(v => !v)}
-          className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 bg-white rounded-md px-2 py-1 transition-colors"
-        >
-          <Plus className="w-3 h-3" /> Add Species
-        </button>
+        {!showRow && (
+          <button
+            onClick={() => setShowRow(true)}
+            className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 bg-white rounded-md px-2 py-1 transition-colors"
+          >
+            <Plus className="w-3 h-3" /> Add Species
+          </button>
+        )}
       </div>
 
-      {/* Add row */}
-      {showAdd && (
-        <div className="px-5 pb-3">
-          <div className="bg-white border border-emerald-200 rounded-lg p-3 space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs text-stone-500 mb-0.5">Scientific Name *</label>
-                <input
-                  type="text" placeholder="e.g. Acanthurus leucosternon"
-                  value={form.species_name}
-                  onChange={e => setForm(f => ({ ...f, species_name: e.target.value }))}
-                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-stone-500 mb-0.5">Common Name</label>
-                <input
-                  type="text" placeholder="e.g. Powder Blue Tang"
-                  value={form.common_name}
-                  onChange={e => setForm(f => ({ ...f, common_name: e.target.value }))}
-                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block text-xs text-stone-500 mb-0.5">Qty</label>
-                <input type="number" placeholder="0" value={form.quantity}
-                  onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400" />
-              </div>
-              <div>
-                <label className="block text-xs text-stone-500 mb-0.5">Avg Size (cm)</label>
-                <input type="number" step="0.1" placeholder="0.0" value={form.avg_size_cm}
-                  onChange={e => setForm(f => ({ ...f, avg_size_cm: e.target.value }))}
-                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400" />
-              </div>
-              <div>
-                <label className="block text-xs text-stone-500 mb-0.5">Biomass (kg)</label>
-                <input type="number" step="0.1" placeholder="0.0" value={form.biomass_kg}
-                  onChange={e => setForm(f => ({ ...f, biomass_kg: e.target.value }))}
-                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400" />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowAdd(false)} className="text-xs text-stone-500 hover:text-stone-700 px-2 py-1">Cancel</button>
-              <button
-                onClick={handleAdd} disabled={saving}
-                className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-              >
-                {saving ? 'Saving…' : 'Add'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Species table */}
-      {mySpecies.length > 0 ? (
+      {/* Species table — always shown when there are rows OR when add-row is open */}
+      {(mySpecies.length > 0 || showRow) ? (
         <div className="overflow-x-auto pb-3">
           <table className="w-full text-xs">
             <thead>
@@ -231,6 +194,37 @@ function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
                   </td>
                 </tr>
               ))}
+
+              {/* Inline add row */}
+              {showRow && (
+                <tr className="border-t-2 border-emerald-300 bg-emerald-50/60">
+                  <td className="px-5 py-2 italic">{inCell('species_name', 'text', 'e.g. Acanthurus leucosternon')}</td>
+                  <td className="px-4 py-2">{inCell('common_name', 'text', 'Common name')}</td>
+                  <td className="px-4 py-2 text-right">{inCell('quantity', 'number', '0')}</td>
+                  <td className="px-4 py-2 text-right">{inCell('avg_size_cm', 'number', '0.0')}</td>
+                  <td className="px-4 py-2 text-right">{inCell('biomass_kg', 'number', '0.00')}</td>
+                  <td className="px-2 py-2">
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={handleAdd}
+                        disabled={saving}
+                        title="Save (Enter)"
+                        className="text-emerald-600 hover:text-emerald-800 p-0.5 rounded disabled:opacity-40"
+                      >
+                        {saving ? <span className="text-xs">…</span> : <Check className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => { setShowRow(false); setRow({ ...BLANK_SPECIES }); }}
+                        title="Cancel (Esc)"
+                        className="text-stone-300 hover:text-stone-500 p-0.5 rounded"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+
               {/* Biomass total */}
               {mySpecies.some(s => s.biomass_kg != null) && (
                 <tr className="border-t border-emerald-200 bg-emerald-50/40">
@@ -243,11 +237,12 @@ function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
               )}
             </tbody>
           </table>
+          {showRow && (
+            <p className="px-5 pt-1 text-xs text-stone-400">Press <kbd className="font-mono bg-stone-100 px-1 rounded">Enter</kbd> to save · <kbd className="font-mono bg-stone-100 px-1 rounded">Esc</kbd> to cancel</p>
+          )}
         </div>
       ) : (
-        !showAdd && (
-          <div className="px-5 pb-4 text-xs text-stone-400 italic">No species allocated — click Add Species to begin.</div>
-        )
+        <div className="px-5 pb-4 text-xs text-stone-400 italic">No species allocated — click Add Species to begin.</div>
       )}
     </div>
   );
@@ -520,26 +515,29 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<'assign' | 'new'>('assign');
-  const [assigning, setAssigning] = useState<string | null>(null);
+  const [selected, setSelected] = useState<any | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [newForm, setNewForm] = useState({
     tank_code: '', tank_name: '', shape_type: 'Rectangular',
     length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '',
-    primary_material: '', notes: '',
+    primary_material: '',
   });
   const [saving, setSaving] = useState(false);
 
   const setF = (k: string, v: string) => setNewForm(f => ({ ...f, [k]: v }));
 
-  const handleAssign = async (tankId: string) => {
-    setAssigning(tankId);
+  const handleConfirmAssign = async () => {
+    if (!selected) return;
+    setConfirming(true);
     try {
-      await api.patch(`/tanks/${tankId}/exhibit`, { exhibit_id: exhibit.id });
-      toast.success('Tank assigned');
+      await api.patch(`/tanks/${selected.id}/exhibit`, { exhibit_id: exhibit.id });
+      toast.success(`${selected.tank_name} assigned to ${exhibit.exhibit_name}`);
       onRefresh();
+      onClose();
     } catch {
       toast.error('Failed to assign tank');
     } finally {
-      setAssigning(null);
+      setConfirming(false);
     }
   };
 
@@ -560,7 +558,6 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
         height_mm: newForm.height_mm || null,
         design_water_level_mm: newForm.design_water_level_mm || null,
         primary_material: newForm.primary_material || null,
-        notes: newForm.notes || null,
         status: 'Active',
       });
       toast.success('Tank created and added to exhibit');
@@ -577,10 +574,11 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
 
   return (
     <div className="border-t border-blue-100 bg-blue-50/20 px-5 py-4">
+      {/* Mode tabs + close */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-1 rounded-lg border border-blue-200 bg-white p-0.5">
           <button
-            onClick={() => setMode('assign')}
+            onClick={() => { setMode('assign'); setSelected(null); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               mode === 'assign' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:text-stone-800'
             }`}
@@ -588,7 +586,7 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
             <LinkIcon className="w-3 h-3" /> Assign Existing
           </button>
           <button
-            onClick={() => setMode('new')}
+            onClick={() => { setMode('new'); setSelected(null); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               mode === 'new' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:text-stone-800'
             }`}
@@ -601,6 +599,7 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
         </button>
       </div>
 
+      {/* Assign existing */}
       {mode === 'assign' && (
         unassignedTanks.length === 0 ? (
           <div className="text-center py-6 text-stone-400 text-sm">
@@ -609,31 +608,66 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
             <button onClick={() => setMode('new')} className="mt-2 text-blue-600 hover:underline text-xs">Create a new tank instead →</button>
           </div>
         ) : (
-          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-            <p className="text-xs text-stone-500 mb-2">{unassignedTanks.length} unassigned tank{unassignedTanks.length !== 1 ? 's' : ''} — click to add to this exhibit:</p>
-            {unassignedTanks.map(tank => (
-              <div key={tank.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-lg px-3 py-2 hover:border-blue-300 transition-colors group">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded shrink-0">{tank.tank_code}</span>
-                  <span className="text-sm text-stone-700 truncate">{tank.tank_name}</span>
-                  {tank.eff_shape && <ShapeBadge shape={tank.eff_shape} />}
-                  {tank.gross_volume_m3 && (
-                    <span className="text-xs text-stone-400 font-mono shrink-0">{parseFloat(tank.gross_volume_m3).toFixed(2)} m³</span>
-                  )}
+          <div className="space-y-2">
+            <p className="text-xs text-stone-500">{unassignedTanks.length} unassigned tank{unassignedTanks.length !== 1 ? 's' : ''} — select one to assign:</p>
+
+            {/* Tank list */}
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+              {unassignedTanks.map(tank => {
+                const isSelected = selected?.id === tank.id;
+                return (
+                  <button
+                    key={tank.id}
+                    onClick={() => setSelected(isSelected ? null : tank)}
+                    className={`w-full text-left flex items-center gap-2.5 rounded-lg px-3 py-2 border transition-all ${
+                      isSelected
+                        ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-300'
+                        : 'bg-white border-stone-200 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                      isSelected ? 'border-blue-500 bg-blue-500' : 'border-stone-300'
+                    }`}>
+                      {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                    </div>
+                    <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded shrink-0">{tank.tank_code}</span>
+                    <span className="text-sm text-stone-700 truncate flex-1">{tank.tank_name}</span>
+                    {tank.eff_shape && <ShapeBadge shape={tank.eff_shape} />}
+                    {tank.gross_volume_m3 && (
+                      <span className="text-xs text-stone-400 font-mono shrink-0">{parseFloat(tank.gross_volume_m3).toFixed(2)} m³</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Selected preview + confirm */}
+            {selected && (
+              <div className="mt-2 rounded-lg bg-blue-600 text-white px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-blue-200" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold truncate">{selected.tank_name}</p>
+                    <p className="text-xs text-blue-200">
+                      {selected.eff_shape || 'Tank'}{selected.gross_volume_m3 ? ` · ${parseFloat(selected.gross_volume_m3).toFixed(2)} m³` : ''}
+                    </p>
+                  </div>
                 </div>
                 <button
-                  onClick={() => handleAssign(tank.id)}
-                  disabled={assigning === tank.id}
-                  className="ml-2 shrink-0 flex items-center gap-1 text-xs bg-blue-600 text-white px-2.5 py-1 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  onClick={handleConfirmAssign}
+                  disabled={confirming}
+                  className="shrink-0 flex items-center gap-1.5 bg-white text-blue-700 font-semibold text-xs px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors"
                 >
-                  <Plus className="w-3 h-3" /> {assigning === tank.id ? '…' : 'Add'}
+                  <Check className="w-3.5 h-3.5" />
+                  {confirming ? 'Assigning…' : 'Confirm Assignment'}
                 </button>
               </div>
-            ))}
+            )}
           </div>
         )
       )}
 
+      {/* Create new */}
       {mode === 'new' && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -691,7 +725,7 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
             <button onClick={onClose} className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-700">Cancel</button>
             <button onClick={handleCreate} disabled={saving}
               className="px-4 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
-              {saving ? 'Creating…' : 'Create Tank'}
+              {saving ? 'Creating…' : 'Create & Assign Tank'}
             </button>
           </div>
         </div>
@@ -818,17 +852,23 @@ function ExhibitsTab({
                   <div className="text-xs text-stone-400">{exhibitTanks.length} tank{exhibitTanks.length !== 1 ? 's' : ''}</div>
                   <div className="text-sm font-semibold text-stone-700">{exGross.toFixed(2)} m³</div>
                 </div>
-                <button
-                  onClick={e => { e.stopPropagation(); setAddTankForExhibit(showingAddTank ? null : exhibit.id); if (!isOpen) onToggleExhibit(exhibit.id); }}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
-                    showingAddTank
-                      ? 'bg-blue-50 text-blue-700 border-blue-300'
-                      : 'bg-white text-stone-600 border-stone-200 hover:border-blue-300 hover:text-blue-600'
-                  }`}
-                  title="Add tank to this exhibit"
-                >
-                  <Plus className="w-3 h-3" /> Tank
-                </button>
+                {exhibitTanks.length === 0 ? (
+                  <button
+                    onClick={e => { e.stopPropagation(); setAddTankForExhibit(showingAddTank ? null : exhibit.id); if (!isOpen) onToggleExhibit(exhibit.id); }}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
+                      showingAddTank
+                        ? 'bg-blue-50 text-blue-700 border-blue-300'
+                        : 'bg-white text-stone-600 border-stone-200 hover:border-blue-300 hover:text-blue-600'
+                    }`}
+                    title="Assign a tank to this exhibit"
+                  >
+                    <Plus className="w-3 h-3" /> Tank
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs text-stone-400 px-2 py-1.5" title="One tank per exhibit">
+                    <Check className="w-3 h-3 text-blue-500" /> Tank assigned
+                  </span>
+                )}
                 <button onClick={() => onToggleExhibit(exhibit.id)} className="text-stone-400 hover:text-stone-600 p-1">
                   {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
