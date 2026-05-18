@@ -5,7 +5,7 @@ import api from '../../lib/api';
 import {
   ChevronRight, Waves, ThermometerSun, FlaskConical, Fish, Plus,
   Trash2, Check, CheckCircle2, Layers, FolderOpen, LinkIcon,
-  SquarePlus, X, Droplets
+  SquarePlus, X, Droplets, Pencil, Save
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -280,56 +280,251 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
   );
 }
 
-// ─── Tank Panel ───────────────────────────────────────────────────────────────
+// ─── Tank Card with Inline Edit ───────────────────────────────────────────────
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Custom'];
 
-function TankCard({ tank }: { tank: any }) {
-  const isCyl = (tank.eff_shape || '').toLowerCase() === 'cylindrical';
-  const dims = [
-    !isCyl && tank.eff_length_mm ? { label: 'Length', val: `${fmtDim(tank.eff_length_mm)} mm` } : null,
-    tank.eff_width_mm ? { label: isCyl ? 'Diameter' : 'Width', val: `${fmtDim(tank.eff_width_mm)} mm` } : null,
-    tank.eff_height_mm ? { label: 'Height', val: `${fmtDim(tank.eff_height_mm)} mm` } : null,
-    tank.design_water_level_mm ? { label: 'Water Level', val: `${fmtDim(tank.design_water_level_mm)} mm` } : null,
-  ].filter(Boolean);
+function calcVolumes(shape: string, l: string, w: string, h: string, wl: string, gv: string, ov: string) {
+  const lv = parseFloat(l) || 0;
+  const wv = parseFloat(w) || 0;
+  const hv = parseFloat(h) || 0;
+  const wlv = parseFloat(wl) || 0;
+  const s = shape.toLowerCase();
+  if (s === 'custom') {
+    return { gross: parseFloat(gv) || null, op: parseFloat(ov) || null };
+  }
+  if (s === 'cylindrical') {
+    const r = wv / 2;
+    const gross = wv && hv ? Math.round(Math.PI * r * r * hv / 1e9 * 1e4) / 1e4 : null;
+    const op = wv && wlv ? Math.round(Math.PI * r * r * wlv / 1e9 * 1e4) / 1e4 : null;
+    return { gross, op };
+  }
+  // rectangular
+  const gross = lv && wv && hv ? Math.round(lv * wv * hv / 1e9 * 1e4) / 1e4 : null;
+  const op = lv && wv && wlv ? Math.round(lv * wv * wlv / 1e9 * 1e4) / 1e4 : null;
+  return { gross, op };
+}
+
+function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<any>({});
+
+  const startEdit = () => {
+    setForm({
+      tank_code:              tank.tank_code || '',
+      tank_name:              tank.tank_name || '',
+      shape_type:             tank.shape_type || tank.eff_shape || 'Rectangular',
+      length_mm:              tank.length_mm ?? tank.eff_length_mm ?? '',
+      width_mm:               tank.width_mm  ?? tank.eff_width_mm  ?? '',
+      height_mm:              tank.height_mm ?? tank.eff_height_mm ?? '',
+      design_water_level_mm:  tank.design_water_level_mm ?? '',
+      gross_volume_m3:        tank.gross_volume_m3 ?? '',
+      operating_volume_m3:    tank.operating_volume_m3 ?? tank.design_volume_m3 ?? '',
+      primary_material:       tank.primary_material || '',
+      status:                 tank.status || 'Active',
+    });
+    setEditing(true);
+  };
+
+  const setF = (k: string, v: string) => setForm((f: any) => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.tank_name.trim()) return toast.error('Tank name is required');
+    setSaving(true);
+    try {
+      await api.put(`/tanks/${tank.id}`, {
+        tank_code:            form.tank_code || undefined,
+        tank_name:            form.tank_name,
+        shape_type:           form.shape_type,
+        length_mm:            form.length_mm || null,
+        width_mm:             form.width_mm || null,
+        height_mm:            form.height_mm || null,
+        design_water_level_mm: form.design_water_level_mm || null,
+        gross_volume_m3:      form.gross_volume_m3 || null,
+        operating_volume_m3:  form.operating_volume_m3 || null,
+        primary_material:     form.primary_material || null,
+        status:               form.status,
+      });
+      toast.success('Tank updated');
+      setEditing(false);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to save tank');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isCyl  = (form.shape_type || '').toLowerCase() === 'cylindrical';
+  const isCust = (form.shape_type || '').toLowerCase() === 'custom';
+  const preview = editing
+    ? calcVolumes(form.shape_type, form.length_mm, form.width_mm, form.height_mm,
+                  form.design_water_level_mm, form.gross_volume_m3, form.operating_volume_m3)
+    : null;
+
+  // ── View mode ──
+  if (!editing) {
+    const viewIsCyl = (tank.eff_shape || '').toLowerCase() === 'cylindrical';
+    const dims = [
+      !viewIsCyl && tank.eff_length_mm   ? { label: 'Length',     val: `${fmtDim(tank.eff_length_mm)} mm` }   : null,
+      tank.eff_width_mm                  ? { label: viewIsCyl ? 'Diameter' : 'Width', val: `${fmtDim(tank.eff_width_mm)} mm` } : null,
+      tank.eff_height_mm                 ? { label: 'Height',     val: `${fmtDim(tank.eff_height_mm)} mm` }   : null,
+      tank.design_water_level_mm         ? { label: 'Water Level', val: `${fmtDim(tank.design_water_level_mm)} mm` } : null,
+    ].filter(Boolean);
+
+    return (
+      <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-5">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-mono text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200">{tank.tank_code}</span>
+              <ShapeBadge shape={tank.eff_shape} />
+            </div>
+            <h3 className="text-lg font-semibold text-stone-800">{tank.tank_name}</h3>
+            {tank.primary_material && (
+              <p className="text-xs text-stone-500 mt-0.5">{tank.primary_material}</p>
+            )}
+          </div>
+          <div className="flex items-start gap-4">
+            <div className="text-right">
+              <div className="text-2xl font-bold text-blue-700">{fmtVol(tank.gross_volume_m3)}</div>
+              <div className="text-xs text-stone-400">m³ gross volume</div>
+              {(tank.design_volume_m3 || tank.operating_volume_m3) && (
+                <div className="text-sm text-stone-500 mt-0.5">
+                  {fmtVol(tank.operating_volume_m3 ?? tank.design_volume_m3)} m³ operating
+                </div>
+              )}
+            </div>
+            <button
+              onClick={startEdit}
+              className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-blue-600 border border-stone-200 hover:border-blue-300 bg-white rounded-lg px-2.5 py-1.5 transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+          </div>
+        </div>
+        {dims.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {dims.map((d: any) => (
+              <div key={d.label} className="bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-xs text-stone-400 mb-0.5">{d.label}</div>
+                <div className="font-mono text-sm font-semibold text-stone-700">{d.val}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {tank.system_code && (
+          <div className="mt-3 flex items-center gap-2 text-xs text-stone-500">
+            <span>Linked system:</span>
+            <span className="font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600">{tank.system_code}</span>
+            {tank.system_name && <span>{tank.system_name}</span>}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Edit mode ──
+  const inp = (label: string, key: string, opts?: { type?: string; placeholder?: string; required?: boolean; upper?: boolean }) => (
+    <div>
+      <label className="block text-xs font-medium text-stone-500 mb-1">
+        {label}{opts?.required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      <input
+        type={opts?.type ?? 'text'}
+        placeholder={opts?.placeholder}
+        value={form[key]}
+        onChange={e => setF(key, opts?.upper ? e.target.value.toUpperCase() : e.target.value)}
+        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+      />
+    </div>
+  );
 
   return (
-    <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-5">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200">{tank.tank_code}</span>
-            <ShapeBadge shape={tank.eff_shape} />
-          </div>
-          <h3 className="text-lg font-semibold text-stone-800">{tank.tank_name}</h3>
-          {tank.primary_material && (
-            <p className="text-xs text-stone-500 mt-0.5">{tank.primary_material}</p>
-          )}
-        </div>
-        <div className="text-right">
-          <div className="text-2xl font-bold text-blue-700">{fmtVol(tank.gross_volume_m3)}</div>
-          <div className="text-xs text-stone-400">m³ gross volume</div>
-          {tank.design_volume_m3 && (
-            <div className="text-sm text-stone-500 mt-0.5">{fmtVol(tank.design_volume_m3)} m³ operating</div>
-          )}
+    <div className="rounded-xl border border-blue-400 bg-white shadow-sm">
+      {/* Edit header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-blue-100 bg-blue-50/40">
+        <span className="text-sm font-semibold text-blue-700">Edit Tank</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setEditing(false)}
+            className="text-xs text-stone-500 hover:text-stone-700 px-3 py-1.5 rounded-lg border border-stone-200 bg-white transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-3 py-1.5 rounded-lg font-medium transition-colors">
+            <Save className="w-3.5 h-3.5" />
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
         </div>
       </div>
-      {dims.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {dims.map((d: any) => (
-            <div key={d.label} className="bg-white rounded-lg px-3 py-2 border border-blue-100">
-              <div className="text-xs text-stone-400 mb-0.5">{d.label}</div>
-              <div className="font-mono text-sm font-semibold text-stone-700">{d.val}</div>
+
+      <div className="p-5 space-y-4">
+        {/* Identity */}
+        <div className="grid grid-cols-2 gap-4">
+          {inp('Tank Code', 'tank_code', { placeholder: 'TK-01', upper: true })}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">Shape</label>
+            <select value={form.shape_type} onChange={e => setF('shape_type', e.target.value)}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+              {TANK_SHAPES.map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        {inp('Tank Name', 'tank_name', { required: true, placeholder: 'e.g. Main Display Tank' })}
+
+        {/* Dimensions */}
+        <div>
+          <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Dimensions (mm)</p>
+          <div className={`grid gap-3 ${isCyl ? 'grid-cols-3' : 'grid-cols-4'}`}>
+            {!isCyl && inp('Length', 'length_mm', { type: 'number', placeholder: '0' })}
+            {inp(isCyl ? 'Diameter' : 'Width', 'width_mm', { type: 'number', placeholder: '0' })}
+            {inp('Height', 'height_mm', { type: 'number', placeholder: '0' })}
+            {inp('Water Level', 'design_water_level_mm', { type: 'number', placeholder: '0' })}
+          </div>
+        </div>
+
+        {/* Volumes — direct input for Custom, calculated preview for others */}
+        {isCust ? (
+          <div>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Volumes (m³) — direct input</p>
+            <div className="grid grid-cols-2 gap-4">
+              {inp('Gross Volume', 'gross_volume_m3', { type: 'number', placeholder: '0.000' })}
+              {inp('Operating Volume', 'operating_volume_m3', { type: 'number', placeholder: '0.000' })}
             </div>
-          ))}
+          </div>
+        ) : (
+          <div className="flex items-center gap-4 bg-blue-50 rounded-lg px-4 py-3 border border-blue-100">
+            <div className="text-xs text-stone-500">Calculated volumes:</div>
+            <div className="flex items-center gap-6">
+              <div>
+                <div className="text-xs text-stone-400">Gross</div>
+                <div className="font-mono text-sm font-bold text-blue-700">
+                  {preview?.gross != null ? `${preview.gross.toFixed(3)} m³` : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-stone-400">Operating</div>
+                <div className="font-mono text-sm font-bold text-blue-600">
+                  {preview?.op != null ? `${preview.op.toFixed(3)} m³` : '—'}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-stone-400 ml-auto">Auto-calculated from dimensions</p>
+          </div>
+        )}
+
+        {/* Material & status */}
+        <div className="grid grid-cols-2 gap-4">
+          {inp('Material', 'primary_material', { placeholder: 'e.g. Acrylic, FRP, Concrete' })}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">Status</label>
+            <select value={form.status} onChange={e => setF('status', e.target.value)}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+              {['Design', 'Active', 'Inactive', 'Decommissioned'].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
         </div>
-      )}
-      {tank.system_code && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-stone-500">
-          <span>Linked system:</span>
-          <span className="font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600">{tank.system_code}</span>
-          {tank.system_name && <span>{tank.system_name}</span>}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -654,7 +849,7 @@ export default function ExhibitDetail() {
             Display Tank
           </h2>
           {tank ? (
-            <TankCard tank={tank} />
+            <TankCard tank={tank} onRefresh={refresh} />
           ) : (
             book.project_id ? (
               <AssignTankPanel
