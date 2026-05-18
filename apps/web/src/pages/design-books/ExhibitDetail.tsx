@@ -62,7 +62,47 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Inline editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRow, setEditRow] = useState({ ...BLANK_SPECIES });
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
   const setR = (k: string, v: string) => setRow(r => ({ ...r, [k]: v }));
+  const setE = (k: string, v: string) => setEditRow(r => ({ ...r, [k]: v }));
+
+  const startEdit = (sp: any) => {
+    setEditingId(sp.id);
+    setEditRow({
+      species_name: sp.species_name || '',
+      common_name:  sp.common_name  || '',
+      quantity:     sp.quantity  != null ? String(sp.quantity)  : '',
+      avg_size_cm:  sp.avg_size_cm != null ? String(sp.avg_size_cm) : '',
+      biomass_kg:   sp.biomass_kg  != null ? String(sp.biomass_kg)  : '',
+    });
+    setShowRow(false); // close add-row if open
+  };
+
+  const cancelEdit = () => { setEditingId(null); setEditRow({ ...BLANK_SPECIES }); };
+
+  const handleUpdate = async (speciesId: string) => {
+    if (!editRow.species_name.trim()) return toast.error('Scientific name required');
+    setUpdatingId(speciesId);
+    try {
+      await api.put(`/design-books/${bookId}/species/${speciesId}`, {
+        species_name: editRow.species_name.trim(),
+        common_name:  editRow.common_name  || null,
+        quantity:     editRow.quantity     ? parseInt(editRow.quantity)        : null,
+        avg_size_cm:  editRow.avg_size_cm  ? parseFloat(editRow.avg_size_cm)  : null,
+        biomass_kg:   editRow.biomass_kg   ? parseFloat(editRow.biomass_kg)   : null,
+      });
+      setEditingId(null);
+      onRefresh();
+    } catch {
+      toast.error('Failed to update species');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const handleAdd = async () => {
     if (!row.species_name.trim()) return toast.error('Scientific name required');
@@ -91,6 +131,11 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
     if (e.key === 'Escape') { setShowRow(false); setRow({ ...BLANK_SPECIES }); }
   };
 
+  const editKeyDown = (e: React.KeyboardEvent, speciesId: string) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleUpdate(speciesId); }
+    if (e.key === 'Escape') cancelEdit();
+  };
+
   const handleDelete = async (speciesId: string) => {
     if (!confirm('Remove this species entry?')) return;
     setDeletingId(speciesId);
@@ -104,16 +149,20 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
     }
   };
 
+  // Shared input cell style
+  const cellCls = 'w-full bg-transparent border-b border-emerald-400 focus:outline-none text-sm py-0.5 placeholder-stone-300 text-stone-800';
+
   const inCell = (k: string, type = 'text', placeholder = '') => (
-    <input
-      type={type}
-      step={type === 'number' ? '0.1' : undefined}
-      placeholder={placeholder}
-      value={(row as any)[k]}
-      onChange={e => setR(k, e.target.value)}
-      onKeyDown={handleKeyDown}
-      className="w-full bg-transparent border-b border-emerald-400 focus:outline-none text-sm py-0.5 placeholder-stone-300 text-stone-800"
-    />
+    <input type={type} step={type === 'number' ? 'any' : undefined} placeholder={placeholder}
+      value={(row as any)[k]} onChange={e => setR(k, e.target.value)} onKeyDown={handleKeyDown}
+      className={cellCls} />
+  );
+
+  const editCell = (k: string, speciesId: string, type = 'text', placeholder = '', extraCls = '') => (
+    <input type={type} step={type === 'number' ? 'any' : undefined} placeholder={placeholder}
+      value={(editRow as any)[k]} onChange={e => setE(k, e.target.value)}
+      onKeyDown={e => editKeyDown(e, speciesId)}
+      className={`${cellCls} ${extraCls}`} autoFocus={k === 'species_name'} />
   );
 
   // Total biomass = sum of (quantity × biomass per unit) for each species
@@ -127,6 +176,13 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
   const previewTotal = (() => {
     const perUnit = parseFloat(row.biomass_kg) || 0;
     const qty = parseFloat(row.quantity) || 0;
+    return perUnit > 0 && qty > 0 ? perUnit * qty : null;
+  })();
+
+  // Live total preview for the edit-row
+  const editPreviewTotal = (() => {
+    const perUnit = parseFloat(editRow.biomass_kg) || 0;
+    const qty = parseFloat(editRow.quantity) || 0;
     return perUnit > 0 && qty > 0 ? perUnit * qty : null;
   })();
 
@@ -145,7 +201,7 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
             </span>
           )}
         </div>
-        {!showRow && (
+        {!showRow && !editingId && (
           <button
             onClick={() => setShowRow(true)}
             className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 bg-white rounded-md px-2.5 py-1 transition-colors"
@@ -170,17 +226,51 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-emerald-600 uppercase tracking-wide bg-emerald-50/60">
                   Total Biomass (kg)
                 </th>
-                <th className="w-10" />
+                <th className="w-16" />
               </tr>
             </thead>
             <tbody>
               {species.map(sp => {
+                const isEditing = editingId === sp.id;
                 const perUnit = sp.biomass_kg != null ? parseFloat(sp.biomass_kg) : null;
                 const qty = sp.quantity != null ? parseFloat(sp.quantity) : null;
                 const rowTotal = perUnit != null && qty != null ? perUnit * qty : null;
 
+                if (isEditing) {
+                  return (
+                    <tr key={sp.id} className="border-t-2 border-emerald-400 bg-emerald-50/60">
+                      <td className="px-5 py-2 italic">{editCell('species_name', sp.id, 'text', 'Scientific name', 'italic')}</td>
+                      <td className="px-4 py-2">{editCell('common_name', sp.id, 'text', 'Common name')}</td>
+                      <td className="px-4 py-2">{editCell('quantity', sp.id, 'number', '0')}</td>
+                      <td className="px-4 py-2">{editCell('avg_size_cm', sp.id, 'number', '0.0')}</td>
+                      <td className="px-4 py-2">{editCell('biomass_kg', sp.id, 'number', '0.000')}</td>
+                      <td className="px-4 py-2 text-right bg-emerald-50/60">
+                        {editPreviewTotal != null
+                          ? <span className="font-mono font-semibold text-emerald-700">{editPreviewTotal.toFixed(2)}</span>
+                          : <span className="text-stone-300 text-xs">auto</span>}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-0.5">
+                          <button onClick={() => handleUpdate(sp.id)} disabled={updatingId === sp.id}
+                            title="Save (Enter)"
+                            className="text-emerald-600 hover:text-emerald-800 p-0.5 rounded disabled:opacity-40">
+                            {updatingId === sp.id ? <span className="text-xs">…</span> : <Check className="w-4 h-4" />}
+                          </button>
+                          <button onClick={cancelEdit} title="Cancel (Esc)"
+                            className="text-stone-300 hover:text-stone-500 p-0.5 rounded">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
-                  <tr key={sp.id} className="border-t border-stone-100 hover:bg-emerald-50/20 transition-colors group">
+                  <tr key={sp.id}
+                    onClick={() => !editingId && startEdit(sp)}
+                    className={`border-t border-stone-100 transition-colors group ${editingId ? 'opacity-40' : 'hover:bg-emerald-50/30 cursor-pointer'}`}
+                  >
                     <td className="px-5 py-3 italic text-stone-700">{sp.species_name}</td>
                     <td className="px-4 py-3 text-stone-600">{sp.common_name || <span className="text-stone-300">—</span>}</td>
                     <td className="px-4 py-3 text-right font-mono text-stone-700">
@@ -199,7 +289,7 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
                     </td>
                     <td className="px-3 py-3">
                       <button
-                        onClick={() => handleDelete(sp.id)}
+                        onClick={e => { e.stopPropagation(); handleDelete(sp.id); }}
                         disabled={deletingId === sp.id}
                         className="opacity-0 group-hover:opacity-100 text-stone-300 hover:text-red-500 transition-all p-0.5 rounded"
                       >
