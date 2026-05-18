@@ -41,6 +41,8 @@ import PurchaseOrderDetail from './pages/procurement/PurchaseOrderDetail';
 import PIMDashboard from './pages/pim/PIMDashboard';
 import OrderManagementDashboard from './pages/orders/OrderManagementDashboard';
 import ProjectManagementDashboard from './pages/project-mgmt/ProjectManagementDashboard';
+import DesignBooksList from './pages/design-books/DesignBooksList';
+import DesignBookDetail from './pages/design-books/DesignBookDetail';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -96,6 +98,8 @@ export default function App() {
             <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
             <Route path="purchase-orders" element={<PurchaseOrdersList />} />
             <Route path="purchase-orders/:id" element={<PurchaseOrderDetail />} />
+            <Route path="design-books" element={<DesignBooksList />} />
+            <Route path="design-books/:id" element={<DesignBookDetail />} />
           </Route>
         </Routes>
       </BrowserRouter>

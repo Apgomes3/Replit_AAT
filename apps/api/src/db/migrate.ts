@@ -819,6 +819,22 @@ SELECT 'MAT-FRP-VE', 'FRP (Vinyl Ester)', 350, 'Base rate for FRP tank shell fab
 WHERE NOT EXISTS (SELECT 1 FROM tank_cost_rates WHERE material_code = 'MAT-FRP-VE');
 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_scopes TEXT[] DEFAULT ARRAY['LSS','Tanks','Waterproofing','Theming','Acrylic'];
+
+-- DESIGN BOOKS
+CREATE TABLE IF NOT EXISTS design_books (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  book_code VARCHAR(50) UNIQUE NOT NULL,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  book_title VARCHAR(255) NOT NULL,
+  description TEXT,
+  revision VARCHAR(20) DEFAULT 'A',
+  status VARCHAR(50) DEFAULT 'Draft',
+  notes TEXT,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_design_books_project ON design_books(project_id) WHERE project_id IS NOT NULL;
 `;
 
 async function migrate() {

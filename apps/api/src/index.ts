@@ -19,6 +19,7 @@ import importRoutes from './routes/import';
 import adminRoutes from './routes/admin';
 import purchaseOrderRoutes from './routes/purchaseOrders';
 import notificationRoutes from './routes/notifications';
+import designBookRoutes from './routes/designBooks';
 import { errorHandler, notFound } from './middleware/errors';
 
 const app = express();
@@ -47,6 +48,7 @@ app.use('/api/v1/import', importRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1', purchaseOrderRoutes);
 app.use('/api/v1', notificationRoutes);
+app.use('/api/v1', designBookRoutes);
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 

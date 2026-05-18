@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -21,7 +21,10 @@ const SECTIONS: { id: string; label: string; hub: string; items: NavItemDef[] }[
   },
   {
     id: 'projects', label: 'Project Management', hub: '/project-management',
-    items: [{ id: 'projects', to: '/projects', icon: FolderOpen, label: 'Projects' }],
+    items: [
+      { id: 'projects', to: '/projects', icon: FolderOpen, label: 'Projects' },
+      { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
+    ],
   },
 ];
 

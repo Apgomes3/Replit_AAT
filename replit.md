@@ -92,6 +92,16 @@ workspace/
 - **3 BOMs fully linked**: FF-1500 (10 lines), FF-800 (9 lines), Pump-22 (7 lines) — 100% component_id coverage
 - **Shared component**: COMP-VEN-50 (Venturi Injector) used in both FF-1500 and FF-800
 
+## Design Books Module
+- Route: `/design-books` (list) + `/design-books/:id` (detail)
+- Nav: Project Management → Design Books (BookMarked icon)
+- `design_books` table: id, book_code, project_id (FK, optional), book_title, description, revision, status, notes, created_by, created_at, updated_at
+- Create flow: link to an existing project (auto-imports exhibits + tanks) or standalone
+- Detail tabs: **Exhibits** (fully built — groups tanks by exhibit with dimensions, volumes, water type, material, system) | **LSS** (Coming Soon) | **Piping** (Coming Soon)
+- API: `GET/POST /design-books`, `GET/PUT/DELETE /design-books/:id`
+- Route file: `apps/api/src/routes/designBooks.ts`
+- Frontend: `apps/web/src/pages/design-books/DesignBooksList.tsx`, `DesignBookDetail.tsx`
+
 ## Running the App
 
 ```bash
