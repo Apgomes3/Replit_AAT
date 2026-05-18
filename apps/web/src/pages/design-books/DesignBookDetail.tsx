@@ -734,19 +734,18 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
   );
 }
 
-// ─── Exhibits Tab ────────────────────────────────────────────────────────────
+// ─── Exhibits Tab (list view — click to open exhibit detail page) ─────────────
 function ExhibitsTab({
-  book, exhibits, tanks, exhibitMap, expandAll, expandedExhibits,
-  onToggleExhibit, onToggleAll, onRefresh, onNewExhibit,
+  book, exhibits, tanks, exhibitMap, onRefresh, onNewExhibit,
 }: {
   book: any; exhibits: any[]; tanks: any[];
   exhibitMap: Map<string | null, any[]>;
-  expandAll: boolean; expandedExhibits: Set<string>;
-  onToggleExhibit: (id: string) => void; onToggleAll: () => void;
   onRefresh: () => void; onNewExhibit: () => void;
 }) {
+  const navigate = useNavigate();
   const allSpecies: any[] = book.species || [];
-  const [addTankForExhibit, setAddTankForExhibit] = useState<string | null>(null);
+  const unassigned: any[] = exhibitMap.get(null) || [];
+  const totalGross = tanks.reduce((s, t) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
 
   if (!book.project_id) {
     return (
@@ -758,9 +757,7 @@ function ExhibitsTab({
     );
   }
 
-  const unassigned: any[] = exhibitMap.get(null) || [];
-
-  if (exhibits.length === 0 && tanks.length === 0) {
+  if (exhibits.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-stone-200 py-20 text-center">
         <Layers className="w-10 h-10 text-stone-300 mx-auto mb-3" />
@@ -777,256 +774,123 @@ function ExhibitsTab({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-stone-500">{exhibits.length} exhibit{exhibits.length !== 1 ? 's' : ''} · {tanks.length} tank{tanks.length !== 1 ? 's' : ''}</p>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onToggleAll}
-            className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-700 px-3 py-1.5 border border-stone-200 rounded-lg bg-white"
-          >
-            {expandAll ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            {expandAll ? 'Collapse All' : 'Expand All'}
-          </button>
-          <button
-            onClick={onNewExhibit}
-            className="flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors font-medium"
-          >
-            <Plus className="w-3.5 h-3.5" /> New Exhibit
-          </button>
-        </div>
+        <p className="text-sm text-stone-500">
+          {exhibits.length} exhibit{exhibits.length !== 1 ? 's' : ''} · {tanks.length} tank{tanks.length !== 1 ? 's' : ''}
+          {totalGross > 0 && <span className="ml-2 font-mono text-stone-400">· {totalGross.toFixed(2)} m³ total</span>}
+        </p>
+        <button
+          onClick={onNewExhibit}
+          className="flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors font-medium"
+        >
+          <Plus className="w-3.5 h-3.5" /> New Exhibit
+        </button>
       </div>
 
-      {/* Exhibit cards */}
-      {exhibits.map((exhibit: any) => {
-        const exhibitTanks: any[] = exhibitMap.get(exhibit.id) || [];
-        const exGross = exhibitTanks.reduce((s, t) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
-        const isOpen = expandedExhibits.has(exhibit.id) || expandAll;
-        const mySpeciesCount = allSpecies.filter(s => s.exhibit_id === exhibit.id).length;
-        const showingAddTank = addTankForExhibit === exhibit.id;
+      {/* Exhibit list table */}
+      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-stone-50 border-b border-stone-200">
+            <tr>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Exhibit Name</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Temperature</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Tank</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Volume m³</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Species</th>
+              <th className="w-10" />
+            </tr>
+          </thead>
+          <tbody>
+            {exhibits.map((exhibit: any) => {
+              const exhibitTank = (exhibitMap.get(exhibit.id) || [])[0];
+              const speciesCount = allSpecies.filter(s => s.exhibit_id === exhibit.id).length;
+              const gross = exhibitTank ? parseFloat(exhibitTank.gross_volume_m3) || 0 : 0;
 
-        return (
-          <div key={exhibit.id} className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
-            {/* Exhibit header */}
-            <div className="flex items-center px-5 py-4">
-              <button
-                onClick={() => onToggleExhibit(exhibit.id)}
-                className="flex-1 flex items-center gap-3 text-left min-w-0"
-              >
-                <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
-                  <Layers className="w-4 h-4 text-blue-600" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-xs text-stone-500">{exhibit.exhibit_code}</span>
-                    <span className="font-semibold text-stone-800">{exhibit.exhibit_name}</span>
-                    <WaterTypeBadge type={exhibit.water_type} />
-                  </div>
-                  <div className="flex items-center gap-4 mt-0.5 flex-wrap">
-                    {(exhibit.design_temperature_min != null || exhibit.design_temperature_max != null) && (
-                      <span className="flex items-center gap-1 text-xs text-stone-500">
-                        <ThermometerSun className="w-3 h-3" />
-                        {exhibit.design_temperature_min ?? '?'}–{exhibit.design_temperature_max ?? '?'}°C
-                      </span>
-                    )}
-                    {exhibit.design_salinity != null && (
-                      <span className="flex items-center gap-1 text-xs text-stone-500">
-                        <FlaskConical className="w-3 h-3" />
-                        {exhibit.design_salinity} ppt
-                      </span>
-                    )}
+              return (
+                <tr
+                  key={exhibit.id}
+                  onClick={() => navigate(`/design-books/${book.id}/exhibits/${exhibit.id}`)}
+                  className="border-t border-stone-100 hover:bg-blue-50/30 cursor-pointer transition-colors group"
+                >
+                  <td className="px-5 py-3.5">
+                    <span className="font-mono text-xs text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">{exhibit.exhibit_code}</span>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <span className="font-semibold text-stone-800 group-hover:text-blue-700 transition-colors">{exhibit.exhibit_name}</span>
                     {exhibit.area_name && (
-                      <span className="text-xs text-stone-400">Area: {exhibit.area_name}</span>
+                      <span className="ml-2 text-xs text-stone-400">{exhibit.area_name}</span>
                     )}
-                    {mySpeciesCount > 0 && (
-                      <span className="flex items-center gap-1 text-xs text-emerald-600">
-                        <Fish className="w-3 h-3" /> {mySpeciesCount} species
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <WaterTypeBadge type={exhibit.water_type} />
+                  </td>
+                  <td className="px-4 py-3.5">
+                    {(exhibit.design_temperature_min != null || exhibit.design_temperature_max != null) ? (
+                      <span className="flex items-center gap-1 text-xs text-stone-600">
+                        <ThermometerSun className="w-3 h-3 text-orange-400" />
+                        {exhibit.design_temperature_min ?? '?'}–{exhibit.design_temperature_max ?? '?'} °C
                       </span>
+                    ) : (
+                      <span className="text-stone-300 text-xs">—</span>
                     )}
-                  </div>
-                </div>
-              </button>
-              <div className="flex items-center gap-3 flex-shrink-0 ml-3">
-                <div className="text-right hidden sm:block">
-                  <div className="text-xs text-stone-400">{exhibitTanks.length} tank{exhibitTanks.length !== 1 ? 's' : ''}</div>
-                  <div className="text-sm font-semibold text-stone-700">{exGross.toFixed(2)} m³</div>
-                </div>
-                {exhibitTanks.length === 0 ? (
-                  <button
-                    onClick={e => { e.stopPropagation(); setAddTankForExhibit(showingAddTank ? null : exhibit.id); if (!isOpen) onToggleExhibit(exhibit.id); }}
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
-                      showingAddTank
-                        ? 'bg-blue-50 text-blue-700 border-blue-300'
-                        : 'bg-white text-stone-600 border-stone-200 hover:border-blue-300 hover:text-blue-600'
-                    }`}
-                    title="Assign a tank to this exhibit"
-                  >
-                    <Plus className="w-3 h-3" /> Tank
-                  </button>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs text-stone-400 px-2 py-1.5" title="One tank per exhibit">
-                    <Check className="w-3 h-3 text-blue-500" /> Tank assigned
-                  </span>
-                )}
-                <button onClick={() => onToggleExhibit(exhibit.id)} className="text-stone-400 hover:text-stone-600 p-1">
-                  {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    {exhibitTank ? (
+                      <div>
+                        <span className="font-medium text-stone-700 text-xs">{exhibitTank.tank_name}</span>
+                        <span className="ml-1.5 font-mono text-xs text-stone-400">{exhibitTank.tank_code}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">No tank</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5 text-right">
+                    {gross > 0 ? (
+                      <span className="font-mono text-sm font-semibold text-stone-700">{gross.toFixed(2)}</span>
+                    ) : (
+                      <span className="text-stone-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5 text-right">
+                    {speciesCount > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        <Fish className="w-3 h-3" /> {speciesCount}
+                      </span>
+                    ) : (
+                      <span className="text-stone-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3.5">
+                    <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-blue-500 transition-colors" />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
 
-            {/* Expanded content */}
-            {isOpen && (
-              <>
-                {/* Tanks table */}
-                <div className="border-t border-stone-100">
-                  {exhibitTanks.length === 0 && !showingAddTank ? (
-                    <div className="px-5 py-5 flex items-center justify-center gap-3 text-stone-400">
-                      <span className="text-sm italic">No tanks in this exhibit</span>
-                      <button
-                        onClick={() => setAddTankForExhibit(exhibit.id)}
-                        className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 bg-blue-50 px-2 py-1 rounded-md transition-colors"
-                      >
-                        + Add Tank
-                      </button>
-                    </div>
-                  ) : exhibitTanks.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-stone-50/80">
-                          <tr>
-                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
-                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Tank Name</th>
-                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Shape</th>
-                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">L mm</th>
-                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">W / Ø mm</th>
-                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">H mm</th>
-                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Gross m³</th>
-                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Op. m³</th>
-                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Material</th>
-                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">System</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {exhibitTanks.map((tank: any) => (
-                            <tr key={tank.id} className="border-t border-stone-100 hover:bg-blue-50/20 transition-colors">
-                              <td className="px-4 py-2.5">
-                                <span className="font-mono text-xs text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded">{tank.tank_code}</span>
-                              </td>
-                              <td className="px-4 py-2.5 font-medium text-stone-800">{tank.tank_name}</td>
-                              <td className="px-4 py-2.5"><ShapeBadge shape={tank.eff_shape} /></td>
-                              <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">
-                                {tank.eff_shape === 'Cylindrical' ? <span className="text-stone-400">—</span> : fmtDim(tank.eff_length_mm)}
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">{fmtDim(tank.eff_width_mm)}</td>
-                              <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">{fmtDim(tank.eff_height_mm)}</td>
-                              <td className="px-4 py-2.5 text-right">{fmtVol(tank.gross_volume_m3)}</td>
-                              <td className="px-4 py-2.5 text-right">{fmtVol(tank.design_volume_m3)}</td>
-                              <td className="px-4 py-2.5 text-xs text-stone-600">{tank.primary_material || <span className="text-stone-400">—</span>}</td>
-                              <td className="px-4 py-2.5">
-                                {tank.system_code
-                                  ? <span className="font-mono text-xs text-stone-500">{tank.system_code}</span>
-                                  : <span className="text-stone-400 text-xs">—</span>}
-                              </td>
-                            </tr>
-                          ))}
-                          {exhibitTanks.length > 1 && (
-                            <tr className="border-t-2 border-stone-200 bg-stone-50/60">
-                              <td colSpan={6} className="px-4 py-2 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                                Subtotal — {exhibitTanks.length} tanks
-                              </td>
-                              <td className="px-4 py-2 text-right font-semibold text-stone-700 font-mono text-xs">{exGross.toFixed(3)}</td>
-                              <td colSpan={3} />
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Species section */}
-                <SpeciesSection
-                  bookId={book.id}
-                  exhibitId={exhibit.id}
-                  allSpecies={allSpecies}
-                  onRefresh={onRefresh}
-                />
-
-                {/* Add Tank Panel */}
-                {showingAddTank && (
-                  <AddTankPanel
-                    exhibit={exhibit}
-                    projectId={book.project_id}
-                    unassignedTanks={unassigned}
-                    onRefresh={() => { onRefresh(); }}
-                    onClose={() => setAddTankForExhibit(null)}
-                  />
-                )}
-              </>
-            )}
+        {/* Summary footer */}
+        {tanks.length > 0 && (
+          <div className="border-t-2 border-stone-200 bg-stone-50/80 px-5 py-3 flex items-center justify-between">
+            <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
+              {tanks.length} tank{tanks.length !== 1 ? 's' : ''} across {exhibits.length} exhibits
+            </span>
+            <span className="font-mono text-sm font-bold text-stone-700">{totalGross.toFixed(3)} m³</span>
           </div>
-        );
-      })}
+        )}
+      </div>
 
-      {/* Unassigned tanks */}
+      {/* Unassigned tanks notice */}
       {unassigned.length > 0 && (
-        <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
-          <button
-            onClick={() => onToggleExhibit('__none__')}
-            className="w-full flex items-center justify-between px-5 py-4 hover:bg-amber-50/30 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center">
-                <AlertCircle className="w-4 h-4 text-amber-500" />
-              </div>
-              <div className="text-left">
-                <span className="font-semibold text-stone-700">Unassigned Tanks</span>
-                <p className="text-xs text-stone-400 mt-0.5">Tanks not linked to any exhibit</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm font-semibold text-stone-700">{unassigned.length} tank{unassigned.length !== 1 ? 's' : ''}</span>
-              {(expandedExhibits.has('__none__') || expandAll) ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
-            </div>
-          </button>
-          {(expandedExhibits.has('__none__') || expandAll) && (
-            <div className="border-t border-amber-100 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-amber-50/50">
-                  <tr>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Tank Name</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Shape</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Gross m³</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Op. m³</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">System</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unassigned.map((tank: any) => (
-                    <tr key={tank.id} className="border-t border-amber-100 hover:bg-amber-50/20">
-                      <td className="px-4 py-2.5"><span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">{tank.tank_code}</span></td>
-                      <td className="px-4 py-2.5 font-medium text-stone-800">{tank.tank_name}</td>
-                      <td className="px-4 py-2.5"><ShapeBadge shape={tank.eff_shape} /></td>
-                      <td className="px-4 py-2.5 text-right">{fmtVol(tank.gross_volume_m3)}</td>
-                      <td className="px-4 py-2.5 text-right">{fmtVol(tank.design_volume_m3)}</td>
-                      <td className="px-4 py-2.5 text-xs text-stone-500">{tank.system_code || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Grand total */}
-      {tanks.length > 0 && (
-        <div className="bg-stone-800 rounded-xl px-5 py-3 flex items-center justify-between">
-          <span className="text-xs font-bold text-stone-300 uppercase tracking-wide">Grand Total — {tanks.length} tanks across {exhibits.length} exhibits</span>
-          <span className="font-mono text-sm font-bold text-white">
-            {tanks.reduce((s, t) => s + (parseFloat(t.gross_volume_m3) || 0), 0).toFixed(3)} m³
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5">
+          <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+          <span className="text-sm text-amber-800">
+            <span className="font-semibold">{unassigned.length} unassigned tank{unassigned.length !== 1 ? 's' : ''}</span>
+            {' '}— open an exhibit and use "Assign Tank" to link {unassigned.length === 1 ? 'it' : 'them'}.
           </span>
         </div>
       )}
@@ -1043,8 +907,6 @@ export default function DesignBookDetail() {
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
-  const [expandedExhibits, setExpandedExhibits] = useState<Set<string>>(new Set());
-  const [expandAll, setExpandAll] = useState(true);
   const [showNewExhibit, setShowNewExhibit] = useState(false);
 
   const { data: book, isLoading } = useQuery({
@@ -1085,24 +947,6 @@ export default function DesignBookDetail() {
   const freshVol = tanks
     .filter((t: any) => { const wt = (t.exhibit_water_type || t.water_type || '').toLowerCase(); return wt.includes('fresh'); })
     .reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
-
-  const toggleExhibit = (eid: string) => {
-    setExpandedExhibits(prev => {
-      const n = new Set(prev);
-      if (n.has(eid)) n.delete(eid); else n.add(eid);
-      return n;
-    });
-  };
-
-  const toggleAll = () => {
-    if (expandAll) {
-      setExpandedExhibits(new Set());
-      setExpandAll(false);
-    } else {
-      setExpandedExhibits(new Set(exhibits.map((e: any) => e.id).concat(['__none__'])));
-      setExpandAll(true);
-    }
-  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -1289,10 +1133,6 @@ export default function DesignBookDetail() {
           exhibits={exhibits}
           tanks={tanks}
           exhibitMap={exhibitMap}
-          expandAll={expandAll}
-          expandedExhibits={expandedExhibits}
-          onToggleExhibit={toggleExhibit}
-          onToggleAll={toggleAll}
           onRefresh={refresh}
           onNewExhibit={() => setShowNewExhibit(true)}
         />
