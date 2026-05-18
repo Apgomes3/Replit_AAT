@@ -221,7 +221,7 @@ export default function ProjectDetail() {
   const { data: materialsData } = useQuery({
     queryKey: ['materials-list'],
     queryFn: () => api.get('/materials').then(r => r.data),
-    enabled: showNewTank && tankMode === 'manual',
+    enabled: (showNewTank && tankMode === 'manual') || !!editTankModal,
     staleTime: 5 * 60 * 1000,
   });
   const materials: { material_code: string; material_name: string }[] = materialsData?.items ?? [];
