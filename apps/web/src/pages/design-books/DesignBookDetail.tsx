@@ -8,8 +8,9 @@ import Button from '../../components/ui/Button';
 import {
   BookMarked, FolderOpen, ChevronRight, Pencil, Save, X,
   Droplets, ThermometerSun, FlaskConical, Layers,
-  ChevronDown, ChevronUp, Waves, AlertCircle, FlaskRound,
-  Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2
+  ChevronDown, ChevronUp, Waves, AlertCircle,
+  Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2,
+  LinkIcon, SquarePlus
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -395,18 +396,323 @@ function LSSTab({ book }: { book: any }) {
   );
 }
 
+// ─── New Exhibit Modal ───────────────────────────────────────────────────────
+const WATER_TYPES = ['Marine', 'Freshwater', 'Brackish', 'Salt Water', 'Blackwater'];
+const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Custom'];
+
+function NewExhibitModal({ projectId, onClose, onCreated }: {
+  projectId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState({
+    exhibit_code: '', exhibit_name: '', water_type: '',
+    design_temperature_min: '', design_temperature_max: '', design_salinity: '', notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.exhibit_code.trim() || !form.exhibit_name.trim()) {
+      return toast.error('Exhibit code and name are required');
+    }
+    setSaving(true);
+    try {
+      await api.post('/exhibits', {
+        exhibit_code: form.exhibit_code.trim().toUpperCase(),
+        exhibit_name: form.exhibit_name.trim(),
+        project_id: projectId,
+        water_type: form.water_type || null,
+        design_temperature_min: form.design_temperature_min ? parseFloat(form.design_temperature_min) : null,
+        design_temperature_max: form.design_temperature_max ? parseFloat(form.design_temperature_max) : null,
+        design_salinity: form.design_salinity ? parseFloat(form.design_salinity) : null,
+        notes: form.notes || null,
+      });
+      toast.success('Exhibit created');
+      onCreated();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to create exhibit');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
+          <div className="flex items-center gap-2">
+            <Layers className="w-5 h-5 text-blue-600" />
+            <h2 className="text-base font-semibold text-stone-800">New Exhibit</h2>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-1 rounded">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Exhibit Code *</label>
+              <input type="text" placeholder="e.g. EX-01"
+                value={form.exhibit_code} onChange={e => set('exhibit_code', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Water Type</label>
+              <select value={form.water_type} onChange={e => set('water_type', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                <option value="">— Select —</option>
+                {WATER_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">Exhibit Name *</label>
+            <input type="text" placeholder="e.g. Coral Reef Display"
+              value={form.exhibit_name} onChange={e => set('exhibit_name', e.target.value)}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Temp Min (°C)</label>
+              <input type="number" step="0.1" placeholder="24"
+                value={form.design_temperature_min} onChange={e => set('design_temperature_min', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Temp Max (°C)</label>
+              <input type="number" step="0.1" placeholder="26"
+                value={form.design_temperature_max} onChange={e => set('design_temperature_max', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Salinity (ppt)</label>
+              <input type="number" step="0.1" placeholder="34"
+                value={form.design_salinity} onChange={e => set('design_salinity', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">Notes</label>
+            <textarea value={form.notes} rows={2} onChange={e => set('notes', e.target.value)} placeholder="Optional notes…"
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-stone-100 bg-stone-50/40 rounded-b-2xl">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-stone-600 hover:text-stone-800 rounded-lg hover:bg-stone-100">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
+            {saving ? 'Creating…' : 'Create Exhibit'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Tank Panel (inside each exhibit) ───────────────────────────────────
+function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose }: {
+  exhibit: any;
+  projectId: string;
+  unassignedTanks: any[];
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<'assign' | 'new'>('assign');
+  const [assigning, setAssigning] = useState<string | null>(null);
+  const [newForm, setNewForm] = useState({
+    tank_code: '', tank_name: '', shape_type: 'Rectangular',
+    length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '',
+    primary_material: '', notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const setF = (k: string, v: string) => setNewForm(f => ({ ...f, [k]: v }));
+
+  const handleAssign = async (tankId: string) => {
+    setAssigning(tankId);
+    try {
+      await api.patch(`/tanks/${tankId}/exhibit`, { exhibit_id: exhibit.id });
+      toast.success('Tank assigned');
+      onRefresh();
+    } catch {
+      toast.error('Failed to assign tank');
+    } finally {
+      setAssigning(null);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!newForm.tank_code.trim() || !newForm.tank_name.trim()) {
+      return toast.error('Tank code and name are required');
+    }
+    setSaving(true);
+    try {
+      await api.post('/tanks', {
+        tank_code: newForm.tank_code.trim().toUpperCase(),
+        tank_name: newForm.tank_name.trim(),
+        project_id: projectId,
+        exhibit_id: exhibit.id,
+        shape_type: newForm.shape_type || null,
+        length_mm: newForm.length_mm || null,
+        width_mm: newForm.width_mm || null,
+        height_mm: newForm.height_mm || null,
+        design_water_level_mm: newForm.design_water_level_mm || null,
+        primary_material: newForm.primary_material || null,
+        notes: newForm.notes || null,
+        status: 'Active',
+      });
+      toast.success('Tank created and added to exhibit');
+      onRefresh();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to create tank');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isCyl = newForm.shape_type === 'Cylindrical';
+
+  return (
+    <div className="border-t border-blue-100 bg-blue-50/20 px-5 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1 rounded-lg border border-blue-200 bg-white p-0.5">
+          <button
+            onClick={() => setMode('assign')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              mode === 'assign' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:text-stone-800'
+            }`}
+          >
+            <LinkIcon className="w-3 h-3" /> Assign Existing
+          </button>
+          <button
+            onClick={() => setMode('new')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              mode === 'new' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:text-stone-800'
+            }`}
+          >
+            <SquarePlus className="w-3 h-3" /> Create New Tank
+          </button>
+        </div>
+        <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-1 rounded">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {mode === 'assign' && (
+        unassignedTanks.length === 0 ? (
+          <div className="text-center py-6 text-stone-400 text-sm">
+            <Layers className="w-6 h-6 mx-auto mb-2 opacity-40" />
+            No unassigned tanks in this project.<br />
+            <button onClick={() => setMode('new')} className="mt-2 text-blue-600 hover:underline text-xs">Create a new tank instead →</button>
+          </div>
+        ) : (
+          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+            <p className="text-xs text-stone-500 mb-2">{unassignedTanks.length} unassigned tank{unassignedTanks.length !== 1 ? 's' : ''} — click to add to this exhibit:</p>
+            {unassignedTanks.map(tank => (
+              <div key={tank.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-lg px-3 py-2 hover:border-blue-300 transition-colors group">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded shrink-0">{tank.tank_code}</span>
+                  <span className="text-sm text-stone-700 truncate">{tank.tank_name}</span>
+                  {tank.eff_shape && <ShapeBadge shape={tank.eff_shape} />}
+                  {tank.gross_volume_m3 && (
+                    <span className="text-xs text-stone-400 font-mono shrink-0">{parseFloat(tank.gross_volume_m3).toFixed(2)} m³</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleAssign(tank.id)}
+                  disabled={assigning === tank.id}
+                  className="ml-2 shrink-0 flex items-center gap-1 text-xs bg-blue-600 text-white px-2.5 py-1 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> {assigning === tank.id ? '…' : 'Add'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {mode === 'new' && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Tank Code *</label>
+              <input type="text" placeholder="e.g. TK-01"
+                value={newForm.tank_code} onChange={e => setF('tank_code', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Shape</label>
+              <select value={newForm.shape_type} onChange={e => setF('shape_type', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                {TANK_SHAPES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">Tank Name *</label>
+            <input type="text" placeholder="e.g. Main Display Tank"
+              value={newForm.tank_name} onChange={e => setF('tank_name', e.target.value)}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+          </div>
+          <div className={`grid gap-3 ${isCyl ? 'grid-cols-3' : 'grid-cols-4'}`}>
+            {!isCyl && (
+              <div>
+                <label className="block text-xs text-stone-500 mb-1">Length (mm)</label>
+                <input type="number" placeholder="0" value={newForm.length_mm} onChange={e => setF('length_mm', e.target.value)}
+                  className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-stone-500 mb-1">{isCyl ? 'Diameter (mm)' : 'Width (mm)'}</label>
+              <input type="number" placeholder="0" value={newForm.width_mm} onChange={e => setF('width_mm', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs text-stone-500 mb-1">Height (mm)</label>
+              <input type="number" placeholder="0" value={newForm.height_mm} onChange={e => setF('height_mm', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs text-stone-500 mb-1">Water Level (mm)</label>
+              <input type="number" placeholder="0" value={newForm.design_water_level_mm} onChange={e => setF('design_water_level_mm', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Material</label>
+            <input type="text" placeholder="e.g. Acrylic, FRP, Concrete"
+              value={newForm.primary_material} onChange={e => setF('primary_material', e.target.value)}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={onClose} className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-700">Cancel</button>
+            <button onClick={handleCreate} disabled={saving}
+              className="px-4 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
+              {saving ? 'Creating…' : 'Create Tank'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Exhibits Tab ────────────────────────────────────────────────────────────
 function ExhibitsTab({
   book, exhibits, tanks, exhibitMap, expandAll, expandedExhibits,
-  onToggleExhibit, onToggleAll, onRefresh,
+  onToggleExhibit, onToggleAll, onRefresh, onNewExhibit,
 }: {
   book: any; exhibits: any[]; tanks: any[];
   exhibitMap: Map<string | null, any[]>;
   expandAll: boolean; expandedExhibits: Set<string>;
   onToggleExhibit: (id: string) => void; onToggleAll: () => void;
-  onRefresh: () => void;
+  onRefresh: () => void; onNewExhibit: () => void;
 }) {
   const allSpecies: any[] = book.species || [];
+  const [addTankForExhibit, setAddTankForExhibit] = useState<string | null>(null);
 
   if (!book.project_id) {
     return (
@@ -418,30 +724,44 @@ function ExhibitsTab({
     );
   }
 
+  const unassigned: any[] = exhibitMap.get(null) || [];
+
   if (exhibits.length === 0 && tanks.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-stone-200 py-16 text-center">
+      <div className="bg-white rounded-2xl border border-stone-200 py-20 text-center">
         <Layers className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-        <p className="text-stone-500 font-medium">No exhibits found</p>
-        <p className="text-stone-400 text-sm mt-1">Add exhibits and tanks to the linked project to see them here.</p>
+        <p className="text-stone-500 font-medium">No exhibits yet</p>
+        <p className="text-stone-400 text-sm mt-1 mb-4">Create your first exhibit to start organising tanks and species.</p>
+        <button
+          onClick={onNewExhibit}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> New Exhibit
+        </button>
       </div>
     );
   }
-
-  const unassigned: any[] = exhibitMap.get(null) || [];
 
   return (
     <div className="space-y-3">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-stone-500">{exhibits.length} exhibit{exhibits.length !== 1 ? 's' : ''} · {tanks.length} tank{tanks.length !== 1 ? 's' : ''}</p>
-        <button
-          onClick={onToggleAll}
-          className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-700 px-3 py-1.5 border border-stone-200 rounded-lg bg-white"
-        >
-          {expandAll ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          {expandAll ? 'Collapse All' : 'Expand All'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleAll}
+            className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-700 px-3 py-1.5 border border-stone-200 rounded-lg bg-white"
+          >
+            {expandAll ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {expandAll ? 'Collapse All' : 'Expand All'}
+          </button>
+          <button
+            onClick={onNewExhibit}
+            className="flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors font-medium"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Exhibit
+          </button>
+        </div>
       </div>
 
       {/* Exhibit cards */}
@@ -450,19 +770,20 @@ function ExhibitsTab({
         const exGross = exhibitTanks.reduce((s, t) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
         const isOpen = expandedExhibits.has(exhibit.id) || expandAll;
         const mySpeciesCount = allSpecies.filter(s => s.exhibit_id === exhibit.id).length;
+        const showingAddTank = addTankForExhibit === exhibit.id;
 
         return (
           <div key={exhibit.id} className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
             {/* Exhibit header */}
-            <button
-              onClick={() => onToggleExhibit(exhibit.id)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-stone-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
+            <div className="flex items-center px-5 py-4">
+              <button
+                onClick={() => onToggleExhibit(exhibit.id)}
+                className="flex-1 flex items-center gap-3 text-left min-w-0"
+              >
                 <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
                   <Layers className="w-4 h-4 text-blue-600" />
                 </div>
-                <div className="text-left">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs text-stone-500">{exhibit.exhibit_code}</span>
                     <span className="font-semibold text-stone-800">{exhibit.exhibit_name}</span>
@@ -491,24 +812,45 @@ function ExhibitsTab({
                     )}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-4 flex-shrink-0">
+              </button>
+              <div className="flex items-center gap-3 flex-shrink-0 ml-3">
                 <div className="text-right hidden sm:block">
                   <div className="text-xs text-stone-400">{exhibitTanks.length} tank{exhibitTanks.length !== 1 ? 's' : ''}</div>
                   <div className="text-sm font-semibold text-stone-700">{exGross.toFixed(2)} m³</div>
                 </div>
-                {isOpen ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
+                <button
+                  onClick={e => { e.stopPropagation(); setAddTankForExhibit(showingAddTank ? null : exhibit.id); if (!isOpen) onToggleExhibit(exhibit.id); }}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
+                    showingAddTank
+                      ? 'bg-blue-50 text-blue-700 border-blue-300'
+                      : 'bg-white text-stone-600 border-stone-200 hover:border-blue-300 hover:text-blue-600'
+                  }`}
+                  title="Add tank to this exhibit"
+                >
+                  <Plus className="w-3 h-3" /> Tank
+                </button>
+                <button onClick={() => onToggleExhibit(exhibit.id)} className="text-stone-400 hover:text-stone-600 p-1">
+                  {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
               </div>
-            </button>
+            </div>
 
             {/* Expanded content */}
             {isOpen && (
               <>
                 {/* Tanks table */}
                 <div className="border-t border-stone-100">
-                  {exhibitTanks.length === 0 ? (
-                    <div className="px-5 py-4 text-center text-sm text-stone-400 italic">No tanks in this exhibit</div>
-                  ) : (
+                  {exhibitTanks.length === 0 && !showingAddTank ? (
+                    <div className="px-5 py-5 flex items-center justify-center gap-3 text-stone-400">
+                      <span className="text-sm italic">No tanks in this exhibit</span>
+                      <button
+                        onClick={() => setAddTankForExhibit(exhibit.id)}
+                        className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 bg-blue-50 px-2 py-1 rounded-md transition-colors"
+                      >
+                        + Add Tank
+                      </button>
+                    </div>
+                  ) : exhibitTanks.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-stone-50/80">
@@ -560,7 +902,7 @@ function ExhibitsTab({
                         </tbody>
                       </table>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Species section */}
@@ -570,6 +912,17 @@ function ExhibitsTab({
                   allSpecies={allSpecies}
                   onRefresh={onRefresh}
                 />
+
+                {/* Add Tank Panel */}
+                {showingAddTank && (
+                  <AddTankPanel
+                    exhibit={exhibit}
+                    projectId={book.project_id}
+                    unassignedTanks={unassigned}
+                    onRefresh={() => { onRefresh(); }}
+                    onClose={() => setAddTankForExhibit(null)}
+                  />
+                )}
               </>
             )}
           </div>
@@ -652,6 +1005,7 @@ export default function DesignBookDetail() {
   const [saving, setSaving] = useState(false);
   const [expandedExhibits, setExpandedExhibits] = useState<Set<string>>(new Set());
   const [expandAll, setExpandAll] = useState(true);
+  const [showNewExhibit, setShowNewExhibit] = useState(false);
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', id],
@@ -745,6 +1099,15 @@ export default function DesignBookDetail() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
+      {/* New Exhibit Modal */}
+      {showNewExhibit && book.project_id && (
+        <NewExhibitModal
+          projectId={book.project_id}
+          onClose={() => setShowNewExhibit(false)}
+          onCreated={() => { setShowNewExhibit(false); refresh(); }}
+        />
+      )}
+
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-stone-500 mb-4">
         <Link to="/design-book-engine" className="hover:text-blue-600 transition-colors">Design Book Engine</Link>
@@ -891,6 +1254,7 @@ export default function DesignBookDetail() {
           onToggleExhibit={toggleExhibit}
           onToggleAll={toggleAll}
           onRefresh={refresh}
+          onNewExhibit={() => setShowNewExhibit(true)}
         />
       )}
 

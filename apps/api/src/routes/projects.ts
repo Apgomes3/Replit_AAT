@@ -220,8 +220,25 @@ router.get('/exhibits', authenticate, async (req: AuthRequest, res: Response) =>
   const filters: string[] = [], params: any[] = [];
   if (req.query.project_id) { params.push(req.query.project_id); filters.push(`e.project_id = $${params.length}`); }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const result = await query(`SELECT e.*, a.area_name, p.project_code FROM exhibits e JOIN areas a ON e.area_id=a.id JOIN projects p ON e.project_id=p.id ${where} ORDER BY e.exhibit_code`, params);
+  const result = await query(`SELECT e.*, a.area_name, p.project_code FROM exhibits e LEFT JOIN areas a ON e.area_id=a.id JOIN projects p ON e.project_id=p.id ${where} ORDER BY e.exhibit_code`, params);
   res.json({ items: result.rows });
+});
+
+router.put('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { exhibit_code, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity, area_id, notes } = req.body;
+  if (!exhibit_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'exhibit_name is required' } });
+  const result = await query(
+    `UPDATE exhibits SET exhibit_code=$1, exhibit_name=$2, water_type=$3, design_temperature_min=$4, design_temperature_max=$5, design_salinity=$6, area_id=$7, notes=$8, updated_at=NOW() WHERE id=$9 RETURNING *`,
+    [exhibit_code, exhibit_name, water_type || null, design_temperature_min || null, design_temperature_max || null, design_salinity || null, area_id || null, notes || null, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query('DELETE FROM exhibits WHERE id=$1 RETURNING id', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found' } });
+  res.json({ deleted: true });
 });
 
 router.get('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response) => {
@@ -366,7 +383,7 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
 });
 
 router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+  const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
   if (!tank_code || !project_id || !tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
   const qty = Math.max(1, parseInt(quantity) || 1);
   const l = length_mm ? parseFloat(length_mm) : null;
@@ -386,8 +403,8 @@ router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
       ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
       : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
   const result = await query(
-    'INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
-    [tank_code, project_id, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
+    'INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *',
+    [tank_code, project_id, exhibit_id || null, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
   const tank = result.rows[0];
   if (qty > 1) {
     const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -464,7 +481,7 @@ router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id } = req.body;
+  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id } = req.body;
   if (!tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
   const l = length_mm ? parseFloat(length_mm) : null;
   const w = width_mm ? parseFloat(width_mm) : null;
@@ -483,19 +500,35 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
       ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
       : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
   const qty = Math.max(1, parseInt(quantity) || 1);
+  const hasExhibit = 'exhibit_id' in req.body;
   const result = await query(
     `UPDATE tanks SET
       tank_code=COALESCE($1, tank_code), tank_name=$2, tank_type=$3, shape_type=$4,
       length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
       gross_volume_m3=$9, operating_volume_m3=$10,
       primary_material=$11, status=$12, notes=$13, quantity=$14,
-      system_id=$15, updated_at=NOW()
+      system_id=$15, ${hasExhibit ? 'exhibit_id=$17,' : ''} updated_at=NOW()
     WHERE id=$16 RETURNING *`,
-    [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
-     l, w, h, wl, calcGross, calcOp,
-     primary_material || null, status || 'Active', notes || null, qty,
-     system_id || null,
-     req.params.id]);
+    hasExhibit
+      ? [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
+         l, w, h, wl, calcGross, calcOp,
+         primary_material || null, status || 'Active', notes || null, qty,
+         system_id || null, req.params.id, exhibit_id || null]
+      : [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
+         l, w, h, wl, calcGross, calcOp,
+         primary_material || null, status || 'Active', notes || null, qty,
+         system_id || null, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+  res.json(result.rows[0]);
+});
+
+// Quick exhibit assignment for tanks
+router.patch('/tanks/:id/exhibit', authenticate, async (req: AuthRequest, res: Response) => {
+  const { exhibit_id } = req.body;
+  const result = await query(
+    'UPDATE tanks SET exhibit_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
+    [exhibit_id || null, req.params.id]
+  );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
 });
