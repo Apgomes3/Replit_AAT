@@ -835,6 +835,24 @@ CREATE TABLE IF NOT EXISTS design_books (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_design_books_project ON design_books(project_id) WHERE project_id IS NOT NULL;
+
+-- DESIGN BOOK: Exhibit Species
+CREATE TABLE IF NOT EXISTS design_book_exhibit_species (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  exhibit_id UUID NOT NULL REFERENCES exhibits(id) ON DELETE CASCADE,
+  species_name VARCHAR(255) NOT NULL,
+  common_name VARCHAR(255),
+  quantity INTEGER,
+  avg_size_cm NUMERIC,
+  biomass_kg NUMERIC,
+  notes TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_db_species_book ON design_book_exhibit_species(design_book_id);
+CREATE INDEX IF NOT EXISTS idx_db_species_exhibit ON design_book_exhibit_species(exhibit_id);
 `;
 
 async function migrate() {

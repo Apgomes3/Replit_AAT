@@ -40,6 +40,8 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
 
   let exhibits: any[] = [];
   let tanks: any[] = [];
+  let systems: any[] = [];
+  let species: any[] = [];
 
   if (row.project_id) {
     const exResult = await query(
@@ -101,9 +103,29 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
       [row.project_id]
     );
     tanks = tkResult.rows;
+
+    const sysResult = await query(
+      `SELECT s.*,
+         e.exhibit_code, e.exhibit_name,
+         a.area_code, a.area_name,
+         (SELECT COUNT(*) FROM equipment_instances ei WHERE ei.system_id = s.id) as equipment_count
+       FROM systems s
+       LEFT JOIN exhibits e ON s.exhibit_id = e.id
+       LEFT JOIN areas a ON s.area_id = a.id
+       WHERE s.project_id = $1
+       ORDER BY a.area_code NULLS LAST, e.exhibit_code NULLS LAST, s.system_code`,
+      [row.project_id]
+    );
+    systems = sysResult.rows;
   }
 
-  res.json({ ...row, exhibits, tanks });
+  const speciesResult = await query(
+    `SELECT * FROM design_book_exhibit_species WHERE design_book_id = $1 ORDER BY exhibit_id, sort_order, species_name`,
+    [req.params.id]
+  );
+  species = speciesResult.rows;
+
+  res.json({ ...row, exhibits, tanks, systems, species });
 });
 
 router.post('/design-books', authenticate, async (req: AuthRequest, res: Response) => {
@@ -131,6 +153,38 @@ router.put('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
 router.delete('/design-books/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query('DELETE FROM design_books WHERE id=$1 RETURNING id', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+  res.json({ deleted: true });
+});
+
+// Species CRUD
+router.post('/design-books/:id/species', authenticate, async (req: AuthRequest, res: Response) => {
+  const { exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order } = req.body;
+  if (!exhibit_id || !species_name) return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id and species_name are required' } });
+  const result = await query(
+    `INSERT INTO design_book_exhibit_species (design_book_id, exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [req.params.id, exhibit_id, species_name, common_name || null, quantity || null, avg_size_cm || null, biomass_kg || null, notes || null, sort_order || 0]
+  );
+  res.status(201).json(result.rows[0]);
+});
+
+router.put('/design-books/:id/species/:speciesId', authenticate, async (req: AuthRequest, res: Response) => {
+  const { species_name, common_name, quantity, avg_size_cm, biomass_kg, notes } = req.body;
+  const result = await query(
+    `UPDATE design_book_exhibit_species SET species_name=$1, common_name=$2, quantity=$3, avg_size_cm=$4, biomass_kg=$5, notes=$6, updated_at=NOW()
+     WHERE id=$7 AND design_book_id=$8 RETURNING *`,
+    [species_name, common_name || null, quantity || null, avg_size_cm || null, biomass_kg || null, notes || null, req.params.speciesId, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species entry not found' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/design-books/:id/species/:speciesId', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    'DELETE FROM design_book_exhibit_species WHERE id=$1 AND design_book_id=$2 RETURNING id',
+    [req.params.speciesId, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species entry not found' } });
   res.json({ deleted: true });
 });
 

@@ -8,7 +8,8 @@ import Button from '../../components/ui/Button';
 import {
   BookMarked, FolderOpen, ChevronRight, Pencil, Save, X,
   Droplets, ThermometerSun, FlaskConical, Layers,
-  ChevronDown, ChevronUp, Waves, AlertCircle, FlaskRound
+  ChevronDown, ChevronUp, Waves, AlertCircle, FlaskRound,
+  Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -41,6 +42,22 @@ function ShapeBadge({ shape }: { shape?: string }) {
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${colors[shape] ?? 'bg-stone-100 text-stone-600'}`}>{shape}</span>;
 }
 
+function SystemTypeBadge({ type }: { type?: string }) {
+  if (!type) return <span className="text-stone-400 text-xs">—</span>;
+  const colors: Record<string, string> = {
+    Filtration: 'bg-blue-50 text-blue-700 border-blue-200',
+    Circulation: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    UV: 'bg-violet-50 text-violet-700 border-violet-200',
+    Ozone: 'bg-orange-50 text-orange-700 border-orange-200',
+    Heating: 'bg-red-50 text-red-700 border-red-200',
+    Chilling: 'bg-sky-50 text-sky-700 border-sky-200',
+    Skimming: 'bg-teal-50 text-teal-700 border-teal-200',
+  };
+  const cls = Object.entries(colors).find(([k]) => type.toLowerCase().includes(k.toLowerCase()))?.[1]
+    ?? 'bg-stone-50 text-stone-600 border-stone-200';
+  return <span className={`px-1.5 py-0.5 rounded text-xs font-medium border ${cls}`}>{type}</span>;
+}
+
 function fmtDim(v?: number | null) {
   return v != null ? `${Number(v).toLocaleString()}` : '—';
 }
@@ -48,289 +65,349 @@ function fmtVol(v?: number | null) {
   if (v == null) return <span className="text-stone-400">—</span>;
   return <span className="font-mono text-xs">{parseFloat(String(v)).toFixed(3)}</span>;
 }
+function fmtNum(v?: number | null, decimals = 1) {
+  if (v == null || v === undefined) return <span className="text-stone-400">—</span>;
+  return <span className="font-mono text-xs">{parseFloat(String(v)).toFixed(decimals)}</span>;
+}
 
-export default function DesignBookDetail() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>('exhibits');
-  const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState<any>(null);
+// ─── Species Section inside each Exhibit ────────────────────────────────────
+function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
+  bookId: string;
+  exhibitId: string;
+  allSpecies: any[];
+  onRefresh: () => void;
+}) {
+  const mySpecies = allSpecies.filter(s => s.exhibit_id === exhibitId);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '', notes: '' });
   const [saving, setSaving] = useState(false);
-  const [expandedExhibits, setExpandedExhibits] = useState<Set<string>>(new Set());
-  const [expandAll, setExpandAll] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const { data: book, isLoading } = useQuery({
-    queryKey: ['design-book', id],
-    queryFn: () => api.get(`/design-books/${id}`).then(r => r.data),
-    enabled: !!id,
-  });
-
-  const { data: projectsData } = useQuery({
-    queryKey: ['projects-for-select'],
-    queryFn: () => api.get('/projects').then(r => r.data),
-    enabled: editMode,
-    staleTime: 60_000,
-  });
-  const projects: any[] = projectsData?.items || [];
-
-  if (isLoading) return <div className="p-8 text-center text-stone-400">Loading…</div>;
-  if (!book) return <div className="p-8 text-center text-stone-500">Design book not found.</div>;
-
-  const exhibits: any[] = book.exhibits || [];
-  const tanks: any[] = book.tanks || [];
-
-  // Group tanks by exhibit
-  const exhibitMap = new Map<string | null, any[]>();
-  for (const t of tanks) {
-    const key = t.exhibit_id || null;
-    if (!exhibitMap.has(key)) exhibitMap.set(key, []);
-    exhibitMap.get(key)!.push(t);
-  }
-
-  // Summary stats
-  const totalTanks = tanks.length;
-  const totalGross = tanks.reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
-  const marineVol = tanks
-    .filter((t: any) => {
-      const wt = (t.exhibit_water_type || t.water_type || '').toLowerCase();
-      return wt.includes('marine') || wt.includes('salt');
-    })
-    .reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
-  const freshVol = tanks
-    .filter((t: any) => {
-      const wt = (t.exhibit_water_type || t.water_type || '').toLowerCase();
-      return wt.includes('fresh');
-    })
-    .reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
-
-  const toggleExhibit = (id: string) => {
-    setExpandedExhibits(prev => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id); else n.add(id);
-      return n;
-    });
-  };
-
-  const toggleAll = () => {
-    if (expandAll) {
-      setExpandedExhibits(new Set());
-      setExpandAll(false);
-    } else {
-      setExpandedExhibits(new Set(exhibits.map((e: any) => e.id).concat(['__none__'])));
-      setExpandAll(true);
-    }
-  };
-
-  const handleSave = async () => {
+  const handleAdd = async () => {
+    if (!form.species_name.trim()) return toast.error('Scientific name required');
     setSaving(true);
     try {
-      await api.put(`/design-books/${id}`, editForm);
-      toast.success('Design book updated');
-      qc.invalidateQueries({ queryKey: ['design-book', id] });
-      qc.invalidateQueries({ queryKey: ['design-books'] });
-      setEditMode(false);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Failed to save');
+      await api.post(`/design-books/${bookId}/species`, {
+        exhibit_id: exhibitId,
+        species_name: form.species_name.trim(),
+        common_name: form.common_name || null,
+        quantity: form.quantity ? parseInt(form.quantity) : null,
+        avg_size_cm: form.avg_size_cm ? parseFloat(form.avg_size_cm) : null,
+        biomass_kg: form.biomass_kg ? parseFloat(form.biomass_kg) : null,
+        notes: form.notes || null,
+      });
+      toast.success('Species added');
+      setForm({ species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '', notes: '' });
+      setShowAdd(false);
+      onRefresh();
+    } catch {
+      toast.error('Failed to add species');
     } finally {
       setSaving(false);
     }
   };
 
-  const startEdit = () => {
-    setEditForm({
-      book_title: book.book_title,
-      project_id: book.project_id || '',
-      description: book.description || '',
-      revision: book.revision || 'A',
-      status: book.status || 'Draft',
-      notes: book.notes || '',
-    });
-    setEditMode(true);
+  const handleDelete = async (speciesId: string) => {
+    if (!confirm('Remove this species entry?')) return;
+    setDeletingId(speciesId);
+    try {
+      await api.delete(`/design-books/${bookId}/species/${speciesId}`);
+      toast.success('Removed');
+      onRefresh();
+    } catch {
+      toast.error('Failed to remove');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
-  const TABS: { key: Tab; label: string; count?: number; soon?: boolean }[] = [
-    { key: 'exhibits', label: 'Exhibits', count: exhibits.length },
-    { key: 'lss', label: 'Life Support Systems', soon: true },
-    { key: 'piping', label: 'Piping & Fittings', soon: true },
-  ];
-
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-stone-500 mb-4">
-        <Link to="/design-books" className="hover:text-blue-600 transition-colors">Design Books</Link>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-stone-800 font-medium">{book.book_code}</span>
-      </nav>
+    <div className="border-t border-stone-100 bg-emerald-50/20">
+      {/* Section header */}
+      <div className="flex items-center justify-between px-5 py-2.5">
+        <div className="flex items-center gap-2">
+          <Fish className="w-3.5 h-3.5 text-emerald-600" />
+          <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Species Allocation</span>
+          {mySpecies.length > 0 && (
+            <span className="text-xs bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5">{mySpecies.length}</span>
+          )}
+        </div>
+        <button
+          onClick={() => setShowAdd(v => !v)}
+          className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 bg-white rounded-md px-2 py-1 transition-colors"
+        >
+          <Plus className="w-3 h-3" /> Add Species
+        </button>
+      </div>
 
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-stone-200 p-6 mb-5">
-        {editMode ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+      {/* Add row */}
+      {showAdd && (
+        <div className="px-5 pb-3">
+          <div className="bg-white border border-emerald-200 rounded-lg p-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Title</label>
-                <input type="text" value={editForm.book_title}
-                  onChange={e => setEditForm((f: any) => ({ ...f, book_title: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <label className="block text-xs text-stone-500 mb-0.5">Scientific Name *</label>
+                <input
+                  type="text" placeholder="e.g. Acanthurus leucosternon"
+                  value={form.species_name}
+                  onChange={e => setForm(f => ({ ...f, species_name: e.target.value }))}
+                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Linked Project</label>
-                <select value={editForm.project_id}
-                  onChange={e => setEditForm((f: any) => ({ ...f, project_id: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-                  <option value="">— Standalone —</option>
-                  {projects.map((p: any) => <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Description</label>
-              <textarea value={editForm.description} rows={2} onChange={e => setEditForm((f: any) => ({ ...f, description: e.target.value }))}
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Revision</label>
-                <input type="text" value={editForm.revision} onChange={e => setEditForm((f: any) => ({ ...f, revision: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Status</label>
-                <select value={editForm.status} onChange={e => setEditForm((f: any) => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <label className="block text-xs text-stone-500 mb-0.5">Common Name</label>
+                <input
+                  type="text" placeholder="e.g. Powder Blue Tang"
+                  value={form.common_name}
+                  onChange={e => setForm(f => ({ ...f, common_name: e.target.value }))}
+                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                />
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-2 border-t border-stone-100">
-              <button onClick={() => setEditMode(false)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-stone-600 hover:text-stone-800">
-                <X className="w-4 h-4" /> Cancel
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-xs text-stone-500 mb-0.5">Qty</label>
+                <input type="number" placeholder="0" value={form.quantity}
+                  onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
+                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400" />
+              </div>
+              <div>
+                <label className="block text-xs text-stone-500 mb-0.5">Avg Size (cm)</label>
+                <input type="number" step="0.1" placeholder="0.0" value={form.avg_size_cm}
+                  onChange={e => setForm(f => ({ ...f, avg_size_cm: e.target.value }))}
+                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400" />
+              </div>
+              <div>
+                <label className="block text-xs text-stone-500 mb-0.5">Biomass (kg)</label>
+                <input type="number" step="0.1" placeholder="0.0" value={form.biomass_kg}
+                  onChange={e => setForm(f => ({ ...f, biomass_kg: e.target.value }))}
+                  className="w-full border border-stone-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowAdd(false)} className="text-xs text-stone-500 hover:text-stone-700 px-2 py-1">Cancel</button>
+              <button
+                onClick={handleAdd} disabled={saving}
+                className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? 'Saving…' : 'Add'}
               </button>
-              <Button onClick={handleSave} disabled={saving}>
-                <Save className="w-4 h-4 mr-1.5" />{saving ? 'Saving…' : 'Save'}
-              </Button>
             </div>
           </div>
-        ) : (
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
-                <BookMarked className="w-6 h-6 text-blue-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2.5 mb-1">
-                  <EntityCode code={book.book_code} />
-                  <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">Rev {book.revision}</span>
-                  <StatusBadge status={book.status} />
-                </div>
-                <h1 className="text-xl font-bold text-stone-900">{book.book_title}</h1>
-                {book.description && <p className="text-stone-500 text-sm mt-1">{book.description}</p>}
-                {book.project_code && (
-                  <Link
-                    to={`/projects/${book.project_id}`}
-                    className="inline-flex items-center gap-1.5 mt-2 text-sm text-blue-600 hover:text-blue-700"
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <FolderOpen className="w-3.5 h-3.5" />
-                    {book.project_code} — {book.project_name}
-                    {book.client_name && <span className="text-stone-500"> · {book.client_name}</span>}
-                  </Link>
-                )}
-              </div>
+        </div>
+      )}
+
+      {/* Species table */}
+      {mySpecies.length > 0 ? (
+        <div className="overflow-x-auto pb-3">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-t border-stone-100">
+                <th className="text-left px-5 py-1.5 text-stone-400 font-medium">Scientific Name</th>
+                <th className="text-left px-4 py-1.5 text-stone-400 font-medium">Common Name</th>
+                <th className="text-right px-4 py-1.5 text-stone-400 font-medium">Qty</th>
+                <th className="text-right px-4 py-1.5 text-stone-400 font-medium">Avg Size (cm)</th>
+                <th className="text-right px-4 py-1.5 text-stone-400 font-medium">Biomass (kg)</th>
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {mySpecies.map(sp => (
+                <tr key={sp.id} className="border-t border-emerald-100/60 hover:bg-emerald-50/40 transition-colors group">
+                  <td className="px-5 py-2 italic text-stone-700">{sp.species_name}</td>
+                  <td className="px-4 py-2 text-stone-600">{sp.common_name || <span className="text-stone-300">—</span>}</td>
+                  <td className="px-4 py-2 text-right font-mono text-stone-700">{sp.quantity ?? <span className="text-stone-300">—</span>}</td>
+                  <td className="px-4 py-2 text-right font-mono text-stone-600">{sp.avg_size_cm != null ? parseFloat(sp.avg_size_cm).toFixed(1) : <span className="text-stone-300">—</span>}</td>
+                  <td className="px-4 py-2 text-right font-mono text-stone-600">{sp.biomass_kg != null ? parseFloat(sp.biomass_kg).toFixed(2) : <span className="text-stone-300">—</span>}</td>
+                  <td className="px-2 py-2">
+                    <button
+                      onClick={() => handleDelete(sp.id)}
+                      disabled={deletingId === sp.id}
+                      className="opacity-0 group-hover:opacity-100 text-stone-300 hover:text-red-500 transition-all p-0.5 rounded"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {/* Biomass total */}
+              {mySpecies.some(s => s.biomass_kg != null) && (
+                <tr className="border-t border-emerald-200 bg-emerald-50/40">
+                  <td colSpan={4} className="px-5 py-1.5 text-xs font-semibold text-emerald-700">Total Biomass</td>
+                  <td className="px-4 py-1.5 text-right font-mono font-semibold text-emerald-800">
+                    {mySpecies.reduce((s, sp) => s + (parseFloat(sp.biomass_kg) || 0), 0).toFixed(2)} kg
+                  </td>
+                  <td />
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        !showAdd && (
+          <div className="px-5 pb-4 text-xs text-stone-400 italic">No species allocated — click Add Species to begin.</div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─── LSS Tab ────────────────────────────────────────────────────────────────
+function LSSTab({ book }: { book: any }) {
+  const systems: any[] = book.systems || [];
+
+  if (!book.project_id) {
+    return (
+      <div className="bg-white rounded-2xl border border-stone-200 py-16 text-center">
+        <FolderOpen className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+        <p className="text-stone-500 font-medium">No project linked</p>
+        <p className="text-stone-400 text-sm mt-1">Link this design book to a project to import its Life Support Systems.</p>
+      </div>
+    );
+  }
+
+  if (systems.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-stone-200 py-16 text-center">
+        <Activity className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+        <p className="text-stone-500 font-medium">No systems found</p>
+        <p className="text-stone-400 text-sm mt-1">Add Life Support Systems to the linked project to see them here.</p>
+        <Link
+          to={`/projects/${book.project_id}`}
+          className="inline-flex items-center gap-1.5 mt-4 text-sm text-blue-600 hover:text-blue-700 border border-blue-200 bg-white px-3 py-1.5 rounded-lg"
+        >
+          <FolderOpen className="w-3.5 h-3.5" /> Open Project
+        </Link>
+      </div>
+    );
+  }
+
+  // Aggregate stats
+  const totalFlow = systems.reduce((s, sys) => s + (parseFloat(sys.design_flow_m3h) || 0), 0);
+  const activeSystems = systems.filter(s => s.status === 'Active' || s.status === 'Released').length;
+  const totalEquipment = systems.reduce((s, sys) => s + (parseInt(sys.equipment_count) || 0), 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Stats strip */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Systems', value: systems.length, icon: <GitBranch className="w-4 h-4 text-blue-500" /> },
+          { label: 'Total Design Flow', value: `${totalFlow.toFixed(1)} m³/h`, icon: <Gauge className="w-4 h-4 text-cyan-600" /> },
+          { label: 'Equipment Items', value: totalEquipment, icon: <Settings2 className="w-4 h-4 text-violet-500" /> },
+        ].map(c => (
+          <div key={c.label} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-stone-50 flex items-center justify-center">{c.icon}</div>
+            <div>
+              <div className="text-xs text-stone-500">{c.label}</div>
+              <div className="font-semibold text-stone-800 text-sm">{c.value}</div>
             </div>
-            <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50">
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Systems table */}
+      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100 bg-stone-50/50">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-semibold text-stone-700">Life Support Systems</span>
+            <span className="text-xs bg-blue-50 text-blue-700 rounded-full px-1.5 py-0.5">{systems.length}</span>
+          </div>
+          <Link
+            to={`/projects/${book.project_id}`}
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors flex items-center gap-1"
+          >
+            <FolderOpen className="w-3 h-3" /> View in Project
+          </Link>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-stone-50/80">
+              <tr>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">System Name</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Type</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Exhibit</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Flow m³/h</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Turnover h</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Equipment</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {systems.map((sys: any) => (
+                <tr key={sys.id} className="border-t border-stone-100 hover:bg-blue-50/20 transition-colors">
+                  <td className="px-4 py-2.5">
+                    <span className="font-mono text-xs text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded">{sys.system_code}</span>
+                  </td>
+                  <td className="px-4 py-2.5 font-medium text-stone-800">{sys.system_name}</td>
+                  <td className="px-4 py-2.5"><SystemTypeBadge type={sys.system_type} /></td>
+                  <td className="px-4 py-2.5">
+                    {sys.exhibit_code
+                      ? <span className="text-xs text-stone-600"><span className="font-mono text-stone-400">{sys.exhibit_code}</span> {sys.exhibit_name}</span>
+                      : <span className="text-stone-400 text-xs">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5"><WaterTypeBadge type={sys.water_type} /></td>
+                  <td className="px-4 py-2.5 text-right">{fmtNum(sys.design_flow_m3h)}</td>
+                  <td className="px-4 py-2.5 text-right">{fmtNum(sys.turnover_rate_hr)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {parseInt(sys.equipment_count) > 0
+                      ? <span className="font-mono text-xs text-stone-600">{sys.equipment_count}</span>
+                      : <span className="text-stone-400 text-xs">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5"><StatusBadge status={sys.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {/* Total row */}
+        {totalFlow > 0 && (
+          <div className="border-t-2 border-stone-200 bg-stone-50/60 px-4 py-2 flex items-center gap-4 text-xs">
+            <span className="font-semibold text-stone-500 uppercase tracking-wide">Total</span>
+            <span className="ml-auto font-mono font-semibold text-stone-700">{totalFlow.toFixed(1)} m³/h design flow</span>
           </div>
         )}
       </div>
 
-      {/* Summary Cards */}
-      {book.project_id && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          {[
-            { label: 'Exhibits', value: exhibits.length, icon: <Layers className="w-4 h-4 text-blue-500" />, color: 'blue' },
-            { label: 'Total Tanks', value: totalTanks, icon: <FlaskConical className="w-4 h-4 text-violet-500" />, color: 'violet' },
-            { label: 'Total Volume', value: `${totalGross.toFixed(2)} m³`, icon: <Droplets className="w-4 h-4 text-cyan-600" />, color: 'cyan' },
-            { label: 'Marine / Fresh', value: `${marineVol.toFixed(1)} / ${freshVol.toFixed(1)} m³`, icon: <Waves className="w-4 h-4 text-teal-500" />, color: 'teal' },
-          ].map(c => (
-            <div key={c.label} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-stone-50 flex items-center justify-center">{c.icon}</div>
-              <div>
-                <div className="text-xs text-stone-500">{c.label}</div>
-                <div className="font-semibold text-stone-800 text-sm">{c.value}</div>
+      {/* Duty descriptions */}
+      {systems.some(s => s.duty_description) && (
+        <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-stone-100 bg-stone-50/50">
+            <span className="text-sm font-semibold text-stone-700">Duty Descriptions</span>
+          </div>
+          <div className="divide-y divide-stone-50">
+            {systems.filter(s => s.duty_description).map((sys: any) => (
+              <div key={sys.id} className="px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">{sys.system_code}</span>
+                  <span className="text-sm font-medium text-stone-700">{sys.system_name}</span>
+                </div>
+                <p className="text-sm text-stone-500 leading-relaxed">{sys.duty_description}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
-
-      {/* Tabs */}
-      <div className="flex items-center gap-0.5 border-b border-stone-200 mb-5">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
-              tab === t.key
-                ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
-                : 'text-stone-500 hover:text-stone-700'
-            }`}
-          >
-            {t.label}
-            {t.count != null && (
-              <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === t.key ? 'bg-blue-100 text-blue-700' : 'bg-stone-100 text-stone-500'}`}>
-                {t.count}
-              </span>
-            )}
-            {t.soon && (
-              <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400">Soon</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      {tab === 'exhibits' && (
-        <ExhibitsTab
-          book={book}
-          exhibits={exhibits}
-          tanks={tanks}
-          exhibitMap={exhibitMap}
-          expandAll={expandAll}
-          expandedExhibits={expandedExhibits}
-          onToggleExhibit={toggleExhibit}
-          onToggleAll={toggleAll}
-        />
-      )}
-
-      {tab === 'lss' && <ComingSoonTab label="Life Support Systems" description="LSS calculations, system sizing, and hydraulic design will appear here." icon={<FlaskRound className="w-10 h-10 text-stone-300 mx-auto mb-3" />} />}
-      {tab === 'piping' && <ComingSoonTab label="Piping & Fittings" description="Pipe sizing, pressure drop calculations, and fitting schedules will appear here." icon={<AlertCircle className="w-10 h-10 text-stone-300 mx-auto mb-3" />} />}
     </div>
   );
 }
 
-function ComingSoonTab({ label, description, icon }: { label: string; description: string; icon: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-2xl border border-stone-200 border-dashed py-20 text-center">
-      {icon}
-      <p className="text-stone-600 font-semibold text-lg">{label}</p>
-      <p className="text-stone-400 text-sm mt-1 max-w-sm mx-auto">{description}</p>
-      <span className="inline-block mt-4 px-3 py-1 bg-stone-100 text-stone-500 rounded-full text-xs font-medium">Coming Soon</span>
-    </div>
-  );
-}
-
+// ─── Exhibits Tab ────────────────────────────────────────────────────────────
 function ExhibitsTab({
-  book, exhibits, tanks, exhibitMap, expandAll, expandedExhibits, onToggleExhibit, onToggleAll
+  book, exhibits, tanks, exhibitMap, expandAll, expandedExhibits,
+  onToggleExhibit, onToggleAll, onRefresh,
 }: {
   book: any; exhibits: any[]; tanks: any[];
   exhibitMap: Map<string | null, any[]>;
   expandAll: boolean; expandedExhibits: Set<string>;
   onToggleExhibit: (id: string) => void; onToggleAll: () => void;
+  onRefresh: () => void;
 }) {
+  const allSpecies: any[] = book.species || [];
+
   if (!book.project_id) {
     return (
       <div className="bg-white rounded-2xl border border-stone-200 py-16 text-center">
@@ -351,7 +428,6 @@ function ExhibitsTab({
     );
   }
 
-  // Unassigned tanks (no exhibit_id)
   const unassigned: any[] = exhibitMap.get(null) || [];
 
   return (
@@ -373,9 +449,10 @@ function ExhibitsTab({
         const exhibitTanks: any[] = exhibitMap.get(exhibit.id) || [];
         const exGross = exhibitTanks.reduce((s, t) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
         const isOpen = expandedExhibits.has(exhibit.id) || expandAll;
+        const mySpeciesCount = allSpecies.filter(s => s.exhibit_id === exhibit.id).length;
 
         return (
-          <div key={exhibit.id} className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div key={exhibit.id} className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
             {/* Exhibit header */}
             <button
               onClick={() => onToggleExhibit(exhibit.id)}
@@ -386,12 +463,12 @@ function ExhibitsTab({
                   <Layers className="w-4 h-4 text-blue-600" />
                 </div>
                 <div className="text-left">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs text-stone-500">{exhibit.exhibit_code}</span>
                     <span className="font-semibold text-stone-800">{exhibit.exhibit_name}</span>
                     <WaterTypeBadge type={exhibit.water_type} />
                   </div>
-                  <div className="flex items-center gap-4 mt-0.5">
+                  <div className="flex items-center gap-4 mt-0.5 flex-wrap">
                     {(exhibit.design_temperature_min != null || exhibit.design_temperature_max != null) && (
                       <span className="flex items-center gap-1 text-xs text-stone-500">
                         <ThermometerSun className="w-3 h-3" />
@@ -407,6 +484,11 @@ function ExhibitsTab({
                     {exhibit.area_name && (
                       <span className="text-xs text-stone-400">Area: {exhibit.area_name}</span>
                     )}
+                    {mySpeciesCount > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-600">
+                        <Fish className="w-3 h-3" /> {mySpeciesCount} species
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -419,66 +501,76 @@ function ExhibitsTab({
               </div>
             </button>
 
-            {/* Tanks table */}
+            {/* Expanded content */}
             {isOpen && (
-              <div className="border-t border-stone-100">
-                {exhibitTanks.length === 0 ? (
-                  <div className="px-5 py-5 text-center text-sm text-stone-400 italic">No tanks in this exhibit</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-stone-50/80">
-                        <tr>
-                          <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
-                          <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Tank Name</th>
-                          <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Shape</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">L mm</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">W / Ø mm</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">H mm</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Gross m³</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Op. m³</th>
-                          <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Material</th>
-                          <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">System</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {exhibitTanks.map((tank: any) => (
-                          <tr key={tank.id} className="border-t border-stone-100 hover:bg-blue-50/20 transition-colors">
-                            <td className="px-4 py-2.5">
-                              <span className="font-mono text-xs text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded">{tank.tank_code}</span>
-                            </td>
-                            <td className="px-4 py-2.5 font-medium text-stone-800">{tank.tank_name}</td>
-                            <td className="px-4 py-2.5"><ShapeBadge shape={tank.eff_shape} /></td>
-                            <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">
-                              {tank.eff_shape === 'Cylindrical' ? <span className="text-stone-400">—</span> : fmtDim(tank.eff_length_mm)}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">{fmtDim(tank.eff_width_mm)}</td>
-                            <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">{fmtDim(tank.eff_height_mm)}</td>
-                            <td className="px-4 py-2.5 text-right">{fmtVol(tank.gross_volume_m3)}</td>
-                            <td className="px-4 py-2.5 text-right">{fmtVol(tank.design_volume_m3)}</td>
-                            <td className="px-4 py-2.5 text-xs text-stone-600">{tank.primary_material || <span className="text-stone-400">—</span>}</td>
-                            <td className="px-4 py-2.5">
-                              {tank.system_code
-                                ? <span className="font-mono text-xs text-stone-500">{tank.system_code}</span>
-                                : <span className="text-stone-400 text-xs">—</span>}
-                            </td>
+              <>
+                {/* Tanks table */}
+                <div className="border-t border-stone-100">
+                  {exhibitTanks.length === 0 ? (
+                    <div className="px-5 py-4 text-center text-sm text-stone-400 italic">No tanks in this exhibit</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-stone-50/80">
+                          <tr>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Tank Name</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Shape</th>
+                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">L mm</th>
+                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">W / Ø mm</th>
+                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">H mm</th>
+                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Gross m³</th>
+                            <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Op. m³</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Material</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">System</th>
                           </tr>
-                        ))}
-                        {/* Exhibit subtotal row */}
-                        {exhibitTanks.length > 1 && (
-                          <tr className="border-t-2 border-stone-200 bg-stone-50/60">
-                            <td colSpan={6} className="px-4 py-2 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                              Subtotal — {exhibitTanks.length} tanks
-                            </td>
-                            <td className="px-4 py-2 text-right font-semibold text-stone-700 font-mono text-xs">{exGross.toFixed(3)}</td>
-                            <td colSpan={3} />
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+                        </thead>
+                        <tbody>
+                          {exhibitTanks.map((tank: any) => (
+                            <tr key={tank.id} className="border-t border-stone-100 hover:bg-blue-50/20 transition-colors">
+                              <td className="px-4 py-2.5">
+                                <span className="font-mono text-xs text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded">{tank.tank_code}</span>
+                              </td>
+                              <td className="px-4 py-2.5 font-medium text-stone-800">{tank.tank_name}</td>
+                              <td className="px-4 py-2.5"><ShapeBadge shape={tank.eff_shape} /></td>
+                              <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">
+                                {tank.eff_shape === 'Cylindrical' ? <span className="text-stone-400">—</span> : fmtDim(tank.eff_length_mm)}
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">{fmtDim(tank.eff_width_mm)}</td>
+                              <td className="px-4 py-2.5 text-right font-mono text-xs text-stone-600">{fmtDim(tank.eff_height_mm)}</td>
+                              <td className="px-4 py-2.5 text-right">{fmtVol(tank.gross_volume_m3)}</td>
+                              <td className="px-4 py-2.5 text-right">{fmtVol(tank.design_volume_m3)}</td>
+                              <td className="px-4 py-2.5 text-xs text-stone-600">{tank.primary_material || <span className="text-stone-400">—</span>}</td>
+                              <td className="px-4 py-2.5">
+                                {tank.system_code
+                                  ? <span className="font-mono text-xs text-stone-500">{tank.system_code}</span>
+                                  : <span className="text-stone-400 text-xs">—</span>}
+                              </td>
+                            </tr>
+                          ))}
+                          {exhibitTanks.length > 1 && (
+                            <tr className="border-t-2 border-stone-200 bg-stone-50/60">
+                              <td colSpan={6} className="px-4 py-2 text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                                Subtotal — {exhibitTanks.length} tanks
+                              </td>
+                              <td className="px-4 py-2 text-right font-semibold text-stone-700 font-mono text-xs">{exGross.toFixed(3)}</td>
+                              <td colSpan={3} />
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Species section */}
+                <SpeciesSection
+                  bookId={book.id}
+                  exhibitId={exhibit.id}
+                  allSpecies={allSpecies}
+                  onRefresh={onRefresh}
+                />
+              </>
             )}
           </div>
         );
@@ -533,6 +625,283 @@ function ExhibitsTab({
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Grand total */}
+      {tanks.length > 0 && (
+        <div className="bg-stone-800 rounded-xl px-5 py-3 flex items-center justify-between">
+          <span className="text-xs font-bold text-stone-300 uppercase tracking-wide">Grand Total — {tanks.length} tanks across {exhibits.length} exhibits</span>
+          <span className="font-mono text-sm font-bold text-white">
+            {tanks.reduce((s, t) => s + (parseFloat(t.gross_volume_m3) || 0), 0).toFixed(3)} m³
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+export default function DesignBookDetail() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<Tab>('exhibits');
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [expandedExhibits, setExpandedExhibits] = useState<Set<string>>(new Set());
+  const [expandAll, setExpandAll] = useState(true);
+
+  const { data: book, isLoading } = useQuery({
+    queryKey: ['design-book', id],
+    queryFn: () => api.get(`/design-books/${id}`).then(r => r.data),
+    enabled: !!id,
+  });
+
+  const { data: projectsData } = useQuery({
+    queryKey: ['projects-for-select'],
+    queryFn: () => api.get('/projects').then(r => r.data),
+    enabled: editMode,
+    staleTime: 60_000,
+  });
+  const projects: any[] = projectsData?.items || [];
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['design-book', id] });
+
+  if (isLoading) return <div className="p-8 text-center text-stone-400">Loading…</div>;
+  if (!book) return <div className="p-8 text-center text-stone-500">Design book not found.</div>;
+
+  const exhibits: any[] = book.exhibits || [];
+  const tanks: any[] = book.tanks || [];
+  const systems: any[] = book.systems || [];
+
+  const exhibitMap = new Map<string | null, any[]>();
+  for (const t of tanks) {
+    const key = t.exhibit_id || null;
+    if (!exhibitMap.has(key)) exhibitMap.set(key, []);
+    exhibitMap.get(key)!.push(t);
+  }
+
+  const totalTanks = tanks.length;
+  const totalGross = tanks.reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
+  const marineVol = tanks
+    .filter((t: any) => { const wt = (t.exhibit_water_type || t.water_type || '').toLowerCase(); return wt.includes('marine') || wt.includes('salt'); })
+    .reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
+  const freshVol = tanks
+    .filter((t: any) => { const wt = (t.exhibit_water_type || t.water_type || '').toLowerCase(); return wt.includes('fresh'); })
+    .reduce((s: number, t: any) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
+
+  const toggleExhibit = (eid: string) => {
+    setExpandedExhibits(prev => {
+      const n = new Set(prev);
+      if (n.has(eid)) n.delete(eid); else n.add(eid);
+      return n;
+    });
+  };
+
+  const toggleAll = () => {
+    if (expandAll) {
+      setExpandedExhibits(new Set());
+      setExpandAll(false);
+    } else {
+      setExpandedExhibits(new Set(exhibits.map((e: any) => e.id).concat(['__none__'])));
+      setExpandAll(true);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/design-books/${id}`, editForm);
+      toast.success('Design book updated');
+      qc.invalidateQueries({ queryKey: ['design-book', id] });
+      qc.invalidateQueries({ queryKey: ['design-books'] });
+      setEditMode(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startEdit = () => {
+    setEditForm({
+      book_title: book.book_title,
+      project_id: book.project_id || '',
+      description: book.description || '',
+      revision: book.revision || 'A',
+      status: book.status || 'Draft',
+      notes: book.notes || '',
+    });
+    setEditMode(true);
+  };
+
+  const TABS: { key: Tab; label: string; count?: number }[] = [
+    { key: 'exhibits', label: 'Exhibits', count: exhibits.length },
+    { key: 'lss', label: 'Life Support Systems', count: systems.length },
+    { key: 'piping', label: 'Piping & Fittings' },
+  ];
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-sm text-stone-500 mb-4">
+        <Link to="/design-book-engine" className="hover:text-blue-600 transition-colors">Design Book Engine</Link>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <Link to="/design-books" className="hover:text-blue-600 transition-colors">Design Books</Link>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <span className="text-stone-800 font-medium">{book.book_code}</span>
+      </nav>
+
+      {/* Header card */}
+      <div className="bg-white rounded-2xl border border-stone-200 p-6 mb-5">
+        {editMode ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Title</label>
+                <input type="text" value={editForm.book_title}
+                  onChange={e => setEditForm((f: any) => ({ ...f, book_title: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Linked Project</label>
+                <select value={editForm.project_id}
+                  onChange={e => setEditForm((f: any) => ({ ...f, project_id: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                  <option value="">— Standalone —</option>
+                  {projects.map((p: any) => <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Description</label>
+              <textarea value={editForm.description} rows={2} onChange={e => setEditForm((f: any) => ({ ...f, description: e.target.value }))}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Revision</label>
+                <input type="text" value={editForm.revision} onChange={e => setEditForm((f: any) => ({ ...f, revision: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Status</label>
+                <select value={editForm.status} onChange={e => setEditForm((f: any) => ({ ...f, status: e.target.value }))}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2 border-t border-stone-100">
+              <button onClick={() => setEditMode(false)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-stone-600 hover:text-stone-800">
+                <X className="w-4 h-4" /> Cancel
+              </button>
+              <Button onClick={handleSave} disabled={saving}>
+                <Save className="w-4 h-4 mr-1.5" />{saving ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center flex-shrink-0">
+                <BookMarked className="w-6 h-6 text-violet-600" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2.5 mb-1 flex-wrap">
+                  <EntityCode code={book.book_code} />
+                  <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">Rev {book.revision}</span>
+                  <StatusBadge status={book.status} />
+                </div>
+                <h1 className="text-xl font-bold text-stone-900">{book.book_title}</h1>
+                {book.description && <p className="text-stone-500 text-sm mt-1">{book.description}</p>}
+                {book.project_code && (
+                  <Link
+                    to={`/projects/${book.project_id}`}
+                    className="inline-flex items-center gap-1.5 mt-2 text-sm text-blue-600 hover:text-blue-700"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    {book.project_code} — {book.project_name}
+                    {book.client_name && <span className="text-stone-500"> · {book.client_name}</span>}
+                  </Link>
+                )}
+              </div>
+            </div>
+            <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50">
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Summary Cards */}
+      {book.project_id && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          {[
+            { label: 'Exhibits', value: exhibits.length, icon: <Layers className="w-4 h-4 text-blue-500" /> },
+            { label: 'Total Tanks', value: totalTanks, icon: <FlaskConical className="w-4 h-4 text-violet-500" /> },
+            { label: 'Total Volume', value: `${totalGross.toFixed(2)} m³`, icon: <Droplets className="w-4 h-4 text-cyan-600" /> },
+            { label: 'Marine / Fresh', value: `${marineVol.toFixed(1)} / ${freshVol.toFixed(1)} m³`, icon: <Waves className="w-4 h-4 text-teal-500" /> },
+          ].map(c => (
+            <div key={c.label} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-stone-50 flex items-center justify-center">{c.icon}</div>
+              <div>
+                <div className="text-xs text-stone-500">{c.label}</div>
+                <div className="font-semibold text-stone-800 text-sm">{c.value}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex items-center gap-0.5 border-b border-stone-200 mb-5">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
+              tab === t.key
+                ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
+                : 'text-stone-500 hover:text-stone-700'
+            }`}
+          >
+            {t.label}
+            {t.count != null && (
+              <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${tab === t.key ? 'bg-blue-100 text-blue-700' : 'bg-stone-100 text-stone-500'}`}>
+                {t.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {tab === 'exhibits' && (
+        <ExhibitsTab
+          book={book}
+          exhibits={exhibits}
+          tanks={tanks}
+          exhibitMap={exhibitMap}
+          expandAll={expandAll}
+          expandedExhibits={expandedExhibits}
+          onToggleExhibit={toggleExhibit}
+          onToggleAll={toggleAll}
+          onRefresh={refresh}
+        />
+      )}
+
+      {tab === 'lss' && <LSSTab book={book} />}
+
+      {tab === 'piping' && (
+        <div className="bg-white rounded-2xl border border-stone-200 border-dashed py-20 text-center">
+          <AlertCircle className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+          <p className="text-stone-600 font-semibold text-lg">Piping & Fittings</p>
+          <p className="text-stone-400 text-sm mt-1 max-w-sm mx-auto">Pipe sizing, pressure drop calculations, and fitting schedules will appear here.</p>
+          <span className="inline-block mt-4 px-3 py-1 bg-stone-100 text-stone-500 rounded-full text-xs font-medium">Coming Soon</span>
         </div>
       )}
     </div>

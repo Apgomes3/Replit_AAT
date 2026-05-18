@@ -92,15 +92,22 @@ workspace/
 - **3 BOMs fully linked**: FF-1500 (10 lines), FF-800 (9 lines), Pump-22 (7 lines) — 100% component_id coverage
 - **Shared component**: COMP-VEN-50 (Venturi Injector) used in both FF-1500 and FF-800
 
-## Design Books Module
+## Design Book Engine Module
+- Top-level nav section "Design Book Engine" (alongside PIM, Orders, Projects)
+- Hub page: `/design-book-engine` (`DesignBookEngineDashboard.tsx`) — status counters, active books panel, recent list
 - Route: `/design-books` (list) + `/design-books/:id` (detail)
-- Nav: Project Management → Design Books (BookMarked icon)
 - `design_books` table: id, book_code, project_id (FK, optional), book_title, description, revision, status, notes, created_by, created_at, updated_at
+- `design_book_exhibit_species` table: id, design_book_id, exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order
 - Create flow: link to an existing project (auto-imports exhibits + tanks) or standalone
-- Detail tabs: **Exhibits** (fully built — groups tanks by exhibit with dimensions, volumes, water type, material, system) | **LSS** (Coming Soon) | **Piping** (Coming Soon)
+- Detail tabs:
+  - **Exhibits**: groups tanks by exhibit with full dimension/volume table; each exhibit has a **Species Allocation** sub-section (add/delete species with scientific name, common name, qty, avg size, biomass; running total biomass)
+  - **LSS**: live systems table imported from the linked project (code, name, type, exhibit, water type, flow, turnover, equipment count, status + duty descriptions panel)
+  - **Piping**: Coming Soon
+- ProjectDetail: shows "Design Book" button in header when a linked book exists for the project
 - API: `GET/POST /design-books`, `GET/PUT/DELETE /design-books/:id`
+- Species API: `POST /design-books/:id/species`, `PUT /design-books/:id/species/:speciesId`, `DELETE /design-books/:id/species/:speciesId`
 - Route file: `apps/api/src/routes/designBooks.ts`
-- Frontend: `apps/web/src/pages/design-books/DesignBooksList.tsx`, `DesignBookDetail.tsx`
+- Frontend: `apps/web/src/pages/design-books/DesignBooksList.tsx`, `DesignBookDetail.tsx`, `DesignBookEngineDashboard.tsx`
 
 ## Running the App
 
