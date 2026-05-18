@@ -145,12 +145,14 @@ router.get('/projects/:id/systems', authenticate, async (req: AuthRequest, res: 
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
             THEN PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2)
-                      * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0 * t.quantity
-          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+                      * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0 * COALESCE(t.quantity, 1)
+          WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
-            THEN COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0 * t.quantity
+            THEN COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0 * COALESCE(t.quantity, 1)
+          WHEN COALESCE(t.gross_volume_m3, pm.gross_volume_m3) IS NOT NULL
+            THEN COALESCE(t.gross_volume_m3, pm.gross_volume_m3) * COALESCE(t.quantity, 1)
           ELSE 0
         END
       ), 0)::numeric AS total_volume_m3,
