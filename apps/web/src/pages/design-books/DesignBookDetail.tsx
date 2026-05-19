@@ -13,9 +13,10 @@ import {
   LinkIcon, SquarePlus, Check, CheckCircle2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import VersionsTab from './VersionsTab';
 
 const STATUSES = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
-type Tab = 'exhibits' | 'lss' | 'piping';
+type Tab = 'exhibits' | 'lss' | 'piping' | 'versions';
 
 function WaterTypeBadge({ type }: { type?: string }) {
   if (!type) return <span className="text-stone-400 text-xs italic">—</span>;
@@ -979,6 +980,7 @@ export default function DesignBookDetail() {
     { key: 'exhibits', label: 'Exhibits', count: exhibits.length },
     { key: 'lss', label: 'Life Support Systems', count: systems.length },
     { key: 'piping', label: 'Piping & Fittings' },
+    { key: 'versions', label: 'Versions' },
   ];
 
   return (
@@ -1147,6 +1149,10 @@ export default function DesignBookDetail() {
           <p className="text-stone-400 text-sm mt-1 max-w-sm mx-auto">Pipe sizing, pressure drop calculations, and fitting schedules will appear here.</p>
           <span className="inline-block mt-4 px-3 py-1 bg-stone-100 text-stone-500 rounded-full text-xs font-medium">Coming Soon</span>
         </div>
+      )}
+
+      {tab === 'versions' && (
+        <VersionsTab bookId={id!} onBookRefresh={refresh} />
       )}
     </div>
   );

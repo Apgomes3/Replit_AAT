@@ -884,6 +884,20 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_substrate (
   UNIQUE(design_book_id, exhibit_id)
 );
 CREATE INDEX IF NOT EXISTS idx_db_substrate_book ON design_book_exhibit_substrate(design_book_id);
+
+-- DESIGN BOOK: Versions (point-in-time JSONB snapshots)
+CREATE TABLE IF NOT EXISTS design_book_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  version_number INTEGER NOT NULL,
+  version_label VARCHAR(200),
+  notes TEXT,
+  snapshot JSONB NOT NULL,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(design_book_id, version_number)
+);
+CREATE INDEX IF NOT EXISTS idx_db_versions_book ON design_book_versions(design_book_id);
 `;
 
 async function migrate() {
