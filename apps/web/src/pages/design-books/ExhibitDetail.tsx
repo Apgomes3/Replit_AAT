@@ -877,9 +877,18 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
   const [confirming, setConfirming] = useState(false);
   const [newForm, setNewForm] = useState({
     tank_code: '', tank_name: '', shape_type: 'Rectangular',
-    length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', primary_material: '',
+    length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '',
+    material_id: '', primary_material: '',
   });
   const [saving, setSaving] = useState(false);
+
+  const { data: matData } = useQuery({
+    queryKey: ['materials-list'],
+    queryFn: () => api.get('/materials').then(r => r.data),
+    staleTime: 300_000,
+    enabled: mode === 'new',
+  });
+  const newMaterials: any[] = matData?.items || [];
 
   const setF = (k: string, v: string) => setNewForm(f => ({ ...f, [k]: v }));
 
@@ -913,6 +922,7 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
         width_mm: newForm.width_mm || null,
         height_mm: newForm.height_mm || null,
         design_water_level_mm: newForm.design_water_level_mm || null,
+        material_id: newForm.material_id || null,
         primary_material: newForm.primary_material || null,
         status: 'Active',
       });
@@ -1066,9 +1076,22 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
             </div>
             <div>
               <label className="block text-xs text-stone-500 mb-1">Material</label>
-              <input type="text" placeholder="e.g. Acrylic, FRP, Concrete"
-                value={newForm.primary_material} onChange={e => setF('primary_material', e.target.value)}
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              <select
+                value={newForm.material_id}
+                onChange={e => {
+                  const mat = newMaterials.find((m: any) => m.id === e.target.value);
+                  setF('material_id', e.target.value);
+                  setF('primary_material', mat ? mat.material_name : '');
+                }}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              >
+                <option value="">— Select material —</option>
+                {newMaterials.map((m: any) => (
+                  <option key={m.id} value={m.id}>
+                    {m.material_code} — {m.material_name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex justify-end">
               <button onClick={handleCreate} disabled={saving}
