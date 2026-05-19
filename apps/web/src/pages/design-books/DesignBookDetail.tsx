@@ -443,14 +443,22 @@ function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
     return (
       <div className="bg-white rounded-2xl border border-stone-200 py-16 text-center">
         <Activity className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-        <p className="text-stone-500 font-medium">No systems found</p>
-        <p className="text-stone-400 text-sm mt-1">Add Life Support Systems to the linked project to see them here.</p>
-        <Link
-          to={`/projects/${book.project_id}`}
-          className="inline-flex items-center gap-1.5 mt-4 text-sm text-blue-600 hover:text-blue-700 border border-blue-200 bg-white px-3 py-1.5 rounded-lg"
-        >
-          <FolderOpen className="w-3.5 h-3.5" /> Open Project
-        </Link>
+        <p className="text-stone-500 font-medium">No systems yet</p>
+        <p className="text-stone-400 text-sm mt-1 mb-5">Create a new Life Support System directly in this design book.</p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={onNewLSS}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> New Life Support System
+          </button>
+          <Link
+            to={`/projects/${book.project_id}`}
+            className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-blue-600 border border-stone-200 bg-white px-3 py-2 rounded-lg transition-colors"
+          >
+            <FolderOpen className="w-3.5 h-3.5" /> View Project
+          </Link>
+        </div>
       </div>
     );
   }
