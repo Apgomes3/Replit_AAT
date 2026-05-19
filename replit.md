@@ -98,6 +98,7 @@ workspace/
 - Route: `/design-books` (list) + `/design-books/:id` (detail)
 - `design_books` table: id, book_code, project_id (FK, optional), book_title, description, revision, status, notes, created_by, created_at, updated_at
 - `design_book_exhibit_species` table: id, design_book_id, exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order
+- `design_book_exhibit_hydraulics` table: id, design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct (default 30), bottom_drain_pct (default 70), notes — UNIQUE(design_book_id, exhibit_id)
 - Create flow: link to an existing project (auto-imports exhibits + tanks) or standalone
 - Detail tabs:
   - **Exhibits**: groups tanks by exhibit with full dimension/volume table; each exhibit has a **Species Allocation** sub-section (add/delete species with scientific name, common name, qty, avg size, biomass; running total biomass)

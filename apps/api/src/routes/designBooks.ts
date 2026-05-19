@@ -125,7 +125,13 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
   );
   species = speciesResult.rows;
 
-  res.json({ ...row, exhibits, tanks, systems, species });
+  const hydraulicsResult = await query(
+    `SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id = $1`,
+    [req.params.id]
+  );
+  const hydraulics = hydraulicsResult.rows;
+
+  res.json({ ...row, exhibits, tanks, systems, species, hydraulics });
 });
 
 router.post('/design-books', authenticate, async (req: AuthRequest, res: Response) => {
@@ -176,6 +182,26 @@ router.put('/design-books/:id/species/:speciesId', authenticate, async (req: Aut
     [species_name, common_name || null, quantity || null, avg_size_cm || null, biomass_kg || null, notes || null, req.params.speciesId, req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species entry not found' } });
+  res.json(result.rows[0]);
+});
+
+router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, async (req: AuthRequest, res: Response) => {
+  const { target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes } = req.body;
+  const result = await query(
+    `INSERT INTO design_book_exhibit_hydraulics
+       (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (design_book_id, exhibit_id)
+     DO UPDATE SET
+       target_turnover_rate = EXCLUDED.target_turnover_rate,
+       surface_skim_pct     = EXCLUDED.surface_skim_pct,
+       bottom_drain_pct     = EXCLUDED.bottom_drain_pct,
+       notes                = EXCLUDED.notes,
+       updated_at           = NOW()
+     RETURNING *`,
+    [req.params.id, req.params.exhibitId,
+     target_turnover_rate ?? null, surface_skim_pct ?? 30, bottom_drain_pct ?? 70, notes ?? null]
+  );
   res.json(result.rows[0]);
 });
 

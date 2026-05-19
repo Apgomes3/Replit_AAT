@@ -853,6 +853,21 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_species (
 );
 CREATE INDEX IF NOT EXISTS idx_db_species_book ON design_book_exhibit_species(design_book_id);
 CREATE INDEX IF NOT EXISTS idx_db_species_exhibit ON design_book_exhibit_species(exhibit_id);
+
+-- DESIGN BOOK: Exhibit Hydraulics (water flow / turnover config)
+CREATE TABLE IF NOT EXISTS design_book_exhibit_hydraulics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  exhibit_id UUID NOT NULL REFERENCES exhibits(id) ON DELETE CASCADE,
+  target_turnover_rate NUMERIC(6,2),
+  surface_skim_pct NUMERIC(5,2) DEFAULT 30,
+  bottom_drain_pct NUMERIC(5,2) DEFAULT 70,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(design_book_id, exhibit_id)
+);
+CREATE INDEX IF NOT EXISTS idx_db_hydraulics_book ON design_book_exhibit_hydraulics(design_book_id);
 `;
 
 async function migrate() {

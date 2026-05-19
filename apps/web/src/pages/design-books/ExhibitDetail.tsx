@@ -5,7 +5,8 @@ import api from '../../lib/api';
 import {
   ChevronRight, Waves, ThermometerSun, FlaskConical, Fish, Plus,
   Trash2, Check, CheckCircle2, Layers, FolderOpen, LinkIcon,
-  SquarePlus, X, Droplets, Pencil, Save
+  SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
+  ArrowUpToLine, Wind, BookOpen
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -837,10 +838,289 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
   );
 }
 
+// ─── AAT Turnover Reference ───────────────────────────────────────────────────
+const AAT_REFERENCE = [
+  { category: 'Coral Reef / SPS', rate: '8–12', notes: 'High flow, strong circulation' },
+  { category: 'Marine Fish Display', rate: '4–8', notes: 'General marine fish' },
+  { category: 'Shark / Predator', rate: '4–6', notes: 'Large pelagic species' },
+  { category: 'Jellyfish', rate: '2–4', notes: 'Gentle laminar flow' },
+  { category: 'Freshwater Tropical', rate: '3–5', notes: 'General tropical fish' },
+  { category: 'Freshwater Predator', rate: '4–6', notes: 'Arapaima, arapaima etc.' },
+  { category: 'Brackish / Estuary', rate: '4–6', notes: 'Mixed salinity displays' },
+  { category: 'Touch Pool', rate: '6–10', notes: 'High bioload, public contact' },
+];
+
+// ─── Water Flow Tab ───────────────────────────────────────────────────────────
+function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh }: {
+  bookId: string;
+  exhibitId: string;
+  tank: any;
+  species: any[];
+  hydraulics: any | null;
+  onRefresh: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    target_turnover_rate: hydraulics?.target_turnover_rate != null ? String(hydraulics.target_turnover_rate) : '',
+    surface_skim_pct:     hydraulics?.surface_skim_pct     != null ? String(hydraulics.surface_skim_pct)     : '30',
+    bottom_drain_pct:     hydraulics?.bottom_drain_pct     != null ? String(hydraulics.bottom_drain_pct)     : '70',
+    notes:               hydraulics?.notes || '',
+  });
+
+  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  // live-recalc from form while editing, otherwise from saved hydraulics
+  const src = editing ? form : {
+    target_turnover_rate: hydraulics?.target_turnover_rate != null ? String(hydraulics.target_turnover_rate) : '',
+    surface_skim_pct:     hydraulics?.surface_skim_pct     != null ? String(hydraulics.surface_skim_pct)     : '30',
+    bottom_drain_pct:     hydraulics?.bottom_drain_pct     != null ? String(hydraulics.bottom_drain_pct)     : '70',
+    notes:               hydraulics?.notes || '',
+  };
+
+  const opVol   = parseFloat(tank?.design_volume_m3) || 0;
+  const turnover = parseFloat(src.target_turnover_rate) || 0;
+  const skimPct  = parseFloat(src.surface_skim_pct) || 0;
+  const drainPct = parseFloat(src.bottom_drain_pct) || 0;
+
+  const totalM3h  = opVol > 0 && turnover > 0 ? opVol * turnover : null;
+  const totalLmin = totalM3h != null ? totalM3h * 1000 / 60 : null;
+  const skimM3h   = totalM3h != null ? totalM3h * skimPct / 100 : null;
+  const skimLmin  = skimM3h  != null ? skimM3h  * 1000 / 60 : null;
+  const drainM3h  = totalM3h != null ? totalM3h * drainPct / 100 : null;
+  const drainLmin = drainM3h != null ? drainM3h * 1000 / 60 : null;
+  const splitOk   = Math.abs(skimPct + drainPct - 100) < 0.01;
+
+  // Total biomass from species
+  const totalBiomass = species.reduce((s, sp) => {
+    return s + (parseFloat(sp.biomass_kg) || 0) * (parseFloat(sp.quantity) || 0);
+  }, 0);
+
+  const handleSave = async () => {
+    if (!form.target_turnover_rate) return toast.error('Enter a target turnover rate');
+    if (!splitOk) return toast.error('Surface skim % + bottom drain % must total 100');
+    setSaving(true);
+    try {
+      await api.put(`/design-books/${bookId}/exhibits/${exhibitId}/hydraulics`, {
+        target_turnover_rate: parseFloat(form.target_turnover_rate),
+        surface_skim_pct:     parseFloat(form.surface_skim_pct),
+        bottom_drain_pct:     parseFloat(form.bottom_drain_pct),
+        notes:               form.notes || null,
+      });
+      toast.success('Water flow saved');
+      setEditing(false);
+      onRefresh();
+    } catch {
+      toast.error('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = () => {
+    setForm({
+      target_turnover_rate: hydraulics?.target_turnover_rate != null ? String(hydraulics.target_turnover_rate) : '',
+      surface_skim_pct:     hydraulics?.surface_skim_pct     != null ? String(hydraulics.surface_skim_pct)     : '30',
+      bottom_drain_pct:     hydraulics?.bottom_drain_pct     != null ? String(hydraulics.bottom_drain_pct)     : '70',
+      notes:               hydraulics?.notes || '',
+    });
+    setEditing(true);
+  };
+
+  const fmtFlow = (v: number | null, decimals = 2) =>
+    v != null ? v.toFixed(decimals) : '—';
+
+  const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30';
+
+  return (
+    <div className="space-y-5">
+      {/* Context banner — volume + biomass from other tabs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Operating Volume', value: opVol > 0 ? `${opVol.toFixed(3)} m³` : '—', sub: 'from tank dimensions', color: 'blue' },
+          { label: 'Total Biomass', value: totalBiomass > 0 ? `${totalBiomass.toFixed(2)} kg` : '—', sub: `${species.length} species`, color: 'emerald' },
+          { label: 'Turnover Rate', value: turnover > 0 ? `${turnover}×/h` : '—', sub: 'target', color: 'violet' },
+          { label: 'Required Flow', value: totalLmin != null ? `${fmtFlow(totalLmin)} L/min` : '—', sub: totalM3h != null ? `${fmtFlow(totalM3h)} m³/h` : 'set turnover to calculate', color: 'amber' },
+        ].map(c => (
+          <div key={c.label} className={`bg-white rounded-xl border border-stone-200 px-4 py-3`}>
+            <p className="text-xs text-stone-400 mb-0.5">{c.label}</p>
+            <p className={`text-lg font-bold ${c.color === 'blue' ? 'text-blue-700' : c.color === 'emerald' ? 'text-emerald-700' : c.color === 'violet' ? 'text-violet-700' : 'text-amber-700'}`}>{c.value}</p>
+            <p className="text-xs text-stone-400 mt-0.5">{c.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        {/* Left — inputs */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-blue-50/30">
+            <div className="flex items-center gap-2">
+              <Gauge className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-semibold text-blue-800">Flow Parameters</span>
+            </div>
+            {!editing ? (
+              <button onClick={handleEdit}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-white rounded-md px-2.5 py-1 transition-colors">
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <button onClick={handleSave} disabled={saving}
+                  className="flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2.5 py-1 transition-colors disabled:opacity-50">
+                  <Save className="w-3 h-3" /> {saving ? 'Saving…' : 'Save'}
+                </button>
+                <button onClick={() => setEditing(false)}
+                  className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 bg-white rounded-md px-2 py-1">
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1.5">
+                Target Turnover Rate <span className="text-stone-400 font-normal">(×/hour)</span>
+              </label>
+              {editing ? (
+                <input type="number" step="0.5" min="0" placeholder="e.g. 5"
+                  value={form.target_turnover_rate} onChange={e => setF('target_turnover_rate', e.target.value)}
+                  className={inputCls} autoFocus />
+              ) : (
+                <p className="text-2xl font-bold text-blue-700">
+                  {hydraulics?.target_turnover_rate != null ? `${hydraulics.target_turnover_rate}×` : <span className="text-stone-300 text-base font-normal">Not set</span>}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1.5">Flow Split</label>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <ArrowUpToLine className="w-4 h-4 text-sky-500 shrink-0" />
+                  <span className="text-xs text-stone-500 w-28 shrink-0">Surface Skim</span>
+                  {editing ? (
+                    <input type="number" step="5" min="0" max="100"
+                      value={form.surface_skim_pct} onChange={e => setF('surface_skim_pct', e.target.value)}
+                      className="w-20 border border-stone-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  ) : (
+                    <span className="text-sm font-semibold text-stone-700">{src.surface_skim_pct}%</span>
+                  )}
+                  {skimLmin != null && <span className="text-xs font-mono text-sky-600 ml-auto">{fmtFlow(skimLmin)} L/min</span>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <ArrowDownToLine className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span className="text-xs text-stone-500 w-28 shrink-0">Bottom Drain</span>
+                  {editing ? (
+                    <input type="number" step="5" min="0" max="100"
+                      value={form.bottom_drain_pct} onChange={e => setF('bottom_drain_pct', e.target.value)}
+                      className="w-20 border border-stone-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  ) : (
+                    <span className="text-sm font-semibold text-stone-700">{src.bottom_drain_pct}%</span>
+                  )}
+                  {drainLmin != null && <span className="text-xs font-mono text-indigo-600 ml-auto">{fmtFlow(drainLmin)} L/min</span>}
+                </div>
+                {editing && !splitOk && (
+                  <p className="text-xs text-red-500">Surface + drain must total 100% (currently {skimPct + drainPct}%)</p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1.5">Design Rationale / Notes</label>
+              {editing ? (
+                <textarea rows={3} placeholder="Species requirements, references, assumptions…"
+                  value={form.notes} onChange={e => setF('notes', e.target.value)}
+                  className={`${inputCls} resize-none`} />
+              ) : (
+                <p className="text-sm text-stone-600 whitespace-pre-wrap">
+                  {hydraulics?.notes || <span className="text-stone-300 italic">No notes</span>}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right — calculated results */}
+        <div className="lg:col-span-3 space-y-5">
+          {/* Flow breakdown */}
+          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
+              <Wind className="w-4 h-4 text-stone-500" />
+              <span className="text-sm font-semibold text-stone-700">Flow Rate Breakdown</span>
+              {!opVol && <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 ml-auto">Assign a tank to calculate</span>}
+              {opVol > 0 && !turnover && <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 ml-auto">Set turnover rate to calculate</span>}
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-stone-50/60">
+                <tr>
+                  <th className="text-left px-5 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">Stream</th>
+                  <th className="text-right px-4 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">m³/h</th>
+                  <th className="text-right px-4 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">L/min</th>
+                  <th className="text-right px-5 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">L/s</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: 'Total Return Flow', icon: <Gauge className="w-3.5 h-3.5 text-amber-500" />, m3h: totalM3h, lmin: totalLmin, cls: 'font-semibold text-stone-800' },
+                  { label: 'Surface Skimmer Box', icon: <ArrowUpToLine className="w-3.5 h-3.5 text-sky-500" />, m3h: skimM3h, lmin: skimLmin, cls: 'text-stone-700' },
+                  { label: 'Bottom Drain', icon: <ArrowDownToLine className="w-3.5 h-3.5 text-indigo-500" />, m3h: drainM3h, lmin: drainLmin, cls: 'text-stone-700' },
+                ].map(row => (
+                  <tr key={row.label} className="border-t border-stone-100">
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2">
+                        {row.icon}
+                        <span className={row.cls}>{row.label}</span>
+                      </div>
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono ${row.cls}`}>{fmtFlow(row.m3h, 3)}</td>
+                    <td className={`px-4 py-3 text-right font-mono ${row.cls}`}>{fmtFlow(row.lmin, 1)}</td>
+                    <td className={`px-5 py-3 text-right font-mono text-stone-500`}>
+                      {row.m3h != null ? (row.m3h * 1000 / 3600).toFixed(2) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* AAT Reference */}
+          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-stone-400" />
+              <span className="text-sm font-semibold text-stone-600">AAT Turnover Rate Reference</span>
+              <span className="text-xs text-stone-400 ml-1">(×/hour)</span>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-stone-50/40">
+                <tr>
+                  <th className="text-left px-5 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">Exhibit Type</th>
+                  <th className="text-right px-4 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">Rate ×/h</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide hidden sm:table-cell">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {AAT_REFERENCE.map(r => (
+                  <tr key={r.category} className="border-t border-stone-100 hover:bg-stone-50/50">
+                    <td className="px-5 py-2.5 text-stone-700">{r.category}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-blue-700">{r.rate}</td>
+                    <td className="px-4 py-2.5 text-stone-400 text-xs hidden sm:table-cell">{r.notes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ExhibitDetail() {
   const { bookId, exhibitId } = useParams<{ bookId: string; exhibitId: string }>();
   const qc = useQueryClient();
+
+  const [activeTab, setActiveTab] = useState<'tank' | 'species' | 'flow'>('tank');
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', bookId],
@@ -856,13 +1136,21 @@ export default function ExhibitDetail() {
   const exhibits: any[] = book.exhibits || [];
   const tanks: any[] = book.tanks || [];
   const allSpecies: any[] = book.species || [];
+  const allHydraulics: any[] = book.hydraulics || [];
 
   const exhibit = exhibits.find((e: any) => e.id === exhibitId);
   if (!exhibit) return <div className="p-10 text-center text-stone-500">Exhibit not found.</div>;
 
   const tank = tanks.find((t: any) => t.exhibit_id === exhibitId);
   const species = allSpecies.filter((s: any) => s.exhibit_id === exhibitId);
+  const hydraulics = allHydraulics.find((h: any) => h.exhibit_id === exhibitId) ?? null;
   const unassigned = tanks.filter((t: any) => !t.exhibit_id);
+
+  const TABS = [
+    { id: 'tank',    label: 'Tank',       icon: <Layers   className="w-3.5 h-3.5" /> },
+    { id: 'species', label: 'Species',    icon: <Fish     className="w-3.5 h-3.5" />, badge: species.length || undefined },
+    { id: 'flow',    label: 'Water Flow', icon: <Gauge    className="w-3.5 h-3.5" /> },
+  ] as const;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -878,7 +1166,7 @@ export default function ExhibitDetail() {
       </nav>
 
       {/* Exhibit Header */}
-      <div className="bg-white rounded-2xl border border-stone-200 px-6 py-5 mb-6 shadow-sm">
+      <div className="bg-white rounded-2xl border border-stone-200 px-6 py-5 mb-5 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
@@ -930,47 +1218,67 @@ export default function ExhibitDetail() {
         </div>
       </div>
 
-      {/* Content: Tank + Species stacked */}
-      <div className="space-y-5">
-        {/* Tank Section */}
-        <div>
-          <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
-            Display Tank
-          </h2>
-          {tank ? (
-            <TankCard tank={tank} onRefresh={refresh} />
-          ) : (
-            book.project_id ? (
-              <AssignTankPanel
-                exhibit={exhibit}
-                projectId={book.project_id}
-                unassigned={unassigned}
-                onRefresh={refresh}
-              />
-            ) : (
-              <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
-                <FolderOpen className="w-8 h-8 text-stone-200 mx-auto mb-2" />
-                <p className="text-stone-400 text-sm">No tank assigned. Link a project to this design book to manage tanks.</p>
-              </div>
-            )
-          )}
-        </div>
+      {/* Tab Bar */}
+      <div className="flex items-center gap-1 border-b border-stone-200 mb-6">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === tab.id
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+            {'badge' in tab && tab.badge ? (
+              <span className={`text-xs rounded-full px-1.5 py-0.5 ${activeTab === tab.id ? 'bg-blue-100 text-blue-700' : 'bg-stone-100 text-stone-500'}`}>
+                {tab.badge}
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
 
-        {/* Species Section */}
-        <div>
-          <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-            Species Allocation
-          </h2>
-          <SpeciesSection
-            bookId={book.id}
-            exhibitId={exhibitId!}
-            species={species}
+      {/* Tab Content */}
+      {activeTab === 'tank' && (
+        tank ? (
+          <TankCard tank={tank} onRefresh={refresh} />
+        ) : book.project_id ? (
+          <AssignTankPanel
+            exhibit={exhibit}
+            projectId={book.project_id}
+            unassigned={unassigned}
             onRefresh={refresh}
           />
-        </div>
-      </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-stone-200 py-14 text-center">
+            <FolderOpen className="w-8 h-8 text-stone-200 mx-auto mb-2" />
+            <p className="text-stone-400 text-sm">No tank assigned. Link a project to this design book to manage tanks.</p>
+          </div>
+        )
+      )}
+
+      {activeTab === 'species' && (
+        <SpeciesSection
+          bookId={book.id}
+          exhibitId={exhibitId!}
+          species={species}
+          onRefresh={refresh}
+        />
+      )}
+
+      {activeTab === 'flow' && (
+        <WaterFlowTab
+          bookId={book.id}
+          exhibitId={exhibitId!}
+          tank={tank}
+          species={species}
+          hydraulics={hydraulics}
+          onRefresh={refresh}
+        />
+      )}
     </div>
   );
 }
