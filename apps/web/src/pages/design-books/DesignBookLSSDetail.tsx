@@ -261,6 +261,7 @@ export default function DesignBookLSSDetail() {
 
     const newTurnoverHr   = totalVol / totalFlow;
     const sys             = systemRef.current;
+    if (!sys) return;
     const currentFlow     = parseFloat(sys?.design_flow_m3h)  || 0;
     const currentTurnover = parseFloat(sys?.turnover_rate_hr) || 0;
 
