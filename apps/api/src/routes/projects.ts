@@ -682,6 +682,65 @@ router.post('/systems/:id/duplicate', authenticate, async (req: AuthRequest, res
   res.status(201).json(result.rows[0]);
 });
 
+// SYSTEM ↔ EXHIBIT LINKS
+router.get('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT sel.*, e.exhibit_code, e.exhibit_name, e.water_type as exhibit_water_type
+     FROM system_exhibit_links sel
+     JOIN exhibits e ON sel.exhibit_id = e.id
+     WHERE sel.system_id = $1
+     ORDER BY sel.sort_order, e.exhibit_code`,
+    [req.params.id]
+  );
+  res.json(result.rows);
+});
+
+router.post('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest, res: Response) => {
+  const { exhibit_id, link_type, flow_allocation_m3h, notes, sort_order } = req.body;
+  if (!exhibit_id) return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id is required' } });
+  try {
+    const result = await query(
+      `INSERT INTO system_exhibit_links (system_id, exhibit_id, link_type, flow_allocation_m3h, notes, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING *`,
+      [req.params.id, exhibit_id, link_type || 'Primary', flow_allocation_m3h ?? null, notes || null, sort_order ?? 0]
+    );
+    const enriched = await query(
+      `SELECT sel.*, e.exhibit_code, e.exhibit_name, e.water_type as exhibit_water_type
+       FROM system_exhibit_links sel JOIN exhibits e ON sel.exhibit_id = e.id WHERE sel.id = $1`,
+      [result.rows[0].id]
+    );
+    res.status(201).json(enriched.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'This exhibit is already linked to the system.' } });
+    throw err;
+  }
+});
+
+router.put('/systems/:id/exhibit-links/:linkId', authenticate, async (req: AuthRequest, res: Response) => {
+  const { link_type, flow_allocation_m3h, notes } = req.body;
+  const result = await query(
+    `UPDATE system_exhibit_links SET link_type=$1, flow_allocation_m3h=$2, notes=$3 WHERE id=$4 AND system_id=$5 RETURNING *`,
+    [link_type || 'Primary', flow_allocation_m3h ?? null, notes || null, req.params.linkId, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Link not found' } });
+  const enriched = await query(
+    `SELECT sel.*, e.exhibit_code, e.exhibit_name, e.water_type as exhibit_water_type
+     FROM system_exhibit_links sel JOIN exhibits e ON sel.exhibit_id = e.id WHERE sel.id = $1`,
+    [result.rows[0].id]
+  );
+  res.json(enriched.rows[0]);
+});
+
+router.delete('/systems/:id/exhibit-links/:linkId', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    'DELETE FROM system_exhibit_links WHERE id=$1 AND system_id=$2 RETURNING id',
+    [req.params.linkId, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Link not found' } });
+  res.json({ deleted: true });
+});
+
 // EQUIPMENT ITEMS (direct product-to-project/system relationship)
 router.post('/equipment-items', authenticate, async (req: AuthRequest, res: Response) => {
   const { equip_code, project_id, system_id, product_master_id, component_id, description, quantity, unit, notes, status } = req.body;

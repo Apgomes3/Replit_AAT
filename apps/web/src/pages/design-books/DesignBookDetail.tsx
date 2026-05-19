@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -249,8 +249,113 @@ function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
   );
 }
 
-// ─── LSS Tab ────────────────────────────────────────────────────────────────
-function LSSTab({ book }: { book: any }) {
+// ─── LSS Tab + New LSS Modal ─────────────────────────────────────────────────
+const SYSTEM_TYPES_LIST = [
+  'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
+  'Ozone', 'Heating', 'Chilling', 'Skimming', 'Carbon Dosing', 'Denitrification', 'Other',
+];
+
+function NewLSSModal({ projectId, bookId, onClose, onCreated }: {
+  projectId: string;
+  bookId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({
+    system_code: '', system_name: '', system_type: 'Life Support',
+    water_type: 'Marine', design_flow_m3h: '', turnover_rate_hr: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.system_code.trim() || !form.system_name.trim()) {
+      return toast.error('System code and name are required');
+    }
+    setSaving(true);
+    try {
+      const res = await api.post('/systems', {
+        system_code: form.system_code.trim().toUpperCase(),
+        system_name: form.system_name.trim(),
+        system_type: form.system_type || null,
+        water_type:  form.water_type  || null,
+        project_id:  projectId,
+        design_flow_m3h:  form.design_flow_m3h  ? parseFloat(form.design_flow_m3h)  : null,
+        turnover_rate_hr: form.turnover_rate_hr ? parseFloat(form.turnover_rate_hr) : null,
+      });
+      toast.success('Life support system created');
+      onCreated();
+      navigate(`/design-books/${bookId}/lss/${res.data.id}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to create');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 bg-white';
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-600" />
+            <span className="font-semibold text-stone-800">New Life Support System</span>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-1 rounded-lg"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">System Code</label>
+              <input placeholder="e.g. SYS-LSS-01"
+                value={form.system_code} onChange={e => set('system_code', e.target.value.toUpperCase())}
+                className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Type</label>
+              <select value={form.system_type} onChange={e => set('system_type', e.target.value)} className={inputCls}>
+                {SYSTEM_TYPES_LIST.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">System Name</label>
+            <input placeholder="e.g. Shark Tank Primary Filtration System"
+              value={form.system_name} onChange={e => set('system_name', e.target.value)}
+              className={inputCls} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Water Type</label>
+              <select value={form.water_type} onChange={e => set('water_type', e.target.value)} className={inputCls}>
+                {['Marine', 'Freshwater', 'Brackish', 'Salt Water', 'Blackwater'].map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Design Flow (m³/h)</label>
+              <input type="number" step="0.1" min="0" placeholder="e.g. 500"
+                value={form.design_flow_m3h} onChange={e => set('design_flow_m3h', e.target.value)}
+                className={inputCls} />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-stone-100 bg-stone-50/50">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-stone-500 border border-stone-200 bg-white rounded-lg">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50">
+            <Check className="w-3.5 h-3.5" /> {saving ? 'Creating…' : 'Create & Open'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
+  const navigate = useNavigate();
   const systems: any[] = book.systems || [];
 
   if (!book.project_id) {
@@ -311,12 +416,20 @@ function LSSTab({ book }: { book: any }) {
             <span className="text-sm font-semibold text-stone-700">Life Support Systems</span>
             <span className="text-xs bg-blue-50 text-blue-700 rounded-full px-1.5 py-0.5">{systems.length}</span>
           </div>
-          <Link
-            to={`/projects/${book.project_id}`}
-            className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors flex items-center gap-1"
-          >
-            <FolderOpen className="w-3 h-3" /> View in Project
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onNewLSS}
+              className="flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2.5 py-1.5 transition-colors"
+            >
+              <Plus className="w-3 h-3" /> New LSS
+            </button>
+            <Link
+              to={`/projects/${book.project_id}`}
+              className="text-xs text-stone-500 hover:text-blue-600 font-medium transition-colors flex items-center gap-1 border border-stone-200 bg-white rounded-md px-2.5 py-1.5"
+            >
+              <FolderOpen className="w-3 h-3" /> View in Project
+            </Link>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -325,27 +438,26 @@ function LSSTab({ book }: { book: any }) {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">System Name</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Type</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Exhibit</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Flow m³/h</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Turnover h</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Equipment</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Status</th>
+                <th className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody>
               {systems.map((sys: any) => (
-                <tr key={sys.id} className="border-t border-stone-100 hover:bg-blue-50/20 transition-colors">
+                <tr
+                  key={sys.id}
+                  onClick={() => navigate(`/design-books/${book.id}/lss/${sys.id}`)}
+                  className="border-t border-stone-100 hover:bg-blue-50/40 cursor-pointer transition-colors group"
+                >
                   <td className="px-4 py-2.5">
                     <span className="font-mono text-xs text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded">{sys.system_code}</span>
                   </td>
-                  <td className="px-4 py-2.5 font-medium text-stone-800">{sys.system_name}</td>
+                  <td className="px-4 py-2.5 font-medium text-stone-800 group-hover:text-blue-700">{sys.system_name}</td>
                   <td className="px-4 py-2.5"><SystemTypeBadge type={sys.system_type} /></td>
-                  <td className="px-4 py-2.5">
-                    {sys.exhibit_code
-                      ? <span className="text-xs text-stone-600"><span className="font-mono text-stone-400">{sys.exhibit_code}</span> {sys.exhibit_name}</span>
-                      : <span className="text-stone-400 text-xs">—</span>}
-                  </td>
                   <td className="px-4 py-2.5"><WaterTypeBadge type={sys.water_type} /></td>
                   <td className="px-4 py-2.5 text-right">{fmtNum(sys.design_flow_m3h)}</td>
                   <td className="px-4 py-2.5 text-right">{fmtNum(sys.turnover_rate_hr)}</td>
@@ -355,6 +467,9 @@ function LSSTab({ book }: { book: any }) {
                       : <span className="text-stone-400 text-xs">—</span>}
                   </td>
                   <td className="px-4 py-2.5"><StatusBadge status={sys.status} /></td>
+                  <td className="px-4 py-2.5 text-right">
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-blue-400 inline-block" />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -904,11 +1019,13 @@ export default function DesignBookDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>('exhibits');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>((searchParams.get('tab') as Tab) || 'exhibits');
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [showNewExhibit, setShowNewExhibit] = useState(false);
+  const [showNewLSS, setShowNewLSS] = useState(false);
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', id],
@@ -991,6 +1108,15 @@ export default function DesignBookDetail() {
           projectId={book.project_id}
           onClose={() => setShowNewExhibit(false)}
           onCreated={() => { setShowNewExhibit(false); refresh(); }}
+        />
+      )}
+      {/* New LSS Modal */}
+      {showNewLSS && book.project_id && (
+        <NewLSSModal
+          projectId={book.project_id}
+          bookId={book.id}
+          onClose={() => setShowNewLSS(false)}
+          onCreated={() => { setShowNewLSS(false); refresh(); }}
         />
       )}
 
@@ -1140,7 +1266,7 @@ export default function DesignBookDetail() {
         />
       )}
 
-      {tab === 'lss' && <LSSTab book={book} />}
+      {tab === 'lss' && <LSSTab book={book} onNewLSS={() => setShowNewLSS(true)} />}
 
       {tab === 'piping' && (
         <div className="bg-white rounded-2xl border border-stone-200 border-dashed py-20 text-center">

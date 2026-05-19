@@ -899,6 +899,21 @@ CREATE TABLE IF NOT EXISTS design_book_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_db_versions_book ON design_book_versions(design_book_id);
 
+-- SYSTEM EXHIBIT LINKS: many-to-many systems ↔ exhibits with ruleset
+CREATE TABLE IF NOT EXISTS system_exhibit_links (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_id           UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  exhibit_id          UUID NOT NULL REFERENCES exhibits(id) ON DELETE CASCADE,
+  link_type           VARCHAR(100) DEFAULT 'Primary',
+  flow_allocation_m3h NUMERIC,
+  notes               TEXT,
+  sort_order          INTEGER DEFAULT 0,
+  created_at          TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(system_id, exhibit_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sel_system  ON system_exhibit_links(system_id);
+CREATE INDEX IF NOT EXISTS idx_sel_exhibit ON system_exhibit_links(exhibit_id);
+
 -- SUBSTRATE: height-based volume calculation fields
 ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS substrate_height_mm NUMERIC;
 ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS theming_height_mm NUMERIC;
