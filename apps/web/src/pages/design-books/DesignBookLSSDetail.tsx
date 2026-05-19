@@ -334,8 +334,20 @@ export default function DesignBookLSSDetail() {
   const linkedExhibitIds = new Set((links as any[]).map((l: any) => l.exhibit_id));
   const availableExhibits = exhibits.filter((ex: any) => !linkedExhibitIds.has(ex.id));
 
-  const totalAllocatedFlow = (links as any[]).reduce((s, l: any) => s + (parseFloat(l.flow_allocation_m3h) || 0), 0);
   const systemFlow = parseFloat(system.design_flow_m3h) || 0;
+
+  // Compute design flow for each linked exhibit from hydraulics + tank volumes
+  const exhibitFlowMap = new Map<string, number | null>();
+  (links as any[]).forEach((l: any) => {
+    const hydr    = (book?.hydraulics || []).find((h: any) => h.exhibit_id === l.exhibit_id);
+    const exTanks = (book?.tanks      || []).filter((t: any) => t.exhibit_id === l.exhibit_id);
+    const opVol   = exTanks.reduce((s: number, t: any) =>
+      s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
+    const rate    = parseFloat(hydr?.target_turnover_rate) || 0;
+    exhibitFlowMap.set(l.exhibit_id, opVol > 0 && rate > 0 ? opVol * rate : null);
+  });
+  const totalCalculatedFlow = [...exhibitFlowMap.values()]
+    .reduce((s, f) => s + (f ?? 0), 0);
 
   const setEF = (k: string, v: string) => setEditForm((f: any) => ({ ...f, [k]: v }));
   const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40';
@@ -527,9 +539,10 @@ export default function DesignBookLSSDetail() {
             <GitBranch className="w-4 h-4 text-blue-600" />
             <span className="text-sm font-semibold text-blue-800">Linked Exhibits</span>
             <span className="text-xs bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5">{(links as any[]).length}</span>
-            {totalAllocatedFlow > 0 && systemFlow > 0 && (
+            {totalCalculatedFlow > 0 && (
               <span className="text-xs text-stone-500 ml-2">
-                {totalAllocatedFlow.toFixed(1)} / {systemFlow.toFixed(1)} m³/h allocated
+                {totalCalculatedFlow.toFixed(1)} m³/h total
+                {systemFlow > 0 && ` · design ${systemFlow.toFixed(1)} m³/h`}
               </span>
             )}
           </div>
@@ -558,7 +571,7 @@ export default function DesignBookLSSDetail() {
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Exhibit</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Link Type</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Flow Alloc. m³/h</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Design Flow m³/h</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Notes</th>
                   <th className="px-4 py-2.5" />
                 </tr>
@@ -579,9 +592,12 @@ export default function DesignBookLSSDetail() {
                       <LinkTypeBadge type={link.link_type} />
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-sm text-stone-700">
-                      {link.flow_allocation_m3h != null
-                        ? parseFloat(link.flow_allocation_m3h).toFixed(1)
-                        : <span className="text-stone-400">—</span>}
+                      {(() => {
+                        const f = exhibitFlowMap.get(link.exhibit_id);
+                        return f != null
+                          ? <span>{f.toFixed(1)}</span>
+                          : <span className="text-stone-300 text-xs">no hydraulics</span>;
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-stone-500 max-w-xs">
                       {link.notes
@@ -606,14 +622,15 @@ export default function DesignBookLSSDetail() {
                 ))}
               </tbody>
             </table>
-            {totalAllocatedFlow > 0 && (
+            {totalCalculatedFlow > 0 && (
               <div className="border-t-2 border-stone-200 bg-stone-50/60 px-4 py-2 flex items-center justify-end gap-4 text-xs">
-                <span className="text-stone-500">Total allocated flow</span>
-                <span className="font-mono font-semibold text-stone-700">{totalAllocatedFlow.toFixed(1)} m³/h</span>
+                <span className="text-stone-500">Total exhibit flow</span>
+                <span className="font-mono font-semibold text-cyan-700">{totalCalculatedFlow.toFixed(1)} m³/h</span>
                 {systemFlow > 0 && (
                   <>
-                    <span className="text-stone-400">of</span>
-                    <span className="font-mono font-semibold text-blue-700">{systemFlow.toFixed(1)} m³/h design</span>
+                    <span className="text-stone-400">·</span>
+                    <span className="text-stone-500">system design</span>
+                    <span className="font-mono font-semibold text-blue-700">{systemFlow.toFixed(1)} m³/h</span>
                   </>
                 )}
               </div>
