@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
 import {
@@ -227,6 +227,61 @@ export default function DesignBookLSSDetail() {
     qc.invalidateQueries({ queryKey: ['system-exhibit-links', systemId] });
     qc.invalidateQueries({ queryKey: ['design-book', bookId] });
   };
+
+  // Stable key that only changes when the set of linked exhibit IDs changes
+  const linksSignature = useMemo(
+    () => (links as any[]).map((l: any) => l.exhibit_id).sort().join(','),
+    [links],
+  );
+
+  // Ref so the effect can read latest system without being in its deps
+  const systemRef = useRef<any>(null);
+  if (system) systemRef.current = system;
+
+  // Auto-sync design_flow + turnover_rate whenever linked exhibits change
+  useEffect(() => {
+    if (!linksSignature || !book) return;
+    const currentLinks = links as any[];
+    if (currentLinks.length === 0) return;
+
+    let totalFlow = 0;
+    let totalVol  = 0;
+    for (const l of currentLinks) {
+      const hydr    = (book.hydraulics || []).find((h: any) => h.exhibit_id === l.exhibit_id);
+      const exTanks = (book.tanks      || []).filter((t: any) => t.exhibit_id === l.exhibit_id);
+      const opVol   = exTanks.reduce((s: number, t: any) =>
+        s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
+      const rate    = parseFloat(hydr?.target_turnover_rate) || 0;
+      if (opVol > 0 && rate > 0) {
+        totalFlow += opVol * rate;
+        totalVol  += opVol;
+      }
+    }
+    if (totalFlow <= 0 || totalVol <= 0) return;
+
+    const newTurnoverHr   = totalVol / totalFlow;
+    const sys             = systemRef.current;
+    const currentFlow     = parseFloat(sys?.design_flow_m3h)  || 0;
+    const currentTurnover = parseFloat(sys?.turnover_rate_hr) || 0;
+
+    if (Math.abs(totalFlow - currentFlow) < 0.005 && Math.abs(newTurnoverHr - currentTurnover) < 0.0005) return;
+
+    api.put(`/systems/${systemId}`, {
+      system_code:         sys.system_code,
+      system_name:         sys.system_name,
+      system_type:         sys.system_type         || null,
+      water_type:          sys.water_type          || null,
+      status:              sys.status,
+      duty_description:    sys.duty_description    || null,
+      redundancy_strategy: sys.redundancy_strategy || null,
+      design_flow_m3h:  totalFlow,
+      turnover_rate_hr: newTurnoverHr,
+    }).then(() => {
+      qc.invalidateQueries({ queryKey: ['system', systemId] });
+      qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linksSignature, book]);
 
   // System edit state
   const [editMode, setEditMode]   = useState(false);
