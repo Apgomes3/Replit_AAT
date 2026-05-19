@@ -377,13 +377,13 @@ async function seed() {
 
     // Documents
     await client.query(`
-      INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, system_id, status, created_by) VALUES
-        ('DOC-PID-SHARK-01', 'Shark LSS P&ID - Primary Filtration', 'PID', 'Mechanical', $1, $2, 'Draft', $3),
-        ('DOC-CALC-SHARK-01', 'Shark LSS Turnover Calculation', 'Calculation', 'Mechanical', $1, $2, 'Approved', $3),
-        ('DOC-SPEC-LSS-001', 'Life Support System Specification', 'Specification', 'Mechanical', $1, NULL, 'Released', $3),
-        ('DOC-DRW-TANK-SHARK-01', 'Shark Tank General Arrangement', 'Drawing', 'Structural', $1, NULL, 'Draft', $3)
+      INSERT INTO documents (document_code, document_title, document_type, discipline, system_id, status, created_by) VALUES
+        ('DOC-PID-SHARK-01', 'Shark LSS P&ID - Primary Filtration', 'PID', 'Mechanical', $1, 'Draft', $2),
+        ('DOC-CALC-SHARK-01', 'Shark LSS Turnover Calculation', 'Calculation', 'Mechanical', $1, 'Approved', $2),
+        ('DOC-SPEC-LSS-001', 'Life Support System Specification', 'Specification', 'Mechanical', NULL, 'Released', $2),
+        ('DOC-DRW-TANK-SHARK-01', 'Shark Tank General Arrangement', 'Drawing', 'Structural', NULL, 'Draft', $2)
       ON CONFLICT DO NOTHING
-    `, [projId, sys1Id, adminId]);
+    `, [sys1Id, adminId]);
 
     // Document Revisions
     const doc1Res = await client.query(`SELECT id FROM documents WHERE document_code='DOC-PID-SHARK-01'`);

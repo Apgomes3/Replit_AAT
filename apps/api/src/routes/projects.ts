@@ -481,7 +481,13 @@ router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id } = req.body;
+  const {
+    tank_code, tank_name, tank_type, shape_type,
+    length_mm, width_mm, height_mm, design_water_level_mm,
+    primary_material, status, notes, quantity,
+    gross_volume_m3, operating_volume_m3, system_id, exhibit_id,
+    material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm,
+  } = req.body;
   if (!tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
   const l = length_mm ? parseFloat(length_mm) : null;
   const w = width_mm ? parseFloat(width_mm) : null;
@@ -507,17 +513,25 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
       length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
       gross_volume_m3=$9, operating_volume_m3=$10,
       primary_material=$11, status=$12, notes=$13, quantity=$14,
-      system_id=$15, ${hasExhibit ? 'exhibit_id=$17,' : ''} updated_at=NOW()
-    WHERE id=$16 RETURNING *`,
+      system_id=$15, material_id=$16, wall_thickness_mm=$17,
+      inner_length_mm=$18, inner_width_mm=$19, inner_height_mm=$20,
+      ${hasExhibit ? 'exhibit_id=$22,' : ''} updated_at=NOW()
+    WHERE id=$21 RETURNING *`,
     hasExhibit
       ? [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
          l, w, h, wl, calcGross, calcOp,
          primary_material || null, status || 'Active', notes || null, qty,
-         system_id || null, req.params.id, exhibit_id || null]
+         system_id || null,
+         material_id || null, wall_thickness_mm ?? null,
+         inner_length_mm ?? null, inner_width_mm ?? null, inner_height_mm ?? null,
+         req.params.id, exhibit_id || null]
       : [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
          l, w, h, wl, calcGross, calcOp,
          primary_material || null, status || 'Active', notes || null, qty,
-         system_id || null, req.params.id]);
+         system_id || null,
+         material_id || null, wall_thickness_mm ?? null,
+         inner_length_mm ?? null, inner_width_mm ?? null, inner_height_mm ?? null,
+         req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
 });

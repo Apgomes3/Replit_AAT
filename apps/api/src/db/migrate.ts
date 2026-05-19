@@ -898,6 +898,13 @@ CREATE TABLE IF NOT EXISTS design_book_versions (
   UNIQUE(design_book_id, version_number)
 );
 CREATE INDEX IF NOT EXISTS idx_db_versions_book ON design_book_versions(design_book_id);
+
+-- TANKS: additional design fields (added after initial schema)
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS material_id UUID REFERENCES materials(id);
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS wall_thickness_mm NUMERIC;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_length_mm NUMERIC;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_width_mm NUMERIC;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_height_mm NUMERIC;
 `;
 
 async function migrate() {

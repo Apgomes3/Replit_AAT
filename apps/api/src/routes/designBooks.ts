@@ -59,6 +59,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
         e.exhibit_name, e.water_type as exhibit_water_type,
         s.system_code, s.system_name,
         pm.product_code, pm.product_name as product_name,
+        mat.material_code, mat.material_name,
         COALESCE(t.shape_type, pm.shape_type) as eff_shape,
         COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
         COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
@@ -98,6 +99,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
        LEFT JOIN exhibits e ON t.exhibit_id = e.id
        LEFT JOIN systems s ON t.system_id = s.id
        LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+       LEFT JOIN materials mat ON t.material_id = mat.id
        WHERE t.project_id = $1
        ORDER BY e.exhibit_code NULLS LAST, t.sort_order, t.tank_code`,
       [row.project_id]
