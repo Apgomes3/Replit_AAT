@@ -59,7 +59,6 @@ function AddExhibitModal({ systemId, availableExhibits, onClose, onAdded }: {
   const [form, setForm] = useState({
     exhibit_id: availableExhibits[0]?.id || '',
     link_type: 'Primary',
-    flow_allocation_m3h: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -73,7 +72,6 @@ function AddExhibitModal({ systemId, availableExhibits, onClose, onAdded }: {
       await api.post(`/systems/${systemId}/exhibit-links`, {
         exhibit_id: form.exhibit_id,
         link_type:  form.link_type,
-        flow_allocation_m3h: form.flow_allocation_m3h ? parseFloat(form.flow_allocation_m3h) : null,
         notes: form.notes || null,
       });
       toast.success('Exhibit linked');
@@ -118,12 +116,6 @@ function AddExhibitModal({ systemId, availableExhibits, onClose, onAdded }: {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1">Flow Allocation (m³/h) <span className="text-stone-400 font-normal">optional</span></label>
-            <input type="number" step="0.1" min="0" placeholder="e.g. 120.0"
-              value={form.flow_allocation_m3h} onChange={e => set('flow_allocation_m3h', e.target.value)}
-              className={inputCls} />
-          </div>
-          <div>
             <label className="block text-xs font-medium text-stone-500 mb-1">Notes <span className="text-stone-400 font-normal">optional</span></label>
             <textarea rows={2} placeholder="Rule set notes, design conditions, constraints…"
               value={form.notes} onChange={e => set('notes', e.target.value)}
@@ -153,7 +145,6 @@ function EditLinkModal({ link, systemId, onClose, onSaved }: {
 }) {
   const [form, setForm] = useState({
     link_type:           link.link_type || 'Primary',
-    flow_allocation_m3h: link.flow_allocation_m3h != null ? String(link.flow_allocation_m3h) : '',
     notes:               link.notes || '',
   });
   const [saving, setSaving] = useState(false);
@@ -164,7 +155,6 @@ function EditLinkModal({ link, systemId, onClose, onSaved }: {
     try {
       await api.put(`/systems/${systemId}/exhibit-links/${link.id}`, {
         link_type:           form.link_type,
-        flow_allocation_m3h: form.flow_allocation_m3h ? parseFloat(form.flow_allocation_m3h) : null,
         notes:               form.notes || null,
       });
       toast.success('Link updated');
@@ -195,12 +185,6 @@ function EditLinkModal({ link, systemId, onClose, onSaved }: {
             <select value={form.link_type} onChange={e => set('link_type', e.target.value)} className={inputCls}>
               {LINK_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1">Flow Allocation (m³/h)</label>
-            <input type="number" step="0.1" min="0" placeholder="e.g. 120.0"
-              value={form.flow_allocation_m3h} onChange={e => set('flow_allocation_m3h', e.target.value)}
-              className={inputCls} />
           </div>
           <div>
             <label className="block text-xs font-medium text-stone-500 mb-1">Notes</label>
@@ -255,16 +239,35 @@ export default function DesignBookLSSDetail() {
   const [deletingLink, setDeletingLink] = useState<string | null>(null);
 
   const startEdit = () => {
+    let flowVal     = system.design_flow_m3h  != null ? String(system.design_flow_m3h)  : '';
+    let turnoverVal = system.turnover_rate_hr != null ? String(system.turnover_rate_hr) : '';
+
+    // Auto-compute from primary exhibit when values are missing
+    if ((!flowVal || !turnoverVal) && (links as any[]).length > 0 && book) {
+      const primaryLink = (links as any[]).find((l: any) => l.link_type === 'Primary') ?? (links as any[])[0];
+      if (primaryLink) {
+        const hydr    = (book.hydraulics || []).find((h: any) => h.exhibit_id === primaryLink.exhibit_id);
+        const exTanks = (book.tanks      || []).filter((t: any) => t.exhibit_id === primaryLink.exhibit_id);
+        const opVol   = exTanks.reduce((s: number, t: any) =>
+          s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
+        const targetRate = parseFloat(hydr?.target_turnover_rate) || 0;
+        if (opVol > 0 && targetRate > 0) {
+          if (!flowVal)     flowVal     = (opVol * targetRate).toFixed(2);
+          if (!turnoverVal) turnoverVal = (1 / targetRate).toFixed(2);
+        }
+      }
+    }
+
     setEditForm({
-      system_code:        system.system_code,
-      system_name:        system.system_name,
-      system_type:        system.system_type || '',
-      water_type:         system.water_type  || '',
-      design_flow_m3h:    system.design_flow_m3h   != null ? String(system.design_flow_m3h)   : '',
-      turnover_rate_hr:   system.turnover_rate_hr  != null ? String(system.turnover_rate_hr)  : '',
-      status:             system.status            || 'Draft',
-      duty_description:   system.duty_description  || '',
-      redundancy_strategy:system.redundancy_strategy || '',
+      system_code:         system.system_code,
+      system_name:         system.system_name,
+      system_type:         system.system_type || '',
+      water_type:          system.water_type  || '',
+      design_flow_m3h:     flowVal,
+      turnover_rate_hr:    turnoverVal,
+      status:              system.status            || 'Draft',
+      duty_description:    system.duty_description  || '',
+      redundancy_strategy: system.redundancy_strategy || '',
     });
     setEditMode(true);
   };
