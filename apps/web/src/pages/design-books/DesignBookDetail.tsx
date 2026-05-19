@@ -10,7 +10,7 @@ import {
   Droplets, ThermometerSun, FlaskConical, Layers,
   ChevronDown, ChevronUp, Waves, AlertCircle,
   Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2,
-  LinkIcon, SquarePlus, Check, CheckCircle2
+  LinkIcon, SquarePlus, Check, CheckCircle2, RotateCcw, Calculator
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import VersionsTab from './VersionsTab';
@@ -257,10 +257,12 @@ const SYSTEM_TYPES_LIST = [
 
 const LSS_STATUSES = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released', 'Decommissioned'];
 
-function NewLSSModal({ projectId, bookId, exhibits, onClose, onCreated }: {
+function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, onClose, onCreated }: {
   projectId: string;
   bookId: string;
   exhibits: any[];
+  hydraulics: any[];
+  tanks: any[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -272,7 +274,47 @@ function NewLSSModal({ projectId, bookId, exhibits, onClose, onCreated }: {
     duty_description: '', redundancy_strategy: '',
   });
   const [saving, setSaving] = useState(false);
+  const [computedFlow, setComputedFlow] = useState<number | null>(null);
+  const [computedTurnover, setComputedTurnover] = useState<number | null>(null);
+  const [sourceRate, setSourceRate] = useState<number | null>(null);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleExhibitChange = (exhibitId: string) => {
+    set('exhibit_id', exhibitId);
+    if (!exhibitId) {
+      setComputedFlow(null);
+      setComputedTurnover(null);
+      setSourceRate(null);
+      return;
+    }
+    const hydr = hydraulics.find((h: any) => h.exhibit_id === exhibitId);
+    const targetRate = parseFloat(hydr?.target_turnover_rate) || 0;
+    const exTanks = tanks.filter((t: any) => t.exhibit_id === exhibitId);
+    const opVol = exTanks.reduce((s: number, t: any) =>
+      s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
+    if (opVol > 0 && targetRate > 0) {
+      const flow = opVol * targetRate;
+      const turnoverHr = 1 / targetRate;
+      setComputedFlow(flow);
+      setComputedTurnover(turnoverHr);
+      setSourceRate(targetRate);
+      setForm(f => ({
+        ...f,
+        exhibit_id: exhibitId,
+        design_flow_m3h: flow.toFixed(2),
+        turnover_rate_hr: turnoverHr.toFixed(2),
+      }));
+    } else {
+      setComputedFlow(null);
+      setComputedTurnover(null);
+      setSourceRate(null);
+    }
+  };
+
+  const flowVal = parseFloat(form.design_flow_m3h);
+  const turnoverVal = parseFloat(form.turnover_rate_hr);
+  const isFlowOverridden  = computedFlow     !== null && form.design_flow_m3h  !== '' && Math.abs(flowVal     - computedFlow)     > 0.005;
+  const isTurnoverOverridden = computedTurnover !== null && form.turnover_rate_hr !== '' && Math.abs(turnoverVal - computedTurnover) > 0.005;
 
   const handleSave = async () => {
     if (!form.system_code.trim() || !form.system_name.trim()) {
@@ -361,9 +403,9 @@ function NewLSSModal({ projectId, bookId, exhibits, onClose, onCreated }: {
           {exhibits.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">
-                Primary Exhibit <span className="text-stone-400 font-normal">optional — more can be linked after creation</span>
+                Primary Exhibit <span className="text-stone-400 font-normal">optional — hydraulics auto-filled when set</span>
               </label>
-              <select value={form.exhibit_id} onChange={e => set('exhibit_id', e.target.value)} className={inputCls}>
+              <select value={form.exhibit_id} onChange={e => handleExhibitChange(e.target.value)} className={inputCls}>
                 <option value="">— Not linked —</option>
                 {exhibits.map((ex: any) => (
                   <option key={ex.id} value={ex.id}>{ex.exhibit_code} — {ex.exhibit_name}</option>
@@ -374,21 +416,61 @@ function NewLSSModal({ projectId, bookId, exhibits, onClose, onCreated }: {
 
           {/* Design Flow + Turnover Rate */}
           <div>
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Hydraulics</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide">Hydraulics</p>
+              {computedFlow !== null && !isFlowOverridden && !isTurnoverOverridden && (
+                <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                  <Calculator className="w-3 h-3" /> Calculated from exhibit
+                </span>
+              )}
+              {(isFlowOverridden || isTurnoverOverridden) && (
+                <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                  Manually overridden
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Design Flow (m³/h)</label>
-                <input type="number" step="0.1" min="0" placeholder="e.g. 500"
+                <input type="number" step="0.01" min="0" placeholder="e.g. 500"
                   value={form.design_flow_m3h} onChange={e => set('design_flow_m3h', e.target.value)}
-                  className={inputCls} />
+                  className={`${inputCls} ${isFlowOverridden ? 'border-amber-300 bg-amber-50/40' : ''}`} />
+                {isFlowOverridden && computedFlow !== null && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-stone-400">Calculated: {computedFlow.toFixed(2)}</span>
+                    <button type="button" onClick={() => set('design_flow_m3h', computedFlow.toFixed(2))}
+                      className="flex items-center gap-0.5 text-xs text-blue-500 hover:text-blue-700">
+                      <RotateCcw className="w-3 h-3" /> Reset
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Turnover Rate (h)</label>
-                <input type="number" step="0.1" min="0" placeholder="e.g. 2.0"
+                <label className="block text-xs font-medium text-stone-500 mb-1">
+                  Turnover Rate (h/cycle)
+                  {sourceRate !== null && !isTurnoverOverridden && (
+                    <span className="ml-1 text-stone-400 font-normal">← {sourceRate}×/h</span>
+                  )}
+                </label>
+                <input type="number" step="0.01" min="0" placeholder="e.g. 0.5"
                   value={form.turnover_rate_hr} onChange={e => set('turnover_rate_hr', e.target.value)}
-                  className={inputCls} />
+                  className={`${inputCls} ${isTurnoverOverridden ? 'border-amber-300 bg-amber-50/40' : ''}`} />
+                {isTurnoverOverridden && computedTurnover !== null && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-stone-400">Calculated: {computedTurnover.toFixed(2)}</span>
+                    <button type="button" onClick={() => set('turnover_rate_hr', computedTurnover.toFixed(2))}
+                      className="flex items-center gap-0.5 text-xs text-blue-500 hover:text-blue-700">
+                      <RotateCcw className="w-3 h-3" /> Reset
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
+            {computedFlow === null && form.exhibit_id && (
+              <p className="text-xs text-stone-400 mt-1.5 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> No hydraulics set on this exhibit yet — enter values manually.
+              </p>
+            )}
           </div>
 
           {/* Duty Description */}
@@ -1195,6 +1277,8 @@ export default function DesignBookDetail() {
           projectId={book.project_id}
           bookId={book.id}
           exhibits={exhibits}
+          hydraulics={book.hydraulics || []}
+          tanks={book.tanks || []}
           onClose={() => setShowNewLSS(false)}
           onCreated={() => { setShowNewLSS(false); refresh(); }}
         />
