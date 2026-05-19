@@ -899,6 +899,10 @@ CREATE TABLE IF NOT EXISTS design_book_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_db_versions_book ON design_book_versions(design_book_id);
 
+-- SUBSTRATE: height-based volume calculation fields
+ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS substrate_height_mm NUMERIC;
+ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS theming_height_mm NUMERIC;
+
 -- TANKS: additional design fields (added after initial schema)
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS material_id UUID REFERENCES materials(id);
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS wall_thickness_mm NUMERIC;

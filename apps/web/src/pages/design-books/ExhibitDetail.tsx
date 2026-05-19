@@ -1099,42 +1099,83 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [subOverride, setSubOverride] = useState(false);
+  const [themOverride, setThemOverride] = useState(false);
   const [form, setForm] = useState({
-    substrate_type:    substrateData?.substrate_type    || 'None',
+    substrate_type:      substrateData?.substrate_type      || 'None',
+    substrate_height_mm: substrateData?.substrate_height_mm != null ? String(substrateData.substrate_height_mm) : '',
     substrate_volume_m3: substrateData?.substrate_volume_m3 != null ? String(substrateData.substrate_volume_m3) : '',
-    theming_type:      substrateData?.theming_type      || '',
-    theming_volume_m3: substrateData?.theming_volume_m3 != null ? String(substrateData.theming_volume_m3) : '',
-    notes:             substrateData?.notes             || '',
+    theming_type:        substrateData?.theming_type        || '',
+    theming_height_mm:   substrateData?.theming_height_mm   != null ? String(substrateData.theming_height_mm)   : '',
+    theming_volume_m3:   substrateData?.theming_volume_m3   != null ? String(substrateData.theming_volume_m3)   : '',
+    notes:               substrateData?.notes               || '',
   });
 
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
+  // Resolve tank inner footprint (L × W) for volume calculation
+  const wall   = parseFloat(tank?.wall_thickness_mm) || null;
+  const outerL = parseFloat(tank?.eff_length_mm || tank?.length_mm) || null;
+  const outerW = parseFloat(tank?.eff_width_mm  || tank?.width_mm)  || null;
+  const tankInnerL: number | null = tank?.inner_length_mm
+    ? parseFloat(tank.inner_length_mm)
+    : (wall && outerL ? outerL - 2 * wall : outerL);
+  const tankInnerW: number | null = tank?.inner_width_mm
+    ? parseFloat(tank.inner_width_mm)
+    : (wall && outerW ? outerW - 2 * wall : outerW);
+  const hasTankFootprint = !!(tankInnerL && tankInnerW);
+
+  const calcVol = (heightStr: string): number | null => {
+    const h = parseFloat(heightStr) || null;
+    if (!h || !tankInnerL || !tankInnerW) return null;
+    return Math.round(tankInnerL * tankInnerW * h / 1e9 * 1e6) / 1e6;
+  };
+
+  const subComputed  = calcVol(form.substrate_height_mm);
+  const themComputed = calcVol(form.theming_height_mm);
+
+  // Effective volumes for the displaced preview
+  const subEffVol  = editing
+    ? (subOverride  ? (parseFloat(form.substrate_volume_m3) || 0) : ((subComputed  ?? parseFloat(form.substrate_volume_m3))  || 0))
+    : (parseFloat(substrateData?.substrate_volume_m3  || '') || 0);
+  const themEffVol = editing
+    ? (themOverride ? (parseFloat(form.theming_volume_m3)   || 0) : ((themComputed ?? parseFloat(form.theming_volume_m3))    || 0))
+    : (parseFloat(substrateData?.theming_volume_m3    || '') || 0);
+
   const opVol        = parseFloat(tank?.design_volume_m3) || 0;
-  const subVol       = parseFloat((editing ? form : substrateData)?.substrate_volume_m3 || '') || 0;
-  const themVol      = parseFloat((editing ? form : substrateData)?.theming_volume_m3   || '') || 0;
-  const displaced    = subVol + themVol;
+  const displaced    = subEffVol + themEffVol;
   const effectiveVol = opVol > 0 ? Math.max(0, opVol - displaced) : null;
 
   const handleEdit = () => {
     setForm({
-      substrate_type:    substrateData?.substrate_type    || 'None',
+      substrate_type:      substrateData?.substrate_type      || 'None',
+      substrate_height_mm: substrateData?.substrate_height_mm != null ? String(substrateData.substrate_height_mm) : '',
       substrate_volume_m3: substrateData?.substrate_volume_m3 != null ? String(substrateData.substrate_volume_m3) : '',
-      theming_type:      substrateData?.theming_type      || '',
-      theming_volume_m3: substrateData?.theming_volume_m3 != null ? String(substrateData.theming_volume_m3) : '',
-      notes:             substrateData?.notes             || '',
+      theming_type:        substrateData?.theming_type        || '',
+      theming_height_mm:   substrateData?.theming_height_mm   != null ? String(substrateData.theming_height_mm)   : '',
+      theming_volume_m3:   substrateData?.theming_volume_m3   != null ? String(substrateData.theming_volume_m3)   : '',
+      notes:               substrateData?.notes               || '',
     });
+    setSubOverride(!substrateData?.substrate_height_mm && !!substrateData?.substrate_volume_m3);
+    setThemOverride(!substrateData?.theming_height_mm  && !!substrateData?.theming_volume_m3);
     setEditing(true);
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      const finalSubVol  = subOverride  ? (form.substrate_volume_m3 ? parseFloat(form.substrate_volume_m3) : null)
+                                        : (subComputed  ?? (form.substrate_volume_m3  ? parseFloat(form.substrate_volume_m3)  : null));
+      const finalThemVol = themOverride ? (form.theming_volume_m3   ? parseFloat(form.theming_volume_m3)   : null)
+                                        : (themComputed ?? (form.theming_volume_m3    ? parseFloat(form.theming_volume_m3)    : null));
       await api.put(`/design-books/${bookId}/exhibits/${exhibitId}/substrate`, {
-        substrate_type:    form.substrate_type !== 'None' ? form.substrate_type : null,
-        substrate_volume_m3: form.substrate_volume_m3 ? parseFloat(form.substrate_volume_m3) : null,
-        theming_type:      form.theming_type    || null,
-        theming_volume_m3: form.theming_volume_m3 ? parseFloat(form.theming_volume_m3) : null,
-        notes:             form.notes           || null,
+        substrate_type:      form.substrate_type !== 'None' ? form.substrate_type : null,
+        substrate_height_mm: form.substrate_height_mm ? parseFloat(form.substrate_height_mm) : null,
+        substrate_volume_m3: finalSubVol,
+        theming_type:        form.theming_type    || null,
+        theming_height_mm:   form.theming_height_mm ? parseFloat(form.theming_height_mm) : null,
+        theming_volume_m3:   finalThemVol,
+        notes:               form.notes           || null,
       });
       toast.success('Theming & substrate saved');
       setEditing(false);
@@ -1198,10 +1239,40 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Displaced Volume (m³)</label>
-                  <input type="number" step="0.001" min="0" placeholder="0.000"
-                    value={form.substrate_volume_m3} onChange={e => setF('substrate_volume_m3', e.target.value)}
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Layer Height (mm)</label>
+                  <input type="number" min="0" placeholder="e.g. 150"
+                    value={form.substrate_height_mm} onChange={e => setF('substrate_height_mm', e.target.value)}
                     className={inputCls} />
+                  {form.substrate_height_mm && !subOverride && (
+                    <div className="mt-1.5">
+                      {hasTankFootprint && subComputed != null ? (
+                        <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded font-mono">
+                          {(tankInnerL! / 1000).toFixed(3)} × {(tankInnerW! / 1000).toFixed(3)} × {(parseFloat(form.substrate_height_mm) / 1000).toFixed(3)} = {subComputed.toFixed(4)} m³
+                        </span>
+                      ) : (
+                        <span className="text-xs text-stone-400">No tank footprint — enter volume directly below</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-stone-500">Displaced Volume (m³)</label>
+                    <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer">
+                      <input type="checkbox" checked={subOverride} onChange={e => setSubOverride(e.target.checked)}
+                        className="rounded border-stone-300" />
+                      Override
+                    </label>
+                  </div>
+                  {subOverride || !form.substrate_height_mm || !hasTankFootprint ? (
+                    <input type="number" step="0.0001" min="0" placeholder="0.0000"
+                      value={form.substrate_volume_m3} onChange={e => setF('substrate_volume_m3', e.target.value)}
+                      className={subOverride ? `${inputCls} border-amber-300 bg-amber-50/30` : inputCls} />
+                  ) : (
+                    <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 font-mono text-sm text-amber-800 font-semibold">
+                      {subComputed != null ? `${subComputed.toFixed(4)} m³` : '—'}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1218,22 +1289,52 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                     className={inputCls} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Displaced Volume (m³)</label>
-                  <input type="number" step="0.001" min="0" placeholder="0.000"
-                    value={form.theming_volume_m3} onChange={e => setF('theming_volume_m3', e.target.value)}
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Layer Height (mm)</label>
+                  <input type="number" min="0" placeholder="e.g. 300"
+                    value={form.theming_height_mm} onChange={e => setF('theming_height_mm', e.target.value)}
                     className={inputCls} />
+                  {form.theming_height_mm && !themOverride && (
+                    <div className="mt-1.5">
+                      {hasTankFootprint && themComputed != null ? (
+                        <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded font-mono">
+                          {(tankInnerL! / 1000).toFixed(3)} × {(tankInnerW! / 1000).toFixed(3)} × {(parseFloat(form.theming_height_mm) / 1000).toFixed(3)} = {themComputed.toFixed(4)} m³
+                        </span>
+                      ) : (
+                        <span className="text-xs text-stone-400">No tank footprint — enter volume directly below</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-stone-500">Displaced Volume (m³)</label>
+                    <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer">
+                      <input type="checkbox" checked={themOverride} onChange={e => setThemOverride(e.target.checked)}
+                        className="rounded border-stone-300" />
+                      Override
+                    </label>
+                  </div>
+                  {themOverride || !form.theming_height_mm || !hasTankFootprint ? (
+                    <input type="number" step="0.0001" min="0" placeholder="0.0000"
+                      value={form.theming_volume_m3} onChange={e => setF('theming_volume_m3', e.target.value)}
+                      className={themOverride ? `${inputCls} border-amber-300 bg-amber-50/30` : inputCls} />
+                  ) : (
+                    <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 font-mono text-sm text-amber-800 font-semibold">
+                      {themComputed != null ? `${themComputed.toFixed(4)} m³` : '—'}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Volume impact preview */}
-            {opVol > 0 && (subVol > 0 || themVol > 0) && (
+            {opVol > 0 && (subEffVol > 0 || themEffVol > 0) && (
               <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
                 <span className="text-stone-500">Operating</span>
                 <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
                 <span className="text-stone-400">−</span>
                 <span className="text-stone-500">Displaced</span>
-                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(3)} m³</span>
+                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(4)} m³</span>
                 <span className="text-stone-400">=</span>
                 <span className="text-stone-500">Effective</span>
                 <span className="font-mono font-bold text-emerald-700 text-base">{effectiveVol?.toFixed(3)} m³</span>
@@ -1257,8 +1358,11 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Substrate</span>
                 </div>
                 <p className="text-base font-semibold text-stone-800">{substrateData?.substrate_type || <span className="text-stone-300 font-normal">None</span>}</p>
+                {substrateData?.substrate_height_mm != null && (
+                  <p className="text-xs text-stone-400 mt-1 font-mono">Layer height: {parseFloat(substrateData.substrate_height_mm)} mm</p>
+                )}
                 {substrateData?.substrate_volume_m3 != null && (
-                  <p className="text-sm text-stone-500 mt-1 font-mono">{parseFloat(substrateData.substrate_volume_m3).toFixed(3)} m³ displaced</p>
+                  <p className="text-sm text-stone-500 mt-0.5 font-mono">{parseFloat(substrateData.substrate_volume_m3).toFixed(4)} m³ displaced</p>
                 )}
               </div>
               {/* Theming view */}
@@ -1268,8 +1372,11 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Theming</span>
                 </div>
                 <p className="text-base font-semibold text-stone-800">{substrateData?.theming_type || <span className="text-stone-300 font-normal">None</span>}</p>
+                {substrateData?.theming_height_mm != null && (
+                  <p className="text-xs text-stone-400 mt-1 font-mono">Layer height: {parseFloat(substrateData.theming_height_mm)} mm</p>
+                )}
                 {substrateData?.theming_volume_m3 != null && (
-                  <p className="text-sm text-stone-500 mt-1 font-mono">{parseFloat(substrateData.theming_volume_m3).toFixed(3)} m³ displaced</p>
+                  <p className="text-sm text-stone-500 mt-0.5 font-mono">{parseFloat(substrateData.theming_volume_m3).toFixed(4)} m³ displaced</p>
                 )}
               </div>
             </div>
@@ -1281,7 +1388,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                 <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
                 <span className="text-stone-400">−</span>
                 <span className="text-stone-500">Displaced</span>
-                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(3)} m³</span>
+                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(4)} m³</span>
                 <span className="text-stone-400">=</span>
                 <span className="text-stone-500">Effective</span>
                 <span className="font-mono font-bold text-emerald-700 text-base">{effectiveVol?.toFixed(3)} m³</span>
