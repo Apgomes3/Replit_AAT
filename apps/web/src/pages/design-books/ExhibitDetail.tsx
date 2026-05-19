@@ -6,7 +6,7 @@ import {
   ChevronRight, Waves, ThermometerSun, FlaskConical, Fish, Plus,
   Trash2, Check, CheckCircle2, Layers, FolderOpen, LinkIcon,
   SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
-  ArrowUpToLine, Wind, BookOpen
+  ArrowUpToLine, Wind, BookOpen, Mountain, Palette
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -455,62 +455,90 @@ function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
 
   // ── View mode ──
   if (!editing) {
-    const viewIsCyl = (tank.eff_shape || '').toLowerCase() === 'cylindrical';
+    const shape = tank.eff_shape || tank.shape_type || '';
+    const viewIsCyl = shape.toLowerCase() === 'cylindrical';
+    const grossVol = tank.gross_volume_m3;
+    const opVol = tank.operating_volume_m3 ?? tank.design_volume_m3;
+    const statusCls: Record<string, string> = {
+      Active:   'bg-emerald-50 text-emerald-700 border-emerald-200',
+      Inactive: 'bg-stone-50 text-stone-500 border-stone-200',
+      Design:   'bg-amber-50 text-amber-700 border-amber-200',
+      Retired:  'bg-red-50 text-red-600 border-red-200',
+    };
     const dims = [
-      !viewIsCyl && tank.eff_length_mm   ? { label: 'Length',     val: `${fmtDim(tank.eff_length_mm)} mm` }   : null,
-      tank.eff_width_mm                  ? { label: viewIsCyl ? 'Diameter' : 'Width', val: `${fmtDim(tank.eff_width_mm)} mm` } : null,
-      tank.eff_height_mm                 ? { label: 'Height',     val: `${fmtDim(tank.eff_height_mm)} mm` }   : null,
-      tank.design_water_level_mm         ? { label: 'Water Level', val: `${fmtDim(tank.design_water_level_mm)} mm` } : null,
+      !viewIsCyl && tank.eff_length_mm  ? { label: 'Length',     val: `${fmtDim(tank.eff_length_mm)} mm` }  : null,
+      tank.eff_width_mm                 ? { label: viewIsCyl ? 'Diameter' : 'Width', val: `${fmtDim(tank.eff_width_mm)} mm` } : null,
+      tank.eff_height_mm                ? { label: 'Height',     val: `${fmtDim(tank.eff_height_mm)} mm` }  : null,
+      tank.design_water_level_mm        ? { label: 'Water Level', val: `${fmtDim(tank.design_water_level_mm)} mm` } : null,
     ].filter(Boolean);
 
     return (
-      <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-5">
-        <div className="flex items-start justify-between mb-4">
+      <div className="rounded-xl border border-blue-200 bg-white shadow-sm overflow-hidden">
+        {/* Header */}
+        <div className="flex items-start justify-between px-5 py-4 bg-blue-50/50 border-b border-blue-100">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200">{tank.tank_code}</span>
-              <ShapeBadge shape={tank.eff_shape} />
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+              <span className="font-mono text-xs bg-white text-stone-600 px-2 py-0.5 rounded border border-stone-200">{tank.tank_code}</span>
+              <ShapeBadge shape={shape} />
+              <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${statusCls[tank.status] ?? statusCls['Active']}`}>
+                {tank.status || 'Active'}
+              </span>
             </div>
-            <h3 className="text-lg font-semibold text-stone-800">{tank.tank_name}</h3>
+            <h3 className="text-xl font-bold text-stone-800">{tank.tank_name}</h3>
             {tank.primary_material && (
-              <p className="text-xs text-stone-500 mt-0.5">{tank.primary_material}</p>
+              <p className="text-sm text-stone-500 mt-0.5">{tank.primary_material}</p>
             )}
           </div>
-          <div className="flex items-start gap-4">
-            <div className="text-right">
-              <div className="text-2xl font-bold text-blue-700">{fmtVol(tank.gross_volume_m3)}</div>
-              <div className="text-xs text-stone-400">m³ gross volume</div>
-              {(tank.design_volume_m3 || tank.operating_volume_m3) && (
-                <div className="text-sm text-stone-500 mt-0.5">
-                  {fmtVol(tank.operating_volume_m3 ?? tank.design_volume_m3)} m³ operating
-                </div>
-              )}
-            </div>
-            <button
-              onClick={startEdit}
-              className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-blue-600 border border-stone-200 hover:border-blue-300 bg-white rounded-lg px-2.5 py-1.5 transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
-          </div>
+          <button onClick={startEdit}
+            className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-blue-600 border border-stone-200 hover:border-blue-300 bg-white rounded-lg px-2.5 py-1.5 transition-colors shrink-0 ml-4">
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </button>
         </div>
-        {dims.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {dims.map((d: any) => (
-              <div key={d.label} className="bg-white rounded-lg px-3 py-2 border border-blue-100">
-                <div className="text-xs text-stone-400 mb-0.5">{d.label}</div>
-                <div className="font-mono text-sm font-semibold text-stone-700">{d.val}</div>
+
+        <div className="p-5 space-y-4">
+          {/* Dimensions */}
+          {dims.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Dimensions</p>
+              <div className={`grid gap-2.5 ${viewIsCyl ? 'grid-cols-3' : 'grid-cols-4'}`}>
+                {dims.map((d: any) => (
+                  <div key={d.label} className="bg-stone-50 rounded-lg px-3 py-2.5 border border-stone-100">
+                    <div className="text-xs text-stone-400 mb-0.5">{d.label}</div>
+                    <div className="font-mono text-sm font-semibold text-stone-700">{d.val}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        {tank.system_code && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-stone-500">
-            <span>Linked system:</span>
-            <span className="font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600">{tank.system_code}</span>
-            {tank.system_name && <span>{tank.system_name}</span>}
-          </div>
-        )}
+            </div>
+          )}
+
+          {/* Volumes */}
+          {(grossVol != null || opVol != null) && (
+            <div>
+              <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Volumes</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
+                  <div className="text-xs text-blue-500 mb-1">Gross Volume</div>
+                  <div className="text-2xl font-bold text-blue-700 font-mono leading-none">{fmtVol(grossVol)}</div>
+                  <div className="text-xs text-blue-400 mt-0.5">m³</div>
+                </div>
+                <div className="bg-sky-50 rounded-xl px-4 py-3 border border-sky-100">
+                  <div className="text-xs text-sky-500 mb-1">Operating Volume</div>
+                  <div className="text-2xl font-bold text-sky-700 font-mono leading-none">{fmtVol(opVol)}</div>
+                  <div className="text-xs text-sky-400 mt-0.5">m³</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* System link */}
+          {tank.system_code && (
+            <div className="flex items-center gap-2 text-xs text-stone-500 pt-1 border-t border-stone-100">
+              <span className="text-stone-400">Linked system:</span>
+              <span className="font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600">{tank.system_code}</span>
+              {tank.system_name && <span>{tank.system_name}</span>}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -838,6 +866,229 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
   );
 }
 
+// ─── Theming & Substrate Section ─────────────────────────────────────────────
+const SUBSTRATE_TYPES = [
+  'None', 'Silica Sand', 'Coral Sand', 'Coral Rubble', 'Live Rock',
+  'Gravel', 'Crushed Coral', 'Concrete', 'Bare Bottom', 'Other',
+];
+
+function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }: {
+  bookId: string;
+  exhibitId: string;
+  tank: any;
+  substrateData: any | null;
+  onRefresh: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    substrate_type:    substrateData?.substrate_type    || 'None',
+    substrate_volume_m3: substrateData?.substrate_volume_m3 != null ? String(substrateData.substrate_volume_m3) : '',
+    theming_type:      substrateData?.theming_type      || '',
+    theming_volume_m3: substrateData?.theming_volume_m3 != null ? String(substrateData.theming_volume_m3) : '',
+    notes:             substrateData?.notes             || '',
+  });
+
+  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const opVol        = parseFloat(tank?.design_volume_m3) || 0;
+  const subVol       = parseFloat((editing ? form : substrateData)?.substrate_volume_m3 || '') || 0;
+  const themVol      = parseFloat((editing ? form : substrateData)?.theming_volume_m3   || '') || 0;
+  const displaced    = subVol + themVol;
+  const effectiveVol = opVol > 0 ? Math.max(0, opVol - displaced) : null;
+
+  const handleEdit = () => {
+    setForm({
+      substrate_type:    substrateData?.substrate_type    || 'None',
+      substrate_volume_m3: substrateData?.substrate_volume_m3 != null ? String(substrateData.substrate_volume_m3) : '',
+      theming_type:      substrateData?.theming_type      || '',
+      theming_volume_m3: substrateData?.theming_volume_m3 != null ? String(substrateData.theming_volume_m3) : '',
+      notes:             substrateData?.notes             || '',
+    });
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/design-books/${bookId}/exhibits/${exhibitId}/substrate`, {
+        substrate_type:    form.substrate_type !== 'None' ? form.substrate_type : null,
+        substrate_volume_m3: form.substrate_volume_m3 ? parseFloat(form.substrate_volume_m3) : null,
+        theming_type:      form.theming_type    || null,
+        theming_volume_m3: form.theming_volume_m3 ? parseFloat(form.theming_volume_m3) : null,
+        notes:             form.notes           || null,
+      });
+      toast.success('Theming & substrate saved');
+      setEditing(false);
+      onRefresh();
+    } catch {
+      toast.error('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasData = substrateData?.substrate_type || substrateData?.theming_type;
+  const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/40';
+
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-amber-50/30">
+        <div className="flex items-center gap-2">
+          <Mountain className="w-4 h-4 text-amber-600" />
+          <span className="text-sm font-semibold text-amber-800">Theming &amp; Substrate</span>
+          {effectiveVol != null && displaced > 0 && (
+            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-mono ml-1">
+              {effectiveVol.toFixed(3)} m³ effective
+            </span>
+          )}
+        </div>
+        {!editing ? (
+          <button onClick={handleEdit}
+            className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 border border-amber-200 bg-white rounded-md px-2.5 py-1 transition-colors">
+            <Pencil className="w-3 h-3" /> Edit
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-1 text-xs text-white bg-amber-600 hover:bg-amber-700 rounded-md px-2.5 py-1 transition-colors disabled:opacity-50">
+              <Save className="w-3 h-3" /> {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={() => setEditing(false)}
+              className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 bg-white rounded-md px-2 py-1">
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="p-5">
+        {editing ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Substrate */}
+              <div className="space-y-3 p-4 rounded-xl bg-stone-50 border border-stone-100">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Mountain className="w-3.5 h-3.5 text-stone-500" />
+                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Substrate</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Type</label>
+                  <select value={form.substrate_type} onChange={e => setF('substrate_type', e.target.value)}
+                    className={`${inputCls} bg-white`}>
+                    {SUBSTRATE_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Displaced Volume (m³)</label>
+                  <input type="number" step="0.001" min="0" placeholder="0.000"
+                    value={form.substrate_volume_m3} onChange={e => setF('substrate_volume_m3', e.target.value)}
+                    className={inputCls} />
+                </div>
+              </div>
+
+              {/* Theming */}
+              <div className="space-y-3 p-4 rounded-xl bg-stone-50 border border-stone-100">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Palette className="w-3.5 h-3.5 text-stone-500" />
+                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Theming</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Type</label>
+                  <input type="text" placeholder="e.g. Artificial Coral, Rock Work, Wreck…"
+                    value={form.theming_type} onChange={e => setF('theming_type', e.target.value)}
+                    className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Displaced Volume (m³)</label>
+                  <input type="number" step="0.001" min="0" placeholder="0.000"
+                    value={form.theming_volume_m3} onChange={e => setF('theming_volume_m3', e.target.value)}
+                    className={inputCls} />
+                </div>
+              </div>
+            </div>
+
+            {/* Volume impact preview */}
+            {opVol > 0 && (subVol > 0 || themVol > 0) && (
+              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
+                <span className="text-stone-500">Operating</span>
+                <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
+                <span className="text-stone-400">−</span>
+                <span className="text-stone-500">Displaced</span>
+                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(3)} m³</span>
+                <span className="text-stone-400">=</span>
+                <span className="text-stone-500">Effective</span>
+                <span className="font-mono font-bold text-emerald-700 text-base">{effectiveVol?.toFixed(3)} m³</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Notes</label>
+              <textarea rows={2} placeholder="Material specifications, installation notes…"
+                value={form.notes} onChange={e => setF('notes', e.target.value)}
+                className={`${inputCls} resize-none`} />
+            </div>
+          </div>
+        ) : hasData ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Substrate view */}
+              <div className="p-4 rounded-xl bg-stone-50 border border-stone-100">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <Mountain className="w-3.5 h-3.5 text-stone-500" />
+                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Substrate</span>
+                </div>
+                <p className="text-base font-semibold text-stone-800">{substrateData?.substrate_type || <span className="text-stone-300 font-normal">None</span>}</p>
+                {substrateData?.substrate_volume_m3 != null && (
+                  <p className="text-sm text-stone-500 mt-1 font-mono">{parseFloat(substrateData.substrate_volume_m3).toFixed(3)} m³ displaced</p>
+                )}
+              </div>
+              {/* Theming view */}
+              <div className="p-4 rounded-xl bg-stone-50 border border-stone-100">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <Palette className="w-3.5 h-3.5 text-stone-500" />
+                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Theming</span>
+                </div>
+                <p className="text-base font-semibold text-stone-800">{substrateData?.theming_type || <span className="text-stone-300 font-normal">None</span>}</p>
+                {substrateData?.theming_volume_m3 != null && (
+                  <p className="text-sm text-stone-500 mt-1 font-mono">{parseFloat(substrateData.theming_volume_m3).toFixed(3)} m³ displaced</p>
+                )}
+              </div>
+            </div>
+
+            {/* Effective volume */}
+            {opVol > 0 && displaced > 0 && (
+              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
+                <span className="text-stone-500">Operating</span>
+                <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
+                <span className="text-stone-400">−</span>
+                <span className="text-stone-500">Displaced</span>
+                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(3)} m³</span>
+                <span className="text-stone-400">=</span>
+                <span className="text-stone-500">Effective</span>
+                <span className="font-mono font-bold text-emerald-700 text-base">{effectiveVol?.toFixed(3)} m³</span>
+              </div>
+            )}
+
+            {substrateData?.notes && (
+              <p className="text-sm text-stone-500 italic">{substrateData.notes}</p>
+            )}
+          </div>
+        ) : (
+          <div className="py-8 text-center">
+            <Mountain className="w-8 h-8 text-stone-200 mx-auto mb-2" />
+            <p className="text-stone-400 text-sm">No theming or substrate defined yet.</p>
+            <button onClick={handleEdit}
+              className="mt-3 text-xs text-amber-600 hover:text-amber-800 border border-amber-200 bg-amber-50 px-3 py-1.5 rounded-lg transition-colors">
+              <Plus className="w-3 h-3 inline mr-1" />Define Substrate &amp; Theming
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── AAT Turnover Reference ───────────────────────────────────────────────────
 const AAT_REFERENCE = [
   { category: 'Coral Reef / SPS', rate: '8–12', notes: 'High flow, strong circulation' },
@@ -1137,13 +1388,15 @@ export default function ExhibitDetail() {
   const tanks: any[] = book.tanks || [];
   const allSpecies: any[] = book.species || [];
   const allHydraulics: any[] = book.hydraulics || [];
+  const allSubstrate: any[]  = book.substrate  || [];
 
   const exhibit = exhibits.find((e: any) => e.id === exhibitId);
   if (!exhibit) return <div className="p-10 text-center text-stone-500">Exhibit not found.</div>;
 
   const tank = tanks.find((t: any) => t.exhibit_id === exhibitId);
   const species = allSpecies.filter((s: any) => s.exhibit_id === exhibitId);
-  const hydraulics = allHydraulics.find((h: any) => h.exhibit_id === exhibitId) ?? null;
+  const hydraulics  = allHydraulics.find((h: any) => h.exhibit_id === exhibitId) ?? null;
+  const substrateData = allSubstrate.find((s: any) => s.exhibit_id === exhibitId) ?? null;
   const unassigned = tanks.filter((t: any) => !t.exhibit_id);
 
   const TABS = [
@@ -1243,21 +1496,30 @@ export default function ExhibitDetail() {
 
       {/* Tab Content */}
       {activeTab === 'tank' && (
-        tank ? (
-          <TankCard tank={tank} onRefresh={refresh} />
-        ) : book.project_id ? (
-          <AssignTankPanel
-            exhibit={exhibit}
-            projectId={book.project_id}
-            unassigned={unassigned}
+        <div className="space-y-5">
+          {tank ? (
+            <TankCard tank={tank} onRefresh={refresh} />
+          ) : book.project_id ? (
+            <AssignTankPanel
+              exhibit={exhibit}
+              projectId={book.project_id}
+              unassigned={unassigned}
+              onRefresh={refresh}
+            />
+          ) : (
+            <div className="bg-white rounded-xl border border-stone-200 py-14 text-center">
+              <FolderOpen className="w-8 h-8 text-stone-200 mx-auto mb-2" />
+              <p className="text-stone-400 text-sm">No tank assigned. Link a project to this design book to manage tanks.</p>
+            </div>
+          )}
+          <SubstrateSection
+            bookId={book.id}
+            exhibitId={exhibitId!}
+            tank={tank}
+            substrateData={substrateData}
             onRefresh={refresh}
           />
-        ) : (
-          <div className="bg-white rounded-xl border border-stone-200 py-14 text-center">
-            <FolderOpen className="w-8 h-8 text-stone-200 mx-auto mb-2" />
-            <p className="text-stone-400 text-sm">No tank assigned. Link a project to this design book to manage tanks.</p>
-          </div>
-        )
+        </div>
       )}
 
       {activeTab === 'species' && (

@@ -131,7 +131,13 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
   );
   const hydraulics = hydraulicsResult.rows;
 
-  res.json({ ...row, exhibits, tanks, systems, species, hydraulics });
+  const substrateResult = await query(
+    `SELECT * FROM design_book_exhibit_substrate WHERE design_book_id = $1`,
+    [req.params.id]
+  );
+  const substrate = substrateResult.rows;
+
+  res.json({ ...row, exhibits, tanks, systems, species, hydraulics, substrate });
 });
 
 router.post('/design-books', authenticate, async (req: AuthRequest, res: Response) => {
@@ -182,6 +188,28 @@ router.put('/design-books/:id/species/:speciesId', authenticate, async (req: Aut
     [species_name, common_name || null, quantity || null, avg_size_cm || null, biomass_kg || null, notes || null, req.params.speciesId, req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species entry not found' } });
+  res.json(result.rows[0]);
+});
+
+router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, async (req: AuthRequest, res: Response) => {
+  const { substrate_type, substrate_volume_m3, theming_type, theming_volume_m3, notes } = req.body;
+  const result = await query(
+    `INSERT INTO design_book_exhibit_substrate
+       (design_book_id, exhibit_id, substrate_type, substrate_volume_m3, theming_type, theming_volume_m3, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (design_book_id, exhibit_id)
+     DO UPDATE SET
+       substrate_type     = EXCLUDED.substrate_type,
+       substrate_volume_m3 = EXCLUDED.substrate_volume_m3,
+       theming_type       = EXCLUDED.theming_type,
+       theming_volume_m3  = EXCLUDED.theming_volume_m3,
+       notes              = EXCLUDED.notes,
+       updated_at         = NOW()
+     RETURNING *`,
+    [req.params.id, req.params.exhibitId,
+     substrate_type || null, substrate_volume_m3 ?? null,
+     theming_type || null, theming_volume_m3 ?? null, notes || null]
+  );
   res.json(result.rows[0]);
 });
 

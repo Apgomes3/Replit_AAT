@@ -868,6 +868,22 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_hydraulics (
   UNIQUE(design_book_id, exhibit_id)
 );
 CREATE INDEX IF NOT EXISTS idx_db_hydraulics_book ON design_book_exhibit_hydraulics(design_book_id);
+
+-- DESIGN BOOK: Exhibit Theming & Substrate
+CREATE TABLE IF NOT EXISTS design_book_exhibit_substrate (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  exhibit_id UUID NOT NULL REFERENCES exhibits(id) ON DELETE CASCADE,
+  substrate_type VARCHAR(100),
+  substrate_volume_m3 NUMERIC(8,4),
+  theming_type VARCHAR(100),
+  theming_volume_m3 NUMERIC(8,4),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(design_book_id, exhibit_id)
+);
+CREATE INDEX IF NOT EXISTS idx_db_substrate_book ON design_book_exhibit_substrate(design_book_id);
 `;
 
 async function migrate() {
