@@ -1427,6 +1427,23 @@ const AAT_REFERENCE = [
 ];
 
 // ─── Water Flow Tab ───────────────────────────────────────────────────────────
+// ─── Flow unit helpers ────────────────────────────────────────────────────────
+type FlowUnit = 'm3h' | 'lh' | 'lmin' | 'ls' | 'gpm';
+
+const FLOW_UNITS: { key: FlowUnit; label: string; factor: number; decimals: number }[] = [
+  { key: 'm3h',  label: 'm³/h',  factor: 1,               decimals: 3 },
+  { key: 'lh',   label: 'L/h',   factor: 1000,             decimals: 1 },
+  { key: 'lmin', label: 'L/min', factor: 1000 / 60,        decimals: 1 },
+  { key: 'ls',   label: 'L/s',   factor: 1000 / 3600,      decimals: 2 },
+  { key: 'gpm',  label: 'GPM',   factor: 4.40287,          decimals: 1 },
+];
+
+function convertFlow(m3h: number | null, unit: FlowUnit): string {
+  if (m3h == null) return '—';
+  const u = FLOW_UNITS.find(u => u.key === unit)!;
+  return (m3h * u.factor).toFixed(u.decimals);
+}
+
 function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh }: {
   bookId: string;
   exhibitId: string;
@@ -1437,6 +1454,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [flowUnit, setFlowUnit] = useState<FlowUnit>('lmin');
   const [form, setForm] = useState({
     target_turnover_rate: hydraulics?.target_turnover_rate != null ? String(hydraulics.target_turnover_rate) : '',
     surface_skim_pct:     hydraulics?.surface_skim_pct     != null ? String(hydraulics.surface_skim_pct)     : '30',
@@ -1516,7 +1534,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
           { label: 'Operating Volume', value: opVol > 0 ? `${opVol.toFixed(3)} m³` : '—', sub: 'from tank dimensions', color: 'blue' },
           { label: 'Total Biomass', value: totalBiomass > 0 ? `${totalBiomass.toFixed(2)} kg` : '—', sub: `${species.length} species`, color: 'emerald' },
           { label: 'Turnover Rate', value: turnover > 0 ? `${turnover}×/h` : '—', sub: 'target', color: 'violet' },
-          { label: 'Required Flow', value: totalLmin != null ? `${fmtFlow(totalLmin)} L/min` : '—', sub: totalM3h != null ? `${fmtFlow(totalM3h)} m³/h` : 'set turnover to calculate', color: 'amber' },
+          { label: 'Required Flow', value: totalM3h != null ? `${convertFlow(totalM3h, flowUnit)} ${FLOW_UNITS.find(u => u.key === flowUnit)!.label}` : '—', sub: totalM3h != null ? `${fmtFlow(totalM3h, 3)} m³/h` : 'set turnover to calculate', color: 'amber' },
         ].map(c => (
           <div key={c.label} className={`bg-white rounded-xl border border-stone-200 px-4 py-3`}>
             <p className="text-xs text-stone-400 mb-0.5">{c.label}</p>
@@ -1581,7 +1599,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
                   ) : (
                     <span className="text-sm font-semibold text-stone-700">{src.surface_skim_pct}%</span>
                   )}
-                  {skimLmin != null && <span className="text-xs font-mono text-sky-600 ml-auto">{fmtFlow(skimLmin)} L/min</span>}
+                  {skimM3h != null && <span className="text-xs font-mono text-sky-600 ml-auto">{convertFlow(skimM3h, flowUnit)} {FLOW_UNITS.find(u => u.key === flowUnit)!.label}</span>}
                 </div>
                 <div className="flex items-center gap-3">
                   <ArrowDownToLine className="w-4 h-4 text-indigo-500 shrink-0" />
@@ -1593,7 +1611,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
                   ) : (
                     <span className="text-sm font-semibold text-stone-700">{src.bottom_drain_pct}%</span>
                   )}
-                  {drainLmin != null && <span className="text-xs font-mono text-indigo-600 ml-auto">{fmtFlow(drainLmin)} L/min</span>}
+                  {drainM3h != null && <span className="text-xs font-mono text-indigo-600 ml-auto">{convertFlow(drainM3h, flowUnit)} {FLOW_UNITS.find(u => u.key === flowUnit)!.label}</span>}
                 </div>
                 {editing && !splitOk && (
                   <p className="text-xs text-red-500">Surface + drain must total 100% (currently {skimPct + drainPct}%)</p>
@@ -1620,26 +1638,43 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
         <div className="lg:col-span-3 space-y-5">
           {/* Flow breakdown */}
           <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
-              <Wind className="w-4 h-4 text-stone-500" />
-              <span className="text-sm font-semibold text-stone-700">Flow Rate Breakdown</span>
-              {!opVol && <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 ml-auto">Assign a tank to calculate</span>}
-              {opVol > 0 && !turnover && <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 ml-auto">Set turnover rate to calculate</span>}
+            <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2 flex-wrap">
+              <Wind className="w-4 h-4 text-stone-500 shrink-0" />
+              <span className="text-sm font-semibold text-stone-700 shrink-0">Flow Rate Breakdown</span>
+              {/* Unit selector pills */}
+              <div className="flex items-center gap-1 ml-auto">
+                {FLOW_UNITS.map(u => (
+                  <button
+                    key={u.key}
+                    onClick={() => setFlowUnit(u.key)}
+                    className={`text-xs px-2 py-0.5 rounded-md border transition-colors font-medium ${
+                      flowUnit === u.key
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-stone-500 border-stone-200 hover:border-blue-300 hover:text-blue-600'
+                    }`}
+                  >
+                    {u.label}
+                  </button>
+                ))}
+              </div>
+              {!opVol && <span className="w-full text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">Assign a tank to calculate</span>}
+              {opVol > 0 && !turnover && <span className="w-full text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">Set turnover rate to calculate</span>}
             </div>
             <table className="w-full text-sm">
               <thead className="bg-stone-50/60">
                 <tr>
                   <th className="text-left px-5 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">Stream</th>
                   <th className="text-right px-4 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">m³/h</th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">L/min</th>
-                  <th className="text-right px-5 py-2 text-xs font-semibold text-stone-400 uppercase tracking-wide">L/s</th>
+                  <th className="text-right px-5 py-2 text-xs font-semibold text-blue-500 uppercase tracking-wide">
+                    {FLOW_UNITS.find(u => u.key === flowUnit)!.label}
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {[
-                  { label: 'Total Return Flow', icon: <Gauge className="w-3.5 h-3.5 text-amber-500" />, m3h: totalM3h, lmin: totalLmin, cls: 'font-semibold text-stone-800' },
-                  { label: 'Surface Skimmer Box', icon: <ArrowUpToLine className="w-3.5 h-3.5 text-sky-500" />, m3h: skimM3h, lmin: skimLmin, cls: 'text-stone-700' },
-                  { label: 'Bottom Drain', icon: <ArrowDownToLine className="w-3.5 h-3.5 text-indigo-500" />, m3h: drainM3h, lmin: drainLmin, cls: 'text-stone-700' },
+                  { label: 'Total Return Flow',   icon: <Gauge className="w-3.5 h-3.5 text-amber-500" />,   m3h: totalM3h, cls: 'font-semibold text-stone-800' },
+                  { label: 'Surface Skimmer Box', icon: <ArrowUpToLine className="w-3.5 h-3.5 text-sky-500" />,    m3h: skimM3h,  cls: 'text-stone-700' },
+                  { label: 'Bottom Drain',         icon: <ArrowDownToLine className="w-3.5 h-3.5 text-indigo-500" />, m3h: drainM3h, cls: 'text-stone-700' },
                 ].map(row => (
                   <tr key={row.label} className="border-t border-stone-100">
                     <td className="px-5 py-3">
@@ -1648,10 +1683,11 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
                         <span className={row.cls}>{row.label}</span>
                       </div>
                     </td>
-                    <td className={`px-4 py-3 text-right font-mono ${row.cls}`}>{fmtFlow(row.m3h, 3)}</td>
-                    <td className={`px-4 py-3 text-right font-mono ${row.cls}`}>{fmtFlow(row.lmin, 1)}</td>
-                    <td className={`px-5 py-3 text-right font-mono text-stone-500`}>
-                      {row.m3h != null ? (row.m3h * 1000 / 3600).toFixed(2) : '—'}
+                    <td className={`px-4 py-3 text-right font-mono text-stone-400`}>
+                      {row.m3h != null ? row.m3h.toFixed(3) : '—'}
+                    </td>
+                    <td className={`px-5 py-3 text-right font-mono font-semibold text-blue-700`}>
+                      {convertFlow(row.m3h, flowUnit)}
                     </td>
                   </tr>
                 ))}
