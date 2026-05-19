@@ -624,12 +624,13 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
 
 router.post('/systems', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type } = req.body;
+    const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
     if (!system_code || !project_id || !system_name) {
       return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'system_code, project_id and system_name are required' } });
     }
-    const result = await query('INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
-      [system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type]);
+    const result = await query(
+      'INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
+      [system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status || 'Draft', duty_description || null, redundancy_strategy || null]);
     await logAudit(req.user!.id, 'system', result.rows[0].id, 'CREATE', { system_code, system_name, system_type });
     res.status(201).json(result.rows[0]);
   } catch (err: any) {

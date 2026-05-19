@@ -255,16 +255,21 @@ const SYSTEM_TYPES_LIST = [
   'Ozone', 'Heating', 'Chilling', 'Skimming', 'Carbon Dosing', 'Denitrification', 'Other',
 ];
 
-function NewLSSModal({ projectId, bookId, onClose, onCreated }: {
+const LSS_STATUSES = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released', 'Decommissioned'];
+
+function NewLSSModal({ projectId, bookId, exhibits, onClose, onCreated }: {
   projectId: string;
   bookId: string;
+  exhibits: any[];
   onClose: () => void;
   onCreated: () => void;
 }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     system_code: '', system_name: '', system_type: 'Life Support',
-    water_type: 'Marine', design_flow_m3h: '', turnover_rate_hr: '',
+    water_type: 'Marine', status: 'Draft', exhibit_id: '',
+    design_flow_m3h: '', turnover_rate_hr: '',
+    duty_description: '', redundancy_strategy: '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -276,13 +281,17 @@ function NewLSSModal({ projectId, bookId, onClose, onCreated }: {
     setSaving(true);
     try {
       const res = await api.post('/systems', {
-        system_code: form.system_code.trim().toUpperCase(),
-        system_name: form.system_name.trim(),
-        system_type: form.system_type || null,
-        water_type:  form.water_type  || null,
-        project_id:  projectId,
-        design_flow_m3h:  form.design_flow_m3h  ? parseFloat(form.design_flow_m3h)  : null,
-        turnover_rate_hr: form.turnover_rate_hr ? parseFloat(form.turnover_rate_hr) : null,
+        system_code:         form.system_code.trim().toUpperCase(),
+        system_name:         form.system_name.trim(),
+        system_type:         form.system_type         || null,
+        water_type:          form.water_type          || null,
+        status:              form.status              || 'Draft',
+        project_id:          projectId,
+        exhibit_id:          form.exhibit_id          || null,
+        design_flow_m3h:     form.design_flow_m3h     ? parseFloat(form.design_flow_m3h)     : null,
+        turnover_rate_hr:    form.turnover_rate_hr    ? parseFloat(form.turnover_rate_hr)    : null,
+        duty_description:    form.duty_description    || null,
+        redundancy_strategy: form.redundancy_strategy || null,
       });
       toast.success('Life support system created');
       onCreated();
@@ -298,18 +307,20 @@ function NewLSSModal({ projectId, bookId, onClose, onCreated }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 shrink-0">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-blue-600" />
             <span className="font-semibold text-stone-800">New Life Support System</span>
           </div>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600 p-1 rounded-lg"><X className="w-4 h-4" /></button>
         </div>
-        <div className="p-5 space-y-4">
+
+        <div className="p-5 space-y-4 overflow-y-auto">
+          {/* System Code + Type */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">System Code</label>
+              <label className="block text-xs font-medium text-stone-500 mb-1">System Code <span className="text-red-400">*</span></label>
               <input placeholder="e.g. SYS-LSS-01"
                 value={form.system_code} onChange={e => set('system_code', e.target.value.toUpperCase())}
                 className={inputCls} />
@@ -321,12 +332,16 @@ function NewLSSModal({ projectId, bookId, onClose, onCreated }: {
               </select>
             </div>
           </div>
+
+          {/* System Name */}
           <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1">System Name</label>
+            <label className="block text-xs font-medium text-stone-500 mb-1">System Name <span className="text-red-400">*</span></label>
             <input placeholder="e.g. Shark Tank Primary Filtration System"
               value={form.system_name} onChange={e => set('system_name', e.target.value)}
               className={inputCls} />
           </div>
+
+          {/* Water Type + Status */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">Water Type</label>
@@ -335,17 +350,73 @@ function NewLSSModal({ projectId, bookId, onClose, onCreated }: {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Design Flow (m³/h)</label>
-              <input type="number" step="0.1" min="0" placeholder="e.g. 500"
-                value={form.design_flow_m3h} onChange={e => set('design_flow_m3h', e.target.value)}
-                className={inputCls} />
+              <label className="block text-xs font-medium text-stone-500 mb-1">Status</label>
+              <select value={form.status} onChange={e => set('status', e.target.value)} className={inputCls}>
+                {LSS_STATUSES.map(s => <option key={s}>{s}</option>)}
+              </select>
             </div>
           </div>
+
+          {/* Primary Exhibit */}
+          {exhibits.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">
+                Primary Exhibit <span className="text-stone-400 font-normal">optional — more can be linked after creation</span>
+              </label>
+              <select value={form.exhibit_id} onChange={e => set('exhibit_id', e.target.value)} className={inputCls}>
+                <option value="">— Not linked —</option>
+                {exhibits.map((ex: any) => (
+                  <option key={ex.id} value={ex.id}>{ex.exhibit_code} — {ex.exhibit_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Design Flow + Turnover Rate */}
+          <div>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Hydraulics</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Design Flow (m³/h)</label>
+                <input type="number" step="0.1" min="0" placeholder="e.g. 500"
+                  value={form.design_flow_m3h} onChange={e => set('design_flow_m3h', e.target.value)}
+                  className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Turnover Rate (h)</label>
+                <input type="number" step="0.1" min="0" placeholder="e.g. 2.0"
+                  value={form.turnover_rate_hr} onChange={e => set('turnover_rate_hr', e.target.value)}
+                  className={inputCls} />
+              </div>
+            </div>
+          </div>
+
+          {/* Duty Description */}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">
+              Duty Description <span className="text-stone-400 font-normal">optional</span>
+            </label>
+            <textarea rows={3}
+              placeholder="Describe the system's operating duty, design intent, load conditions, treatment objectives…"
+              value={form.duty_description} onChange={e => set('duty_description', e.target.value)}
+              className={`${inputCls} resize-none`} />
+          </div>
+
+          {/* Redundancy Strategy */}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">
+              Redundancy Strategy <span className="text-stone-400 font-normal">optional</span>
+            </label>
+            <input placeholder="e.g. N+1 standby pump, 100% duty/standby configuration"
+              value={form.redundancy_strategy} onChange={e => set('redundancy_strategy', e.target.value)}
+              className={inputCls} />
+          </div>
         </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-stone-100 bg-stone-50/50">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-stone-500 border border-stone-200 bg-white rounded-lg">Cancel</button>
+
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-stone-100 bg-stone-50/50 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-stone-500 border border-stone-200 bg-white rounded-lg hover:bg-stone-50 transition-colors">Cancel</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50">
+            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 font-medium transition-colors">
             <Check className="w-3.5 h-3.5" /> {saving ? 'Creating…' : 'Create & Open'}
           </button>
         </div>
@@ -1115,6 +1186,7 @@ export default function DesignBookDetail() {
         <NewLSSModal
           projectId={book.project_id}
           bookId={book.id}
+          exhibits={exhibits}
           onClose={() => setShowNewLSS(false)}
           onCreated={() => { setShowNewLSS(false); refresh(); }}
         />
