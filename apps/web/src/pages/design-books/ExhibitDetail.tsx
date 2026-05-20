@@ -1302,8 +1302,9 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
       toast.success('Theming & substrate saved');
       setEditing(false);
       onRefresh();
-    } catch {
-      toast.error('Failed to save');
+    } catch (err: any) {
+      console.error('Substrate save error:', err);
+      toast.error(err?.response?.data?.error?.message || 'Failed to save substrate');
     } finally {
       setSaving(false);
     }
