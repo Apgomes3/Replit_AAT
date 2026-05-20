@@ -2090,7 +2090,7 @@ export default function ExhibitDetail() {
   const { bookId, exhibitId } = useParams<{ bookId: string; exhibitId: string }>();
   const qc = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'tank' | 'species' | 'flow'>('tank');
+  const [activeTab, setActiveTab] = useState<'tank' | 'species' | 'flow' | 'weir'>('tank');
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', bookId],
@@ -2119,9 +2119,10 @@ export default function ExhibitDetail() {
   const unassigned = tanks.filter((t: any) => !t.exhibit_id);
 
   const TABS = [
-    { id: 'tank',    label: 'Tank',       icon: <Layers   className="w-3.5 h-3.5" /> },
-    { id: 'species', label: 'Species',    icon: <Fish     className="w-3.5 h-3.5" />, badge: species.length || undefined },
-    { id: 'flow',    label: 'Water Flow', icon: <Gauge    className="w-3.5 h-3.5" /> },
+    { id: 'tank',    label: 'Tank',         icon: <Layers     className="w-3.5 h-3.5" /> },
+    { id: 'species', label: 'Species',      icon: <Fish       className="w-3.5 h-3.5" />, badge: species.length || undefined },
+    { id: 'flow',    label: 'Water Flow',   icon: <Gauge      className="w-3.5 h-3.5" /> },
+    { id: 'weir',    label: 'Weir Design',  icon: <Calculator className="w-3.5 h-3.5" /> },
   ] as const;
 
   return (
@@ -2238,15 +2239,6 @@ export default function ExhibitDetail() {
             substrateData={substrateData}
             onRefresh={refresh}
           />
-          <WeirAllocationSection
-            key={exhibitId}
-            bookId={book.id}
-            exhibitId={exhibitId!}
-            tank={tank}
-            hydraulics={hydraulics}
-            substrateData={substrateData}
-            onRefresh={refresh}
-          />
         </div>
       )}
 
@@ -2265,6 +2257,18 @@ export default function ExhibitDetail() {
           exhibitId={exhibitId!}
           tank={tank}
           species={species}
+          hydraulics={hydraulics}
+          substrateData={substrateData}
+          onRefresh={refresh}
+        />
+      )}
+
+      {activeTab === 'weir' && (
+        <WeirAllocationSection
+          key={exhibitId}
+          bookId={book.id}
+          exhibitId={exhibitId!}
+          tank={tank}
           hydraulics={hydraulics}
           substrateData={substrateData}
           onRefresh={refresh}
