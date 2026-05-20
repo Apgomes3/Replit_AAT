@@ -1135,10 +1135,10 @@ export default function DesignBookLSSDetail() {
                   <span className="font-medium text-stone-800">{filt}</span>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm flex-wrap">
-                <Wind className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <span className="text-stone-500 text-xs">Bio/Degas:</span>
-                {src ? (
+              {src && (
+                <div className="flex items-center gap-2 text-sm flex-wrap">
+                  <Wind className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span className="text-stone-500 text-xs">Bio/Degas:</span>
                   <span className="flex items-center gap-1.5 flex-wrap">
                     <span className={`font-mono font-semibold text-xs ${linked ? 'text-emerald-700' : 'text-stone-700'}`}>
                       {fmtFlow(linkedFlowForSource(src))}
@@ -1148,11 +1148,8 @@ export default function DesignBookLSSDetail() {
                       <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">linked</span>
                     )}
                   </span>
-                ) : bio != null
-                  ? <span className="font-mono text-stone-800 font-semibold text-xs">{fmtFlow(parseFloat(bio))}</span>
-                  : <span className="text-stone-300 text-xs">—</span>
-                }
-              </div>
+                </div>
+              )}
             </div>
           );
         };
