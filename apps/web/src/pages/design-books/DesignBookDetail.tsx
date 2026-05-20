@@ -44,6 +44,21 @@ function ShapeBadge({ shape }: { shape?: string }) {
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${colors[shape] ?? 'bg-stone-100 text-stone-600'}`}>{shape}</span>;
 }
 
+function SystemConfigBadge({ config }: { config?: string }) {
+  if (!config || config === 'bespoke') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-stone-100 text-stone-600 border border-stone-200">
+        Bespoke
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+      Compact
+    </span>
+  );
+}
+
 function SystemTypeBadge({ type }: { type?: string }) {
   if (!type) return <span className="text-stone-400 text-xs">—</span>;
   const colors: Record<string, string> = {
@@ -599,6 +614,7 @@ function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">System Name</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Type</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Config</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Flow m³/h</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Turnover h</th>
@@ -619,6 +635,7 @@ function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
                   </td>
                   <td className="px-4 py-2.5 font-medium text-stone-800 group-hover:text-blue-700">{sys.system_name}</td>
                   <td className="px-4 py-2.5"><SystemTypeBadge type={sys.system_type} /></td>
+                  <td className="px-4 py-2.5"><SystemConfigBadge config={sys.system_config} /></td>
                   <td className="px-4 py-2.5"><WaterTypeBadge type={sys.water_type} /></td>
                   <td className="px-4 py-2.5 text-right">{fmtNum(sys.design_flow_m3h)}</td>
                   <td className="px-4 py-2.5 text-right">{fmtNum(sys.turnover_rate_hr)}</td>
