@@ -1247,9 +1247,10 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   const hasTankFootprint = !!(tankInnerL && tankInnerW);
 
   const calcVol = (heightStr: string): number | null => {
-    const h = parseFloat(heightStr) || null;
-    if (!h || !tankInnerL || !tankInnerW) return null;
-    return Math.round(tankInnerL * tankInnerW * h / 1e9 * 1e6) / 1e6;
+    if (!heightStr) return null;                        // empty → no value
+    const h = parseFloat(heightStr);
+    if (isNaN(h) || !tankInnerL || !tankInnerW) return null;
+    return h <= 0 ? 0 : Math.round(tankInnerL * tankInnerW * h / 1e9 * 1e6) / 1e6;
   };
 
   const subComputed  = calcVol(form.substrate_height_mm);
