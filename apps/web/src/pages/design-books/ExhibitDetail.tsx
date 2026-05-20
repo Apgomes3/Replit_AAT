@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import {
   ChevronRight, Waves, ThermometerSun, FlaskConical, Fish, Plus,
@@ -1502,12 +1502,38 @@ function calcBazin(skimM3h: number, headM: number): { L: number; m: number } | n
   return { L, m };
 }
 
-function WeirAllocationSection({ tank, hydraulics }: {
+type ResultUnit = 'mm' | 'm' | 'cm' | 'in';
+const RESULT_UNITS: ResultUnit[] = ['mm', 'm', 'cm', 'in'];
+
+function fmtWeir(L: number, unit: ResultUnit): string {
+  switch (unit) {
+    case 'mm': return (L * 1000).toFixed(0);
+    case 'm':  return L.toFixed(4);
+    case 'cm': return (L * 100).toFixed(2);
+    case 'in': return (L * 1000 / 25.4).toFixed(2);
+  }
+}
+
+function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, onRefresh }: {
+  bookId: string;
+  exhibitId: string;
   tank: any | null;
   hydraulics: any | null;
+  onRefresh: () => void;
 }) {
-  const [headVal, setHeadVal] = useState('');
-  const [headUnit, setHeadUnit] = useState<'mm' | 'm'>('mm');
+  const [headVal, setHeadVal]       = useState('');
+  const [headUnit, setHeadUnit]     = useState<'mm' | 'm'>('mm');
+  const [resultUnit, setResultUnit] = useState<ResultUnit>('mm');
+  const [saving, setSaving]         = useState(false);
+  const initialized                 = useRef(false);
+
+  // Seed headVal from stored value on first load
+  useEffect(() => {
+    if (!initialized.current && hydraulics?.weir_head_mm != null) {
+      setHeadVal(String(parseFloat(hydraulics.weir_head_mm)));
+      initialized.current = true;
+    }
+  }, [hydraulics?.weir_head_mm]);
 
   // Derive surface skim flow from hydraulics (same logic as WaterFlowTab)
   const opVol    = parseFloat(tank?.design_volume_m3) || 0;
@@ -1517,13 +1543,38 @@ function WeirAllocationSection({ tank, hydraulics }: {
   const skimM3h  = totalM3h != null ? totalM3h * skimPct / 100 : null;
   const skimLmin = skimM3h != null ? skimM3h * 1000 / 60 : null;
 
-  const headRaw = parseFloat(headVal) || 0;
-  const headM   = headUnit === 'mm' ? headRaw / 1000 : headRaw;
-  const result  = skimM3h != null ? calcBazin(skimM3h, headM) : null;
+  const headRaw    = parseFloat(headVal) || 0;
+  const headM      = headUnit === 'mm' ? headRaw / 1000 : headRaw;
+  const currentMm  = headM > 0 ? headM * 1000 : null;
+  const storedMm   = hydraulics?.weir_head_mm != null ? parseFloat(String(hydraulics.weir_head_mm)) : null;
+  const isDirty    = currentMm !== storedMm;
 
+  const result  = skimM3h != null ? calcBazin(skimM3h, headM) : null;
   const noFlow  = skimM3h == null;
   const noHead  = headM <= 0;
-  const lowHead = headM > 0 && headM < 0.05; // < 50 mm — outside reliable range
+  const lowHead = headM > 0 && headM < 0.05;
+
+  const nextUnit = RESULT_UNITS[(RESULT_UNITS.indexOf(resultUnit) + 1) % RESULT_UNITS.length];
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/design-books/${bookId}/exhibits/${exhibitId}/hydraulics`, {
+        target_turnover_rate: hydraulics?.target_turnover_rate ?? null,
+        surface_skim_pct:     hydraulics?.surface_skim_pct     ?? 30,
+        bottom_drain_pct:     hydraulics?.bottom_drain_pct     ?? 70,
+        notes:                hydraulics?.notes                ?? null,
+        weir_head_mm:         currentMm,
+      });
+      toast.success('Head saved');
+      initialized.current = false; // allow re-seed after refresh
+      onRefresh();
+    } catch {
+      toast.error('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -1539,7 +1590,7 @@ function WeirAllocationSection({ tank, hydraulics }: {
         {/* Left — inputs */}
         <div className="space-y-4">
 
-          {/* Upstream flow (read-only from Water Flow tab) */}
+          {/* Upstream flow */}
           <div>
             <p className="text-xs font-medium text-stone-500 mb-2">Surface Skim Flow <span className="font-normal text-stone-400">(from Water Flow tab)</span></p>
             {noFlow ? (
@@ -1563,11 +1614,9 @@ function WeirAllocationSection({ tank, hydraulics }: {
             )}
           </div>
 
-          {/* Head over weir input */}
+          {/* Head over weir input + save */}
           <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1.5">
-              Head Over Weir (H)
-            </label>
+            <label className="block text-xs font-medium text-stone-500 mb-1.5">Head Over Weir (H)</label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -1578,35 +1627,36 @@ function WeirAllocationSection({ tank, hydraulics }: {
                 onChange={e => setHeadVal(e.target.value)}
                 className="flex-1 border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
               />
-              {/* mm / m toggle */}
               <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
                 {(['mm', 'm'] as const).map(u => (
-                  <button
-                    key={u}
+                  <button key={u}
                     onClick={() => {
                       if (headUnit !== u && headVal) {
-                        // Convert value on toggle
                         const v = parseFloat(headVal);
                         if (!isNaN(v)) setHeadVal(u === 'm' ? (v / 1000).toFixed(4) : (v * 1000).toFixed(0));
                       }
                       setHeadUnit(u);
                     }}
                     className={`px-3 py-2 transition-colors ${headUnit === u ? 'bg-indigo-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
-                  >
-                    {u}
-                  </button>
+                  >{u}</button>
                 ))}
               </div>
+              {isDirty && headM > 0 && (
+                <button onClick={handleSave} disabled={saving}
+                  className="flex items-center gap-1 text-xs text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg px-3 py-2 font-medium transition-colors shrink-0">
+                  <Save className="w-3 h-3" />{saving ? '…' : 'Save'}
+                </button>
+              )}
             </div>
             {lowHead && (
               <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                H &lt; 50 mm — Bazin formula less reliable at very low heads
+                <AlertTriangle className="w-3 h-3" />H &lt; 50 mm — Bazin formula less reliable at very low heads
               </p>
             )}
             {headM > 0 && (
               <p className="text-xs text-stone-400 mt-1">
                 = {headUnit === 'mm' ? `${headM.toFixed(4)} m` : `${(headM * 1000).toFixed(1)} mm`}
+                {!isDirty && storedMm != null && <span className="ml-2 text-indigo-400">✓ saved</span>}
               </p>
             )}
           </div>
@@ -1617,9 +1667,7 @@ function WeirAllocationSection({ tank, hydraulics }: {
             <p className="font-mono">Q = m · L · √(2g) · H<sup>3/2</sup></p>
             <p className="font-mono">m = 0.405 + 0.0027 / H</p>
             <p className="font-mono">√(2g) = {SQRT_2G.toFixed(4)} m<sup>½</sup>/s</p>
-            {result && (
-              <p className="font-mono text-indigo-600">m used = {result.m.toFixed(4)}</p>
-            )}
+            {result && <p className="font-mono text-indigo-600">m used = {result.m.toFixed(4)}</p>}
             <p className="text-stone-400 mt-1.5">Sharp-crested rectangular weir. Valid for H &gt; 50 mm.</p>
           </div>
         </div>
@@ -1638,25 +1686,19 @@ function WeirAllocationSection({ tank, hydraulics }: {
               <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide text-center">
                 Skimmer Box Opening Width
               </p>
-              {/* Primary result — mm */}
-              <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl px-6 py-5 text-center">
+              {/* Primary result — cycling unit */}
+              <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl px-6 py-5 text-center relative">
+                <button
+                  onClick={() => setResultUnit(nextUnit)}
+                  title={`Switch to ${nextUnit}`}
+                  className="absolute top-2.5 right-3 text-xs text-indigo-400 hover:text-indigo-700 bg-white border border-indigo-200 rounded-md px-2 py-0.5 font-medium transition-colors"
+                >
+                  {nextUnit} →
+                </button>
                 <p className="text-4xl font-bold text-indigo-700 font-mono tracking-tight">
-                  {(result.L * 1000).toFixed(0)}
+                  {fmtWeir(result.L, resultUnit)}
                 </p>
-                <p className="text-base font-medium text-indigo-500 mt-0.5">mm</p>
-              </div>
-              {/* Secondary conversions */}
-              <div className="grid grid-cols-3 gap-2 text-center">
-                {[
-                  { val: result.L.toFixed(4), unit: 'm' },
-                  { val: (result.L * 100).toFixed(2), unit: 'cm' },
-                  { val: (result.L * 1000 / 25.4).toFixed(2), unit: 'in' },
-                ].map(c => (
-                  <div key={c.unit} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-2">
-                    <p className="font-mono text-sm font-semibold text-stone-700">{c.val}</p>
-                    <p className="text-xs text-stone-400">{c.unit}</p>
-                  </div>
-                ))}
+                <p className="text-base font-medium text-indigo-500 mt-0.5">{resultUnit}</p>
               </div>
               {/* Calculation breakdown */}
               <div className="bg-white border border-stone-200 rounded-lg px-4 py-3 text-xs space-y-1 text-stone-500">
@@ -1664,7 +1706,9 @@ function WeirAllocationSection({ tank, hydraulics }: {
                 <div className="flex justify-between"><span>Q (skim flow)</span><span className="font-mono text-stone-700">{(skimM3h! / 3600).toFixed(6)} m³/s</span></div>
                 <div className="flex justify-between"><span>H (head)</span><span className="font-mono text-stone-700">{headM.toFixed(4)} m ({(headM * 1000).toFixed(1)} mm)</span></div>
                 <div className="flex justify-between"><span>m (Bazin coeff.)</span><span className="font-mono text-stone-700">{result.m.toFixed(4)}</span></div>
-                <div className="flex justify-between font-semibold text-indigo-700 pt-1 border-t border-stone-100"><span>L (weir length)</span><span className="font-mono">{(result.L * 1000).toFixed(1)} mm</span></div>
+                <div className="flex justify-between font-semibold text-indigo-700 pt-1 border-t border-stone-100">
+                  <span>L (weir length)</span><span className="font-mono">{(result.L * 1000).toFixed(1)} mm</span>
+                </div>
               </div>
             </div>
           ) : (
@@ -2143,8 +2187,11 @@ export default function ExhibitDetail() {
             onRefresh={refresh}
           />
           <WeirAllocationSection
+            bookId={book.id}
+            exhibitId={exhibitId!}
             tank={tank}
             hydraulics={hydraulics}
+            onRefresh={refresh}
           />
         </div>
       )}

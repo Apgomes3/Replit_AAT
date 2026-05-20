@@ -218,21 +218,23 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, asyn
 });
 
 router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, async (req: AuthRequest, res: Response) => {
-  const { target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes } = req.body;
+  const { target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes, weir_head_mm } = req.body;
   const result = await query(
     `INSERT INTO design_book_exhibit_hydraulics
-       (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes)
-     VALUES ($1,$2,$3,$4,$5,$6)
+       (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes, weir_head_mm)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      ON CONFLICT (design_book_id, exhibit_id)
      DO UPDATE SET
        target_turnover_rate = EXCLUDED.target_turnover_rate,
        surface_skim_pct     = EXCLUDED.surface_skim_pct,
        bottom_drain_pct     = EXCLUDED.bottom_drain_pct,
        notes                = EXCLUDED.notes,
+       weir_head_mm         = EXCLUDED.weir_head_mm,
        updated_at           = NOW()
      RETURNING *`,
     [req.params.id, req.params.exhibitId,
-     target_turnover_rate ?? null, surface_skim_pct ?? 30, bottom_drain_pct ?? 70, notes ?? null]
+     target_turnover_rate ?? null, surface_skim_pct ?? 30, bottom_drain_pct ?? 70,
+     notes ?? null, weir_head_mm ?? null]
   );
   res.json(result.rows[0]);
 });

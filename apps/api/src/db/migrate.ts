@@ -868,6 +868,7 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_hydraulics (
   UNIQUE(design_book_id, exhibit_id)
 );
 CREATE INDEX IF NOT EXISTS idx_db_hydraulics_book ON design_book_exhibit_hydraulics(design_book_id);
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_head_mm NUMERIC(8,2);
 
 -- DESIGN BOOK: Exhibit Theming & Substrate
 CREATE TABLE IF NOT EXISTS design_book_exhibit_substrate (
