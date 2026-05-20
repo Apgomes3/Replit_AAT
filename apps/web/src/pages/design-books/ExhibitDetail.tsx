@@ -1857,6 +1857,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
         surface_skim_pct:     parseFloat(form.surface_skim_pct),
         bottom_drain_pct:     parseFloat(form.bottom_drain_pct),
         notes:               form.notes || null,
+        weir_head_mm:        hydraulics?.weir_head_mm ?? null,
       });
       toast.success('Water flow saved');
       setEditing(false);
