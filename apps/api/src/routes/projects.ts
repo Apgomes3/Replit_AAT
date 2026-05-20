@@ -653,6 +653,7 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
       water_type, status, duty_description, redundancy_strategy,
       loop1_flow_source, loop1_filtration, loop1_bio_degas_m3h, loop1_link_bio_degas,
       loop2_flow_source, loop2_filtration, loop2_bio_degas_m3h, loop2_link_bio_degas,
+      loop3_flow_source, loop3_filtration, loop3_bio_degas_m3h, loop3_link_bio_degas,
       system_config, compact_unit_id,
     } = req.body;
     const result = await query(
@@ -662,9 +663,10 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
         duty_description=$8, redundancy_strategy=$9,
         loop1_flow_source=$10, loop1_filtration=$11, loop1_bio_degas_m3h=$12, loop1_link_bio_degas=$13,
         loop2_flow_source=$14, loop2_filtration=$15, loop2_bio_degas_m3h=$16, loop2_link_bio_degas=$17,
-        system_config=$18, compact_unit_id=$19,
+        loop3_flow_source=$18, loop3_filtration=$19, loop3_bio_degas_m3h=$20, loop3_link_bio_degas=$21,
+        system_config=$22, compact_unit_id=$23,
         updated_at=NOW()
-       WHERE id=$20 RETURNING *`,
+       WHERE id=$24 RETURNING *`,
       [
         system_code || null, system_name, system_type,
         design_flow_m3h || null, turnover_rate_hr || null, water_type, status,
@@ -673,6 +675,8 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
         loop1_bio_degas_m3h ?? null, loop1_link_bio_degas ?? false,
         loop2_flow_source || null, loop2_filtration || null,
         loop2_bio_degas_m3h ?? null, loop2_link_bio_degas ?? false,
+        loop3_flow_source || null, loop3_filtration || null,
+        loop3_bio_degas_m3h ?? null, loop3_link_bio_degas ?? false,
         system_config || 'bespoke', compact_unit_id || null,
         req.params.id,
       ]);

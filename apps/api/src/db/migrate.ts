@@ -968,6 +968,10 @@ ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_flow_source    VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_filtration     VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_bio_degas_m3h  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_link_bio_degas BOOLEAN DEFAULT false;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_flow_source    VARCHAR(50);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_filtration     VARCHAR(50);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_bio_degas_m3h  NUMERIC;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_link_bio_degas BOOLEAN DEFAULT false;
 `;
 
 async function migrate() {

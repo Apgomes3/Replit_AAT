@@ -308,6 +308,11 @@ export default function DesignBookLSSDetail() {
   const [flowSaving,   setFlowSaving]   = useState(false);
   const [flowForm,     setFlowForm]     = useState<any>(null);
   const setFF = (k: string, v: any) => setFlowForm((f: any) => ({ ...f, [k]: v }));
+  const [flowViewMode, setFlowViewMode] = useState<'card' | 'list'>('card');
+  const [expandedCardLoops, setExpandedCardLoops] = useState<number[]>([1]);
+  const [listEditRow, setListEditRow] = useState<number | null>(null);
+  const [listRowForm, setListRowForm] = useState<any>(null);
+  const setLRF = (k: string, v: any) => setListRowForm((f: any) => ({ ...f, [k]: v }));
 
   const startEdit = () => {
     let flowVal     = system.design_flow_m3h  != null ? String(system.design_flow_m3h)  : '';
@@ -348,15 +353,29 @@ export default function DesignBookLSSDetail() {
     setEditSaving(true);
     try {
       await api.put(`/systems/${systemId}`, {
-        system_code:         editForm.system_code,
-        system_name:         editForm.system_name,
-        system_type:         editForm.system_type   || null,
-        water_type:          editForm.water_type    || null,
-        design_flow_m3h:     editForm.design_flow_m3h    ? parseFloat(editForm.design_flow_m3h)   : null,
-        turnover_rate_hr:    editForm.turnover_rate_hr   ? parseFloat(editForm.turnover_rate_hr)  : null,
-        status:              editForm.status,
-        duty_description:    editForm.duty_description   || null,
-        redundancy_strategy: editForm.redundancy_strategy || null,
+        system_code:          editForm.system_code,
+        system_name:          editForm.system_name,
+        system_type:          editForm.system_type   || null,
+        water_type:           editForm.water_type    || null,
+        design_flow_m3h:      editForm.design_flow_m3h    ? parseFloat(editForm.design_flow_m3h)   : null,
+        turnover_rate_hr:     editForm.turnover_rate_hr   ? parseFloat(editForm.turnover_rate_hr)  : null,
+        status:               editForm.status,
+        duty_description:     editForm.duty_description   || null,
+        redundancy_strategy:  editForm.redundancy_strategy || null,
+        loop1_flow_source:    system.loop1_flow_source    || null,
+        loop1_filtration:     system.loop1_filtration     || null,
+        loop1_bio_degas_m3h:  system.loop1_bio_degas_m3h  ?? null,
+        loop1_link_bio_degas: !!system.loop1_link_bio_degas,
+        loop2_flow_source:    system.loop2_flow_source    || null,
+        loop2_filtration:     system.loop2_filtration     || null,
+        loop2_bio_degas_m3h:  system.loop2_bio_degas_m3h  ?? null,
+        loop2_link_bio_degas: !!system.loop2_link_bio_degas,
+        loop3_flow_source:    system.loop3_flow_source    || null,
+        loop3_filtration:     system.loop3_filtration     || null,
+        loop3_bio_degas_m3h:  system.loop3_bio_degas_m3h  ?? null,
+        loop3_link_bio_degas: !!system.loop3_link_bio_degas,
+        system_config:        system.system_config        || 'bespoke',
+        compact_unit_id:      system.compact_unit_id      || null,
       });
       toast.success('System updated');
       setEditMode(false);
@@ -395,14 +414,18 @@ export default function DesignBookLSSDetail() {
         turnover_rate_hr:    system.turnover_rate_hr     || null,
         duty_description:    system.duty_description     || null,
         redundancy_strategy: system.redundancy_strategy  || null,
-        loop1_flow_source:   system.loop1_flow_source    || null,
-        loop1_filtration:    system.loop1_filtration     || null,
-        loop1_bio_degas_m3h: system.loop1_bio_degas_m3h  ?? null,
+        loop1_flow_source:    system.loop1_flow_source    || null,
+        loop1_filtration:     system.loop1_filtration     || null,
+        loop1_bio_degas_m3h:  system.loop1_bio_degas_m3h  ?? null,
         loop1_link_bio_degas: !!system.loop1_link_bio_degas,
-        loop2_flow_source:   system.loop2_flow_source    || null,
-        loop2_filtration:    system.loop2_filtration     || null,
-        loop2_bio_degas_m3h: system.loop2_bio_degas_m3h  ?? null,
+        loop2_flow_source:    system.loop2_flow_source    || null,
+        loop2_filtration:     system.loop2_filtration     || null,
+        loop2_bio_degas_m3h:  system.loop2_bio_degas_m3h  ?? null,
         loop2_link_bio_degas: !!system.loop2_link_bio_degas,
+        loop3_flow_source:    system.loop3_flow_source    || null,
+        loop3_filtration:     system.loop3_filtration     || null,
+        loop3_bio_degas_m3h:  system.loop3_bio_degas_m3h  ?? null,
+        loop3_link_bio_degas: !!system.loop3_link_bio_degas,
         system_config:   config,
         compact_unit_id: config === 'compact' ? (unitId || null) : null,
       });
@@ -415,7 +438,13 @@ export default function DesignBookLSSDetail() {
     }
   };
 
-  const startFlowEdit = () => {
+  const startFlowEdit = (addLoop?: number) => {
+    const loopHasDataSaved = (n: number) =>
+      !!(system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] ||
+         system[`loop${n}_bio_degas_m3h`] != null || system[`loop${n}_link_bio_degas`]);
+    const active = [1, 2, 3].filter(n => n === 1 || loopHasDataSaved(n));
+    const expanded = addLoop && !active.includes(addLoop) ? [...active, addLoop] : active;
+    setExpandedCardLoops(expanded);
     setFlowForm({
       loop1_flow_source:    system.loop1_flow_source    || '',
       loop1_filtration:     system.loop1_filtration     || '',
@@ -425,6 +454,10 @@ export default function DesignBookLSSDetail() {
       loop2_filtration:     system.loop2_filtration     || '',
       loop2_bio_degas_m3h:  system.loop2_bio_degas_m3h  != null ? String(system.loop2_bio_degas_m3h)  : '',
       loop2_link_bio_degas: !!system.loop2_link_bio_degas,
+      loop3_flow_source:    system.loop3_flow_source    || '',
+      loop3_filtration:     system.loop3_filtration     || '',
+      loop3_bio_degas_m3h:  system.loop3_bio_degas_m3h  != null ? String(system.loop3_bio_degas_m3h)  : '',
+      loop3_link_bio_degas: !!system.loop3_link_bio_degas,
     });
     setFlowEditMode(true);
   };
@@ -442,6 +475,8 @@ export default function DesignBookLSSDetail() {
         turnover_rate_hr:     system.turnover_rate_hr     || null,
         duty_description:     system.duty_description     || null,
         redundancy_strategy:  system.redundancy_strategy  || null,
+        system_config:        system.system_config        || 'bespoke',
+        compact_unit_id:      system.compact_unit_id      || null,
         loop1_flow_source:    flowForm.loop1_flow_source    || null,
         loop1_filtration:     flowForm.loop1_filtration     || null,
         loop1_bio_degas_m3h:  flowForm.loop1_bio_degas_m3h  ? parseFloat(flowForm.loop1_bio_degas_m3h)  : null,
@@ -450,12 +485,87 @@ export default function DesignBookLSSDetail() {
         loop2_filtration:     flowForm.loop2_filtration     || null,
         loop2_bio_degas_m3h:  flowForm.loop2_bio_degas_m3h  ? parseFloat(flowForm.loop2_bio_degas_m3h)  : null,
         loop2_link_bio_degas: flowForm.loop2_link_bio_degas,
+        loop3_flow_source:    flowForm.loop3_flow_source    || null,
+        loop3_filtration:     flowForm.loop3_filtration     || null,
+        loop3_bio_degas_m3h:  flowForm.loop3_bio_degas_m3h  ? parseFloat(flowForm.loop3_bio_degas_m3h)  : null,
+        loop3_link_bio_degas: flowForm.loop3_link_bio_degas,
       });
       toast.success('Flow route saved');
       setFlowEditMode(false);
+      setExpandedCardLoops([1]);
       refresh();
     } catch {
       toast.error('Failed to save flow route');
+    } finally {
+      setFlowSaving(false);
+    }
+  };
+
+  const saveListRow = async (n: number) => {
+    if (!listRowForm) return;
+    setFlowSaving(true);
+    try {
+      const loopFields: any = {};
+      for (const ln of [1, 2, 3]) {
+        loopFields[`loop${ln}_flow_source`]    = ln === n ? (listRowForm.flow_source    || null) : (system[`loop${ln}_flow_source`]    || null);
+        loopFields[`loop${ln}_filtration`]     = ln === n ? (listRowForm.filtration     || null) : (system[`loop${ln}_filtration`]     || null);
+        loopFields[`loop${ln}_bio_degas_m3h`]  = ln === n ? (listRowForm.bio_degas_m3h  ? parseFloat(listRowForm.bio_degas_m3h) : null) : (system[`loop${ln}_bio_degas_m3h`] ?? null);
+        loopFields[`loop${ln}_link_bio_degas`] = ln === n ? !!listRowForm.link_bio_degas : !!system[`loop${ln}_link_bio_degas`];
+      }
+      await api.put(`/systems/${systemId}`, {
+        system_code:         system.system_code,
+        system_name:         system.system_name,
+        system_type:         system.system_type         || null,
+        water_type:          system.water_type          || null,
+        status:              system.status,
+        design_flow_m3h:     system.design_flow_m3h     || null,
+        turnover_rate_hr:    system.turnover_rate_hr    || null,
+        duty_description:    system.duty_description    || null,
+        redundancy_strategy: system.redundancy_strategy || null,
+        system_config:       system.system_config       || 'bespoke',
+        compact_unit_id:     system.compact_unit_id     || null,
+        ...loopFields,
+      });
+      toast.success(`Loop ${n} saved`);
+      setListEditRow(null);
+      setListRowForm(null);
+      refresh();
+    } catch {
+      toast.error('Failed to save loop');
+    } finally {
+      setFlowSaving(false);
+    }
+  };
+
+  const deleteLoop = async (n: number) => {
+    if (!confirm(`Remove Loop ${n}? This will clear all its configuration.`)) return;
+    setFlowSaving(true);
+    try {
+      const loopFields: any = {};
+      for (const ln of [1, 2, 3]) {
+        loopFields[`loop${ln}_flow_source`]    = ln === n ? null : (system[`loop${ln}_flow_source`]    || null);
+        loopFields[`loop${ln}_filtration`]     = ln === n ? null : (system[`loop${ln}_filtration`]     || null);
+        loopFields[`loop${ln}_bio_degas_m3h`]  = ln === n ? null : (system[`loop${ln}_bio_degas_m3h`]  ?? null);
+        loopFields[`loop${ln}_link_bio_degas`] = ln === n ? false : !!system[`loop${ln}_link_bio_degas`];
+      }
+      await api.put(`/systems/${systemId}`, {
+        system_code:         system.system_code,
+        system_name:         system.system_name,
+        system_type:         system.system_type         || null,
+        water_type:          system.water_type          || null,
+        status:              system.status,
+        design_flow_m3h:     system.design_flow_m3h     || null,
+        turnover_rate_hr:    system.turnover_rate_hr    || null,
+        duty_description:    system.duty_description    || null,
+        redundancy_strategy: system.redundancy_strategy || null,
+        system_config:       system.system_config       || 'bespoke',
+        compact_unit_id:     system.compact_unit_id     || null,
+        ...loopFields,
+      });
+      toast.success(`Loop ${n} removed`);
+      refresh();
+    } catch {
+      toast.error('Failed to remove loop');
     } finally {
       setFlowSaving(false);
     }
@@ -923,43 +1033,59 @@ export default function DesignBookLSSDetail() {
         const isSaltwater = system.water_type === 'Marine' || system.water_type === 'Salt Water';
         const FLOW_SOURCES = ['Bottom Drain', 'Surface Skim', 'Both Integrated'] as const;
         const FILTRATION_OPTS = [
-          { label: 'Foam Fractionation', value: 'Foam Fractionation', saltwaterOnly: true },
+          { label: 'Foam Fractionation',     value: 'Foam Fractionation',     saltwaterOnly: true  },
           { label: 'Pressurized Bag Filter', value: 'Pressurized Bag Filter', saltwaterOnly: false },
-          { label: 'Sand Filter', value: 'Sand Filter', saltwaterOnly: false },
+          { label: 'Sand Filter',            value: 'Sand Filter',            saltwaterOnly: false },
         ];
         const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
-        const systemFlow = parseFloat(system.design_flow_m3h) || 0;
+        const systemFlow   = parseFloat(system.design_flow_m3h) || 0;
 
-        const LoopView = ({ n }: { n: 1 | 2 }) => {
-          const src  = system[`loop${n}_flow_source`];
-          const filt = system[`loop${n}_filtration`];
-          const bio  = system[`loop${n}_bio_degas_m3h`];
+        const LOOP_COLORS: Record<number, { badge: string; border: string; label: string }> = {
+          1: { badge: 'bg-violet-100 text-violet-700', border: 'border-violet-200', label: 'text-violet-800' },
+          2: { badge: 'bg-blue-100 text-blue-700',     border: 'border-blue-200',   label: 'text-blue-800'   },
+          3: { badge: 'bg-indigo-100 text-indigo-700', border: 'border-indigo-200', label: 'text-indigo-800' },
+        };
+
+        const loopHasData = (n: number) =>
+          !!(system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] ||
+             system[`loop${n}_bio_degas_m3h`] != null || system[`loop${n}_link_bio_degas`]);
+
+        const activeLoops: number[]        = [1, 2, 3].filter(n => n === 1 || loopHasData(n));
+        const nextLoopToAdd: number | undefined = [2, 3].find(n => !loopHasData(n) && (n === 2 || loopHasData(n - 1)));
+        const canAddNext = nextLoopToAdd != null && nextLoopToAdd <= 3;
+
+        // ── Read-only loop card ────────────────────────────────────────────
+        const LoopView = ({ n }: { n: number }) => {
+          const src    = system[`loop${n}_flow_source`];
+          const filt   = system[`loop${n}_filtration`];
+          const bio    = system[`loop${n}_bio_degas_m3h`];
           const linked = !!system[`loop${n}_link_bio_degas`];
-          const hasSomething = src || filt || bio != null;
-          if (!hasSomething) return (
-            <div className="text-xs text-stone-300 italic py-2">Not configured</div>
-          );
+          if (!src && !filt && bio == null && !linked)
+            return <div className="text-xs text-stone-300 italic py-2">Not configured</div>;
           return (
-            <div className="space-y-2 text-sm">
-              {src && (
-                <div className="flex items-center gap-2">
-                  <Droplets className="w-3.5 h-3.5 text-cyan-500 flex-shrink-0" />
+            <div className="space-y-2">
+              {src ? (
+                <div className="flex items-center gap-2 text-sm">
+                  <Droplets className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
                   <span className="text-stone-500 text-xs">Source:</span>
                   <span className="font-medium text-stone-800">{src}</span>
                 </div>
-              )}
+              ) : <div className="text-xs text-stone-300 italic">No source set</div>}
               {filt && (
-                <div className="flex items-center gap-2">
-                  <FlaskConical className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+                <div className="flex items-center gap-2 text-sm">
+                  <FlaskConical className="w-3.5 h-3.5 text-violet-500 shrink-0" />
                   <span className="text-stone-500 text-xs">Filtration:</span>
                   <span className="font-medium text-stone-800">{filt}</span>
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <Wind className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+              <div className="flex items-center gap-2 text-sm">
+                <Wind className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                 <span className="text-stone-500 text-xs">Bio/Degas:</span>
                 {linked
-                  ? <span className="font-mono text-emerald-700 font-semibold text-xs">{systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'} <span className="text-stone-400 font-normal">(linked)</span></span>
+                  ? <span className="font-mono text-emerald-700 font-semibold text-xs">
+                      {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'}{' '}
+                      <span className="text-stone-400 font-normal">(linked)</span>
+                    </span>
                   : bio != null
                     ? <span className="font-mono text-stone-800 font-semibold text-xs">{parseFloat(bio).toFixed(1)} m³/h</span>
                     : <span className="text-stone-300 text-xs">—</span>
@@ -969,19 +1095,18 @@ export default function DesignBookLSSDetail() {
           );
         };
 
-        const LoopEditor = ({ n }: { n: 1 | 2 }) => {
+        // ── Loop editor panel (card edit mode) ────────────────────────────
+        const LoopEditor = ({ n }: { n: number }) => {
           if (!flowForm) return null;
-          const srcKey  = `loop${n}_flow_source` as const;
-          const filtKey = `loop${n}_filtration` as const;
-          const bioKey  = `loop${n}_bio_degas_m3h` as const;
-          const lnkKey  = `loop${n}_link_bio_degas` as const;
+          const srcKey  = `loop${n}_flow_source`;
+          const filtKey = `loop${n}_filtration`;
+          const bioKey  = `loop${n}_bio_degas_m3h`;
+          const lnkKey  = `loop${n}_link_bio_degas`;
           const linked: boolean = !!flowForm[lnkKey];
           const curSrc  = flowForm[srcKey]  as string;
           const curFilt = flowForm[filtKey] as string;
-
           return (
             <div className="space-y-4">
-              {/* Flow Source */}
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">Flow Source</label>
                 <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
@@ -993,16 +1118,13 @@ export default function DesignBookLSSDetail() {
                   ))}
                 </div>
               </div>
-
-              {/* Filtration */}
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">Filtration Type</label>
                 <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
                   {FILTRATION_OPTS.map(o => {
                     const disabled = o.saltwaterOnly && !isSaltwater;
                     return (
-                      <button key={o.value} type="button"
-                        disabled={disabled}
+                      <button key={o.value} type="button" disabled={disabled}
                         onClick={() => !disabled && setFF(filtKey, curFilt === o.value ? '' : o.value)}
                         className={`flex-1 px-2 py-1.5 transition-colors text-center leading-tight border-r border-stone-200 last:border-r-0
                           ${disabled ? 'bg-stone-50 text-stone-300 cursor-not-allowed' : curFilt === o.value ? 'bg-violet-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
@@ -1013,8 +1135,6 @@ export default function DesignBookLSSDetail() {
                   })}
                 </div>
               </div>
-
-              {/* Bio / Degas */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-medium text-stone-500">Bio / Degas Flow (m³/h)</label>
@@ -1026,7 +1146,8 @@ export default function DesignBookLSSDetail() {
                 </div>
                 {linked ? (
                   <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-sm font-mono text-emerald-800 font-semibold">
-                    {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'} <span className="text-emerald-600 font-normal text-xs">(= system design flow)</span>
+                    {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'}{' '}
+                    <span className="text-emerald-600 font-normal text-xs">(= system design flow)</span>
                   </div>
                 ) : (
                   <input type="number" step="0.1" min="0" placeholder="e.g. 12.5"
@@ -1040,6 +1161,8 @@ export default function DesignBookLSSDetail() {
 
         return (
           <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+
+            {/* ── Header ──────────────────────────────────────────────────── */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-violet-50/30">
               <div className="flex items-center gap-2">
                 <Route className="w-4 h-4 text-violet-600" />
@@ -1048,63 +1171,267 @@ export default function DesignBookLSSDetail() {
                   <span className="text-xs text-stone-400 ml-1">· Foam Fractionation disabled (freshwater)</span>
                 )}
               </div>
-              {!flowEditMode && (
-                <button onClick={startFlowEdit}
-                  className="flex items-center gap-1 text-xs text-violet-700 hover:text-violet-900 border border-violet-200 bg-white rounded-md px-2.5 py-1.5 transition-colors">
-                  <Pencil className="w-3 h-3" /> Edit
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {/* Card / List toggle */}
+                <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
+                  <button onClick={() => setFlowViewMode('card')}
+                    className={`px-2.5 py-1 transition-colors ${flowViewMode === 'card' ? 'bg-stone-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
+                    Card
+                  </button>
+                  <button onClick={() => setFlowViewMode('list')}
+                    className={`px-2.5 py-1 border-l border-stone-200 transition-colors ${flowViewMode === 'list' ? 'bg-stone-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
+                    List
+                  </button>
+                </div>
+                {/* Edit button — card view only */}
+                {flowViewMode === 'card' && !flowEditMode && (
+                  <button onClick={() => startFlowEdit()}
+                    className="flex items-center gap-1 text-xs text-violet-700 hover:text-violet-900 border border-violet-200 bg-white rounded-md px-2.5 py-1.5 transition-colors">
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="p-5">
-              {flowEditMode && flowForm ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold flex items-center justify-center">1</span>
-                        <span className="text-sm font-semibold text-stone-700">Loop 1</span>
-                      </div>
-                      <LoopEditor n={1} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
-                        <span className="text-sm font-semibold text-stone-700">Loop 2</span>
-                      </div>
-                      <LoopEditor n={2} />
+            {/* ── Card View ───────────────────────────────────────────────── */}
+            {flowViewMode === 'card' && (
+              <div className="p-5">
+                {flowEditMode && flowForm ? (
+                  <div className="space-y-6">
+                    {expandedCardLoops.map((n, idx) => {
+                      const colors = LOOP_COLORS[n] ?? LOOP_COLORS[1];
+                      return (
+                        <div key={n}>
+                          {idx > 0 && <div className="border-t border-stone-100 mb-6" />}
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                              <span className="text-sm font-semibold text-stone-700">Loop {n}</span>
+                            </div>
+                            {n > 1 && (
+                              <button type="button" onClick={() => {
+                                setFF(`loop${n}_flow_source`, '');
+                                setFF(`loop${n}_filtration`, '');
+                                setFF(`loop${n}_bio_degas_m3h`, '');
+                                setFF(`loop${n}_link_bio_degas`, false);
+                                setExpandedCardLoops(prev => prev.filter(x => x !== n));
+                              }} className="text-xs text-stone-400 hover:text-red-500 flex items-center gap-0.5 transition-colors">
+                                <X className="w-3 h-3" /> Remove
+                              </button>
+                            )}
+                          </div>
+                          <LoopEditor n={n} />
+                        </div>
+                      );
+                    })}
+
+                    {/* Add next loop (inside edit mode) */}
+                    {(() => {
+                      const next = [2, 3].find(n => !expandedCardLoops.includes(n));
+                      if (!next || next > 3) return null;
+                      return (
+                        <button type="button" onClick={() => setExpandedCardLoops(prev => [...prev, next])}
+                          className="w-full py-2.5 text-xs text-stone-400 border border-dashed border-stone-200 rounded-lg hover:border-blue-300 hover:text-blue-600 transition-colors flex items-center justify-center gap-1.5">
+                          <Plus className="w-3.5 h-3.5" /> Add Loop {next}
+                        </button>
+                      );
+                    })()}
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
+                      <button onClick={saveFlowRoute} disabled={flowSaving}
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-violet-600 hover:bg-violet-700 rounded-lg disabled:opacity-50">
+                        <Save className="w-3.5 h-3.5" /> {flowSaving ? 'Saving…' : 'Save Flow Route'}
+                      </button>
+                      <button onClick={() => { setFlowEditMode(false); setExpandedCardLoops([1]); }}
+                        className="px-4 py-2 text-sm text-stone-500 border border-stone-200 bg-white rounded-lg hover:text-stone-700">
+                        Cancel
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
-                    <button onClick={saveFlowRoute} disabled={flowSaving}
-                      className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-violet-600 hover:bg-violet-700 rounded-lg disabled:opacity-50">
-                      <Save className="w-3.5 h-3.5" /> {flowSaving ? 'Saving…' : 'Save Flow Route'}
-                    </button>
-                    <button onClick={() => setFlowEditMode(false)}
-                      className="px-4 py-2 text-sm text-stone-500 border border-stone-200 bg-white rounded-lg hover:text-stone-700">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-6">
+                ) : (
                   <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold flex items-center justify-center">1</span>
-                      <span className="text-sm font-semibold text-stone-700">Loop 1</span>
+                    <div className={`grid gap-4 ${activeLoops.length >= 2 ? 'grid-cols-2' : 'grid-cols-1 max-w-sm'}`}>
+                      {activeLoops.map(n => {
+                        const colors = LOOP_COLORS[n] ?? LOOP_COLORS[1];
+                        return (
+                          <div key={n} className={`rounded-lg border p-4 ${colors.border}`}>
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                              <span className={`text-sm font-semibold ${colors.label}`}>Loop {n}</span>
+                            </div>
+                            <LoopView n={n} />
+                          </div>
+                        );
+                      })}
                     </div>
-                    <LoopView n={1} />
+                    {canAddNext && (
+                      <button onClick={() => startFlowEdit(nextLoopToAdd)}
+                        className="mt-4 w-full py-2.5 text-xs text-stone-400 border border-dashed border-stone-200 rounded-lg hover:border-blue-300 hover:text-blue-600 transition-colors flex items-center justify-center gap-1.5">
+                        <Plus className="w-3.5 h-3.5" /> Add Loop {nextLoopToAdd}
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
-                      <span className="text-sm font-semibold text-stone-700">Loop 2</span>
-                    </div>
-                    <LoopView n={2} />
+                )}
+              </div>
+            )}
+
+            {/* ── List View ───────────────────────────────────────────────── */}
+            {flowViewMode === 'list' && (
+              <div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-stone-100 bg-stone-50/60">
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-stone-500 w-12">#</th>
+                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Flow Source</th>
+                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Filtration</th>
+                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Bio / Degas (m³/h)</th>
+                      <th className="text-center px-3 py-2.5 text-xs font-medium text-stone-500 w-16">Linked</th>
+                      <th className="px-3 py-2.5 w-24" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {[
+                      ...activeLoops,
+                      ...(listEditRow !== null && !activeLoops.includes(listEditRow) ? [listEditRow] : []),
+                    ].map(n => {
+                      const colors    = LOOP_COLORS[n] ?? LOOP_COLORS[1];
+                      const isEditing = listEditRow === n;
+
+                      if (isEditing && listRowForm) {
+                        const linked: boolean = !!listRowForm.link_bio_degas;
+                        return (
+                          <tr key={n} className="bg-blue-50/20">
+                            <td className="px-4 py-2.5">
+                              <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <select value={listRowForm.flow_source} onChange={e => setLRF('flow_source', e.target.value)}
+                                className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
+                                <option value="">— None —</option>
+                                {FLOW_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              <select value={listRowForm.filtration} onChange={e => setLRF('filtration', e.target.value)}
+                                className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
+                                <option value="">— None —</option>
+                                {FILTRATION_OPTS.map(o => (
+                                  <option key={o.value} value={o.value} disabled={o.saltwaterOnly && !isSaltwater}>
+                                    {o.label}{o.saltwaterOnly && !isSaltwater ? ' (saltwater only)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              {linked ? (
+                                <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                                  {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'}
+                                </span>
+                              ) : (
+                                <input type="number" step="0.1" min="0" placeholder="0.0"
+                                  value={listRowForm.bio_degas_m3h}
+                                  onChange={e => setLRF('bio_degas_m3h', e.target.value)}
+                                  className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <input type="checkbox" checked={linked} onChange={e => setLRF('link_bio_degas', e.target.checked)}
+                                className="rounded border-stone-300 text-emerald-600" />
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1 justify-end">
+                                <button onClick={() => saveListRow(n)} disabled={flowSaving}
+                                  className="flex items-center gap-1 text-xs text-white bg-violet-600 hover:bg-violet-700 rounded px-2 py-1 disabled:opacity-50">
+                                  <Save className="w-3 h-3" /> {flowSaving ? '…' : 'Save'}
+                                </button>
+                                <button onClick={() => { setListEditRow(null); setListRowForm(null); }}
+                                  className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 rounded p-1">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      const src    = system[`loop${n}_flow_source`];
+                      const filt   = system[`loop${n}_filtration`];
+                      const bio    = system[`loop${n}_bio_degas_m3h`];
+                      const linked = !!system[`loop${n}_link_bio_degas`];
+                      return (
+                        <tr key={n} className="hover:bg-stone-50/60 group">
+                          <td className="px-4 py-3">
+                            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                          </td>
+                          <td className="px-3 py-3">
+                            {src ? (
+                              <span className="flex items-center gap-1.5 text-stone-700">
+                                <Droplets className="w-3 h-3 text-cyan-500 shrink-0" /> {src}
+                              </span>
+                            ) : <span className="text-stone-300 text-xs italic">—</span>}
+                          </td>
+                          <td className="px-3 py-3">
+                            {filt ? (
+                              <span className="flex items-center gap-1.5 text-stone-700">
+                                <FlaskConical className="w-3 h-3 text-violet-500 shrink-0" /> {filt}
+                              </span>
+                            ) : <span className="text-stone-300 text-xs italic">—</span>}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-xs">
+                            {linked
+                              ? <span className="text-emerald-700">{systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'} <span className="text-stone-400 font-sans">(linked)</span></span>
+                              : bio != null
+                                ? <span className="text-stone-800">{parseFloat(bio).toFixed(1)} m³/h</span>
+                                : <span className="text-stone-300">—</span>
+                            }
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            {linked
+                              ? <Check className="w-3.5 h-3.5 text-emerald-500 mx-auto" />
+                              : <span className="text-stone-200 text-xs">—</span>
+                            }
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => {
+                                setListEditRow(n);
+                                setListRowForm({
+                                  flow_source:    system[`loop${n}_flow_source`]    || '',
+                                  filtration:     system[`loop${n}_filtration`]     || '',
+                                  bio_degas_m3h:  system[`loop${n}_bio_degas_m3h`]  != null ? String(system[`loop${n}_bio_degas_m3h`]) : '',
+                                  link_bio_degas: !!system[`loop${n}_link_bio_degas`],
+                                });
+                              }} className="text-xs text-stone-400 hover:text-blue-600 border border-stone-200 rounded px-2 py-1 flex items-center gap-1 bg-white">
+                                <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                              {n > 1 && (
+                                <button onClick={() => deleteLoop(n)}
+                                  className="text-xs text-stone-300 hover:text-red-500 border border-stone-200 rounded p-1 bg-white">
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {/* Add next loop footer */}
+                {canAddNext && listEditRow !== nextLoopToAdd && (
+                  <div className="px-4 py-3 border-t border-stone-100 bg-stone-50/30">
+                    <button onClick={() => {
+                      setListEditRow(nextLoopToAdd!);
+                      setListRowForm({ flow_source: '', filtration: '', bio_degas_m3h: '', link_bio_degas: false });
+                    }} className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-blue-600 transition-colors">
+                      <Plus className="w-3.5 h-3.5" /> Add Loop {nextLoopToAdd}
+                    </button>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
+
           </div>
         );
       })()}
