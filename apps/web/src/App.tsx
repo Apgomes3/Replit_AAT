@@ -46,6 +46,7 @@ import DesignBookDetail from './pages/design-books/DesignBookDetail';
 import DesignBookEngineDashboard from './pages/design-books/DesignBookEngineDashboard';
 import ExhibitDetail from './pages/design-books/ExhibitDetail';
 import DesignBookLSSDetail from './pages/design-books/DesignBookLSSDetail';
+import LSSCompactUnitsCatalog from './pages/design-books/LSSCompactUnitsCatalog';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -106,6 +107,7 @@ export default function App() {
             <Route path="design-books/:id" element={<DesignBookDetail />} />
             <Route path="design-books/:bookId/exhibits/:exhibitId" element={<ExhibitDetail />} />
             <Route path="design-books/:bookId/lss/:systemId" element={<DesignBookLSSDetail />} />
+            <Route path="lss-compact-units" element={<LSSCompactUnitsCatalog />} />
           </Route>
         </Routes>
       </BrowserRouter>

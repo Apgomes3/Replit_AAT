@@ -7,6 +7,7 @@ import {
   ChevronRight, Activity, Pencil, Save, X, Plus, Trash2,
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
   Droplets, ArrowLeft, Route, FlaskConical, Wind,
+  Layers, Package, ExternalLink, Zap, Weight, Maximize2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -221,6 +222,10 @@ export default function DesignBookLSSDetail() {
     queryKey: ['system-exhibit-links', systemId],
     queryFn: () => api.get(`/systems/${systemId}/exhibit-links`).then(r => r.data),
   });
+  const { data: compactUnits = [] } = useQuery({
+    queryKey: ['lss-compact-units'],
+    queryFn: () => api.get('/lss-compact-units').then(r => r.data),
+  });
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['system', systemId] });
@@ -293,6 +298,10 @@ export default function DesignBookLSSDetail() {
   const [showAddExhibit, setShowAddExhibit] = useState(false);
   const [editLink, setEditLink]   = useState<any>(null);
   const [deletingLink, setDeletingLink] = useState<string | null>(null);
+
+  // System config selector
+  const [configSaving, setConfigSaving] = useState(false);
+  const [pendingUnitId, setPendingUnitId] = useState<string>('');
 
   // Flow Route edit state
   const [flowEditMode, setFlowEditMode] = useState(false);
@@ -370,6 +379,39 @@ export default function DesignBookLSSDetail() {
       toast.error('Failed to remove link');
     } finally {
       setDeletingLink(null);
+    }
+  };
+
+  const saveSystemConfig = async (config: 'compact' | 'bespoke', unitId?: string) => {
+    setConfigSaving(true);
+    try {
+      await api.put(`/systems/${systemId}`, {
+        system_code:         system.system_code,
+        system_name:         system.system_name,
+        system_type:         system.system_type          || null,
+        water_type:          system.water_type           || null,
+        status:              system.status,
+        design_flow_m3h:     system.design_flow_m3h      || null,
+        turnover_rate_hr:    system.turnover_rate_hr     || null,
+        duty_description:    system.duty_description     || null,
+        redundancy_strategy: system.redundancy_strategy  || null,
+        loop1_flow_source:   system.loop1_flow_source    || null,
+        loop1_filtration:    system.loop1_filtration     || null,
+        loop1_bio_degas_m3h: system.loop1_bio_degas_m3h  ?? null,
+        loop1_link_bio_degas: !!system.loop1_link_bio_degas,
+        loop2_flow_source:   system.loop2_flow_source    || null,
+        loop2_filtration:    system.loop2_filtration     || null,
+        loop2_bio_degas_m3h: system.loop2_bio_degas_m3h  ?? null,
+        loop2_link_bio_degas: !!system.loop2_link_bio_degas,
+        system_config:   config,
+        compact_unit_id: config === 'compact' ? (unitId || null) : null,
+      });
+      toast.success(config === 'compact' ? 'Set to Compact Unit' : 'Set to Bespoke System');
+      refresh();
+    } catch {
+      toast.error('Failed to update system configuration');
+    } finally {
+      setConfigSaving(false);
     }
   };
 
@@ -496,6 +538,135 @@ export default function DesignBookLSSDetail() {
         <ChevronRight className="w-3.5 h-3.5" />
         <span className="text-stone-800 font-medium">{system.system_code}</span>
       </nav>
+
+      {/* System Configuration selector */}
+      {(() => {
+        const cfg = system.system_config || 'bespoke';
+        const selectedUnit = (compactUnits as any[]).find(u => u.id === system.compact_unit_id);
+        const localUnitId = pendingUnitId || system.compact_unit_id || '';
+
+        return (
+          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-stone-500" />
+              <span className="text-sm font-semibold text-stone-700">System Configuration</span>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Choice cards */}
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  {
+                    key: 'compact' as const,
+                    title: 'Compact Unit',
+                    desc: 'Select a packaged LSS unit from the catalog — pre-defined flow, volume and filtration',
+                    icon: <Layers className="w-5 h-5" />,
+                    color: cfg === 'compact' ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-300/50' : 'border-stone-200 hover:border-violet-300 hover:bg-violet-50/30',
+                    textColor: cfg === 'compact' ? 'text-violet-800' : 'text-stone-700',
+                  },
+                  {
+                    key: 'bespoke' as const,
+                    title: 'Bespoke / Large System',
+                    desc: 'Custom-designed system — configure loops, filtration and bio/degas flow manually',
+                    icon: <Route className="w-5 h-5" />,
+                    color: cfg === 'bespoke' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-300/50' : 'border-stone-200 hover:border-blue-300 hover:bg-blue-50/30',
+                    textColor: cfg === 'bespoke' ? 'text-blue-800' : 'text-stone-700',
+                  },
+                ] as const).map(opt => (
+                  <button key={opt.key} type="button" disabled={configSaving}
+                    onClick={() => {
+                      if (opt.key !== cfg) saveSystemConfig(opt.key, opt.key === 'compact' ? localUnitId : undefined);
+                    }}
+                    className={`text-left p-4 rounded-xl border-2 transition-all ${opt.color} disabled:opacity-60`}>
+                    <div className={`flex items-center gap-2 mb-1.5 font-semibold text-sm ${opt.textColor}`}>
+                      {opt.icon} {opt.title}
+                      {cfg === opt.key && <Check className="w-3.5 h-3.5 ml-auto" />}
+                    </div>
+                    <p className="text-xs text-stone-500 leading-relaxed">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Compact unit picker */}
+              {cfg === 'compact' && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-stone-500 mb-1.5">Select Unit from Catalog</label>
+                      <select
+                        value={localUnitId}
+                        onChange={e => {
+                          setPendingUnitId(e.target.value);
+                          if (e.target.value) saveSystemConfig('compact', e.target.value);
+                        }}
+                        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 bg-white"
+                      >
+                        <option value="">— Choose a compact unit —</option>
+                        {(compactUnits as any[]).map((u: any) => (
+                          <option key={u.id} value={u.id}>
+                            {u.unit_code} — {u.unit_name}{u.water_type ? ` (${u.water_type})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <Link to="/lss-compact-units"
+                      className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 border border-violet-200 rounded-lg px-2.5 py-2 mt-5 whitespace-nowrap transition-colors">
+                      <Layers className="w-3 h-3" /> Manage Catalog
+                    </Link>
+                  </div>
+
+                  {/* Selected unit spec card */}
+                  {selectedUnit && (
+                    <div className="bg-violet-50/50 border border-violet-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded">{selectedUnit.unit_code}</span>
+                          <h3 className="font-semibold text-stone-800 mt-1">{selectedUnit.unit_name}</h3>
+                          {selectedUnit.manufacturer && <p className="text-xs text-stone-500">{selectedUnit.manufacturer}</p>}
+                        </div>
+                        {selectedUnit.product_master_id && (
+                          <Link to={`/products/masters/${selectedUnit.product_master_id}`}
+                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-white rounded-lg px-2.5 py-1.5 transition-colors">
+                            <Package className="w-3 h-3" /> {selectedUnit.product_code}
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </Link>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        {[
+                          { label: 'Tank Volume', value: selectedUnit.min_tank_volume_m3 != null ? `${selectedUnit.min_tank_volume_m3}–${selectedUnit.max_tank_volume_m3 ?? '?'} m³` : null },
+                          { label: 'Design Flow', value: selectedUnit.design_flow_m3h != null ? `${parseFloat(selectedUnit.design_flow_m3h).toFixed(1)} m³/h` : null },
+                          { label: 'Break Tank', value: selectedUnit.break_tank_volume_l != null ? `${parseFloat(selectedUnit.break_tank_volume_l).toFixed(0)} L` : null },
+                          { label: 'Power', value: selectedUnit.power_kw != null ? `${parseFloat(selectedUnit.power_kw).toFixed(1)} kW` : null },
+                          { label: 'Filtration', value: selectedUnit.includes_filtration },
+                          { label: 'UV', value: selectedUnit.uv_power_w != null ? `${selectedUnit.uv_power_w} W` : null },
+                          { label: 'Footprint', value: selectedUnit.footprint_l_mm != null ? `${selectedUnit.footprint_l_mm}×${selectedUnit.footprint_w_mm} mm` : null },
+                          { label: 'Dry Weight', value: selectedUnit.dry_weight_kg != null ? `${selectedUnit.dry_weight_kg} kg` : null },
+                        ].filter(s => s.value).map(s => (
+                          <div key={s.label} className="bg-white/70 rounded-lg p-2 border border-violet-100">
+                            <div className="text-stone-400 mb-0.5">{s.label}</div>
+                            <div className="font-mono font-semibold text-stone-700">{s.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedUnit.notes && (
+                        <p className="text-xs text-stone-500 leading-relaxed border-t border-violet-100 pt-2">{selectedUnit.notes}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {!selectedUnit && (compactUnits as any[]).length === 0 && (
+                    <div className="flex items-center gap-2 text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-lg px-4 py-3">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      No units in the catalog yet.{' '}
+                      <Link to="/lss-compact-units" className="text-violet-600 hover:underline">Add units to the catalog</Link> first.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* System header card */}
       <div className="bg-white rounded-2xl border border-stone-200 p-6">

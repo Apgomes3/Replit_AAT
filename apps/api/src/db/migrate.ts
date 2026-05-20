@@ -927,6 +927,38 @@ ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_length_mm NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_width_mm NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_height_mm NUMERIC;
 
+-- LSS COMPACT UNITS: master product catalog for compact LSS systems
+CREATE TABLE IF NOT EXISTS lss_compact_units (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  unit_code            VARCHAR(50) NOT NULL UNIQUE,
+  unit_name            VARCHAR(255) NOT NULL,
+  manufacturer         VARCHAR(100),
+  water_type           VARCHAR(50),
+  min_tank_volume_m3   NUMERIC,
+  max_tank_volume_m3   NUMERIC,
+  design_flow_m3h      NUMERIC,
+  max_flow_m3h         NUMERIC,
+  break_tank_volume_l  NUMERIC,
+  includes_filtration  VARCHAR(255),
+  uv_power_w           NUMERIC,
+  footprint_l_mm       NUMERIC,
+  footprint_w_mm       NUMERIC,
+  height_mm            NUMERIC,
+  dry_weight_kg        NUMERIC,
+  power_kw             NUMERIC,
+  inlet_connection     VARCHAR(50),
+  outlet_connection    VARCHAR(50),
+  notes                TEXT,
+  product_master_id    UUID REFERENCES product_masters(id),
+  status               VARCHAR(50) DEFAULT 'Active',
+  created_at           TIMESTAMPTZ DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- SYSTEMS: config type + compact unit link
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS system_config   VARCHAR(20) DEFAULT 'bespoke';
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS compact_unit_id UUID REFERENCES lss_compact_units(id);
+
 -- SYSTEMS: flow route loop configuration
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_flow_source    VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_filtration     VARCHAR(50);

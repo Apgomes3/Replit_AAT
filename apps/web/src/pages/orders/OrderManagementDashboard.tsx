@@ -18,7 +18,7 @@ const CAN_APPROVE_ROLES = new Set(['admin', 'hq_manager']);
 
 const PIPELINE_STAGES = [
   { key: 'draft',              label: 'Draft',             color: 'bg-slate-100 text-slate-600 border-slate-200' },
-  { key: 'pending_approval',   label: 'Pending Approval',  color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { key: 'pending_approval',   label: 'Pending Approval',  color: 'bg-sky-50 text-sky-700 border-sky-200' },
   { key: 'purchase_order',     label: 'Purchase Order',    color: 'bg-blue-50 text-blue-700 border-blue-200' },
   { key: 'po_review',          label: 'PO Review',         color: 'bg-purple-50 text-purple-700 border-purple-200' },
   { key: 'engineering_review', label: 'Eng. Review',       color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
@@ -33,7 +33,7 @@ const ADVANCE_TO: Record<string, string> = {
 
 const STATUS_AVATAR: Record<string, { label: string; color: string }> = {
   draft:              { label: 'DR', color: 'bg-slate-100 text-slate-600' },
-  pending_approval:   { label: 'PA', color: 'bg-amber-100 text-amber-700' },
+  pending_approval:   { label: 'PA', color: 'bg-sky-100 text-sky-700' },
   purchase_order:     { label: 'PO', color: 'bg-blue-100 text-blue-700' },
   po_review:          { label: 'PR', color: 'bg-purple-100 text-purple-700' },
   engineering_review: { label: 'ER', color: 'bg-indigo-100 text-indigo-700' },
@@ -342,7 +342,7 @@ export default function OrderManagementDashboard() {
         </div>
         <span className="text-xs font-bold text-blue-600 whitespace-nowrap">{progressPct}%</span>
         {needsAction.length > 0 && (
-          <span className="ml-auto text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+          <span className="ml-auto text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
             {needsAction.length} need{needsAction.length === 1 ? 's' : ''} your action
           </span>
         )}
@@ -646,7 +646,7 @@ export default function OrderManagementDashboard() {
                               </div>
                             )}
                             {isLatest && h.to_status === 'pending_approval' && (
-                              <div className="text-xs text-amber-700 mt-1 bg-amber-50 border border-amber-100 rounded px-2 py-1 inline-block">
+                              <div className="text-xs text-sky-700 mt-1 bg-sky-50 border border-sky-100 rounded px-2 py-1 inline-block">
                                 Waiting for HQ Manager / Admin approval
                               </div>
                             )}

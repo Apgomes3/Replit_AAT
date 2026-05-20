@@ -29,6 +29,7 @@ const SECTIONS: { id: string; label: string; hub: string; items: NavItemDef[] }[
     id: 'design-book-engine', label: 'Design Book Engine', hub: '/design-book-engine',
     items: [
       { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
+      { id: 'lss-catalog', to: '/lss-compact-units', icon: Layers, label: 'LSS Unit Catalog' },
     ],
   },
 ];

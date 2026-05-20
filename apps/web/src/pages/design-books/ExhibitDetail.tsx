@@ -1442,7 +1442,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   <input type="number" min="0" placeholder="e.g. 300"
                     value={form.theming_height_mm} onChange={e => setF('theming_height_mm', e.target.value)}
                     className={inputCls} />
-                  {form.theming_height_mm && !themOverride && (
+                  {form.theming_height_mm && themVolumeMode === 'height' && (
                     <div className="mt-1.5">
                       {hasTankFootprint && themComputed != null ? (
                         <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded font-mono">
