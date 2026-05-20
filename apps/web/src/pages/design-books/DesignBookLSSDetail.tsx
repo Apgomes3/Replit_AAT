@@ -309,6 +309,7 @@ export default function DesignBookLSSDetail() {
   const [flowForm,     setFlowForm]     = useState<any>(null);
   const setFF = (k: string, v: any) => setFlowForm((f: any) => ({ ...f, [k]: v }));
   const [flowViewMode, setFlowViewMode] = useState<'card' | 'list'>('card');
+  const [flowUnit, setFlowUnit] = useState<'M3H' | 'LS' | 'GPM'>('M3H');
   const [expandedCardLoops, setExpandedCardLoops] = useState<number[]>([1]);
   const [listEditRow, setListEditRow] = useState<number | null>(null);
   const [listRowForm, setListRowForm] = useState<any>(null);
@@ -527,9 +528,11 @@ export default function DesignBookLSSDetail() {
         ...loopFields,
       });
       toast.success(`Loop ${n} saved`);
+      // Await refetch so the loop stays visible in the list until new data arrives
+      await qc.refetchQueries({ queryKey: ['system', systemId] });
+      qc.invalidateQueries({ queryKey: ['design-book', bookId] });
       setListEditRow(null);
       setListRowForm(null);
-      refresh();
     } catch {
       toast.error('Failed to save loop');
     } finally {
@@ -1038,13 +1041,24 @@ export default function DesignBookLSSDetail() {
           { label: 'Sand Filter',            value: 'Sand Filter',            saltwaterOnly: false },
         ];
         const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
-        const systemFlow   = parseFloat(system.design_flow_m3h) || 0;
-
-        // Derive bottom-drain / surface-skim split from the primary linked exhibit's hydraulics
+        // Derive exhibit hydraulics first — used for flow fallback when design_flow_m3h is unset
         const primaryExLink = (links as any[]).find((l: any) => l.link_type === 'Primary') ?? (links as any[])[0];
         const exHydr = primaryExLink && book
           ? (book.hydraulics || []).find((h: any) => h.exhibit_id === primaryExLink.exhibit_id)
           : null;
+        const exTanksForFlow = (primaryExLink && book)
+          ? (book.tanks || []).filter((t: any) => t.exhibit_id === primaryExLink.exhibit_id)
+          : [];
+        const exOpVol    = exTanksForFlow.reduce((s: number, t: any) =>
+          s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
+        const exTurnover = parseFloat(exHydr?.target_turnover_rate) || 0;
+
+        // System flow: prefer saved design_flow_m3h; fall back to computed exhibit flow
+        const systemFlowRaw = parseFloat(system.design_flow_m3h) || 0;
+        const systemFlow    = systemFlowRaw > 0
+          ? systemFlowRaw
+          : (exOpVol > 0 && exTurnover > 0 ? exOpVol * exTurnover : 0);
+
         const surfacePct  = parseFloat(exHydr?.surface_skim_pct)  || 30;
         const bottomPct   = parseFloat(exHydr?.bottom_drain_pct)  || 70;
         const surfaceFlow = systemFlow * (surfacePct / 100);
@@ -1058,6 +1072,15 @@ export default function DesignBookLSSDetail() {
           if (src === 'Bottom Drain')  return `bottom drain (${bottomPct}%)`;
           if (src === 'Surface Skim')  return `surface skim (${surfacePct}%)`;
           return 'total exhibit flow';
+        };
+
+        // Unit conversion helpers
+        const UNIT_FACTORS: Record<string, number> = { M3H: 1, LS: 1000 / 3600, GPM: 4.40287 };
+        const UNIT_LABELS:  Record<string, string>  = { M3H: 'm³/h', LS: 'L/s', GPM: 'GPM' };
+        const fmtFlow = (m3h: number): string => {
+          if (!(m3h > 0)) return '—';
+          const val = m3h * UNIT_FACTORS[flowUnit];
+          return `${val.toFixed(1)} ${UNIT_LABELS[flowUnit]}`;
         };
 
         const LOOP_COLORS: Record<number, { badge: string; border: string; label: string }> = {
@@ -1103,11 +1126,11 @@ export default function DesignBookLSSDetail() {
                 <span className="text-stone-500 text-xs">Bio/Degas:</span>
                 {linked
                   ? <span className="font-mono text-emerald-700 font-semibold text-xs">
-                      {linkedFlowForSource(src || '') > 0 ? `${linkedFlowForSource(src || '').toFixed(1)} m³/h` : '—'}{' '}
+                      {fmtFlow(linkedFlowForSource(src || ''))}{' '}
                       <span className="text-stone-400 font-normal">({linkedFlowLabel(src || '')})</span>
                     </span>
                   : bio != null
-                    ? <span className="font-mono text-stone-800 font-semibold text-xs">{parseFloat(bio).toFixed(1)} m³/h</span>
+                    ? <span className="font-mono text-stone-800 font-semibold text-xs">{fmtFlow(parseFloat(bio))}</span>
                     : <span className="text-stone-300 text-xs">—</span>
                 }
               </div>
@@ -1166,7 +1189,7 @@ export default function DesignBookLSSDetail() {
                 </div>
                 {linked ? (
                   <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-sm font-mono text-emerald-800 font-semibold">
-                    {linkedFlowForSource(curSrc) > 0 ? `${linkedFlowForSource(curSrc).toFixed(1)} m³/h` : '—'}{' '}
+                    {fmtFlow(linkedFlowForSource(curSrc))}{' '}
                     <span className="text-emerald-600 font-normal text-xs">(= {linkedFlowLabel(curSrc)})</span>
                   </div>
                 ) : (
@@ -1192,6 +1215,15 @@ export default function DesignBookLSSDetail() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {/* Unit toggle */}
+                <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
+                  {(['M3H', 'LS', 'GPM'] as const).map((u, i) => (
+                    <button key={u} onClick={() => setFlowUnit(u)}
+                      className={`px-2 py-1 transition-colors ${i > 0 ? 'border-l border-stone-200' : ''} ${flowUnit === u ? 'bg-cyan-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
+                      {u === 'M3H' ? 'm³/h' : u === 'LS' ? 'L/s' : 'GPM'}
+                    </button>
+                  ))}
+                </div>
                 {/* Card / List toggle */}
                 <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
                   <button onClick={() => setFlowViewMode('card')}
@@ -1304,7 +1336,7 @@ export default function DesignBookLSSDetail() {
                       <th className="text-left px-4 py-2.5 text-xs font-medium text-stone-500 w-12">#</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Flow Source</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Filtration</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Bio / Degas (m³/h)</th>
+                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Bio / Degas ({UNIT_LABELS[flowUnit]})</th>
                       <th className="text-center px-3 py-2.5 text-xs font-medium text-stone-500 w-16">Linked</th>
                       <th className="px-3 py-2.5 w-24" />
                     </tr>
@@ -1345,7 +1377,7 @@ export default function DesignBookLSSDetail() {
                             <td className="px-3 py-2">
                               {linked ? (
                                 <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                                  {linkedFlowForSource(listRowForm.flow_source || '') > 0 ? `${linkedFlowForSource(listRowForm.flow_source || '').toFixed(1)} m³/h` : '—'}
+                                  {fmtFlow(linkedFlowForSource(listRowForm.flow_source || ''))}
                                 </span>
                               ) : (
                                 <input type="number" step="0.1" min="0" placeholder="0.0"
@@ -1399,9 +1431,9 @@ export default function DesignBookLSSDetail() {
                           </td>
                           <td className="px-3 py-3 font-mono text-xs">
                             {linked
-                              ? <span className="text-emerald-700">{linkedFlowForSource(src || '') > 0 ? `${linkedFlowForSource(src || '').toFixed(1)} m³/h` : '—'} <span className="text-stone-400 font-sans">({linkedFlowLabel(src || '')})</span></span>
+                              ? <span className="text-emerald-700">{fmtFlow(linkedFlowForSource(src || ''))} <span className="text-stone-400 font-sans">({linkedFlowLabel(src || '')})</span></span>
                               : bio != null
-                                ? <span className="text-stone-800">{parseFloat(bio).toFixed(1)} m³/h</span>
+                                ? <span className="text-stone-800">{fmtFlow(parseFloat(bio))}</span>
                                 : <span className="text-stone-300">—</span>
                             }
                           </td>
