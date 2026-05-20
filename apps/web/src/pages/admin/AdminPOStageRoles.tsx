@@ -12,7 +12,7 @@ const STAGE_CONFIG = [
     label: 'Pending Approval',
     description: 'Who can approve or reject a submitted PO',
     note: 'If no users are assigned here, any HQ Manager or Admin can approve. Assigning users overrides the default.',
-    color: 'amber',
+    color: 'blue',
   },
   {
     stage: 'purchase_order',
@@ -51,7 +51,6 @@ const COLOR: Record<string, { badge: string; dot: string; ring: string; header: 
   violet:  { badge: 'bg-violet-50 text-violet-700 border-violet-200', dot: 'bg-violet-500', ring: 'ring-violet-200', header: 'bg-violet-50 border-violet-100' },
   emerald: { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', ring: 'ring-emerald-200', header: 'bg-emerald-50 border-emerald-100' },
   stone:   { badge: 'bg-stone-100 text-stone-600 border-stone-200', dot: 'bg-stone-400', ring: 'ring-stone-200', header: 'bg-stone-50 border-stone-100' },
-  amber:   { badge: 'bg-amber-50 text-amber-700 border-amber-200',  dot: 'bg-amber-400',  ring: 'ring-amber-200',  header: 'bg-amber-50 border-amber-100' },
 };
 
 export default function AdminPOStageRoles() {

@@ -83,7 +83,7 @@ export default function FormulaInput({ value, onChange, placeholder, className, 
       )}
       {tooltipVisible && lastFormula && (
         <div className="absolute bottom-full left-0 mb-1.5 bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-lg whitespace-nowrap z-50 pointer-events-none flex items-center gap-1.5">
-          <span className="text-amber-300 font-mono">{lastFormula.expr}</span>
+          <span className="text-blue-300 font-mono">{lastFormula.expr}</span>
           <span className="text-slate-400">=</span>
           <span className="font-semibold font-mono">{lastFormula.result}</span>
         </div>

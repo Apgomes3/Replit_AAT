@@ -918,6 +918,7 @@ CREATE INDEX IF NOT EXISTS idx_sel_exhibit ON system_exhibit_links(exhibit_id);
 -- SUBSTRATE: height-based volume calculation fields
 ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS substrate_height_mm NUMERIC;
 ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS theming_height_mm NUMERIC;
+ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS theming_volume_pct NUMERIC(6,2);
 
 -- TANKS: additional design fields (added after initial schema)
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS material_id UUID REFERENCES materials(id);

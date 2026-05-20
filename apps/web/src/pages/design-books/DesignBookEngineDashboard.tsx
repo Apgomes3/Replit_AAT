@@ -92,7 +92,7 @@ export default function DesignBookEngineDashboard() {
           const styles: Record<string, { bg: string; text: string; dot: string; border: string }> = {
             'Draft':      { bg: 'bg-stone-50',   text: 'text-stone-600',   dot: 'bg-stone-400',   border: 'border-stone-200'  },
             'In Progress':{ bg: 'bg-blue-50',    text: 'text-blue-700',    dot: 'bg-blue-500',    border: 'border-blue-200'   },
-            'For Review': { bg: 'bg-amber-50',   text: 'text-amber-700',   dot: 'bg-amber-500',   border: 'border-amber-200'  },
+            'For Review': { bg: 'bg-sky-50',     text: 'text-sky-700',     dot: 'bg-sky-500',     border: 'border-sky-200'    },
             'Approved':   { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', border: 'border-emerald-200'},
             'Released':   { bg: 'bg-violet-50',  text: 'text-violet-700',  dot: 'bg-violet-500',  border: 'border-violet-200' },
           };

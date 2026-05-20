@@ -194,11 +194,11 @@ router.put('/design-books/:id/species/:speciesId', authenticate, async (req: Aut
 });
 
 router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, async (req: AuthRequest, res: Response) => {
-  const { substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, notes } = req.body;
+  const { substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes } = req.body;
   const result = await query(
     `INSERT INTO design_book_exhibit_substrate
-       (design_book_id, exhibit_id, substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       (design_book_id, exhibit_id, substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (design_book_id, exhibit_id)
      DO UPDATE SET
        substrate_type      = EXCLUDED.substrate_type,
@@ -207,12 +207,14 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, asyn
        theming_type        = EXCLUDED.theming_type,
        theming_height_mm   = EXCLUDED.theming_height_mm,
        theming_volume_m3   = EXCLUDED.theming_volume_m3,
+       theming_volume_pct  = EXCLUDED.theming_volume_pct,
        notes               = EXCLUDED.notes,
        updated_at          = NOW()
      RETURNING *`,
     [req.params.id, req.params.exhibitId,
      substrate_type || null, substrate_height_mm ?? null, substrate_volume_m3 ?? null,
-     theming_type || null, theming_height_mm ?? null, theming_volume_m3 ?? null, notes || null]
+     theming_type || null, theming_height_mm ?? null, theming_volume_m3 ?? null,
+     theming_volume_pct ?? null, notes || null]
   );
   res.json(result.rows[0]);
 });

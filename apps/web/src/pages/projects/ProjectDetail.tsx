@@ -1555,7 +1555,7 @@ export default function ProjectDetail() {
                     )}
 
                     {(sys as any).design_flow_m3h && parseFloat((sys as any).total_operating_volume_m3) > 0 && (
-                      <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-mono shrink-0" title="Calculated turnover rate">
+                      <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 font-mono shrink-0" title="Calculated turnover rate">
                         {(parseFloat((sys as any).design_flow_m3h) / parseFloat((sys as any).total_operating_volume_m3)).toFixed(1)} /hr
                       </span>
                     )}
@@ -1795,7 +1795,7 @@ export default function ProjectDetail() {
                             </button>
                             <button
                               onClick={e => { e.stopPropagation(); openSaveTankToDb(tank); }}
-                              className="text-xs text-amber-600 hover:text-amber-800 border border-amber-200 hover:border-amber-400 px-1.5 py-0.5 rounded hover:bg-amber-50 whitespace-nowrap"
+                              className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-1.5 py-0.5 rounded hover:bg-blue-50 whitespace-nowrap"
                               title="Save this tank to the Tank Database as a product master"
                             >+ DB</button>
                           </>
@@ -2050,8 +2050,8 @@ export default function ProjectDetail() {
           )}
           {tab === 'theming' && (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-              <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center mb-4">
-                <svg className="w-6 h-6 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42"/></svg>
+              <div className="w-12 h-12 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42"/></svg>
               </div>
               <div className="text-sm font-medium text-slate-600 mb-1">Theming scope</div>
               <div className="text-xs text-slate-400 text-center max-w-xs">Manage theming design, fabrication items and decoration schedules for this project</div>
@@ -2111,7 +2111,7 @@ export default function ProjectDetail() {
           const statusColor = (s: string) => {
             if (s === 'released') return 'bg-green-100 text-green-700 border-green-200';
             if (s === 'draft') return 'bg-slate-100 text-slate-600 border-slate-200';
-            if (s === 'pending_approval') return 'bg-amber-100 text-amber-700 border-amber-200';
+            if (s === 'pending_approval') return 'bg-yellow-100 text-yellow-700 border-yellow-200';
             if (s === 'engineering_review' || s === 'po_review') return 'bg-blue-100 text-blue-700 border-blue-200';
             return 'bg-slate-100 text-slate-600 border-slate-200';
           };
@@ -3037,7 +3037,7 @@ export default function ProjectDetail() {
                     value={saveTankDbCode}
                     onChange={e => setSaveTankDbCode(e.target.value.toUpperCase())}
                     placeholder="e.g. TK-FW-001"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
                   />
                 </div>
                 <div>
@@ -3045,7 +3045,7 @@ export default function ProjectDetail() {
                   <select
                     value={saveTankDbFamilyId}
                     onChange={e => setSaveTankDbFamilyId(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
                   >
                     <option value="">— None —</option>
                     {(tankFamilies?.items || []).map((f: any) => (
@@ -3060,7 +3060,7 @@ export default function ProjectDetail() {
                   value={saveTankDbName}
                   onChange={e => setSaveTankDbName(e.target.value)}
                   placeholder="Tank product name"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-400"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
                 />
               </div>
               <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600 space-y-1">

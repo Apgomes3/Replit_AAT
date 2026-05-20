@@ -33,7 +33,7 @@ function ShapeBadge({ shape }: { shape?: string }) {
   const colors: Record<string, string> = {
     Rectangular: 'bg-slate-100 text-slate-600',
     Cylindrical: 'bg-violet-100 text-violet-700',
-    Custom: 'bg-amber-100 text-amber-700',
+    Custom: 'bg-blue-100 text-blue-700',
   };
   return (
     <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${colors[shape] ?? 'bg-stone-100 text-stone-600'}`}>
@@ -609,7 +609,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
     const statusCls: Record<string, string> = {
       Active:         'bg-emerald-50 text-emerald-700 border-emerald-200',
       Inactive:       'bg-stone-50 text-stone-500 border-stone-200',
-      Design:         'bg-amber-50 text-amber-700 border-amber-200',
+      Design:         'bg-blue-50 text-blue-700 border-blue-200',
       Retired:        'bg-red-50 text-red-600 border-red-200',
       Decommissioned: 'bg-stone-100 text-stone-500 border-stone-200',
     };
@@ -672,7 +672,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                   <div className="flex items-center gap-2 mb-2">
                     <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide">Inner Dimensions</p>
                     {innerOverridden && (
-                      <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">overridden</span>
+                      <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">overridden</span>
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -883,7 +883,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                   <input type="number" value={form.inner_length_mm}
                     placeholder={computedInner.il ? String(Math.round(computedInner.il)) : '0'}
                     onChange={e => setF('inner_length_mm', e.target.value)}
-                    className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 bg-amber-50/40" />
+                    className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/30 bg-blue-50/40" />
                 </div>
               )}
               <div>
@@ -891,14 +891,14 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                 <input type="number" value={form.inner_width_mm}
                   placeholder={computedInner.iw ? String(Math.round(computedInner.iw)) : '0'}
                   onChange={e => setF('inner_width_mm', e.target.value)}
-                  className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 bg-amber-50/40" />
+                  className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/30 bg-blue-50/40" />
               </div>
               <div>
                 <label className="block text-xs text-stone-500 mb-1">Inner Height</label>
                 <input type="number" value={form.inner_height_mm}
                   placeholder={computedInner.ih ? String(Math.round(computedInner.ih)) : '0'}
                   onChange={e => setF('inner_height_mm', e.target.value)}
-                  className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 bg-amber-50/40" />
+                  className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/30 bg-blue-50/40" />
               </div>
             </div>
           ) : (
@@ -1310,29 +1310,29 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   };
 
   const hasData = substrateData?.substrate_type || substrateData?.theming_type;
-  const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/40';
+  const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40';
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-amber-50/30">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-blue-50/30">
         <div className="flex items-center gap-2">
-          <Mountain className="w-4 h-4 text-amber-600" />
-          <span className="text-sm font-semibold text-amber-800">Theming &amp; Substrate</span>
+          <Mountain className="w-4 h-4 text-blue-600" />
+          <span className="text-sm font-semibold text-blue-800">Theming &amp; Substrate</span>
           {effectiveVol != null && displaced > 0 && (
-            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-mono ml-1">
+            <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-mono ml-1">
               {effectiveVol.toFixed(3)} m³ effective
             </span>
           )}
         </div>
         {!editing ? (
           <button onClick={handleEdit}
-            className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 border border-amber-200 bg-white rounded-md px-2.5 py-1 transition-colors">
+            className="flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 border border-blue-200 bg-white rounded-md px-2.5 py-1 transition-colors">
             <Pencil className="w-3 h-3" /> Edit
           </button>
         ) : (
           <div className="flex items-center gap-1.5">
             <button onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1 text-xs text-white bg-amber-600 hover:bg-amber-700 rounded-md px-2.5 py-1 transition-colors disabled:opacity-50">
+              className="flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2.5 py-1 transition-colors disabled:opacity-50">
               <Save className="w-3 h-3" /> {saving ? 'Saving…' : 'Save'}
             </button>
             <button onClick={() => setEditing(false)}
@@ -1368,7 +1368,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   {form.substrate_height_mm && !subOverride && (
                     <div className="mt-1.5">
                       {hasTankFootprint && subComputed != null ? (
-                        <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded font-mono">
+                        <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded font-mono">
                           {(tankInnerL! / 1000).toFixed(3)} × {(tankInnerW! / 1000).toFixed(3)} × {(parseFloat(form.substrate_height_mm) / 1000).toFixed(3)} = {subComputed.toFixed(4)} m³
                         </span>
                       ) : (
@@ -1389,9 +1389,9 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   {subOverride || !form.substrate_height_mm || !hasTankFootprint ? (
                     <input type="number" step="0.0001" min="0" placeholder="0.0000"
                       value={form.substrate_volume_m3} onChange={e => setF('substrate_volume_m3', e.target.value)}
-                      className={subOverride ? `${inputCls} border-amber-300 bg-amber-50/30` : inputCls} />
+                      className={subOverride ? `${inputCls} border-blue-300 bg-blue-50/30` : inputCls} />
                   ) : (
-                    <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 font-mono text-sm text-amber-800 font-semibold">
+                    <div className="px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 font-mono text-sm text-blue-800 font-semibold">
                       {subComputed != null ? `${subComputed.toFixed(4)} m³` : '—'}
                     </div>
                   )}
@@ -1418,7 +1418,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   {form.theming_height_mm && !themOverride && (
                     <div className="mt-1.5">
                       {hasTankFootprint && themComputed != null ? (
-                        <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded font-mono">
+                        <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded font-mono">
                           {(tankInnerL! / 1000).toFixed(3)} × {(tankInnerW! / 1000).toFixed(3)} × {(parseFloat(form.theming_height_mm) / 1000).toFixed(3)} = {themComputed.toFixed(4)} m³
                         </span>
                       ) : (
@@ -1439,9 +1439,9 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   {themOverride || !form.theming_height_mm || !hasTankFootprint ? (
                     <input type="number" step="0.0001" min="0" placeholder="0.0000"
                       value={form.theming_volume_m3} onChange={e => setF('theming_volume_m3', e.target.value)}
-                      className={themOverride ? `${inputCls} border-amber-300 bg-amber-50/30` : inputCls} />
+                      className={themOverride ? `${inputCls} border-blue-300 bg-blue-50/30` : inputCls} />
                   ) : (
-                    <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 font-mono text-sm text-amber-800 font-semibold">
+                    <div className="px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 font-mono text-sm text-blue-800 font-semibold">
                       {themComputed != null ? `${themComputed.toFixed(4)} m³` : '—'}
                     </div>
                   )}
@@ -1451,12 +1451,12 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
 
             {/* Volume impact preview */}
             {opVol > 0 && (subEffVol > 0 || themEffVol > 0) && (
-              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
+              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
                 <span className="text-stone-500">Operating</span>
                 <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
                 <span className="text-stone-400">−</span>
                 <span className="text-stone-500">Displaced</span>
-                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(4)} m³</span>
+                <span className="font-mono font-semibold text-blue-700">{displaced.toFixed(4)} m³</span>
                 <span className="text-stone-400">=</span>
                 <span className="text-stone-500">Effective</span>
                 <span className="font-mono font-bold text-emerald-700 text-base">{effectiveVol?.toFixed(3)} m³</span>
@@ -1505,12 +1505,12 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
 
             {/* Effective volume */}
             {opVol > 0 && displaced > 0 && (
-              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
+              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
                 <span className="text-stone-500">Operating</span>
                 <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
                 <span className="text-stone-400">−</span>
                 <span className="text-stone-500">Displaced</span>
-                <span className="font-mono font-semibold text-amber-700">{displaced.toFixed(4)} m³</span>
+                <span className="font-mono font-semibold text-blue-700">{displaced.toFixed(4)} m³</span>
                 <span className="text-stone-400">=</span>
                 <span className="text-stone-500">Effective</span>
                 <span className="font-mono font-bold text-emerald-700 text-base">{effectiveVol?.toFixed(3)} m³</span>
@@ -1526,7 +1526,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
             <Mountain className="w-8 h-8 text-stone-200 mx-auto mb-2" />
             <p className="text-stone-400 text-sm">No theming or substrate defined yet.</p>
             <button onClick={handleEdit}
-              className="mt-3 text-xs text-amber-600 hover:text-amber-800 border border-amber-200 bg-amber-50 px-3 py-1.5 rounded-lg transition-colors">
+              className="mt-3 text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">
               <Plus className="w-3 h-3 inline mr-1" />Define Substrate &amp; Theming
             </button>
           </div>
@@ -1893,11 +1893,11 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
           { label: 'Operating Volume', value: opVol > 0 ? `${opVol.toFixed(3)} m³` : '—', sub: opVol > 0 && (parseFloat(substrateData?.substrate_volume_m3 || '0') + parseFloat(substrateData?.theming_volume_m3 || '0')) > 0 ? `after ${(parseFloat(substrateData?.substrate_volume_m3 || '0') + parseFloat(substrateData?.theming_volume_m3 || '0')).toFixed(3)} m³ displacement` : 'from inner dimensions', color: 'blue' },
           { label: 'Total Biomass', value: totalBiomass > 0 ? `${totalBiomass.toFixed(2)} kg` : '—', sub: `${species.length} species`, color: 'emerald' },
           { label: 'Turnover Rate', value: turnover > 0 ? `${turnover}×/h` : '—', sub: 'target', color: 'violet' },
-          { label: 'Required Flow', value: totalM3h != null ? `${convertFlow(totalM3h, flowUnit)} ${FLOW_UNITS.find(u => u.key === flowUnit)!.label}` : '—', sub: totalM3h != null ? `${fmtFlow(totalM3h, 3)} m³/h` : 'set turnover to calculate', color: 'amber' },
+          { label: 'Required Flow', value: totalM3h != null ? `${convertFlow(totalM3h, flowUnit)} ${FLOW_UNITS.find(u => u.key === flowUnit)!.label}` : '—', sub: totalM3h != null ? `${fmtFlow(totalM3h, 3)} m³/h` : 'set turnover to calculate', color: 'blue' },
         ].map(c => (
           <div key={c.label} className={`bg-white rounded-xl border border-stone-200 px-4 py-3`}>
             <p className="text-xs text-stone-400 mb-0.5">{c.label}</p>
-            <p className={`text-lg font-bold ${c.color === 'blue' ? 'text-blue-700' : c.color === 'emerald' ? 'text-emerald-700' : c.color === 'violet' ? 'text-violet-700' : 'text-amber-700'}`}>{c.value}</p>
+            <p className={`text-lg font-bold ${c.color === 'blue' ? 'text-blue-700' : c.color === 'emerald' ? 'text-emerald-700' : c.color === 'violet' ? 'text-violet-700' : 'text-stone-700'}`}>{c.value}</p>
             <p className="text-xs text-stone-400 mt-0.5">{c.sub}</p>
           </div>
         ))}
@@ -2016,8 +2016,8 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
                   </button>
                 ))}
               </div>
-              {!opVol && <span className="w-full text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">Assign a tank to calculate</span>}
-              {opVol > 0 && !turnover && <span className="w-full text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">Set turnover rate to calculate</span>}
+              {!opVol && <span className="w-full text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">Assign a tank to calculate</span>}
+              {opVol > 0 && !turnover && <span className="w-full text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">Set turnover rate to calculate</span>}
             </div>
             <table className="w-full text-sm">
               <thead className="bg-stone-50/60">
@@ -2031,7 +2031,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
               </thead>
               <tbody>
                 {[
-                  { label: 'Total Return Flow',   icon: <Gauge className="w-3.5 h-3.5 text-amber-500" />,   m3h: totalM3h, cls: 'font-semibold text-stone-800' },
+                  { label: 'Total Return Flow',   icon: <Gauge className="w-3.5 h-3.5 text-blue-500" />,   m3h: totalM3h, cls: 'font-semibold text-stone-800' },
                   { label: 'Surface Skimmer Box', icon: <ArrowUpToLine className="w-3.5 h-3.5 text-sky-500" />,    m3h: skimM3h,  cls: 'text-stone-700' },
                   { label: 'Bottom Drain',         icon: <ArrowDownToLine className="w-3.5 h-3.5 text-indigo-500" />, m3h: drainM3h, cls: 'text-stone-700' },
                 ].map(row => (
@@ -2160,7 +2160,7 @@ export default function ExhibitDetail() {
               <div className="flex items-center gap-5 mt-2 flex-wrap">
                 {(exhibit.design_temperature_min != null || exhibit.design_temperature_max != null) && (
                   <span className="flex items-center gap-1.5 text-sm text-stone-500">
-                    <ThermometerSun className="w-4 h-4 text-orange-400" />
+                    <ThermometerSun className="w-4 h-4 text-stone-400" />
                     {exhibit.design_temperature_min ?? '?'}–{exhibit.design_temperature_max ?? '?'} °C
                   </span>
                 )}

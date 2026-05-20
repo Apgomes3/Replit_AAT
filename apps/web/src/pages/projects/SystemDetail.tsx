@@ -617,8 +617,8 @@ export default function SystemDetail() {
               ))}
               {/* Calc Turnover Rate */}
               <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
-                  <Zap className="w-4 h-4 text-amber-600" />
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <Zap className="w-4 h-4 text-blue-600" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Calc. Turnover Rate</div>

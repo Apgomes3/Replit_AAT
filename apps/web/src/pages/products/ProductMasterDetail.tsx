@@ -1105,7 +1105,7 @@ export default function ProductMasterDetail() {
                             </div>
                             <div className="col-span-2">
                               <div className="text-slate-400 mb-0.5">Est. Shell Weight <span className="text-slate-300">({editLabels.weightFormula})×ρ</span></div>
-                              <div className={`rounded px-2 py-1 font-mono border ${editEstWeight!=null?'bg-amber-50 border-amber-200 text-amber-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                              <div className={`rounded px-2 py-1 font-mono border ${editEstWeight!=null?'bg-blue-50 border-blue-200 text-blue-700':'bg-slate-50 border-slate-200 text-slate-400'}`}>
                                 {editEstWeight!=null ? `${editEstWeight} kg`
                                   : !product.primary_material_code ? 'set a Primary Material first'
                                   : editDensity==null ? `no density for ${product.primary_material_code} — add in Admin → Materials`
@@ -1162,7 +1162,7 @@ export default function ProductMasterDetail() {
                             {(gross!=null||op!=null||estWeight!=null||product.weight_kg!=null||estCostResult!=null) && <div className="border-t border-slate-100 my-1"/>}
                             {gross!=null && <div className="flex justify-between"><span className="text-slate-400">Gross Vol <span className="text-slate-300">({viewLabels.volFormula})</span></span><span className="font-mono text-blue-600 font-medium">{gross} m³</span></div>}
                             {op!=null && <div className="flex justify-between"><span className="text-slate-400">Op. Vol</span><span className="font-mono text-blue-600 font-medium">{op} m³</span></div>}
-                            {estWeight!=null && <div className="flex justify-between"><span className="text-slate-400">Est. Weight <span className="text-slate-300">(shell)</span></span><span className="font-mono text-amber-600 font-medium">{estWeight} kg</span></div>}
+                            {estWeight!=null && <div className="flex justify-between"><span className="text-slate-400">Est. Weight <span className="text-slate-300">(shell)</span></span><span className="font-mono text-blue-600 font-medium">{estWeight} kg</span></div>}
                             {product.weight_kg!=null && <div className="flex justify-between"><span className="text-slate-400">Actual Weight</span><span className="font-mono text-slate-800 font-semibold">{product.weight_kg} kg</span></div>}
                             {estCostResult!=null && (
                               <div className="flex justify-between items-baseline">

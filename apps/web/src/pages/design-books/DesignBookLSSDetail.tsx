@@ -41,7 +41,7 @@ function LinkTypeBadge({ type }: { type?: string }) {
     Primary:     'bg-blue-50 text-blue-700 border-blue-200',
     Secondary:   'bg-sky-50 text-sky-700 border-sky-200',
     Emergency:   'bg-red-50 text-red-700 border-red-200',
-    Backup:      'bg-amber-50 text-amber-700 border-amber-200',
+    Backup:      'bg-blue-50 text-blue-700 border-blue-200',
     Observation: 'bg-violet-50 text-violet-700 border-violet-200',
     Redundant:   'bg-stone-50 text-stone-600 border-stone-200',
   };
@@ -580,8 +580,8 @@ export default function DesignBookLSSDetail() {
             </div>
 
             {system.redundancy_strategy && (
-              <div className="mt-4 px-4 py-3 bg-amber-50/60 border border-amber-200 rounded-xl text-sm text-stone-600">
-                <span className="font-medium text-amber-800">Redundancy: </span>{system.redundancy_strategy}
+              <div className="mt-4 px-4 py-3 bg-blue-50/60 border border-blue-200 rounded-xl text-sm text-stone-600">
+                <span className="font-medium text-blue-800">Redundancy: </span>{system.redundancy_strategy}
               </div>
             )}
           </div>

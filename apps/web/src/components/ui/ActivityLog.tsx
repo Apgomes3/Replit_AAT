@@ -32,11 +32,11 @@ const ACTION_ICONS: Record<string, { icon: React.ReactNode; color: string; label
   CREATE:           { icon: <PlusCircle className="w-3.5 h-3.5" />, color: 'text-emerald-600 bg-emerald-50 border-emerald-200', label: 'Created' },
   UPDATE:           { icon: <Pencil className="w-3.5 h-3.5" />, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'Updated' },
   DELETE:           { icon: <Trash2 className="w-3.5 h-3.5" />, color: 'text-red-500 bg-red-50 border-red-200', label: 'Deleted' },
-  STATE_TRANSITION: { icon: <ArrowRight className="w-3.5 h-3.5" />, color: 'text-amber-600 bg-amber-50 border-amber-200', label: 'Status changed' },
+  STATE_TRANSITION: { icon: <ArrowRight className="w-3.5 h-3.5" />, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'Status changed' },
   ADD_EQUIPMENT:    { icon: <Package className="w-3.5 h-3.5" />, color: 'text-violet-600 bg-violet-50 border-violet-200', label: 'Equipment added' },
   UPDATE_EQUIPMENT: { icon: <Wrench className="w-3.5 h-3.5" />, color: 'text-slate-600 bg-slate-50 border-slate-200', label: 'Equipment updated' },
   REMOVE_EQUIPMENT: { icon: <Minus className="w-3.5 h-3.5" />, color: 'text-red-400 bg-red-50 border-red-200', label: 'Equipment removed' },
-  STATUS_CHANGE:    { icon: <ArrowRight className="w-3.5 h-3.5" />, color: 'text-amber-600 bg-amber-50 border-amber-200', label: 'Status changed' },
+  STATUS_CHANGE:    { icon: <ArrowRight className="w-3.5 h-3.5" />, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'Status changed' },
 };
 
 function fmtDate(ts: string) {

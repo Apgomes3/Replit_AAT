@@ -43,7 +43,7 @@ function SnapSummary({ snap }: { snap: any }) {
           </span>
         ))}
         {substrate.some((s: any) => s.substrate_type && s.substrate_type !== 'None') && (
-          <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-700">
+          <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700">
             Substrate data
           </span>
         )}
@@ -225,7 +225,7 @@ export default function VersionsTab({
               <li className="list-disc">Water flow & hydraulics settings</li>
               <li className="list-disc">Theming & substrate data</li>
             </ul>
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-5 text-xs text-amber-700">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-5 text-xs text-blue-700">
               Project-side data — exhibits, tanks, and LSS systems — is <strong>not changed</strong> by a restore.
             </div>
             <div className="flex gap-3 justify-end">

@@ -39,7 +39,7 @@ function ShapeBadge({ shape }: { shape?: string }) {
   const colors: Record<string, string> = {
     Rectangular: 'bg-slate-100 text-slate-600',
     Cylindrical: 'bg-violet-100 text-violet-700',
-    Custom: 'bg-amber-100 text-amber-700',
+    Custom: 'bg-blue-100 text-blue-700',
   };
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${colors[shape] ?? 'bg-stone-100 text-stone-600'}`}>{shape}</span>;
 }
@@ -50,7 +50,7 @@ function SystemTypeBadge({ type }: { type?: string }) {
     Filtration: 'bg-blue-50 text-blue-700 border-blue-200',
     Circulation: 'bg-cyan-50 text-cyan-700 border-cyan-200',
     UV: 'bg-violet-50 text-violet-700 border-violet-200',
-    Ozone: 'bg-orange-50 text-orange-700 border-orange-200',
+    Ozone: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     Heating: 'bg-red-50 text-red-700 border-red-200',
     Chilling: 'bg-sky-50 text-sky-700 border-sky-200',
     Skimming: 'bg-teal-50 text-teal-700 border-teal-200',
@@ -424,7 +424,7 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, onClose, 
                 </span>
               )}
               {(isFlowOverridden || isTurnoverOverridden) && (
-                <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                <span className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">
                   Manually overridden
                 </span>
               )}
@@ -434,7 +434,7 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, onClose, 
                 <label className="block text-xs font-medium text-stone-500 mb-1">Design Flow (m³/h)</label>
                 <input type="number" step="0.01" min="0" placeholder="e.g. 500"
                   value={form.design_flow_m3h} onChange={e => set('design_flow_m3h', e.target.value)}
-                  className={`${inputCls} ${isFlowOverridden ? 'border-amber-300 bg-amber-50/40' : ''}`} />
+                  className={`${inputCls} ${isFlowOverridden ? 'border-blue-300 bg-blue-50/40' : ''}`} />
                 {isFlowOverridden && computedFlow !== null && (
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-xs text-stone-400">Calculated: {computedFlow.toFixed(2)}</span>
@@ -454,7 +454,7 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, onClose, 
                 </label>
                 <input type="number" step="0.01" min="0" placeholder="e.g. 0.5"
                   value={form.turnover_rate_hr} onChange={e => set('turnover_rate_hr', e.target.value)}
-                  className={`${inputCls} ${isTurnoverOverridden ? 'border-amber-300 bg-amber-50/40' : ''}`} />
+                  className={`${inputCls} ${isTurnoverOverridden ? 'border-blue-300 bg-blue-50/40' : ''}`} />
                 {isTurnoverOverridden && computedTurnover !== null && (
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-xs text-stone-400">Calculated: {computedTurnover.toFixed(2)}</span>
@@ -1120,7 +1120,7 @@ function ExhibitsTab({
                   <td className="px-4 py-3.5">
                     {(exhibit.design_temperature_min != null || exhibit.design_temperature_max != null) ? (
                       <span className="flex items-center gap-1 text-xs text-stone-600">
-                        <ThermometerSun className="w-3 h-3 text-orange-400" />
+                        <ThermometerSun className="w-3 h-3 text-stone-400" />
                         {exhibit.design_temperature_min ?? '?'}–{exhibit.design_temperature_max ?? '?'} °C
                       </span>
                     ) : (
@@ -1134,7 +1134,7 @@ function ExhibitsTab({
                         <span className="ml-1.5 font-mono text-xs text-stone-400">{exhibitTank.tank_code}</span>
                       </div>
                     ) : (
-                      <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">No tank</span>
+                      <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">No tank</span>
                     )}
                   </td>
                   <td className="px-4 py-3.5 text-right">
