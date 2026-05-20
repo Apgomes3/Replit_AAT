@@ -1074,6 +1074,9 @@ export default function DesignBookLSSDetail() {
 
         const surfaceFlow = systemFlow * (surfacePct / 100);
         const bottomFlow  = systemFlow * (bottomPct  / 100);
+        const srcPct = (src: string): number =>
+          src === 'Bottom Drain' ? bottomPct :
+          src === 'Surface Skim' ? surfacePct : 100;
         const linkedFlowForSource = (src: string): number => {
           if (src === 'Bottom Drain')  return bottomFlow;
           if (src === 'Surface Skim')  return surfaceFlow;
@@ -1132,17 +1135,22 @@ export default function DesignBookLSSDetail() {
                   <span className="font-medium text-stone-800">{filt}</span>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2 text-sm flex-wrap">
                 <Wind className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                 <span className="text-stone-500 text-xs">Bio/Degas:</span>
-                {linked
-                  ? <span className="font-mono text-emerald-700 font-semibold text-xs">
-                      {fmtFlow(linkedFlowForSource(src || ''))}{' '}
-                      <span className="text-stone-400 font-normal">({linkedFlowLabel(src || '')})</span>
+                {src ? (
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`font-mono font-semibold text-xs ${linked ? 'text-emerald-700' : 'text-stone-700'}`}>
+                      {fmtFlow(linkedFlowForSource(src))}
                     </span>
-                  : bio != null
-                    ? <span className="font-mono text-stone-800 font-semibold text-xs">{fmtFlow(parseFloat(bio))}</span>
-                    : <span className="text-stone-300 text-xs">—</span>
+                    <span className="text-stone-400 text-xs">· {srcPct(src)}% of exhibit</span>
+                    {linked && (
+                      <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">linked</span>
+                    )}
+                  </span>
+                ) : bio != null
+                  ? <span className="font-mono text-stone-800 font-semibold text-xs">{fmtFlow(parseFloat(bio))}</span>
+                  : <span className="text-stone-300 text-xs">—</span>
                 }
               </div>
             </div>
@@ -1199,14 +1207,23 @@ export default function DesignBookLSSDetail() {
                   </label>
                 </div>
                 {linked ? (
-                  <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-sm font-mono text-emerald-800 font-semibold">
+                  <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 font-mono text-emerald-800 font-semibold text-sm">
                     {fmtFlow(linkedFlowForSource(curSrc))}{' '}
-                    <span className="text-emerald-600 font-normal text-xs">(= {linkedFlowLabel(curSrc)})</span>
+                    <span className="text-emerald-600 font-normal text-xs">· {srcPct(curSrc)}% of exhibit</span>
                   </div>
                 ) : (
-                  <input type="number" step="0.1" min="0" placeholder="e.g. 12.5"
-                    value={flowForm[bioKey]} onChange={e => setFF(bioKey, e.target.value)}
-                    className={inputCls} />
+                  <div>
+                    {curSrc && linkedFlowForSource(curSrc) > 0 && (
+                      <div className="text-xs text-stone-400 mb-1.5">
+                        Exhibit ref:{' '}
+                        <span className="font-mono text-stone-600">{fmtFlow(linkedFlowForSource(curSrc))}</span>
+                        {' '}· {srcPct(curSrc)}% of exhibit
+                      </div>
+                    )}
+                    <input type="number" step="0.1" min="0" placeholder="e.g. 12.5"
+                      value={flowForm[bioKey]} onChange={e => setFF(bioKey, e.target.value)}
+                      className={inputCls} />
+                  </div>
                 )}
               </div>
             </div>
@@ -1387,14 +1404,23 @@ export default function DesignBookLSSDetail() {
                             </td>
                             <td className="px-3 py-2">
                               {linked ? (
-                                <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                                <span className="text-xs font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded flex items-center gap-1.5">
                                   {fmtFlow(linkedFlowForSource(listRowForm.flow_source || ''))}
+                                  <span className="text-emerald-600 font-sans font-normal">· {srcPct(listRowForm.flow_source || '')}%</span>
                                 </span>
                               ) : (
-                                <input type="number" step="0.1" min="0" placeholder="0.0"
-                                  value={listRowForm.bio_degas_m3h}
-                                  onChange={e => setLRF('bio_degas_m3h', e.target.value)}
-                                  className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                <div>
+                                  {listRowForm.flow_source && linkedFlowForSource(listRowForm.flow_source) > 0 && (
+                                    <div className="text-[10px] text-stone-400 mb-1">
+                                      ref: <span className="font-mono">{fmtFlow(linkedFlowForSource(listRowForm.flow_source))}</span>
+                                      {' '}· {srcPct(listRowForm.flow_source)}%
+                                    </div>
+                                  )}
+                                  <input type="number" step="0.1" min="0" placeholder="0.0"
+                                    value={listRowForm.bio_degas_m3h}
+                                    onChange={e => setLRF('bio_degas_m3h', e.target.value)}
+                                    className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                </div>
                               )}
                             </td>
                             <td className="px-3 py-2 text-center">
@@ -1441,11 +1467,19 @@ export default function DesignBookLSSDetail() {
                             ) : <span className="text-stone-300 text-xs italic">—</span>}
                           </td>
                           <td className="px-3 py-3 font-mono text-xs">
-                            {linked
-                              ? <span className="text-emerald-700">{fmtFlow(linkedFlowForSource(src || ''))} <span className="text-stone-400 font-sans">({linkedFlowLabel(src || '')})</span></span>
-                              : bio != null
-                                ? <span className="text-stone-800">{fmtFlow(parseFloat(bio))}</span>
-                                : <span className="text-stone-300">—</span>
+                            {src ? (
+                              <span className="flex items-center gap-1.5 flex-wrap">
+                                <span className={linked ? 'text-emerald-700 font-semibold' : 'text-stone-700'}>
+                                  {fmtFlow(linkedFlowForSource(src))}
+                                </span>
+                                <span className="text-stone-400 font-sans text-xs">· {srcPct(src)}%</span>
+                                {linked && (
+                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-sans">linked</span>
+                                )}
+                              </span>
+                            ) : bio != null
+                              ? <span className="text-stone-800">{fmtFlow(parseFloat(bio))}</span>
+                              : <span className="text-stone-300">—</span>
                             }
                           </td>
                           <td className="px-3 py-3 text-center">
