@@ -422,6 +422,35 @@ function calcInnerDims(
   };
 }
 
+// Returns effective operating volume (m³) using inner dims when wall thickness
+// is set, outer dims otherwise.  Falls back to the stored operating_volume_m3 /
+// design_volume_m3 when critical dimensions are missing.
+function computeTankOpVol(tank: any): number | null {
+  if (!tank) return null;
+  const shape = (tank.eff_shape || tank.shape_type || '').toLowerCase();
+  if (shape === 'custom') {
+    return parseFloat(tank.operating_volume_m3 ?? tank.design_volume_m3) || null;
+  }
+  const thick  = tank.wall_thickness_mm ? parseFloat(tank.wall_thickness_mm) : null;
+  const outerW = parseFloat(tank.eff_width_mm  || tank.width_mm)  || null;
+  const outerL = parseFloat(tank.eff_length_mm || tank.length_mm) || null;
+  const wlv    = tank.design_water_level_mm ? parseFloat(tank.design_water_level_mm) : null;
+  // Prefer explicitly stored inner dims, then compute from outer − wall
+  const innerW = tank.inner_width_mm  ? parseFloat(tank.inner_width_mm)  : (thick && outerW ? outerW - 2 * thick : outerW);
+  const innerL = tank.inner_length_mm ? parseFloat(tank.inner_length_mm) : (thick && outerL ? outerL - 2 * thick : outerL);
+  const effW = thick ? innerW : outerW;
+  const effL = thick ? innerL : outerL;
+  if (wlv && effW) {
+    if (shape === 'cylindrical') {
+      const r = effW / 2;
+      return Math.round(Math.PI * r * r * wlv / 1e9 * 1e4) / 1e4;
+    }
+    if (effL) return Math.round(effL * effW * wlv / 1e9 * 1e4) / 1e4;
+  }
+  // Fall back to stored value (e.g. product master with pre-computed volume)
+  return parseFloat(tank.operating_volume_m3 ?? tank.design_volume_m3) || null;
+}
+
 function DimTile({ label, val, inner }: { label: string; val: string; inner?: boolean }) {
   return (
     <div className={`rounded-lg px-3 py-2.5 border ${inner ? 'bg-teal-50 border-teal-100' : 'bg-stone-50 border-stone-100'}`}>
@@ -1214,7 +1243,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
     ? (themOverride ? (parseFloat(form.theming_volume_m3)   || 0) : ((themComputed ?? parseFloat(form.theming_volume_m3))    || 0))
     : (parseFloat(substrateData?.theming_volume_m3    || '') || 0);
 
-  const opVol        = parseFloat(tank?.design_volume_m3) || 0;
+  const opVol        = computeTankOpVol(tank) ?? 0;
   const displaced    = subEffVol + themEffVol;
   const effectiveVol = opVol > 0 ? Math.max(0, opVol - displaced) : null;
 
@@ -1536,7 +1565,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, onRefresh 
   }, [hydraulics?.weir_head_mm]);
 
   // Derive surface skim flow from hydraulics (same logic as WaterFlowTab)
-  const opVol    = parseFloat(tank?.design_volume_m3) || 0;
+  const opVol    = computeTankOpVol(tank) ?? 0;
   const turnover = parseFloat(hydraulics?.target_turnover_rate) || 0;
   const skimPct  = parseFloat(hydraulics?.surface_skim_pct) || 30;
   const totalM3h = opVol > 0 && turnover > 0 ? opVol * turnover : null;
@@ -1778,7 +1807,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
     notes:               hydraulics?.notes || '',
   };
 
-  const opVol   = parseFloat(tank?.design_volume_m3) || 0;
+  const opVol   = computeTankOpVol(tank) ?? 0;
   const turnover = parseFloat(src.target_turnover_rate) || 0;
   const skimPct  = parseFloat(src.surface_skim_pct) || 0;
   const drainPct = parseFloat(src.bottom_drain_pct) || 0;

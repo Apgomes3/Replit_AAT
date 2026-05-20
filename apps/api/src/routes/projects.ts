@@ -493,18 +493,23 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
   const w = width_mm ? parseFloat(width_mm) : null;
   const h = height_mm ? parseFloat(height_mm) : null;
   const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
+  const t  = wall_thickness_mm ? parseFloat(wall_thickness_mm) : 0;
   const isCustom = (shape_type || '').toLowerCase() === 'custom';
-  const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
+  const isCyl    = (shape_type || '').toLowerCase() === 'cylindrical';
+  // Use inner dims when wall thickness is set (open-top: subtract one wall from height)
+  const il = !isCyl && l && t ? l - 2 * t : l;
+  const iw = w && t ? w - 2 * t : w;
+  const ih = h && t ? h - t : h;
   const calcGross = isCustom
     ? (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null)
     : isCyl
-      ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
-      : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
+      ? (iw && ih ? Math.round(Math.PI * (iw / 2) * (iw / 2) * ih / 1e9 * 1e4) / 1e4 : null)
+      : (il && iw && ih ? Math.round(il * iw * ih / 1e9 * 1e4) / 1e4 : null);
   const calcOp = isCustom
     ? (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null)
     : isCyl
-      ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
-      : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
+      ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
+      : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
   const qty = Math.max(1, parseInt(quantity) || 1);
   const hasExhibit = 'exhibit_id' in req.body;
   const result = await query(
