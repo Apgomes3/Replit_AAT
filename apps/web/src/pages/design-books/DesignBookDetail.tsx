@@ -1141,8 +1141,31 @@ function ExhibitsTab({
                       <span className="text-stone-300 text-xs">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-3.5">
-                    <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-blue-500 transition-colors" />
+                  <td className="px-3 py-3.5 text-right" onClick={e => e.stopPropagation()}>
+                    {deletingExhibit === exhibit.id ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <span className="text-xs text-red-600 font-medium mr-1">Delete?</span>
+                        <button
+                          onClick={() => handleDeleteExhibit(exhibit.id)}
+                          className="px-2 py-0.5 text-xs text-white bg-red-600 hover:bg-red-700 rounded font-medium"
+                        >Yes</button>
+                        <button
+                          onClick={() => setDeletingExhibit(null)}
+                          className="px-2 py-0.5 text-xs text-stone-500 bg-stone-100 hover:bg-stone-200 rounded font-medium"
+                        >No</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setDeletingExhibit(exhibit.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-stone-300 hover:text-red-500 hover:bg-red-50 rounded transition-all"
+                          title="Delete exhibit"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-blue-500 transition-colors" />
+                      </div>
+                    )}
                   </td>
                 </tr>
               );
@@ -1187,6 +1210,7 @@ export default function DesignBookDetail() {
   const [saving, setSaving] = useState(false);
   const [showNewExhibit, setShowNewExhibit] = useState(false);
   const [showNewLSS, setShowNewLSS] = useState(false);
+  const [deletingExhibit, setDeletingExhibit] = useState<string | null>(null);
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', id],
@@ -1203,6 +1227,17 @@ export default function DesignBookDetail() {
   const projects: any[] = projectsData?.items || [];
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['design-book', id] });
+
+  const handleDeleteExhibit = async (exhibitId: string) => {
+    try {
+      await api.delete(`/exhibits/${exhibitId}`);
+      toast.success('Exhibit deleted');
+      setDeletingExhibit(null);
+      refresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to delete exhibit');
+    }
+  };
 
   if (isLoading) return <div className="p-8 text-center text-stone-400">Loading…</div>;
   if (!book) return <div className="p-8 text-center text-stone-500">Design book not found.</div>;
