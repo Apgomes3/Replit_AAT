@@ -1041,26 +1041,37 @@ export default function DesignBookLSSDetail() {
           { label: 'Sand Filter',            value: 'Sand Filter',            saltwaterOnly: false },
         ];
         const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
-        // Derive exhibit hydraulics first — used for flow fallback when design_flow_m3h is unset
+        // Hydraulics split % from the primary linked exhibit
         const primaryExLink = (links as any[]).find((l: any) => l.link_type === 'Primary') ?? (links as any[])[0];
         const exHydr = primaryExLink && book
           ? (book.hydraulics || []).find((h: any) => h.exhibit_id === primaryExLink.exhibit_id)
           : null;
-        const exTanksForFlow = (primaryExLink && book)
-          ? (book.tanks || []).filter((t: any) => t.exhibit_id === primaryExLink.exhibit_id)
-          : [];
-        const exOpVol    = exTanksForFlow.reduce((s: number, t: any) =>
-          s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
+        const surfacePct = parseFloat(exHydr?.surface_skim_pct) || 30;
+        const bottomPct  = parseFloat(exHydr?.bottom_drain_pct) || 70;
         const exTurnover = parseFloat(exHydr?.target_turnover_rate) || 0;
 
-        // System flow: prefer saved design_flow_m3h; fall back to computed exhibit flow
-        const systemFlowRaw = parseFloat(system.design_flow_m3h) || 0;
-        const systemFlow    = systemFlowRaw > 0
-          ? systemFlowRaw
-          : (exOpVol > 0 && exTurnover > 0 ? exOpVol * exTurnover : 0);
+        // Gather tanks by exhibit_id OR system_id (some tanks may only have system_id set),
+        // deduplicate by tank id, and multiply by quantity
+        const allSystemTanks: any[] = book
+          ? [...new Map(
+              (book.tanks || [])
+                .filter((t: any) =>
+                  (primaryExLink && t.exhibit_id === primaryExLink.exhibit_id) ||
+                  t.system_id?.toString() === systemId?.toString())
+                .map((t: any) => [t.id, t])
+            ).values()]
+          : [];
+        const exOpVol = allSystemTanks.reduce((s: number, t: any) =>
+          s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0) * (parseInt(t.quantity) || 1), 0);
 
-        const surfacePct  = parseFloat(exHydr?.surface_skim_pct)  || 30;
-        const bottomPct   = parseFloat(exHydr?.bottom_drain_pct)  || 70;
+        // System flow: (1) saved design_flow_m3h  (2) tank vol × turnover  (3) totalCalculatedFlow
+        const systemFlow = (() => {
+          const saved = parseFloat(system.design_flow_m3h) || 0;
+          if (saved > 0) return saved;
+          if (exOpVol > 0 && exTurnover > 0) return exOpVol * exTurnover;
+          return totalCalculatedFlow;
+        })();
+
         const surfaceFlow = systemFlow * (surfacePct / 100);
         const bottomFlow  = systemFlow * (bottomPct  / 100);
         const linkedFlowForSource = (src: string): number => {

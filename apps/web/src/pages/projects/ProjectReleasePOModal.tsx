@@ -195,7 +195,7 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
             <p className="text-xs text-slate-400 mt-0.5">
               Select items from {projectCode} to include
               {lockedCount > 0 && (
-                <span className="ml-1.5 text-amber-600 font-medium">· {lockedCount} already in a PO</span>
+                <span className="ml-1.5 text-blue-600 font-medium">· {lockedCount} already in a PO</span>
               )}
             </p>
           </div>
@@ -228,8 +228,8 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
           )}
 
           {!isLoading && availableCount === 0 && lockedCount > 0 && (
-            <div className="px-6 py-4 text-sm text-slate-500 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
-              <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+            <div className="px-6 py-4 text-sm text-slate-500 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-blue-500 shrink-0" />
               All items in this project have already been released into a PO.
             </div>
           )}
