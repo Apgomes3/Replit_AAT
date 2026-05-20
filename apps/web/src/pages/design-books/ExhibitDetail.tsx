@@ -6,7 +6,8 @@ import {
   ChevronRight, Waves, ThermometerSun, FlaskConical, Fish, Plus,
   Trash2, Check, CheckCircle2, Layers, FolderOpen, LinkIcon,
   SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
-  ArrowUpToLine, Wind, BookOpen, Mountain, Palette
+  ArrowUpToLine, Wind, BookOpen, Mountain, Palette, Calculator,
+  ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -1437,6 +1438,196 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   );
 }
 
+// ─── Weir Allocation ─────────────────────────────────────────────────────────
+// Bazin (1888) sharp-crested rectangular weir:
+//   Q = m · L · √(2g) · H^1.5      [m³/s]
+//   m = 0.405 + 0.0027 / H          [H in metres]
+//   Solving for L:  L = Q / ( m · √(2g) · H^1.5 )
+
+const SQRT_2G = Math.sqrt(2 * 9.81); // ≈ 4.4294
+
+function calcBazin(skimM3h: number, headM: number): { L: number; m: number } | null {
+  if (headM <= 0 || skimM3h <= 0) return null;
+  const Q = skimM3h / 3600;          // m³/s
+  const m = 0.405 + 0.0027 / headM;  // Bazin coefficient
+  const L = Q / (m * SQRT_2G * Math.pow(headM, 1.5));
+  return { L, m };
+}
+
+function WeirAllocationSection({ tank, hydraulics }: {
+  tank: any | null;
+  hydraulics: any | null;
+}) {
+  const [headVal, setHeadVal] = useState('');
+  const [headUnit, setHeadUnit] = useState<'mm' | 'm'>('mm');
+
+  // Derive surface skim flow from hydraulics (same logic as WaterFlowTab)
+  const opVol    = parseFloat(tank?.design_volume_m3) || 0;
+  const turnover = parseFloat(hydraulics?.target_turnover_rate) || 0;
+  const skimPct  = parseFloat(hydraulics?.surface_skim_pct) || 30;
+  const totalM3h = opVol > 0 && turnover > 0 ? opVol * turnover : null;
+  const skimM3h  = totalM3h != null ? totalM3h * skimPct / 100 : null;
+  const skimLmin = skimM3h != null ? skimM3h * 1000 / 60 : null;
+
+  const headRaw = parseFloat(headVal) || 0;
+  const headM   = headUnit === 'mm' ? headRaw / 1000 : headRaw;
+  const result  = skimM3h != null ? calcBazin(skimM3h, headM) : null;
+
+  const noFlow  = skimM3h == null;
+  const noHead  = headM <= 0;
+  const lowHead = headM > 0 && headM < 0.05; // < 50 mm — outside reliable range
+
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-stone-100 bg-indigo-50/40">
+        <Calculator className="w-4 h-4 text-indigo-600" />
+        <span className="text-sm font-semibold text-indigo-800">Weir Allocation</span>
+        <span className="text-xs text-indigo-500 ml-1">— Bazin formula, sharp-crested rectangular weir</span>
+      </div>
+
+      <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {/* Left — inputs */}
+        <div className="space-y-4">
+
+          {/* Upstream flow (read-only from Water Flow tab) */}
+          <div>
+            <p className="text-xs font-medium text-stone-500 mb-2">Surface Skim Flow <span className="font-normal text-stone-400">(from Water Flow tab)</span></p>
+            {noFlow ? (
+              <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                Set tank volume &amp; turnover rate in the Water Flow tab first
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-center min-w-0">
+                  <p className="text-lg font-bold text-sky-700 font-mono">{skimM3h!.toFixed(3)}</p>
+                  <p className="text-xs text-sky-500">m³/h</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-stone-300 shrink-0" />
+                <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-center min-w-0">
+                  <p className="text-lg font-bold text-sky-700 font-mono">{skimLmin!.toFixed(1)}</p>
+                  <p className="text-xs text-sky-500">L/min</p>
+                </div>
+                <span className="text-xs text-stone-400">{skimPct}% of total flow</span>
+              </div>
+            )}
+          </div>
+
+          {/* Head over weir input */}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1.5">
+              Head Over Weir (H)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                step={headUnit === 'mm' ? '5' : '0.005'}
+                min="0"
+                placeholder={headUnit === 'mm' ? 'e.g. 50' : 'e.g. 0.050'}
+                value={headVal}
+                onChange={e => setHeadVal(e.target.value)}
+                className="flex-1 border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
+              />
+              {/* mm / m toggle */}
+              <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
+                {(['mm', 'm'] as const).map(u => (
+                  <button
+                    key={u}
+                    onClick={() => {
+                      if (headUnit !== u && headVal) {
+                        // Convert value on toggle
+                        const v = parseFloat(headVal);
+                        if (!isNaN(v)) setHeadVal(u === 'm' ? (v / 1000).toFixed(4) : (v * 1000).toFixed(0));
+                      }
+                      setHeadUnit(u);
+                    }}
+                    className={`px-3 py-2 transition-colors ${headUnit === u ? 'bg-indigo-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {lowHead && (
+              <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                H &lt; 50 mm — Bazin formula less reliable at very low heads
+              </p>
+            )}
+            {headM > 0 && (
+              <p className="text-xs text-stone-400 mt-1">
+                = {headUnit === 'mm' ? `${headM.toFixed(4)} m` : `${(headM * 1000).toFixed(1)} mm`}
+              </p>
+            )}
+          </div>
+
+          {/* Formula reference */}
+          <div className="bg-stone-50 border border-stone-200 rounded-lg px-4 py-3 space-y-1 text-xs text-stone-500">
+            <p className="font-semibold text-stone-600 mb-1.5">Bazin (1888) Formula</p>
+            <p className="font-mono">Q = m · L · √(2g) · H<sup>3/2</sup></p>
+            <p className="font-mono">m = 0.405 + 0.0027 / H</p>
+            <p className="font-mono">√(2g) = {SQRT_2G.toFixed(4)} m<sup>½</sup>/s</p>
+            {result && (
+              <p className="font-mono text-indigo-600">m used = {result.m.toFixed(4)}</p>
+            )}
+            <p className="text-stone-400 mt-1.5">Sharp-crested rectangular weir. Valid for H &gt; 50 mm.</p>
+          </div>
+        </div>
+
+        {/* Right — result */}
+        <div className="flex flex-col justify-center items-center">
+          {noFlow || noHead ? (
+            <div className="text-center space-y-2 py-6">
+              <Calculator className="w-10 h-10 text-stone-200 mx-auto" />
+              <p className="text-sm text-stone-400">
+                {noFlow ? 'Set flow data in Water Flow tab' : 'Enter head over weir to calculate'}
+              </p>
+            </div>
+          ) : result ? (
+            <div className="w-full space-y-4">
+              <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide text-center">
+                Skimmer Box Opening Width
+              </p>
+              {/* Primary result — mm */}
+              <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl px-6 py-5 text-center">
+                <p className="text-4xl font-bold text-indigo-700 font-mono tracking-tight">
+                  {(result.L * 1000).toFixed(0)}
+                </p>
+                <p className="text-base font-medium text-indigo-500 mt-0.5">mm</p>
+              </div>
+              {/* Secondary conversions */}
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {[
+                  { val: result.L.toFixed(4), unit: 'm' },
+                  { val: (result.L * 100).toFixed(2), unit: 'cm' },
+                  { val: (result.L * 1000 / 25.4).toFixed(2), unit: 'in' },
+                ].map(c => (
+                  <div key={c.unit} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-2">
+                    <p className="font-mono text-sm font-semibold text-stone-700">{c.val}</p>
+                    <p className="text-xs text-stone-400">{c.unit}</p>
+                  </div>
+                ))}
+              </div>
+              {/* Calculation breakdown */}
+              <div className="bg-white border border-stone-200 rounded-lg px-4 py-3 text-xs space-y-1 text-stone-500">
+                <p className="font-semibold text-stone-600 mb-1">Calculation Summary</p>
+                <div className="flex justify-between"><span>Q (skim flow)</span><span className="font-mono text-stone-700">{(skimM3h! / 3600).toFixed(6)} m³/s</span></div>
+                <div className="flex justify-between"><span>H (head)</span><span className="font-mono text-stone-700">{headM.toFixed(4)} m ({(headM * 1000).toFixed(1)} mm)</span></div>
+                <div className="flex justify-between"><span>m (Bazin coeff.)</span><span className="font-mono text-stone-700">{result.m.toFixed(4)}</span></div>
+                <div className="flex justify-between font-semibold text-indigo-700 pt-1 border-t border-stone-100"><span>L (weir length)</span><span className="font-mono">{(result.L * 1000).toFixed(1)} mm</span></div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-stone-400 text-center py-6">Enter a positive head value to calculate</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── AAT Turnover Reference ───────────────────────────────────────────────────
 const AAT_REFERENCE = [
   { category: 'Coral Reef / SPS', rate: '8–12', notes: 'High flow, strong circulation' },
@@ -1902,6 +2093,10 @@ export default function ExhibitDetail() {
             tank={tank}
             substrateData={substrateData}
             onRefresh={refresh}
+          />
+          <WeirAllocationSection
+            tank={tank}
+            hydraulics={hydraulics}
           />
         </div>
       )}
