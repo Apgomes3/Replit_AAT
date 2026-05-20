@@ -451,6 +451,15 @@ function computeTankOpVol(tank: any): number | null {
   return parseFloat(tank.operating_volume_m3 ?? tank.design_volume_m3) || null;
 }
 
+// Returns raw op vol minus substrate + theming displacement.
+function computeEffectiveOpVol(tank: any, substrateData: any | null): number | null {
+  const raw = computeTankOpVol(tank);
+  if (raw == null) return null;
+  const sub  = parseFloat(substrateData?.substrate_volume_m3 || '0') || 0;
+  const them = parseFloat(substrateData?.theming_volume_m3   || '0') || 0;
+  return Math.max(0, raw - sub - them);
+}
+
 function DimTile({ label, val, inner }: { label: string; val: string; inner?: boolean }) {
   return (
     <div className={`rounded-lg px-3 py-2.5 border ${inner ? 'bg-teal-50 border-teal-100' : 'bg-stone-50 border-stone-100'}`}>
@@ -460,7 +469,7 @@ function DimTile({ label, val, inner }: { label: string; val: string; inner?: bo
   );
 }
 
-function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
+function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData?: any | null; onRefresh: () => void }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<any>({});
@@ -696,9 +705,20 @@ function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
                   <div className="text-xs text-blue-400 mt-0.5">m³</div>
                 </div>
                 <div className="bg-sky-50 rounded-xl px-4 py-3 border border-sky-100">
-                  <div className="text-xs text-sky-500 mb-1">Operating Volume</div>
-                  <div className="text-2xl font-bold text-sky-700 font-mono leading-none">{fmtVol(opVol)}</div>
-                  <div className="text-xs text-sky-400 mt-0.5">m³</div>
+                  {(() => {
+                    const subD  = parseFloat(substrateData?.substrate_volume_m3 || '0') || 0;
+                    const themD = parseFloat(substrateData?.theming_volume_m3   || '0') || 0;
+                    const displaced = subD + themD;
+                    const effVol = opVol != null ? Math.max(0, opVol - displaced) : null;
+                    return <>
+                      <div className="text-xs text-sky-500 mb-1">{displaced > 0 ? 'Effective Op. Volume' : 'Operating Volume'}</div>
+                      <div className="text-2xl font-bold text-sky-700 font-mono leading-none">{fmtVol(effVol)}</div>
+                      {displaced > 0
+                        ? <div className="text-xs text-sky-400 mt-0.5">m³ · -{displaced.toFixed(3)} displaced</div>
+                        : <div className="text-xs text-sky-400 mt-0.5">m³</div>
+                      }
+                    </>;
+                  })()}
                 </div>
               </div>
             </div>
@@ -1543,11 +1563,12 @@ function fmtWeir(L: number, unit: ResultUnit): string {
   }
 }
 
-function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, onRefresh }: {
+function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateData, onRefresh }: {
   bookId: string;
   exhibitId: string;
   tank: any | null;
   hydraulics: any | null;
+  substrateData?: any | null;
   onRefresh: () => void;
 }) {
   const [headVal, setHeadVal]       = useState('');
@@ -1565,7 +1586,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, onRefresh 
   }, [hydraulics?.weir_head_mm]);
 
   // Derive surface skim flow from hydraulics (same logic as WaterFlowTab)
-  const opVol    = computeTankOpVol(tank) ?? 0;
+  const opVol    = computeEffectiveOpVol(tank, substrateData) ?? 0;
   const turnover = parseFloat(hydraulics?.target_turnover_rate) || 0;
   const skimPct  = parseFloat(hydraulics?.surface_skim_pct) || 30;
   const totalM3h = opVol > 0 && turnover > 0 ? opVol * turnover : null;
@@ -1779,12 +1800,13 @@ function convertFlow(m3h: number | null, unit: FlowUnit): string {
   return (m3h * u.factor).toFixed(u.decimals);
 }
 
-function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh }: {
+function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateData, onRefresh }: {
   bookId: string;
   exhibitId: string;
   tank: any;
   species: any[];
   hydraulics: any | null;
+  substrateData?: any | null;
   onRefresh: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -1807,7 +1829,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
     notes:               hydraulics?.notes || '',
   };
 
-  const opVol   = computeTankOpVol(tank) ?? 0;
+  const opVol   = computeEffectiveOpVol(tank, substrateData) ?? 0;
   const turnover = parseFloat(src.target_turnover_rate) || 0;
   const skimPct  = parseFloat(src.surface_skim_pct) || 0;
   const drainPct = parseFloat(src.bottom_drain_pct) || 0;
@@ -1866,7 +1888,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, onRefresh 
       {/* Context banner — volume + biomass from other tabs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Operating Volume', value: opVol > 0 ? `${opVol.toFixed(3)} m³` : '—', sub: 'from tank dimensions', color: 'blue' },
+          { label: 'Operating Volume', value: opVol > 0 ? `${opVol.toFixed(3)} m³` : '—', sub: opVol > 0 && (parseFloat(substrateData?.substrate_volume_m3 || '0') + parseFloat(substrateData?.theming_volume_m3 || '0')) > 0 ? `after ${(parseFloat(substrateData?.substrate_volume_m3 || '0') + parseFloat(substrateData?.theming_volume_m3 || '0')).toFixed(3)} m³ displacement` : 'from inner dimensions', color: 'blue' },
           { label: 'Total Biomass', value: totalBiomass > 0 ? `${totalBiomass.toFixed(2)} kg` : '—', sub: `${species.length} species`, color: 'emerald' },
           { label: 'Turnover Rate', value: turnover > 0 ? `${turnover}×/h` : '—', sub: 'target', color: 'violet' },
           { label: 'Required Flow', value: totalM3h != null ? `${convertFlow(totalM3h, flowUnit)} ${FLOW_UNITS.find(u => u.key === flowUnit)!.label}` : '—', sub: totalM3h != null ? `${fmtFlow(totalM3h, 3)} m³/h` : 'set turnover to calculate', color: 'amber' },
@@ -2194,7 +2216,7 @@ export default function ExhibitDetail() {
       {activeTab === 'tank' && (
         <div className="space-y-5">
           {tank ? (
-            <TankCard tank={tank} onRefresh={refresh} />
+            <TankCard tank={tank} substrateData={substrateData} onRefresh={refresh} />
           ) : book.project_id ? (
             <AssignTankPanel
               exhibit={exhibit}
@@ -2220,6 +2242,7 @@ export default function ExhibitDetail() {
             exhibitId={exhibitId!}
             tank={tank}
             hydraulics={hydraulics}
+            substrateData={substrateData}
             onRefresh={refresh}
           />
         </div>
@@ -2241,6 +2264,7 @@ export default function ExhibitDetail() {
           tank={tank}
           species={species}
           hydraulics={hydraulics}
+          substrateData={substrateData}
           onRefresh={refresh}
         />
       )}
