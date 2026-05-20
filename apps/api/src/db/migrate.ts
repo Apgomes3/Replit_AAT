@@ -926,6 +926,16 @@ ALTER TABLE tanks ADD COLUMN IF NOT EXISTS wall_thickness_mm NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_length_mm NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_width_mm NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS inner_height_mm NUMERIC;
+
+-- SYSTEMS: flow route loop configuration
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_flow_source    VARCHAR(50);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_filtration     VARCHAR(50);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_bio_degas_m3h  NUMERIC;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_link_bio_degas BOOLEAN DEFAULT false;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_flow_source    VARCHAR(50);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_filtration     VARCHAR(50);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_bio_degas_m3h  NUMERIC;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_link_bio_degas BOOLEAN DEFAULT false;
 `;
 
 async function migrate() {

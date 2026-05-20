@@ -6,7 +6,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import {
   ChevronRight, Activity, Pencil, Save, X, Plus, Trash2,
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
-  Droplets, ArrowLeft,
+  Droplets, ArrowLeft, Route, FlaskConical, Wind,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -294,6 +294,12 @@ export default function DesignBookLSSDetail() {
   const [editLink, setEditLink]   = useState<any>(null);
   const [deletingLink, setDeletingLink] = useState<string | null>(null);
 
+  // Flow Route edit state
+  const [flowEditMode, setFlowEditMode] = useState(false);
+  const [flowSaving,   setFlowSaving]   = useState(false);
+  const [flowForm,     setFlowForm]     = useState<any>(null);
+  const setFF = (k: string, v: any) => setFlowForm((f: any) => ({ ...f, [k]: v }));
+
   const startEdit = () => {
     let flowVal     = system.design_flow_m3h  != null ? String(system.design_flow_m3h)  : '';
     let turnoverVal = system.turnover_rate_hr != null ? String(system.turnover_rate_hr) : '';
@@ -364,6 +370,52 @@ export default function DesignBookLSSDetail() {
       toast.error('Failed to remove link');
     } finally {
       setDeletingLink(null);
+    }
+  };
+
+  const startFlowEdit = () => {
+    setFlowForm({
+      loop1_flow_source:    system.loop1_flow_source    || '',
+      loop1_filtration:     system.loop1_filtration     || '',
+      loop1_bio_degas_m3h:  system.loop1_bio_degas_m3h  != null ? String(system.loop1_bio_degas_m3h)  : '',
+      loop1_link_bio_degas: !!system.loop1_link_bio_degas,
+      loop2_flow_source:    system.loop2_flow_source    || '',
+      loop2_filtration:     system.loop2_filtration     || '',
+      loop2_bio_degas_m3h:  system.loop2_bio_degas_m3h  != null ? String(system.loop2_bio_degas_m3h)  : '',
+      loop2_link_bio_degas: !!system.loop2_link_bio_degas,
+    });
+    setFlowEditMode(true);
+  };
+
+  const saveFlowRoute = async () => {
+    setFlowSaving(true);
+    try {
+      await api.put(`/systems/${systemId}`, {
+        system_code:          system.system_code,
+        system_name:          system.system_name,
+        system_type:          system.system_type          || null,
+        water_type:           system.water_type           || null,
+        status:               system.status,
+        design_flow_m3h:      system.design_flow_m3h      || null,
+        turnover_rate_hr:     system.turnover_rate_hr     || null,
+        duty_description:     system.duty_description     || null,
+        redundancy_strategy:  system.redundancy_strategy  || null,
+        loop1_flow_source:    flowForm.loop1_flow_source    || null,
+        loop1_filtration:     flowForm.loop1_filtration     || null,
+        loop1_bio_degas_m3h:  flowForm.loop1_bio_degas_m3h  ? parseFloat(flowForm.loop1_bio_degas_m3h)  : null,
+        loop1_link_bio_degas: flowForm.loop1_link_bio_degas,
+        loop2_flow_source:    flowForm.loop2_flow_source    || null,
+        loop2_filtration:     flowForm.loop2_filtration     || null,
+        loop2_bio_degas_m3h:  flowForm.loop2_bio_degas_m3h  ? parseFloat(flowForm.loop2_bio_degas_m3h)  : null,
+        loop2_link_bio_degas: flowForm.loop2_link_bio_degas,
+      });
+      toast.success('Flow route saved');
+      setFlowEditMode(false);
+      refresh();
+    } catch {
+      toast.error('Failed to save flow route');
+    } finally {
+      setFlowSaving(false);
     }
   };
 
@@ -694,6 +746,197 @@ export default function DesignBookLSSDetail() {
           </div>
         )}
       </div>
+
+      {/* Flow Route panel */}
+      {(() => {
+        const isSaltwater = system.water_type === 'Marine' || system.water_type === 'Salt Water';
+        const FLOW_SOURCES = ['Bottom Drain', 'Surface Skim', 'Both Integrated'] as const;
+        const FILTRATION_OPTS = [
+          { label: 'Foam Fractionation', value: 'Foam Fractionation', saltwaterOnly: true },
+          { label: 'Pressurized Bag Filter', value: 'Pressurized Bag Filter', saltwaterOnly: false },
+          { label: 'Sand Filter', value: 'Sand Filter', saltwaterOnly: false },
+        ];
+        const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
+        const systemFlow = parseFloat(system.design_flow_m3h) || 0;
+
+        const LoopView = ({ n }: { n: 1 | 2 }) => {
+          const src  = system[`loop${n}_flow_source`];
+          const filt = system[`loop${n}_filtration`];
+          const bio  = system[`loop${n}_bio_degas_m3h`];
+          const linked = !!system[`loop${n}_link_bio_degas`];
+          const hasSomething = src || filt || bio != null;
+          if (!hasSomething) return (
+            <div className="text-xs text-stone-300 italic py-2">Not configured</div>
+          );
+          return (
+            <div className="space-y-2 text-sm">
+              {src && (
+                <div className="flex items-center gap-2">
+                  <Droplets className="w-3.5 h-3.5 text-cyan-500 flex-shrink-0" />
+                  <span className="text-stone-500 text-xs">Source:</span>
+                  <span className="font-medium text-stone-800">{src}</span>
+                </div>
+              )}
+              {filt && (
+                <div className="flex items-center gap-2">
+                  <FlaskConical className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+                  <span className="text-stone-500 text-xs">Filtration:</span>
+                  <span className="font-medium text-stone-800">{filt}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <Wind className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                <span className="text-stone-500 text-xs">Bio/Degas:</span>
+                {linked
+                  ? <span className="font-mono text-emerald-700 font-semibold text-xs">{systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'} <span className="text-stone-400 font-normal">(linked)</span></span>
+                  : bio != null
+                    ? <span className="font-mono text-stone-800 font-semibold text-xs">{parseFloat(bio).toFixed(1)} m³/h</span>
+                    : <span className="text-stone-300 text-xs">—</span>
+                }
+              </div>
+            </div>
+          );
+        };
+
+        const LoopEditor = ({ n }: { n: 1 | 2 }) => {
+          if (!flowForm) return null;
+          const srcKey  = `loop${n}_flow_source` as const;
+          const filtKey = `loop${n}_filtration` as const;
+          const bioKey  = `loop${n}_bio_degas_m3h` as const;
+          const lnkKey  = `loop${n}_link_bio_degas` as const;
+          const linked: boolean = !!flowForm[lnkKey];
+          const curSrc  = flowForm[srcKey]  as string;
+          const curFilt = flowForm[filtKey] as string;
+
+          return (
+            <div className="space-y-4">
+              {/* Flow Source */}
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1.5">Flow Source</label>
+                <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
+                  {FLOW_SOURCES.map(s => (
+                    <button key={s} type="button" onClick={() => setFF(srcKey, curSrc === s ? '' : s)}
+                      className={`flex-1 px-2 py-1.5 transition-colors text-center leading-tight ${curSrc === s ? 'bg-cyan-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filtration */}
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1.5">Filtration Type</label>
+                <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
+                  {FILTRATION_OPTS.map(o => {
+                    const disabled = o.saltwaterOnly && !isSaltwater;
+                    return (
+                      <button key={o.value} type="button"
+                        disabled={disabled}
+                        onClick={() => !disabled && setFF(filtKey, curFilt === o.value ? '' : o.value)}
+                        className={`flex-1 px-2 py-1.5 transition-colors text-center leading-tight border-r border-stone-200 last:border-r-0
+                          ${disabled ? 'bg-stone-50 text-stone-300 cursor-not-allowed' : curFilt === o.value ? 'bg-violet-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
+                        {o.label}
+                        {disabled && <span className="block text-[9px] font-normal opacity-70">saltwater only</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Bio / Degas */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-stone-500">Bio / Degas Flow (m³/h)</label>
+                  <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
+                    <input type="checkbox" checked={linked} onChange={e => setFF(lnkKey, e.target.checked)}
+                      className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-400/40" />
+                    {bioLinkLabel}
+                  </label>
+                </div>
+                {linked ? (
+                  <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-sm font-mono text-emerald-800 font-semibold">
+                    {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'} <span className="text-emerald-600 font-normal text-xs">(= system design flow)</span>
+                  </div>
+                ) : (
+                  <input type="number" step="0.1" min="0" placeholder="e.g. 12.5"
+                    value={flowForm[bioKey]} onChange={e => setFF(bioKey, e.target.value)}
+                    className={inputCls} />
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-violet-50/30">
+              <div className="flex items-center gap-2">
+                <Route className="w-4 h-4 text-violet-600" />
+                <span className="text-sm font-semibold text-violet-800">Flow Route</span>
+                {!isSaltwater && system.water_type && (
+                  <span className="text-xs text-stone-400 ml-1">· Foam Fractionation disabled (freshwater)</span>
+                )}
+              </div>
+              {!flowEditMode && (
+                <button onClick={startFlowEdit}
+                  className="flex items-center gap-1 text-xs text-violet-700 hover:text-violet-900 border border-violet-200 bg-white rounded-md px-2.5 py-1.5 transition-colors">
+                  <Pencil className="w-3 h-3" /> Edit
+                </button>
+              )}
+            </div>
+
+            <div className="p-5">
+              {flowEditMode && flowForm ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold flex items-center justify-center">1</span>
+                        <span className="text-sm font-semibold text-stone-700">Loop 1</span>
+                      </div>
+                      <LoopEditor n={1} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
+                        <span className="text-sm font-semibold text-stone-700">Loop 2</span>
+                      </div>
+                      <LoopEditor n={2} />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
+                    <button onClick={saveFlowRoute} disabled={flowSaving}
+                      className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-violet-600 hover:bg-violet-700 rounded-lg disabled:opacity-50">
+                      <Save className="w-3.5 h-3.5" /> {flowSaving ? 'Saving…' : 'Save Flow Route'}
+                    </button>
+                    <button onClick={() => setFlowEditMode(false)}
+                      className="px-4 py-2 text-sm text-stone-500 border border-stone-200 bg-white rounded-lg hover:text-stone-700">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold flex items-center justify-center">1</span>
+                      <span className="text-sm font-semibold text-stone-700">Loop 1</span>
+                    </div>
+                    <LoopView n={1} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
+                      <span className="text-sm font-semibold text-stone-700">Loop 2</span>
+                    </div>
+                    <LoopView n={2} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Back link */}
       <div>
