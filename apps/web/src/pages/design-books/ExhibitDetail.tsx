@@ -2239,6 +2239,7 @@ export default function ExhibitDetail() {
             onRefresh={refresh}
           />
           <WeirAllocationSection
+            key={exhibitId}
             bookId={book.id}
             exhibitId={exhibitId!}
             tank={tank}
