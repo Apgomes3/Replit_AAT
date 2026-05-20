@@ -1221,7 +1221,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [subOverride, setSubOverride] = useState(false);
-  const [themOverride, setThemOverride] = useState(false);
+  const [themVolumeMode, setThemVolumeMode] = useState<'height' | 'pct' | 'direct'>('height');
   const [form, setForm] = useState({
     substrate_type:      substrateData?.substrate_type      || 'None',
     substrate_height_mm: substrateData?.substrate_height_mm != null ? String(substrateData.substrate_height_mm) : '',
@@ -1229,6 +1229,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
     theming_type:        substrateData?.theming_type        || '',
     theming_height_mm:   substrateData?.theming_height_mm   != null ? String(substrateData.theming_height_mm)   : '',
     theming_volume_m3:   substrateData?.theming_volume_m3   != null ? String(substrateData.theming_volume_m3)   : '',
+    theming_volume_pct:  substrateData?.theming_volume_pct  != null ? String(substrateData.theming_volume_pct)  : '',
     notes:               substrateData?.notes               || '',
   });
 
@@ -1256,15 +1257,21 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   const subComputed  = calcVol(form.substrate_height_mm);
   const themComputed = calcVol(form.theming_height_mm);
 
+  const opVol = computeTankOpVol(tank) ?? 0;
+
   // Effective volumes for the displaced preview
   const subEffVol  = editing
     ? (subOverride  ? (parseFloat(form.substrate_volume_m3) || 0) : ((subComputed  ?? parseFloat(form.substrate_volume_m3))  || 0))
     : (parseFloat(substrateData?.substrate_volume_m3  || '') || 0);
+  const themPctVol = themVolumeMode === 'pct' && form.theming_volume_pct
+    ? opVol * (parseFloat(form.theming_volume_pct) || 0) / 100
+    : 0;
   const themEffVol = editing
-    ? (themOverride ? (parseFloat(form.theming_volume_m3)   || 0) : ((themComputed ?? parseFloat(form.theming_volume_m3))    || 0))
+    ? (themVolumeMode === 'pct'    ? themPctVol
+     : themVolumeMode === 'direct' ? (parseFloat(form.theming_volume_m3) || 0)
+     : ((themComputed ?? parseFloat(form.theming_volume_m3)) || 0))
     : (parseFloat(substrateData?.theming_volume_m3    || '') || 0);
 
-  const opVol        = computeTankOpVol(tank) ?? 0;
   const displaced    = subEffVol + themEffVol;
   const effectiveVol = opVol > 0 ? Math.max(0, opVol - displaced) : null;
 
@@ -1276,20 +1283,32 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
       theming_type:        substrateData?.theming_type        || '',
       theming_height_mm:   substrateData?.theming_height_mm   != null ? String(substrateData.theming_height_mm)   : '',
       theming_volume_m3:   substrateData?.theming_volume_m3   != null ? String(substrateData.theming_volume_m3)   : '',
+      theming_volume_pct:  substrateData?.theming_volume_pct  != null ? String(substrateData.theming_volume_pct)  : '',
       notes:               substrateData?.notes               || '',
     });
     setSubOverride(!substrateData?.substrate_height_mm && !!substrateData?.substrate_volume_m3);
-    setThemOverride(!substrateData?.theming_height_mm  && !!substrateData?.theming_volume_m3);
+    if (substrateData?.theming_volume_pct != null) {
+      setThemVolumeMode('pct');
+    } else if (!substrateData?.theming_height_mm && substrateData?.theming_volume_m3) {
+      setThemVolumeMode('direct');
+    } else {
+      setThemVolumeMode('height');
+    }
     setEditing(true);
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const finalSubVol  = subOverride  ? (form.substrate_volume_m3 ? parseFloat(form.substrate_volume_m3) : null)
-                                        : (subComputed  ?? (form.substrate_volume_m3  ? parseFloat(form.substrate_volume_m3)  : null));
-      const finalThemVol = themOverride ? (form.theming_volume_m3   ? parseFloat(form.theming_volume_m3)   : null)
-                                        : (themComputed ?? (form.theming_volume_m3    ? parseFloat(form.theming_volume_m3)    : null));
+      const finalSubVol  = subOverride
+        ? (form.substrate_volume_m3  ? parseFloat(form.substrate_volume_m3)  : null)
+        : (subComputed  ?? (form.substrate_volume_m3  ? parseFloat(form.substrate_volume_m3)  : null));
+      const finalThemPct = themVolumeMode === 'pct' ? (form.theming_volume_pct ? parseFloat(form.theming_volume_pct) : null) : null;
+      const finalThemVol = themVolumeMode === 'pct'
+        ? (opVol > 0 && form.theming_volume_pct ? Math.round(opVol * parseFloat(form.theming_volume_pct) / 100 * 1e6) / 1e6 : null)
+        : themVolumeMode === 'direct'
+          ? (form.theming_volume_m3 ? parseFloat(form.theming_volume_m3) : null)
+          : (themComputed ?? (form.theming_volume_m3 ? parseFloat(form.theming_volume_m3) : null));
       await api.put(`/design-books/${bookId}/exhibits/${exhibitId}/substrate`, {
         substrate_type:      form.substrate_type !== 'None' ? form.substrate_type : null,
         substrate_height_mm: form.substrate_height_mm ? parseFloat(form.substrate_height_mm) : null,
@@ -1297,6 +1316,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
         theming_type:        form.theming_type    || null,
         theming_height_mm:   form.theming_height_mm ? parseFloat(form.theming_height_mm) : null,
         theming_volume_m3:   finalThemVol,
+        theming_volume_pct:  finalThemPct,
         notes:               form.notes           || null,
       });
       toast.success('Theming & substrate saved');
@@ -1430,22 +1450,58 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   )}
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-stone-500">Displaced Volume (m³)</label>
-                    <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer">
-                      <input type="checkbox" checked={themOverride} onChange={e => setThemOverride(e.target.checked)}
-                        className="rounded border-stone-300" />
-                      Override
-                    </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-medium text-stone-500">Displaced Volume</label>
+                    <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs font-medium">
+                      {(['height', 'pct', 'direct'] as const).map(m => (
+                        <button key={m} type="button" onClick={() => setThemVolumeMode(m)}
+                          className={`px-2.5 py-1 transition-colors ${themVolumeMode === m ? 'bg-blue-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
+                          {m === 'height' ? 'Height' : m === 'pct' ? '% Vol' : 'Direct m³'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  {themOverride || !form.theming_height_mm || !hasTankFootprint ? (
+
+                  {themVolumeMode === 'height' && (
+                    themComputed != null && themComputed > 0 ? (
+                      <div className="px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 font-mono text-sm text-blue-800 font-semibold">
+                        {themComputed.toFixed(4)} m³
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2 rounded-lg bg-stone-50 border border-stone-200 text-sm text-stone-400">
+                        {form.theming_height_mm ? 'No tank footprint — use Direct m³' : 'Enter height above to auto-calculate'}
+                      </div>
+                    )
+                  )}
+
+                  {themVolumeMode === 'pct' && (
+                    <div className="space-y-1.5">
+                      <div className="relative">
+                        <input type="number" step="0.1" min="0" max="100" placeholder="e.g. 15"
+                          value={form.theming_volume_pct} onChange={e => setF('theming_volume_pct', e.target.value)}
+                          className={`${inputCls} pr-8`} />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm pointer-events-none">%</span>
+                      </div>
+                      {opVol > 0 && form.theming_volume_pct ? (
+                        <div className="flex items-center gap-1.5 text-xs text-stone-500">
+                          <span className="font-mono">{form.theming_volume_pct}%</span>
+                          <span className="text-stone-300">×</span>
+                          <span className="font-mono">{opVol.toFixed(3)} m³</span>
+                          <span className="text-stone-300">=</span>
+                          <span className="font-mono font-semibold text-blue-700">
+                            {(opVol * (parseFloat(form.theming_volume_pct) || 0) / 100).toFixed(4)} m³
+                          </span>
+                        </div>
+                      ) : opVol === 0 ? (
+                        <p className="text-xs text-stone-400">Assign a tank with known dimensions first</p>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {themVolumeMode === 'direct' && (
                     <input type="number" step="0.0001" min="0" placeholder="0.0000"
                       value={form.theming_volume_m3} onChange={e => setF('theming_volume_m3', e.target.value)}
-                      className={themOverride ? `${inputCls} border-blue-300 bg-blue-50/30` : inputCls} />
-                  ) : (
-                    <div className="px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 font-mono text-sm text-blue-800 font-semibold">
-                      {themComputed != null ? `${themComputed.toFixed(4)} m³` : '—'}
-                    </div>
+                      className={inputCls} />
                   )}
                 </div>
               </div>
@@ -1499,9 +1555,16 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                 {substrateData?.theming_height_mm != null && parseFloat(substrateData.theming_height_mm) > 0 && (
                   <p className="text-xs text-stone-400 mt-1 font-mono">Layer height: {parseFloat(substrateData.theming_height_mm)} mm</p>
                 )}
-                {substrateData?.theming_volume_m3 != null && parseFloat(substrateData.theming_volume_m3) > 0 && (
+                {substrateData?.theming_volume_pct != null && parseFloat(substrateData.theming_volume_pct) > 0 ? (
+                  <p className="text-sm text-stone-500 mt-0.5 font-mono">
+                    {parseFloat(substrateData.theming_volume_pct)}% of op. vol
+                    {substrateData.theming_volume_m3 && parseFloat(substrateData.theming_volume_m3) > 0
+                      ? ` = ${parseFloat(substrateData.theming_volume_m3).toFixed(4)} m³`
+                      : ''}{' '}displaced
+                  </p>
+                ) : substrateData?.theming_volume_m3 != null && parseFloat(substrateData.theming_volume_m3) > 0 ? (
                   <p className="text-sm text-stone-500 mt-0.5 font-mono">{parseFloat(substrateData.theming_volume_m3).toFixed(4)} m³ displaced</p>
-                )}
+                ) : null}
               </div>
             </div>
 
