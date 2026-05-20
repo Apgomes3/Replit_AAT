@@ -376,24 +376,33 @@ function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Custom'];
 const TANK_CONSTRUCTION_TYPES = ['Acrylic', 'Acrylic with FRP', 'FRP/Steel with Window', 'FRP/Steel', 'Glass', 'PP'];
 
-function calcVolumes(shape: string, l: string, w: string, h: string, wl: string, gv: string, ov: string) {
-  const lv = parseFloat(l) || 0;
-  const wv = parseFloat(w) || 0;
-  const hv = parseFloat(h) || 0;
-  const wlv = parseFloat(wl) || 0;
+function calcVolumes(shape: string, l: string, w: string, h: string, wl: string, gv: string, ov: string, wallThickness?: string) {
   const s = shape.toLowerCase();
   if (s === 'custom') {
-    return { gross: parseFloat(gv) || null, op: parseFloat(ov) || null };
+    return { gross: parseFloat(gv) || null, op: parseFloat(ov) || null, fromInner: false };
   }
-  if (s === 'cylindrical') {
+  const thick = parseFloat(wallThickness || '') || 0;
+  const isCyl = s === 'cylindrical';
+  // Apply wall thickness to get inner dims (open-top: height loses one wall panel)
+  let lv = parseFloat(l) || 0;
+  let wv = parseFloat(w) || 0;
+  let hv = parseFloat(h) || 0;
+  const wlv = parseFloat(wl) || 0;
+  const fromInner = thick > 0;
+  if (fromInner) {
+    if (!isCyl && lv) lv = lv - 2 * thick;
+    if (wv) wv = wv - 2 * thick;
+    if (hv) hv = hv - thick; // open-top: subtract one bottom wall from height
+  }
+  if (isCyl) {
     const r = wv / 2;
     const gross = wv && hv ? Math.round(Math.PI * r * r * hv / 1e9 * 1e4) / 1e4 : null;
-    const op = wv && wlv ? Math.round(Math.PI * r * r * wlv / 1e9 * 1e4) / 1e4 : null;
-    return { gross, op };
+    const op    = wv && wlv ? Math.round(Math.PI * r * r * wlv / 1e9 * 1e4) / 1e4 : null;
+    return { gross, op, fromInner };
   }
   const gross = lv && wv && hv ? Math.round(lv * wv * hv / 1e9 * 1e4) / 1e4 : null;
-  const op = lv && wv && wlv ? Math.round(lv * wv * wlv / 1e9 * 1e4) / 1e4 : null;
-  return { gross, op };
+  const op    = lv && wv && wlv ? Math.round(lv * wv * wlv / 1e9 * 1e4) / 1e4 : null;
+  return { gross, op, fromInner };
 }
 
 function calcInnerDims(
@@ -475,7 +484,8 @@ function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
 
   const preview = editing
     ? calcVolumes(form.shape_type, form.length_mm, form.width_mm, form.height_mm,
-                  form.design_water_level_mm, form.gross_volume_m3, form.operating_volume_m3)
+                  form.design_water_level_mm, form.gross_volume_m3, form.operating_volume_m3,
+                  form.wall_thickness_mm)
     : null;
 
   const handleSave = async () => {
@@ -515,8 +525,6 @@ function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
   if (!editing) {
     const shape = tank.eff_shape || tank.shape_type || '';
     const viewIsCyl = shape.toLowerCase() === 'cylindrical';
-    const grossVol = tank.gross_volume_m3;
-    const opVol = tank.operating_volume_m3 ?? tank.design_volume_m3;
     const thick = tank.wall_thickness_mm ? parseFloat(tank.wall_thickness_mm) : null;
     const outerL = parseFloat(tank.eff_length_mm || tank.length_mm) || null;
     const outerW = parseFloat(tank.eff_width_mm  || tank.width_mm)  || null;
@@ -528,6 +536,37 @@ function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
     const innerOverridden = !!(tank.inner_length_mm || tank.inner_width_mm || tank.inner_height_mm);
     const hasDims  = !!(outerL || outerW || outerH);
     const hasInner = !!(viewInnerL || viewInnerW || viewInnerH);
+
+    // Compute volumes — use inner dims when wall thickness is set, outer otherwise.
+    // For custom shapes always use the stored values.
+    const isCust = shape.toLowerCase() === 'custom';
+    const volCalc = isCust
+      ? { gross: parseFloat(String(tank.gross_volume_m3)) || null,
+          op:    parseFloat(String(tank.operating_volume_m3 ?? tank.design_volume_m3)) || null,
+          fromInner: false }
+      : (() => {
+          const effL = thick && viewInnerL != null ? viewInnerL : outerL;
+          const effW = thick && viewInnerW != null ? viewInnerW : outerW;
+          const effH = thick && viewInnerH != null ? viewInnerH : outerH;
+          const wlv  = tank.design_water_level_mm ? parseFloat(tank.design_water_level_mm) : 0;
+          const fi   = !!thick;
+          if (viewIsCyl) {
+            const r = (effW ?? 0) / 2;
+            return {
+              gross: effW && effH ? Math.round(Math.PI * r * r * effH! / 1e9 * 1e4) / 1e4 : null,
+              op:    effW && wlv  ? Math.round(Math.PI * r * r * wlv  / 1e9 * 1e4) / 1e4 : null,
+              fromInner: fi,
+            };
+          }
+          return {
+            gross: effL && effW && effH ? Math.round(effL! * effW! * effH! / 1e9 * 1e4) / 1e4 : null,
+            op:    effL && effW && wlv  ? Math.round(effL! * effW! * wlv  / 1e9 * 1e4) / 1e4 : null,
+            fromInner: fi,
+          };
+        })();
+    const grossVol = volCalc.gross;
+    const opVol    = volCalc.op;
+    const volFromInner = volCalc.fromInner;
 
     const statusCls: Record<string, string> = {
       Active:         'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -611,7 +650,16 @@ function TankCard({ tank, onRefresh }: { tank: any; onRefresh: () => void }) {
           {/* Volumes */}
           {(grossVol != null || opVol != null) && (
             <div>
-              <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Volumes</p>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide">Volumes</p>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium ${
+                  volFromInner
+                    ? 'bg-teal-50 text-teal-600 border-teal-200'
+                    : 'bg-stone-50 text-stone-400 border-stone-200'
+                }`}>
+                  {volFromInner ? 'inner dims' : 'outer dims'}
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
                   <div className="text-xs text-blue-500 mb-1">Gross Volume</div>
