@@ -1040,6 +1040,26 @@ export default function DesignBookLSSDetail() {
         const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
         const systemFlow   = parseFloat(system.design_flow_m3h) || 0;
 
+        // Derive bottom-drain / surface-skim split from the primary linked exhibit's hydraulics
+        const primaryExLink = (links as any[]).find((l: any) => l.link_type === 'Primary') ?? (links as any[])[0];
+        const exHydr = primaryExLink && book
+          ? (book.hydraulics || []).find((h: any) => h.exhibit_id === primaryExLink.exhibit_id)
+          : null;
+        const surfacePct  = parseFloat(exHydr?.surface_skim_pct)  || 30;
+        const bottomPct   = parseFloat(exHydr?.bottom_drain_pct)  || 70;
+        const surfaceFlow = systemFlow * (surfacePct / 100);
+        const bottomFlow  = systemFlow * (bottomPct  / 100);
+        const linkedFlowForSource = (src: string): number => {
+          if (src === 'Bottom Drain')  return bottomFlow;
+          if (src === 'Surface Skim')  return surfaceFlow;
+          return systemFlow;
+        };
+        const linkedFlowLabel = (src: string): string => {
+          if (src === 'Bottom Drain')  return `bottom drain (${bottomPct}%)`;
+          if (src === 'Surface Skim')  return `surface skim (${surfacePct}%)`;
+          return 'total exhibit flow';
+        };
+
         const LOOP_COLORS: Record<number, { badge: string; border: string; label: string }> = {
           1: { badge: 'bg-violet-100 text-violet-700', border: 'border-violet-200', label: 'text-violet-800' },
           2: { badge: 'bg-blue-100 text-blue-700',     border: 'border-blue-200',   label: 'text-blue-800'   },
@@ -1083,8 +1103,8 @@ export default function DesignBookLSSDetail() {
                 <span className="text-stone-500 text-xs">Bio/Degas:</span>
                 {linked
                   ? <span className="font-mono text-emerald-700 font-semibold text-xs">
-                      {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'}{' '}
-                      <span className="text-stone-400 font-normal">(linked)</span>
+                      {linkedFlowForSource(src || '') > 0 ? `${linkedFlowForSource(src || '').toFixed(1)} m³/h` : '—'}{' '}
+                      <span className="text-stone-400 font-normal">({linkedFlowLabel(src || '')})</span>
                     </span>
                   : bio != null
                     ? <span className="font-mono text-stone-800 font-semibold text-xs">{parseFloat(bio).toFixed(1)} m³/h</span>
@@ -1146,8 +1166,8 @@ export default function DesignBookLSSDetail() {
                 </div>
                 {linked ? (
                   <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-sm font-mono text-emerald-800 font-semibold">
-                    {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'}{' '}
-                    <span className="text-emerald-600 font-normal text-xs">(= system design flow)</span>
+                    {linkedFlowForSource(curSrc) > 0 ? `${linkedFlowForSource(curSrc).toFixed(1)} m³/h` : '—'}{' '}
+                    <span className="text-emerald-600 font-normal text-xs">(= {linkedFlowLabel(curSrc)})</span>
                   </div>
                 ) : (
                   <input type="number" step="0.1" min="0" placeholder="e.g. 12.5"
@@ -1325,7 +1345,7 @@ export default function DesignBookLSSDetail() {
                             <td className="px-3 py-2">
                               {linked ? (
                                 <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                                  {systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'}
+                                  {linkedFlowForSource(listRowForm.flow_source || '') > 0 ? `${linkedFlowForSource(listRowForm.flow_source || '').toFixed(1)} m³/h` : '—'}
                                 </span>
                               ) : (
                                 <input type="number" step="0.1" min="0" placeholder="0.0"
@@ -1379,7 +1399,7 @@ export default function DesignBookLSSDetail() {
                           </td>
                           <td className="px-3 py-3 font-mono text-xs">
                             {linked
-                              ? <span className="text-emerald-700">{systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : '—'} <span className="text-stone-400 font-sans">(linked)</span></span>
+                              ? <span className="text-emerald-700">{linkedFlowForSource(src || '') > 0 ? `${linkedFlowForSource(src || '').toFixed(1)} m³/h` : '—'} <span className="text-stone-400 font-sans">({linkedFlowLabel(src || '')})</span></span>
                               : bio != null
                                 ? <span className="text-stone-800">{parseFloat(bio).toFixed(1)} m³/h</span>
                                 : <span className="text-stone-300">—</span>
