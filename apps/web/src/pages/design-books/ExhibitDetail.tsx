@@ -1309,7 +1309,8 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
     }
   };
 
-  const hasData = substrateData?.substrate_type || substrateData?.theming_type;
+  const hasData = (substrateData?.substrate_type && substrateData.substrate_type !== 'None')
+               || substrateData?.theming_type;
   const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40';
 
   return (
@@ -1480,10 +1481,10 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Substrate</span>
                 </div>
                 <p className="text-base font-semibold text-stone-800">{substrateData?.substrate_type || <span className="text-stone-300 font-normal">None</span>}</p>
-                {substrateData?.substrate_height_mm != null && (
+                {substrateData?.substrate_height_mm != null && parseFloat(substrateData.substrate_height_mm) > 0 && (
                   <p className="text-xs text-stone-400 mt-1 font-mono">Layer height: {parseFloat(substrateData.substrate_height_mm)} mm</p>
                 )}
-                {substrateData?.substrate_volume_m3 != null && (
+                {substrateData?.substrate_volume_m3 != null && parseFloat(substrateData.substrate_volume_m3) > 0 && (
                   <p className="text-sm text-stone-500 mt-0.5 font-mono">{parseFloat(substrateData.substrate_volume_m3).toFixed(4)} m³ displaced</p>
                 )}
               </div>
@@ -1494,10 +1495,10 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                   <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">Theming</span>
                 </div>
                 <p className="text-base font-semibold text-stone-800">{substrateData?.theming_type || <span className="text-stone-300 font-normal">None</span>}</p>
-                {substrateData?.theming_height_mm != null && (
+                {substrateData?.theming_height_mm != null && parseFloat(substrateData.theming_height_mm) > 0 && (
                   <p className="text-xs text-stone-400 mt-1 font-mono">Layer height: {parseFloat(substrateData.theming_height_mm)} mm</p>
                 )}
-                {substrateData?.theming_volume_m3 != null && (
+                {substrateData?.theming_volume_m3 != null && parseFloat(substrateData.theming_volume_m3) > 0 && (
                   <p className="text-sm text-stone-500 mt-0.5 font-mono">{parseFloat(substrateData.theming_volume_m3).toFixed(4)} m³ displaced</p>
                 )}
               </div>
