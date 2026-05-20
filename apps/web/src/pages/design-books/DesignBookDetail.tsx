@@ -1020,7 +1020,19 @@ function ExhibitsTab({
   onRefresh: () => void; onNewExhibit: () => void;
 }) {
   const navigate = useNavigate();
+  const [deletingExhibit, setDeletingExhibit] = useState<string | null>(null);
   const allSpecies: any[] = book.species || [];
+
+  const handleDeleteExhibit = async (exhibitId: string) => {
+    try {
+      await api.delete(`/exhibits/${exhibitId}`);
+      toast.success('Exhibit deleted');
+      setDeletingExhibit(null);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to delete exhibit');
+    }
+  };
   const unassigned: any[] = exhibitMap.get(null) || [];
   const totalGross = tanks.reduce((s, t) => s + (parseFloat(t.gross_volume_m3) || 0), 0);
 
@@ -1210,8 +1222,6 @@ export default function DesignBookDetail() {
   const [saving, setSaving] = useState(false);
   const [showNewExhibit, setShowNewExhibit] = useState(false);
   const [showNewLSS, setShowNewLSS] = useState(false);
-  const [deletingExhibit, setDeletingExhibit] = useState<string | null>(null);
-
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', id],
     queryFn: () => api.get(`/design-books/${id}`).then(r => r.data),
@@ -1227,17 +1237,6 @@ export default function DesignBookDetail() {
   const projects: any[] = projectsData?.items || [];
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['design-book', id] });
-
-  const handleDeleteExhibit = async (exhibitId: string) => {
-    try {
-      await api.delete(`/exhibits/${exhibitId}`);
-      toast.success('Exhibit deleted');
-      setDeletingExhibit(null);
-      refresh();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Failed to delete exhibit');
-    }
-  };
 
   if (isLoading) return <div className="p-8 text-center text-stone-400">Loading…</div>;
   if (!book) return <div className="p-8 text-center text-stone-500">Design book not found.</div>;
