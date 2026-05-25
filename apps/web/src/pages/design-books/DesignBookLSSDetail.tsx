@@ -1325,30 +1325,37 @@ export default function DesignBookLSSDetail() {
                       </button>
                     </div>
                   </div>
-                ) : (
-                  <div>
-                    <div className={`grid gap-4 ${activeLoops.length >= 2 ? 'grid-cols-2' : 'grid-cols-1 max-w-sm'}`}>
-                      {activeLoops.map(n => {
-                        const colors = LOOP_COLORS[n] ?? LOOP_COLORS[1];
-                        return (
-                          <div key={n} className={`rounded-lg border p-4 ${colors.border}`}>
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
-                              <span className={`text-sm font-semibold ${colors.label}`}>Loop {n}</span>
+                ) : (() => {
+                  const pendingLoop = listEditRow !== null && !activeLoops.includes(listEditRow) ? listEditRow : null;
+                  const cardLoops = pendingLoop != null ? [...activeLoops, pendingLoop] : activeLoops;
+                  const gridCls = cardLoops.length === 3 ? 'grid-cols-3' : cardLoops.length >= 2 ? 'grid-cols-2' : 'grid-cols-1 max-w-sm';
+                  return (
+                    <div>
+                      <div className={`grid gap-4 ${gridCls}`}>
+                        {cardLoops.map(n => {
+                          const colors  = LOOP_COLORS[n] ?? LOOP_COLORS[1];
+                          const pending = n === pendingLoop;
+                          return (
+                            <div key={n} className={`rounded-lg border p-4 ${colors.border} ${pending ? 'opacity-60 border-dashed' : ''}`}>
+                              <div className="flex items-center gap-2 mb-3">
+                                <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                                <span className={`text-sm font-semibold ${colors.label}`}>Loop {n}</span>
+                                {pending && <span className="text-[10px] text-stone-400 italic">unsaved</span>}
+                              </div>
+                              <LoopView n={n} />
                             </div>
-                            <LoopView n={n} />
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
+                      {canAddNext && pendingLoop == null && (
+                        <button onClick={() => startFlowEdit(nextLoopToAdd)}
+                          className="mt-4 w-full py-2.5 text-xs text-stone-400 border border-dashed border-stone-200 rounded-lg hover:border-blue-300 hover:text-blue-600 transition-colors flex items-center justify-center gap-1.5">
+                          <Plus className="w-3.5 h-3.5" /> Add Loop {nextLoopToAdd}
+                        </button>
+                      )}
                     </div>
-                    {canAddNext && (
-                      <button onClick={() => startFlowEdit(nextLoopToAdd)}
-                        className="mt-4 w-full py-2.5 text-xs text-stone-400 border border-dashed border-stone-200 rounded-lg hover:border-blue-300 hover:text-blue-600 transition-colors flex items-center justify-center gap-1.5">
-                        <Plus className="w-3.5 h-3.5" /> Add Loop {nextLoopToAdd}
-                      </button>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 
