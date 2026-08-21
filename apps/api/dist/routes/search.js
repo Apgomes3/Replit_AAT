@@ -1,0 +1,30 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const db_1 = require("../db");
+const auth_1 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+router.get('/', auth_1.authenticate, async (req, res) => {
+    const q = req.query.q;
+    if (!q || q.trim().length < 2)
+        return res.json({ results: [], query: q });
+    const term = `%${q.trim()}%`;
+    const [projects, systems, equipment, products, materials, documents] = await Promise.all([
+        (0, db_1.query)(`SELECT 'project' as type, id::text, project_code as code, project_name as name, project_status as status FROM projects WHERE project_name ILIKE $1 OR project_code ILIKE $1 LIMIT 10`, [term]),
+        (0, db_1.query)(`SELECT 'system' as type, s.id::text, s.system_code as code, s.system_name as name, s.status, p.project_code FROM systems s JOIN projects p ON s.project_id=p.id WHERE s.system_name ILIKE $1 OR s.system_code ILIKE $1 LIMIT 10`, [term]),
+        (0, db_1.query)(`SELECT 'equipment' as type, pei.id::text, pei.equip_code as code, COALESCE(pei.description, pm.product_name, pei.equip_code) as name, pei.status, p.project_code, pei.system_id FROM project_equipment_items pei LEFT JOIN product_masters pm ON pei.product_master_id=pm.id JOIN projects p ON pei.project_id=p.id WHERE pei.equip_code ILIKE $1 OR pm.product_name ILIKE $1 LIMIT 10`, [term]),
+        (0, db_1.query)(`SELECT 'product' as type, id::text, product_code as code, product_name as name, standard_status as status FROM product_masters WHERE product_name ILIKE $1 OR product_code ILIKE $1 OR EXISTS (SELECT 1 FROM unnest(synonyms) s WHERE s ILIKE $1) LIMIT 10`, [term]),
+        (0, db_1.query)(`SELECT 'material' as type, id::text, material_code as code, material_name as name, status FROM materials WHERE material_name ILIKE $1 OR material_code ILIKE $1 LIMIT 10`, [term]),
+        (0, db_1.query)(`SELECT 'document' as type, d.id::text, d.document_code as code, d.document_title as name, d.status, p.project_code FROM documents d LEFT JOIN systems s ON d.system_id=s.id LEFT JOIN projects p ON s.project_id=p.id WHERE d.document_title ILIKE $1 OR d.document_code ILIKE $1 LIMIT 10`, [term]),
+    ]);
+    const results = [
+        ...projects.rows,
+        ...systems.rows,
+        ...equipment.rows,
+        ...products.rows,
+        ...materials.rows,
+        ...documents.rows,
+    ];
+    res.json({ results, query: q, total: results.length });
+});
+exports.default = router;

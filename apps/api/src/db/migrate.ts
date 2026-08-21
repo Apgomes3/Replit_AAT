@@ -972,6 +972,14 @@ ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_flow_source    VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_filtration     VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_bio_degas_m3h  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_link_bio_degas BOOLEAN DEFAULT false;
+
+-- PROCUREMENT FIELDS: vendor, delivery date, payment/shipping terms, priority, UOM
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS required_by_date DATE;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(100);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS shipping_terms VARCHAR(100);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'normal';
+ALTER TABLE po_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20) DEFAULT 'EA';
 `;
 
 async function migrate() {

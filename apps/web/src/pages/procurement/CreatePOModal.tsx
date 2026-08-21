@@ -4,9 +4,19 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
-import { X, Trash2, Search, Plus, Minus, Network, Paperclip, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Trash2, Search, Plus, Minus, Network, Paperclip, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
+
+const PAYMENT_TERMS_OPTIONS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90', 'Advance Payment', 'Letter of Credit', 'COD', 'Other'];
+const SHIPPING_TERMS_OPTIONS = ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF', 'Other'];
+const UOM_OPTIONS = ['EA', 'm', 'kg', 'm²', 'm³', 'L', 'pcs', 'set', 'pack', 'roll', 'lot', 'hr'];
+const PRIORITY_OPTIONS = [
+  { value: 'low',    label: 'Low',    color: 'text-slate-500' },
+  { value: 'normal', label: 'Normal', color: 'text-blue-600' },
+  { value: 'high',   label: 'High',   color: 'text-amber-600' },
+  { value: 'urgent', label: 'Urgent', color: 'text-red-600' },
+];
 
 type DraftItem = {
   key: number;
@@ -14,6 +24,7 @@ type DraftItem = {
   product_code: string;
   product_name: string;
   quantity: number;
+  uom: string;
   cost_price: string;
   sell_price: string;
   notes: string;
@@ -31,8 +42,16 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const [projectId, setProjectId] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [notes, setNotes] = useState('');
+  const [vendorName, setVendorName] = useState('');
+  const [requiredByDate, setRequiredByDate] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('');
+  const [paymentTermsOther, setPaymentTermsOther] = useState('');
+  const [shippingTerms, setShippingTerms] = useState('');
+  const [shippingTermsOther, setShippingTermsOther] = useState('');
+  const [priority, setPriority] = useState('normal');
   const [saving, setSaving] = useState(false);
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const [items, setItems] = useState<DraftItem[]>([]);
   const [itemKey, setItemKey] = useState(0);
@@ -95,6 +114,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       product_code: prod.product_code,
       product_name: prod.product_name,
       quantity: 1,
+      uom: 'EA',
       cost_price: prod.cost != null ? String(prod.cost) : '',
       sell_price: prod.sell_price != null ? String(prod.sell_price) : '',
       notes: '',
@@ -108,6 +128,17 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
     setShowResults(false);
     setTimeout(() => searchRef.current?.focus(), 50);
   }, [itemKey]);
+
+  const validateForm = (): string[] => {
+    const errors: string[] = [];
+    if (!projectId) errors.push('A project must be selected');
+    if (items.length === 0) errors.push('At least one line item is required');
+    const badQty = items.filter(i => !i.quantity || i.quantity <= 0);
+    if (badQty.length > 0) errors.push(`${badQty.length} item(s) have invalid quantity (must be > 0)`);
+    const badCost = items.filter(i => i.cost_price !== '' && (isNaN(parseFloat(i.cost_price)) || parseFloat(i.cost_price) < 0));
+    if (badCost.length > 0) errors.push(`${badCost.length} item(s) have invalid cost price (must be a non-negative number)`);
+    return errors;
+  };
 
   const updateItem = (key: number, fields: Partial<DraftItem>) =>
     setItems(prev => prev.map(i => i.key === key ? { ...i, ...fields } : i));
@@ -129,11 +160,24 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   };
 
   const handleCreate = async () => {
+    const errors = validateForm();
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+    setValidationErrors([]);
     setSaving(true);
     try {
+      const effectivePaymentTerms = paymentTerms === 'Other' ? (paymentTermsOther || 'Other') : paymentTerms;
+      const effectiveShippingTerms = shippingTerms === 'Other' ? (shippingTermsOther || 'Other') : shippingTerms;
       const poRes = await api.post('/purchase-orders', {
         project_id: projectId || null,
         notes: notes || null,
+        vendor_name: vendorName || null,
+        required_by_date: requiredByDate || null,
+        payment_terms: effectivePaymentTerms || null,
+        shipping_terms: effectiveShippingTerms || null,
+        priority: priority || 'normal',
       });
       const poId = poRes.data.id;
 
@@ -141,6 +185,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
         api.post(`/purchase-orders/${poId}/items`, {
           product_master_id: item.product_master_id,
           quantity: item.quantity,
+          uom: item.uom || 'EA',
           cost_price: item.cost_price !== '' ? parseFloat(item.cost_price) : null,
           sell_price: item.sell_price !== '' ? parseFloat(item.sell_price) : null,
           currency,
@@ -181,38 +226,116 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto">
 
           {/* Top bar: project + currency + notes */}
-          <div className="px-6 pt-4 pb-3 border-b border-slate-100 grid grid-cols-3 gap-3">
-            <div className="col-span-1">
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Project</label>
-              <select
-                value={projectId}
-                onChange={e => setProjectId(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">— None —</option>
-                {(projectsData?.items || []).map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>
-                ))}
-              </select>
+          <div className="px-6 pt-4 pb-3 border-b border-slate-100 space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-1">
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Project <span className="text-red-400">*</span>
+                </label>
+                <select
+                  value={projectId}
+                  onChange={e => { setProjectId(e.target.value); setValidationErrors([]); }}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${!projectId && validationErrors.length > 0 ? 'border-red-400' : 'border-slate-200'}`}
+                >
+                  <option value="">— None —</option>
+                  {(projectsData?.items || []).map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Currency</label>
+                <select
+                  value={currency}
+                  onChange={e => setCurrency(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Notes</label>
+                <input
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder="Optional…"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Currency</label>
-              <select
-                value={currency}
-                onChange={e => setCurrency(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {CURRENCIES.map(c => <option key={c}>{c}</option>)}
-              </select>
+
+            {/* Row 2: Vendor, Required By, Priority */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Supplier / Vendor</label>
+                <input
+                  value={vendorName}
+                  onChange={e => setVendorName(e.target.value)}
+                  placeholder="Vendor name…"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Required By Date</label>
+                <input
+                  type="date"
+                  value={requiredByDate}
+                  onChange={e => setRequiredByDate(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Priority</label>
+                <select
+                  value={priority}
+                  onChange={e => setPriority(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Notes</label>
-              <input
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="Optional…"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+
+            {/* Row 3: Payment Terms, Shipping Terms */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Payment Terms</label>
+                <select
+                  value={paymentTerms}
+                  onChange={e => setPaymentTerms(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— Select —</option>
+                  {PAYMENT_TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {paymentTerms === 'Other' && (
+                  <input
+                    value={paymentTermsOther}
+                    onChange={e => setPaymentTermsOther(e.target.value)}
+                    placeholder="Specify terms…"
+                    className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Shipping Terms / Incoterms</label>
+                <select
+                  value={shippingTerms}
+                  onChange={e => setShippingTerms(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— Select —</option>
+                  {SHIPPING_TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {shippingTerms === 'Other' && (
+                  <input
+                    value={shippingTermsOther}
+                    onChange={e => setShippingTermsOther(e.target.value)}
+                    placeholder="Specify terms…"
+                    className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
+              </div>
             </div>
           </div>
 
@@ -263,7 +386,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                   <EntityCode code={item.product_code} />
                   <span className="text-sm text-slate-700 font-medium truncate flex-1">{item.product_name}</span>
 
-                  {/* Qty */}
+                  {/* Qty + UOM */}
                   <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => changeQty(item.key, -1)}
                       className="w-6 h-6 rounded-md border border-slate-200 bg-white flex items-center justify-center hover:border-blue-400 hover:text-blue-600 transition-colors">
@@ -272,13 +395,21 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                     <input
                       type="number" min="1" step="any"
                       value={item.quantity}
-                      onChange={e => updateItem(item.key, { quantity: parseFloat(e.target.value) || 1 })}
+                      onChange={e => { updateItem(item.key, { quantity: parseFloat(e.target.value) || 1 }); setValidationErrors([]); }}
                       className="w-12 text-center border border-slate-200 rounded-md px-1 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <button onClick={() => changeQty(item.key, 1)}
                       className="w-6 h-6 rounded-md border border-slate-200 bg-white flex items-center justify-center hover:border-blue-400 hover:text-blue-600 transition-colors">
                       <Plus className="w-3 h-3" />
                     </button>
+                    <select
+                      value={item.uom}
+                      onChange={e => updateItem(item.key, { uom: e.target.value })}
+                      className="border border-slate-200 rounded-md px-1 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-600"
+                      title="Unit of Measure"
+                    >
+                      {UOM_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
                   </div>
 
                   {/* System picker trigger */}
@@ -396,6 +527,19 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {/* Validation error banner */}
+        {validationErrors.length > 0 && (
+          <div className="mx-6 mb-2 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+            <div className="text-xs text-red-700">
+              <div className="font-semibold mb-0.5">Please fix the following before creating the PO:</div>
+              <ul className="list-disc list-inside space-y-0.5">
+                {validationErrors.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
           <span className="text-xs text-slate-400">
@@ -408,8 +552,12 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
               className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 border border-slate-200 rounded-lg bg-white transition-colors disabled:opacity-50">
               Cancel
             </button>
-            <button onClick={handleCreate} disabled={saving}
-              className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60 active:scale-95">
+            <button
+              onClick={handleCreate}
+              disabled={saving}
+              title={validationErrors.length > 0 ? validationErrors.join(' · ') : undefined}
+              className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60 active:scale-95"
+            >
               {saving ? 'Creating…' : 'Create PO'}
             </button>
           </div>

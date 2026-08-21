@@ -38,6 +38,13 @@ function POStatusBadge({ status }: { status: string }) {
   return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>;
 }
 
+const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
+  low:    { label: 'Low',    color: 'bg-slate-100 text-slate-500' },
+  normal: { label: 'Normal', color: 'bg-blue-50 text-blue-600' },
+  high:   { label: 'High',   color: 'bg-amber-50 text-amber-700' },
+  urgent: { label: 'Urgent', color: 'bg-red-50 text-red-700 font-semibold' },
+};
+
 type PO = {
   id: string; po_code: string; status: string; notes: string;
   project_code: string; project_name: string;
@@ -45,6 +52,10 @@ type PO = {
   item_count: string; created_at: string; updated_at: string;
   total_cost_usd: string; stage_due_date: string | null;
   fo_number: string | null;
+  vendor_name: string | null;
+  required_by_date: string | null;
+  payment_terms: string | null;
+  priority: string | null;
 };
 
 type InlineAction = {
@@ -281,13 +292,17 @@ export default function PurchaseOrdersList() {
   const handleExport = (items: PO[]) => exportCsv(
     `purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`,
     [
-      { header: 'PO Code',      value: r => r.po_code ?? '' },
-      { header: 'Project Code', value: r => r.project_code ?? '' },
-      { header: 'Project',      value: r => r.project_name ?? '' },
-      { header: 'Status',       value: r => STATUS_META[r.status]?.label ?? r.status },
-      { header: 'Items',        value: r => String(r.item_count ?? '') },
-      { header: 'Created By',   value: r => r.created_by_name ?? '' },
-      { header: 'Date',         value: r => new Date(r.created_at).toLocaleDateString() },
+      { header: 'PO Code',        value: r => r.po_code ?? '' },
+      { header: 'Project Code',   value: r => r.project_code ?? '' },
+      { header: 'Project',        value: r => r.project_name ?? '' },
+      { header: 'Status',         value: r => STATUS_META[r.status]?.label ?? r.status },
+      { header: 'Priority',       value: r => r.priority ? r.priority.charAt(0).toUpperCase() + r.priority.slice(1) : 'Normal' },
+      { header: 'Vendor',         value: r => r.vendor_name ?? '' },
+      { header: 'Required By',    value: r => r.required_by_date ? new Date(r.required_by_date).toLocaleDateString() : '' },
+      { header: 'Payment Terms',  value: r => r.payment_terms ?? '' },
+      { header: 'Items',          value: r => String(r.item_count ?? '') },
+      { header: 'Created By',     value: r => r.created_by_name ?? '' },
+      { header: 'Date',           value: r => new Date(r.created_at).toLocaleDateString() },
     ],
     items
   );
@@ -314,7 +329,24 @@ export default function PurchaseOrdersList() {
         ? <span><span className="font-mono text-xs text-slate-400 mr-1">{r.project_code}</span>{r.project_name}</span>
         : <span className="text-slate-300 text-xs">—</span>,
     },
-    { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status, render: r => <POStatusBadge status={r.status} /> },
+    {
+      key: 'vendor_name' as any, header: 'Vendor', sortable: true,
+      render: r => r.vendor_name
+        ? <span className="text-xs text-slate-600 truncate max-w-[120px] block">{r.vendor_name}</span>
+        : <span className="text-slate-300 text-xs">—</span>,
+    },
+    {
+      key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status,
+      render: r => (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <POStatusBadge status={r.status} />
+          {r.priority && r.priority !== 'normal' && (() => {
+            const badge = PRIORITY_BADGES[r.priority];
+            return badge ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span> : null;
+          })()}
+        </div>
+      ),
+    },
     { key: 'item_count' as any, header: 'Items', sortable: true, sortValue: r => Number(r.item_count) || 0, render: r => <span className="text-sm text-slate-600">{r.item_count}</span> },
     { key: 'created_by_name' as any, header: 'Created By', sortable: true, filterable: true, render: r => <span className="text-sm text-slate-600">{r.created_by_name}</span> },
     {

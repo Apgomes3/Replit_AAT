@@ -30,6 +30,56 @@ async function isDesignated(poId: string, userId: string): Promise<boolean> {
   return r.rows.length > 0;
 }
 
+// Roles that may perform PO management actions (assign users, set due dates, update procurement meta, etc.)
+function canTransition(role: string): boolean {
+  return ['admin', 'engineer', 'hq_manager'].includes(role);
+}
+
+// ─── Procurement field allowlists ────────────────────────────────────────────
+const VALID_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
+const VALID_UOMS = new Set(['EA', 'm', 'kg', 'm²', 'm³', 'L', 'pcs', 'set', 'pack', 'roll', 'lot', 'hr']);
+
+function validateProcurementFields(fields: {
+  priority?: string | null;
+  vendor_name?: string | null;
+  payment_terms?: string | null;
+  shipping_terms?: string | null;
+  required_by_date?: string | null;
+}): string | null {
+  if (fields.priority != null && !VALID_PRIORITIES.has(fields.priority)) {
+    return `Invalid priority "${fields.priority}". Must be one of: ${[...VALID_PRIORITIES].join(', ')}.`;
+  }
+  if (fields.vendor_name != null && fields.vendor_name.length > 255) {
+    return 'Vendor name must be 255 characters or fewer.';
+  }
+  if (fields.payment_terms != null && fields.payment_terms.length > 100) {
+    return 'Payment terms must be 100 characters or fewer.';
+  }
+  if (fields.shipping_terms != null && fields.shipping_terms.length > 100) {
+    return 'Shipping terms must be 100 characters or fewer.';
+  }
+  if (fields.required_by_date != null) {
+    const d = new Date(fields.required_by_date);
+    if (isNaN(d.getTime())) return 'required_by_date must be a valid ISO date (YYYY-MM-DD) or null.';
+  }
+  return null;
+}
+
+function validateItemFields(fields: { uom?: string | null; quantity?: any; cost_price?: any }): string | null {
+  if (fields.uom != null && !VALID_UOMS.has(fields.uom)) {
+    return `Invalid UOM "${fields.uom}". Must be one of: ${[...VALID_UOMS].join(', ')}.`;
+  }
+  if (fields.quantity !== undefined) {
+    const q = parseFloat(String(fields.quantity));
+    if (isNaN(q) || q <= 0) return 'Quantity must be a positive number.';
+  }
+  if (fields.cost_price !== undefined && fields.cost_price !== null && fields.cost_price !== '') {
+    const c = parseFloat(String(fields.cost_price));
+    if (isNaN(c) || c < 0) return 'Cost price must be a non-negative number.';
+  }
+  return null;
+}
+
 // Check whether a user may advance a PO from its current stage.
 // purchase_order: creator OR hq_manager/admin OR in stage_assignees
 // po_review / engineering_review: in stage_assignees only
@@ -120,6 +170,7 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
       u.first_name || ' ' || u.last_name AS created_by_name,
       a.first_name || ' ' || a.last_name AS approved_by_name,
       po.approved_at, po.stage_due_date, po.fo_number,
+      po.vendor_name, po.required_by_date, po.payment_terms, po.shipping_terms, po.priority,
       (SELECT COUNT(*) FROM po_items WHERE po_id=po.id) AS item_count,
       (SELECT COALESCE(SUM(CAST(pi.cost_price AS NUMERIC) * CAST(pi.quantity AS NUMERIC)), 0)
        FROM po_items pi WHERE pi.po_id=po.id) AS total_cost_usd
@@ -137,27 +188,30 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
 
 // CREATE
 router.post('/purchase-orders', authenticate, async (req: AuthRequest, res: Response) => {
-  const { project_id, notes, system_ids } = req.body;
+  const { project_id, notes, system_ids, vendor_name, required_by_date, payment_terms, shipping_terms, priority } = req.body;
   const user = req.user!;
+  const procError = validateProcurementFields({ priority, vendor_name, payment_terms, shipping_terms, required_by_date });
+  if (procError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: procError } });
   const yearSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('po_code_seq') AS seq`);
   const { yr, seq } = yearSeq.rows[0];
   const po_code = `PO-${yr}-${String(seq).padStart(4, '0')}`;
   const initialStatus = user.role === 'hq_manager' ? 'purchase_order' : 'draft';
   const approved_by = user.role === 'hq_manager' ? user.id : null;
-  const approved_at = user.role === 'hq_manager' ? 'now()' : null;
 
   let poRes;
   if (user.role === 'hq_manager') {
     poRes = await query(
-      `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by, approved_by, approved_at)
-       VALUES ($1,$2,$3,$4,$5,$6,now()) RETURNING *`,
-      [po_code, project_id || null, initialStatus, notes || null, user.id, approved_by]
+      `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by, approved_by, approved_at, vendor_name, required_by_date, payment_terms, shipping_terms, priority)
+       VALUES ($1,$2,$3,$4,$5,$6,now(),$7,$8,$9,$10,$11) RETURNING *`,
+      [po_code, project_id || null, initialStatus, notes || null, user.id, approved_by,
+       vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal']
     );
   } else {
     poRes = await query(
-      `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [po_code, project_id || null, initialStatus, notes || null, user.id]
+      `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by, vendor_name, required_by_date, payment_terms, shipping_terms, priority)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [po_code, project_id || null, initialStatus, notes || null, user.id,
+       vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal']
     );
   }
   const po = poRes.rows[0];
@@ -261,14 +315,16 @@ router.get('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: R
 // UPDATE (draft only)
 router.put('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  const { project_id, notes, system_ids } = req.body;
+  const { project_id, notes, system_ids, vendor_name, required_by_date, payment_terms, shipping_terms, priority } = req.body;
+  const procError = validateProcurementFields({ priority, vendor_name, payment_terms, shipping_terms, required_by_date });
+  if (procError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: procError } });
   const existing = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
   if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   if (existing.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Only draft POs can be edited' } });
 
   await query(
-    `UPDATE purchase_orders SET project_id=$1, notes=$2, updated_at=now() WHERE id=$3`,
-    [project_id || null, notes || null, id]
+    `UPDATE purchase_orders SET project_id=$1, notes=$2, vendor_name=$3, required_by_date=$4, payment_terms=$5, shipping_terms=$6, priority=$7, updated_at=now() WHERE id=$8`,
+    [project_id || null, notes || null, vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal', id]
   );
   if (Array.isArray(system_ids)) {
     await query('DELETE FROM po_systems WHERE po_id=$1', [id]);
@@ -276,6 +332,23 @@ router.put('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: R
       await query('INSERT INTO po_systems (po_id,system_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [id, sid]);
     }
   }
+  res.json({ ok: true });
+});
+
+// PATCH PROCUREMENT META (vendor, dates, terms, priority — editable regardless of status)
+router.patch('/purchase-orders/:id/procurement-meta', authenticate, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const user = req.user!;
+  if (!canTransition(user.role)) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised' } });
+  const existing = await query('SELECT id FROM purchase_orders WHERE id=$1', [id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
+  const { vendor_name, required_by_date, payment_terms, shipping_terms, priority } = req.body;
+  const procError = validateProcurementFields({ priority, vendor_name, payment_terms, shipping_terms, required_by_date });
+  if (procError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: procError } });
+  await query(
+    `UPDATE purchase_orders SET vendor_name=$1, required_by_date=$2, payment_terms=$3, shipping_terms=$4, priority=$5, updated_at=now() WHERE id=$6`,
+    [vendor_name ?? null, required_by_date ?? null, payment_terms ?? null, shipping_terms ?? null, priority ?? 'normal', id]
+  );
   res.json({ ok: true });
 });
 
@@ -528,7 +601,9 @@ router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRe
 // ADD ITEM
 router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
-  const { product_master_id, quantity, cost_price, sell_price, currency, notes, system_id, project_equipment_item_id, tank_id } = req.body;
+  const { product_master_id, quantity, cost_price, sell_price, currency, notes, system_id, project_equipment_item_id, tank_id, uom } = req.body;
+  const itemError = validateItemFields({ uom, quantity, cost_price });
+  if (itemError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: itemError } });
   const poRes = await query('SELECT status FROM purchase_orders WHERE id=$1', [id]);
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   if (poRes.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Items can only be added to draft POs' } });
@@ -537,9 +612,9 @@ router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest,
   const sortOrder = parseInt(maxSort.rows[0].m) + 10;
 
   const r = await query(
-    `INSERT INTO po_items (po_id,product_master_id,quantity,cost_price,sell_price,currency,notes,sort_order,system_id,project_equipment_item_id,tank_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-    [id, product_master_id || null, quantity || 1, cost_price || null, sell_price || null, currency || 'USD', notes || null, sortOrder, system_id || null, project_equipment_item_id || null, tank_id || null]
+    `INSERT INTO po_items (po_id,product_master_id,quantity,cost_price,sell_price,currency,notes,sort_order,system_id,project_equipment_item_id,tank_id,uom)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+    [id, product_master_id || null, quantity || 1, cost_price || null, sell_price || null, currency || 'USD', notes || null, sortOrder, system_id || null, project_equipment_item_id || null, tank_id || null, uom || 'EA']
   );
   res.status(201).json(r.rows[0]);
 });
@@ -547,14 +622,16 @@ router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest,
 // UPDATE ITEM
 router.put('/purchase-orders/:id/items/:itemId', authenticate, async (req: AuthRequest, res: Response) => {
   const { id, itemId } = req.params;
-  const { quantity, cost_price, sell_price, currency, notes, system_id, budget_amount } = req.body;
+  const { quantity, cost_price, sell_price, currency, notes, system_id, budget_amount, uom } = req.body;
+  const itemError = validateItemFields({ uom, quantity, cost_price });
+  if (itemError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: itemError } });
   const poRes = await query('SELECT status FROM purchase_orders WHERE id=$1', [id]);
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   if (poRes.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Items can only be edited on draft POs' } });
 
   const r = await query(
-    `UPDATE po_items SET quantity=$1,cost_price=$2,sell_price=$3,currency=$4,notes=$5,system_id=$6,budget_amount=$7 WHERE id=$8 AND po_id=$9 RETURNING *`,
-    [quantity, cost_price || null, sell_price || null, currency || 'USD', notes || null, system_id || null, budget_amount != null ? budget_amount : null, itemId, id]
+    `UPDATE po_items SET quantity=$1,cost_price=$2,sell_price=$3,currency=$4,notes=$5,system_id=$6,budget_amount=$7,uom=COALESCE($8, uom) WHERE id=$9 AND po_id=$10 RETURNING *`,
+    [quantity, cost_price || null, sell_price || null, currency || 'USD', notes || null, system_id || null, budget_amount != null ? budget_amount : null, uom ?? null, itemId, id]
   );
   res.json(r.rows[0]);
 });

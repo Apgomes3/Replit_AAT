@@ -127,7 +127,7 @@ function convertAmount(amount: number | null, fromCurrency: string, toCurrency: 
 
 type Item = {
   id: string; product_master_id: string | null; product_code: string; product_name: string;
-  quantity: string; cost_price: string | null; sell_price: string | null; currency: string; notes: string | null;
+  quantity: string; uom: string | null; cost_price: string | null; sell_price: string | null; currency: string; notes: string | null;
   system_id: string | null; system_code: string | null; system_name: string | null;
   budget_amount: string | null;
 };
@@ -206,6 +206,10 @@ export default function PurchaseOrderDetail() {
   const [dueDateEditing, setDueDateEditing] = useState(false);
   const [dueDateValue, setDueDateValue] = useState('');
 
+  // Procurement meta editing
+  const [procurementEdit, setProcurementEdit] = useState<string | null>(null); // field name being edited
+  const [procurementValues, setProcurementValues] = useState<Record<string, string>>({});
+
   // Designated users
   const [showUserPicker, setShowUserPicker] = useState(false);
   const [userPickerSearch, setUserPickerSearch] = useState('');
@@ -244,6 +248,7 @@ export default function PurchaseOrderDetail() {
     try {
       await api.put(`/purchase-orders/${id}/items/${itemId}`, {
         quantity: item.quantity,
+        uom: item.uom ?? 'EA',
         cost_price: item.cost_price ?? '',
         sell_price: item.sell_price ?? '',
         currency: item.currency,
@@ -266,6 +271,7 @@ export default function PurchaseOrderDetail() {
     try {
       await api.put(`/purchase-orders/${id}/items/${snap.itemId}`, {
         quantity: snap.field === 'quantity' ? snap.value : item.quantity,
+        uom: item.uom ?? 'EA',
         cost_price: snap.field === 'cost_price' ? snap.value : (item.cost_price ?? ''),
         sell_price: snap.field === 'sell_price' ? snap.value : (item.sell_price ?? ''),
         currency: item.currency,
@@ -287,6 +293,7 @@ export default function PurchaseOrderDetail() {
     try {
       await api.put(`/purchase-orders/${id}/items/${itemId}`, {
         quantity: item.quantity,
+        uom: item.uom ?? 'EA',
         cost_price: item.cost_price ?? '',
         sell_price: item.sell_price ?? '',
         currency: newCurrency,
@@ -481,6 +488,46 @@ export default function PurchaseOrderDetail() {
       setDueDateEditing(false);
       refetch();
     } catch { toast.error('Failed to save due date'); }
+  };
+
+  const PAYMENT_TERMS_OPTIONS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90', 'Advance Payment', 'Letter of Credit', 'COD', 'Other'];
+  const SHIPPING_TERMS_OPTIONS = ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF', 'Other'];
+  const PRIORITY_COLORS: Record<string, string> = {
+    low: 'bg-slate-100 text-slate-600',
+    normal: 'bg-blue-50 text-blue-700',
+    high: 'bg-amber-50 text-amber-700',
+    urgent: 'bg-red-50 text-red-700',
+  };
+
+  const startProcurementEdit = (field: string) => {
+    // Reset to ONLY the current field so cancelled edits never leak into future saves
+    setProcurementEdit(field);
+    setProcurementValues({ [field]: po?.[field] ?? '' });
+  };
+
+  const cancelProcurementEdit = () => {
+    setProcurementEdit(null);
+    setProcurementValues({});
+  };
+
+  const handleSaveProcurementMeta = async () => {
+    if (!procurementEdit) return;
+    // Build payload from current PO values; override only the active field being edited
+    const editedValue = procurementValues[procurementEdit] ?? '';
+    const payload = {
+      vendor_name: po?.vendor_name ?? null,
+      required_by_date: po?.required_by_date ?? null,
+      payment_terms: po?.payment_terms ?? null,
+      shipping_terms: po?.shipping_terms ?? null,
+      priority: po?.priority ?? 'normal',
+      [procurementEdit]: editedValue === '' ? null : editedValue,
+    };
+    try {
+      await api.patch(`/purchase-orders/${id}/procurement-meta`, payload);
+      setProcurementEdit(null);
+      setProcurementValues({});
+      refetch();
+    } catch { toast.error('Failed to save'); }
   };
 
   const handlePostComment = async () => {
@@ -711,6 +758,143 @@ export default function PurchaseOrderDetail() {
                     </a>
                   </div>
                 )}
+
+                {/* Procurement fields */}
+                <div className="pt-2 border-t border-slate-100 space-y-2">
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Procurement</div>
+
+                  {/* Priority */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 text-sm">Priority</span>
+                    {procurementEdit === 'priority' ? (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={procurementValues.priority ?? po?.priority ?? 'normal'}
+                          onChange={e => setProcurementValues(v => ({ ...v, priority: e.target.value }))}
+                          className="text-xs border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none bg-white"
+                        >
+                          {['low', 'normal', 'high', 'urgent'].map(p => (
+                            <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                          ))}
+                        </select>
+                        <button onClick={handleSaveProcurementMeta} className="text-xs text-blue-600 hover:underline font-medium">Save</button>
+                        <button onClick={cancelProcurementEdit} className="text-slate-400 hover:text-slate-600"><X className="w-3 h-3" /></button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => startProcurementEdit('priority')}
+                        className={`text-xs cursor-pointer px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[po?.priority ?? 'normal'] ?? 'bg-slate-100 text-slate-600'} hover:opacity-80 transition-opacity`}
+                      >
+                        {po?.priority ? po.priority.charAt(0).toUpperCase() + po.priority.slice(1) : 'Normal'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Vendor */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 text-sm">Vendor</span>
+                    {procurementEdit === 'vendor_name' ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          autoFocus
+                          value={procurementValues.vendor_name ?? ''}
+                          onChange={e => setProcurementValues(v => ({ ...v, vendor_name: e.target.value }))}
+                          className="text-xs border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none w-32"
+                        />
+                        <button onClick={handleSaveProcurementMeta} className="text-xs text-blue-600 hover:underline font-medium">Save</button>
+                        <button onClick={cancelProcurementEdit} className="text-slate-400 hover:text-slate-600"><X className="w-3 h-3" /></button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => startProcurementEdit('vendor_name')}
+                        className="text-xs text-right cursor-pointer hover:text-blue-600 group/pf flex items-center gap-1"
+                      >
+                        {po?.vendor_name || <span className="text-slate-300">Set vendor…</span>}
+                        <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/pf:opacity-40" />
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Required By Date */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 text-sm">Required By</span>
+                    {procurementEdit === 'required_by_date' ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="date"
+                          autoFocus
+                          value={procurementValues.required_by_date ?? ''}
+                          onChange={e => setProcurementValues(v => ({ ...v, required_by_date: e.target.value }))}
+                          className="text-xs border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none"
+                        />
+                        <button onClick={handleSaveProcurementMeta} className="text-xs text-blue-600 hover:underline font-medium">Save</button>
+                        <button onClick={cancelProcurementEdit} className="text-slate-400 hover:text-slate-600"><X className="w-3 h-3" /></button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => startProcurementEdit('required_by_date')}
+                        className="text-xs cursor-pointer hover:text-blue-600 group/pf flex items-center gap-1"
+                      >
+                        {po?.required_by_date ? new Date(po.required_by_date).toLocaleDateString() : <span className="text-slate-300">Set date…</span>}
+                        <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/pf:opacity-40" />
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Payment Terms */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 text-sm">Payment Terms</span>
+                    {procurementEdit === 'payment_terms' ? (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={procurementValues.payment_terms ?? ''}
+                          onChange={e => setProcurementValues(v => ({ ...v, payment_terms: e.target.value }))}
+                          className="text-xs border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none bg-white"
+                        >
+                          <option value="">— None —</option>
+                          {PAYMENT_TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <button onClick={handleSaveProcurementMeta} className="text-xs text-blue-600 hover:underline font-medium">Save</button>
+                        <button onClick={cancelProcurementEdit} className="text-slate-400 hover:text-slate-600"><X className="w-3 h-3" /></button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => startProcurementEdit('payment_terms')}
+                        className="text-xs cursor-pointer hover:text-blue-600 group/pf flex items-center gap-1 text-right"
+                      >
+                        {po?.payment_terms || <span className="text-slate-300">Set terms…</span>}
+                        <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/pf:opacity-40 shrink-0" />
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Shipping Terms */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 text-sm">Shipping Terms</span>
+                    {procurementEdit === 'shipping_terms' ? (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={procurementValues.shipping_terms ?? ''}
+                          onChange={e => setProcurementValues(v => ({ ...v, shipping_terms: e.target.value }))}
+                          className="text-xs border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none bg-white"
+                        >
+                          <option value="">— None —</option>
+                          {SHIPPING_TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <button onClick={handleSaveProcurementMeta} className="text-xs text-blue-600 hover:underline font-medium">Save</button>
+                        <button onClick={cancelProcurementEdit} className="text-slate-400 hover:text-slate-600"><X className="w-3 h-3" /></button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => startProcurementEdit('shipping_terms')}
+                        className="text-xs cursor-pointer hover:text-blue-600 group/pf flex items-center gap-1 text-right"
+                      >
+                        {po?.shipping_terms || <span className="text-slate-300">Set terms…</span>}
+                        <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/pf:opacity-40 shrink-0" />
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -934,7 +1118,7 @@ export default function PurchaseOrderDetail() {
                         <tr className="border-b border-slate-100">
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Product</th>
                           <th className="text-left px-3 py-2.5 text-xs font-medium text-slate-500">System</th>
-                          <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Qty</th>
+                          <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Qty / UOM</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Budget ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Cost ({displayCurrency})</th>
                           <th className="text-right px-3 py-2.5 text-xs font-medium text-slate-500">Sell ({displayCurrency})</th>
@@ -1013,6 +1197,9 @@ export default function PurchaseOrderDetail() {
                                     {parseFloat(item.quantity).toFixed(2)}
                                     {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
                                   </span>
+                                )}
+                                {(item as any).uom && (item as any).uom !== 'EA' && (
+                                  <div className="text-[10px] text-slate-400 font-sans">{(item as any).uom}</div>
                                 )}
                               </td>
                               <td className="px-3 py-3 text-right text-xs">
