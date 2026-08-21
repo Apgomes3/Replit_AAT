@@ -272,7 +272,8 @@ export default function ProjectDetail() {
 
   const { data: usersData } = useQuery({
     queryKey: ['admin-users-list'],
-    queryFn: () => api.get('/admin/users').then(r => r.data),
+    queryFn: () => api.get('/admin/users', { params: { page_size: 1000 } }).then(r => r.data),
+    enabled: isPrivileged,
     staleTime: 60_000,
   });
   const allUsers: any[] = usersData?.items || [];

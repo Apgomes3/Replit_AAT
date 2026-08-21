@@ -3,7 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isSmtpConfigured = isSmtpConfigured;
 exports.sendPasswordResetEmail = sendPasswordResetEmail;
+exports.sendInviteEmail = sendInviteEmail;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 function createTransport() {
     const host = process.env.SMTP_HOST;
@@ -19,6 +21,9 @@ function createTransport() {
         secure: port === 465,
         auth: { user, pass },
     });
+}
+function isSmtpConfigured() {
+    return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
 async function sendPasswordResetEmail(toEmail, resetUrl) {
     const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@example.com';
@@ -48,6 +53,39 @@ async function sendPasswordResetEmail(toEmail, resetUrl) {
         <a href="${resetUrl}">${resetUrl}</a>
       </p>
       <p style="color:#6b7280;font-size:0.875em">If you did not request this, you can safely ignore this email.</p>
+    `,
+    });
+}
+async function sendInviteEmail(toEmail, firstName, setupUrl) {
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@example.com';
+    const transport = createTransport();
+    const greeting = firstName ? `Hi ${firstName},` : 'Hello,';
+    if (!transport) {
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error('SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM environment secrets.');
+        }
+        console.warn(`[EMAIL] SMTP not configured. Invite URL for ${toEmail}: ${setupUrl}`);
+        return;
+    }
+    await transport.sendMail({
+        from,
+        to: toEmail,
+        subject: 'You have been invited — set your password',
+        text: `${greeting}\n\nAn account has been created for you. Click the link below to set your password and get started. This link expires in 24 hours.\n\n${setupUrl}\n\nIf you did not expect this invitation, you can safely ignore this email.`,
+        html: `
+      <p>${greeting}</p>
+      <p>An account has been created for you. Click the button below to set your password and get started.</p>
+      <p>This link expires in <strong>24 hours</strong>.</p>
+      <p style="margin:24px 0">
+        <a href="${setupUrl}" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600">
+          Set Your Password
+        </a>
+      </p>
+      <p style="color:#6b7280;font-size:0.875em">
+        Or copy and paste this URL into your browser:<br/>
+        <a href="${setupUrl}">${setupUrl}</a>
+      </p>
+      <p style="color:#6b7280;font-size:0.875em">If you did not expect this invitation, you can safely ignore this email.</p>
     `,
     });
 }

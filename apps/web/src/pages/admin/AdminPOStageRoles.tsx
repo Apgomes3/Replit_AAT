@@ -67,7 +67,7 @@ export default function AdminPOStageRoles() {
 
   const { data: usersData } = useQuery({
     queryKey: ['admin-users-list'],
-    queryFn: () => api.get('/admin/users').then(r => r.data),
+    queryFn: () => api.get('/admin/users', { params: { page_size: 1000 } }).then(r => r.data),
   });
   const allUsers: any[] = usersData?.items ?? [];
 

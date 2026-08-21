@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useState, lazy, Suspense, useRef, useEffect } from 'react';
 import api from '../../lib/api';
+import { useAuthStore } from '../../store/authStore';
 import { Project } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -27,6 +28,8 @@ const ALL_SCOPES = [
 
 export default function ProjectsList() {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [view, setView] = useState<'table' | 'map'>('table');
@@ -49,8 +52,8 @@ export default function ProjectsList() {
 
   const { data: usersData } = useQuery({
     queryKey: ['admin-users-list'],
-    queryFn: () => api.get('/admin/users').then(r => r.data),
-    enabled: showNew,
+    queryFn: () => api.get('/admin/users', { params: { page_size: 1000 } }).then(r => r.data),
+    enabled: showNew && isPrivileged,
     staleTime: 60_000,
   });
   const allUsers: any[] = usersData?.items || [];

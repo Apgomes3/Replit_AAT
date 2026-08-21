@@ -18,6 +18,8 @@ router.post('/login', async (req: Request, res: Response) => {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } });
 
+  await query('UPDATE users SET last_login_at=NOW() WHERE id=$1', [user.id]);
+
   const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
   res.json({
     token,

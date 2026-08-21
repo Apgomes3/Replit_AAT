@@ -984,6 +984,9 @@ ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(100);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS shipping_terms VARCHAR(100);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'normal';
 ALTER TABLE po_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20) DEFAULT 'EA';
+
+-- USERS: last login timestamp for audit awareness
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 `;
 async function migrate() {
     const client = await index_1.default.connect();

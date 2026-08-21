@@ -5,13 +5,69 @@ import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { logAudit } from '../db/audit';
-import { sendPasswordResetEmail } from '../lib/email';
+import { sendPasswordResetEmail, sendInviteEmail, isSmtpConfigured } from '../lib/email';
 
 const router = Router();
 
-router.get('/users', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT id, email, first_name, last_name, role, is_active, can_see_all_pos, created_at FROM users ORDER BY created_at');
-  res.json({ items: result.rows });
+router.get('/email-status', authenticate, requireRole('admin'), (_req: AuthRequest, res: Response) => {
+  res.json({ smtp_configured: isSmtpConfigured() });
+});
+
+router.get('/users', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const page_size = Math.min(1000, Math.max(1, parseInt(req.query.page_size as string) || 25));
+  const offset = (page - 1) * page_size;
+  const q = (req.query.q as string || '').trim();
+  const role = (req.query.role as string || '').trim();
+  const sort = (req.query.sort as string || 'created_asc');
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (q) {
+    params.push(`%${q}%`);
+    conditions.push(`(email ILIKE $${params.length} OR first_name ILIKE $${params.length} OR last_name ILIKE $${params.length} OR (first_name || ' ' || last_name) ILIKE $${params.length})`);
+  }
+  if (role) {
+    params.push(role);
+    conditions.push(`role = $${params.length}`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const orderMap: Record<string, string> = {
+    name_asc: 'LOWER(first_name || last_name) ASC, email ASC',
+    name_desc: 'LOWER(first_name || last_name) DESC, email DESC',
+    email_asc: 'email ASC',
+    email_desc: 'email DESC',
+    role_asc: 'role ASC',
+    role_desc: 'role DESC',
+    status_asc: 'is_active ASC',
+    status_desc: 'is_active DESC',
+    created_asc: 'created_at ASC',
+    created_desc: 'created_at DESC',
+    last_login_asc: 'last_login_at ASC NULLS FIRST',
+    last_login_desc: 'last_login_at DESC NULLS LAST',
+  };
+  const orderBy = orderMap[sort] || 'created_at ASC';
+
+  const countParams = [...params];
+  const dataParams = [...params, page_size, offset];
+
+  const [countResult, dataResult] = await Promise.all([
+    query(`SELECT COUNT(*) FROM users ${where}`, countParams),
+    query(
+      `SELECT id, email, first_name, last_name, role, is_active, can_see_all_pos, created_at, last_login_at
+       FROM users ${where} ORDER BY ${orderBy} LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+      dataParams
+    ),
+  ]);
+
+  const total = parseInt(countResult.rows[0].count);
+  res.json({
+    items: dataResult.rows,
+    pagination: { page, page_size, total, pages: Math.ceil(total / page_size) },
+  });
 });
 
 router.patch('/users/:id/po-visibility', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
@@ -30,10 +86,68 @@ router.patch('/users/:id/po-visibility', authenticate, requireRole('admin'), asy
 router.post('/users', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const { email, password, first_name, last_name, role } = req.body;
   if (!email || !password) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Email and password required' } });
-  const hash = await bcrypt.hash(password, 10);
-  const result = await query('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email, first_name, last_name, role, created_at',
-    [email, hash, first_name, last_name, role || 'viewer']);
-  res.status(201).json(result.rows[0]);
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    const result = await query('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email, first_name, last_name, role, created_at',
+      [email, hash, first_name, last_name, role || 'viewer']);
+    await logAudit(req.user!.id, 'user', result.rows[0].id, 'CREATE', { target_email: email, role: role || 'viewer' });
+    res.status(201).json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'A user with that email already exists' } });
+    throw err;
+  }
+});
+
+router.post('/users/invite', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { email, first_name, last_name, role } = req.body;
+  if (!email) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Email is required' } });
+
+  // Create user with a random unusable password
+  const randomPassword = crypto.randomBytes(32).toString('hex');
+  const hash = await bcrypt.hash(randomPassword, 10);
+
+  let userId: string;
+  let userEmail: string;
+  try {
+    const result = await query(
+      'INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email',
+      [email.toLowerCase().trim(), hash, first_name || null, last_name || null, role || 'viewer']
+    );
+    userId = result.rows[0].id;
+    userEmail = result.rows[0].email;
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'A user with that email already exists' } });
+    throw err;
+  }
+
+  // Generate a 24-hour setup token (reuses password_reset_tokens table)
+  const token = crypto.randomBytes(48).toString('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await query(
+    'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
+    [userId, token, expiresAt]
+  );
+
+  const appUrl = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'localhost:5173'}`;
+  const setupUrl = `${appUrl}/reset-password?token=${token}`;
+
+  try {
+    await sendInviteEmail(userEmail, first_name || '', setupUrl);
+  } catch (emailErr: any) {
+    // Email failed — clean up the created user and token so the admin gets an honest error
+    console.error('[INVITE] Failed to send invite email:', emailErr?.message);
+    await query('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
+    await query('DELETE FROM users WHERE id=$1', [userId]);
+    return res.status(502).json({
+      error: {
+        code: 'EMAIL_FAILED',
+        message: 'User was not created because the invite email could not be sent. Check your SMTP configuration.',
+      },
+    });
+  }
+
+  await logAudit(req.user!.id, 'user', userId, 'INVITE', { target_email: userEmail, role: role || 'viewer' });
+  res.status(201).json({ ok: true, user_id: userId, email: userEmail });
 });
 
 router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
