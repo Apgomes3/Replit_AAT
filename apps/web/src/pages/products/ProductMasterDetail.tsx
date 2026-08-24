@@ -659,7 +659,7 @@ export default function ProductMasterDetail() {
     { key: 'is_optional', header: 'Optional', render: r => r.is_optional ? <span className="text-blue-600 text-xs">Optional</span> : null },
     { key: 'remarks', header: 'Remarks' },
     { key: 'id', header: '', className: 'w-10', render: r => (
-      <button onClick={() => handleDeleteLine((r as any).id)} className="text-slate-300 hover:text-red-500 transition-colors">
+      <button aria-label="Delete BOM line" title="Delete BOM line" onClick={() => handleDeleteLine((r as any).id)} className="text-slate-300 hover:text-red-500 transition-colors">
         <Trash2 className="w-3.5 h-3.5" />
       </button>
     )},
@@ -1280,7 +1280,7 @@ export default function ProductMasterDetail() {
                 {(product.synonyms || []).map((s: string) => (
                   <span key={s} className="inline-flex items-center gap-1 bg-blue-600/10 text-blue-600 text-xs px-2 py-0.5 rounded-full">
                     {s}
-                    {showSynonymsEdit && <button onClick={() => removeSynonym(s)} disabled={synonymsSaving} className="hover:text-red-500"><X className="w-3 h-3" /></button>}
+                    {showSynonymsEdit && <button aria-label={`Remove synonym ${s}`} title={`Remove synonym ${s}`} onClick={() => removeSynonym(s)} disabled={synonymsSaving} className="hover:text-red-500"><X className="w-3 h-3" /></button>}
                   </span>
                 ))}
               </div>
@@ -1477,7 +1477,7 @@ export default function ProductMasterDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="font-semibold text-slate-800">Product Image</h2>
-              <button onClick={() => setShowImageModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close product image dialog" title="Close dialog" onClick={() => setShowImageModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex gap-1 p-1 bg-slate-100 rounded-lg">
@@ -1544,7 +1544,7 @@ export default function ProductMasterDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="font-semibold text-slate-800">Add BOM Line</h2>
-              <button onClick={() => { setShowAddLine(false); resetAddLineModal(); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close add BOM line dialog" title="Close dialog" onClick={() => { setShowAddLine(false); resetAddLineModal(); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               {/* Source type toggle */}
@@ -1597,7 +1597,7 @@ export default function ProductMasterDetail() {
                   <div className="mt-1 px-3 py-2 bg-blue-50 rounded-lg flex items-center gap-2 text-sm">
                     <EntityCode code={selectedComp.component_code} />
                     <span className="text-slate-700 text-xs">Linked from component library</span>
-                    <button onClick={() => { setSelectedComp(null); setCompSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+                    <button aria-label="Clear selected component" title="Clear selected component" onClick={() => { setSelectedComp(null); setCompSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
               </div>
@@ -1646,7 +1646,7 @@ export default function ProductMasterDetail() {
                   <div className="mt-1 px-3 py-2 bg-green-50 rounded-lg flex items-center gap-2 text-sm border border-green-200">
                     <EntityCode code={selectedProd.product_code} />
                     <span className="text-slate-700 text-xs">{selectedProd.product_name}</span>
-                    <button onClick={() => { setSelectedProd(null); setProdSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+                    <button aria-label="Clear selected product" title="Clear selected product" onClick={() => { setSelectedProd(null); setProdSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
               </div>
@@ -1696,7 +1696,7 @@ export default function ProductMasterDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="font-semibold text-slate-800">Link Related Product</h2>
-              <button onClick={() => setShowRelModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close link related product dialog" title="Close dialog" onClick={() => setShowRelModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
@@ -1727,7 +1727,7 @@ export default function ProductMasterDetail() {
                   <div className="mt-2 p-3 bg-blue-50 rounded-lg flex items-center gap-2 text-sm">
                     <EntityCode code={relTarget.product_code} />
                     <span className="text-slate-700">{relTarget.product_name}</span>
-                    <button onClick={() => { setRelTarget(null); setRelSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+                    <button aria-label="Clear selected related product" title="Clear selected related product" onClick={() => { setRelTarget(null); setRelSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
                   </div>
                 )}
               </div>
@@ -1747,7 +1747,7 @@ export default function ProductMasterDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="font-semibold text-slate-800">Link Peer Variant</h2>
-              <button onClick={() => setShowVariantModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close link variant dialog" title="Close dialog" onClick={() => setShowVariantModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <p className="text-sm text-slate-500">Search for another product in the library that is a variant of this one. The link is bidirectional.</p>
@@ -1773,7 +1773,7 @@ export default function ProductMasterDetail() {
                   <div className="mt-2 p-3 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-2 text-sm">
                     <EntityCode code={variantTarget.product_code} />
                     <span className="text-slate-700 font-medium">{variantTarget.product_name}</span>
-                    <button onClick={() => { setVariantTarget(null); setVariantSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+                    <button aria-label="Clear selected variant" title="Clear selected variant" onClick={() => { setVariantTarget(null); setVariantSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
                   </div>
                 )}
               </div>
@@ -1795,7 +1795,7 @@ export default function ProductMasterDetail() {
               <h2 className="font-semibold text-slate-800">
                 {docModalContext === 'drawings' ? 'Add Drawing / Model' : 'Add Document'} — {product.product_code}
               </h2>
-              <button onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close add document dialog" title="Close dialog" onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>

@@ -364,7 +364,7 @@ export default function ProductMastersList() {
                 <h2 className="font-semibold text-slate-800">Edit Product</h2>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">{editRow.product_code}</p>
               </div>
-              <button onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close edit product form" title="Close edit product form" onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
               <div>

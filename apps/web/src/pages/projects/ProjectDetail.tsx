@@ -1226,7 +1226,7 @@ export default function ProjectDetail() {
                             </span>
                           )}
                           {projectForm.project_manager && !pmEditOpen && (
-                            <button type="button" onClick={e => { e.stopPropagation(); setProjectForm((f: any) => ({ ...f, project_manager: '' })); }}
+                            <button type="button" aria-label="Clear project manager" title="Clear project manager" onClick={e => { e.stopPropagation(); setProjectForm((f: any) => ({ ...f, project_manager: '' })); }}
                               className="text-slate-300 hover:text-slate-500 ml-1"><X className="w-3.5 h-3.5" /></button>
                           )}
                         </div>
@@ -2201,7 +2201,7 @@ export default function ProjectDetail() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
               <h2 className="text-lg font-semibold text-slate-800">Add Tank to Project</h2>
-              <button onClick={() => { resetTankForm(); setShowNewTank(false); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close add tank dialog" title="Close dialog" onClick={() => { resetTankForm(); setShowNewTank(false); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
 
             {/* Mode toggle */}
@@ -2243,7 +2243,7 @@ export default function ProjectDetail() {
                           {selectedTankProduct.gross_volume_m3 != null ? ` · ${selectedTankProduct.gross_volume_m3} m³` : ''}
                         </div>
                       </div>
-                      <button onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); }} className="text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-4 h-4" /></button>
+                      <button aria-label="Clear selected tank product" title="Clear selected tank product" onClick={() => { setSelectedTankProduct(null); setTankProductSearch(''); }} className="text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-4 h-4" /></button>
                     </div>
                   ) : (
                     <div className="relative">
@@ -2529,7 +2529,7 @@ export default function ProjectDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="text-lg font-semibold text-slate-800">Add Piping / Fitting to Project</h2>
-              <button onClick={() => setShowNewPiping(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close add piping dialog" title="Close dialog" onClick={() => setShowNewPiping(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
@@ -2543,7 +2543,7 @@ export default function ProjectDetail() {
                       </div>
                       <div className="text-xs text-slate-500 mt-0.5">{selectedPipingProduct.application_type || 'Piping'}</div>
                     </div>
-                    <button onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); }} className="text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-4 h-4" /></button>
+                    <button aria-label="Clear selected piping product" title="Clear selected piping product" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); }} className="text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-4 h-4" /></button>
                   </div>
                 ) : (
                   <div className="relative">
@@ -2613,7 +2613,7 @@ export default function ProjectDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="text-lg font-semibold text-slate-800">New BOM Release</h2>
-              <button onClick={() => setShowNewBomRelease(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close BOM release dialog" title="Close dialog" onClick={() => setShowNewBomRelease(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-5">
               <div>
@@ -2688,7 +2688,7 @@ export default function ProjectDetail() {
                     <Trash2 className="w-3.5 h-3.5 text-red-400" />
                   </Button>
                 )}
-                <button onClick={() => setSelectedRelease(null)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-5 h-5" /></button>
+                <button aria-label="Close BOM release details" title="Close BOM release details" onClick={() => setSelectedRelease(null)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-5 h-5" /></button>
               </div>
             </div>
 
@@ -2761,7 +2761,7 @@ export default function ProjectDetail() {
                 <h3 className="font-semibold text-slate-800">Edit System</h3>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">{editSystemRow.system_code}</p>
               </div>
-              <button onClick={() => setEditSystemRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+              <button aria-label="Close edit system form" title="Close edit system form" onClick={() => setEditSystemRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 grid grid-cols-2 gap-3">
               <div>

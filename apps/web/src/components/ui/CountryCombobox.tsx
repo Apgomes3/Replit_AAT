@@ -65,7 +65,7 @@ export default function CountryCombobox({ value, onChange, placeholder = 'Select
         )}
         <div className="flex items-center gap-1 shrink-0 ml-2">
           {value && !open && (
-            <button type="button" onClick={clear} className="text-slate-300 hover:text-slate-500">
+            <button type="button" aria-label="Clear selected country" title="Clear selected country" onClick={clear} className="text-slate-300 hover:text-slate-500">
               <X className="w-3.5 h-3.5" />
             </button>
           )}

@@ -184,7 +184,7 @@ export default function ProjectsList() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
               <h2 className="text-base font-semibold text-slate-800">New Project</h2>
-              <button onClick={closeNew} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close new project form" title="Close new project form" onClick={closeNew} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-5 space-y-3">
               <div>
@@ -242,7 +242,7 @@ export default function ProjectsList() {
                         </span>
                       )}
                       {form.project_manager && !pmOpen && (
-                        <button type="button" onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, project_manager: '' })); }}
+                        <button type="button" aria-label="Clear project manager" title="Clear project manager" onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, project_manager: '' })); }}
                           className="text-slate-300 hover:text-slate-500 ml-1"><X className="w-3.5 h-3.5" /></button>
                       )}
                     </div>
@@ -293,7 +293,7 @@ export default function ProjectsList() {
                       <div className="text-xs text-slate-700 font-medium truncate">{logoFile.name}</div>
                       <div className="text-[11px] text-slate-400">{(logoFile.size / 1024).toFixed(0)} KB</div>
                     </div>
-                    <button type="button" onClick={() => setLogoFile(null)}
+                    <button type="button" aria-label="Remove client logo" title="Remove client logo" onClick={() => setLogoFile(null)}
                       className="text-slate-300 hover:text-red-400 transition-colors"><X className="w-4 h-4" /></button>
                   </div>
                 ) : (

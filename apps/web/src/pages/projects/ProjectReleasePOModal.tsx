@@ -199,7 +199,7 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
               )}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <button aria-label="Close release purchase order dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="px-6 py-3 border-b border-slate-100 flex items-end gap-4">

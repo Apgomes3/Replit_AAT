@@ -380,7 +380,7 @@ export default function SystemDetail() {
         inlineSelectedProduct ? (
           <div className="flex items-center gap-1.5 border border-blue-600 bg-blue-50 rounded px-2 py-1 text-sm">
             <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedProduct.product_name}</span>
-            <button onClick={e => { e.stopPropagation(); setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+            <button aria-label="Clear selected product" title="Clear selected product" onClick={e => { e.stopPropagation(); setInlineSelectedProduct(null); setInlineProductSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
           </div>
         ) : (
           <div className="relative" onClick={e => e.stopPropagation()}>
@@ -410,7 +410,7 @@ export default function SystemDetail() {
         inlineSelectedComponent ? (
           <div className="flex items-center gap-1.5 border border-violet-600 bg-violet-50 rounded px-2 py-1 text-sm">
             <span className="flex-1 truncate font-medium text-slate-800">{inlineSelectedComponent.component_name}</span>
-            <button onClick={e => { e.stopPropagation(); setInlineSelectedComponent(null); setInlineComponentSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+            <button aria-label="Clear selected component" title="Clear selected component" onClick={e => { e.stopPropagation(); setInlineSelectedComponent(null); setInlineComponentSearch(''); }} className="text-slate-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
           </div>
         ) : (
           <div className="relative" onClick={e => e.stopPropagation()}>
@@ -761,10 +761,10 @@ export default function SystemDetail() {
                         <td className={cellCls} />
                         <td className={cellCls} onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                            <button aria-label="Save system row" title="Save system row" onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
                               <Check className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
+                            <button aria-label="Cancel editing system row" title="Cancel editing system row" onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -887,10 +887,10 @@ export default function SystemDetail() {
                   <td className={cellCls} />
                   <td className={cellCls}>
                     <div className="flex items-center gap-1">
-                      <button onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                      <button aria-label="Save system row" title="Save system row" onClick={saveInlineRow} disabled={inlineSaving} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
                         <Check className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
+                      <button aria-label="Cancel editing system row" title="Cancel editing system row" onClick={cancelInline} className="p-1.5 rounded text-slate-400 hover:bg-slate-100">
                         <X className="w-3.5 h-3.5" />
                       </button>
                     </div>

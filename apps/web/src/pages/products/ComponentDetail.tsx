@@ -392,7 +392,7 @@ export default function ComponentDetail() {
                         {(form.synonyms || []).map((s: string) => (
                           <span key={s} className="inline-flex items-center gap-1 bg-blue-600/10 text-blue-600 text-xs px-2 py-0.5 rounded-full">
                             {s}
-                            <button type="button" onClick={() => removeSynonym(s)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
+                            <button type="button" aria-label={`Remove synonym ${s}`} title={`Remove synonym ${s}`} onClick={() => removeSynonym(s)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
                           </span>
                         ))}
                       </div>
@@ -523,7 +523,7 @@ export default function ComponentDetail() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="font-semibold text-slate-800">Link Variant Component</h2>
-              <button onClick={() => setShowVariantModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close link variant dialog" title="Close dialog" onClick={() => setShowVariantModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <p className="text-sm text-slate-500">Search for another component in the library that is a variant of this one. The link is bidirectional.</p>
@@ -549,7 +549,7 @@ export default function ComponentDetail() {
                   <div className="mt-2 p-3 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-2 text-sm">
                     <EntityCode code={variantTarget.component_code} />
                     <span className="text-slate-700 font-medium">{variantTarget.component_name}</span>
-                    <button onClick={() => { setVariantTarget(null); setVariantSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+                    <button aria-label="Clear selected variant" title="Clear selected variant" onClick={() => { setVariantTarget(null); setVariantSearch(''); }} className="ml-auto text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
                   </div>
                 )}
               </div>
@@ -571,7 +571,7 @@ export default function ComponentDetail() {
               <h2 className="font-semibold text-slate-800">
                 {docModalContext === 'drawings' ? 'Add Drawing / Model' : 'Add Document'} — {component.component_code}
               </h2>
-              <button onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close add document dialog" title="Close dialog" onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>

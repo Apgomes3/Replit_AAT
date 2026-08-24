@@ -317,7 +317,7 @@ export default function ComponentsList() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 sticky top-0 bg-white">
               <h2 className="font-semibold text-slate-800">New Component</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close new component form" title="Close new component form" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
               <div>
@@ -420,7 +420,7 @@ export default function ComponentsList() {
                 <h2 className="font-semibold text-slate-800">Edit Component</h2>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">{editRow.component_code}</p>
               </div>
-              <button onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button aria-label="Close edit component form" title="Close edit component form" onClick={() => setEditRow(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
               <div className="col-span-2">

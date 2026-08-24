@@ -117,7 +117,7 @@ export default function PipingCsvImport({ onClose, onImported }: Props) {
             <h2 className="font-semibold text-slate-800">Import Piping Fittings from CSV</h2>
             <p className="text-sm text-slate-500 mt-0.5">Items will be created in the Shark OS and linked by product code</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <button aria-label="Close piping CSV import" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="flex-1 overflow-auto p-6">
