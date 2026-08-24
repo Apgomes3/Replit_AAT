@@ -241,8 +241,18 @@ router.post('/purchase-orders/:id/clone', authenticate, async (req: AuthRequest,
   const { yr, seq } = yearSeq.rows[0];
   const po_code = `PO-${yr}-${String(seq).padStart(4, '0')}`;
   const newPo = await query(
-    `INSERT INTO purchase_orders (po_code,project_id,status,notes,created_by) VALUES ($1,$2,'draft',$3,$4) RETURNING *`,
-    [po_code, src.project_id, src.notes ? `[Clone of ${src.po_code}] ${src.notes}` : `[Clone of ${src.po_code}]`, user.id]
+    `INSERT INTO purchase_orders (po_code,project_id,status,notes,created_by,vendor_name,required_by_date,payment_terms,shipping_terms,priority)
+     VALUES ($1,$2,'draft',$3,$4,$5,NULL,$6,$7,$8) RETURNING *`,
+    [
+      po_code,
+      src.project_id,
+      src.notes ? `[Clone of ${src.po_code}] ${src.notes}` : `[Clone of ${src.po_code}]`,
+      user.id,
+      src.vendor_name,
+      src.payment_terms,
+      src.shipping_terms,
+      src.priority,
+    ]
   );
   const newId = newPo.rows[0].id;
   const items = await query('SELECT * FROM po_items WHERE po_id=$1 ORDER BY sort_order, created_at', [id]);
