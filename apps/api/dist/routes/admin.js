@@ -233,7 +233,8 @@ router.delete('/users/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'
 });
 router.get('/audit-logs', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const page = parseInt(req.query.page) || 1;
-    const page_size = Math.min(parseInt(req.query.page_size) || 50, 200);
+    // Allow up to 10 000 rows for CSV export (page_size=10000 sent by the Export button)
+    const page_size = Math.min(parseInt(req.query.page_size) || 50, 10000);
     const offset = (page - 1) * page_size;
     const conditions = [];
     const params = [];
@@ -252,7 +253,7 @@ router.get('/audit-logs', auth_1.authenticate, (0, auth_1.requireRole)('admin', 
     }
     if (actor) {
         params.push(`%${actor}%`);
-        conditions.push(`(u.first_name || ' ' || u.last_name) ILIKE $${params.length}`);
+        conditions.push(`((u.first_name || ' ' || u.last_name) ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
     }
     if (from) {
         params.push(from);

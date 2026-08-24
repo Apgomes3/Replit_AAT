@@ -259,7 +259,8 @@ router.delete('/users/:id', authenticate, requireRole('admin'), async (req: Auth
 
 router.get('/audit-logs', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
-  const page_size = Math.min(parseInt(req.query.page_size as string) || 50, 200);
+  // Allow up to 10 000 rows for CSV export (page_size=10000 sent by the Export button)
+  const page_size = Math.min(parseInt(req.query.page_size as string) || 50, 10000);
   const offset = (page - 1) * page_size;
 
   const conditions: string[] = [];
@@ -273,7 +274,7 @@ router.get('/audit-logs', authenticate, requireRole('admin', 'engineer'), async 
 
   if (entity_type) { params.push(entity_type); conditions.push(`al.entity_type = $${params.length}`); }
   if (action) { params.push(action); conditions.push(`al.action = $${params.length}`); }
-  if (actor) { params.push(`%${actor}%`); conditions.push(`(u.first_name || ' ' || u.last_name) ILIKE $${params.length}`); }
+  if (actor) { params.push(`%${actor}%`); conditions.push(`((u.first_name || ' ' || u.last_name) ILIKE $${params.length} OR u.email ILIKE $${params.length})`); }
   if (from) { params.push(from); conditions.push(`al.created_at >= $${params.length}`); }
   if (to) { params.push(to); conditions.push(`al.created_at <= $${params.length}`); }
 

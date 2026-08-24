@@ -3,9 +3,20 @@ export interface CsvColumn<T> {
   value: (row: T) => string;
 }
 
+/**
+ * Sanitize a string against CSV formula injection.
+ * Spreadsheet apps (Excel, Google Sheets) treat cells beginning with
+ * =, +, -, @, \t, or \r as formulas. Prefix those with a literal apostrophe
+ * so the value is interpreted as plain text.
+ */
+function sanitizeCsvCell(raw: string): string {
+  const s = String(raw ?? '');
+  return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+}
+
 export function exportCsv<T>(filename: string, columns: CsvColumn<T>[], data: T[]) {
   if (data.length === 0) return;
-  const escape = (s: string) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+  const escape = (s: string) => `"${sanitizeCsvCell(s).replace(/"/g, '""')}"`;
   const headerRow = columns.map(c => escape(c.header)).join(',');
   const dataRows = data.map(row => columns.map(c => escape(c.value(row))).join(','));
   const csv = '\uFEFF' + [headerRow, ...dataRows].join('\r\n');
