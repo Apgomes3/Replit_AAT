@@ -149,7 +149,7 @@ router.post('/users/invite', auth_1.authenticate, (0, auth_1.requireRole)('admin
         console.error('[INVITE] Failed to send invite email:', emailErr?.message);
         await (0, db_1.query)('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
         await (0, db_1.query)('DELETE FROM users WHERE id=$1', [userId]);
-        return res.status(502).json({
+        return res.status(500).json({
             error: {
                 code: 'EMAIL_FAILED',
                 message: 'User was not created because the invite email could not be sent. Check your SMTP configuration.',
@@ -310,7 +310,22 @@ router.post('/users/:id/send-reset-link', auth_1.authenticate, (0, auth_1.requir
     await (0, db_1.query)('INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)', [existing.rows[0].id, token, expiresAt]);
     const appUrl = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'localhost:5173'}`;
     const resetUrl = `${appUrl}/reset-password?token=${token}`;
-    await (0, email_1.sendPasswordResetEmail)(existing.rows[0].email, resetUrl);
+    try {
+        await (0, email_1.sendPasswordResetEmail)(existing.rows[0].email, resetUrl);
+    }
+    catch (emailErr) {
+        // Email failed — remove the unused token so a failed attempt cannot leave
+        // an unexpected reset link active. The explicit response lets the admin
+        // fix SMTP and retry from the user actions menu.
+        console.error('[RESET LINK] Failed to send password reset email:', emailErr?.message);
+        await (0, db_1.query)('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
+        return res.status(500).json({
+            error: {
+                code: 'EMAIL_FAILED',
+                message: 'Password reset link was not sent. Check your SMTP configuration and try again.',
+            },
+        });
+    }
     await (0, audit_1.logAudit)(req.user.id, 'user', existing.rows[0].id, 'SEND_RESET_LINK', { target_email: existing.rows[0].email });
     res.json({ ok: true });
 });

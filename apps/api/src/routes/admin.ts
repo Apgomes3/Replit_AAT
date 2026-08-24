@@ -175,7 +175,7 @@ router.post('/users/invite', authenticate, requireRole('admin'), async (req: Aut
     console.error('[INVITE] Failed to send invite email:', emailErr?.message);
     await query('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
     await query('DELETE FROM users WHERE id=$1', [userId]);
-    return res.status(502).json({
+    return res.status(500).json({
       error: {
         code: 'EMAIL_FAILED',
         message: 'User was not created because the invite email could not be sent. Check your SMTP configuration.',
@@ -355,7 +355,21 @@ router.post('/users/:id/send-reset-link', authenticate, requireRole('admin'), as
   const appUrl = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'localhost:5173'}`;
   const resetUrl = `${appUrl}/reset-password?token=${token}`;
 
-  await sendPasswordResetEmail(existing.rows[0].email, resetUrl);
+  try {
+    await sendPasswordResetEmail(existing.rows[0].email, resetUrl);
+  } catch (emailErr: any) {
+    // Email failed — remove the unused token so a failed attempt cannot leave
+    // an unexpected reset link active. The explicit response lets the admin
+    // fix SMTP and retry from the user actions menu.
+    console.error('[RESET LINK] Failed to send password reset email:', emailErr?.message);
+    await query('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
+    return res.status(500).json({
+      error: {
+        code: 'EMAIL_FAILED',
+        message: 'Password reset link was not sent. Check your SMTP configuration and try again.',
+      },
+    });
+  }
 
   await logAudit(req.user!.id, 'user', existing.rows[0].id, 'SEND_RESET_LINK', { target_email: existing.rows[0].email });
   res.json({ ok: true });
