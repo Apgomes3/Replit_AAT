@@ -87,6 +87,39 @@ function updatedColor(updatedAt: string, status: string): string {
   return 'text-red-500 font-medium';
 }
 
+type RequiredByUrgency = 'overdue' | 'upcoming' | null;
+
+function parseDateOnly(dateStr: string): Date | null {
+  const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+function formatRequiredByDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
+  const date = parseDateOnly(dateStr);
+  return date
+    ? date.toLocaleDateString(undefined, options ?? { month: 'short', day: 'numeric' })
+    : dateStr;
+}
+
+function requiredByUrgency(dateStr: string | null, status: string): RequiredByUrgency {
+  if (!dateStr || status === 'released') return null;
+
+  const requiredBy = parseDateOnly(dateStr);
+  if (!requiredBy) return null;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (requiredBy < today) return 'overdue';
+
+  const sevenDaysFromToday = new Date(today);
+  sevenDaysFromToday.setDate(today.getDate() + 7);
+  return requiredBy <= sevenDaysFromToday ? 'upcoming' : null;
+}
+
 const CAN_BULK_ASSIGN = new Set(['admin', 'engineer', 'hq_manager']);
 const CAN_MANAGE = new Set(['admin', 'engineer', 'hq_manager']);
 const CAN_APPROVE = new Set(['admin', 'hq_manager']);
@@ -310,6 +343,34 @@ export default function PurchaseOrdersList() {
     items
   );
 
+  const requiredByColumn: Column<PO> = {
+    key: 'required_by_date',
+    header: 'Required By',
+    sortable: true,
+    filterable: true,
+    className: 'whitespace-nowrap',
+    sortValue: r => parseDateOnly(r.required_by_date ?? '')?.getTime() ?? Number.MAX_SAFE_INTEGER,
+    filterValue: r => r.required_by_date ? formatRequiredByDate(r.required_by_date) : '',
+    render: r => {
+      if (!r.required_by_date) return null;
+      const urgency = requiredByUrgency(r.required_by_date, r.status);
+      const urgencyLabel = urgency === 'overdue' ? 'Overdue' : urgency === 'upcoming' ? 'Due within 7 days' : 'Required by';
+      const color = urgency === 'overdue'
+        ? 'text-red-600 font-semibold'
+        : urgency === 'upcoming'
+          ? 'text-amber-600 font-medium'
+          : 'text-slate-500';
+      return (
+        <span
+          className={`text-xs ${color}`}
+          title={`${urgencyLabel} ${formatRequiredByDate(r.required_by_date, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+        >
+          {formatRequiredByDate(r.required_by_date)}
+        </span>
+      );
+    },
+  };
+
   const columns: Column<PO>[] = [
     {
       key: '__select',
@@ -338,6 +399,7 @@ export default function PurchaseOrdersList() {
         ? <span className="text-xs text-slate-600 truncate max-w-[120px] block">{r.vendor_name}</span>
         : <span className="text-slate-300 text-xs">—</span>,
     },
+    requiredByColumn,
     {
       key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status,
       render: r => (
@@ -430,6 +492,7 @@ export default function PurchaseOrdersList() {
         ? <span className="font-mono text-xs bg-green-50 border border-green-200 text-green-700 px-2 py-0.5 rounded">{r.fo_number}</span>
         : <span className="text-slate-300 text-xs">—</span>,
     },
+    requiredByColumn,
     { key: 'item_count' as any, header: 'Items', sortable: true, sortValue: r => Number(r.item_count) || 0, render: r => <span className="text-sm text-slate-600">{r.item_count}</span> },
     {
       key: 'total_cost_usd' as any, header: 'Total Cost (USD)', sortable: true, sortValue: r => parseFloat(r.total_cost_usd || '0'),
