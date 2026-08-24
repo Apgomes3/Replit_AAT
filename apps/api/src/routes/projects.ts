@@ -89,6 +89,11 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
     [toStr(project_name), toStr(client_name), toStr(site_name), toStr(country), toStr(city), toNum(latitude), toNum(longitude), project_status, toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), Array.isArray(project_scopes) ? project_scopes : null, req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+  await logAudit(req.user!.id, 'project', result.rows[0].id, 'UPDATE', {
+    summary: 'Project details updated',
+    project_name: result.rows[0].project_name,
+    project_status: result.rows[0].project_status,
+  });
   res.json(result.rows[0]);
 });
 
@@ -636,7 +641,12 @@ router.post('/systems', authenticate, async (req: AuthRequest, res: Response) =>
     const result = await query(
       'INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
       [system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status || 'Draft', duty_description || null, redundancy_strategy || null]);
-    await logAudit(req.user!.id, 'system', result.rows[0].id, 'CREATE', { system_code, system_name, system_type });
+    await logAudit(req.user!.id, 'system', result.rows[0].id, 'CREATE', {
+      summary: `System ${system_code} created`,
+      system_code,
+      system_name,
+      system_type,
+    });
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') {
@@ -681,7 +691,14 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
         req.params.id,
       ]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-    await logAudit(req.user!.id, 'system', req.params.id, 'UPDATE', { system_name, system_type, status, design_flow_m3h, water_type });
+    await logAudit(req.user!.id, 'system', req.params.id, 'UPDATE', {
+      summary: 'System details updated',
+      system_name,
+      system_type,
+      status,
+      design_flow_m3h,
+      water_type,
+    });
     res.json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') {
@@ -785,7 +802,13 @@ router.post('/equipment-items', authenticate, async (req: AuthRequest, res: Resp
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [equip_code.trim().toUpperCase(), project_id, system_id || null, product_master_id || null,
        component_id || null, description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design']);
-    if (system_id) await logAudit(req.user!.id, 'system', system_id, 'ADD_EQUIPMENT', { equip_code: equip_code.trim().toUpperCase(), description, quantity, unit });
+    if (system_id) await logAudit(req.user!.id, 'system', system_id, 'ADD_EQUIPMENT', {
+      summary: `Equipment ${equip_code.trim().toUpperCase()} added to system`,
+      equip_code: equip_code.trim().toUpperCase(),
+      description,
+      quantity,
+      unit,
+    });
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Equipment code already exists in this project' } });
@@ -802,7 +825,13 @@ router.put('/equipment-items/:id', authenticate, async (req: AuthRequest, res: R
     [equip_code ? equip_code.trim().toUpperCase() : null, system_id || null, product_master_id || null,
      component_id || null, description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design', req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
-  if (system_id) await logAudit(req.user!.id, 'system', system_id, 'UPDATE_EQUIPMENT', { equip_code: result.rows[0].equip_code, description, quantity, status });
+  if (system_id) await logAudit(req.user!.id, 'system', system_id, 'UPDATE_EQUIPMENT', {
+    summary: `Equipment ${result.rows[0].equip_code} updated`,
+    equip_code: result.rows[0].equip_code,
+    description,
+    quantity,
+    status,
+  });
   res.json(result.rows[0]);
 });
 
@@ -811,7 +840,11 @@ router.delete('/equipment-items/:id', authenticate, async (req: AuthRequest, res
   const item = existing.rows[0];
   const result = await query('DELETE FROM project_equipment_items WHERE id=$1 RETURNING id', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
-  if (item?.system_id) await logAudit(req.user!.id, 'system', item.system_id, 'REMOVE_EQUIPMENT', { equip_code: item.equip_code, description: item.description });
+  if (item?.system_id) await logAudit(req.user!.id, 'system', item.system_id, 'REMOVE_EQUIPMENT', {
+    summary: `Equipment ${item.equip_code} removed from system`,
+    equip_code: item.equip_code,
+    description: item.description,
+  });
   res.json({ success: true });
 });
 
@@ -858,7 +891,12 @@ router.post('/equipment-instances', authenticate, async (req: AuthRequest, res: 
       [product_master_id, eq.id, project_id]
     );
   }
-  await logAudit(req.user!.id, 'equipment', eq.id, 'CREATE', { equipment_code, equipment_name, equipment_type });
+  await logAudit(req.user!.id, 'equipment', eq.id, 'CREATE', {
+    summary: `Equipment ${equipment_code} created`,
+    equipment_code,
+    equipment_name,
+    equipment_type,
+  });
   res.status(201).json(eq);
 });
 
@@ -868,7 +906,13 @@ router.put('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
     'UPDATE equipment_instances SET equipment_name=$1, equipment_type=$2, design_flow_m3h=$3, design_head_m=$4, power_kw=$5, material_code=$6, status=$7, operational_duty=$8, serial_number=$9, installation_date=$10, commissioning_date=$11, updated_at=NOW() WHERE id=$12 RETURNING *',
     [equipment_name, equipment_type, design_flow_m3h, design_head_m, power_kw, material_code, status, operational_duty, serial_number, installation_date, commissioning_date, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
-  await logAudit(req.user!.id, 'equipment', req.params.id, 'UPDATE', { equipment_name, equipment_type, status, serial_number });
+  await logAudit(req.user!.id, 'equipment', req.params.id, 'UPDATE', {
+    summary: 'Equipment details updated',
+    equipment_name,
+    equipment_type,
+    status,
+    serial_number,
+  });
   res.json(result.rows[0]);
 });
 
@@ -889,8 +933,12 @@ router.post('/lifecycle/transition', authenticate, async (req: AuthRequest, res:
   await query('INSERT INTO lifecycle_transitions (entity_type, entity_id, from_state, to_state, actor_id, comment) VALUES ($1,$2,$3,$4,$5,$6)',
     [entity_type, entity_id, from_state, to_state, req.user!.id, comment]);
 
-  await query('INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details) VALUES ($1,$2,$3,$4,$5)',
-    [entity_type, entity_id, 'STATE_TRANSITION', req.user!.id, JSON.stringify({ from: from_state, to: to_state, comment })]);
+  await logAudit(req.user!.id, entity_type, entity_id, 'STATE_TRANSITION', {
+    summary: `Status changed from ${from_state || 'Unknown'} → ${to_state}`,
+    from: from_state,
+    to: to_state,
+    comment,
+  });
 
   res.json({ success: true, from_state, to_state });
 });

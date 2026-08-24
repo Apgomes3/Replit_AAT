@@ -66,7 +66,11 @@ router.patch('/change-password', authenticate, async (req: AuthRequest, res: Res
 
   const hash = await bcrypt.hash(newPassword, 10);
   await query('UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, req.user!.id]);
-  await logAudit(req.user!.id, 'user', req.user!.id, 'RESET_PASSWORD', { self_service: true, email: user.email });
+  await logAudit(req.user!.id, 'user', req.user!.id, 'RESET_PASSWORD', {
+    summary: 'User password reset',
+    self_service: true,
+    email: user.email,
+  });
   res.status(204).end();
 });
 
@@ -93,7 +97,11 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   await query('UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, uid]);
   await query('UPDATE password_reset_tokens SET used_at=NOW() WHERE id=$1', [tokenId]);
   await query('DELETE FROM refresh_tokens WHERE user_id=$1', [uid]);
-  await logAudit(uid, 'user', uid, 'RESET_PASSWORD', { via_reset_link: true, email });
+  await logAudit(uid, 'user', uid, 'RESET_PASSWORD', {
+    summary: 'User password reset through reset link',
+    via_reset_link: true,
+    email,
+  });
 
   res.json({ ok: true });
 });

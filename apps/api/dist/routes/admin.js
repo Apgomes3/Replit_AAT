@@ -107,7 +107,11 @@ router.post('/users', auth_1.authenticate, (0, auth_1.requireRole)('admin'), asy
     try {
         const hash = await bcryptjs_1.default.hash(password, 10);
         const result = await (0, db_1.query)('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email, first_name, last_name, role, created_at', [email, hash, first_name, last_name, role || 'viewer']);
-        await (0, audit_1.logAudit)(req.user.id, 'user', result.rows[0].id, 'CREATE', { target_email: email, role: role || 'viewer' });
+        await (0, audit_1.logAudit)(req.user.id, 'user', result.rows[0].id, 'CREATE', {
+            summary: `User account created for ${email}`,
+            target_email: email,
+            role: role || 'viewer',
+        });
         res.status(201).json(result.rows[0]);
     }
     catch (err) {
@@ -156,7 +160,11 @@ router.post('/users/invite', auth_1.authenticate, (0, auth_1.requireRole)('admin
             },
         });
     }
-    await (0, audit_1.logAudit)(req.user.id, 'user', userId, 'INVITE', { target_email: userEmail, role: role || 'viewer' });
+    await (0, audit_1.logAudit)(req.user.id, 'user', userId, 'INVITE', {
+        summary: `Invitation sent to ${userEmail}`,
+        target_email: userEmail,
+        role: role || 'viewer',
+    });
     res.status(201).json({ ok: true, user_id: userId, email: userEmail });
 });
 router.post('/users/import', auth_1.authenticate, (0, auth_1.requireRole)('admin'), uploadUserCsv.single('file'), async (req, res) => {
@@ -253,7 +261,11 @@ router.post('/users/import', auth_1.authenticate, (0, auth_1.requireRole)('admin
             });
             continue;
         }
-        await (0, audit_1.logAudit)(req.user.id, 'user', userId, 'INVITE', { target_email: email, role });
+        await (0, audit_1.logAudit)(req.user.id, 'user', userId, 'INVITE', {
+            summary: `Invitation sent to ${email}`,
+            target_email: email,
+            role,
+        });
         result.invited++;
     }
     res.json(result);
@@ -263,7 +275,7 @@ router.put('/users/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), 
     if (req.user.id === req.params.id && is_active !== true) {
         return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot block your own account' } });
     }
-    const existing = await (0, db_1.query)('SELECT is_active FROM users WHERE id=$1', [req.params.id]);
+    const existing = await (0, db_1.query)('SELECT is_active, role FROM users WHERE id=$1', [req.params.id]);
     const result = await (0, db_1.query)('UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4, updated_at=NOW() WHERE id=$5 RETURNING id, email, first_name, last_name, role, is_active', [first_name, last_name, role, is_active, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
@@ -275,7 +287,15 @@ router.put('/users/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), 
         else if (existing.rows[0].is_active && is_active === false)
             action = 'BLOCK';
     }
+    const summary = action === 'BLOCK'
+        ? 'User account blocked'
+        : action === 'UNBLOCK'
+            ? 'User account unblocked'
+            : existing.rows[0]?.role !== updated.role
+                ? `Role changed from ${existing.rows[0]?.role || 'unknown'} → ${updated.role}`
+                : 'User details updated';
     await (0, audit_1.logAudit)(req.user.id, 'user', updated.id, action, {
+        summary,
         target_email: updated.email,
         first_name: updated.first_name,
         last_name: updated.last_name,
@@ -298,7 +318,10 @@ router.patch('/users/:id/password', auth_1.authenticate, (0, auth_1.requireRole)
     const hash = await bcryptjs_1.default.hash(password, 10);
     await (0, db_1.query)('UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, req.params.id]);
     await (0, db_1.query)('DELETE FROM refresh_tokens WHERE user_id=$1', [req.params.id]);
-    await (0, audit_1.logAudit)(req.user.id, 'user', req.params.id, 'RESET_PASSWORD', { target_email: existing.rows[0].email });
+    await (0, audit_1.logAudit)(req.user.id, 'user', req.params.id, 'RESET_PASSWORD', {
+        summary: 'User password reset',
+        target_email: existing.rows[0].email,
+    });
     res.status(204).end();
 });
 router.post('/users/:id/send-reset-link', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
@@ -326,7 +349,10 @@ router.post('/users/:id/send-reset-link', auth_1.authenticate, (0, auth_1.requir
             },
         });
     }
-    await (0, audit_1.logAudit)(req.user.id, 'user', existing.rows[0].id, 'SEND_RESET_LINK', { target_email: existing.rows[0].email });
+    await (0, audit_1.logAudit)(req.user.id, 'user', existing.rows[0].id, 'SEND_RESET_LINK', {
+        summary: `Password reset link sent to ${existing.rows[0].email}`,
+        target_email: existing.rows[0].email,
+    });
     res.json({ ok: true });
 });
 router.delete('/users/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
@@ -363,7 +389,11 @@ router.delete('/users/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'
         // Finally delete the user
         await client.query('DELETE FROM users WHERE id=$1', [userId]);
         await client.query('COMMIT');
-        await (0, audit_1.logAudit)(req.user.id, 'user', userId, 'DELETE', { target_user_id: userId, target_email: existing.rows[0].email });
+        await (0, audit_1.logAudit)(req.user.id, 'user', userId, 'DELETE', {
+            summary: `User account deleted for ${existing.rows[0].email}`,
+            target_user_id: userId,
+            target_email: existing.rows[0].email,
+        });
         res.status(204).end();
     }
     catch (err) {

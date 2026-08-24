@@ -10,6 +10,7 @@ const fs_1 = __importDefault(require("fs"));
 const db_1 = require("../db");
 const auth_1 = require("../middleware/auth");
 const notifications_1 = require("../db/notifications");
+const audit_1 = require("../db/audit");
 const uploadDir = path_1.default.join(__dirname, '../../uploads');
 if (!fs_1.default.existsSync(uploadDir))
     fs_1.default.mkdirSync(uploadDir, { recursive: true });
@@ -20,6 +21,14 @@ const docStorage = multer_1.default.diskStorage({
 const uploadDoc = (0, multer_1.default)({ storage: docStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 const router = (0, express_1.Router)();
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
+function humanizeStatus(status) {
+    if (!status)
+        return 'Unknown';
+    return status.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+}
+function statusChangeSummary(from, to) {
+    return `Status changed from ${humanizeStatus(from)} → ${humanizeStatus(to)}`;
+}
 function nextStage(current) {
     const idx = STAGES.indexOf(current);
     if (idx === -1 || idx >= STAGES.length - 1)
@@ -328,6 +337,13 @@ router.put('/purchase-orders/:id', auth_1.authenticate, async (req, res) => {
             await (0, db_1.query)('INSERT INTO po_systems (po_id,system_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [id, sid]);
         }
     }
+    await (0, audit_1.logAudit)(req.user.id, 'purchase_order', String(id), 'UPDATE', {
+        summary: 'Purchase order details updated',
+        project_id: project_id || null,
+        vendor_name: vendor_name || null,
+        required_by_date: required_by_date || null,
+        priority: priority || 'normal',
+    });
     res.json({ ok: true });
 });
 // PATCH PROCUREMENT META (vendor, dates, terms, priority — editable regardless of status)
@@ -344,6 +360,14 @@ router.patch('/purchase-orders/:id/procurement-meta', auth_1.authenticate, async
     if (procError)
         return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: procError } });
     await (0, db_1.query)(`UPDATE purchase_orders SET vendor_name=$1, required_by_date=$2, payment_terms=$3, shipping_terms=$4, priority=$5, updated_at=now() WHERE id=$6`, [vendor_name ?? null, required_by_date ?? null, payment_terms ?? null, shipping_terms ?? null, priority ?? 'normal', id]);
+    await (0, audit_1.logAudit)(user.id, 'purchase_order', String(id), 'UPDATE', {
+        summary: 'Procurement details updated',
+        vendor_name: vendor_name ?? null,
+        required_by_date: required_by_date ?? null,
+        payment_terms: payment_terms ?? null,
+        shipping_terms: shipping_terms ?? null,
+        priority: priority ?? 'normal',
+    });
     res.json({ ok: true });
 });
 // SUBMIT for approval
@@ -374,6 +398,12 @@ router.post('/purchase-orders/:id/submit', auth_1.authenticate, async (req, res)
         await (0, db_1.query)(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [newStatus, id]);
     }
     await (0, db_1.query)(`INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`, [id, 'draft', newStatus, user.id, user.role === 'hq_manager' ? 'Self-approved by HQ Manager' : 'Submitted for approval']);
+    await (0, audit_1.logAudit)(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
+        summary: statusChangeSummary('draft', newStatus),
+        from: 'draft',
+        to: newStatus,
+        comment: user.role === 'hq_manager' ? 'Self-approved by HQ Manager' : 'Submitted for approval',
+    });
     if (newStatus === 'pending_approval') {
         const actorRes = await (0, db_1.query)('SELECT first_name, last_name FROM users WHERE id=$1', [user.id]);
         const actor = actorRes.rows[0];
@@ -414,6 +444,12 @@ router.post('/purchase-orders/:id/approve', auth_1.authenticate, async (req, res
     }
     await (0, db_1.query)(`UPDATE purchase_orders SET status='purchase_order', approved_by=$1, approved_at=now(), stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [user.id, id]);
     await (0, db_1.query)(`INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`, [id, 'pending_approval', 'purchase_order', user.id, comment || 'Approved']);
+    await (0, audit_1.logAudit)(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
+        summary: statusChangeSummary('pending_approval', 'purchase_order'),
+        from: 'pending_approval',
+        to: 'purchase_order',
+        comment: comment || 'Approved',
+    });
     if (poRes.rows[0].created_by) {
         await (0, notifications_1.createNotification)({
             userId: poRes.rows[0].created_by,
@@ -451,6 +487,12 @@ router.post('/purchase-orders/:id/reject', auth_1.authenticate, async (req, res)
     const fromStatus = poRes.rows[0].status;
     await (0, db_1.query)(`UPDATE purchase_orders SET status='draft', updated_at=now() WHERE id=$1`, [id]);
     await (0, db_1.query)(`INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,'draft',$3,$4)`, [id, fromStatus, user.id, comment || 'Sent back for corrections']);
+    await (0, audit_1.logAudit)(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
+        summary: statusChangeSummary(fromStatus, 'draft'),
+        from: fromStatus,
+        to: 'draft',
+        comment: comment || 'Sent back for corrections',
+    });
     if (poRes.rows[0].created_by) {
         await (0, notifications_1.createNotification)({
             userId: poRes.rows[0].created_by,
@@ -513,6 +555,12 @@ router.post('/purchase-orders/:id/transition', auth_1.authenticate, async (req, 
         await (0, db_1.query)(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [next, id]);
     }
     await (0, db_1.query)(`INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`, [id, po.status, next, user.id, comment || null]);
+    await (0, audit_1.logAudit)(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
+        summary: statusChangeSummary(po.status, next),
+        from: po.status,
+        to: next,
+        comment: comment || null,
+    });
     if (po.created_by && po.created_by !== user.id) {
         await (0, notifications_1.createNotification)({
             userId: po.created_by,
@@ -566,6 +614,12 @@ router.post('/purchase-orders/bulk-transition', auth_1.authenticate, async (req,
                 await (0, db_1.query)(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [next, id]);
             }
             await (0, db_1.query)(`INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`, [id, po.status, next, user.id, 'Bulk transition']);
+            await (0, audit_1.logAudit)(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
+                summary: statusChangeSummary(po.status, next),
+                from: po.status,
+                to: next,
+                comment: 'Bulk transition',
+            });
             if (po.created_by && po.created_by !== user.id) {
                 await (0, notifications_1.createNotification)({
                     userId: po.created_by,

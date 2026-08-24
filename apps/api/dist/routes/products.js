@@ -189,7 +189,12 @@ router.post('/product-masters', auth_1.authenticate, async (req, res) => {
         design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, 0,
         manufacturer || null, model || null,
     ]);
-    await (0, audit_1.logAudit)(req.user.id, 'product', result.rows[0].id, 'CREATE', { product_code, product_name, standard_status: standard_status || 'Concept' });
+    await (0, audit_1.logAudit)(req.user.id, 'product', result.rows[0].id, 'CREATE', {
+        summary: `Product ${product_code} created`,
+        product_code,
+        product_name,
+        standard_status: standard_status || 'Concept',
+    });
     res.status(201).json(result.rows[0]);
 });
 router.delete('/product-masters/:id', auth_1.authenticate, async (req, res) => {
@@ -207,7 +212,10 @@ router.delete('/product-masters/:id', auth_1.authenticate, async (req, res) => {
     const result = await (0, db_1.query)('DELETE FROM product_masters WHERE id::text=$1 RETURNING id, product_code', [id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-    await (0, audit_1.logAudit)(req.user.id, 'product', id, 'DELETE', { product_code: result.rows[0].product_code });
+    await (0, audit_1.logAudit)(req.user.id, 'product', id, 'DELETE', {
+        summary: `Product ${result.rows[0].product_code} deleted`,
+        product_code: result.rows[0].product_code,
+    });
     res.json({ deleted: true });
 });
 router.put('/product-masters/:id', auth_1.authenticate, async (req, res) => {
@@ -228,7 +236,17 @@ router.put('/product-masters/:id', auth_1.authenticate, async (req, res) => {
     const result = await (0, db_1.query)(`UPDATE product_masters SET product_code=COALESCE($29, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, updated_at=NOW() WHERE id=$28 RETURNING *`, [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, req.params.id, newCode]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-    await (0, audit_1.logAudit)(req.user.id, 'product', String(req.params.id), 'UPDATE', { product_code: product_code || undefined, product_name, standard_status, manufacturer: manufacturer || null, model: model || null, cost: costVal, sell_price: sellVal, primary_material_code: primary_material_code || null });
+    await (0, audit_1.logAudit)(req.user.id, 'product', String(req.params.id), 'UPDATE', {
+        summary: 'Product details updated',
+        product_code: product_code || undefined,
+        product_name,
+        standard_status,
+        manufacturer: manufacturer || null,
+        model: model || null,
+        cost: costVal,
+        sell_price: sellVal,
+        primary_material_code: primary_material_code || null,
+    });
     res.json(result.rows[0]);
 });
 router.post('/product-masters/:id/duplicate', auth_1.authenticate, async (req, res) => {
@@ -454,7 +472,12 @@ router.post('/components', auth_1.authenticate, async (req, res) => {
         const pmCode = primary_material_code || null;
         const wkg = (weight_kg === '' || weight_kg === null || weight_kg === undefined) ? null : parseFloat(String(weight_kg));
         const result = await (0, db_1.query)('INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost, manufacturer, model) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *', [component_code, component_name, component_type || 'Vessel', component_category || 'Mechanical', description || null, pmCode, standard_size || null, wkg, unit || 'EA', status || 'Active', notes || null, req.user.id, 0, manufacturer || null, model || null]);
-        await (0, audit_1.logAudit)(req.user.id, 'component', result.rows[0].id, 'CREATE', { component_code, component_name, component_type });
+        await (0, audit_1.logAudit)(req.user.id, 'component', result.rows[0].id, 'CREATE', {
+            summary: `Component ${component_code} created`,
+            component_code,
+            component_name,
+            component_type,
+        });
         res.status(201).json(result.rows[0]);
     }
     catch (err) {
@@ -472,7 +495,16 @@ router.put('/components/:id', auth_1.authenticate, async (req, res) => {
     const result = await (0, db_1.query)('UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, cost=$12, sell_price=$13, manufacturer=$14, model=$15, updated_at=NOW() WHERE id=$16 RETURNING *', [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, manufacturer || null, model || null, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-    await (0, audit_1.logAudit)(req.user.id, 'component', String(req.params.id), 'UPDATE', { component_name, component_type, status, manufacturer: manufacturer || null, model: model || null, cost: costVal, primary_material_code: primary_material_code || null });
+    await (0, audit_1.logAudit)(req.user.id, 'component', String(req.params.id), 'UPDATE', {
+        summary: 'Component details updated',
+        component_name,
+        component_type,
+        status,
+        manufacturer: manufacturer || null,
+        model: model || null,
+        cost: costVal,
+        primary_material_code: primary_material_code || null,
+    });
     res.json(result.rows[0]);
 });
 router.patch('/product-masters/:id/status', auth_1.authenticate, async (req, res) => {
@@ -482,7 +514,11 @@ router.patch('/product-masters/:id/status', auth_1.authenticate, async (req, res
     const result = await (0, db_1.query)('UPDATE product_masters SET standard_status=$1, updated_at=NOW() WHERE id=$2 RETURNING id, standard_status', [standard_status, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-    await (0, audit_1.logAudit)(req.user.id, 'product', String(req.params.id), 'STATUS_CHANGE', { from: undefined, to: standard_status });
+    await (0, audit_1.logAudit)(req.user.id, 'product', String(req.params.id), 'STATUS_CHANGE', {
+        summary: `Status changed to ${standard_status}`,
+        from: undefined,
+        to: standard_status,
+    });
     res.json(result.rows[0]);
 });
 router.patch('/components/:id/status', auth_1.authenticate, async (req, res) => {
@@ -492,7 +528,10 @@ router.patch('/components/:id/status', auth_1.authenticate, async (req, res) => 
     const result = await (0, db_1.query)('UPDATE components SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING id, status', [status, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-    await (0, audit_1.logAudit)(req.user.id, 'component', String(req.params.id), 'STATUS_CHANGE', { to: status });
+    await (0, audit_1.logAudit)(req.user.id, 'component', String(req.params.id), 'STATUS_CHANGE', {
+        summary: `Status changed to ${status}`,
+        to: status,
+    });
     res.json(result.rows[0]);
 });
 router.post('/components/:id/duplicate', auth_1.authenticate, async (req, res) => {
@@ -536,7 +575,10 @@ router.delete('/components/:id', auth_1.authenticate, async (req, res) => {
     const result = await (0, db_1.query)('DELETE FROM components WHERE id::text=$1 RETURNING id, component_code', [id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-    await (0, audit_1.logAudit)(req.user.id, 'component', id, 'DELETE', { component_code: result.rows[0].component_code });
+    await (0, audit_1.logAudit)(req.user.id, 'component', id, 'DELETE', {
+        summary: `Component ${result.rows[0].component_code} deleted`,
+        component_code: result.rows[0].component_code,
+    });
     res.json({ deleted: true });
 });
 // FAMILY CLASSIFIERS
