@@ -13,6 +13,8 @@ import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 import toast from 'react-hot-toast';
 import { Plus, Copy, Pencil, X, Download, Package, Trash2 } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
+import QueryError from '../../components/ui/QueryError';
+import EmptyState from '../../components/ui/EmptyState';
 
 const STATUSES = ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'];
 
@@ -36,7 +38,7 @@ export default function ProductMastersList() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryLoading, setNewCategoryLoading] = useState(false);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['product-masters', search],
     queryFn: () => {
       const p = new URLSearchParams({ page_size: '500' });
@@ -249,34 +251,46 @@ export default function ProductMastersList() {
               className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600"
             />
           </div>
-          <div className="flex-1 overflow-auto">
-            <DataTable
-              columns={columns} data={allItems} loading={isLoading} tableId="products-list"
-              onRowClick={r => navigate(`/products/masters/${r.id}`)}
-              emptyMessage="No products — add a product or select a different family"
-              contextMenuItems={row => [
-                { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
-                {
-                  label: dupSaving === row.id ? 'Duplicating…' : 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
-                  onClick: async () => {
-                    if (dupSaving) return;
-                    setDupSaving(row.id);
-                    try {
-                      const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
-                      toast.success('Product duplicated');
-                      refetch();
-                      navigate(`/products/masters/${res.data.id}`);
-                    } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
-                    finally { setDupSaving(null); }
-                  },
-                },
-                {
-                  label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
-                  onClick: () => setConfirmDelete({ id: row.id, name: row.product_code }),
-                },
-              ]}
-            />
-          </div>
+           <div className="flex-1 overflow-auto">
+             {isError ? (
+               <QueryError message="Could not load products" onRetry={() => refetch()} />
+             ) : !isLoading && allItems.length === 0 && !search && !selectedFamilyId ? (
+               <EmptyState
+                 icon={Package}
+                 title="No products found"
+                 description="Add a product to your catalog, or adjust your filters to find an existing product."
+                 actionLabel="Add a product"
+                 onAction={() => setShowNew(true)}
+               />
+             ) : (
+               <DataTable
+                 columns={columns} data={allItems} loading={isLoading} tableId="products-list"
+                 onRowClick={r => navigate(`/products/masters/${r.id}`)}
+                 emptyMessage="No products — adjust filters or add a product"
+                 contextMenuItems={row => [
+                   { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
+                   {
+                     label: dupSaving === row.id ? 'Duplicating…' : 'Duplicate', icon: <Copy className="w-3.5 h-3.5" />,
+                     onClick: async () => {
+                       if (dupSaving) return;
+                       setDupSaving(row.id);
+                       try {
+                         const res = await api.post(`/product-masters/${row.id}/duplicate`, {});
+                         toast.success('Product duplicated');
+                         refetch();
+                         navigate(`/products/masters/${res.data.id}`);
+                       } catch (e: any) { toast.error(e?.response?.data?.error?.message || 'Duplicate failed'); }
+                       finally { setDupSaving(null); }
+                     },
+                   },
+                   {
+                     label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, divider: true, danger: true,
+                     onClick: () => setConfirmDelete({ id: row.id, name: row.product_code }),
+                   },
+                 ]}
+               />
+             )}
+           </div>
         </div>
       </div>
 

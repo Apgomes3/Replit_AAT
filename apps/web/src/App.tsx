@@ -71,6 +71,8 @@ export default function App() {
             <Route index element={<HomeHub />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="pim" element={<PIMDashboard />} />
+             <Route path="pim/products" element={<Navigate to="/products/masters" replace />} />
+             <Route path="pim/components" element={<Navigate to="/products/components" replace />} />
             <Route path="order-management" element={<OrderManagementDashboard />} />
             <Route path="project-management" element={<ProjectManagementDashboard />} />
             <Route path="projects" element={<ProjectsList />} />
@@ -92,6 +94,7 @@ export default function App() {
             <Route path="graph" element={<GraphExplorer />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="admin/users" element={<AdminUsers />} />
+             <Route path="admin" element={<Navigate to="/admin/users" replace />} />
             <Route path="admin/import" element={<AdminImport />} />
             <Route path="admin/categories" element={<AdminCategories />} />
             <Route path="admin/roles" element={<AdminRoles />} />

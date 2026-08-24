@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useState, lazy, Suspense, useRef, useEffect, Fragment } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
+import QueryError from '../../components/ui/QueryError';
 import MetadataPanel from '../../components/ui/MetadataPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
@@ -175,7 +176,7 @@ export default function ProjectDetail() {
   const [selectedRelease, setSelectedRelease] = useState<any>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ Products: true, Equipment: true, Tank: true, Piping: true });
 
-  const { data: project, isLoading, refetch } = useQuery({
+  const { data: project, isLoading, isError, refetch } = useQuery({
     queryKey: ['project', id],
     queryFn: () => api.get(`/projects/${id}`).then(r => r.data),
   });
@@ -357,6 +358,7 @@ export default function ProjectDetail() {
   }, [project?.project_scopes]);
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
+  if (isError) return <QueryError message="Could not load project" onRetry={() => refetch()} />;
   if (!project) return <div className="p-8 text-slate-400">Project not found</div>;
 
   const startEditProject = () => {

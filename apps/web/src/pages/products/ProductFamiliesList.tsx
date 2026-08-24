@@ -10,7 +10,9 @@ import NewEntityModal from '../../components/ui/NewEntityModal';
 import FamilyClassifiersModal from '../../components/ui/FamilyClassifiersModal';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
-import { Plus, Pencil, SlidersHorizontal } from 'lucide-react';
+import { Plus, Pencil, SlidersHorizontal, Package } from 'lucide-react';
+import QueryError from '../../components/ui/QueryError';
+import EmptyState from '../../components/ui/EmptyState';
 
 function deriveCode(name: string): string {
   return name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
@@ -22,7 +24,7 @@ export default function ProductFamiliesList() {
   const [editRow, setEditRow] = useState<ProductFamily | null>(null);
   const [classifiersFamily, setClassifiersFamily] = useState<ProductFamily | null>(null);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['product-families'],
     queryFn: () => api.get('/product-families').then(r => r.data),
   });
@@ -57,21 +59,33 @@ export default function ProductFamiliesList() {
         actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Family</Button>}
       />
       <div className="flex-1 bg-white overflow-auto">
-        <DataTable
-          columns={columns} data={data?.items || []} loading={isLoading} tableId="families-list"
-          contextMenuItems={row => [
-            {
-              label: 'Edit',
-              icon: <Pencil className="w-3.5 h-3.5" />,
-              onClick: () => setEditRow(row),
-            },
-            {
-              label: 'Manage Classifiers',
-              icon: <SlidersHorizontal className="w-3.5 h-3.5" />,
-              onClick: () => setClassifiersFamily(row),
-            },
-          ]}
-        />
+        {isError ? (
+          <QueryError message="Could not load product families" onRetry={() => refetch()} />
+        ) : !isLoading && data?.items?.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="No product families yet"
+            description="Create a family to organize reusable product definitions in your catalog."
+            actionLabel="Create a family"
+            onAction={() => setShowNew(true)}
+          />
+        ) : (
+          <DataTable
+            columns={columns} data={data?.items || []} loading={isLoading} tableId="families-list"
+            contextMenuItems={row => [
+              {
+                label: 'Edit',
+                icon: <Pencil className="w-3.5 h-3.5" />,
+                onClick: () => setEditRow(row),
+              },
+              {
+                label: 'Manage Classifiers',
+                icon: <SlidersHorizontal className="w-3.5 h-3.5" />,
+                onClick: () => setClassifiersFamily(row),
+              },
+            ]}
+          />
+        )}
       </div>
       {showNew && (
         <NewEntityModal title="New Product Family" onClose={() => setShowNew(false)}

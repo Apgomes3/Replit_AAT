@@ -15,10 +15,10 @@ const ALL_QUICK_LINKS = [
   { label: 'Search',          href: '/search',                  icon: 'Search'       },
   { label: 'Design Rules',    href: '/knowledge/design-rules',  icon: 'Ruler'        },
   { label: 'Purchase Orders', href: '/purchase-orders',         icon: 'ShoppingCart' },
-  { label: 'Products',        href: '/pim/products',            icon: 'Package'      },
-  { label: 'Projects',        href: '/project-management',      icon: 'FolderOpen'   },
+  { label: 'Products',        href: '/products/masters',        icon: 'Package'      },
+  { label: 'Projects',        href: '/projects',                icon: 'FolderOpen'   },
   { label: 'PIM',             href: '/pim',                     icon: 'Layers'       },
-  { label: 'Components',      href: '/pim/components',          icon: 'Wrench'       },
+  { label: 'Components',      href: '/products/components',     icon: 'Wrench'       },
   { label: 'Design Books',    href: '/design-books',            icon: 'BookMarked'   },
   { label: 'Admin',           href: '/admin',                   icon: 'Settings'     },
   { label: 'Admin Users',     href: '/admin/users',             icon: 'Users'        },
@@ -36,7 +36,13 @@ const LS_KEY = 'shark_quick_links';
 function loadSaved(): string[] {
   try {
     const v = localStorage.getItem(LS_KEY);
-    return v ? JSON.parse(v) : DEFAULT_HREFS;
+    const saved = v ? JSON.parse(v) : DEFAULT_HREFS;
+    const routeAliases: Record<string, string> = {
+      '/pim/products': '/products/masters',
+      '/pim/components': '/products/components',
+      '/project-management': '/projects',
+    };
+    return Array.isArray(saved) ? saved.map(href => routeAliases[href] ?? href) : DEFAULT_HREFS;
   } catch {
     return DEFAULT_HREFS;
   }
@@ -141,7 +147,7 @@ export default function HomeHub() {
     },
     {
       id: 'projects',
-      href: '/project-management',
+      href: '/projects',
       icon: FolderOpen,
       title: 'Project Management',
       description: 'Manage active projects, systems, equipment lists and engineering deliverables.',

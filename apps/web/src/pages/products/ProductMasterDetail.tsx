@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
+import QueryError from '../../components/ui/QueryError';
 import MetadataPanel from '../../components/ui/MetadataPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
@@ -159,7 +160,7 @@ export default function ProductMasterDetail() {
   const [prodSearch, setProdSearch] = useState('');
   const [selectedProd, setSelectedProd] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
 
-  const { data: product, isLoading } = useQuery({
+  const { data: product, isLoading, isError, refetch } = useQuery({
     queryKey: ['product-master', id],
     queryFn: () => api.get(`/product-masters/${id}`).then(r => r.data),
   });
@@ -473,6 +474,7 @@ export default function ProductMasterDetail() {
   };
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
+  if (isError) return <QueryError message="Could not load product" onRetry={() => refetch()} />;
   if (!product) return <div className="p-8 text-slate-400">Product not found</div>;
 
   const isPiping = product.product_category === 'Piping';

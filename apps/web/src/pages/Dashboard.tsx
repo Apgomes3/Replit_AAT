@@ -9,6 +9,7 @@ import {
   Boxes, FileText, Plus, Trash2, CheckSquare, Square, Clock, ChevronUp, ChevronDown,
   X, LayoutDashboard, Eye, GripVertical
 } from 'lucide-react';
+import EmptyState from '../components/ui/EmptyState';
 
 type CardState = 'visible' | 'minimized' | 'hidden';
 type Prefs = Record<string, CardState>;
@@ -344,13 +345,19 @@ export default function Dashboard() {
         }
       </DashboardCard>
     ),
-    'recent-docs': (
+     'recent-docs': (
       <DashboardCard id="recent-docs" title="Recent Documents" state={state('recent-docs')} onUpdate={s => update('recent-docs', s)}
         className={CARD_SPAN['recent-docs']}
         headerRight={<Link to="/documents" className="text-xs text-blue-600 hover:underline">View all</Link>}
         {...sharedDragProps('recent-docs')}>
-        {recentDocs.length === 0
-          ? <div className="p-4 text-sm text-stone-400">No documents yet</div>
+         {recentDocs.length === 0
+           ? <EmptyState
+               icon={FileText}
+               title="No recent documents"
+               description="Controlled files and revisions will appear here once they are added."
+               actionLabel="Open documents"
+               actionHref="/documents"
+             />
           : (
             <div className="divide-y divide-stone-100">
               {recentDocs.map((d: any) => (
@@ -372,17 +379,27 @@ export default function Dashboard() {
       <DashboardCard id="recent-projects" title="Recent Projects" state={state('recent-projects')} onUpdate={s => update('recent-projects', s)}
         headerRight={<Link to="/projects" className="text-xs text-blue-600 hover:underline">View all</Link>}
         {...sharedDragProps('recent-projects')}>
-        <div className="divide-y divide-stone-100">
-          {projects?.items?.map((p: any) => (
-            <Link key={p.id} to={`/projects/${p.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-stone-50">
-              <div>
-                <div className="font-mono text-xs text-stone-400">{p.project_code}</div>
-                <div className="text-sm text-stone-800">{p.project_name}</div>
-              </div>
-              <StatusBadge status={p.project_status} />
-            </Link>
-          ))}
-        </div>
+         {projects?.items?.length === 0 ? (
+           <EmptyState
+             icon={FolderOpen}
+             title="No recent projects"
+             description="Create a project to start organizing engineering work and deliverables."
+             actionLabel="Create a project"
+             actionHref="/projects"
+           />
+         ) : (
+           <div className="divide-y divide-stone-100">
+             {projects?.items?.map((p: any) => (
+               <Link key={p.id} to={`/projects/${p.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-stone-50">
+                 <div>
+                   <div className="font-mono text-xs text-stone-400">{p.project_code}</div>
+                   <div className="text-sm text-stone-800">{p.project_name}</div>
+                 </div>
+                 <StatusBadge status={p.project_status} />
+               </Link>
+             ))}
+           </div>
+         )}
       </DashboardCard>
     ),
     'quick-links': (

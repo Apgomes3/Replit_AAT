@@ -4,6 +4,7 @@ import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
+import QueryError from '../../components/ui/QueryError';
 import Button from '../../components/ui/Button';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
@@ -307,7 +308,7 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const { data: po, isLoading, refetch } = useQuery({
+  const { data: po, isLoading, isError, refetch } = useQuery({
     queryKey: ['purchase-order', id],
     queryFn: () => api.get(`/purchase-orders/${id}`).then(r => r.data),
   });
@@ -596,6 +597,7 @@ export default function PurchaseOrderDetail() {
     new Intl.NumberFormat('en-US', { style: 'currency', currency: displayCurrency, minimumFractionDigits: 2 }).format(val);
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading…</div>;
+  if (isError) return <QueryError message="Could not load purchase order" onRetry={() => refetch()} />;
   if (!po) return <div className="p-8 text-slate-400">PO not found</div>;
 
   const statusMeta = STATUS_META[po.status] || { label: po.status, color: '', dot: '' };

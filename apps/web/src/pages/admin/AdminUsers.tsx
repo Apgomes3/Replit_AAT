@@ -4,6 +4,7 @@ import {
   Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail,
   Eye, EyeOff, MoreHorizontal, Search, ChevronLeft, ChevronRight,
   ArrowUp, ArrowDown, ChevronsUpDown, UserPlus, AlertTriangle,
+  Users,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -13,6 +14,9 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
+import QueryError from '../../components/ui/QueryError';
+import EmptyState from '../../components/ui/EmptyState';
+import SkeletonTable from '../../components/ui/SkeletonTable';
 
 interface UserRow {
   id: string;
@@ -300,7 +304,7 @@ export default function AdminUsers() {
 
   const sortParam = `${sortKey === 'name' ? 'name' : sortKey === 'email' ? 'email' : sortKey === 'role' ? 'role' : sortKey === 'status' ? 'status' : sortKey === 'last_login' ? 'last_login' : 'created'}_${sortDir}`;
 
-  const { data, isLoading, refetch } = useQuery<{ items: UserRow[]; pagination: { page: number; page_size: number; total: number; pages: number } }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ items: UserRow[]; pagination: { page: number; page_size: number; total: number; pages: number } }>({
     queryKey: ['admin-users', debouncedQ, roleFilter, page, sortParam],
     queryFn: () => api.get('/admin/users', {
       params: { q: debouncedQ || undefined, role: roleFilter || undefined, page, page_size: 25, sort: sortParam },
@@ -471,17 +475,18 @@ export default function AdminUsers() {
 
       {/* Table */}
       <div className="flex-1 bg-white overflow-auto">
-        {isLoading ? (
-          <div className="divide-y divide-slate-100">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 px-4 py-3">
-                <div className="skeleton h-3 w-40 rounded" />
-                <div className="skeleton h-3 w-28 rounded" />
-                <div className="skeleton h-3 w-16 rounded" />
-                <div className="skeleton h-5 w-14 rounded-full ml-auto" />
-              </div>
-            ))}
-          </div>
+        {isError ? (
+          <QueryError message="Could not load users" onRetry={() => refetch()} />
+        ) : isLoading ? (
+          <SkeletonTable rows={6} columns={isAdmin ? 8 : 7} />
+        ) : users.length === 0 && !debouncedQ && !roleFilter ? (
+          <EmptyState
+            icon={Users}
+            title="No users"
+            description="Invite teammates so they can access the platform and collaborate on projects."
+            actionLabel={isAdmin ? 'Invite a user' : undefined}
+            onAction={isAdmin ? () => setShowInvite(true) : undefined}
+          />
         ) : (
           <table className="w-full text-sm">
             <thead>

@@ -10,9 +10,11 @@ import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import CountryCombobox from '../../components/ui/CountryCombobox';
-import { Plus, List, Map, Download, X, Search, User, ImagePlus } from 'lucide-react';
+import { Plus, List, Map, Download, X, Search, User, ImagePlus, FolderOpen } from 'lucide-react';
 import { exportCsv, csvDate } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
+import QueryError from '../../components/ui/QueryError';
+import EmptyState from '../../components/ui/EmptyState';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
@@ -45,7 +47,7 @@ export default function ProjectsList() {
   const [pmOpen, setPmOpen] = useState(false);
   const pmRef = useRef<HTMLDivElement>(null);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['projects', search],
     queryFn: () => api.get(`/projects${search ? `?q=${search}` : ''}`).then(r => r.data),
   });
@@ -147,17 +149,33 @@ export default function ProjectsList() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or code..."
               className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600" />
           </div>
-          <div className="flex-1 bg-white overflow-auto">
-            <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => navigate(`/projects/${r.id}`)} />
+           <div className="flex-1 bg-white overflow-auto">
+             {isError ? (
+               <QueryError message="Could not load projects" onRetry={() => refetch()} />
+             ) : !isLoading && data?.items?.length === 0 && !search ? (
+               <EmptyState
+                 icon={FolderOpen}
+                 title="No projects"
+                 description="Create a project to organize systems, equipment, and engineering deliverables."
+                 actionLabel="Create a project"
+                 onAction={openNew}
+               />
+             ) : (
+               <DataTable columns={columns} data={data?.items || []} loading={isLoading} onRowClick={r => navigate(`/projects/${r.id}`)} />
+             )}
           </div>
         </>
       )}
 
       {view === 'map' && (
-        <div className="flex-1 overflow-auto p-4">
-          <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading map...</div>}>
-            <ProjectsMap projects={data?.items || []} height="calc(100vh - 180px)" />
-          </Suspense>
+         <div className="flex-1 overflow-auto p-4">
+           {isError ? (
+             <QueryError message="Could not load projects" onRetry={() => refetch()} />
+           ) : (
+             <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading map...</div>}>
+               <ProjectsMap projects={data?.items || []} height="calc(100vh - 180px)" />
+             </Suspense>
+           )}
         </div>
       )}
 

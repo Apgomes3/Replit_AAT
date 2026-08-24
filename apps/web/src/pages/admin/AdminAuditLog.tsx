@@ -3,9 +3,12 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
-import { ChevronDown, ChevronRight, ClipboardList, RefreshCw, Download, AlertCircle, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardList, RefreshCw, Download, ChevronUp } from 'lucide-react';
 import clsx from 'clsx';
 import { exportCsv } from '../../lib/exportCsv';
+import QueryError from '../../components/ui/QueryError';
+import EmptyState from '../../components/ui/EmptyState';
+import SkeletonTable from '../../components/ui/SkeletonTable';
 
 interface AuditLog {
   id: string;
@@ -468,42 +471,21 @@ export default function AdminAuditLog() {
       {/* Main content area */}
       <div className="flex-1 bg-white overflow-auto">
         {isError ? (
-          /* Error panel */
-          <div className="flex flex-col items-center justify-center h-64 gap-3">
-            <div className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="w-5 h-5" />
-              <p className="text-sm font-medium">Failed to load audit log</p>
-            </div>
-            <p className="text-xs text-stone-400 max-w-sm text-center">
-              {(error as any)?.message ?? 'An unexpected error occurred. Please try again.'}
-            </p>
-            <button
-              onClick={() => refetch()}
-              className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Retry
-            </button>
-          </div>
+          <QueryError
+            message="Could not load audit log"
+            detail={(error as any)?.message}
+            onRetry={() => refetch()}
+          />
         ) : isLoading ? (
-          <div className="divide-y divide-stone-100">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 px-4 py-3">
-                <div className="skeleton w-7 h-7 rounded-full" />
-                <div className="skeleton h-3 w-24 rounded" />
-                <div className="skeleton h-5 w-16 rounded-full" />
-                <div className="skeleton h-3 w-20 rounded" />
-                <div className="skeleton h-3 w-40 rounded" />
-                <div className="skeleton h-3 w-16 rounded ml-auto" />
-              </div>
-            ))}
-          </div>
+          <SkeletonTable rows={8} columns={6} />
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-stone-400">
-            <ClipboardList className="w-10 h-10 mb-3 opacity-30" />
-            <p className="text-sm font-medium">No audit events found</p>
-            {hasFilters && <p className="text-xs mt-1">Try clearing the filters</p>}
-          </div>
+          <EmptyState
+            icon={ClipboardList}
+            title={hasFilters ? 'No matching log entries' : 'No audit events yet'}
+            description={hasFilters ? 'Try removing one or more filters to see more activity.' : 'Platform activity will appear here as records are created and updated.'}
+            actionLabel={hasFilters ? 'Clear filters' : undefined}
+            onAction={hasFilters ? resetFilters : undefined}
+          />
         ) : (
           <table className="w-full text-sm">
             <thead>

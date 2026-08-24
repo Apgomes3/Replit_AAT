@@ -2,6 +2,7 @@ import { ReactNode, useState, useRef, useEffect, useCallback } from 'react';
 import clsx from 'clsx';
 import { GripVertical, ChevronsUpDown, ArrowUp, ArrowDown, Filter, X } from 'lucide-react';
 import ContextMenu, { ContextMenuItem } from './ContextMenu';
+import SkeletonTable from './SkeletonTable';
 
 export interface Column<T> {
   key: string;
@@ -160,18 +161,7 @@ export default function DataTable<T extends Record<string, any>>({
   const activeSortCol = cols.find(c => c.key === sortKey);
   const processed = filterData(sortData(data, sortKey, sortDir, activeSortCol), filters, cols);
 
-  if (loading) return (
-    <div className="divide-y divide-stone-100">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 px-4 py-3">
-          <div className="skeleton h-3 w-20 rounded" />
-          <div className="skeleton h-3 w-40 rounded" />
-          <div className="skeleton h-3 w-24 rounded" />
-          <div className="ml-auto skeleton h-5 w-16 rounded-full" />
-        </div>
-      ))}
-    </div>
-  );
+  if (loading) return <SkeletonTable columns={Math.min(Math.max(cols.length, 3), 6)} />;
 
   return (
     <div className="flex flex-col h-full">

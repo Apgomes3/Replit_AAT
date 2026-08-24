@@ -8,10 +8,12 @@ import Button from '../../components/ui/Button';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import EntityCode from '../../components/ui/EntityCode';
 import CreatePOModal from './CreatePOModal';
-import { Plus, Download, Copy, User, ExternalLink, X, CheckSquare2, UserPlus, Bookmark, BookmarkCheck, ArrowRight, CheckCircle2, XCircle, Send, ChevronRight, PackageCheck, List } from 'lucide-react';
+import { Plus, Download, Copy, User, ExternalLink, X, CheckSquare2, UserPlus, Bookmark, BookmarkCheck, ArrowRight, CheckCircle2, XCircle, Send, ChevronRight, PackageCheck, List, ShoppingCart } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 import AssignUserModal from './AssignUserModal';
+import QueryError from '../../components/ui/QueryError';
+import EmptyState from '../../components/ui/EmptyState';
 
 type Preset = { name: string; search: string; statusFilter: string; mineOnly: boolean };
 
@@ -151,8 +153,9 @@ export default function PurchaseOrdersList() {
   }, [inlineAction]);
 
   const effectiveStatus = viewTab === 'released' ? 'released' : statusFilter;
+  const hasActiveFilters = Boolean(search || effectiveStatus || mineOnly);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['purchase-orders', search, effectiveStatus, mineOnly, viewTab],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -591,8 +594,10 @@ export default function PurchaseOrdersList() {
         </div>
       </div>
 
-      <div className="flex-1 bg-white overflow-auto">
-        {viewTab === 'released' ? (
+       <div className="flex-1 bg-white overflow-auto">
+         {isError ? (
+           <QueryError message="Could not load purchase orders" onRetry={() => refetch()} />
+         ) : viewTab === 'released' ? (
           <DataTable
             columns={releasedColumns}
             data={allItems}
@@ -605,7 +610,15 @@ export default function PurchaseOrdersList() {
               { label: 'Clone PO', icon: <Copy className="w-3.5 h-3.5" />, divider: true, onClick: () => cloneMutation.mutate(r.id) },
             ]}
           />
-        ) : (
+         ) : !isLoading && allItems.length === 0 && !hasActiveFilters ? (
+           <EmptyState
+             icon={ShoppingCart}
+             title="No purchase orders yet"
+             description="Create a purchase order to start tracking approvals, engineering review, and release."
+             actionLabel="Create your first PO"
+             onAction={() => setShowCreate(true)}
+           />
+         ) : (
           <DataTable
             columns={columns}
             data={allItems}

@@ -4,6 +4,7 @@ import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useState, useRef, useMemo } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
+import QueryError from '../../components/ui/QueryError';
 import MetadataPanel from '../../components/ui/MetadataPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
@@ -90,7 +91,7 @@ export default function ComponentDetail() {
   const [variantTarget, setVariantTarget] = useState<any>(null);
   const [variantSubmitting, setVariantSubmitting] = useState(false);
 
-  const { data: component, isLoading } = useQuery({
+  const { data: component, isLoading, isError, refetch } = useQuery({
     queryKey: ['component', id],
     queryFn: () => api.get(`/components/${id}`).then(r => r.data),
   });
@@ -119,6 +120,7 @@ export default function ComponentDetail() {
   );
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
+  if (isError) return <QueryError message="Could not load component" onRetry={() => refetch()} />;
   if (!component) return <div className="p-8 text-slate-400">Component not found</div>;
 
   const documents: Document[] = component.documents || [];
