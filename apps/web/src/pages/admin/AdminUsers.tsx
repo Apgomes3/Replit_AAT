@@ -4,7 +4,7 @@ import {
   Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail,
   Eye, EyeOff, MoreHorizontal, Search, ChevronLeft, ChevronRight,
   ArrowUp, ArrowDown, ChevronsUpDown, UserPlus, AlertTriangle,
-  Users,
+  Users, Upload, Download, X, FileSpreadsheet,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -278,6 +278,192 @@ function InviteModal({ roleOptions, smtpConfigured, onClose, onSuccess }: Invite
   );
 }
 
+interface BulkInviteResult {
+  total: number;
+  invited: number;
+  skipped: number;
+  errors: Array<{ row: number; email?: string; message: string }>;
+}
+
+interface BulkInviteModalProps {
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+const BULK_INVITE_TEMPLATE = [
+  'email,first_name,last_name,role',
+  'alex@example.com,Alex,Smith,viewer',
+  'sam@example.com,Sam,Lee,engineer',
+].join('\n');
+
+function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [result, setResult] = useState<BulkInviteResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose });
+
+  const downloadTemplate = () => {
+    const url = URL.createObjectURL(new Blob([BULK_INVITE_TEMPLATE], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'user_invites_template.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const chooseFile = (selectedFile: File | undefined) => {
+    if (!selectedFile) return;
+    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Please choose a CSV file');
+      return;
+    }
+    setFile(selectedFile);
+    setResult(null);
+  };
+
+  const submit = async () => {
+    if (!file) return;
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await api.post('/admin/users/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setResult(response.data);
+      onSuccess();
+      if (response.data.invited > 0) {
+        toast.success(`${response.data.invited} invite${response.data.invited === 1 ? '' : 's'} sent`);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Could not import users');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const reset = () => {
+    setFile(null);
+    setResult(null);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="bulk-invite-title" tabIndex={-1} className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="flex items-start justify-between p-5 border-b border-slate-100">
+          <div className="flex items-start gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-blue-600 mt-0.5" />
+            <div>
+              <h2 id="bulk-invite-title" className="text-base font-semibold text-slate-800">Import Users from CSV</h2>
+              <p className="text-xs text-slate-500 mt-1">Invite multiple teammates at once. Each new user receives a password-setup link.</p>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close dialog" title="Close dialog" className="text-slate-300 hover:text-slate-500">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="overflow-auto p-5">
+          {!result ? (
+            <div className="space-y-4">
+              <div
+                className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-blue-600/40 hover:bg-slate-50 transition-colors"
+                onClick={() => fileRef.current?.click()}
+                onDragOver={event => event.preventDefault()}
+                onDrop={event => { event.preventDefault(); chooseFile(event.dataTransfer.files[0]); }}
+              >
+                <Upload className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                <div className="text-sm font-medium text-slate-600">
+                  {file ? file.name : 'Drop your CSV file here or click to browse'}
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  {file ? `${(file.size / 1024).toFixed(1)} KB selected` : 'CSV files up to 2 MB'}
+                </div>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={event => chooseFile(event.target.files?.[0])}
+                />
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-4">
+                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Accepted columns</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {['email *', 'first_name', 'last_name', 'role'].map(column => (
+                    <span key={column} className={`text-xs px-2 py-0.5 rounded font-mono ${column === 'email *' ? 'bg-blue-600/10 text-blue-600 font-semibold' : 'bg-slate-200 text-slate-600'}`}>
+                      {column}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 mt-2">The role defaults to viewer when it is blank or omitted.</p>
+                <button onClick={downloadTemplate} className="mt-3 flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+                  <Download className="w-3.5 h-3.5" /> Download template CSV
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                Import finished for {result.total} row{result.total === 1 ? '' : 's'}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-center">
+                  <div className="text-xl font-semibold text-emerald-700">{result.invited}</div>
+                  <div className="text-xs text-emerald-700">Invites sent</div>
+                </div>
+                <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-center">
+                  <div className="text-xl font-semibold text-amber-700">{result.skipped}</div>
+                  <div className="text-xs text-amber-700">Skipped</div>
+                </div>
+                <div className="rounded-lg bg-red-50 border border-red-100 p-3 text-center">
+                  <div className="text-xl font-semibold text-red-700">{result.errors.length}</div>
+                  <div className="text-xs text-red-700">Errors</div>
+                </div>
+              </div>
+              {result.skipped > 0 && <p className="text-xs text-slate-500">Skipped rows were already registered or duplicated in this file.</p>}
+              {result.errors.length > 0 && (
+                <div className="border border-red-100 rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-red-50 text-xs font-semibold text-red-700">Rows that need attention</div>
+                  <div className="max-h-48 overflow-auto divide-y divide-red-50">
+                    {result.errors.map(error => (
+                      <div key={`${error.row}-${error.email}`} className="px-3 py-2 text-xs text-slate-600">
+                        <span className="font-medium text-slate-800">Row {error.row}</span>
+                        {error.email && <span className="text-slate-500"> · {error.email}</span>}
+                        <span className="block text-red-600 mt-0.5">{error.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 pb-5">
+          {!result ? (
+            <>
+              <Button onClick={onClose}>Cancel</Button>
+              <Button variant="primary" onClick={submit} disabled={!file || submitting}>
+                {submitting ? 'Importing…' : 'Import & Send Invites'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={reset}>Import Another</Button>
+              <Button variant="primary" onClick={onClose}>Done</Button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface SetPasswordModalProps {
   user: UserRow;
   password: string;
@@ -356,6 +542,7 @@ export default function AdminUsers() {
 
   // Modals
   const [showInvite, setShowInvite] = useState(false);
+  const [showBulkInvite, setShowBulkInvite] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [confirmBlock, setConfirmBlock] = useState<UserRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserRow | null>(null);
@@ -499,9 +686,14 @@ export default function AdminUsers() {
         title="User Management"
         subtitle="Platform users and roles"
         actions={isAdmin ? (
-          <Button variant="primary" onClick={() => setShowInvite(true)}>
-            <Plus className="w-4 h-4" />New User
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setShowBulkInvite(true)}>
+              <Upload className="w-4 h-4" />Import CSV
+            </Button>
+            <Button variant="primary" onClick={() => setShowInvite(true)}>
+              <Plus className="w-4 h-4" />New User
+            </Button>
+          </div>
         ) : undefined}
       />
 
@@ -701,6 +893,14 @@ export default function AdminUsers() {
           roleOptions={roleOptions}
           smtpConfigured={smtpConfigured}
           onClose={() => setShowInvite(false)}
+          onSuccess={() => refetch()}
+        />
+      )}
+
+      {/* Bulk invite modal */}
+      {showBulkInvite && (
+        <BulkInviteModal
+          onClose={() => setShowBulkInvite(false)}
           onSuccess={() => refetch()}
         />
       )}

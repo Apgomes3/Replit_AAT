@@ -6,8 +6,45 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { logAudit } from '../db/audit';
 import { sendPasswordResetEmail, sendInviteEmail, isSmtpConfigured } from '../lib/email';
+import multer from 'multer';
+import csv from 'csv-parser';
+import { Readable } from 'stream';
 
 const router = Router();
+const uploadUserCsv = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+});
+
+const MAX_BULK_INVITES = 500;
+
+type UserCsvRow = Record<string, string>;
+
+function parseUserCsv(buffer: Buffer): Promise<{ headers: string[]; rows: UserCsvRow[] }> {
+  return new Promise((resolve, reject) => {
+    const rows: UserCsvRow[] = [];
+    let headers: string[] = [];
+    const parser = csv({
+      mapHeaders: ({ header }) => header.trim().replace(/^\uFEFF/, '').toLowerCase(),
+    });
+
+    parser
+      .on('headers', (parsedHeaders: string[]) => { headers = parsedHeaders; })
+      .on('data', (row: UserCsvRow) => rows.push(row))
+      .on('error', reject)
+      .on('end', () => resolve({ headers, rows }));
+
+    Readable.from([buffer]).pipe(parser);
+  });
+}
+
+function csvValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function validEmail(email: string): boolean {
+  return email.length <= 255 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
 router.get('/email-status', authenticate, requireRole('admin'), (_req: AuthRequest, res: Response) => {
   res.json({ smtp_configured: isSmtpConfigured() });
@@ -148,6 +185,117 @@ router.post('/users/invite', authenticate, requireRole('admin'), async (req: Aut
 
   await logAudit(req.user!.id, 'user', userId, 'INVITE', { target_email: userEmail, role: role || 'viewer' });
   res.status(201).json({ ok: true, user_id: userId, email: userEmail });
+});
+
+router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.single('file'), async (req: AuthRequest, res: Response) => {
+  if (!req.file) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
+  }
+
+  let parsed: { headers: string[]; rows: UserCsvRow[] };
+  try {
+    parsed = await parseUserCsv(req.file.buffer);
+  } catch {
+    return res.status(400).json({ error: { code: 'INVALID_CSV', message: 'Could not parse the CSV file' } });
+  }
+
+  if (!parsed.headers.includes('email')) {
+    return res.status(400).json({ error: { code: 'INVALID_CSV', message: 'CSV must include an email column' } });
+  }
+  if (parsed.rows.length > MAX_BULK_INVITES) {
+    return res.status(400).json({
+      error: { code: 'INVALID_CSV', message: `CSV cannot contain more than ${MAX_BULK_INVITES} rows` },
+    });
+  }
+  if (!parsed.rows.length) {
+    return res.status(400).json({ error: { code: 'INVALID_CSV', message: 'CSV does not contain any data rows' } });
+  }
+
+  const rolesResult = await query('SELECT name FROM roles');
+  const validRoles = new Set(rolesResult.rows.map(row => String(row.name).toLowerCase()));
+  if (!validRoles.has('viewer')) validRoles.add('viewer');
+
+  const result = {
+    total: parsed.rows.length,
+    invited: 0,
+    skipped: 0,
+    errors: [] as Array<{ row: number; email?: string; message: string }>,
+  };
+  const emailsInFile = new Set<string>();
+
+  for (const [index, row] of parsed.rows.entries()) {
+    const rowNumber = index + 2;
+    const email = csvValue(row.email).toLowerCase();
+    const firstName = csvValue(row.first_name);
+    const lastName = csvValue(row.last_name);
+    const role = csvValue(row.role).toLowerCase() || 'viewer';
+
+    let validationMessage: string | undefined;
+    if (!email) validationMessage = 'Email is required';
+    else if (!validEmail(email)) validationMessage = 'Email address is invalid';
+    else if (firstName.length > 100) validationMessage = 'First name must be 100 characters or fewer';
+    else if (lastName.length > 100) validationMessage = 'Last name must be 100 characters or fewer';
+    else if (!validRoles.has(role)) validationMessage = `Role "${role}" does not exist`;
+
+    if (validationMessage) {
+      result.errors.push({ row: rowNumber, email: email || undefined, message: validationMessage });
+      continue;
+    }
+
+    if (emailsInFile.has(email)) {
+      result.skipped++;
+      continue;
+    }
+    emailsInFile.add(email);
+
+    const existing = await query('SELECT id FROM users WHERE LOWER(email)=$1 LIMIT 1', [email]);
+    if (existing.rows[0]) {
+      result.skipped++;
+      continue;
+    }
+
+    let userId: string | undefined;
+    let token: string | undefined;
+    try {
+      const randomPassword = crypto.randomBytes(32).toString('hex');
+      const hash = await bcrypt.hash(randomPassword, 10);
+      const inserted = await query(
+        'INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email',
+        [email, hash, firstName || null, lastName || null, role]
+      );
+      userId = inserted.rows[0].id;
+
+      token = crypto.randomBytes(48).toString('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await query(
+        'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
+        [userId, token, expiresAt]
+      );
+
+      const appUrl = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'localhost:5173'}`;
+      await sendInviteEmail(email, firstName, `${appUrl}/reset-password?token=${token}`);
+    } catch (err: any) {
+      if (err?.code === '23505' && !userId) {
+        result.skipped++;
+        continue;
+      }
+
+      if (token) await query('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
+      if (userId) await query('DELETE FROM users WHERE id=$1', [userId]);
+      console.error(`[BULK INVITE] Failed for row ${rowNumber}:`, err?.message);
+      result.errors.push({
+        row: rowNumber,
+        email,
+        message: 'Invite could not be sent',
+      });
+      continue;
+    }
+
+    await logAudit(req.user!.id, 'user', userId!, 'INVITE', { target_email: email, role });
+    result.invited++;
+  }
+
+  res.json(result);
 });
 
 router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
