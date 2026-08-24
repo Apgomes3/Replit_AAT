@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import Button from './Button';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, X, GripVertical } from 'lucide-react';
+import ModalDialog from './ModalDialog';
 
 type Classifier = {
   id: string;
@@ -95,13 +96,13 @@ export default function FamilyClassifiersModal({ family, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]">
+      <ModalDialog onClose={onClose} labelledBy="family-classifiers-title" className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
           <div>
-            <div className="font-semibold text-slate-800">Family Classifiers</div>
+            <div id="family-classifiers-title" className="font-semibold text-slate-800">Family Classifiers</div>
             <div className="text-xs text-slate-400 mt-0.5">{family.product_family_code} · {family.product_family_name}</div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <button aria-label="Close family classifiers dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -149,6 +150,8 @@ export default function FamilyClassifiersModal({ family, onClose }: Props) {
                   <button
                     onClick={() => handleDelete(c.id, c.label)}
                     className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-opacity"
+                    aria-label={`Delete ${c.label}`}
+                    title="Delete classifier"
                   ><Trash2 className="w-4 h-4" /></button>
                 </>
               )}
@@ -185,7 +188,7 @@ export default function FamilyClassifiersModal({ family, onClose }: Props) {
             </Button>
           </div>
         </div>
-      </div>
+      </ModalDialog>
     </div>
   );
 }

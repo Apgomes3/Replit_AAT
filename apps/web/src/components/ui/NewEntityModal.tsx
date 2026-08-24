@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import Button from './Button';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 interface Field {
   name: string;
@@ -24,6 +25,7 @@ interface NewEntityModalProps {
 const CREATE_SENTINEL = '__CREATE_NEW__';
 
 export default function NewEntityModal({ title, fields, onSubmit, onClose, initialValues, submitLabel }: NewEntityModalProps) {
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose });
   const [values, setValues] = useState<Record<string, any>>(initialValues || {});
   const [loading, setLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -69,10 +71,10 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="new-entity-modal-title" tabIndex={-1} className="bg-white rounded-xl shadow-2xl w-full max-w-md">
         <div className="flex items-center justify-between p-4 border-b border-slate-200">
-          <h2 className="text-base font-semibold text-slate-800">{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <h2 id="new-entity-modal-title" className="text-base font-semibold text-slate-800">{title}</h2>
+          <button aria-label="Close dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {fields.map(field => (

@@ -4,6 +4,7 @@ import { Search, LogOut, Bell, KeyRound, ChevronDown, X, Check, CheckCheck, Shop
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Notification {
@@ -48,6 +49,8 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [saving, setSaving] = useState(false);
+  const currentPasswordRef = useRef<HTMLInputElement>(null);
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose, initialFocusRef: currentPasswordRef });
 
   const mismatch = next.length > 0 && confirm.length > 0 && next !== confirm;
   const tooShort = next.length > 0 && next.length < 8;
@@ -70,13 +73,13 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="change-password-title" tabIndex={-1} className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h2 className="text-base font-semibold text-slate-800">Change Password</h2>
+            <h2 id="change-password-title" className="text-base font-semibold text-slate-800">Change Password</h2>
             <p className="text-xs text-slate-400 mt-0.5">Minimum 8 characters</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100">
+          <button aria-label="Close change password dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -84,10 +87,10 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Current password</label>
             <input
+              ref={currentPasswordRef}
               type="password"
               value={current}
               onChange={e => setCurrent(e.target.value)}
-              autoFocus
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
             />
           </div>

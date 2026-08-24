@@ -12,6 +12,10 @@
     -moz-osx-font-smoothing: grayscale;
   }
   #root { height: 100%; }
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px #fafaf9;
+  }
 }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }

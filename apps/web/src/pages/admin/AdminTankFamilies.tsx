@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X } from 'lucide-react';
 import ContextMenu, { ContextMenuItem } from '../../components/ui/ContextMenu';
+import ModalDialog from '../../components/ui/ModalDialog';
 
 interface TankFamily {
   id: string;
@@ -157,10 +158,10 @@ export default function AdminTankFamilies() {
 
       {showNew && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+          <ModalDialog onClose={() => setShowNew(false)} labelledBy="new-tank-family-title" className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-semibold text-slate-800">New Tank Family</h2>
-              <button onClick={() => setShowNew(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <h2 id="new-tank-family-title" className="text-lg font-semibold text-slate-800">New Tank Family</h2>
+              <button aria-label="Close new tank family form" title="Close dialog" onClick={() => setShowNew(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
@@ -194,16 +195,16 @@ export default function AdminTankFamilies() {
                 {saving ? 'Creating...' : 'Create Family'}
               </Button>
             </div>
-          </div>
+          </ModalDialog>
         </div>
       )}
 
       {showEdit && editTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+          <ModalDialog onClose={() => setShowEdit(false)} labelledBy="edit-tank-family-title" className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-semibold text-slate-800">Edit Tank Family</h2>
-              <button onClick={() => setShowEdit(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <h2 id="edit-tank-family-title" className="text-lg font-semibold text-slate-800">Edit Tank Family</h2>
+              <button aria-label="Close edit tank family form" title="Close dialog" onClick={() => setShowEdit(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
@@ -236,7 +237,7 @@ export default function AdminTankFamilies() {
                 {saving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
-          </div>
+          </ModalDialog>
         </div>
       )}
     </div>

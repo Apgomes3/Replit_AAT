@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
+import { useModalFocus } from '../../hooks/useModalFocus';
 import { X, Trash2, Search, Plus, Minus, Network, Paperclip, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
@@ -38,6 +39,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const searchRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose, initialFocusRef: searchRef });
 
   const [projectId, setProjectId] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -213,12 +215,19 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-po-title"
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col"
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-base font-semibold text-slate-800">New Purchase Order</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <h2 id="create-po-title" className="text-base font-semibold text-slate-800">New Purchase Order</h2>
+          <button aria-label="Close new purchase order dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -388,7 +397,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
 
                   {/* Qty + UOM */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => changeQty(item.key, -1)}
+                    <button aria-label={`Decrease quantity for ${item.product_name}`} title="Decrease quantity" onClick={() => changeQty(item.key, -1)}
                       className="w-6 h-6 rounded-md border border-slate-200 bg-white flex items-center justify-center hover:border-blue-400 hover:text-blue-600 transition-colors">
                       <Minus className="w-3 h-3" />
                     </button>
@@ -398,7 +407,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                       onChange={e => { updateItem(item.key, { quantity: parseFloat(e.target.value) || 1 }); setValidationErrors([]); }}
                       className="w-12 text-center border border-slate-200 rounded-md px-1 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
-                    <button onClick={() => changeQty(item.key, 1)}
+                    <button aria-label={`Increase quantity for ${item.product_name}`} title="Increase quantity" onClick={() => changeQty(item.key, 1)}
                       className="w-6 h-6 rounded-md border border-slate-200 bg-white flex items-center justify-center hover:border-blue-400 hover:text-blue-600 transition-colors">
                       <Plus className="w-3 h-3" />
                     </button>
@@ -418,7 +427,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                       <div className="flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
                         <Network className="w-3 h-3 shrink-0" />
                         <span className="max-w-[80px] truncate">{item.system_code}</span>
-                        <button onClick={() => updateItem(item.key, { system_id: '', system_code: '', system_name: '' })}
+                        <button aria-label={`Remove system from ${item.product_name}`} title="Remove system" onClick={() => updateItem(item.key, { system_id: '', system_code: '', system_name: '' })}
                           className="text-blue-300 hover:text-red-500 ml-0.5 transition-colors">
                           <X className="w-2.5 h-2.5" />
                         </button>
@@ -467,13 +476,14 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
                   {/* Toggle prices */}
                   <button
                     onClick={() => updateItem(item.key, { showPrices: !item.showPrices })}
-                    title="Edit prices"
+                    aria-label={`${item.showPrices ? 'Hide' : 'Edit'} prices for ${item.product_name}`}
+                    title={`${item.showPrices ? 'Hide' : 'Edit'} prices`}
                     className="text-slate-300 hover:text-blue-500 transition-colors shrink-0"
                   >
                     {item.showPrices ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </button>
 
-                  <button onClick={() => removeItem(item.key)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0">
+                  <button aria-label={`Remove ${item.product_name}`} title="Remove item" onClick={() => removeItem(item.key)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -512,7 +522,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
               <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
                 <Paperclip className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <span className="text-xs text-blue-700 truncate flex-1">{docFile.name}</span>
-                <button onClick={() => setDocFile(null)} className="text-blue-300 hover:text-red-500 transition-colors">
+                <button aria-label="Remove attached document" title="Remove attached document" onClick={() => setDocFile(null)} className="text-blue-300 hover:text-red-500 transition-colors">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>

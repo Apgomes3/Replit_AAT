@@ -199,6 +199,8 @@ export default function AdminPOStageRoles() {
                         <button
                           onClick={() => removeMutation.mutate(a.id)}
                           disabled={removeMutation.isPending}
+                          aria-label={`Remove ${a.first_name} ${a.last_name} from ${cfg.stage}`}
+                          title="Remove user from stage"
                           className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

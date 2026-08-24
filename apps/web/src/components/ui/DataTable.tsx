@@ -183,6 +183,8 @@ export default function DataTable<T extends Record<string, any>>({
                 />
                 {filters[col.key] && (
                   <button
+                    aria-label={`Clear ${col.header} filter`}
+                    title={`Clear ${col.header} filter`}
                     onClick={() => setFilters(f => { const n = { ...f }; delete n[col.key]; return n; })}
                     className="absolute right-1.5 text-stone-400 hover:text-stone-600 transition-colors"
                   >

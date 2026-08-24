@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import api from '../../lib/api';
 import { Search, X, UserCheck } from 'lucide-react';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 interface Props {
   selectedCount: number;
@@ -13,6 +14,8 @@ interface Props {
 export default function AssignUserModal({ selectedCount, onAssign, onClose }: Props) {
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose, initialFocusRef: searchRef });
 
   const { data } = useQuery({
     queryKey: ['po-users'],
@@ -28,15 +31,15 @@ export default function AssignUserModal({ selectedCount, onAssign, onClose }: Pr
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md flex flex-col max-h-[80vh]">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="assign-user-title" tabIndex={-1} className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md flex flex-col max-h-[80vh]">
         <div className="flex items-start justify-between p-5 border-b border-slate-100">
           <div>
-            <h3 className="text-base font-semibold text-slate-800">Assign Designated User</h3>
+            <h3 id="assign-user-title" className="text-base font-semibold text-slate-800">Assign Designated User</h3>
             <p className="text-xs text-slate-400 mt-0.5">
               Assign to {selectedCount} selected PO{selectedCount > 1 ? 's' : ''}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 -mr-1 -mt-1">
+          <button aria-label="Close assign user dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600 -mr-1 -mt-1">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -45,7 +48,7 @@ export default function AssignUserModal({ selectedCount, onAssign, onClose }: Pr
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
-              autoFocus
+              ref={searchRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search users…"

@@ -5,6 +5,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, Check, ShieldCheck } from 'lucide-react';
+import ModalDialog from '../../components/ui/ModalDialog';
 
 interface Role {
   id: string;
@@ -130,8 +131,8 @@ export default function AdminRoles() {
                       <td />
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5">
-                          <button onClick={() => handleEdit(role.id, role.is_system)} disabled={saving} className="p-1.5 text-green-600 hover:bg-green-50 rounded"><Check className="w-4 h-4" /></button>
-                          <button onClick={() => setEditId(null)} className="p-1.5 text-slate-400 hover:bg-slate-50 rounded"><X className="w-4 h-4" /></button>
+                          <button aria-label={`Save ${role.name}`} title="Save role" onClick={() => handleEdit(role.id, role.is_system)} disabled={saving} className="p-1.5 text-green-600 hover:bg-green-50 rounded"><Check className="w-4 h-4" /></button>
+                          <button aria-label={`Cancel editing ${role.name}`} title="Cancel editing" onClick={() => setEditId(null)} className="p-1.5 text-slate-400 hover:bg-slate-50 rounded"><X className="w-4 h-4" /></button>
                         </div>
                       </td>
                     </>
@@ -147,9 +148,9 @@ export default function AdminRoles() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <button onClick={() => startEdit(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button aria-label={`Edit ${role.name}`} title="Edit role" onClick={() => startEdit(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                           {!role.is_system && (
-                            <button onClick={() => handleDelete(role)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                            <button aria-label={`Delete ${role.name}`} title="Delete role" onClick={() => handleDelete(role)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                           )}
                         </div>
                       </td>
@@ -164,10 +165,10 @@ export default function AdminRoles() {
 
       {showNew && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+          <ModalDialog onClose={() => setShowNew(false)} labelledBy="new-role-title" className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-semibold text-slate-800">New Role</h2>
-              <button onClick={() => setShowNew(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <h2 id="new-role-title" className="text-lg font-semibold text-slate-800">New Role</h2>
+              <button aria-label="Close new role form" title="Close dialog" onClick={() => setShowNew(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
@@ -207,7 +208,7 @@ export default function AdminRoles() {
                 {saving ? 'Creating...' : 'Create Role'}
               </Button>
             </div>
-          </div>
+          </ModalDialog>
         </div>
       )}
     </div>

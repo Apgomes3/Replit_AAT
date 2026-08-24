@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -13,20 +13,20 @@ const PIM_ITEMS: NavItemDef[] = [
   { id: 'tanks', to: '/products/tanks', icon: Container, label: 'Tanks' },
 ];
 
-const SECTIONS: { id: string; label: string; hub: string; items: NavItemDef[] }[] = [
-  { id: 'pim', label: 'PIM Management', hub: '/pim', items: PIM_ITEMS },
+const SECTIONS: { id: string; label: string; hub: string; icon: any; items: NavItemDef[] }[] = [
+  { id: 'pim', label: 'PIM Management', hub: '/pim', icon: Package, items: PIM_ITEMS },
   {
-    id: 'orders', label: 'Order Management', hub: '/order-management',
+    id: 'orders', label: 'Order Management', hub: '/order-management', icon: ShoppingCart,
     items: [{ id: 'purchase-orders', to: '/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' }],
   },
   {
-    id: 'projects', label: 'Project Management', hub: '/project-management',
+    id: 'projects', label: 'Project Management', hub: '/project-management', icon: FolderOpen,
     items: [
       { id: 'projects', to: '/projects', icon: FolderOpen, label: 'Projects' },
     ],
   },
   {
-    id: 'design-book-engine', label: 'Design Book Engine', hub: '/design-book-engine',
+    id: 'design-book-engine', label: 'Design Book Engine', hub: '/design-book-engine', icon: BookMarked,
     items: [
       { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
       { id: 'lss-catalog', to: '/lss-compact-units', icon: Layers, label: 'LSS Unit Catalog' },
@@ -73,10 +73,11 @@ function applySectionOrder(items: NavItemDef[], savedIds: string[] | undefined):
   return ordered;
 }
 
-function DraggableSection({ section, savedOrder, onOrderChange }: {
+function DraggableSection({ section, savedOrder, onOrderChange, collapsed }: {
   section: typeof SECTIONS[0];
   savedOrder: string[] | undefined;
   onOrderChange: (sectionId: string, newOrder: string[]) => void;
+  collapsed: boolean;
 }) {
   const navigate = useNavigate();
   const [items, setItems] = useState<NavItemDef[]>(() => applySectionOrder(section.items, savedOrder));
@@ -85,6 +86,7 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overItemId, setOverItemId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
+  const HubIcon = section.icon;
 
   useEffect(() => { setItems(applySectionOrder(section.items, savedOrder)); }, []);
 
@@ -118,20 +120,35 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
 
   return (
     <div>
-      <button
-        onClick={() => { navigate(section.hub); setExpanded(v => !v); }}
-        className="w-full flex items-center justify-between pt-4 pb-1.5 px-3 group"
-      >
-        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.12em] group-hover:text-blue-600 transition-colors duration-150">
-          {section.label}
-        </span>
-        <ChevronRight className={clsx(
-          'w-3 h-3 text-stone-300 group-hover:text-blue-500 transition-all duration-200',
-          expanded ? 'rotate-90' : 'rotate-0'
-        )} />
-      </button>
+      {!collapsed && (
+        <button
+          onClick={() => { navigate(section.hub); setExpanded(v => !v); }}
+          className="w-full flex items-center justify-between pt-4 pb-1.5 px-3 group focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${section.label}`}
+        >
+          <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.12em] group-hover:text-blue-600 transition-colors duration-150">
+            {section.label}
+          </span>
+          <ChevronRight className={clsx(
+            'w-3 h-3 text-stone-300 group-hover:text-blue-500 transition-all duration-200',
+            expanded ? 'rotate-90' : 'rotate-0'
+          )} />
+        </button>
+      )}
 
-      {expanded && items.map((item, idx) => {
+      {collapsed && (
+        <NavLink
+          to={section.hub}
+          title={section.label}
+          aria-label={section.label}
+          className={({ isActive }) => clsx(navLinkClass({ isActive }), 'justify-center px-3')}
+        >
+          <HubIcon className="w-4 h-4 shrink-0 text-stone-400" />
+        </NavLink>
+      )}
+
+      {(collapsed || expanded) && items.map((item, idx) => {
         const Icon = item.icon;
         const isDragging = draggingId === item.id;
         const isOver = overItemId === item.id && draggingId !== item.id;
@@ -149,18 +166,24 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
               isOver && 'ring-1 ring-blue-400/40 ring-inset bg-blue-50/60',
             )}
           >
-            <div className="absolute left-0 top-0 bottom-0 flex items-center pl-1 opacity-0 group-hover:opacity-60 transition-opacity cursor-grab active:cursor-grabbing z-10">
+            <div
+              className="absolute left-0 top-0 bottom-0 flex items-center pl-1 opacity-0 group-hover:opacity-60 transition-opacity cursor-grab active:cursor-grabbing z-10"
+              title={`Drag to reorder ${item.label}`}
+              aria-label={`Drag to reorder ${item.label}`}
+            >
               <GripVertical className="w-3 h-3 text-stone-400" />
             </div>
             <NavLink
               to={item.to}
               end={item.end}
               className={({ isActive }) => clsx(
-                'flex-1 flex items-center gap-2.5 pl-6 pr-3 py-2 text-sm rounded-lg transition-all duration-150 relative overflow-hidden',
+                'flex-1 flex items-center gap-2.5 py-2 text-sm rounded-lg transition-all duration-150 relative overflow-hidden',
+                collapsed ? 'justify-center px-3' : 'pl-6 pr-3',
                 isActive
                   ? 'bg-white text-blue-600 font-semibold shadow-sm border border-stone-200/70'
                   : 'text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm'
               )}
+               title={collapsed ? item.label : undefined}
             >
               {({ isActive }) => (
                 <>
@@ -171,7 +194,7 @@ function DraggableSection({ section, savedOrder, onOrderChange }: {
                     'w-4 h-4 shrink-0 transition-all duration-150',
                     isActive ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:scale-110'
                   )} />
-                  <span>{item.label}</span>
+                   {!collapsed && <span>{item.label}</span>}
                 </>
               )}
             </NavLink>
@@ -192,6 +215,8 @@ const ADMIN_GROUPS = [
 function AdminPopup({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
+  const menuItemRefs = useRef<HTMLButtonElement[]>([]);
+  const [activeItemIndex, setActiveItemIndex] = useState(0);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
@@ -201,9 +226,42 @@ function AdminPopup({ onClose }: { onClose: () => void }) {
     return () => { document.removeEventListener('mousedown', handler); document.removeEventListener('keydown', keyHandler); };
   }, [onClose]);
 
+  useEffect(() => {
+    menuItemRefs.current[0]?.focus();
+  }, []);
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = menuItemRefs.current;
+    if (items.length === 0) return;
+
+    const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = items.length - 1;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (nextIndex !== null) {
+      event.preventDefault();
+      setActiveItemIndex(nextIndex);
+      items[nextIndex]?.focus();
+    }
+  };
+
+  menuItemRefs.current = [];
+
   return (
     <div
       ref={ref}
+        id="platform-admin-menu"
+        role="menu"
+        aria-label="Platform Admin"
+      onKeyDown={handleMenuKeyDown}
       className="absolute bottom-14 left-2 right-2 bg-white border border-stone-200 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in-up"
     >
       <div className="px-3 py-2.5 border-b border-stone-100 bg-stone-50/60">
@@ -214,11 +272,16 @@ function AdminPopup({ onClose }: { onClose: () => void }) {
           <div key={group.label}>
             {gi > 0 && <div className="border-t border-stone-100 my-1" />}
             <div className="px-3 pt-2 pb-0.5 text-[10px] font-bold text-stone-300 uppercase tracking-[0.12em]">{group.label}</div>
-            {group.items.map(item => {
+            {group.items.map((item, itemOffset) => {
               const Icon = item.icon;
+              const itemIndex = ADMIN_GROUPS.slice(0, gi).reduce((total, previousGroup) => total + previousGroup.items.length, 0) + itemOffset;
               return (
                 <button
                   key={item.id}
+                  ref={element => { if (element) menuItemRefs.current[itemIndex] = element; }}
+                  role="menuitem"
+                  tabIndex={itemIndex === activeItemIndex ? 0 : -1}
+                  onFocus={() => setActiveItemIndex(itemIndex)}
                   onClick={() => { navigate(item.to); onClose(); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-stone-600 hover:bg-stone-50 hover:text-blue-600 transition-all duration-150 text-left group"
                 >
@@ -242,9 +305,15 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) => clsx(
     : 'text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm'
 );
 
-export default function LeftNav() {
+interface LeftNavProps {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}
+
+export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) {
   const [orders, setOrders] = useState<Record<string, string[]>>(loadOrders);
   const [showAdmin, setShowAdmin] = useState(false);
+  const adminTriggerRef = useRef<HTMLButtonElement>(null);
   const { open: openPalette } = useCommandPalette();
 
   const handleOrderChange = (sectionId: string, newOrder: string[]) => {
@@ -253,23 +322,45 @@ export default function LeftNav() {
     saveOrders(next);
   };
 
+  const closeAdminMenu = () => {
+    setShowAdmin(false);
+    requestAnimationFrame(() => adminTriggerRef.current?.focus());
+  };
+
   return (
-    <nav className="w-56 flex flex-col h-full shrink-0 relative border-r border-stone-200/80 shadow-[1px_0_0_0_rgba(0,0,0,0.03)]"
+    <nav className={clsx(
+      'flex flex-col h-full shrink-0 relative border-r border-stone-200/80 shadow-[1px_0_0_0_rgba(0,0,0,0.03)] transition-[width] duration-300 ease-in-out',
+      collapsed ? 'w-16' : 'w-56',
+    )}
       style={{ background: 'linear-gradient(180deg, #f6f5f3 0%, #f1efed 100%)' }}>
 
-      <div className="px-4 py-4 border-b border-stone-200/80">
-        <div className="flex items-center justify-center">
-          <img src="/shark-os-logo.png" alt="Shark OS" className="h-20 w-auto" />
+      <div className={clsx('border-b border-stone-200/80', collapsed ? 'px-2 py-3' : 'px-4 py-4')}>
+        <div className={clsx('flex items-center', collapsed ? 'flex-col gap-2' : 'justify-between')}>
+          <img src="/shark-os-logo.png" alt="Shark OS" className={clsx('w-auto transition-all duration-300', collapsed ? 'h-9' : 'h-20')} />
+          <button
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="rounded-lg p-1.5 text-stone-400 hover:bg-white/80 hover:text-blue-600 transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+          >
+            {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
-        <div className="px-1 space-y-0.5">
+        <div className={clsx('px-1 space-y-0.5', collapsed && 'px-0.5')}>
           {([
             { to: '/', icon: Home, label: 'Home', end: true },
             { to: '/graph', icon: Network, label: 'Graph Explorer' },
           ] as const).map(({ to, icon: Icon, label, end }: any) => (
-            <NavLink key={to} to={to} end={end} className={navLinkClass}>
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              title={collapsed ? label : undefined}
+              className={({ isActive }) => clsx(navLinkClass({ isActive }), collapsed && 'justify-center px-3')}
+            >
               {({ isActive }) => (
                 <>
                   {isActive && (
@@ -279,20 +370,25 @@ export default function LeftNav() {
                     'w-4 h-4 shrink-0 transition-all duration-150',
                     isActive ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:scale-110'
                   )} />
-                  <span>{label}</span>
+                   {!collapsed && <span>{label}</span>}
                 </>
               )}
             </NavLink>
           ))}
           <button
             onClick={openPalette}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150 mx-1 group relative overflow-hidden text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm"
+            aria-label="Search"
+            title={collapsed ? 'Search' : undefined}
+            className={clsx(
+              'w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150 mx-1 group relative overflow-hidden text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm',
+              collapsed && 'justify-center mx-0',
+            )}
           >
             <Search className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-stone-600 group-hover:scale-110 transition-all duration-150" />
-            <span className="flex-1 text-left">Search</span>
-            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-stone-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-stone-400 group-hover:border-blue-200 group-hover:text-blue-500 transition-colors duration-150">
+            {!collapsed && <span className="flex-1 text-left">Search</span>}
+            {!collapsed && <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-stone-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-stone-400 group-hover:border-blue-200 group-hover:text-blue-500 transition-colors duration-150">
               ⌘K
-            </kbd>
+            </kbd>}
           </button>
         </div>
 
@@ -302,15 +398,23 @@ export default function LeftNav() {
             section={section}
             savedOrder={orders[section.id]}
             onOrderChange={handleOrderChange}
+            collapsed={collapsed}
           />
         ))}
       </div>
 
       <div className="border-t border-stone-200/80 p-2">
         <button
+          ref={adminTriggerRef}
           onClick={() => setShowAdmin(v => !v)}
+          aria-expanded={showAdmin}
+          aria-controls="platform-admin-menu"
+          aria-haspopup="menu"
+          aria-label={collapsed ? 'Platform Admin' : undefined}
+          title={collapsed ? 'Platform Admin' : undefined}
           className={clsx(
-            'w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150 group',
+            'w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150 group focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1',
+            collapsed && 'justify-center px-3',
             showAdmin
               ? 'bg-white text-blue-600 font-semibold shadow-sm border border-stone-200/70'
               : 'text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm'
@@ -320,12 +424,12 @@ export default function LeftNav() {
             'w-4 h-4 shrink-0 transition-all duration-150',
             showAdmin ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:rotate-45'
           )} />
-          <span>Platform Admin</span>
-          <ChevronRight className={clsx('w-3.5 h-3.5 ml-auto transition-transform duration-200', showAdmin && 'rotate-90')} />
+          {!collapsed && <span>Platform Admin</span>}
+          {!collapsed && <ChevronRight className={clsx('w-3.5 h-3.5 ml-auto transition-transform duration-200', showAdmin && 'rotate-90')} />}
         </button>
       </div>
 
-      {showAdmin && <AdminPopup onClose={() => setShowAdmin(false)} />}
+      {showAdmin && <AdminPopup onClose={closeAdminMenu} />}
     </nav>
   );
 }

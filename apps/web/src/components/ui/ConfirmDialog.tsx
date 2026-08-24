@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import { X, AlertTriangle } from 'lucide-react';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 interface ConfirmDialogProps {
   title?: string;
@@ -20,10 +21,20 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const dialogRef = useModalFocus<HTMLDivElement>({ onClose: onCancel });
+
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={onCancel} />
-      <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-sm p-6">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? 'confirm-dialog-title' : undefined}
+        aria-describedby="confirm-dialog-message"
+        tabIndex={-1}
+        className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-sm p-6"
+      >
         <div className="flex items-start gap-3 mb-4">
           {danger && (
             <div className="shrink-0 w-9 h-9 rounded-full bg-red-50 flex items-center justify-center mt-0.5">
@@ -31,10 +42,10 @@ export default function ConfirmDialog({
             </div>
           )}
           <div className="flex-1 min-w-0">
-            {title && <h3 className="text-sm font-semibold text-slate-800 mb-1">{title}</h3>}
-            <p className="text-sm text-slate-600 leading-relaxed">{message}</p>
+            {title && <h3 id="confirm-dialog-title" className="text-sm font-semibold text-slate-800 mb-1">{title}</h3>}
+            <p id="confirm-dialog-message" className="text-sm text-slate-600 leading-relaxed">{message}</p>
           </div>
-          <button onClick={onCancel} className="text-slate-300 hover:text-slate-500 shrink-0 -mt-0.5 -mr-1">
+          <button aria-label="Close dialog" title="Close dialog" onClick={onCancel} className="text-slate-300 hover:text-slate-500 shrink-0 -mt-0.5 -mr-1">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -47,7 +58,6 @@ export default function ConfirmDialog({
           </button>
           <button
             onClick={onConfirm}
-            autoFocus
             className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
               danger
                 ? 'bg-red-600 text-white hover:bg-red-700'

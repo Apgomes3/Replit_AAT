@@ -190,10 +190,10 @@ export default function AdminSystemTypes() {
                           </td>
                           <td className="px-4 py-2">
                             <div className="flex gap-1 justify-end">
-                              <button onClick={() => handleEdit(t.id)} disabled={editSaving} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded">
+                              <button aria-label={`Save ${t.name}`} title="Save changes" onClick={() => handleEdit(t.id)} disabled={editSaving} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded">
                                 <Check className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => setEditId(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded">
+                              <button aria-label={`Cancel editing ${t.name}`} title="Cancel editing" onClick={() => setEditId(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded">
                                 <X className="w-3.5 h-3.5" />
                               </button>
                             </div>

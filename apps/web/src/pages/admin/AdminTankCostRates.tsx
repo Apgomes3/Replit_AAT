@@ -5,6 +5,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, DollarSign, Info } from 'lucide-react';
+import ModalDialog from '../../components/ui/ModalDialog';
 
 interface CostRate {
   id: string;
@@ -183,7 +184,7 @@ export default function AdminTankCostRates() {
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-700">New Cost Rate</h3>
-            <button onClick={() => { setShowNew(false); setNewForm(emptyForm); }} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+            <button aria-label="Close new cost rate form" title="Close dialog" onClick={() => { setShowNew(false); setNewForm(emptyForm); }} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
           </div>
           <RateForm form={newForm} onChange={setNewForm} />
           <div className="flex justify-end gap-2">
@@ -238,8 +239,8 @@ export default function AdminTankCostRates() {
                     <td className="px-4 py-3 text-slate-400 text-xs">{rate.notes || '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => openEdit(rate)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => setDeleteTarget(rate)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button aria-label={`Edit ${rate.label}`} title="Edit rate" onClick={() => openEdit(rate)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button aria-label={`Delete ${rate.label}`} title="Delete rate" onClick={() => setDeleteTarget(rate)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </td>
                   </tr>
@@ -252,11 +253,11 @@ export default function AdminTankCostRates() {
 
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm space-y-4 border border-slate-200">
+          <ModalDialog onClose={() => setDeleteTarget(null)} labelledBy="delete-rate-title" className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm space-y-4 border border-slate-200">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center shrink-0"><Trash2 className="w-4 h-4 text-red-500" /></div>
               <div>
-                <p className="text-sm font-semibold text-slate-800">Delete rate?</p>
+                <p id="delete-rate-title" className="text-sm font-semibold text-slate-800">Delete rate?</p>
                 <p className="text-xs text-slate-500 mt-0.5">"{deleteTarget.label}" will be removed. Cost estimates on tank products using this material code will no longer be available.</p>
               </div>
             </div>
@@ -264,7 +265,7 @@ export default function AdminTankCostRates() {
               <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
               <Button variant="danger" onClick={handleDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</Button>
             </div>
-          </div>
+          </ModalDialog>
         </div>
       )}
     </div>

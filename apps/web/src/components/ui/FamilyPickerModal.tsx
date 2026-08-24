@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import { X, Search, Check } from 'lucide-react';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 interface Family {
   id: string;
@@ -19,6 +20,8 @@ interface Props {
 
 export default function FamilyPickerModal({ currentFamilyId, onSelect, onClose }: Props) {
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose, initialFocusRef: searchRef });
 
   const { data, isLoading } = useQuery({
     queryKey: ['product-families'],
@@ -34,17 +37,17 @@ export default function FamilyPickerModal({ currentFamilyId, onSelect, onClose }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="family-picker-title" tabIndex={-1} className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
-          <h2 className="text-lg font-semibold text-slate-800">Change Family</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+          <h2 id="family-picker-title" className="text-lg font-semibold text-slate-800">Change Family</h2>
+          <button aria-label="Close family picker" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="px-4 py-3 border-b border-slate-100 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
-              autoFocus
+              ref={searchRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by code, name or category..."
