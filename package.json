@@ -6,13 +6,17 @@
     "dev": "concurrently --names \"API,WEB\" --prefix-colors \"cyan,green\" \"tsx apps/api/src/index.ts\" \"vite --config apps/web/vite.config.ts\"",
     "migrate": "tsx apps/api/src/db/migrate.ts",
     "seed": "tsx apps/api/src/db/seed.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
     "@types/leaflet": "^1.9.21",
     "@types/nodemailer": "^8.0.0",
     "@types/papaparse": "^5.5.2",
@@ -23,6 +27,7 @@
     "express": "^5.0.0",
     "helmet": "^8.0.0",
     "http-proxy-middleware": "^3.0.5",
+    "jsdom": "^24.1.3",
     "jsonwebtoken": "^9.0.0",
     "leaflet": "^1.9.4",
     "morgan": "^1.10.0",
@@ -30,7 +35,8 @@
     "nodemailer": "^8.0.6",
     "papaparse": "^5.5.3",
     "pg": "^8.11.0",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "vitest": "^4.1.11"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
