@@ -283,39 +283,42 @@ export default function AdminAuditLog() {
   const [action, setAction] = useState('');
 
   // Raw (immediate) values for controlled inputs
+  const [entityIdInput, setEntityIdInput] = useState('');
   const [actorInput, setActorInput] = useState('');
   const [fromInput, setFromInput] = useState('');
   const [toInput, setToInput] = useState('');
 
   // Debounced values (350 ms) — these drive the API query
+  const entityId = useDebounce(entityIdInput, 350);
   const actor = useDebounce(actorInput, 350);
   const from  = useDebounce(fromInput, 350);
   const to    = useDebounce(toInput, 350);
 
   // Reset to page 1 when debounced values change
-  const prevFilters = useRef({ actor, from, to });
+  const prevFilters = useRef({ entityId, actor, from, to });
   useEffect(() => {
     const prev = prevFilters.current;
-    if (prev.actor !== actor || prev.from !== from || prev.to !== to) {
+    if (prev.entityId !== entityId || prev.actor !== actor || prev.from !== from || prev.to !== to) {
       setPage(1);
-      prevFilters.current = { actor, from, to };
+      prevFilters.current = { entityId, actor, from, to };
     }
-  }, [actor, from, to]);
+  }, [entityId, actor, from, to]);
 
   const [exporting, setExporting] = useState(false);
 
   const params = new URLSearchParams({ page: String(page), page_size: '50' });
   if (entityType) params.set('entity_type', entityType);
   if (action) params.set('action', action);
+  if (entityId) params.set('entity_id', entityId);
   if (actor) params.set('actor', actor);
   if (from) params.set('from', from);
   if (to) params.set('to', to + 'T23:59:59Z');
 
   // Detect in-flight debounce (input differs from debounced value)
-  const isDebouncing = actorInput !== actor || fromInput !== from || toInput !== to;
+  const isDebouncing = entityIdInput !== entityId || actorInput !== actor || fromInput !== from || toInput !== to;
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ['audit-logs', page, entityType, action, actor, from, to],
+    queryKey: ['audit-logs', page, entityType, action, entityId, actor, from, to],
     queryFn: () => api.get(`/admin/audit-logs?${params}`).then(r => r.data),
   });
 
@@ -329,11 +332,11 @@ export default function AdminAuditLog() {
 
   const resetFilters = () => {
     setEntityType(''); setAction('');
-    setActorInput(''); setFromInput(''); setToInput('');
+    setEntityIdInput(''); setActorInput(''); setFromInput(''); setToInput('');
     setPage(1);
   };
 
-  const hasFilters = entityType || action || actorInput || fromInput || toInput;
+  const hasFilters = entityType || action || entityIdInput || actorInput || fromInput || toInput;
 
   const handleExport = async () => {
     setExporting(true);
@@ -425,6 +428,19 @@ export default function AdminAuditLog() {
           <option value="">All Actions</option>
           {ACTIONS.map(a => <option key={a} value={a}>{ACTION_META[a].label}</option>)}
         </select>
+
+        {/* Entity ID search — debounced */}
+        <div className="relative">
+          <input
+            value={entityIdInput}
+            onChange={e => setEntityIdInput(e.target.value)}
+            placeholder="Filter by entity ID…"
+            className="h-8 px-2.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 placeholder:text-stone-400 focus:outline-none focus:border-blue-400 w-44"
+          />
+          {isDebouncing && entityIdInput !== entityId && (
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+          )}
+        </div>
 
         {/* Actor search — debounced */}
         <div className="relative">

@@ -429,12 +429,14 @@ router.get('/audit-logs', authenticate, requireRole('admin', 'engineer'), async 
   const params: any[] = [];
 
   const entity_type = req.query.entity_type as string;
+  const entity_id = req.query.entity_id as string;
   const action = req.query.action as string;
   const actor = req.query.actor as string;
   const from = req.query.from as string;
   const to = req.query.to as string;
 
   if (entity_type) { params.push(entity_type); conditions.push(`al.entity_type = $${params.length}`); }
+  if (entity_id) { params.push(`%${entity_id}%`); conditions.push(`al.entity_id ILIKE $${params.length}`); }
   if (action) { params.push(action); conditions.push(`al.action = $${params.length}`); }
   if (actor) { params.push(`%${actor}%`); conditions.push(`((u.first_name || ' ' || u.last_name) ILIKE $${params.length} OR u.email ILIKE $${params.length})`); }
   if (from) { params.push(from); conditions.push(`al.created_at >= $${params.length}`); }

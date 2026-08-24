@@ -382,6 +382,7 @@ router.get('/audit-logs', auth_1.authenticate, (0, auth_1.requireRole)('admin', 
     const conditions = [];
     const params = [];
     const entity_type = req.query.entity_type;
+    const entity_id = req.query.entity_id;
     const action = req.query.action;
     const actor = req.query.actor;
     const from = req.query.from;
@@ -389,6 +390,10 @@ router.get('/audit-logs', auth_1.authenticate, (0, auth_1.requireRole)('admin', 
     if (entity_type) {
         params.push(entity_type);
         conditions.push(`al.entity_type = $${params.length}`);
+    }
+    if (entity_id) {
+        params.push(`%${entity_id}%`);
+        conditions.push(`al.entity_id ILIKE $${params.length}`);
     }
     if (action) {
         params.push(action);
