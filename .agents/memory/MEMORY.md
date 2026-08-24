@@ -1,0 +1,1 @@
+- [PO vendor privacy](po-vendor-privacy.md) — vendor autocomplete must only surface names from purchase orders visible to the current user.

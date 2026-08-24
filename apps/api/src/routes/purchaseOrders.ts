@@ -118,6 +118,39 @@ router.get('/purchase-orders/exchange-rates', authenticate, async (_req: AuthReq
   }
 });
 
+// VENDOR SEARCH (known vendors from visible purchase orders)
+router.get('/purchase-orders/vendors', authenticate, async (req: AuthRequest, res: Response) => {
+  const search = String(req.query.q || '').trim();
+  const visRes = await query('SELECT can_see_all_pos FROM users WHERE id=$1', [req.user!.id]);
+  const canSeeAll = visRes.rows[0]?.can_see_all_pos ?? false;
+
+  const conditions = [
+    'po.vendor_name IS NOT NULL',
+    "BTRIM(po.vendor_name) <> ''",
+    'po.vendor_name ILIKE $1',
+  ];
+  const params: any[] = [`%${search}%`];
+
+  if (!canSeeAll) {
+    conditions.push(`(
+      po.created_by = $2
+      OR EXISTS (SELECT 1 FROM po_designated_users pdu WHERE pdu.po_id=po.id AND pdu.user_id=$2)
+      OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$2)
+    )`);
+    params.push(req.user!.id);
+  }
+
+  const vendors = await query(
+    `SELECT DISTINCT BTRIM(po.vendor_name) AS vendor_name
+     FROM purchase_orders po
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY vendor_name
+     LIMIT 20`,
+    params
+  );
+  res.json({ items: vendors.rows });
+});
+
 // SYSTEMS SEARCH (for system linking, accessible to all roles)
 router.get('/purchase-orders/systems-search', authenticate, async (req: AuthRequest, res: Response) => {
   const { q = '', page_size = '50', project_id } = req.query as any;

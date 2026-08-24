@@ -63,6 +63,8 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const [systemPickerKey, setSystemPickerKey] = useState<number | null>(null);
   const [systemSearch, setSystemSearch] = useState('');
   const systemPickerRef = useRef<HTMLDivElement>(null);
+  const vendorPickerRef = useRef<HTMLDivElement>(null);
+  const [showVendorSuggestions, setShowVendorSuggestions] = useState(false);
 
   useEffect(() => { searchRef.current?.focus(); }, []);
 
@@ -71,6 +73,9 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       if (systemPickerRef.current && !systemPickerRef.current.contains(e.target as Node)) {
         setSystemPickerKey(null);
         setSystemSearch('');
+      }
+      if (vendorPickerRef.current && !vendorPickerRef.current.contains(e.target as Node)) {
+        setShowVendorSuggestions(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -94,6 +99,12 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
     enabled: !!projectId,
   });
 
+  const { data: vendorData, isFetching: vendorsLoading } = useQuery({
+    queryKey: ['po-vendor-search', vendorName.trim()],
+    queryFn: () => api.get(`/purchase-orders/vendors?q=${encodeURIComponent(vendorName.trim())}`).then(r => r.data),
+    enabled: vendorName.trim().length >= 1,
+  });
+
   const { data: systemSearchResults } = useQuery({
     queryKey: ['po-system-search', systemSearch, projectId],
     queryFn: () => {
@@ -108,6 +119,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const systemOptions = systemSearch.length >= 1
     ? (systemSearchResults?.items || [])
     : (projectId ? (projectSystems?.items || []) : (systemSearchResults?.items || []));
+  const vendorSuggestions = vendorData?.items || [];
 
   const addItem = useCallback((prod: any) => {
     setItems(prev => [...prev, {
@@ -275,14 +287,52 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
 
             {/* Row 2: Vendor, Required By, Priority */}
             <div className="grid grid-cols-3 gap-3">
-              <div>
+              <div ref={vendorPickerRef} className="relative">
                 <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Supplier / Vendor</label>
                 <input
                   value={vendorName}
-                  onChange={e => setVendorName(e.target.value)}
+                  onChange={e => { setVendorName(e.target.value); setShowVendorSuggestions(true); }}
+                  onFocus={() => setShowVendorSuggestions(true)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') setShowVendorSuggestions(false);
+                    if (e.key === 'Enter' && vendorSuggestions.length > 0 && showVendorSuggestions) {
+                      e.preventDefault();
+                      setVendorName(vendorSuggestions[0].vendor_name);
+                      setShowVendorSuggestions(false);
+                    }
+                  }}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={showVendorSuggestions && vendorName.trim().length >= 1}
+                  aria-controls="vendor-suggestions"
                   placeholder="Vendor name…"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {showVendorSuggestions && vendorName.trim().length >= 1 && (
+                  <div id="vendor-suggestions" role="listbox" className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-30 max-h-48 overflow-y-auto">
+                    {vendorsLoading ? (
+                      <div className="px-3 py-2.5 text-xs text-slate-400">Searching vendors…</div>
+                    ) : vendorSuggestions.length === 0 ? (
+                      <div className="px-3 py-2.5 text-xs text-slate-400">No matching vendors</div>
+                    ) : (
+                      vendorSuggestions.map((vendor: { vendor_name: string }) => (
+                        <button
+                          key={vendor.vendor_name}
+                          type="button"
+                          role="option"
+                          aria-selected={vendor.vendor_name === vendorName}
+                          onClick={() => {
+                            setVendorName(vendor.vendor_name);
+                            setShowVendorSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 transition-colors"
+                        >
+                          {vendor.vendor_name}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Required By Date</label>

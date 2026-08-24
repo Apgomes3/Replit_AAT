@@ -106,6 +106,32 @@ router.get('/purchase-orders/exchange-rates', auth_1.authenticate, async (_req, 
         res.status(502).json({ error: 'Failed to fetch exchange rates', detail: err?.message });
     }
 });
+// VENDOR SEARCH (known vendors from visible purchase orders)
+router.get('/purchase-orders/vendors', auth_1.authenticate, async (req, res) => {
+    const search = String(req.query.q || '').trim();
+    const visRes = await (0, db_1.query)('SELECT can_see_all_pos FROM users WHERE id=$1', [req.user.id]);
+    const canSeeAll = visRes.rows[0]?.can_see_all_pos ?? false;
+    const conditions = [
+        'po.vendor_name IS NOT NULL',
+        "BTRIM(po.vendor_name) <> ''",
+        'po.vendor_name ILIKE $1',
+    ];
+    const params = [`%${search}%`];
+    if (!canSeeAll) {
+        conditions.push(`(
+      po.created_by = $2
+      OR EXISTS (SELECT 1 FROM po_designated_users pdu WHERE pdu.po_id=po.id AND pdu.user_id=$2)
+      OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$2)
+    )`);
+        params.push(req.user.id);
+    }
+    const vendors = await (0, db_1.query)(`SELECT DISTINCT BTRIM(po.vendor_name) AS vendor_name
+     FROM purchase_orders po
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY vendor_name
+     LIMIT 20`, params);
+    res.json({ items: vendors.rows });
+});
 // SYSTEMS SEARCH (for system linking, accessible to all roles)
 router.get('/purchase-orders/systems-search', auth_1.authenticate, async (req, res) => {
     const { q = '', page_size = '50', project_id } = req.query;
