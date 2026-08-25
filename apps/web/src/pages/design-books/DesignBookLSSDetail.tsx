@@ -19,6 +19,25 @@ const SYSTEM_TYPES = [
 const WATER_TYPES = ['Marine', 'Freshwater', 'Brackish', 'Salt Water', 'Blackwater'];
 const STATUSES   = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released', 'Decommissioned'];
 const LINK_TYPES = ['Primary', 'Secondary', 'Emergency', 'Backup', 'Observation', 'Redundant'];
+const FLOW_ROUTE_VIEW_STORAGE_KEY = 'lss-flow-route-view';
+type FlowViewMode = 'card' | 'list';
+
+function getStoredFlowViewMode(): FlowViewMode {
+  try {
+    const stored = window.localStorage.getItem(FLOW_ROUTE_VIEW_STORAGE_KEY);
+    return stored === 'list' || stored === 'card' ? stored : 'card';
+  } catch {
+    return 'card';
+  }
+}
+
+function storeFlowViewMode(viewMode: FlowViewMode) {
+  try {
+    window.localStorage.setItem(FLOW_ROUTE_VIEW_STORAGE_KEY, viewMode);
+  } catch {
+    // Browser storage can be unavailable or disabled; the in-memory preference still works.
+  }
+}
 
 function WaterTypeBadge({ type }: { type?: string }) {
   if (!type) return <span className="text-stone-400 text-xs">—</span>;
@@ -308,12 +327,16 @@ export default function DesignBookLSSDetail() {
   const [flowSaving,   setFlowSaving]   = useState(false);
   const [flowForm,     setFlowForm]     = useState<any>(null);
   const setFF = (k: string, v: any) => setFlowForm((f: any) => ({ ...f, [k]: v }));
-  const [flowViewMode, setFlowViewMode] = useState<'card' | 'list'>('card');
+  const [flowViewMode, setFlowViewMode] = useState<FlowViewMode>(getStoredFlowViewMode);
   const [flowUnit, setFlowUnit] = useState<'M3H' | 'LS' | 'GPM'>('M3H');
   const [expandedCardLoops, setExpandedCardLoops] = useState<number[]>([1]);
   const [listEditRow, setListEditRow] = useState<number | null>(null);
   const [listRowForm, setListRowForm] = useState<any>(null);
   const setLRF = (k: string, v: any) => setListRowForm((f: any) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    storeFlowViewMode(flowViewMode);
+  }, [flowViewMode]);
 
   const startEdit = () => {
     let flowVal     = system.design_flow_m3h  != null ? String(system.design_flow_m3h)  : '';
