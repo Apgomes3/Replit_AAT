@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState, lazy, Suspense, useRef, useEffect } from 'react';
+import { useState, lazy, Suspense, useRef, useEffect, useId } from 'react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import { Project } from '../../types';
@@ -45,7 +45,12 @@ export default function ProjectsList() {
   const [pmMode, setPmMode] = useState<'pick' | 'manual'>('pick');
   const [pmSearch, setPmSearch] = useState('');
   const [pmOpen, setPmOpen] = useState(false);
+  const [pmActiveIndex, setPmActiveIndex] = useState(-1);
   const pmRef = useRef<HTMLDivElement>(null);
+  const pmInputRef = useRef<HTMLInputElement>(null);
+  const pmTriggerRef = useRef<HTMLButtonElement>(null);
+  const pmRestoreFocus = useRef(false);
+  const pmListboxId = useId();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['projects', search],
@@ -63,11 +68,35 @@ export default function ProjectsList() {
     ? allUsers.filter(u => `${u.first_name} ${u.last_name}`.toLowerCase().includes(pmSearch.toLowerCase()))
     : allUsers;
 
+  const closePm = (shouldRestoreFocus: boolean) => {
+    setPmOpen(false);
+    setPmSearch('');
+    setPmActiveIndex(-1);
+    if (shouldRestoreFocus) pmRestoreFocus.current = true;
+  };
+
+  useEffect(() => {
+    if (!pmOpen && pmRestoreFocus.current) {
+      pmRestoreFocus.current = false;
+      pmTriggerRef.current?.focus();
+    }
+  }, [pmOpen]);
+
   useEffect(() => {
     if (!pmOpen) return;
-    const h = (e: MouseEvent) => { if (!pmRef.current?.contains(e.target as Node)) setPmOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    pmInputRef.current?.focus();
+    const handleMouseDown = (e: MouseEvent) => {
+      if (!pmRef.current?.contains(e.target as Node)) closePm(false);
+    };
+    const handleFocusIn = (e: FocusEvent) => {
+      if (!pmRef.current?.contains(e.target as Node)) closePm(false);
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('focusin', handleFocusIn);
+    };
   }, [pmOpen]);
 
   const columns: Column<Project>[] = [
@@ -217,7 +246,7 @@ export default function ProjectsList() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Project Manager</label>
-                  <button type="button" onClick={() => { setPmMode(m => m === 'pick' ? 'manual' : 'pick'); setForm(f => ({ ...f, project_manager: '' })); setPmSearch(''); }}
+                  <button type="button" onClick={() => { setPmMode(m => m === 'pick' ? 'manual' : 'pick'); setForm(f => ({ ...f, project_manager: '' })); closePm(false); }}
                     className="text-[11px] text-blue-600 hover:underline">
                     {pmMode === 'pick' ? 'Type name manually' : 'Pick from users'}
                   </button>
@@ -228,48 +257,111 @@ export default function ProjectsList() {
                     className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
                 ) : (
                   <div ref={pmRef} className="relative">
-                    <div className="flex items-center border border-slate-300 rounded px-3 py-1.5 text-sm cursor-pointer focus-within:border-blue-600"
-                      onClick={() => setPmOpen(o => !o)}>
+                    <div className="flex items-center border border-slate-300 rounded px-3 py-1.5 text-sm focus-within:border-blue-600">
                       <User className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
                       {pmOpen ? (
-                        <input autoFocus value={pmSearch} onChange={e => setPmSearch(e.target.value)}
+                        <input ref={pmInputRef} autoFocus value={pmSearch} onChange={e => { setPmSearch(e.target.value); setPmActiveIndex(e.target.value.trim() ? 0 : -1); }}
                           placeholder={form.project_manager || 'Search users…'}
+                          aria-label="Search project managers"
+                          role="combobox"
+                          aria-expanded="true"
+                          aria-controls={pmListboxId}
+                          aria-autocomplete="list"
+                          aria-activedescendant={pmActiveIndex >= 0 && pmFiltered[pmActiveIndex] ? `${pmListboxId}-option-${pmActiveIndex}` : undefined}
                           className="flex-1 outline-none text-sm bg-transparent"
-                          onKeyDown={e => { if (e.key === 'Escape') setPmOpen(false); }} />
+                          onKeyDown={e => {
+                            if (e.key === 'Escape') {
+                              e.preventDefault();
+                              closePm(true);
+                            } else if (e.key === 'Enter' && pmActiveIndex >= 0 && pmFiltered[pmActiveIndex]) {
+                              e.preventDefault();
+                              const u = pmFiltered[pmActiveIndex];
+                              const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
+                              setForm(f => ({ ...f, project_manager: name }));
+                              closePm(true);
+                            } else if (e.key === 'ArrowDown' && pmFiltered.length > 0) {
+                              e.preventDefault();
+                              setPmActiveIndex(index => index < pmFiltered.length - 1 ? index + 1 : 0);
+                            } else if (e.key === 'ArrowUp' && pmFiltered.length > 0) {
+                              e.preventDefault();
+                              setPmActiveIndex(index => index <= 0 ? pmFiltered.length - 1 : index - 1);
+                            } else if (e.key === 'Home' && pmFiltered.length > 0) {
+                              e.preventDefault();
+                              setPmActiveIndex(0);
+                            } else if (e.key === 'End' && pmFiltered.length > 0) {
+                              e.preventDefault();
+                              setPmActiveIndex(pmFiltered.length - 1);
+                            } else if (e.key === 'Tab') {
+                              closePm(false);
+                            }
+                          }} />
                       ) : (
-                        <span className={`flex-1 ${form.project_manager ? 'text-slate-800' : 'text-slate-400'}`}>
+                        <button
+                          ref={pmTriggerRef}
+                          type="button"
+                          aria-label={form.project_manager ? `Select project manager, currently ${form.project_manager}` : 'Select project manager'}
+                          aria-haspopup="listbox"
+                          aria-expanded="false"
+                          onClick={() => {
+                            setPmOpen(true);
+                            setPmActiveIndex(form.project_manager ? Math.max(allUsers.findIndex(u => {
+                              const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
+                              return name === form.project_manager;
+                            }), 0) : -1);
+                          }}
+                          onKeyDown={e => {
+                            if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !pmOpen) {
+                              e.preventDefault();
+                              setPmOpen(true);
+                              setPmActiveIndex(form.project_manager ? Math.max(allUsers.findIndex(u => {
+                                const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
+                                return name === form.project_manager;
+                              }), 0) : 0);
+                            }
+                          }}
+                          className={`flex-1 min-w-0 text-left truncate outline-none ${form.project_manager ? 'text-slate-800' : 'text-slate-400'}`}
+                        >
                           {form.project_manager || 'Select project manager…'}
-                        </span>
+                        </button>
                       )}
                       {form.project_manager && !pmOpen && (
-                        <button type="button" aria-label="Clear project manager" title="Clear project manager" onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, project_manager: '' })); }}
+                        <button type="button" aria-label="Clear project manager" title="Clear project manager" onClick={e => { e.stopPropagation(); setForm(f => ({ ...f, project_manager: '' })); setPmActiveIndex(-1); }}
                           className="text-slate-300 hover:text-slate-500 ml-1"><X className="w-3.5 h-3.5" /></button>
                       )}
                     </div>
                     {pmOpen && (
                       <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {pmFiltered.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-slate-400">No users found</div>
-                        ) : (
-                          pmFiltered.map((u: any) => {
-                            const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
-                            return (
-                              <button key={u.id} type="button"
-                                onMouseDown={() => { setForm(f => ({ ...f, project_manager: name })); setPmOpen(false); setPmSearch(''); }}
-                                className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0">
-                                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
-                                  {(u.first_name?.[0] || u.email[0]).toUpperCase()}
-                                </div>
-                                <div>
-                                  <div className="text-sm font-medium text-slate-800">{name}</div>
-                                  <div className="text-xs text-slate-400">{u.role}</div>
-                                </div>
-                              </button>
-                            );
-                          })
-                        )}
+                        <div id={pmListboxId} role="listbox" aria-label="Project manager options">
+                          {pmFiltered.length === 0 ? (
+                            <div className="px-4 py-3 text-sm text-slate-400">No users found</div>
+                          ) : (
+                            pmFiltered.map((u: any, index: number) => {
+                              const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
+                              return (
+                                <button key={u.id} type="button"
+                                  id={`${pmListboxId}-option-${index}`}
+                                  role="option"
+                                  aria-selected={name === form.project_manager}
+                                  tabIndex={-1}
+                                  onMouseDown={e => e.preventDefault()}
+                                  onMouseEnter={() => setPmActiveIndex(index)}
+                                  onClick={() => { setForm(f => ({ ...f, project_manager: name })); closePm(true); }}
+                                  className={`w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 ${index === pmActiveIndex ? 'bg-slate-50' : ''}`}>
+                                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+                                    {(u.first_name?.[0] || u.email[0]).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-medium text-slate-800">{name}</div>
+                                    <div className="text-xs text-slate-400">{u.role}</div>
+                                  </div>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
                         <button type="button"
-                          onMouseDown={() => { setPmMode('manual'); setPmOpen(false); setForm(f => ({ ...f, project_manager: '' })); }}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => { setPmMode('manual'); closePm(false); setForm(f => ({ ...f, project_manager: '' })); }}
                           className="w-full text-left px-4 py-2.5 text-xs text-blue-600 hover:bg-blue-50 border-t border-slate-100 font-medium">
                           + Enter a name not in the system
                         </button>
