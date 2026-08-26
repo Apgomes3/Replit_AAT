@@ -39,6 +39,7 @@ export interface FrancisWeirResult {
 
 export function calculateFrancisWeir(inputs: FrancisWeirInputs): FrancisWeirResult {
   const reasons: string[] = [];
+  const warnings: string[] = [];
   const {
     flowM3h,
     headM,
@@ -55,7 +56,7 @@ export function calculateFrancisWeir(inputs: FrancisWeirInputs): FrancisWeirResu
     reasons.push('Head over the weir must be positive.');
   } else {
     if (headM < FRANCIS_MIN_HEAD_M) {
-      reasons.push(`Head must be at least ${FRANCIS_MIN_HEAD_M * 1000} mm for the approved Francis range.`);
+      warnings.push(`Head is below the ${FRANCIS_MIN_HEAD_M * 1000} mm Francis reference threshold; the calculation is permitted with engineering review.`);
     }
     if (headM > FRANCIS_MAX_HEAD_M) {
       reasons.push(`Head must not exceed ${FRANCIS_MAX_HEAD_M * 1000} mm for the approved Francis range.`);
@@ -86,7 +87,7 @@ export function calculateFrancisWeir(inputs: FrancisWeirInputs): FrancisWeirResu
       flowM3s: Number.isFinite(flowM3h) && flowM3h > 0 ? flowM3h / 3600 : null,
       headToLengthRatio: null,
       reasons,
-      warnings: [],
+      warnings,
     };
   }
 
@@ -108,7 +109,7 @@ export function calculateFrancisWeir(inputs: FrancisWeirInputs): FrancisWeirResu
     flowM3s,
     headToLengthRatio,
     reasons,
-    warnings: [],
+    warnings,
   };
 }
 
@@ -137,7 +138,7 @@ export function calculateBazinWeir(inputs: FrancisWeirInputs): FrancisWeirResult
   if (!Number.isFinite(headM) || headM <= 0) {
     reasons.push('Head over the weir must be positive.');
   } else if (headM < BAZIN_MIN_HEAD_M) {
-    reasons.push(`Head must be at least ${BAZIN_MIN_HEAD_M * 1000} mm for the approved Bazin range.`);
+    warnings.push(`Head is below the ${BAZIN_MIN_HEAD_M * 1000} mm Bazin reference threshold; the calculation is permitted with engineering review.`);
   }
   if (geometry !== 'sharp_rectangular') {
     reasons.push('Only a sharp-crested rectangular weir is supported.');

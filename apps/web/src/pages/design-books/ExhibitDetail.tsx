@@ -1875,12 +1875,15 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
               {basisComplete && (
                 <p className="text-xs text-stone-400 mt-1.5">
                   {francisPreview?.status === 'valid'
-                    ? `Francis is within its approved range at H/L ${francisPreview.headToLengthRatio!.toFixed(2)}.`
+                    ? francisPreview.warnings.length > 0
+                      ? `Francis is available with a head-height review warning at H/L ${francisPreview.headToLengthRatio!.toFixed(2)}.`
+                      : `Francis is within its preferred reference range at H/L ${francisPreview.headToLengthRatio!.toFixed(2)}.`
                     : bazinPreview?.status === 'valid'
                       ? 'Francis is outside its approved range; Bazin is available as an alternative with review.'
                       : 'Neither method is currently valid for these operating conditions.'}
                 </p>
               )}
+              <p className="text-xs text-stone-400 mt-1">Heads below 50 mm are permitted for both methods and are flagged for engineering review.</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">Weir geometry</label>
@@ -1936,7 +1939,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                 <p className="font-mono">m = {BAZIN_COEFFICIENT_BASE.toFixed(3)} + {BAZIN_HEAD_COEFFICIENT.toFixed(4)} / H</p>
                 <p>Q in m³/s · L and H in m · n is recorded but not applied by this alternative</p>
                 <p className="text-stone-400 mt-1.5">Use as an explicit comparison method for the same sharp-crested rectangular, free-discharge case.</p>
-                <p className="text-stone-400">Policy: H ≥ {BAZIN_MIN_HEAD_M * 1000} mm; review the displayed H/L ratio before adopting the result.</p>
+                <p className="text-stone-400">Preferred reference: H ≥ {BAZIN_MIN_HEAD_M * 1000} mm; lower heads are permitted with a review warning. Review the displayed H/L ratio before adopting the result.</p>
               </>
             ) : (
               <>
@@ -1945,7 +1948,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                 <p className="font-mono">L = Q / ({FRANCIS_COEFFICIENT.toFixed(2)} · H<sup>3/2</sup>) + 0.1 · n · H</p>
                 <p>Q in m³/s · L and H in m · n = number of end contractions</p>
                 <p className="text-stone-400 mt-1.5">Source: Francis, <em>Lowell Hydraulic Experiments</em> (1852), SI form used by the project design basis.</p>
-                <p className="text-stone-400">Policy: sharp-crested rectangular, free discharge, H = {FRANCIS_MIN_HEAD_M * 1000}–{FRANCIS_MAX_HEAD_M * 1000} mm, H/L ≤ {FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}, tailwater above crest = 0 mm.</p>
+                <p className="text-stone-400">Preferred reference: sharp-crested rectangular, free discharge, H = {FRANCIS_MIN_HEAD_M * 1000}–{FRANCIS_MAX_HEAD_M * 1000} mm, H/L ≤ {FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}, tailwater above crest = 0 mm. Below {FRANCIS_MIN_HEAD_M * 1000} mm is permitted with a review warning.</p>
               </>
             )}
           </div>

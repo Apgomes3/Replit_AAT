@@ -50,7 +50,7 @@ describe('Francis weir sizing', () => {
     expect(highBoundary.status).toBe('valid');
   });
 
-  it('rejects heads outside the approved operating range', () => {
+  it('permits a low head with a visible review warning', () => {
     const tooLow = calculateFrancisWeir({ ...validInputs, headM: FRANCIS_MIN_HEAD_M - 0.001 });
     const tooHigh = calculateFrancisWeir({
       ...validInputs,
@@ -58,8 +58,8 @@ describe('Francis weir sizing', () => {
       headM: FRANCIS_MAX_HEAD_M + 0.001,
     });
 
-    expect(tooLow.status).toBe('invalid');
-    expect(tooLow.reasons.join(' ')).toContain('at least');
+    expect(tooLow.status).toBe('valid');
+    expect(tooLow.warnings.join(' ')).toContain('below');
     expect(tooHigh.status).toBe('invalid');
     expect(tooHigh.reasons.join(' ')).toContain('must not exceed');
   });
@@ -98,11 +98,11 @@ describe('Bazin weir sizing alternative', () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it('requires the approved minimum head', () => {
+  it('permits a low head with a visible review warning', () => {
     const result = calculateBazinWeir({ ...validInputs, headM: BAZIN_MIN_HEAD_M - 0.001 });
 
-    expect(result.status).toBe('invalid');
-    expect(result.reasons.join(' ')).toContain('at least');
+    expect(result.status).toBe('valid');
+    expect(result.warnings.join(' ')).toContain('below');
   });
 
   it('warns when H/L exceeds the Francis comparison limit', () => {
