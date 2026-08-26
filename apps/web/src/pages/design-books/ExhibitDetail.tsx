@@ -1693,6 +1693,9 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   const headM      = headUnit === 'mm' ? headRaw / 1000 : headRaw;
   const currentMm  = headM > 0 ? headM * 1000 : null;
   const storedMm   = hydraulics?.weir_head_mm != null ? parseFloat(String(hydraulics.weir_head_mm)) : null;
+  const storedLengthMm = hydraulics?.weir_length_mm != null
+    ? parseFloat(String(hydraulics.weir_length_mm))
+    : null;
   const storedContractions = hydraulics?.weir_end_contractions != null
     ? String(hydraulics.weir_end_contractions)
     : null;
@@ -1730,6 +1733,11 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   const francisPreview = calculationInputs ? calculateFrancisWeir(calculationInputs) : null;
   const bazinPreview = calculationInputs ? calculateBazinWeir(calculationInputs) : null;
   const basisResult = method === 'bazin_1888' ? bazinPreview : francisPreview;
+  const calculatedLengthMm = basisResult?.status === 'valid' && basisResult.lengthM != null
+    ? Math.round(basisResult.lengthM * 1000 * 100) / 100
+    : null;
+  const lengthIsDirty = calculatedLengthMm !== storedLengthMm;
+  const isCalculationStale = isDirty || lengthIsDirty;
   const result = basisConfirmed ? basisResult : null;
   const noFlow  = skimM3h == null;
   const noHead  = headM <= 0;
@@ -1746,13 +1754,14 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
         bottom_drain_pct:     hydraulics?.bottom_drain_pct     ?? 70,
         notes:                hydraulics?.notes                ?? null,
         weir_head_mm:         currentMm,
+        weir_length_mm:       calculatedLengthMm,
         weir_formula_method:  method,
         weir_geometry:        geometry,
         weir_end_contractions: parseInt(contractions, 10),
         weir_discharge_condition: dischargeCondition,
         weir_downstream_head_mm: parseFloat(downstreamHeadVal),
       });
-      toast.success('Head saved');
+      toast.success('Weir design saved');
       initialized.current = false; // allow re-seed after refresh
       onRefresh();
     } catch {
@@ -1829,7 +1838,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                   >{u}</button>
                 ))}
               </div>
-              {isDirty && headM > 0 && basisComplete && (
+              {isCalculationStale && headM > 0 && basisComplete && (
                 <button onClick={handleSave} disabled={saving}
                   className="flex items-center gap-1 text-xs text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg px-3 py-2 font-medium transition-colors shrink-0">
                   <Save className="w-3 h-3" />{saving ? '…' : basisConfirmed ? 'Save' : 'Confirm & Save'}
@@ -1839,7 +1848,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
             {headM > 0 && (
               <p className="text-xs text-stone-400 mt-1">
                 = {headUnit === 'mm' ? `${headM.toFixed(4)} m` : `${(headM * 1000).toFixed(1)} mm`}
-                {!isDirty && storedMm != null && <span className="ml-2 text-indigo-400">✓ saved</span>}
+                {!isCalculationStale && storedMm != null && <span className="ml-2 text-indigo-400">✓ saved</span>}
               </p>
             )}
           </div>
@@ -1997,6 +2006,11 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                   {fmtWeir(result.lengthM!, resultUnit)}
                 </p>
                 <p className="text-base font-medium text-indigo-500 mt-0.5">{resultUnit}</p>
+                <p className={`text-xs mt-2 ${isCalculationStale ? 'text-amber-700' : 'text-indigo-500'}`}>
+                  {isCalculationStale
+                    ? 'Recalculated from current inputs — save to persist this value.'
+                    : `Saved calculated length: ${storedLengthMm?.toFixed(2)} mm`}
+                </p>
               </div>
               {/* Calculation breakdown */}
               <div className="bg-white border border-stone-200 rounded-lg px-4 py-3 text-xs space-y-1 text-stone-500">

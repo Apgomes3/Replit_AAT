@@ -222,11 +222,12 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, asyn
 router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, async (req: AuthRequest, res: Response) => {
   const {
     target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
-    weir_head_mm, weir_formula_method, weir_geometry,
+    weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry,
     weir_end_contractions, weir_discharge_condition, weir_downstream_head_mm,
   } = req.body;
   const hasField = (field: string) => Object.prototype.hasOwnProperty.call(req.body, field);
   const hasWeirHead = hasField('weir_head_mm');
+  const hasWeirLength = hasField('weir_length_mm');
   const hasWeirMethod = hasField('weir_formula_method');
   const hasWeirGeometry = hasField('weir_geometry');
   const hasWeirContractions = hasField('weir_end_contractions');
@@ -248,6 +249,9 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, asy
   if (weir_head_mm != null && (!Number.isFinite(Number(weir_head_mm)) || Number(weir_head_mm) < 0)) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Weir head must be a non-negative number' } });
   }
+  if (weir_length_mm != null && (!Number.isFinite(Number(weir_length_mm)) || Number(weir_length_mm) < 0)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Weir length must be a non-negative number' } });
+  }
   if (weir_downstream_head_mm != null &&
       (!Number.isFinite(Number(weir_downstream_head_mm)) || Number(weir_downstream_head_mm) < 0)) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Downstream head must be a non-negative number' } });
@@ -255,30 +259,31 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, asy
   const result = await query(
     `INSERT INTO design_book_exhibit_hydraulics
        (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
-        weir_head_mm, weir_formula_method, weir_geometry, weir_end_contractions,
+         weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
         weir_discharge_condition, weir_downstream_head_mm)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      ON CONFLICT (design_book_id, exhibit_id)
      DO UPDATE SET
        target_turnover_rate = EXCLUDED.target_turnover_rate,
        surface_skim_pct     = EXCLUDED.surface_skim_pct,
        bottom_drain_pct     = EXCLUDED.bottom_drain_pct,
        notes                = EXCLUDED.notes,
-       weir_head_mm = CASE WHEN $13 THEN EXCLUDED.weir_head_mm ELSE design_book_exhibit_hydraulics.weir_head_mm END,
-       weir_formula_method = CASE WHEN $14 THEN EXCLUDED.weir_formula_method ELSE design_book_exhibit_hydraulics.weir_formula_method END,
-       weir_geometry = CASE WHEN $15 THEN EXCLUDED.weir_geometry ELSE design_book_exhibit_hydraulics.weir_geometry END,
-       weir_end_contractions = CASE WHEN $16 THEN EXCLUDED.weir_end_contractions ELSE design_book_exhibit_hydraulics.weir_end_contractions END,
-       weir_discharge_condition = CASE WHEN $17 THEN EXCLUDED.weir_discharge_condition ELSE design_book_exhibit_hydraulics.weir_discharge_condition END,
-       weir_downstream_head_mm = CASE WHEN $18 THEN EXCLUDED.weir_downstream_head_mm ELSE design_book_exhibit_hydraulics.weir_downstream_head_mm END,
+       weir_head_mm = CASE WHEN $14 THEN EXCLUDED.weir_head_mm ELSE design_book_exhibit_hydraulics.weir_head_mm END,
+       weir_length_mm = CASE WHEN $15 THEN EXCLUDED.weir_length_mm ELSE design_book_exhibit_hydraulics.weir_length_mm END,
+       weir_formula_method = CASE WHEN $16 THEN EXCLUDED.weir_formula_method ELSE design_book_exhibit_hydraulics.weir_formula_method END,
+       weir_geometry = CASE WHEN $17 THEN EXCLUDED.weir_geometry ELSE design_book_exhibit_hydraulics.weir_geometry END,
+       weir_end_contractions = CASE WHEN $18 THEN EXCLUDED.weir_end_contractions ELSE design_book_exhibit_hydraulics.weir_end_contractions END,
+       weir_discharge_condition = CASE WHEN $19 THEN EXCLUDED.weir_discharge_condition ELSE design_book_exhibit_hydraulics.weir_discharge_condition END,
+       weir_downstream_head_mm = CASE WHEN $20 THEN EXCLUDED.weir_downstream_head_mm ELSE design_book_exhibit_hydraulics.weir_downstream_head_mm END,
        updated_at           = NOW()
      RETURNING *`,
     [req.params.id, req.params.exhibitId,
      target_turnover_rate ?? null, surface_skim_pct ?? 30, bottom_drain_pct ?? 70,
-     notes ?? null, weir_head_mm ?? null, weir_formula_method ?? null,
+      notes ?? null, weir_head_mm ?? null, weir_length_mm ?? null, weir_formula_method ?? null,
      weir_geometry ?? null, weir_end_contractions ?? null,
      weir_discharge_condition ?? null, weir_downstream_head_mm ?? null,
-     hasWeirHead, hasWeirMethod, hasWeirGeometry, hasWeirContractions,
-     hasWeirDischarge, hasWeirDownstreamHead]
+      hasWeirHead, hasWeirLength, hasWeirMethod, hasWeirGeometry, hasWeirContractions,
+      hasWeirDischarge, hasWeirDownstreamHead]
   );
   res.json(result.rows[0]);
 });
@@ -435,15 +440,15 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, async
       await query(
         `INSERT INTO design_book_exhibit_hydraulics
            (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
-            weir_head_mm, weir_formula_method, weir_geometry, weir_end_contractions,
+             weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
             weir_discharge_condition, weir_downstream_head_mm)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [req.params.id, h.exhibit_id,
          h.target_turnover_rate ?? null, h.surface_skim_pct ?? 30,
          h.bottom_drain_pct ?? 70, h.notes ?? null,
-         h.weir_head_mm ?? null, h.weir_formula_method ?? null,
+          h.weir_head_mm ?? null, h.weir_length_mm ?? null, h.weir_formula_method ?? null,
          h.weir_geometry ?? null, h.weir_end_contractions ?? null,
-         h.weir_discharge_condition ?? null, h.weir_downstream_head_mm ?? null]
+          h.weir_discharge_condition ?? null, h.weir_downstream_head_mm ?? null]
       );
     }
   }

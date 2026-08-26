@@ -869,6 +869,7 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_hydraulics (
 );
 CREATE INDEX IF NOT EXISTS idx_db_hydraulics_book ON design_book_exhibit_hydraulics(design_book_id);
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_head_mm NUMERIC(8,2);
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_length_mm NUMERIC(10,2);
 -- Francis sizing basis. Existing head values are retained; these fields stay
 -- NULL until the saved design basis has been explicitly confirmed.
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_formula_method VARCHAR(50);

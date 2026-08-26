@@ -94,8 +94,8 @@ describe('design-book hydraulics weir persistence', () => {
 
     expect(response.status).toBe(200);
     const call = state.calls[0];
-    expect(call.sql).toContain('CASE WHEN $13');
-    expect(call.params.slice(12, 18)).toEqual([false, false, false, false, false, false]);
+    expect(call.sql).toContain('CASE WHEN $15');
+    expect(call.params.slice(13, 20)).toEqual([false, false, false, false, false, false, false]);
   });
 
   it('updates all Francis basis fields when they are explicitly supplied', async () => {
@@ -104,6 +104,7 @@ describe('design-book hydraulics weir persistence', () => {
       surface_skim_pct: 30,
       bottom_drain_pct: 70,
       weir_head_mm: 100,
+      weir_length_mm: 459.05,
       weir_formula_method: 'francis_184',
       weir_geometry: 'sharp_rectangular',
       weir_end_contractions: 2,
@@ -112,7 +113,7 @@ describe('design-book hydraulics weir persistence', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(state.calls[0].params.slice(12, 18)).toEqual([true, true, true, true, true, true]);
+    expect(state.calls[0].params.slice(13, 20)).toEqual([true, true, true, true, true, true, true]);
   });
 
   it('accepts the Bazin alternative as an explicit saved method', async () => {
@@ -121,6 +122,7 @@ describe('design-book hydraulics weir persistence', () => {
       surface_skim_pct: 30,
       bottom_drain_pct: 70,
       weir_head_mm: 100,
+      weir_length_mm: 459.05,
       weir_formula_method: 'bazin_1888',
       weir_geometry: 'sharp_rectangular',
       weir_end_contractions: 2,
@@ -129,14 +131,15 @@ describe('design-book hydraulics weir persistence', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(state.calls[0].params[7]).toBe('bazin_1888');
+    expect(state.calls[0].params[7]).toBe(459.05);
+    expect(state.calls[0].params[8]).toBe('bazin_1888');
   });
 
   it('allows an explicit null to clear a saved basis field without treating it as omitted', async () => {
     const response = await request(app, token, { weir_formula_method: null });
 
     expect(response.status).toBe(200);
-    expect(state.calls[0].params[7]).toBeNull();
-    expect(state.calls[0].params[13]).toBe(true);
+    expect(state.calls[0].params[8]).toBeNull();
+    expect(state.calls[0].params[15]).toBe(true);
   });
 });
