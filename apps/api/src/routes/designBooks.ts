@@ -232,7 +232,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, asy
   const hasWeirContractions = hasField('weir_end_contractions');
   const hasWeirDischarge = hasField('weir_discharge_condition');
   const hasWeirDownstreamHead = hasField('weir_downstream_head_mm');
-  if (weir_formula_method != null && weir_formula_method !== 'francis_184') {
+  if (weir_formula_method != null && !['francis_184', 'bazin_1888'].includes(weir_formula_method)) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Unsupported weir formula method' } });
   }
   if (weir_geometry != null && weir_geometry !== 'sharp_rectangular') {

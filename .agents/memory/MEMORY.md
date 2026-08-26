@@ -1,1 +1,2 @@
 - [PO vendor privacy](po-vendor-privacy.md) — vendor autocomplete must only surface names from purchase orders visible to the current user.
+- [Weir formula selection](weir-formula-selection.md) — recommend Francis within its approved range; keep Bazin explicit, selectable, and reviewable.

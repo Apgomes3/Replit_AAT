@@ -11,11 +11,16 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
+  calculateBazinWeir,
   calculateFrancisWeir,
+  BAZIN_COEFFICIENT_BASE,
+  BAZIN_HEAD_COEFFICIENT,
+  BAZIN_MIN_HEAD_M,
   FRANCIS_COEFFICIENT,
   FRANCIS_MAX_HEAD_M,
   FRANCIS_MAX_HEAD_TO_LENGTH_RATIO,
   FRANCIS_MIN_HEAD_M,
+  WeirMethod,
 } from '../../lib/weir';
 
 type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir';
@@ -1652,6 +1657,9 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   const [downstreamHeadVal, setDownstreamHeadVal] = useState(
     hydraulics?.weir_downstream_head_mm != null ? String(parseFloat(hydraulics.weir_downstream_head_mm)) : '0',
   );
+  const [method, setMethod] = useState<WeirMethod>(
+    hydraulics?.weir_formula_method === 'bazin_1888' ? 'bazin_1888' : 'francis_184',
+  );
   const [saving, setSaving]         = useState(false);
   const initialized                 = useRef(false);
 
@@ -1668,6 +1676,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
       setDownstreamHeadVal(hydraulics?.weir_downstream_head_mm != null
         ? String(parseFloat(hydraulics.weir_downstream_head_mm))
         : '0');
+      setMethod(hydraulics?.weir_formula_method === 'bazin_1888' ? 'bazin_1888' : 'francis_184');
       initialized.current = true;
     }
   }, [hydraulics]);
@@ -1690,7 +1699,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   const storedDownstreamMm = hydraulics?.weir_downstream_head_mm != null
     ? parseFloat(String(hydraulics.weir_downstream_head_mm))
     : null;
-  const basisConfirmed = hydraulics?.weir_formula_method === 'francis_184'
+  const basisConfirmed = ['francis_184', 'bazin_1888'].includes(hydraulics?.weir_formula_method)
     && hydraulics?.weir_geometry != null
     && hydraulics?.weir_end_contractions != null
     && hydraulics?.weir_discharge_condition != null
@@ -1702,22 +1711,25 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
     && Number.isFinite(parseFloat(downstreamHeadVal))
     && parseFloat(downstreamHeadVal) >= 0;
   const isDirty = currentMm !== storedMm
+    || method !== (hydraulics?.weir_formula_method || null)
     || geometry !== (hydraulics?.weir_geometry || null)
     || contractions !== storedContractions
     || dischargeCondition !== (hydraulics?.weir_discharge_condition || null)
-    || (Number.isFinite(parseFloat(downstreamHeadVal)) ? parseFloat(downstreamHeadVal) : null) !== storedDownstreamMm
-    || hydraulics?.weir_formula_method !== 'francis_184';
+    || (Number.isFinite(parseFloat(downstreamHeadVal)) ? parseFloat(downstreamHeadVal) : null) !== storedDownstreamMm;
 
-  const basisResult = skimM3h != null && basisComplete
-    ? calculateFrancisWeir({
+  const calculationInputs = skimM3h != null && basisComplete
+    ? {
       flowM3h: skimM3h,
       headM,
       geometry,
       endContractions: parseInt(contractions, 10),
       dischargeCondition,
       downstreamHeadM: parseFloat(downstreamHeadVal) / 1000,
-    })
+    }
     : null;
+  const francisPreview = calculationInputs ? calculateFrancisWeir(calculationInputs) : null;
+  const bazinPreview = calculationInputs ? calculateBazinWeir(calculationInputs) : null;
+  const basisResult = method === 'bazin_1888' ? bazinPreview : francisPreview;
   const result = basisConfirmed ? basisResult : null;
   const noFlow  = skimM3h == null;
   const noHead  = headM <= 0;
@@ -1734,7 +1746,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
         bottom_drain_pct:     hydraulics?.bottom_drain_pct     ?? 70,
         notes:                hydraulics?.notes                ?? null,
         weir_head_mm:         currentMm,
-        weir_formula_method:  'francis_184',
+        weir_formula_method:  method,
         weir_geometry:        geometry,
         weir_end_contractions: parseInt(contractions, 10),
         weir_discharge_condition: dischargeCondition,
@@ -1756,7 +1768,9 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-stone-100 bg-indigo-50/40">
         <Calculator className="w-4 h-4 text-indigo-600" />
         <span className="text-sm font-semibold text-indigo-800">Weir Allocation</span>
-        <span className="text-xs text-indigo-500 ml-1">— Francis formula, approved sharp-crested rectangular case</span>
+        <span className="text-xs text-indigo-500 ml-1">
+          — {method === 'bazin_1888' ? 'Bazin alternative' : 'Francis recommended case'}
+        </span>
       </div>
 
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1837,6 +1851,38 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
               <p className="text-xs text-indigo-600/80 mt-0.5">These conditions are part of the saved design basis, not optional calculation notes.</p>
             </div>
             <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Calculation method</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {([
+                  { value: 'francis_184' as const, label: 'Francis', detail: 'Recommended standard case' },
+                  { value: 'bazin_1888' as const, label: 'Bazin', detail: 'Alternative comparison method' },
+                ]).map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setMethod(option.value)}
+                    className={`text-left rounded-lg border px-3 py-2 transition-colors ${
+                      method === option.value
+                        ? 'border-indigo-400 bg-indigo-50 text-indigo-800'
+                        : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+                    }`}
+                  >
+                    <span className="block text-xs font-semibold">{option.label}</span>
+                    <span className="block text-[11px] text-stone-400 mt-0.5">{option.detail}</span>
+                  </button>
+                ))}
+              </div>
+              {basisComplete && (
+                <p className="text-xs text-stone-400 mt-1.5">
+                  {francisPreview?.status === 'valid'
+                    ? `Francis is within its approved range at H/L ${francisPreview.headToLengthRatio!.toFixed(2)}.`
+                    : bazinPreview?.status === 'valid'
+                      ? 'Francis is outside its approved range; Bazin is available as an alternative with review.'
+                      : 'Neither method is currently valid for these operating conditions.'}
+                </p>
+              )}
+            </div>
+            <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">Weir geometry</label>
               <select value={geometry} onChange={e => setGeometry(e.target.value)}
                 className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30">
@@ -1883,12 +1929,25 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
 
           {/* Formula reference */}
           <div className="bg-stone-50 border border-stone-200 rounded-lg px-4 py-3 space-y-1 text-xs text-stone-500">
-            <p className="font-semibold text-stone-600 mb-1.5">Francis (SI) Formula</p>
-            <p className="font-mono">Q = {FRANCIS_COEFFICIENT.toFixed(2)} · (L − 0.1 · n · H) · H<sup>3/2</sup></p>
-            <p className="font-mono">L = Q / ({FRANCIS_COEFFICIENT.toFixed(2)} · H<sup>3/2</sup>) + 0.1 · n · H</p>
-            <p>Q in m³/s · L and H in m · n = number of end contractions</p>
-            <p className="text-stone-400 mt-1.5">Source: Francis, <em>Lowell Hydraulic Experiments</em> (1852), SI form used by the project design basis.</p>
-            <p className="text-stone-400">Policy: sharp-crested rectangular, free discharge, H = {FRANCIS_MIN_HEAD_M * 1000}–{FRANCIS_MAX_HEAD_M * 1000} mm, H/L ≤ {FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}, tailwater above crest = 0 mm.</p>
+            {method === 'bazin_1888' ? (
+              <>
+                <p className="font-semibold text-stone-600 mb-1.5">Bazin (1888) Alternative</p>
+                <p className="font-mono">Q = m · L · √(2g) · H<sup>3/2</sup></p>
+                <p className="font-mono">m = {BAZIN_COEFFICIENT_BASE.toFixed(3)} + {BAZIN_HEAD_COEFFICIENT.toFixed(4)} / H</p>
+                <p>Q in m³/s · L and H in m · n is recorded but not applied by this alternative</p>
+                <p className="text-stone-400 mt-1.5">Use as an explicit comparison method for the same sharp-crested rectangular, free-discharge case.</p>
+                <p className="text-stone-400">Policy: H ≥ {BAZIN_MIN_HEAD_M * 1000} mm; review the displayed H/L ratio before adopting the result.</p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-stone-600 mb-1.5">Francis (SI) Formula</p>
+                <p className="font-mono">Q = {FRANCIS_COEFFICIENT.toFixed(2)} · (L − 0.1 · n · H) · H<sup>3/2</sup></p>
+                <p className="font-mono">L = Q / ({FRANCIS_COEFFICIENT.toFixed(2)} · H<sup>3/2</sup>) + 0.1 · n · H</p>
+                <p>Q in m³/s · L and H in m · n = number of end contractions</p>
+                <p className="text-stone-400 mt-1.5">Source: Francis, <em>Lowell Hydraulic Experiments</em> (1852), SI form used by the project design basis.</p>
+                <p className="text-stone-400">Policy: sharp-crested rectangular, free discharge, H = {FRANCIS_MIN_HEAD_M * 1000}–{FRANCIS_MAX_HEAD_M * 1000} mm, H/L ≤ {FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}, tailwater above crest = 0 mm.</p>
+              </>
+            )}
           </div>
         </div>
 
@@ -1905,12 +1964,12 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
             <div className="text-center space-y-2 py-6">
               <AlertTriangle className="w-10 h-10 text-amber-300 mx-auto" />
               <p className="text-sm font-medium text-amber-700">Design basis confirmation required</p>
-              <p className="text-xs text-stone-500 max-w-sm mx-auto">The previous head value is retained, but no Francis applicability basis was saved with it. Confirm the geometry and operating conditions, then save.</p>
+              <p className="text-xs text-stone-500 max-w-sm mx-auto">The previous head value is retained, but no complete method and applicability basis was saved with it. Confirm the method and operating conditions, then save.</p>
             </div>
           ) : basisResult?.status === 'invalid' ? (
             <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 space-y-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
-                <AlertTriangle className="w-4 h-4" /> Francis sizing unavailable
+                <AlertTriangle className="w-4 h-4" /> {method === 'bazin_1888' ? 'Bazin' : 'Francis'} sizing unavailable
               </div>
               <ul className="list-disc pl-5 space-y-1 text-xs text-amber-700">
                 {basisResult.reasons.map(reason => <li key={reason}>{reason}</li>)}
@@ -1941,9 +2000,20 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                 <p className="font-semibold text-stone-600 mb-1">Calculation Summary</p>
                 <div className="flex justify-between"><span>Q (skim flow)</span><span className="font-mono text-stone-700">{(skimM3h! / 3600).toFixed(6)} m³/s</span></div>
                 <div className="flex justify-between"><span>H (head)</span><span className="font-mono text-stone-700">{headM.toFixed(4)} m ({(headM * 1000).toFixed(1)} mm)</span></div>
-                 <div className="flex justify-between"><span>Francis coefficient</span><span className="font-mono text-stone-700">{FRANCIS_COEFFICIENT.toFixed(2)}</span></div>
-                 <div className="flex justify-between"><span>n (end contractions)</span><span className="font-mono text-stone-700">{contractions}</span></div>
-                 <div className="flex justify-between"><span>H/L applicability</span><span className="font-mono text-stone-700">{result.headToLengthRatio!.toFixed(2)} ≤ {FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}</span></div>
+                {method === 'bazin_1888' ? (
+                  <div className="flex justify-between"><span>Bazin coefficient</span><span className="font-mono text-stone-700">{(BAZIN_COEFFICIENT_BASE + BAZIN_HEAD_COEFFICIENT / headM).toFixed(4)}</span></div>
+                ) : (
+                  <div className="flex justify-between"><span>Francis coefficient</span><span className="font-mono text-stone-700">{FRANCIS_COEFFICIENT.toFixed(2)}</span></div>
+                )}
+                <div className="flex justify-between"><span>Method</span><span className="font-mono text-stone-700">{method === 'bazin_1888' ? 'Bazin' : 'Francis'}</span></div>
+                <div className="flex justify-between"><span>n (end contractions)</span><span className="font-mono text-stone-700">{contractions}{method === 'bazin_1888' ? ' (recorded only)' : ''}</span></div>
+                <div className="flex justify-between">
+                  <span>H/L ratio</span>
+                  <span className={`font-mono ${result.headToLengthRatio! <= FRANCIS_MAX_HEAD_TO_LENGTH_RATIO ? 'text-stone-700' : 'text-amber-700'}`}>
+                    {result.headToLengthRatio!.toFixed(2)} {result.headToLengthRatio! <= FRANCIS_MAX_HEAD_TO_LENGTH_RATIO ? `≤ ${FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}` : `> ${FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}`}
+                  </span>
+                </div>
+                {result.warnings.map(warning => <p key={warning} className="text-amber-700 pt-1">{warning}</p>)}
                 <div className="flex justify-between font-semibold text-indigo-700 pt-1 border-t border-stone-100">
                   <span>L (weir length)</span><span className="font-mono">{(result.lengthM! * 1000).toFixed(1)} mm</span>
                 </div>

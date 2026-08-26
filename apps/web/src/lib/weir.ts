@@ -9,9 +9,14 @@ export const FRANCIS_COEFFICIENT = 1.84;
 export const FRANCIS_MIN_HEAD_M = 0.05;
 export const FRANCIS_MAX_HEAD_M = 0.6;
 export const FRANCIS_MAX_HEAD_TO_LENGTH_RATIO = 0.5;
+export const BAZIN_COEFFICIENT_BASE = 0.405;
+export const BAZIN_HEAD_COEFFICIENT = 0.0027;
+export const BAZIN_MIN_HEAD_M = 0.05;
+const SQRT_2G = Math.sqrt(2 * 9.81);
 
 export type FrancisGeometry = 'sharp_rectangular';
 export type FrancisDischargeCondition = 'free' | 'submerged';
+export type WeirMethod = 'francis_184' | 'bazin_1888';
 
 export interface FrancisWeirInputs {
   flowM3h: number;
@@ -29,6 +34,7 @@ export interface FrancisWeirResult {
   flowM3s: number | null;
   headToLengthRatio: number | null;
   reasons: string[];
+  warnings: string[];
 }
 
 export function calculateFrancisWeir(inputs: FrancisWeirInputs): FrancisWeirResult {
@@ -80,6 +86,7 @@ export function calculateFrancisWeir(inputs: FrancisWeirInputs): FrancisWeirResu
       flowM3s: Number.isFinite(flowM3h) && flowM3h > 0 ? flowM3h / 3600 : null,
       headToLengthRatio: null,
       reasons,
+      warnings: [],
     };
   }
 
@@ -101,5 +108,84 @@ export function calculateFrancisWeir(inputs: FrancisWeirInputs): FrancisWeirResu
     flowM3s,
     headToLengthRatio,
     reasons,
+    warnings: [],
+  };
+}
+
+/**
+ * Bazin sharp-crested rectangular weir sizing.
+ *
+ * This is retained as an explicit alternative to the approved Francis case.
+ * It uses the historical head-dependent Bazin coefficient and does not apply
+ * the Francis end-contraction correction.
+ */
+export function calculateBazinWeir(inputs: FrancisWeirInputs): FrancisWeirResult {
+  const reasons: string[] = [];
+  const warnings: string[] = [];
+  const {
+    flowM3h,
+    headM,
+    geometry,
+    endContractions,
+    dischargeCondition,
+    downstreamHeadM,
+  } = inputs;
+
+  if (!Number.isFinite(flowM3h) || flowM3h <= 0) {
+    reasons.push('A positive surface skim flow is required.');
+  }
+  if (!Number.isFinite(headM) || headM <= 0) {
+    reasons.push('Head over the weir must be positive.');
+  } else if (headM < BAZIN_MIN_HEAD_M) {
+    reasons.push(`Head must be at least ${BAZIN_MIN_HEAD_M * 1000} mm for the approved Bazin range.`);
+  }
+  if (geometry !== 'sharp_rectangular') {
+    reasons.push('Only a sharp-crested rectangular weir is supported.');
+  }
+  if (!Number.isInteger(endContractions) || endContractions! < 0 || endContractions! > 2) {
+    reasons.push('End contractions must be explicitly set to 0, 1, or 2.');
+  }
+  if (dischargeCondition !== 'free') {
+    reasons.push('The Bazin sizing is only approved for free discharge.');
+  }
+  if (downstreamHeadM == null || !Number.isFinite(downstreamHeadM)) {
+    reasons.push('Downstream water level relative to the crest must be confirmed.');
+  } else if (downstreamHeadM < 0) {
+    reasons.push('Downstream head relative to the crest cannot be negative.');
+  } else if (downstreamHeadM > 0) {
+    reasons.push('Downstream water is above the crest; submerged discharge is not supported.');
+  }
+
+  if (reasons.length > 0) {
+    return {
+      status: 'invalid',
+      lengthM: null,
+      effectiveLengthM: null,
+      flowM3s: Number.isFinite(flowM3h) && flowM3h > 0 ? flowM3h / 3600 : null,
+      headToLengthRatio: null,
+      reasons,
+      warnings,
+    };
+  }
+
+  const flowM3s = flowM3h / 3600;
+  const coefficient = BAZIN_COEFFICIENT_BASE + BAZIN_HEAD_COEFFICIENT / headM;
+  const lengthM = flowM3s / (coefficient * SQRT_2G * Math.pow(headM, 1.5));
+  const headToLengthRatio = headM / lengthM;
+
+  if (headToLengthRatio > FRANCIS_MAX_HEAD_TO_LENGTH_RATIO) {
+    warnings.push(
+      `H/L is ${headToLengthRatio.toFixed(2)}; this exceeds the Francis comparison limit of ${FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)} and requires engineering review.`,
+    );
+  }
+
+  return {
+    status: 'valid',
+    lengthM,
+    effectiveLengthM: lengthM,
+    flowM3s,
+    headToLengthRatio,
+    reasons,
+    warnings,
   };
 }

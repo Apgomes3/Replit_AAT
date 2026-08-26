@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculateBazinWeir,
   calculateFrancisWeir,
+  BAZIN_MIN_HEAD_M,
   FRANCIS_MAX_HEAD_M,
   FRANCIS_MIN_HEAD_M,
 } from './weir';
@@ -83,5 +85,31 @@ describe('Francis weir sizing', () => {
     expect(result.status).toBe('invalid');
     expect(result.lengthM).toBeNull();
     expect(result.reasons.join(' ')).toContain(reason);
+  });
+});
+
+describe('Bazin weir sizing alternative', () => {
+  it('calculates a sharp-crested rectangular alternative and exposes H/L', () => {
+    const result = calculateBazinWeir(validInputs);
+
+    expect(result.status).toBe('valid');
+    expect(result.lengthM).toBeCloseTo(0.459055, 6);
+    expect(result.headToLengthRatio).toBeCloseTo(0.217839, 6);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('requires the approved minimum head', () => {
+    const result = calculateBazinWeir({ ...validInputs, headM: BAZIN_MIN_HEAD_M - 0.001 });
+
+    expect(result.status).toBe('invalid');
+    expect(result.reasons.join(' ')).toContain('at least');
+  });
+
+  it('warns when H/L exceeds the Francis comparison limit', () => {
+    const result = calculateBazinWeir({ ...validInputs, flowM3h: 1 });
+
+    expect(result.status).toBe('valid');
+    expect(result.headToLengthRatio).toBeGreaterThan(0.5);
+    expect(result.warnings.join(' ')).toContain('exceeds the Francis comparison limit');
   });
 });
