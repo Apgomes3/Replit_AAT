@@ -390,7 +390,7 @@ export default function PurchaseOrdersList() {
       key: 'project_name' as any, header: 'Project', sortable: true, filterable: true,
       filterValue: r => `${r.project_code ?? ''} ${r.project_name ?? ''}`,
       render: r => r.project_code
-        ? <span><span className="font-mono text-xs text-slate-400 mr-1">{r.project_code}</span>{r.project_name}</span>
+        ? <span className="inline-flex items-center gap-1"><EntityCode code={r.project_code} />{r.project_name}</span>
         : <span className="text-slate-300 text-xs">—</span>,
     },
     {
@@ -483,7 +483,7 @@ export default function PurchaseOrdersList() {
     {
       key: 'project_name' as any, header: 'Project', sortable: true,
       render: r => r.project_code
-        ? <span><span className="font-mono text-xs text-slate-400 mr-1">{r.project_code}</span>{r.project_name}</span>
+        ? <span className="inline-flex items-center gap-1"><EntityCode code={r.project_code} />{r.project_name}</span>
         : <span className="text-slate-300 text-xs">—</span>,
     },
     {

@@ -606,7 +606,13 @@ export default function PurchaseOrderDetail() {
     <div className="flex flex-col h-full">
       <PageHeader
         title={<span className="flex items-center gap-2"><EntityCode code={po.po_code} /><POStatusBadge status={po.status} /></span>}
-        subtitle={po.project_name ? `${po.project_code} — ${po.project_name}` : 'No project linked'}
+        subtitle={po.project_name ? (
+          <span className="inline-flex items-center gap-1">
+            {po.project_code && <EntityCode code={po.project_code} />}
+            {po.project_code && '— '}
+            {po.project_name}
+          </span>
+        ) : 'No project linked'}
         crumbs={[
           ...(fromSystem ? [
             { label: fromSystem.projectCode ? `${fromSystem.projectCode} — ${fromSystem.projectName}` : (fromSystem.projectName || 'Project'), href: `/projects/${fromSystem.projectId}` },
@@ -1608,7 +1614,7 @@ export default function PurchaseOrderDetail() {
                     >
                       <EntityCode code={s.system_code} />
                       <span className="flex-1 text-xs text-slate-700 truncate group-hover:text-blue-700">{s.system_name}</span>
-                      <span className="text-xs text-slate-300 shrink-0">{s.project_code}</span>
+                      {s.project_code && <EntityCode code={s.project_code} className="text-[10px] text-slate-400 bg-slate-50 border-slate-100" />}
                     </button>
                   ))}
                   {itemSysSearch.length === 0 && (
@@ -1775,9 +1781,7 @@ export default function PurchaseOrderDetail() {
                       <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2.5">Used in Projects</div>
                       <div className="flex flex-wrap gap-1.5">
                         {quickViewProduct.projects.map((p: any) => (
-                          <span key={p.project_code} className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                            {p.project_code}
-                          </span>
+                          <EntityCode key={p.project_code} code={p.project_code} className="text-[11px] bg-blue-50 text-blue-700 border-blue-100" />
                         ))}
                       </div>
                     </div>
