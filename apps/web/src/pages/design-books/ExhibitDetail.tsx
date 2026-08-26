@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import {
@@ -10,6 +10,12 @@ import {
   ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir';
+
+function isExhibitTab(value: string | null): value is ExhibitTab {
+  return value === 'tank' || value === 'species' || value === 'flow' || value === 'weir';
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function WaterTypeBadge({ type }: { type?: string }) {
@@ -2160,8 +2166,9 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
 export default function ExhibitDetail() {
   const { bookId, exhibitId } = useParams<{ bookId: string; exhibitId: string }>();
   const qc = useQueryClient();
-
-  const [activeTab, setActiveTab] = useState<'tank' | 'species' | 'flow' | 'weir'>('tank');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: ExhibitTab = isExhibitTab(tabParam) ? tabParam : 'tank';
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', bookId],
@@ -2170,6 +2177,12 @@ export default function ExhibitDetail() {
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+
+  const handleTabChange = (nextTab: ExhibitTab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', nextTab);
+    setSearchParams(nextParams);
+  };
 
   if (isLoading) return <div className="p-10 text-center text-stone-400">Loading…</div>;
   if (!book) return <div className="p-10 text-center text-stone-500">Design book not found.</div>;
@@ -2267,7 +2280,7 @@ export default function ExhibitDetail() {
         {TABS.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleTabChange(tab.id)}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === tab.id
                 ? 'border-blue-600 text-blue-700'

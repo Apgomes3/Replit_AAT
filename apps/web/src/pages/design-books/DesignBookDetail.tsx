@@ -18,6 +18,10 @@ import VersionsTab from './VersionsTab';
 const STATUSES = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
 type Tab = 'exhibits' | 'lss' | 'piping' | 'versions';
 
+function isDesignBookTab(value: string | null): value is Tab {
+  return value === 'exhibits' || value === 'lss' || value === 'piping' || value === 'versions';
+}
+
 function WaterTypeBadge({ type }: { type?: string }) {
   if (!type) return <span className="text-stone-400 text-xs italic">—</span>;
   const styles: Record<string, string> = {
@@ -1232,8 +1236,9 @@ export default function DesignBookDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>((searchParams.get('tab') as Tab) || 'exhibits');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab: Tab = isDesignBookTab(tabParam) ? tabParam : 'exhibits';
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
@@ -1254,6 +1259,12 @@ export default function DesignBookDetail() {
   const projects: any[] = projectsData?.items || [];
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['design-book', id] });
+
+  const handleTabChange = (nextTab: Tab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', nextTab);
+    setSearchParams(nextParams);
+  };
 
   if (isLoading) return <div className="p-8 text-center text-stone-400">Loading…</div>;
   if (!book) return <div className="p-8 text-center text-stone-500">Design book not found.</div>;
@@ -1452,7 +1463,7 @@ export default function DesignBookDetail() {
         {TABS.map(t => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => handleTabChange(t.key)}
             className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
               tab === t.key
                 ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
