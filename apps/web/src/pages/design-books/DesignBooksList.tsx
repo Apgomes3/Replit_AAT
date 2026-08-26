@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
@@ -10,6 +10,7 @@ import { Plus, BookMarked, FolderOpen, X, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const STATUSES = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
+const SEARCH_DEBOUNCE_MS = 300;
 
 const EMPTY_FORM = {
   book_code: '',
@@ -24,13 +25,22 @@ export default function DesignBooksList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearch(search);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [search]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['design-books', search],
-    queryFn: () => api.get(`/design-books${search ? `?q=${encodeURIComponent(search)}` : ''}`).then(r => r.data),
+    queryKey: ['design-books', debouncedSearch],
+    queryFn: () => api.get(`/design-books${debouncedSearch ? `?q=${encodeURIComponent(debouncedSearch)}` : ''}`).then(r => r.data),
   });
 
   const { data: projectsData } = useQuery({
@@ -42,6 +52,8 @@ export default function DesignBooksList() {
 
   const items: any[] = data?.items || [];
   const projects: any[] = projectsData?.items || [];
+  const hasSearch = search.trim().length > 0;
+  const searchIsDebouncing = search !== debouncedSearch;
 
   const handleCreate = async () => {
     if (!form.book_code.trim() || !form.book_title.trim()) {
@@ -102,20 +114,34 @@ export default function DesignBooksList() {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-        {isLoading ? (
+        {isLoading || searchIsDebouncing ? (
           <div className="py-16 text-center text-stone-400 text-sm">Loading…</div>
         ) : items.length === 0 ? (
-          <div className="py-16 text-center">
-            <BookMarked className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-            <p className="text-stone-500 font-medium">No design books yet</p>
-            <p className="text-stone-400 text-sm mt-1">Create one from scratch or link to an existing project</p>
-            <button
-              onClick={() => setShowNew(true)}
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-            >
-              <Plus className="w-4 h-4" /> New Design Book
-            </button>
-          </div>
+          hasSearch ? (
+            <div className="py-16 text-center">
+              <BookMarked className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+              <p className="text-stone-500 font-medium">No design books found for “{search}”</p>
+              <p className="text-stone-400 text-sm mt-1">Try a different code, title or project</p>
+              <button
+                onClick={() => setSearch('')}
+                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50"
+              >
+                Clear search
+              </button>
+            </div>
+          ) : (
+            <div className="py-16 text-center">
+              <BookMarked className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+              <p className="text-stone-500 font-medium">No design books yet</p>
+              <p className="text-stone-400 text-sm mt-1">Create one from scratch or link to an existing project</p>
+              <button
+                onClick={() => setShowNew(true)}
+                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4" /> New Design Book
+              </button>
+            </div>
+          )
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-stone-50 border-b border-stone-200">
