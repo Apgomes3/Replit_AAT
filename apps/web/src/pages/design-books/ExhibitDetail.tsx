@@ -10,6 +10,13 @@ import {
   ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import {
+  calculateFrancisWeir,
+  FRANCIS_COEFFICIENT,
+  FRANCIS_MAX_HEAD_M,
+  FRANCIS_MAX_HEAD_TO_LENGTH_RATIO,
+  FRANCIS_MIN_HEAD_M,
+} from '../../lib/weir';
 
 type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir';
 
@@ -1612,22 +1619,6 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   );
 }
 
-// ─── Weir Allocation ─────────────────────────────────────────────────────────
-// Bazin (1888) sharp-crested rectangular weir:
-//   Q = m · L · √(2g) · H^1.5      [m³/s]
-//   m = 0.405 + 0.0027 / H          [H in metres]
-//   Solving for L:  L = Q / ( m · √(2g) · H^1.5 )
-
-const SQRT_2G = Math.sqrt(2 * 9.81); // ≈ 4.4294
-
-function calcBazin(skimM3h: number, headM: number): { L: number; m: number } | null {
-  if (headM <= 0 || skimM3h <= 0) return null;
-  const Q = skimM3h / 3600;          // m³/s
-  const m = 0.405 + 0.0027 / headM;  // Bazin coefficient
-  const L = Q / (m * SQRT_2G * Math.pow(headM, 1.5));
-  return { L, m };
-}
-
 type ResultUnit = 'mm' | 'm' | 'cm' | 'in';
 const RESULT_UNITS: ResultUnit[] = ['mm', 'm', 'cm', 'in'];
 
@@ -1651,16 +1642,35 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   const [headVal, setHeadVal]       = useState('');
   const [headUnit, setHeadUnit]     = useState<'mm' | 'm'>('mm');
   const [resultUnit, setResultUnit] = useState<ResultUnit>('mm');
+  const [geometry, setGeometry] = useState(hydraulics?.weir_geometry || 'sharp_rectangular');
+  const [contractions, setContractions] = useState(
+    hydraulics?.weir_end_contractions != null ? String(hydraulics.weir_end_contractions) : '2',
+  );
+  const [dischargeCondition, setDischargeCondition] = useState(
+    hydraulics?.weir_discharge_condition || 'free',
+  );
+  const [downstreamHeadVal, setDownstreamHeadVal] = useState(
+    hydraulics?.weir_downstream_head_mm != null ? String(parseFloat(hydraulics.weir_downstream_head_mm)) : '0',
+  );
   const [saving, setSaving]         = useState(false);
   const initialized                 = useRef(false);
 
-  // Seed headVal from stored value on first load
+  // Seed the saved values once. Legacy head-only records intentionally keep
+  // their head but have no confirmed method/boundary conditions.
   useEffect(() => {
-    if (!initialized.current && hydraulics?.weir_head_mm != null) {
-      setHeadVal(String(parseFloat(hydraulics.weir_head_mm)));
+    if (!initialized.current) {
+      if (hydraulics?.weir_head_mm != null) {
+        setHeadVal(String(parseFloat(hydraulics.weir_head_mm)));
+      }
+      setGeometry(hydraulics?.weir_geometry || 'sharp_rectangular');
+      setContractions(hydraulics?.weir_end_contractions != null ? String(hydraulics.weir_end_contractions) : '2');
+      setDischargeCondition(hydraulics?.weir_discharge_condition || 'free');
+      setDownstreamHeadVal(hydraulics?.weir_downstream_head_mm != null
+        ? String(parseFloat(hydraulics.weir_downstream_head_mm))
+        : '0');
       initialized.current = true;
     }
-  }, [hydraulics?.weir_head_mm]);
+  }, [hydraulics]);
 
   // Derive surface skim flow from hydraulics (same logic as WaterFlowTab)
   const opVol    = computeEffectiveOpVol(tank, substrateData) ?? 0;
@@ -1674,12 +1684,44 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   const headM      = headUnit === 'mm' ? headRaw / 1000 : headRaw;
   const currentMm  = headM > 0 ? headM * 1000 : null;
   const storedMm   = hydraulics?.weir_head_mm != null ? parseFloat(String(hydraulics.weir_head_mm)) : null;
-  const isDirty    = currentMm !== storedMm;
+  const storedContractions = hydraulics?.weir_end_contractions != null
+    ? String(hydraulics.weir_end_contractions)
+    : null;
+  const storedDownstreamMm = hydraulics?.weir_downstream_head_mm != null
+    ? parseFloat(String(hydraulics.weir_downstream_head_mm))
+    : null;
+  const basisConfirmed = hydraulics?.weir_formula_method === 'francis_184'
+    && hydraulics?.weir_geometry != null
+    && hydraulics?.weir_end_contractions != null
+    && hydraulics?.weir_discharge_condition != null
+    && storedDownstreamMm != null;
+  const basisComplete = geometry === 'sharp_rectangular'
+    && ['0', '1', '2'].includes(contractions)
+    && ['free', 'submerged'].includes(dischargeCondition)
+    && downstreamHeadVal.trim() !== ''
+    && Number.isFinite(parseFloat(downstreamHeadVal))
+    && parseFloat(downstreamHeadVal) >= 0;
+  const isDirty = currentMm !== storedMm
+    || geometry !== (hydraulics?.weir_geometry || null)
+    || contractions !== storedContractions
+    || dischargeCondition !== (hydraulics?.weir_discharge_condition || null)
+    || (Number.isFinite(parseFloat(downstreamHeadVal)) ? parseFloat(downstreamHeadVal) : null) !== storedDownstreamMm
+    || hydraulics?.weir_formula_method !== 'francis_184';
 
-  const result  = skimM3h != null ? calcBazin(skimM3h, headM) : null;
+  const basisResult = skimM3h != null && basisComplete
+    ? calculateFrancisWeir({
+      flowM3h: skimM3h,
+      headM,
+      geometry,
+      endContractions: parseInt(contractions, 10),
+      dischargeCondition,
+      downstreamHeadM: parseFloat(downstreamHeadVal) / 1000,
+    })
+    : null;
+  const result = basisConfirmed ? basisResult : null;
   const noFlow  = skimM3h == null;
   const noHead  = headM <= 0;
-  const lowHead = headM > 0 && headM < 0.05;
+  const needsBasisConfirmation = !basisConfirmed;
 
   const nextUnit = RESULT_UNITS[(RESULT_UNITS.indexOf(resultUnit) + 1) % RESULT_UNITS.length];
 
@@ -1692,6 +1734,11 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
         bottom_drain_pct:     hydraulics?.bottom_drain_pct     ?? 70,
         notes:                hydraulics?.notes                ?? null,
         weir_head_mm:         currentMm,
+        weir_formula_method:  'francis_184',
+        weir_geometry:        geometry,
+        weir_end_contractions: parseInt(contractions, 10),
+        weir_discharge_condition: dischargeCondition,
+        weir_downstream_head_mm: parseFloat(downstreamHeadVal),
       });
       toast.success('Head saved');
       initialized.current = false; // allow re-seed after refresh
@@ -1709,7 +1756,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-stone-100 bg-indigo-50/40">
         <Calculator className="w-4 h-4 text-indigo-600" />
         <span className="text-sm font-semibold text-indigo-800">Weir Allocation</span>
-        <span className="text-xs text-indigo-500 ml-1">— Bazin formula, sharp-crested rectangular weir</span>
+        <span className="text-xs text-indigo-500 ml-1">— Francis formula, approved sharp-crested rectangular case</span>
       </div>
 
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1768,18 +1815,13 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                   >{u}</button>
                 ))}
               </div>
-              {isDirty && headM > 0 && (
+              {isDirty && headM > 0 && basisComplete && (
                 <button onClick={handleSave} disabled={saving}
                   className="flex items-center gap-1 text-xs text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg px-3 py-2 font-medium transition-colors shrink-0">
-                  <Save className="w-3 h-3" />{saving ? '…' : 'Save'}
+                  <Save className="w-3 h-3" />{saving ? '…' : basisConfirmed ? 'Save' : 'Confirm & Save'}
                 </button>
               )}
             </div>
-            {lowHead && (
-              <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />H &lt; 50 mm — Bazin formula less reliable at very low heads
-              </p>
-            )}
             {headM > 0 && (
               <p className="text-xs text-stone-400 mt-1">
                 = {headUnit === 'mm' ? `${headM.toFixed(4)} m` : `${(headM * 1000).toFixed(1)} mm`}
@@ -1788,14 +1830,65 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
             )}
           </div>
 
+          {/* Applicability and operating conditions */}
+          <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg px-4 py-3 space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-indigo-800">Applicability &amp; operating conditions</p>
+              <p className="text-xs text-indigo-600/80 mt-0.5">These conditions are part of the saved design basis, not optional calculation notes.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Weir geometry</label>
+              <select value={geometry} onChange={e => setGeometry(e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30">
+                <option value="sharp_rectangular">Sharp-crested rectangular</option>
+              </select>
+              <p className="text-xs text-stone-400 mt-1">Broad-crested, V-notch, and proprietary weirs are outside this calculator.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">End contractions (n)</label>
+                <select value={contractions} onChange={e => setContractions(e.target.value)}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30">
+                  <option value="0">0 — suppressed / no end contractions</option>
+                  <option value="1">1 — one end contraction</option>
+                  <option value="2">2 — two end contractions</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Discharge condition</label>
+                <select value={dischargeCondition} onChange={e => setDischargeCondition(e.target.value)}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30">
+                  <option value="free">Free discharge</option>
+                  <option value="submerged">Submerged / drowned (not supported)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Downstream water above crest</label>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" step="1" value={downstreamHeadVal}
+                  onChange={e => setDownstreamHeadVal(e.target.value)}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30" />
+                <span className="text-xs text-stone-500 shrink-0">mm</span>
+              </div>
+              <p className="text-xs text-stone-400 mt-1">Use 0 mm only when the downstream water surface is below the crest and discharge is demonstrably free.</p>
+            </div>
+            {needsBasisConfirmation && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2 flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                Confirm and save these conditions before relying on the sizing result.
+              </p>
+            )}
+          </div>
+
           {/* Formula reference */}
           <div className="bg-stone-50 border border-stone-200 rounded-lg px-4 py-3 space-y-1 text-xs text-stone-500">
-            <p className="font-semibold text-stone-600 mb-1.5">Bazin (1888) Formula</p>
-            <p className="font-mono">Q = m · L · √(2g) · H<sup>3/2</sup></p>
-            <p className="font-mono">m = 0.405 + 0.0027 / H</p>
-            <p className="font-mono">√(2g) = {SQRT_2G.toFixed(4)} m<sup>½</sup>/s</p>
-            {result && <p className="font-mono text-indigo-600">m used = {result.m.toFixed(4)}</p>}
-            <p className="text-stone-400 mt-1.5">Sharp-crested rectangular weir. Valid for H &gt; 50 mm.</p>
+            <p className="font-semibold text-stone-600 mb-1.5">Francis (SI) Formula</p>
+            <p className="font-mono">Q = {FRANCIS_COEFFICIENT.toFixed(2)} · (L − 0.1 · n · H) · H<sup>3/2</sup></p>
+            <p className="font-mono">L = Q / ({FRANCIS_COEFFICIENT.toFixed(2)} · H<sup>3/2</sup>) + 0.1 · n · H</p>
+            <p>Q in m³/s · L and H in m · n = number of end contractions</p>
+            <p className="text-stone-400 mt-1.5">Source: Francis, <em>Lowell Hydraulic Experiments</em> (1852), SI form used by the project design basis.</p>
+            <p className="text-stone-400">Policy: sharp-crested rectangular, free discharge, H = {FRANCIS_MIN_HEAD_M * 1000}–{FRANCIS_MAX_HEAD_M * 1000} mm, H/L ≤ {FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}, tailwater above crest = 0 mm.</p>
           </div>
         </div>
 
@@ -1807,6 +1900,22 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
               <p className="text-sm text-stone-400">
                 {noFlow ? 'Set flow data in Water Flow tab' : 'Enter head over weir to calculate'}
               </p>
+            </div>
+          ) : needsBasisConfirmation ? (
+            <div className="text-center space-y-2 py-6">
+              <AlertTriangle className="w-10 h-10 text-amber-300 mx-auto" />
+              <p className="text-sm font-medium text-amber-700">Design basis confirmation required</p>
+              <p className="text-xs text-stone-500 max-w-sm mx-auto">The previous head value is retained, but no Francis applicability basis was saved with it. Confirm the geometry and operating conditions, then save.</p>
+            </div>
+          ) : basisResult?.status === 'invalid' ? (
+            <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 space-y-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                <AlertTriangle className="w-4 h-4" /> Francis sizing unavailable
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-xs text-amber-700">
+                {basisResult.reasons.map(reason => <li key={reason}>{reason}</li>)}
+              </ul>
+              <p className="text-xs text-amber-700/80 pt-1">Obtain a project hydraulic review or use an approved alternate method; this panel does not size unsupported weirs.</p>
             </div>
           ) : result ? (
             <div className="w-full space-y-4">
@@ -1823,7 +1932,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                   {nextUnit} →
                 </button>
                 <p className="text-4xl font-bold text-indigo-700 font-mono tracking-tight">
-                  {fmtWeir(result.L, resultUnit)}
+                  {fmtWeir(result.lengthM!, resultUnit)}
                 </p>
                 <p className="text-base font-medium text-indigo-500 mt-0.5">{resultUnit}</p>
               </div>
@@ -1832,14 +1941,16 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
                 <p className="font-semibold text-stone-600 mb-1">Calculation Summary</p>
                 <div className="flex justify-between"><span>Q (skim flow)</span><span className="font-mono text-stone-700">{(skimM3h! / 3600).toFixed(6)} m³/s</span></div>
                 <div className="flex justify-between"><span>H (head)</span><span className="font-mono text-stone-700">{headM.toFixed(4)} m ({(headM * 1000).toFixed(1)} mm)</span></div>
-                <div className="flex justify-between"><span>m (Bazin coeff.)</span><span className="font-mono text-stone-700">{result.m.toFixed(4)}</span></div>
+                 <div className="flex justify-between"><span>Francis coefficient</span><span className="font-mono text-stone-700">{FRANCIS_COEFFICIENT.toFixed(2)}</span></div>
+                 <div className="flex justify-between"><span>n (end contractions)</span><span className="font-mono text-stone-700">{contractions}</span></div>
+                 <div className="flex justify-between"><span>H/L applicability</span><span className="font-mono text-stone-700">{result.headToLengthRatio!.toFixed(2)} ≤ {FRANCIS_MAX_HEAD_TO_LENGTH_RATIO.toFixed(2)}</span></div>
                 <div className="flex justify-between font-semibold text-indigo-700 pt-1 border-t border-stone-100">
-                  <span>L (weir length)</span><span className="font-mono">{(result.L * 1000).toFixed(1)} mm</span>
+                  <span>L (weir length)</span><span className="font-mono">{(result.lengthM! * 1000).toFixed(1)} mm</span>
                 </div>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-stone-400 text-center py-6">Enter a positive head value to calculate</p>
+            <p className="text-sm text-stone-400 text-center py-6">Enter a positive head value and complete the applicability conditions</p>
           )}
         </div>
       </div>
@@ -1935,6 +2046,11 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
         bottom_drain_pct:     parseFloat(form.bottom_drain_pct),
         notes:               form.notes || null,
         weir_head_mm:        hydraulics?.weir_head_mm ?? null,
+        weir_formula_method: hydraulics?.weir_formula_method ?? null,
+        weir_geometry: hydraulics?.weir_geometry ?? null,
+        weir_end_contractions: hydraulics?.weir_end_contractions ?? null,
+        weir_discharge_condition: hydraulics?.weir_discharge_condition ?? null,
+        weir_downstream_head_mm: hydraulics?.weir_downstream_head_mm ?? null,
       });
       toast.success('Water flow saved');
       setEditing(false);
