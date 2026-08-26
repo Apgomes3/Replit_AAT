@@ -8,6 +8,9 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  busy?: boolean;
+  busyLabel?: string;
+  error?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -18,6 +21,9 @@ export default function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   danger = false,
+  busy = false,
+  busyLabel = 'Saving…',
+  error,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -25,7 +31,7 @@ export default function ConfirmDialog({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={busy ? undefined : onCancel} />
       <div
         ref={dialogRef}
         role="dialog"
@@ -45,26 +51,33 @@ export default function ConfirmDialog({
             {title && <h3 id="confirm-dialog-title" className="text-sm font-semibold text-slate-800 mb-1">{title}</h3>}
             <p id="confirm-dialog-message" className="text-sm text-slate-600 leading-relaxed">{message}</p>
           </div>
-          <button aria-label="Close dialog" title="Close dialog" onClick={onCancel} className="text-slate-300 hover:text-slate-500 shrink-0 -mt-0.5 -mr-1">
+          <button aria-label="Close dialog" title="Close dialog" onClick={onCancel} disabled={busy} className="text-slate-300 hover:text-slate-500 shrink-0 -mt-0.5 -mr-1 disabled:opacity-50">
             <X className="w-4 h-4" />
           </button>
         </div>
+        {error && (
+          <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        )}
         <div className="flex gap-2 justify-end">
           <button
             onClick={onCancel}
-            className="px-4 py-1.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            disabled={busy}
+            className="px-4 py-1.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+            disabled={busy}
+            className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
               danger
                 ? 'bg-red-600 text-white hover:bg-red-700'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </div>

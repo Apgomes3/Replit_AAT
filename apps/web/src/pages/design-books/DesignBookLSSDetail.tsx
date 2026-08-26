@@ -3,6 +3,7 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import {
   ChevronRight, Activity, Pencil, Save, X, Plus, Trash2,
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
@@ -352,6 +353,8 @@ export default function DesignBookLSSDetail() {
   // Exhibit link modals
   const [showAddExhibit, setShowAddExhibit] = useState(false);
   const [editLink, setEditLink]   = useState<any>(null);
+  const [pendingUnlinkLink, setPendingUnlinkLink] = useState<any>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const [deletingLink, setDeletingLink] = useState<string | null>(null);
 
   // System config selector
@@ -558,15 +561,31 @@ export default function DesignBookLSSDetail() {
     }
   };
 
-  const handleDeleteLink = async (linkId: string) => {
-    if (!confirm('Remove this exhibit link?')) return;
-    setDeletingLink(linkId);
+  const requestDeleteLink = (link: any) => {
+    setUnlinkError(null);
+    setPendingUnlinkLink(link);
+  };
+
+  const cancelDeleteLink = () => {
+    if (deletingLink) return;
+    setPendingUnlinkLink(null);
+    setUnlinkError(null);
+  };
+
+  const handleDeleteLink = async () => {
+    if (!pendingUnlinkLink || deletingLink) return;
+    const link = pendingUnlinkLink;
+    setDeletingLink(link.id);
+    setUnlinkError(null);
     try {
-      await api.delete(`/systems/${systemId}/exhibit-links/${linkId}`);
+      await api.delete(`/systems/${systemId}/exhibit-links/${link.id}`);
+      setPendingUnlinkLink(null);
       toast.success('Link removed');
       refresh();
-    } catch {
-      toast.error('Failed to remove link');
+    } catch (err: any) {
+      const message = err?.response?.data?.error?.message || 'Failed to remove link. Check your connection and try again.';
+      setUnlinkError(message);
+      toast.error(message);
     } finally {
       setDeletingLink(null);
     }
@@ -1167,7 +1186,7 @@ export default function DesignBookLSSDetail() {
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDeleteLink(link.id)}
+                          onClick={() => requestDeleteLink(link)}
                           disabled={deletingLink === link.id}
                           className="text-stone-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-50">
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1739,6 +1758,21 @@ export default function DesignBookLSSDetail() {
           </div>
         );
       })()}
+
+      {pendingUnlinkLink && (
+        <ConfirmDialog
+          title={`Remove exhibit link from ${system.system_name}?`}
+          message={`This will unlink ${pendingUnlinkLink.exhibit_code} — ${pendingUnlinkLink.exhibit_name} from ${system.system_name}. Linked flow calculations and turnover values may change after the link is removed.`}
+          confirmLabel={unlinkError ? 'Retry Remove' : 'Remove Link'}
+          cancelLabel="Keep Link"
+          danger
+          busy={deletingLink === pendingUnlinkLink.id}
+          busyLabel="Removing…"
+          error={unlinkError || undefined}
+          onConfirm={handleDeleteLink}
+          onCancel={cancelDeleteLink}
+        />
+      )}
 
       {/* Back link */}
       <div>
