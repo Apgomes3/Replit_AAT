@@ -7,7 +7,7 @@ import {
   Trash2, Check, CheckCircle2, Layers, FolderOpen, LinkIcon,
   SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
   ArrowUpToLine, Wind, BookOpen, Mountain, Palette, Calculator,
-  ArrowRight, AlertTriangle,
+  ArrowRight, ArrowLeft, AlertTriangle, MoreHorizontal,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -2372,6 +2372,9 @@ export default function ExhibitDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const activeTab: ExhibitTab = isExhibitTab(tabParam) ? tabParam : 'tank';
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [toolsMenuPosition, setToolsMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const toolsMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', bookId],
@@ -2385,6 +2388,42 @@ export default function ExhibitDetail() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('tab', nextTab);
     setSearchParams(nextParams);
+    setShowToolsMenu(false);
+    setToolsMenuPosition(null);
+  };
+
+  useEffect(() => {
+    if (!showToolsMenu) return;
+    const closeMenu = () => {
+      setShowToolsMenu(false);
+      setToolsMenuPosition(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!toolsMenuRef.current?.contains(event.target as Node)) closeMenu();
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showToolsMenu]);
+
+  const openToolsMenu = (event?: React.MouseEvent) => {
+    if (event?.type === 'contextmenu') {
+      event.preventDefault();
+      setToolsMenuPosition({
+        x: Math.min(event.clientX, window.innerWidth - 240),
+        y: Math.min(event.clientY, window.innerHeight - 260),
+      });
+      setShowToolsMenu(true);
+      return;
+    }
+    setToolsMenuPosition(null);
+    setShowToolsMenu(current => !current);
   };
 
   if (isLoading) return <div className="p-10 text-center text-stone-400">Loading…</div>;
@@ -2426,7 +2465,10 @@ export default function ExhibitDetail() {
       </nav>
 
       {/* Exhibit Header */}
-      <div className="bg-white rounded-2xl border border-stone-200 px-6 py-5 mb-5 shadow-sm">
+      <div
+        className="bg-white rounded-2xl border border-stone-200 px-6 py-5 mb-5 shadow-sm"
+        onContextMenu={openToolsMenu}
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
@@ -2469,12 +2511,64 @@ export default function ExhibitDetail() {
               </div>
             </div>
           </div>
-          <Link
-            to={`/design-books/${bookId}`}
-            className="shrink-0 text-xs text-stone-500 hover:text-stone-700 border border-stone-200 rounded-lg px-3 py-1.5 bg-white hover:bg-stone-50 transition-colors"
-          >
-            ← Back to Design Book
-          </Link>
+          <div className="shrink-0 flex items-center gap-2 relative" ref={toolsMenuRef}>
+            <Link
+              to={`/design-books/${bookId}`}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl px-4 py-2.5 shadow-sm transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Design Book
+            </Link>
+            <button
+              type="button"
+              onClick={() => openToolsMenu()}
+              aria-label="Open exhibit tools"
+              aria-expanded={showToolsMenu}
+              className="inline-flex items-center justify-center w-10 h-10 text-stone-600 hover:text-stone-800 border border-stone-200 rounded-xl bg-white hover:bg-stone-50 transition-colors"
+            >
+              <MoreHorizontal className="w-5 h-5" />
+            </button>
+            {showToolsMenu && (
+              <div
+                className={`z-30 w-56 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl ${
+                  toolsMenuPosition ? 'fixed' : 'absolute right-0 top-full mt-2'
+                }`}
+                style={toolsMenuPosition ? { left: toolsMenuPosition.x, top: toolsMenuPosition.y } : undefined}
+                role="menu"
+                aria-label="Exhibit tools"
+              >
+                <Link
+                  to={`/design-books/${bookId}`}
+                  onClick={() => {
+                    setShowToolsMenu(false);
+                    setToolsMenuPosition(null);
+                  }}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                  role="menuitem"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Design Book
+                </Link>
+                <div className="my-1 border-t border-stone-100" />
+                {TABS.map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleTabChange(tab.id)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                      activeTab === tab.id
+                        ? 'bg-blue-50 font-semibold text-blue-700'
+                        : 'text-stone-600 hover:bg-stone-50'
+                    }`}
+                    role="menuitem"
+                  >
+                    {tab.icon}
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

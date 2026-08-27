@@ -1,1 +1,2 @@
 - [PO vendor privacy](po-vendor-privacy.md) — vendor autocomplete must only surface names from purchase orders visible to the current user.
+- [Exhibit navigation](exhibit-navigation.md) — keep Back to Design Book prominent and expose exhibit tools from one accessible menu.
