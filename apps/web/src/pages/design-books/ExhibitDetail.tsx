@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import api from '../../lib/api';
 import {
@@ -28,6 +28,11 @@ type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir';
 
 function isExhibitTab(value: string | null): value is ExhibitTab {
   return value === 'tank' || value === 'species' || value === 'flow' || value === 'weir';
+}
+
+function isEditingField(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement
+    && (target.matches('input, select, textarea, [contenteditable="true"]') || target.isContentEditable);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -2413,6 +2418,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ExhibitDetail() {
   const { bookId, exhibitId } = useParams<{ bookId: string; exhibitId: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const user = useAuthStore(state => state.user);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2439,24 +2445,32 @@ export default function ExhibitDetail() {
   };
 
   useEffect(() => {
-    if (!showToolsMenu) return;
     const closeMenu = () => {
       setShowToolsMenu(false);
       setToolsMenuPosition(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeMenu();
+      if (event.key !== 'Escape') return;
+      if (showToolsMenu) {
+        closeMenu();
+        return;
+      }
+      if (event.defaultPrevented || isEditingField(event.target)) return;
+      navigate(-1);
     };
+    document.addEventListener('keydown', handleKeyDown);
+    if (!showToolsMenu) {
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
     const handleMouseDown = (event: MouseEvent) => {
       if (!toolsMenuRef.current?.contains(event.target as Node)) closeMenu();
     };
     document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showToolsMenu]);
+  }, [navigate, showToolsMenu]);
 
   const openToolsMenu = (event?: React.MouseEvent) => {
     if (event?.type === 'contextmenu') {
