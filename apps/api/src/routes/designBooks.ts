@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest, requireRole, requireModuleAccess } from '../middleware/auth';
 import pool, { query } from '../db/index';
+import crypto from 'crypto';
 import { logAudit } from '../db/audit';
 import {
   buildDesignBookReleaseChecklist,
@@ -47,12 +48,13 @@ async function loadReleaseContext(
   id: string,
   runner: DbRunner = query,
   lock = false,
+  liveOnly = false,
 ): Promise<DesignBookReleaseContext & Record<string, any>> {
   const bookResult = await runner(
-    `SELECT db.*, p.project_scopes
+    `SELECT db.*, p.project_scopes, p.project_code, p.project_name
      FROM design_books db
      LEFT JOIN projects p ON db.project_id = p.id
-     WHERE db.id = $1${lock ? ' FOR UPDATE' : ''}`,
+     WHERE db.id = $1${lock ? ' FOR UPDATE OF db' : ''}`,
     [id],
   );
   const book = bookResult.rows[0];
@@ -62,21 +64,20 @@ async function loadReleaseContext(
   let tanks: any[] = [];
   let systems: any[] = [];
   if (book.project_id) {
-    const [exhibitResult, tankResult, systemResult] = await Promise.all([
-      runner('SELECT * FROM exhibits WHERE project_id=$1 ORDER BY exhibit_code', [book.project_id]),
-      runner('SELECT * FROM tanks WHERE project_id=$1 ORDER BY tank_code', [book.project_id]),
-      runner('SELECT * FROM systems WHERE project_id=$1 ORDER BY system_code', [book.project_id]),
-    ]);
+    const exhibitResult = await runner('SELECT * FROM exhibits WHERE project_id=$1 ORDER BY exhibit_code', [book.project_id]);
+    const tankResult = await runner('SELECT * FROM tanks WHERE project_id=$1 ORDER BY tank_code', [book.project_id]);
+    const systemResult = await runner('SELECT * FROM systems WHERE project_id=$1 ORDER BY system_code', [book.project_id]);
     exhibits = exhibitResult.rows;
     tanks = tankResult.rows;
     systems = systemResult.rows;
   }
 
-  const [speciesResult, hydraulicsResult, substrateResult] = await Promise.all([
-    runner('SELECT * FROM design_book_exhibit_species WHERE design_book_id=$1 ORDER BY exhibit_id, sort_order', [id]),
-    runner('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [id]),
-    runner('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1', [id]),
-  ]);
+  const speciesResult = await runner(
+    'SELECT * FROM design_book_exhibit_species WHERE design_book_id=$1 ORDER BY exhibit_id, sort_order',
+    [id],
+  );
+  const hydraulicsResult = await runner('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [id]);
+  const substrateResult = await runner('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1', [id]);
   const species = speciesResult.rows;
   const hydraulics = hydraulicsResult.rows;
   const substrate = substrateResult.rows;
@@ -134,7 +135,7 @@ async function loadReleaseContext(
       systems: systemCalculations,
     },
   };
-  if (['For Review', 'Approved'].includes(book.status) && book.review_snapshot) {
+  if (!liveOnly && ['For Review', 'Approved'].includes(book.status) && book.review_snapshot) {
     return {
       ...book.review_snapshot,
       id: book.id,
@@ -935,18 +936,27 @@ router.post(
           error: { code: 'ALREADY_RELEASED', message: 'This Design Book revision is already released.' },
         });
       }
-      await client.query(
-        `INSERT INTO design_book_versions
-           (design_book_id, version_number, version_label, notes, snapshot, created_by)
-         SELECT $1, COALESCE(MAX(version_number), 0) + 1, $2, $3, $4::jsonb, $5
-         FROM design_book_versions WHERE design_book_id=$1`,
-        [
-          req.params.id,
-          `Released Rev ${revision.trim()}`,
-          release_notes.trim(),
-          JSON.stringify(snapshot),
-          req.user!.id,
-        ],
+      const releasedVersionSnapshot = withSnapshotIntegrity({
+        ...makeVersionSnapshot({
+          ...context,
+          status: 'Released',
+          revision: revision.trim(),
+        }),
+        release: {
+          included_scope: scope,
+          release_notes: release_notes.trim(),
+          released_by: req.user!.id,
+          released_at: releasedAt,
+          release_checklist: checklist,
+        },
+      });
+      await insertVersion(
+        client.query.bind(client) as DbRunner,
+        routeParam(req.params.id),
+        `Released Rev ${revision.trim()}`,
+        release_notes.trim(),
+        releasedVersionSnapshot,
+        req.user!.id,
       );
       await insertAudit(client.query.bind(client) as DbRunner, req.user!.id, 'design_book', routeParam(req.params.id), 'RELEASE', {
         summary: `Design Book ${context.book_code} Rev ${revision.trim()} released`,
@@ -1068,178 +1078,530 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
+const VERSION_SNAPSHOT_SCHEMA = 2;
+const VERSION_REFERENCE_FIELDS = {
+  project: ['id', 'project_code', 'project_name'],
+  exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
+    'design_temperature_min', 'design_temperature_max', 'design_salinity', 'area_id', 'status', 'notes'],
+  tanks: ['id', 'project_id', 'tank_code', 'exhibit_id', 'system_id', 'area_id', 'quantity',
+    'tank_name', 'tank_type', 'product_master_id', 'shape_type', 'gross_volume_m3',
+    'operating_volume_m3', 'length_mm', 'width_mm', 'height_mm', 'design_water_level_mm',
+    'primary_material', 'material_id', 'wall_thickness_mm', 'inner_length_mm', 'inner_width_mm',
+    'inner_height_mm', 'status', 'notes'],
+  systems: ['id', 'project_id', 'system_code', 'area_id', 'exhibit_id', 'system_name', 'system_type',
+    'design_flow_m3h', 'turnover_rate_hr', 'water_type', 'status', 'primary_control_panel_code',
+    'duty_description', 'redundancy_strategy', 'design_basis_reference', 'system_config', 'compact_unit_id',
+    'calculation_version', 'calculation_inputs', 'loop1_flow_source', 'loop1_filtration',
+    'loop1_bio_degas_m3h', 'loop1_link_bio_degas', 'loop2_flow_source', 'loop2_filtration',
+    'loop2_bio_degas_m3h', 'loop2_link_bio_degas', 'loop3_flow_source', 'loop3_filtration',
+    'loop3_bio_degas_m3h', 'loop3_link_bio_degas'],
+  system_links: ['id', 'system_id', 'exhibit_id', 'link_type', 'flow_allocation_m3h', 'notes',
+    'sort_order', 'allocation_source', 'allocation_updated_at'],
+};
+
+function jsonCopy(value: any) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function pickFields(row: any, fields: string[]) {
+  return fields.reduce((result, field) => {
+    result[field] = row?.[field] ?? null;
+    return result;
+  }, {} as Record<string, any>);
+}
+
+function canonicalJson(value: any): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function withSnapshotIntegrity(snapshot: any) {
+  const unsigned = { ...snapshot };
+  delete unsigned.integrity;
+  return {
+    ...unsigned,
+    integrity: {
+      algorithm: 'sha256',
+      digest: crypto.createHash('sha256').update(canonicalJson(unsigned)).digest('hex'),
+    },
+  };
+}
+
+function snapshotIntegrityStatus(snapshot: any, persistedChecksum?: string | null, requirePersisted = false) {
+  if (!snapshot?.integrity?.digest) return 'legacy_unverified';
+  if (requirePersisted && !persistedChecksum) return 'invalid';
+  const unsigned = { ...snapshot };
+  const expected = snapshot.integrity.digest;
+  delete unsigned.integrity;
+  const actual = crypto.createHash('sha256').update(canonicalJson(unsigned)).digest('hex');
+  return expected === actual && (!persistedChecksum || persistedChecksum === actual) ? 'verified' : 'invalid';
+}
+
+function liveReferencesFromContext(context: any) {
+  return {
+    project: context.project_id
+      ? pickFields(context, VERSION_REFERENCE_FIELDS.project)
+      : null,
+    exhibits: (context.exhibits || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.exhibits)),
+    tanks: (context.tanks || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.tanks)),
+    systems: (context.systems || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.systems)),
+    system_links: (context.system_links || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.system_links)),
+  };
+}
+
+function frozenFromSnapshot(snapshot: any) {
+  if (snapshot?.frozen) return snapshot.frozen;
+  // Keep snapshots made before schema 2 restorable while they are replaced by
+  // verified snapshots on the next save.
+  return {
+    design_book: pickFields(snapshot, ['book_code', 'book_title', 'project_id', 'description', 'revision', 'status', 'notes']),
+    species: snapshot?.species || [],
+    hydraulics: snapshot?.hydraulics || [],
+    substrate: snapshot?.substrate || [],
+    ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
+  };
+}
+
+function referencesFromSnapshot(snapshot: any) {
+  if (snapshot?.live_references) return snapshot.live_references;
+  return {
+    project: snapshot?.project_id
+      ? pickFields(snapshot, VERSION_REFERENCE_FIELDS.project)
+      : null,
+    exhibits: (snapshot?.exhibits || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.exhibits)),
+    tanks: (snapshot?.tanks || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.tanks)),
+    systems: (snapshot?.systems || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.systems)),
+    system_links: (snapshot?.system_links || []).map((row: any) => pickFields(row, VERSION_REFERENCE_FIELDS.system_links)),
+  };
+}
+
+function compareReferenceCollection(captured: any[] = [], current: any[] = []) {
+  const capturedById = new Map(captured.filter(row => row?.id).map(row => [row.id, jsonCopy(row)]));
+  const currentById = new Map(current.filter(row => row?.id).map(row => [row.id, jsonCopy(row)]));
+  const added = current.filter(row => row?.id && !capturedById.has(row.id)).map(row => row.id);
+  const removed = captured.filter(row => row?.id && !currentById.has(row.id)).map(row => row.id);
+  const changed = captured
+    .filter(row => row?.id && currentById.has(row.id))
+    .filter(row => canonicalJson(capturedById.get(row.id)) !== canonicalJson(currentById.get(row.id)))
+    .map(row => row.id);
+  return { added, removed, changed, has_drift: added.length > 0 || removed.length > 0 || changed.length > 0 };
+}
+
+function calculateVersionDrift(snapshot: any, currentContext: any) {
+  const captured = referencesFromSnapshot(snapshot);
+  const current = liveReferencesFromContext(currentContext);
+  const collections: Record<string, any> = {};
+  for (const key of ['exhibits', 'tanks', 'systems', 'system_links']) {
+    collections[key] = compareReferenceCollection(captured[key], current[key]);
+  }
+  const projectChanged = canonicalJson(captured.project) !== canonicalJson(current.project);
+  const unresolved: Array<{ type: string; id: string }> = [];
+  for (const key of ['exhibits', 'tanks', 'systems']) {
+    for (const id of collections[key].removed) unresolved.push({ type: key.slice(0, -1), id });
+  }
+  for (const id of collections.system_links.removed) unresolved.push({ type: 'system_link', id });
+  if (captured.project?.id && !current.project) unresolved.unshift({ type: 'project', id: captured.project.id });
+  return {
+    has_drift: projectChanged || Object.values(collections).some((value: any) => value.has_drift),
+    project_changed: projectChanged,
+    collections,
+    unresolved_references: unresolved,
+  };
+}
+
+function makeVersionSnapshot(context: any, capturedAt = new Date().toISOString()) {
+  const snapshot = {
+    schema_version: VERSION_SNAPSHOT_SCHEMA,
+    captured_at: capturedAt,
+    source: {
+      design_book_id: context.id,
+      project_id: context.project_id || null,
+      book_code: context.book_code,
+      revision: context.revision,
+      project_code: context.project_code || null,
+      project_name: context.project_name || null,
+    },
+    frozen: {
+      design_book: pickFields(context, ['book_code', 'book_title', 'project_id', 'description', 'revision', 'status', 'notes']),
+      species: jsonCopy(context.species || []),
+      hydraulics: jsonCopy(context.hydraulics || []),
+      substrate: jsonCopy(context.substrate || []),
+      review_handovers: jsonCopy(context.review_handovers || []),
+    },
+    live_references: liveReferencesFromContext(context),
+    scope: {
+      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'review handovers'],
+      live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
+      restore_target: 'working_copy',
+    },
+  };
+  return withSnapshotIntegrity(snapshot);
+}
+
+function currentRestoreStateDigest(context: any) {
+  return crypto.createHash('sha256').update(canonicalJson({
+    frozen: {
+      design_book: pickFields(context, ['book_code', 'book_title', 'project_id', 'description', 'revision', 'status', 'notes']),
+      species: jsonCopy(context.species || []),
+      hydraulics: jsonCopy(context.hydraulics || []),
+      substrate: jsonCopy(context.substrate || []),
+      review_handovers: jsonCopy(context.review_handovers || []),
+    },
+    live_references: liveReferencesFromContext(context),
+  })).digest('hex');
+}
+
+function versionPresentation(version: any, currentContext: any) {
+  const snapshot = version.snapshot || {};
+  const frozen = frozenFromSnapshot(snapshot);
+  const drift = calculateVersionDrift(snapshot, currentContext);
+  const summary = {
+    schema_version: snapshot.schema_version || 1,
+    integrity: snapshotIntegrityStatus(
+      snapshot,
+      version.snapshot_checksum,
+      Number(version.snapshot_schema_version || snapshot.schema_version || 1) >= VERSION_SNAPSHOT_SCHEMA,
+    ),
+    captured_at: snapshot.captured_at || snapshot.snapshotted_at || version.created_at,
+    frozen_records: {
+      species: (frozen.species || []).length,
+      hydraulics: (frozen.hydraulics || []).length,
+      substrate_theming: (frozen.substrate || []).length,
+      review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
+    },
+    live_references: {
+      exhibits: (referencesFromSnapshot(snapshot).exhibits || []).length,
+      tanks: (referencesFromSnapshot(snapshot).tanks || []).length,
+      systems: (referencesFromSnapshot(snapshot).systems || []).length,
+      system_links: (referencesFromSnapshot(snapshot).system_links || []).length,
+    },
+    restorable_records: [
+      'book metadata', 'species', 'hydraulics', 'substrate and theming',
+      ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
+    ],
+    preserved_records: Array.isArray(frozen.review_handovers) ? [] : ['review handovers (not captured by this older version)'],
+    live_reference_records: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
+  };
+  return {
+    ...version,
+    snapshot,
+    _snap: snapshot,
+    summary,
+    drift,
+    restore_preview: {
+      before: {
+        book_title: currentContext.book_title,
+        revision: currentContext.revision,
+        status: currentContext.status,
+        species: (currentContext.species || []).length,
+        hydraulics: (currentContext.hydraulics || []).length,
+        substrate_theming: (currentContext.substrate || []).length,
+        review_handovers: (currentContext.review_handovers || []).length,
+      },
+      after: {
+        book_title: frozen.design_book?.book_title,
+        revision: frozen.design_book?.revision,
+        status: frozen.design_book?.status,
+        species: (frozen.species || []).length,
+        hydraulics: (frozen.hydraulics || []).length,
+        substrate_theming: (frozen.substrate || []).length,
+        review_handovers: Array.isArray(frozen.review_handovers)
+          ? frozen.review_handovers.length
+          : (currentContext.review_handovers || []).length,
+        review_handovers_preserved: !Array.isArray(frozen.review_handovers),
+      },
+      token: currentRestoreStateDigest(currentContext),
+      generated_at: new Date().toISOString(),
+    },
+  };
+}
+
+async function insertVersion(
+  runner: DbRunner,
+  bookId: string,
+  versionLabel: string | null,
+  notes: string | null,
+  snapshot: any,
+  createdBy: string,
+  isRecoveryCheckpoint = false,
+) {
+  await runner('SELECT pg_advisory_xact_lock(hashtext($1))', [bookId]);
+  const numberResult = await runner(
+    `SELECT COALESCE(MAX(version_number), 0) + 1 AS next
+     FROM design_book_versions WHERE design_book_id = $1`,
+    [bookId],
+  );
+  const inserted = await runner(
+    `INSERT INTO design_book_versions
+       (design_book_id, version_number, version_label, notes, snapshot, created_by,
+        snapshot_schema_version, snapshot_checksum, is_recovery_checkpoint)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9)
+     RETURNING id, version_number, version_label, notes, created_at, is_recovery_checkpoint`,
+    [
+      bookId,
+      Number(numberResult.rows[0].next),
+      versionLabel,
+      notes,
+      JSON.stringify(snapshot),
+      createdBy,
+      snapshot.schema_version || 1,
+      snapshot.integrity?.digest || null,
+      isRecoveryCheckpoint,
+    ],
+  );
+  return inserted.rows[0];
+}
+
+export const versionSnapshotTestUtils = {
+  makeVersionSnapshot,
+  snapshotIntegrityStatus,
+  frozenFromSnapshot,
+  calculateVersionDrift,
+  currentRestoreStateDigest,
+  insertVersion,
+  loadReleaseContext,
+};
+
 router.get('/design-books/:id/versions', authenticate, async (req: AuthRequest, res: Response) => {
+  const currentContext = await loadReleaseContext(routeParam(req.params.id), query, false, true);
+  if (!currentContext) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
   const result = await query(
-    `SELECT v.id, v.version_number, v.version_label, v.notes, v.created_at,
+    `SELECT v.id, v.version_number, v.version_label, v.notes, v.snapshot, v.created_at,
+            v.is_recovery_checkpoint, v.snapshot_schema_version, v.snapshot_checksum,
             u.first_name || ' ' || u.last_name AS created_by_name
      FROM design_book_versions v
      LEFT JOIN users u ON v.created_by = u.id
      WHERE v.design_book_id = $1
      ORDER BY v.version_number DESC`,
-    [req.params.id]
+    [req.params.id],
   );
-  res.json({ items: result.rows });
+  res.json({ items: result.rows.map(version => versionPresentation(version, currentContext)) });
+});
+
+router.get('/design-books/:id/versions/:versionId/preview', authenticate, async (req: AuthRequest, res: Response) => {
+  const currentContext = await loadReleaseContext(routeParam(req.params.id), query, false, true);
+  if (!currentContext) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+  const result = await query(
+    `SELECT v.*, u.first_name || ' ' || u.last_name AS created_by_name
+     FROM design_book_versions v
+     LEFT JOIN users u ON v.created_by = u.id
+     WHERE v.id=$1 AND v.design_book_id=$2`,
+    [req.params.versionId, req.params.id],
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } });
+  res.json(versionPresentation(result.rows[0], currentContext));
 });
 
 router.post('/design-books/:id/versions', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
-  if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
-  const { version_label, notes } = req.body;
-
-  // 1. Check book exists
-  const bookRow = await query(
-    `SELECT db.*, p.project_code, p.project_name
-     FROM design_books db
-     LEFT JOIN projects p ON db.project_id = p.id
-     WHERE db.id = $1`,
-    [req.params.id]
-  );
-  if (!bookRow.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
-  const book = bookRow.rows[0];
-
-  // 2. Collect project-side data (same queries as GET /design-books/:id)
-  let exhibits: any[] = [], tanks: any[] = [], systems: any[] = [];
-  if (book.project_id) {
-    const [exhibitRes, tankRes, sysRes] = await Promise.all([
-      query(
-        `SELECT e.*, a.area_name, a.area_code
-         FROM exhibits e
-         LEFT JOIN areas a ON e.area_id = a.id
-         WHERE e.project_id = $1
-         ORDER BY a.area_code, e.exhibit_code`,
-        [book.project_id]
-      ),
-      query(
-        `SELECT t.*,
-                e.exhibit_name, e.exhibit_code, e.water_type AS exhibit_water_type, e.id AS exhibit_id,
-                s.system_code, s.system_name,
-                t.operating_volume_m3 AS design_volume_m3
-         FROM tanks t
-         LEFT JOIN exhibits e ON t.exhibit_id = e.id
-         LEFT JOIN systems s ON t.system_id = s.id
-         WHERE e.project_id = $1
-         ORDER BY e.exhibit_code, t.tank_code`,
-        [book.project_id]
-      ),
-      query(
-        `SELECT s.*, e.exhibit_name, e.exhibit_code
-         FROM systems s
-         LEFT JOIN exhibits e ON s.exhibit_id = e.id
-         WHERE s.project_id = $1
-         ORDER BY s.system_code`,
-        [book.project_id]
-      ),
-    ]);
-    exhibits = exhibitRes.rows;
-    tanks = tankRes.rows;
-    systems = sysRes.rows;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client) as DbRunner, true, true);
+    if (!context) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    }
+    if (!isDesignBookContentEditable(context.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Only Draft or In Progress Design Books can be versioned.' },
+      });
+    }
+    const snapshot = makeVersionSnapshot(context);
+    const version = await insertVersion(
+      client.query.bind(client) as DbRunner,
+      routeParam(req.params.id),
+      String(req.body.version_label || '').trim() || null,
+      String(req.body.notes || '').trim() || null,
+      snapshot,
+      req.user!.id,
+    );
+    await insertAudit(client.query.bind(client) as DbRunner, req.user!.id, 'design_book', routeParam(req.params.id), 'VERSION_CREATED', {
+      summary: `Design Book version ${version.version_number} created`,
+      version_id: version.id,
+      version_number: version.version_number,
+      schema_version: snapshot.schema_version,
+      snapshot_checksum: snapshot.integrity.digest,
+    }, req.ip);
+    await client.query('COMMIT');
+    res.status(201).json({ ...version, summary: versionPresentation({ ...version, snapshot }, context).summary });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error?.code === '23505') {
+      return res.status(409).json({ error: { code: 'VERSION_CONFLICT', message: 'Another version was saved at the same time. Please retry.' } });
+    }
+    throw error;
+  } finally {
+    client.release();
   }
-
-  // 3. Collect design-book-owned data
-  const [speciesRes, hydraulicsRes, substrateRes] = await Promise.all([
-    query('SELECT * FROM design_book_exhibit_species WHERE design_book_id = $1 ORDER BY exhibit_id, sort_order', [req.params.id]),
-    query('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id = $1', [req.params.id]),
-    query('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id = $1', [req.params.id]),
-  ]);
-
-  const snapshot = {
-    ...book,
-    exhibits,
-    tanks,
-    systems,
-    species:    speciesRes.rows,
-    hydraulics: hydraulicsRes.rows,
-    substrate:  substrateRes.rows,
-    snapshotted_at: new Date().toISOString(),
-  };
-
-  // 4. Get next version number
-  const numRes = await query(
-    `SELECT COALESCE(MAX(version_number), 0) + 1 AS next FROM design_book_versions WHERE design_book_id = $1`,
-    [req.params.id]
-  );
-  const version_number = numRes.rows[0].next;
-
-  // 5. Insert version
-  const inserted = await query(
-    `INSERT INTO design_book_versions
-       (design_book_id, version_number, version_label, notes, snapshot, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     RETURNING id, version_number, version_label, notes, created_at`,
-    [req.params.id, version_number, version_label || null, notes || null,
-     JSON.stringify(snapshot), req.user!.id]
-  );
-  res.status(201).json(inserted.rows[0]);
 });
 
 router.post('/design-books/:id/versions/:versionId/restore', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
-  if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
-  // 1. Load the snapshot
-  const verRes = await query(
-    'SELECT * FROM design_book_versions WHERE id=$1 AND design_book_id=$2',
-    [req.params.versionId, req.params.id]
-  );
-  if (!verRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } });
-  const snap = verRes.rows[0].snapshot;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    const versionResult = await client.query(
+      'SELECT * FROM design_book_versions WHERE id=$1 AND design_book_id=$2',
+      [req.params.versionId, req.params.id],
+    );
+    if (!versionResult.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } });
+    }
+    const version = versionResult.rows[0];
+    const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client) as DbRunner, true, true);
+    if (!context) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    }
+    if (!isDesignBookContentEditable(context.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Only Draft or In Progress Design Books can be restored.' },
+      });
+    }
+    const currentStateToken = currentRestoreStateDigest(context);
+    if (!req.body.preview_token || req.body.preview_token !== currentStateToken) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: {
+          code: 'RESTORE_PREVIEW_STALE',
+          message: 'The working copy changed after the restore preview. Review the refreshed before-and-after comparison.',
+        },
+      });
+    }
+    const integrity = snapshotIntegrityStatus(
+      version.snapshot,
+      version.snapshot_checksum,
+      Number(version.snapshot_schema_version || version.snapshot?.schema_version || 1) >= VERSION_SNAPSHOT_SCHEMA,
+    );
+    if (integrity === 'invalid') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: { code: 'INVALID_SNAPSHOT', message: 'This version failed its integrity check and cannot be restored.' } });
+    }
+    const drift = calculateVersionDrift(version.snapshot, context);
+    if (drift.unresolved_references.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: {
+          code: 'UNRESOLVED_REFERENCES',
+          message: 'This version refers to project records that no longer exist. Nothing was changed.',
+          references: drift.unresolved_references,
+        },
+        drift,
+      });
+    }
 
-  // 2. Restore book metadata
-  await query(
-    `UPDATE design_books
-     SET book_title=$1, revision=$2, status=$3, description=$4, notes=$5, updated_at=NOW()
-     WHERE id=$6`,
-    [snap.book_title, snap.revision, snap.status, snap.description, snap.notes, req.params.id]
-  );
-
-  // 3. Restore species — delete then re-insert
-  await query('DELETE FROM design_book_exhibit_species WHERE design_book_id=$1', [req.params.id]);
-  if (snap.species?.length) {
-    for (const sp of snap.species) {
-      await query(
+    const currentSnapshot = makeVersionSnapshot(context);
+    const recoverySnapshot = withSnapshotIntegrity({
+      ...currentSnapshot,
+      recovery: {
+        source_version_id: version.id,
+        source_version_number: version.version_number,
+        created_at: new Date().toISOString(),
+      },
+    });
+    const checkpoint = await insertVersion(
+      client.query.bind(client) as DbRunner,
+      routeParam(req.params.id),
+      `Recovery before restoring v${version.version_number}`,
+      `Automatic recovery checkpoint created before restoring version ${version.version_number}.`,
+      recoverySnapshot,
+      req.user!.id,
+      true,
+    );
+    const frozen = frozenFromSnapshot(version.snapshot);
+    const book = frozen.design_book || {};
+    const restoredStatus = isDesignBookContentEditable(book.status) ? book.status : context.status;
+    await client.query(
+      `UPDATE design_books
+       SET book_title=$1, revision=$2, status=$3, description=$4, notes=$5, updated_at=NOW()
+       WHERE id=$6`,
+      [book.book_title, book.revision, restoredStatus, book.description, book.notes, req.params.id],
+    );
+    await client.query('DELETE FROM design_book_exhibit_species WHERE design_book_id=$1', [req.params.id]);
+    for (const sp of frozen.species || []) {
+      await client.query(
         `INSERT INTO design_book_exhibit_species
            (design_book_id, exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [req.params.id, sp.exhibit_id, sp.species_name, sp.common_name,
-         sp.quantity ?? null, sp.avg_size_cm ?? null, sp.biomass_kg ?? null,
-         sp.notes ?? null, sp.sort_order ?? 0]
+        [req.params.id, sp.exhibit_id, sp.species_name, sp.common_name, sp.quantity ?? null, sp.avg_size_cm ?? null,
+          sp.biomass_kg ?? null, sp.notes ?? null, sp.sort_order ?? 0],
       );
     }
-  }
-
-  // 4. Restore hydraulics — delete then re-insert
-  await query('DELETE FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [req.params.id]);
-  if (snap.hydraulics?.length) {
-    for (const h of snap.hydraulics) {
-      await query(
+    await client.query('DELETE FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [req.params.id]);
+    for (const h of frozen.hydraulics || []) {
+      await client.query(
         `INSERT INTO design_book_exhibit_hydraulics
            (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
-             weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
-            weir_discharge_condition, weir_downstream_head_mm)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [req.params.id, h.exhibit_id,
-         h.target_turnover_rate ?? null, h.surface_skim_pct ?? 30,
-         h.bottom_drain_pct ?? 70, h.notes ?? null,
-          h.weir_head_mm ?? null, h.weir_length_mm ?? null, h.weir_formula_method ?? null,
-         h.weir_geometry ?? null, h.weir_end_contractions ?? null,
-          h.weir_discharge_condition ?? null, h.weir_downstream_head_mm ?? null]
+            weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
+            weir_discharge_condition, weir_downstream_head_mm, calculation_version, last_calculated_at,
+            calculation_inputs, override_reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)`,
+        [req.params.id, h.exhibit_id, h.target_turnover_rate ?? null, h.surface_skim_pct ?? 30,
+          h.bottom_drain_pct ?? 70, h.notes ?? null, h.weir_head_mm ?? null, h.weir_length_mm ?? null,
+          h.weir_formula_method ?? null, h.weir_geometry ?? null, h.weir_end_contractions ?? null,
+          h.weir_discharge_condition ?? null, h.weir_downstream_head_mm ?? null, h.calculation_version ?? null,
+          h.last_calculated_at ?? null, h.calculation_inputs ? JSON.stringify(h.calculation_inputs) : null,
+          h.override_reason ?? null],
       );
     }
-  }
-
-  // 5. Restore substrate — delete then re-insert
-  await query('DELETE FROM design_book_exhibit_substrate WHERE design_book_id=$1', [req.params.id]);
-  if (snap.substrate?.length) {
-    for (const s of snap.substrate) {
-      await query(
+    await client.query('DELETE FROM design_book_exhibit_substrate WHERE design_book_id=$1', [req.params.id]);
+    for (const s of frozen.substrate || []) {
+      await client.query(
         `INSERT INTO design_book_exhibit_substrate
-           (design_book_id, exhibit_id, substrate_type, substrate_volume_m3, theming_type, theming_volume_m3, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [req.params.id, s.exhibit_id,
-         s.substrate_type ?? null, s.substrate_volume_m3 ?? null,
-         s.theming_type ?? null, s.theming_volume_m3 ?? null, s.notes ?? null]
+           (design_book_id, exhibit_id, substrate_type, substrate_height_mm, substrate_volume_m3,
+            theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [req.params.id, s.exhibit_id, s.substrate_type ?? null, s.substrate_height_mm ?? null,
+          s.substrate_volume_m3 ?? null, s.theming_type ?? null, s.theming_height_mm ?? null,
+          s.theming_volume_m3 ?? null, s.theming_volume_pct ?? null, s.notes ?? null],
       );
     }
+    if (Array.isArray(frozen.review_handovers)) {
+      await client.query('DELETE FROM design_book_review_handovers WHERE design_book_id=$1', [req.params.id]);
+      for (const handover of frozen.review_handovers) {
+        await client.query(
+          `INSERT INTO design_book_review_handovers
+             (design_book_id, meeting_date, title, attendees, purpose, discussion_summary,
+              decisions, action_items, open_items, acceptance_notes, created_by, created_at)
+           VALUES ($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10,$11,COALESCE($12,NOW()))`,
+          [req.params.id, handover.meeting_date, handover.title, handover.attendees || [],
+            handover.purpose ?? null, handover.discussion_summary ?? null, handover.decisions ?? null,
+            handover.action_items ?? null, handover.open_items ?? null, handover.acceptance_notes ?? null,
+            handover.created_by ?? null, handover.created_at ?? null],
+        );
+      }
+    }
+    await client.query(
+      `INSERT INTO design_book_version_restores
+         (design_book_id, source_version_id, recovery_checkpoint_id, actor_id, drift, restored_at)
+       VALUES ($1,$2,$3,$4,$5::jsonb,NOW())`,
+      [req.params.id, version.id, checkpoint.id, req.user!.id, JSON.stringify(drift)],
+    );
+    await insertAudit(client.query.bind(client) as DbRunner, req.user!.id, 'design_book', routeParam(req.params.id), 'VERSION_RESTORED', {
+      summary: `Design Book restored from version ${version.version_number}`,
+      source_version_id: version.id,
+      source_version_number: version.version_number,
+      recovery_checkpoint_id: checkpoint.id,
+      drift,
+    }, req.ip);
+    await client.query('COMMIT');
+    res.json({
+      restored: true,
+      version_number: version.version_number,
+      recovery_checkpoint_id: checkpoint.id,
+      drift,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
-
-  res.json({ restored: true, version_number: verRes.rows[0].version_number });
 });
 
 export default router;

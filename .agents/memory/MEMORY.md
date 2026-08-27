@@ -3,4 +3,5 @@
 - [Weir formula selection](weir-formula-selection.md) — recommend Francis within its approved range; keep Bazin explicit, selectable, and reviewable.
 - [Aquarium calculation policy](aquarium-calculation-policy.md) — turnover is cycles/hour; effective volume subtracts displacement; saved deviations remain explicit overrides.
 - [Design Book review snapshots](design-book-review-snapshots.md) — review and release use a frozen point-in-time package so shared project edits cannot silently change submitted work.
+- [Design Book version restores](design-book-version-restores.md) — versions freeze book-owned records, retain project references, and restore through a recovery checkpoint.
 - [Project location wording](project-location-wording.md) — use “Country or Region” in Project Management while preserving existing storage compatibility.

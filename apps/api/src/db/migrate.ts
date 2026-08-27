@@ -1015,6 +1015,23 @@ CREATE TABLE IF NOT EXISTS design_book_versions (
   UNIQUE(design_book_id, version_number)
 );
 CREATE INDEX IF NOT EXISTS idx_db_versions_book ON design_book_versions(design_book_id);
+ALTER TABLE design_book_versions ADD COLUMN IF NOT EXISTS snapshot_schema_version INTEGER DEFAULT 1;
+ALTER TABLE design_book_versions ADD COLUMN IF NOT EXISTS snapshot_checksum VARCHAR(64);
+ALTER TABLE design_book_versions ADD COLUMN IF NOT EXISTS is_recovery_checkpoint BOOLEAN NOT NULL DEFAULT false;
+
+-- Each successful restore points to both the source snapshot and the
+-- automatically-created pre-restore recovery checkpoint.
+CREATE TABLE IF NOT EXISTS design_book_version_restores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  source_version_id UUID NOT NULL REFERENCES design_book_versions(id) ON DELETE RESTRICT,
+  recovery_checkpoint_id UUID NOT NULL REFERENCES design_book_versions(id) ON DELETE RESTRICT,
+  actor_id UUID REFERENCES users(id),
+  drift JSONB NOT NULL DEFAULT '{}',
+  restored_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_db_version_restores_book
+  ON design_book_version_restores(design_book_id, restored_at DESC);
 
 -- SYSTEM EXHIBIT LINKS: many-to-many systems ↔ exhibits with ruleset
 CREATE TABLE IF NOT EXISTS system_exhibit_links (
