@@ -729,6 +729,18 @@ export default function ProductMasterDetail() {
       />
 
       <div className="flex-1 overflow-auto p-4">
+        {(product.source_tank_id || product.source_tank_snapshot) && (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-2.5 text-sm text-blue-900">
+            <Link2 className="w-4 h-4 mt-0.5 shrink-0 text-blue-600" />
+            <div>
+              <p className="font-semibold">Promoted from a project tank</p>
+              <p className="text-xs text-blue-800 mt-0.5">
+                Source: {product.source_tank_code || product.source_tank_id}
+                {product.source_project_code ? ` · ${product.source_project_code} — ${product.source_project_name || ''}` : ''}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="col-span-2">
             {isTank ? (

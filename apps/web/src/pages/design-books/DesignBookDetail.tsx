@@ -12,12 +12,13 @@ import {
   Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2,
   LinkIcon, SquarePlus, Check, CheckCircle2, RotateCcw, Calculator,
   ShieldCheck, AlertTriangle, LockKeyhole, GitFork, ExternalLink,
-  Send, UserCheck, ClipboardList, CalendarDays, Users
+  Send, UserCheck, ClipboardList, CalendarDays, Users, LibraryBig
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import VersionsTab from './VersionsTab';
 import { useAuthStore } from '../../store/authStore';
 import ActivityLog from '../../components/ui/ActivityLog';
+import ModalDialog from '../../components/ui/ModalDialog';
 
 type Tab = 'exhibits' | 'lss' | 'piping' | 'review' | 'versions';
 
@@ -1488,16 +1489,189 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
   );
 }
 
-// ─── Exhibits Tab (list view — click to open exhibit detail page) ─────────────
+function PromoteTankModal({ tank, designBookId, onClose, onCompleted }: {
+  tank: any;
+  designBookId: string;
+  onClose: () => void;
+  onCompleted: () => void;
+}) {
+  const qc = useQueryClient();
+  const [familyMode, setFamilyMode] = useState<'existing' | 'new'>('existing');
+  const [form, setForm] = useState({
+    product_code: `PIM-${String(tank.tank_code || '').toUpperCase()}`,
+    product_name: tank.tank_name || '',
+    tank_family_id: '',
+    new_family_code: '',
+    new_family_name: '',
+    application_type: tank.tank_type || '',
+    manufacturer: '',
+    model: '',
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const { data: familiesData, isLoading: familiesLoading } = useQuery({
+    queryKey: ['tank-families'],
+    queryFn: () => api.get('/tank-families').then(r => r.data),
+  });
+  const families: any[] = familiesData?.items || [];
+
+  const setField = (key: string, value: string) => setForm(current => ({ ...current, [key]: value }));
+  const canSave = form.product_code.trim() && form.product_name.trim() &&
+    (familyMode === 'existing' ? form.tank_family_id : form.new_family_code.trim() && form.new_family_name.trim());
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      await api.post(`/tanks/${tank.id}/promote-to-pim`, {
+        design_book_id: designBookId,
+        product_code: form.product_code.trim(),
+        product_name: form.product_name.trim(),
+        tank_family_id: familyMode === 'existing' ? form.tank_family_id : undefined,
+        new_family: familyMode === 'new'
+          ? { code: form.new_family_code.trim(), name: form.new_family_name.trim() }
+          : undefined,
+        application_type: form.application_type.trim() || undefined,
+        manufacturer: form.manufacturer.trim() || undefined,
+        model: form.model.trim() || undefined,
+        notes: form.notes.trim() || undefined,
+      });
+      toast.success('Tank added to the PIM Tank Library');
+      qc.invalidateQueries({ queryKey: ['tank-families'] });
+      onCompleted();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to add tank to the PIM library');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4">
+      <ModalDialog
+        onClose={onClose}
+        labelledBy="promote-tank-title"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] overflow-hidden flex flex-col"
+      >
+        <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <LibraryBig className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 id="promote-tank-title" className="font-semibold text-stone-900">Add to PIM Tank Library</h2>
+              <p className="text-xs text-stone-500">Create a reusable library item from this project tank.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600" aria-label="Close promotion form"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-6 overflow-y-auto space-y-4">
+          <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 text-sm text-blue-900">
+            <p className="font-semibold">Project tank ≠ PIM library item</p>
+            <p className="text-xs text-blue-800 mt-1">
+              The tank will remain in its project. This intentional action creates a separate reusable PIM record and keeps a traceable link back to {tank.tank_code}.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2.5 flex items-center justify-between gap-3 text-xs">
+            <div>
+              <span className="text-stone-500">Source project tank</span>
+              <p className="font-medium text-stone-800">{tank.tank_code} · {tank.tank_name}</p>
+            </div>
+            <div className="text-right text-stone-500">
+              {tank.eff_shape || tank.shape_type || 'Tank'}
+              {(tank.gross_volume_m3 != null) && ` · ${parseFloat(String(tank.gross_volume_m3)).toFixed(2)} m³`}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Reusable product code *</label>
+              <input value={form.product_code} onChange={e => setField('product_code', e.target.value.toUpperCase())}
+                placeholder="PM-TNK-001" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Reusable product name *</label>
+              <input value={form.product_name} onChange={e => setField('product_name', e.target.value)}
+                placeholder="Standard Acrylic Display Tank" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-stone-600">PIM tank family *</label>
+              <div className="flex rounded-md border border-stone-200 bg-white p-0.5">
+                <button type="button" onClick={() => setFamilyMode('existing')}
+                  className={`px-2 py-1 text-[11px] rounded ${familyMode === 'existing' ? 'bg-blue-600 text-white' : 'text-stone-500'}`}>
+                  Choose existing
+                </button>
+                <button type="button" onClick={() => setFamilyMode('new')}
+                  className={`px-2 py-1 text-[11px] rounded ${familyMode === 'new' ? 'bg-blue-600 text-white' : 'text-stone-500'}`}>
+                  Create new
+                </button>
+              </div>
+            </div>
+            {familyMode === 'existing' ? (
+              <select value={form.tank_family_id} onChange={e => setField('tank_family_id', e.target.value)} disabled={familiesLoading}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                <option value="">{familiesLoading ? 'Loading families…' : '— select a tank family —'}</option>
+                {families.map(family => <option key={family.id} value={family.id}>{family.name} ({family.code})</option>)}
+              </select>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <input value={form.new_family_code} onChange={e => setField('new_family_code', e.target.value.toUpperCase())}
+                  placeholder="Family code, e.g. DISPLAY" className="border border-stone-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <input value={form.new_family_name} onChange={e => setField('new_family_name', e.target.value)}
+                  placeholder="Family name" className="border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Tank type</label>
+              <input value={form.application_type} onChange={e => setField('application_type', e.target.value)}
+                placeholder="Display Tank" className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Manufacturer (optional)</label>
+              <input value={form.manufacturer} onChange={e => setField('manufacturer', e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1">Model / reusable notes (optional)</label>
+            <div className="grid grid-cols-2 gap-3">
+              <input value={form.model} onChange={e => setField('model', e.target.value)}
+                placeholder="Model reference" className="border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+              <input value={form.notes} onChange={e => setField('notes', e.target.value)}
+                placeholder="Library notes" className="border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-stone-200 bg-stone-50/40 flex justify-end gap-2">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-stone-600 hover:text-stone-800 rounded-lg hover:bg-stone-100 disabled:opacity-50">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !canSave}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
+            {saving ? 'Adding to library…' : 'Create PIM Library Item'}
+          </button>
+        </div>
+      </ModalDialog>
+    </div>
+  );
+}
 function ExhibitsTab({
-  book, exhibits, tanks, exhibitMap, onRefresh, onNewExhibit, readOnly = false,
+  book, exhibits, tanks, exhibitMap, onRefresh, onNewExhibit, canPromote = false, readOnly = false,
 }: {
   book: any; exhibits: any[]; tanks: any[];
   exhibitMap: Map<string | null, any[]>;
-  onRefresh: () => void; onNewExhibit: () => void; readOnly?: boolean;
+  onRefresh: () => void; onNewExhibit: () => void; canPromote?: boolean; readOnly?: boolean;
 }) {
   const navigate = useNavigate();
   const [deletingExhibit, setDeletingExhibit] = useState<string | null>(null);
+  const [promoteTarget, setPromoteTarget] = useState<any | null>(null);
   const allSpecies: any[] = book.species || [];
 
   const handleDeleteExhibit = async (exhibitId: string) => {
@@ -1610,9 +1784,26 @@ function ExhibitsTab({
                   </td>
                   <td className="px-4 py-3.5">
                     {exhibitTank ? (
-                      <div>
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0">
                         <span className="font-medium text-stone-700 text-xs">{exhibitTank.tank_name}</span>
                         <span className="ml-1.5 font-mono text-xs text-stone-400">{exhibitTank.tank_code}</span>
+                        </div>
+                        {canPromote && (
+                          (exhibitTank.product_master_id || exhibitTank.promoted_product_master_id) ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="This project tank is linked to a PIM library item">
+                              <Check className="w-2.5 h-2.5" /> In PIM
+                            </span>
+                          ) : (
+                            <button
+                              onClick={e => { e.stopPropagation(); setPromoteTarget(exhibitTank); }}
+                              className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full hover:bg-blue-100 whitespace-nowrap"
+                              title="Create a reusable PIM library item from this project tank"
+                            >
+                              <LibraryBig className="w-2.5 h-2.5" /> Add to PIM Tank Library
+                            </button>
+                          )
+                        )}
                       </div>
                     ) : (
                       <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">No tank</span>
@@ -1686,6 +1877,14 @@ function ExhibitsTab({
             {' '}— open an exhibit and use "Assign Tank" to link {unassigned.length === 1 ? 'it' : 'them'}.
           </span>
         </div>
+      )}
+      {promoteTarget && (
+        <PromoteTankModal
+          tank={promoteTarget}
+          designBookId={book.id}
+          onClose={() => setPromoteTarget(null)}
+          onCompleted={() => { setPromoteTarget(null); onRefresh(); }}
+        />
       )}
     </div>
   );
@@ -2064,6 +2263,7 @@ export default function DesignBookDetail() {
           exhibitMap={exhibitMap}
           onRefresh={refresh}
           onNewExhibit={() => !isDesignReadOnly && setShowNewExhibit(true)}
+          canPromote={isDesigner && !isDesignReadOnly && user?.moduleAccess?.pim !== 'view' && user?.moduleAccess?.pim !== 'hidden'}
           readOnly={isDesignReadOnly}
         />
       )}

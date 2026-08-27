@@ -54,4 +54,27 @@ export const requireModuleAccess = (moduleKey: ModuleAccessKey) => async (req: A
   }
 };
 
+export const requireModuleManage = (moduleKey: ModuleAccessKey) => async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const result = await query(
+      `SELECT rma.access_level
+       FROM users u
+       LEFT JOIN roles r ON r.name=u.role
+       LEFT JOIN role_module_access rma ON rma.role_id=r.id AND rma.module_key=$2
+       WHERE u.id=$1`,
+      [req.user!.id, moduleKey],
+    );
+    const accessLevel = result.rows[0]?.access_level;
+    // Preserve legacy/custom accounts without an explicit row, as requireModuleAccess does.
+    if (accessLevel && accessLevel !== 'manage') {
+      return res.status(403).json({
+        error: { code: 'MODULE_READ_ONLY', message: 'Manage access is required for this module.' },
+      });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 export { JWT_SECRET };

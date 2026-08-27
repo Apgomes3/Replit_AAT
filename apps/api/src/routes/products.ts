@@ -115,12 +115,35 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const countRes = await query(`SELECT COUNT(*) FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id ${where}`, params);
   params.push(page_size, offset);
-  const result = await query(`SELECT pm.*, pf.product_family_name FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id ${where} ORDER BY pm.product_code LIMIT $${params.length-1} OFFSET $${params.length}`, params);
+  const result = await query(
+    `SELECT pm.*, pf.product_family_name,
+       COALESCE(st.tank_code, pm.source_tank_snapshot->>'tank_code') AS source_tank_code,
+       COALESCE(sp.project_code, pm.source_tank_snapshot->>'project_code') AS source_project_code,
+       COALESCE(sp.project_name, pm.source_tank_snapshot->>'project_name') AS source_project_name
+     FROM product_masters pm
+     LEFT JOIN product_families pf ON pm.product_family_id=pf.id
+     LEFT JOIN tanks st ON st.id=pm.source_tank_id
+     LEFT JOIN projects sp ON sp.id=st.project_id
+     ${where} ORDER BY pm.product_code LIMIT $${params.length-1} OFFSET $${params.length}`,
+    params,
+  );
   res.json({ items: result.rows, pagination: { page, page_size, total: parseInt(countRes.rows[0].count) } });
 });
 
 router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT pm.*, pf.product_family_name, m.material_name FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id LEFT JOIN materials m ON pm.primary_material_code=m.material_code WHERE pm.id::text=$1 OR pm.product_code=$1', [req.params.id]);
+  const result = await query(
+    `SELECT pm.*, pf.product_family_name, m.material_name,
+       COALESCE(st.tank_code, pm.source_tank_snapshot->>'tank_code') AS source_tank_code,
+       COALESCE(sp.project_code, pm.source_tank_snapshot->>'project_code') AS source_project_code,
+       COALESCE(sp.project_name, pm.source_tank_snapshot->>'project_name') AS source_project_name
+     FROM product_masters pm
+     LEFT JOIN product_families pf ON pm.product_family_id=pf.id
+     LEFT JOIN materials m ON pm.primary_material_code=m.material_code
+     LEFT JOIN tanks st ON st.id=pm.source_tank_id
+     LEFT JOIN projects sp ON sp.id=st.project_id
+     WHERE pm.id::text=$1 OR pm.product_code=$1`,
+    [req.params.id],
+  );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const variants = await query('SELECT * FROM product_variants WHERE product_master_id=$1 ORDER BY variant_code', [result.rows[0].id]);
   const boms = await query('SELECT * FROM standard_boms WHERE product_master_id=$1 ORDER BY effective_from DESC', [result.rows[0].id]);

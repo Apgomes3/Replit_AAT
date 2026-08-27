@@ -539,6 +539,10 @@ CREATE TABLE IF NOT EXISTS tank_families (
 
 
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_family_id UUID REFERENCES tank_families(id) ON DELETE SET NULL;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS source_tank_id UUID REFERENCES tanks(id) ON DELETE SET NULL;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS source_tank_snapshot JSONB;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_masters_source_tank
+  ON product_masters(source_tank_id) WHERE source_tank_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

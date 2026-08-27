@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
-import { query } from '../db';
-import { authenticate, requireRole, requireModuleAccess, AuthRequest } from '../middleware/auth';
+import pool, { query } from '../db';
+import { authenticate, requireRole, requireModuleAccess, requireModuleManage, AuthRequest } from '../middleware/auth';
 import { logAudit } from '../db/audit';
 import multer from 'multer';
 import path from 'path';
@@ -439,6 +439,208 @@ router.post('/tanks', authenticate, requireRole('admin', 'engineer'), async (req
   }
   res.status(201).json(tank);
 });
+
+// PROMOTE A PROJECT TANK INTO THE REUSABLE PIM TANK LIBRARY
+router.post(
+  '/tanks/:id/promote-to-pim',
+  authenticate,
+  requireRole('admin', 'engineer'),
+  requireModuleManage('pim'),
+  async (req: AuthRequest, res: Response) => {
+    const productCode = String(req.body.product_code || '').trim().toUpperCase();
+    const productName = String(req.body.product_name || '').trim();
+    const requestedFamilyId = String(req.body.tank_family_id || req.body.family_id || '').trim();
+    const newFamily = req.body.new_family && typeof req.body.new_family === 'object' ? req.body.new_family : null;
+    const newFamilyCode = String(newFamily?.code || req.body.new_family_code || '').trim().toUpperCase();
+    const newFamilyName = String(newFamily?.name || req.body.new_family_name || '').trim();
+    const designBookId = String(req.body.design_book_id || '').trim();
+
+    if (!productCode || !productName) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'A reusable product code and name are required.' },
+      });
+    }
+    if (productCode.length > 50 || !/^[A-Z0-9][A-Z0-9._-]*$/.test(productCode)) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'Product code may contain only letters, numbers, dots, underscores, and hyphens.' },
+      });
+    }
+    if (productName.length > 255) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'Product name must be 255 characters or fewer.' },
+      });
+    }
+    if ((requestedFamilyId && (newFamilyCode || newFamilyName)) || (!!newFamilyCode !== !!newFamilyName)) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'Choose an existing tank family or provide both a new family code and name.' },
+      });
+    }
+    if (!requestedFamilyId && !newFamilyCode) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'A tank family is required for a reusable PIM tank.' },
+      });
+    }
+    if (!designBookId) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'The source Design Book is required for tank promotion.' },
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const sourceResult = await client.query(
+        `SELECT t.*, p.project_code, p.project_name
+         FROM tanks t
+         JOIN projects p ON p.id=t.project_id
+         WHERE t.id=$1
+         FOR UPDATE`,
+        [req.params.id],
+      );
+      const source = sourceResult.rows[0];
+      if (!source) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project tank not found' } });
+      }
+
+      const designBookResult = await client.query(
+        `SELECT id, status
+         FROM design_books
+         WHERE id=$1 AND project_id=$2
+         FOR SHARE`,
+        [designBookId, source.project_id],
+      );
+      if (!designBookResult.rows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Linked Design Book not found' } });
+      }
+      if (!['Draft', 'In Progress'].includes(designBookResult.rows[0].status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: { code: 'DESIGN_BOOK_READ_ONLY', message: 'Tanks can only be promoted while the Design Book is editable.' },
+        });
+      }
+
+      const existing = await client.query(
+        `SELECT pm.id, pm.product_code, pm.product_name
+         FROM product_masters pm
+         WHERE pm.source_tank_id=$1 OR pm.product_code=$2 OR pm.id=$3`,
+        [source.id, productCode, source.product_master_id || null],
+      );
+      if (existing.rows[0]) {
+        await client.query('ROLLBACK');
+        const match = existing.rows[0];
+        const isSourceLink = source.product_master_id && String(match.id) === String(source.product_master_id);
+        return res.status(409).json({
+          error: {
+            code: 'DUPLICATE_PROMOTION',
+            message: isSourceLink
+              ? `This project tank is already linked to PIM product ${match.product_code}.`
+              : `PIM product code ${match.product_code} is already in use.`,
+          },
+          existing_product: match,
+        });
+      }
+
+      let tankFamilyId = requestedFamilyId || null;
+      if (newFamilyCode) {
+        const familyResult = await client.query(
+          `INSERT INTO tank_families (code, name, description, sort_order, is_system)
+           VALUES ($1,$2,$3,0,false)
+           RETURNING id, code, name, description`,
+          [newFamilyCode, newFamilyName, newFamily?.description ? String(newFamily.description).trim() : null],
+        );
+        tankFamilyId = familyResult.rows[0].id;
+      } else {
+        const familyResult = await client.query(
+          'SELECT id FROM tank_families WHERE id::text=$1 OR code=$1',
+          [requestedFamilyId],
+        );
+        if (!familyResult.rows[0]) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'Selected tank family was not found.' } });
+        }
+        tankFamilyId = familyResult.rows[0].id;
+      }
+
+      const productResult = await client.query(
+        `INSERT INTO product_masters
+          (product_code, tank_family_id, product_name, product_category, application_type,
+           primary_material_code, standard_status, notes, shape_type, length_mm, width_mm,
+           height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3,
+           manufacturer, model, source_tank_id, source_tank_snapshot)
+         VALUES ($1,$2,$3,'Tank',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
+         RETURNING *`,
+        [
+          productCode,
+          tankFamilyId,
+          productName,
+          req.body.application_type || source.tank_type || null,
+          req.body.primary_material_code || source.primary_material || null,
+          req.body.standard_status || 'Concept',
+          req.body.notes !== undefined ? String(req.body.notes).trim() || null : source.notes || null,
+          source.shape_type || null,
+          source.length_mm || null,
+          source.width_mm || null,
+          source.height_mm || null,
+          source.design_water_level_mm || null,
+          source.gross_volume_m3 || null,
+          source.operating_volume_m3 || null,
+          req.body.manufacturer ? String(req.body.manufacturer).trim() : null,
+          req.body.model ? String(req.body.model).trim() : null,
+          source.id,
+          JSON.stringify({
+            design_book_id: designBookId,
+            tank_id: source.id,
+            tank_code: source.tank_code,
+            tank_name: source.tank_name,
+            project_id: source.project_id,
+            project_code: source.project_code,
+            project_name: source.project_name,
+          }),
+        ],
+      );
+      const product = productResult.rows[0];
+
+      await client.query(
+        `INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
+         VALUES ('product',$1,'PROMOTE_FROM_PROJECT_TANK',$2,$3,$4)`,
+        [
+          product.id,
+          req.user!.id,
+          JSON.stringify({
+            summary: `PIM tank ${productCode} promoted from project tank ${source.tank_code}`,
+            product_code: productCode,
+            source_tank_id: source.id,
+            source_tank_code: source.tank_code,
+            project_code: source.project_code,
+            design_book_id: designBookId,
+          }),
+          req.ip || null,
+        ],
+      );
+      await client.query('COMMIT');
+
+      res.status(201).json({
+        ...product,
+        source_tank_id: source.id,
+        source_tank_code: source.tank_code,
+        source_project_code: source.project_code,
+        source_project_name: source.project_name,
+      });
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error?.code === '23505') {
+        return res.status(409).json({
+          error: { code: 'DUPLICATE_PROMOTION', message: 'This tank or product code has already been promoted to the PIM library.' },
+        });
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
 
 router.post('/tanks/:id/duplicate', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const orig = await query('SELECT * FROM tanks WHERE id=$1', [req.params.id]);

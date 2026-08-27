@@ -10,7 +10,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Plus, Copy, Pencil, Container, Trash2, Calculator, X } from 'lucide-react';
+import { Plus, Copy, Pencil, Container, Trash2, Calculator, X, Link2 } from 'lucide-react';
 
 const TANK_TYPES = ['Display Tank', 'Sump', 'Refugium', 'Quarantine', 'Acclimation', 'Holding', 'Treatment', 'Header Tank', 'Buffer Tank', 'Other'];
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Oval', 'Hexagonal', 'Custom'];
@@ -80,6 +80,14 @@ export default function TanksList() {
     { key: 'gross_volume_m3' as any, header: 'Gross Vol (m³)', render: (r: any) => fmtM3(r.gross_volume_m3) },
     { key: 'operating_volume_m3' as any, header: 'Op. Vol (m³)', render: (r: any) => fmtM3(r.operating_volume_m3) },
     { key: 'primary_material_code', header: 'Material', render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
+    {
+      key: 'source_tank_code' as any, header: 'Source',
+      render: (r: any) => r.source_tank_code ? (
+        <span className="inline-flex items-center gap-1 text-xs text-blue-700" title={`${r.source_project_code || 'Project'} · ${r.source_tank_code}`}>
+          <Link2 className="w-3 h-3" /> {r.source_tank_code}
+        </span>
+      ) : <span className="text-slate-300">—</span>,
+    },
     { key: 'standard_status', header: 'Status', render: r => <StatusBadge status={r.standard_status} /> },
     {
       key: '_delete' as any, header: '', className: 'w-10 text-right',
