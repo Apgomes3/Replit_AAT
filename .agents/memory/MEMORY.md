@@ -5,3 +5,4 @@
 - [Design Book review snapshots](design-book-review-snapshots.md) — review and release use a frozen point-in-time package so shared project edits cannot silently change submitted work.
 - [Design Book version restores](design-book-version-restores.md) — versions freeze book-owned records, retain project references, and restore through a recovery checkpoint.
 - [Project location wording](project-location-wording.md) — use “Country or Region” in Project Management while preserving existing storage compatibility.
+- [Vitest debounce timing](vitest-debounce-timing.md) — keep fake timers limited to debounce assertions; restore real timers before Testing Library async UI assertions.
