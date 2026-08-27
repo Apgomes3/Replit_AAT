@@ -6,6 +6,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
+import QueryError from '../../components/ui/QueryError';
 import { Plus, BookMarked, FolderOpen, X, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -40,7 +41,7 @@ export default function DesignBooksList() {
     return () => window.clearTimeout(timeout);
   }, [search]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['design-books', debouncedSearch],
     queryFn: () => api.get(`/design-books${debouncedSearch ? `?q=${encodeURIComponent(debouncedSearch)}` : ''}`).then(r => r.data),
   });
@@ -117,6 +118,11 @@ export default function DesignBooksList() {
       <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
         {isLoading || searchIsDebouncing ? (
           <div className="py-16 text-center text-stone-400 text-sm">Loading…</div>
+        ) : isError ? (
+          <QueryError
+            message="Could not load design books"
+            onRetry={() => refetch()}
+          />
         ) : items.length === 0 ? (
           hasSearch ? (
             <div className="py-16 text-center">

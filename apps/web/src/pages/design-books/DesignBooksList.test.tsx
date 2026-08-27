@@ -108,6 +108,49 @@ describe('DesignBooksList search behavior', () => {
     expect(apiGet).toHaveBeenLastCalledWith('/design-books');
   });
 
+  it('shows a retryable error instead of the empty state when the initial search fails', async () => {
+    apiGet
+      .mockRejectedValueOnce(new Error('Service unavailable'))
+      .mockResolvedValueOnce({ data: { items: [book] } });
+
+    renderList();
+
+    expect(await screen.findByText('Could not load design books')).toBeVisible();
+    expect(screen.queryByText('No design books yet')).not.toBeInTheDocument();
+
+    const input = screen.getByPlaceholderText('Search by code, title or project…');
+    expect(input).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(screen.getByText(book.book_title)).toBeVisible());
+    expect(apiGet).toHaveBeenLastCalledWith('/design-books');
+  });
+
+  it('shows a retryable error for a failed filtered search and retries the current term', async () => {
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/design-books') {
+        return Promise.resolve({ data: { items: [book] } });
+      }
+
+      return Promise.reject(new Error('Service unavailable'));
+    });
+
+    renderList();
+    expect(await screen.findByText(book.book_title)).toBeVisible();
+
+    const input = screen.getByPlaceholderText('Search by code, title or project…');
+    fireEvent.change(input, { target: { value: 'pump' } });
+    await new Promise(resolve => setTimeout(resolve, 350));
+
+    expect(await screen.findByText('Could not load design books')).toBeVisible();
+    expect(screen.queryByText('No design books found for “pump”')).not.toBeInTheDocument();
+    expect(input).toHaveValue('pump');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(apiGet).toHaveBeenLastCalledWith('/design-books?q=pump'));
+  });
+
   it('keeps the New Design Book action visible for an empty collection', async () => {
     renderList();
 
