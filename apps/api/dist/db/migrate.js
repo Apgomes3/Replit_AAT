@@ -880,6 +880,10 @@ ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_geometr
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_end_contractions INTEGER;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_discharge_condition VARCHAR(50);
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_downstream_head_mm NUMERIC(8,2);
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS calculation_version VARCHAR(50);
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS last_calculated_at TIMESTAMPTZ;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS calculation_inputs JSONB;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS override_reason TEXT;
 
 -- DESIGN BOOK: Exhibit Theming & Substrate
 CREATE TABLE IF NOT EXISTS design_book_exhibit_substrate (
@@ -925,6 +929,8 @@ CREATE TABLE IF NOT EXISTS system_exhibit_links (
 );
 CREATE INDEX IF NOT EXISTS idx_sel_system  ON system_exhibit_links(system_id);
 CREATE INDEX IF NOT EXISTS idx_sel_exhibit ON system_exhibit_links(exhibit_id);
+ALTER TABLE system_exhibit_links ADD COLUMN IF NOT EXISTS allocation_source VARCHAR(30) DEFAULT 'calculated';
+ALTER TABLE system_exhibit_links ADD COLUMN IF NOT EXISTS allocation_updated_at TIMESTAMPTZ;
 
 -- SUBSTRATE: height-based volume calculation fields
 ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS substrate_height_mm NUMERIC;
@@ -969,6 +975,9 @@ CREATE TABLE IF NOT EXISTS lss_compact_units (
 -- SYSTEMS: config type + compact unit link
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS system_config   VARCHAR(20) DEFAULT 'bespoke';
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS compact_unit_id UUID REFERENCES lss_compact_units(id);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS calculation_version VARCHAR(50);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS last_calculated_at TIMESTAMPTZ;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS calculation_inputs JSONB;
 
 -- SYSTEMS: flow route loop configuration
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_flow_source    VARCHAR(50);

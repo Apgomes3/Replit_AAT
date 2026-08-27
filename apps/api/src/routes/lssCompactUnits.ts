@@ -13,6 +13,34 @@ const JOIN = `
   LEFT JOIN product_masters pm ON lcu.product_master_id = pm.id
 `;
 
+function validateCompactUnit(body: any): string | null {
+  const numericFields = [
+    'min_tank_volume_m3', 'max_tank_volume_m3', 'design_flow_m3h', 'max_flow_m3h',
+    'break_tank_volume_l', 'uv_power_w', 'footprint_l_mm', 'footprint_w_mm',
+    'height_mm', 'dry_weight_kg', 'power_kw',
+  ];
+  for (const field of numericFields) {
+    const value = body[field];
+    if (value != null && value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      return `${field} must be a non-negative number`;
+    }
+  }
+  const minVolume = body.min_tank_volume_m3 == null ? null : Number(body.min_tank_volume_m3);
+  const maxVolume = body.max_tank_volume_m3 == null ? null : Number(body.max_tank_volume_m3);
+  const designFlow = body.design_flow_m3h == null ? null : Number(body.design_flow_m3h);
+  const maxFlow = body.max_flow_m3h == null ? null : Number(body.max_flow_m3h);
+  if (minVolume != null && maxVolume != null && minVolume > maxVolume) {
+    return 'Minimum tank volume cannot exceed maximum tank volume';
+  }
+  if (designFlow != null && maxFlow != null && designFlow > maxFlow) {
+    return 'Design flow cannot exceed maximum flow';
+  }
+  if (body.water_type && !['Marine', 'Salt Water', 'Freshwater', 'Brackish', 'Universal'].includes(body.water_type)) {
+    return 'Unsupported compact-unit water type';
+  }
+  return null;
+}
+
 router.get('/lss-compact-units', authenticate, async (_req: AuthRequest, res: Response) => {
   const result = await query(`SELECT ${FIELDS} ${JOIN} ORDER BY lcu.unit_code`);
   res.json(result.rows);
@@ -41,6 +69,8 @@ router.post('/lss-compact-units', authenticate, async (req: AuthRequest, res: Re
 
   if (!unit_code?.trim() || !unit_name?.trim())
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'unit_code and unit_name are required' } });
+  const validationError = validateCompactUnit(req.body);
+  if (validationError) return res.status(400).json({ error: { code: 'VALIDATION', message: validationError } });
 
   try {
     const result = await query(
@@ -86,6 +116,10 @@ router.put('/lss-compact-units/:id', authenticate, async (req: AuthRequest, res:
     inlet_connection, outlet_connection,
     notes, product_master_id, status,
   } = req.body;
+  if (!unit_code?.trim() || !unit_name?.trim())
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'unit_code and unit_name are required' } });
+  const validationError = validateCompactUnit(req.body);
+  if (validationError) return res.status(400).json({ error: { code: 'VALIDATION', message: validationError } });
 
   try {
     const result = await query(

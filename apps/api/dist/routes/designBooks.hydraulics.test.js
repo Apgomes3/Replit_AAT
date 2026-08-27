@@ -136,6 +136,21 @@ function request(app, token, body) {
         (0, vitest_1.expect)(response.status).toBe(200);
         (0, vitest_1.expect)(state.calls[0].params.slice(12, 18)).toEqual([true, true, true, true, true, true]);
     });
+    (0, vitest_1.it)('accepts the Bazin alternative as an explicit saved method', async () => {
+        const response = await request(app, token, {
+            target_turnover_rate: 5,
+            surface_skim_pct: 30,
+            bottom_drain_pct: 70,
+            weir_head_mm: 100,
+            weir_formula_method: 'bazin_1888',
+            weir_geometry: 'sharp_rectangular',
+            weir_end_contractions: 2,
+            weir_discharge_condition: 'free',
+            weir_downstream_head_mm: 0,
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(state.calls[0].params[7]).toBe('bazin_1888');
+    });
     (0, vitest_1.it)('allows an explicit null to clear a saved basis field without treating it as omitted', async () => {
         const response = await request(app, token, { weir_formula_method: null });
         (0, vitest_1.expect)(response.status).toBe(200);

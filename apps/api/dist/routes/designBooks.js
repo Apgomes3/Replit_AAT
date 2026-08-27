@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const index_1 = require("../db/index");
+const aquariumCalculations_1 = require("../lib/aquariumCalculations");
 const router = (0, express_1.Router)();
 router.get('/design-books', auth_1.authenticate, async (req, res) => {
     const q = req.query.q;
@@ -113,7 +114,52 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
     const hydraulics = hydraulicsResult.rows;
     const substrateResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_substrate WHERE design_book_id = $1`, [req.params.id]);
     const substrate = substrateResult.rows;
-    res.json({ ...row, exhibits, tanks, systems, species, hydraulics, substrate });
+    // All design-book hydraulic and LSS values are calculated here from the
+    // current project inputs.  Consumers receive the inputs and policy along
+    // with the values, so they do not need to reproduce engineering formulas.
+    const calculationTimestamp = new Date().toISOString();
+    const exhibitCalculations = exhibits.map(exhibit => {
+        const hydraulic = hydraulics.find(h => h.exhibit_id === exhibit.id);
+        const substrateRecord = substrate.find(s => s.exhibit_id === exhibit.id);
+        return (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, tanks.filter(tank => tank.exhibit_id === exhibit.id), hydraulic, substrateRecord, calculationTimestamp);
+    });
+    let systemLinks = [];
+    if (systems.length > 0) {
+        const linkResult = await (0, index_1.query)(`SELECT sel.*, e.exhibit_code
+       FROM system_exhibit_links sel
+       LEFT JOIN exhibits e ON e.id = sel.exhibit_id
+       WHERE sel.system_id = ANY($1::uuid[])`, [systems.map(system => system.id)]);
+        systemLinks = linkResult.rows;
+    }
+    const compactUnitIds = systems
+        .map(system => system.compact_unit_id)
+        .filter(Boolean);
+    const compactUnits = compactUnitIds.length > 0
+        ? (await (0, index_1.query)('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
+        : [];
+    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, systemLinks.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculationTimestamp));
+    res.json({
+        ...row,
+        exhibits,
+        tanks,
+        systems,
+        species,
+        hydraulics,
+        substrate,
+        engineering_calculations: {
+            calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
+            calculated_at: calculationTimestamp,
+            policy: {
+                turnover_unit: 'cycles_per_hour',
+                flow_unit: 'm3_per_hour',
+                allocation_tolerance_pct: 0.01,
+                volume_definition: 'operating water volume less substrate and theming displacement',
+                rounding: 'volumes to 4 decimals m³; flows to 3 decimals m³/h',
+            },
+            exhibits: exhibitCalculations,
+            systems: systemCalculations,
+        },
+    });
 });
 router.post('/design-books', auth_1.authenticate, async (req, res) => {
     const { book_code, book_title, project_id, description, revision, status, notes } = req.body;
@@ -156,6 +202,29 @@ router.put('/design-books/:id/species/:speciesId', auth_1.authenticate, async (r
 });
 router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticate, async (req, res) => {
     const { substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes } = req.body;
+    for (const [label, value] of [
+        ['Substrate height', substrate_height_mm],
+        ['Substrate volume', substrate_volume_m3],
+        ['Theming height', theming_height_mm],
+        ['Theming volume', theming_volume_m3],
+        ['Theming percentage', theming_volume_pct],
+    ]) {
+        if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a non-negative number.` } });
+        }
+    }
+    if (theming_volume_pct != null && Number(theming_volume_pct) > 100) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Theming percentage cannot exceed 100%.' } });
+    }
+    const tankVolumeResult = await (0, index_1.query)(`SELECT SUM(COALESCE(t.operating_volume_m3, t.design_volume_m3, 0) * COALESCE(t.quantity, 1)) AS volume_m3
+     FROM tanks t WHERE t.exhibit_id=$1`, [req.params.exhibitId]);
+    const grossOperatingVolume = Number(tankVolumeResult.rows[0]?.volume_m3);
+    const displacement = Number(substrate_volume_m3 || 0) + Number(theming_volume_m3 || 0);
+    if (grossOperatingVolume > 0 && displacement >= grossOperatingVolume) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'Substrate and theming displacement must be less than operating volume.' },
+        });
+    }
     const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_substrate
        (design_book_id, exhibit_id, substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -185,7 +254,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
     const hasWeirContractions = hasField('weir_end_contractions');
     const hasWeirDischarge = hasField('weir_discharge_condition');
     const hasWeirDownstreamHead = hasField('weir_downstream_head_mm');
-    if (weir_formula_method != null && weir_formula_method !== 'francis_184') {
+    if (weir_formula_method != null && !['francis_184', 'bazin_1888'].includes(weir_formula_method)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Unsupported weir formula method' } });
     }
     if (weir_geometry != null && weir_geometry !== 'sharp_rectangular') {
@@ -205,11 +274,33 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
         (!Number.isFinite(Number(weir_downstream_head_mm)) || Number(weir_downstream_head_mm) < 0)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Downstream head must be a non-negative number' } });
     }
+    const numericFields = [
+        ['target turnover rate', target_turnover_rate],
+        ['surface skim percentage', surface_skim_pct],
+        ['bottom drain percentage', bottom_drain_pct],
+    ];
+    for (const [label, value] of numericFields) {
+        if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a non-negative number` } });
+        }
+    }
+    if (target_turnover_rate != null && Number(target_turnover_rate) === 0) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Target turnover rate must be greater than zero' } });
+    }
+    const savedSurfacePct = surface_skim_pct ?? 30;
+    const savedBottomPct = bottom_drain_pct ?? 70;
+    if (Number(savedSurfacePct) > 100 || Number(savedBottomPct) > 100 ||
+        Math.abs(Number(savedSurfacePct) + Number(savedBottomPct) - 100) > aquariumCalculations_1.ALLOCATION_TOLERANCE_PCT) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: `Surface and bottom allocations must total 100% ± ${aquariumCalculations_1.ALLOCATION_TOLERANCE_PCT}%.` },
+        });
+    }
     const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_hydraulics
        (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
         weir_head_mm, weir_formula_method, weir_geometry, weir_end_contractions,
-        weir_discharge_condition, weir_downstream_head_mm)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       weir_discharge_condition, weir_downstream_head_mm,
+       calculation_version, last_calculated_at, calculation_inputs)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'aquarium-hydraulics-v1',NOW(),$19)
      ON CONFLICT (design_book_id, exhibit_id)
      DO UPDATE SET
        target_turnover_rate = EXCLUDED.target_turnover_rate,
@@ -222,14 +313,24 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
        weir_end_contractions = CASE WHEN $16 THEN EXCLUDED.weir_end_contractions ELSE design_book_exhibit_hydraulics.weir_end_contractions END,
        weir_discharge_condition = CASE WHEN $17 THEN EXCLUDED.weir_discharge_condition ELSE design_book_exhibit_hydraulics.weir_discharge_condition END,
        weir_downstream_head_mm = CASE WHEN $18 THEN EXCLUDED.weir_downstream_head_mm ELSE design_book_exhibit_hydraulics.weir_downstream_head_mm END,
+        calculation_version   = 'aquarium-hydraulics-v1',
+        last_calculated_at    = NOW(),
+        calculation_inputs    = $19,
        updated_at           = NOW()
      RETURNING *`, [req.params.id, req.params.exhibitId,
-        target_turnover_rate ?? null, surface_skim_pct ?? 30, bottom_drain_pct ?? 70,
+        target_turnover_rate ?? null, savedSurfacePct, savedBottomPct,
         notes ?? null, weir_head_mm ?? null, weir_formula_method ?? null,
         weir_geometry ?? null, weir_end_contractions ?? null,
         weir_discharge_condition ?? null, weir_downstream_head_mm ?? null,
         hasWeirHead, hasWeirMethod, hasWeirGeometry, hasWeirContractions,
-        hasWeirDischarge, hasWeirDownstreamHead]);
+        hasWeirDischarge, hasWeirDownstreamHead,
+        JSON.stringify({
+            target_turnover_rate: target_turnover_rate ?? null,
+            surface_skim_pct: savedSurfacePct,
+            bottom_drain_pct: savedBottomPct,
+            turnover_unit: 'cycles_per_hour',
+            flow_unit: 'm3_per_hour',
+        })]);
     res.json(result.rows[0]);
 });
 router.delete('/design-books/:id/species/:speciesId', auth_1.authenticate, async (req, res) => {

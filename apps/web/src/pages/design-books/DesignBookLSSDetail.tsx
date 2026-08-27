@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -105,6 +105,42 @@ function LinkTypeBadge({ type }: { type?: string }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}>{type}</span>;
 }
 
+function EngineeringTrace({ calculation }: { calculation?: any | null }) {
+  if (!calculation) return null;
+  const status = calculation.status || 'warning';
+  const styles = status === 'valid'
+    ? 'border-emerald-200 bg-emerald-50/50 text-emerald-700'
+    : status === 'override'
+      ? 'border-blue-200 bg-blue-50/50 text-blue-700'
+      : 'border-amber-200 bg-amber-50/50 text-amber-700';
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${styles}`}>
+      <div className="flex items-center gap-2 flex-wrap">
+        {status === 'valid' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+        <span className="text-xs font-semibold uppercase tracking-wide">System Calculation Trace</span>
+        <span className="text-xs rounded-full bg-white/70 border border-current/20 px-2 py-0.5">
+          {status === 'override' ? 'Manual override' : status}
+        </span>
+        <span className="text-xs opacity-70 ml-auto">
+          {calculation.calculation_version} · {new Date(calculation.calculated_at).toLocaleString()}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 text-xs">
+        <div><span className="block opacity-70">Calculated flow</span><strong className="font-mono">{calculation.results?.calculated_required_flow_m3h ?? '—'} m³/h</strong></div>
+        <div><span className="block opacity-70">Design flow</span><strong className="font-mono">{calculation.results?.design_flow_m3h ?? '—'} m³/h</strong></div>
+        <div><span className="block opacity-70">Allocated flow</span><strong className="font-mono">{calculation.results?.allocated_flow_m3h ?? '—'} m³/h</strong></div>
+        <div><span className="block opacity-70">Turnover</span><strong className="font-mono">{calculation.results?.turnover_rate_cycles_per_hour ?? '—'} ×/h</strong></div>
+      </div>
+      <p className="text-xs opacity-80 mt-2">{calculation.formula}</p>
+      {calculation.reasons?.length > 0 && (
+        <ul className="text-xs mt-2 list-disc list-inside">
+          {calculation.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ─── Add Exhibit Modal ────────────────────────────────────────────────────────
 function AddExhibitModal({ systemId, availableExhibits, onClose, onAdded }: {
   systemId: string;
@@ -201,6 +237,7 @@ function EditLinkModal({ link, systemId, onClose, onSaved }: {
 }) {
   const [form, setForm] = useState({
     link_type:           link.link_type || 'Primary',
+    flow_allocation_m3h: link.flow_allocation_m3h != null ? String(link.flow_allocation_m3h) : '',
     notes:               link.notes || '',
   });
   const [saving, setSaving] = useState(false);
@@ -211,6 +248,7 @@ function EditLinkModal({ link, systemId, onClose, onSaved }: {
     try {
       await api.put(`/systems/${systemId}/exhibit-links/${link.id}`, {
         link_type:           form.link_type,
+        flow_allocation_m3h: form.flow_allocation_m3h ? parseFloat(form.flow_allocation_m3h) : null,
         notes:               form.notes || null,
       });
       toast.success('Link updated');
@@ -236,6 +274,12 @@ function EditLinkModal({ link, systemId, onClose, onSaved }: {
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600 rounded-lg p-1"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">Flow Allocation Override (m³/h) <span className="text-stone-400 font-normal">optional</span></label>
+            <input type="number" min="0" step="0.001" value={form.flow_allocation_m3h}
+              onChange={e => set('flow_allocation_m3h', e.target.value)}
+              placeholder="Blank uses calculated exhibit flow" className={inputCls} />
+          </div>
           <div>
             <label className="block text-xs font-medium text-stone-500 mb-1">Link Type</label>
             <select value={form.link_type} onChange={e => set('link_type', e.target.value)} className={inputCls}>
@@ -289,61 +333,9 @@ export default function DesignBookLSSDetail() {
     qc.invalidateQueries({ queryKey: ['design-book', bookId] });
   };
 
-  // Stable key that only changes when the set of linked exhibit IDs changes
-  const linksSignature = useMemo(
-    () => (links as any[]).map((l: any) => l.exhibit_id).sort().join(','),
-    [links],
-  );
-
-  // Ref so the effect can read latest system without being in its deps
+  // Ref supports Flow Route draft editing without persisting calculated values.
   const systemRef = useRef<any>(null);
   if (system) systemRef.current = system;
-
-  // Auto-sync design_flow + turnover_rate whenever linked exhibits change
-  useEffect(() => {
-    if (!linksSignature || !book) return;
-    const currentLinks = links as any[];
-    if (currentLinks.length === 0) return;
-
-    let totalFlow = 0;
-    let totalVol  = 0;
-    for (const l of currentLinks) {
-      const hydr    = (book.hydraulics || []).find((h: any) => h.exhibit_id === l.exhibit_id);
-      const exTanks = (book.tanks      || []).filter((t: any) => t.exhibit_id === l.exhibit_id);
-      const opVol   = exTanks.reduce((s: number, t: any) =>
-        s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
-      const rate    = parseFloat(hydr?.target_turnover_rate) || 0;
-      if (opVol > 0 && rate > 0) {
-        totalFlow += opVol * rate;
-        totalVol  += opVol;
-      }
-    }
-    if (totalFlow <= 0 || totalVol <= 0) return;
-
-    const newTurnoverHr   = totalVol / totalFlow;
-    const sys             = systemRef.current;
-    if (!sys) return;
-    const currentFlow     = parseFloat(sys?.design_flow_m3h)  || 0;
-    const currentTurnover = parseFloat(sys?.turnover_rate_hr) || 0;
-
-    if (Math.abs(totalFlow - currentFlow) < 0.005 && Math.abs(newTurnoverHr - currentTurnover) < 0.0005) return;
-
-    api.put(`/systems/${systemId}`, {
-      system_code:         sys.system_code,
-      system_name:         sys.system_name,
-      system_type:         sys.system_type         || null,
-      water_type:          sys.water_type          || null,
-      status:              sys.status,
-      duty_description:    sys.duty_description    || null,
-      redundancy_strategy: sys.redundancy_strategy || null,
-      design_flow_m3h:  totalFlow,
-      turnover_rate_hr: newTurnoverHr,
-    }).then(() => {
-      qc.invalidateQueries({ queryKey: ['system', systemId] });
-      qc.invalidateQueries({ queryKey: ['design-book', bookId] });
-    }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linksSignature, book]);
 
   // System edit state
   const [editMode, setEditMode]   = useState(false);
@@ -503,7 +495,7 @@ export default function DesignBookLSSDetail() {
         const targetRate = parseFloat(hydr?.target_turnover_rate) || 0;
         if (opVol > 0 && targetRate > 0) {
           if (!flowVal)     flowVal     = (opVol * targetRate).toFixed(2);
-          if (!turnoverVal) turnoverVal = (1 / targetRate).toFixed(2);
+          if (!turnoverVal) turnoverVal = targetRate.toFixed(2);
         }
       }
     }
@@ -550,6 +542,7 @@ export default function DesignBookLSSDetail() {
         loop3_link_bio_degas: !!system.loop3_link_bio_degas,
         system_config:        system.system_config        || 'bespoke',
         compact_unit_id:      system.compact_unit_id      || null,
+        design_book_id:       bookId,
       });
       toast.success('System updated');
       setEditMode(false);
@@ -618,6 +611,7 @@ export default function DesignBookLSSDetail() {
         loop3_link_bio_degas: !!system.loop3_link_bio_degas,
         system_config:   config,
         compact_unit_id: config === 'compact' ? (unitId || null) : null,
+        design_book_id:  bookId,
       });
       toast.success(config === 'compact' ? 'Set to Compact Unit' : 'Set to Bespoke System');
       refresh();
@@ -652,6 +646,7 @@ export default function DesignBookLSSDetail() {
         redundancy_strategy:  system.redundancy_strategy  || null,
         system_config:        system.system_config        || 'bespoke',
         compact_unit_id:      system.compact_unit_id      || null,
+        design_book_id:       bookId,
         loop1_flow_source:    flowForm.loop1_flow_source    || null,
         loop1_filtration:     flowForm.loop1_filtration     || null,
         loop1_bio_degas_m3h:  flowForm.loop1_bio_degas_m3h  ? parseFloat(flowForm.loop1_bio_degas_m3h)  : null,
@@ -702,6 +697,7 @@ export default function DesignBookLSSDetail() {
         redundancy_strategy: system.redundancy_strategy || null,
         system_config:       system.system_config       || 'bespoke',
         compact_unit_id:     system.compact_unit_id     || null,
+        design_book_id:      bookId,
         ...loopFields,
       });
       toast.success(`Loop ${n} saved`);
@@ -745,6 +741,7 @@ export default function DesignBookLSSDetail() {
         redundancy_strategy: system.redundancy_strategy || null,
         system_config:       system.system_config       || 'bespoke',
         compact_unit_id:     system.compact_unit_id     || null,
+        design_book_id:      bookId,
         ...loopFields,
       });
       toast.success(`Loop ${n} removed`);
@@ -781,19 +778,20 @@ export default function DesignBookLSSDetail() {
   const availableExhibits = exhibits.filter((ex: any) => !linkedExhibitIds.has(ex.id));
 
   const systemFlow = parseFloat(system.design_flow_m3h) || 0;
+  const systemCalculation = book?.engineering_calculations?.systems?.find(
+    (calculation: any) => calculation.inputs?.system_id === system.id,
+  ) ?? null;
+  const exhibitCalculations: any[] = book?.engineering_calculations?.exhibits || [];
 
-  // Compute design flow for each linked exhibit from hydraulics + tank volumes
+  // Values come exclusively from the API calculation contract.
   const exhibitFlowMap = new Map<string, number | null>();
   (links as any[]).forEach((l: any) => {
-    const hydr    = (book?.hydraulics || []).find((h: any) => h.exhibit_id === l.exhibit_id);
-    const exTanks = (book?.tanks      || []).filter((t: any) => t.exhibit_id === l.exhibit_id);
-    const opVol   = exTanks.reduce((s: number, t: any) =>
-      s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
-    const rate    = parseFloat(hydr?.target_turnover_rate) || 0;
-    exhibitFlowMap.set(l.exhibit_id, opVol > 0 && rate > 0 ? opVol * rate : null);
+    const calculation = exhibitCalculations.find(
+      (candidate: any) => candidate.inputs?.exhibit_id === l.exhibit_id,
+    );
+    exhibitFlowMap.set(l.exhibit_id, calculation?.results?.total_return_flow_m3h ?? null);
   });
-  const totalCalculatedFlow = [...exhibitFlowMap.values()]
-    .reduce((s, f) => s + (f ?? 0), 0);
+  const totalCalculatedFlow = systemCalculation?.results?.calculated_required_flow_m3h ?? 0;
 
   const setEF = (k: string, v: string) => setEditForm((f: any) => ({ ...f, [k]: v }));
   const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40';
@@ -949,6 +947,25 @@ export default function DesignBookLSSDetail() {
                       )}
                     </div>
                   )}
+                  {selectedUnit && systemCalculation?.suitability && (
+                    <div className={`flex items-start gap-2 text-xs rounded-lg border px-4 py-3 ${
+                      systemCalculation.suitability.suitable
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        : 'bg-red-50 border-red-200 text-red-700'
+                    }`}>
+                      {systemCalculation.suitability.suitable
+                        ? <Check className="w-4 h-4 shrink-0" />
+                        : <AlertCircle className="w-4 h-4 shrink-0" />}
+                      <div>
+                        <p className="font-semibold">
+                          {systemCalculation.suitability.suitable ? 'Catalog limits are suitable' : 'Compact unit is not suitable'}
+                        </p>
+                        {systemCalculation.suitability.reasons?.map((reason: string) => (
+                          <p key={reason} className="mt-0.5">{reason}</p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {!selectedUnit && (compactUnits as any[]).length === 0 && (
                     <div className="flex items-center gap-2 text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-lg px-4 py-3">
@@ -1008,7 +1025,7 @@ export default function DesignBookLSSDetail() {
                   onChange={e => setEF('design_flow_m3h', e.target.value)} className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Turnover Rate (h)</label>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Turnover Rate (×/h)</label>
                 <input type="number" step="0.1" min="0" value={editForm.turnover_rate_hr}
                   onChange={e => setEF('turnover_rate_hr', e.target.value)} className={inputCls} />
               </div>
@@ -1077,7 +1094,7 @@ export default function DesignBookLSSDetail() {
                 },
                 {
                   label: 'Turnover Rate',
-                  value: system.turnover_rate_hr != null ? `${parseFloat(system.turnover_rate_hr).toFixed(1)} h` : '—',
+                  value: system.turnover_rate_hr != null ? `${parseFloat(system.turnover_rate_hr).toFixed(1)} ×/h` : '—',
                   icon: <Droplets className="w-4 h-4 text-blue-500" />,
                   bg: 'bg-blue-50',
                 },
@@ -1169,8 +1186,10 @@ export default function DesignBookLSSDetail() {
                     <td className="px-4 py-3 text-right font-mono text-sm text-stone-700">
                       {(() => {
                         const f = exhibitFlowMap.get(link.exhibit_id);
-                        return f != null
-                          ? <span>{f.toFixed(1)}</span>
+                        return link.flow_allocation_m3h != null
+                          ? <span className="text-blue-700">{parseFloat(link.flow_allocation_m3h).toFixed(1)} <small className="block font-sans text-[10px]">manual override · calculated {f?.toFixed(1) ?? '—'}</small></span>
+                          : f != null
+                          ? <span>{f.toFixed(1)} <small className="block font-sans text-[10px] text-stone-400">calculated</small></span>
                           : <span className="text-stone-300 text-xs">no hydraulics</span>;
                       })()}
                     </td>
@@ -1214,6 +1233,8 @@ export default function DesignBookLSSDetail() {
         )}
       </div>
 
+      <EngineeringTrace calculation={systemCalculation} />
+
       {/* Flow Route panel */}
       {(() => {
         const isSaltwater = system.water_type === 'Marine' || system.water_type === 'Salt Water';
@@ -1226,37 +1247,26 @@ export default function DesignBookLSSDetail() {
         const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
         // Hydraulics split % from the primary linked exhibit
         const primaryExLink = (links as any[]).find((l: any) => l.link_type === 'Primary') ?? (links as any[])[0];
-        const exHydr = primaryExLink && book
-          ? (book.hydraulics || []).find((h: any) => h.exhibit_id === primaryExLink.exhibit_id)
+        const primaryCalculation = primaryExLink
+          ? exhibitCalculations.find((calculation: any) =>
+              calculation.inputs?.exhibit_id === primaryExLink.exhibit_id)
           : null;
-        const surfacePct = parseFloat(exHydr?.surface_skim_pct) || 30;
-        const bottomPct  = parseFloat(exHydr?.bottom_drain_pct) || 70;
-        const exTurnover = parseFloat(exHydr?.target_turnover_rate) || 0;
-
-        // Gather tanks by exhibit_id OR system_id (some tanks may only have system_id set),
-        // deduplicate by tank id, and multiply by quantity
-        const allSystemTanks: any[] = book
-          ? [...new Map(
-              (book.tanks || [])
-                .filter((t: any) =>
-                  (primaryExLink && t.exhibit_id === primaryExLink.exhibit_id) ||
-                  t.system_id?.toString() === systemId?.toString())
-                .map((t: any) => [t.id, t])
-            ).values()]
-          : [];
-        const exOpVol = allSystemTanks.reduce((s: number, t: any) =>
-          s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0) * (parseInt(t.quantity) || 1), 0);
-
-        // System flow: (1) saved design_flow_m3h  (2) tank vol × turnover  (3) totalCalculatedFlow
+        const surfacePct = primaryCalculation?.inputs?.surface_skim_pct ?? 30;
+        const bottomPct  = primaryCalculation?.inputs?.bottom_drain_pct ?? 70;
+        // System flow is selected by the API contract, including any override.
         const systemFlow = (() => {
-          const saved = parseFloat(system.design_flow_m3h) || 0;
+          const saved = systemCalculation?.results?.design_flow_m3h ?? 0;
           if (saved > 0) return saved;
-          if (exOpVol > 0 && exTurnover > 0) return exOpVol * exTurnover;
+          if (primaryCalculation?.results?.total_return_flow_m3h > 0) {
+            return primaryCalculation.results.total_return_flow_m3h;
+          }
           return totalCalculatedFlow;
         })();
 
-        const surfaceFlow = systemFlow * (surfacePct / 100);
-        const bottomFlow  = systemFlow * (bottomPct  / 100);
+        const surfaceFlow = primaryCalculation?.results?.surface_skim_flow_m3h ??
+          systemFlow * (surfacePct / 100);
+        const bottomFlow  = primaryCalculation?.results?.bottom_drain_flow_m3h ??
+          systemFlow * (bottomPct / 100);
         const srcPct = (src: string): number =>
           src === 'Bottom Drain' ? bottomPct :
           src === 'Surface Skim' ? surfacePct : 100;

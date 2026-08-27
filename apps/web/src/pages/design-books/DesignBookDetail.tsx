@@ -276,12 +276,13 @@ const SYSTEM_TYPES_LIST = [
 
 const LSS_STATUSES = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released', 'Decommissioned'];
 
-function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, onClose, onCreated }: {
+function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculations, onClose, onCreated }: {
   projectId: string;
   bookId: string;
   exhibits: any[];
   hydraulics: any[];
   tanks: any[];
+  calculations: any[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -306,17 +307,15 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, onClose, 
       setSourceRate(null);
       return;
     }
-    const hydr = hydraulics.find((h: any) => h.exhibit_id === exhibitId);
-    const targetRate = parseFloat(hydr?.target_turnover_rate) || 0;
-    const exTanks = tanks.filter((t: any) => t.exhibit_id === exhibitId);
-    const opVol = exTanks.reduce((s: number, t: any) =>
-      s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
-    if (opVol > 0 && targetRate > 0) {
-      const flow = opVol * targetRate;
-      const turnoverHr = 1 / targetRate;
+    const calculation = calculations.find((item: any) => item.inputs?.exhibit_id === exhibitId);
+    const calculatedFlow = parseFloat(calculation?.results?.total_return_flow_m3h) || 0;
+    const calculatedTurnover = parseFloat(calculation?.inputs?.target_turnover_rate_cycles_per_hour) || 0;
+    if (calculatedFlow > 0 && calculatedTurnover > 0) {
+      const flow = calculatedFlow;
+      const turnoverHr = calculatedTurnover;
       setComputedFlow(flow);
       setComputedTurnover(turnoverHr);
-      setSourceRate(targetRate);
+      setSourceRate(calculatedTurnover);
       setForm(f => ({
         ...f,
         exhibit_id: exhibitId,
@@ -466,7 +465,7 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, onClose, 
               </div>
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">
-                  Turnover Rate (h/cycle)
+                  Turnover Rate (×/h)
                   {sourceRate !== null && !isTurnoverOverridden && (
                     <span className="ml-1 text-stone-400 font-normal">← {sourceRate}×/h</span>
                   )}
@@ -621,7 +620,7 @@ function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Config</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Flow m³/h</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Turnover h</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Turnover ×/h</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Equipment</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Status</th>
                 <th className="px-4 py-2.5" />
@@ -1341,6 +1340,7 @@ export default function DesignBookDetail() {
           exhibits={exhibits}
           hydraulics={book.hydraulics || []}
           tanks={book.tanks || []}
+          calculations={book.engineering_calculations?.exhibits || []}
           onClose={() => setShowNewLSS(false)}
           onCreated={() => { setShowNewLSS(false); refresh(); }}
         />

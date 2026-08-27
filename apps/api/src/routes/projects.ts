@@ -6,6 +6,12 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import {
+  AQUARIUM_CALCULATION_VERSION,
+  calculateExhibitHydraulics,
+  compatibleWaterTypes,
+  evaluateCompactUnit,
+} from '../lib/aquariumCalculations';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -664,8 +670,124 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
       loop1_flow_source, loop1_filtration, loop1_bio_degas_m3h, loop1_link_bio_degas,
       loop2_flow_source, loop2_filtration, loop2_bio_degas_m3h, loop2_link_bio_degas,
       loop3_flow_source, loop3_filtration, loop3_bio_degas_m3h, loop3_link_bio_degas,
-      system_config, compact_unit_id,
+      system_config, compact_unit_id, design_book_id,
     } = req.body;
+    for (const [label, value] of [
+      ['Design flow', design_flow_m3h],
+      ['Turnover rate', turnover_rate_hr],
+      ['Loop 1 bio/degas flow', loop1_bio_degas_m3h],
+      ['Loop 2 bio/degas flow', loop2_bio_degas_m3h],
+      ['Loop 3 bio/degas flow', loop3_bio_degas_m3h],
+    ] as Array<[string, any]>) {
+      if (value != null && value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a non-negative number.` } });
+      }
+    }
+    const currentResult = await query('SELECT id, project_id, water_type FROM systems WHERE id=$1', [req.params.id]);
+    if (!currentResult.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    const intendedWaterType = water_type || currentResult.rows[0].water_type;
+    const linkedWaterTypes = await query(
+      `SELECT e.exhibit_code, e.water_type
+       FROM system_exhibit_links sel
+       JOIN exhibits e ON e.id=sel.exhibit_id
+       WHERE sel.system_id=$1`,
+      [req.params.id],
+    );
+    const incompatibleLink = linkedWaterTypes.rows.find((link: any) =>
+      !compatibleWaterTypes(intendedWaterType, link.water_type));
+    if (incompatibleLink) {
+      return res.status(409).json({
+        error: {
+          code: 'INCOMPATIBLE_WATER_TYPE',
+          message: `${incompatibleLink.exhibit_code} uses ${incompatibleLink.water_type} water and is incompatible with a ${intendedWaterType} system.`,
+        },
+      });
+    }
+    if ((system_config || 'bespoke') === 'compact') {
+      if (!compact_unit_id) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Select a compact unit before saving compact configuration.' } });
+      }
+      if (!design_book_id) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'A Design Book calculation context is required for compact-unit validation.' } });
+      }
+      const designBookResult = await query(
+        'SELECT id FROM design_books WHERE id=$1 AND project_id=$2',
+        [design_book_id, currentResult.rows[0].project_id],
+      );
+      if (!designBookResult.rows[0]) {
+        return res.status(409).json({
+          error: { code: 'DESIGN_BOOK_CONTEXT_MISMATCH', message: 'The Design Book must belong to the same project as the system.' },
+        });
+      }
+      const unitResult = await query('SELECT * FROM lss_compact_units WHERE id=$1', [compact_unit_id]);
+      const unit = unitResult.rows[0];
+      if (!unit) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Compact unit not found.' } });
+      if (unit.status !== 'Active') {
+        return res.status(409).json({ error: { code: 'INCOMPATIBLE_COMPACT_UNIT', message: `Compact unit is ${unit.status.toLowerCase()} and cannot be selected.` } });
+      }
+      if (!compatibleWaterTypes(intendedWaterType, unit.water_type)) {
+        return res.status(409).json({
+          error: { code: 'INCOMPATIBLE_WATER_TYPE', message: `${unit.unit_code} is rated for ${unit.water_type}, not ${intendedWaterType}.` },
+        });
+      }
+      const intendedFlow = Number(design_flow_m3h);
+      if (Number.isFinite(intendedFlow) && unit.max_flow_m3h != null &&
+          intendedFlow > Number(unit.max_flow_m3h)) {
+        return res.status(409).json({
+          error: { code: 'INCOMPATIBLE_COMPACT_UNIT', message: `Design flow exceeds ${unit.unit_code}'s ${unit.max_flow_m3h} m³/h catalog limit.` },
+        });
+      }
+        const linkedExhibitsResult = await query(
+          `SELECT e.*
+           FROM system_exhibit_links sel
+           JOIN exhibits e ON e.id=sel.exhibit_id
+           WHERE sel.system_id=$1`,
+          [req.params.id],
+        );
+        const linkedExhibits = linkedExhibitsResult.rows;
+        const exhibitIds = linkedExhibits.map((item: any) => item.id);
+        if (exhibitIds.length > 0) {
+          const [tankResult, hydraulicResult, substrateResult] = await Promise.all([
+            query('SELECT * FROM tanks WHERE exhibit_id = ANY($1::uuid[])', [exhibitIds]),
+            query(
+              'SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1 AND exhibit_id = ANY($2::uuid[])',
+              [design_book_id, exhibitIds],
+            ),
+            query(
+              'SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1 AND exhibit_id = ANY($2::uuid[])',
+              [design_book_id, exhibitIds],
+            ),
+          ]);
+          const calculations = linkedExhibits.map((linkedExhibit: any) =>
+            calculateExhibitHydraulics(
+              linkedExhibit,
+              tankResult.rows.filter((item: any) => item.exhibit_id === linkedExhibit.id),
+              hydraulicResult.rows.find((item: any) => item.exhibit_id === linkedExhibit.id),
+              substrateResult.rows.find((item: any) => item.exhibit_id === linkedExhibit.id),
+            ));
+          const invalidCalculation = calculations.find((item: any) => item.status === 'invalid');
+          if (invalidCalculation) {
+            return res.status(409).json({
+              error: { code: 'INVALID_ENGINEERING_INPUTS', message: invalidCalculation.reasons.join(' ') },
+            });
+          }
+          const effectiveVolume = calculations.reduce(
+            (sum: number, item: any) => sum + (item.results.operating_volume_m3 || 0), 0);
+          const calculatedFlow = calculations.reduce(
+            (sum: number, item: any) => sum + (item.results.total_return_flow_m3h || 0), 0);
+          const suitability = evaluateCompactUnit(
+            unit,
+            intendedWaterType,
+            effectiveVolume,
+            Number.isFinite(intendedFlow) && intendedFlow > 0 ? intendedFlow : calculatedFlow,
+          );
+          if (!suitability.suitable) {
+            return res.status(409).json({
+              error: { code: 'INCOMPATIBLE_COMPACT_UNIT', message: suitability.reasons.join(' ') },
+            });
+          }
+        }
+    }
     const result = await query(
       `UPDATE systems SET
         system_code=COALESCE($1,system_code), system_name=$2, system_type=$3,
@@ -675,8 +797,9 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
         loop2_flow_source=$14, loop2_filtration=$15, loop2_bio_degas_m3h=$16, loop2_link_bio_degas=$17,
         loop3_flow_source=$18, loop3_filtration=$19, loop3_bio_degas_m3h=$20, loop3_link_bio_degas=$21,
         system_config=$22, compact_unit_id=$23,
+        calculation_version=$24, last_calculated_at=NOW(), calculation_inputs=$25,
         updated_at=NOW()
-       WHERE id=$24 RETURNING *`,
+       WHERE id=$26 RETURNING *`,
       [
         system_code || null, system_name, system_type,
         design_flow_m3h || null, turnover_rate_hr || null, water_type, status,
@@ -688,6 +811,15 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
         loop3_flow_source || null, loop3_filtration || null,
         loop3_bio_degas_m3h ?? null, loop3_link_bio_degas ?? false,
         system_config || 'bespoke', compact_unit_id || null,
+        AQUARIUM_CALCULATION_VERSION,
+        JSON.stringify({
+          design_flow_m3h: design_flow_m3h ?? null,
+          turnover_rate_hr: turnover_rate_hr ?? null,
+          turnover_unit: 'cycles_per_hour',
+          flow_unit: 'm3_per_hour',
+          system_config: system_config || 'bespoke',
+          compact_unit_id: compact_unit_id || null,
+        }),
         req.params.id,
       ]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
@@ -749,12 +881,39 @@ router.get('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest, 
 router.post('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest, res: Response) => {
   const { exhibit_id, link_type, flow_allocation_m3h, notes, sort_order } = req.body;
   if (!exhibit_id) return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id is required' } });
+  if (flow_allocation_m3h != null &&
+      (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be a non-negative number.' } });
+  }
   try {
+    const ownership = await query(
+      `SELECT s.project_id AS system_project_id, s.water_type AS system_water_type,
+              e.project_id AS exhibit_project_id, e.water_type AS exhibit_water_type,
+              e.exhibit_code
+       FROM systems s CROSS JOIN exhibits e
+       WHERE s.id=$1 AND e.id=$2`,
+      [req.params.id, exhibit_id],
+    );
+    const candidate = ownership.rows[0];
+    if (!candidate) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System or exhibit not found.' } });
+    if (candidate.system_project_id !== candidate.exhibit_project_id) {
+      return res.status(409).json({ error: { code: 'OWNERSHIP_MISMATCH', message: 'The exhibit and system must belong to the same project.' } });
+    }
+    if (!compatibleWaterTypes(candidate.system_water_type, candidate.exhibit_water_type)) {
+      return res.status(409).json({
+        error: {
+          code: 'INCOMPATIBLE_WATER_TYPE',
+          message: `${candidate.exhibit_code} uses ${candidate.exhibit_water_type} water and cannot be linked to a ${candidate.system_water_type} system.`,
+        },
+      });
+    }
+    const allocationSource = flow_allocation_m3h != null ? 'manual_override' : 'calculated';
     const result = await query(
-      `INSERT INTO system_exhibit_links (system_id, exhibit_id, link_type, flow_allocation_m3h, notes, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO system_exhibit_links
+         (system_id, exhibit_id, link_type, flow_allocation_m3h, notes, sort_order, allocation_source, allocation_updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
        RETURNING *`,
-      [req.params.id, exhibit_id, link_type || 'Primary', flow_allocation_m3h ?? null, notes || null, sort_order ?? 0]
+      [req.params.id, exhibit_id, link_type || 'Primary', flow_allocation_m3h ?? null, notes || null, sort_order ?? 0, allocationSource]
     );
     const enriched = await query(
       `SELECT sel.*, e.exhibit_code, e.exhibit_name, e.water_type as exhibit_water_type
@@ -770,9 +929,18 @@ router.post('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest,
 
 router.put('/systems/:id/exhibit-links/:linkId', authenticate, async (req: AuthRequest, res: Response) => {
   const { link_type, flow_allocation_m3h, notes } = req.body;
+  if (flow_allocation_m3h != null &&
+      (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be a non-negative number.' } });
+  }
   const result = await query(
-    `UPDATE system_exhibit_links SET link_type=$1, flow_allocation_m3h=$2, notes=$3 WHERE id=$4 AND system_id=$5 RETURNING *`,
-    [link_type || 'Primary', flow_allocation_m3h ?? null, notes || null, req.params.linkId, req.params.id]
+    `UPDATE system_exhibit_links
+     SET link_type=$1, flow_allocation_m3h=$2, notes=$3,
+         allocation_source=$4, allocation_updated_at=NOW()
+     WHERE id=$5 AND system_id=$6 RETURNING *`,
+    [link_type || 'Primary', flow_allocation_m3h ?? null, notes || null,
+     flow_allocation_m3h != null ? 'manual_override' : 'calculated',
+     req.params.linkId, req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Link not found' } });
   const enriched = await query(

@@ -68,7 +68,37 @@ function fmtVol(v?: number | null) {
   return parseFloat(String(v)).toFixed(3);
 }
 
-// ─── Species Section ─────────────────────────────────────────────────────────
+function CalculationTrace({ calculation, title = 'Calculation Trace' }: {
+  calculation?: any | null;
+  title?: string;
+}) {
+  if (!calculation) return null;
+  const valid = calculation.status === 'valid';
+  const timestamp = calculation.calculated_at
+    ? new Date(calculation.calculated_at).toLocaleString()
+    : '—';
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${valid ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40'}`}>
+      <div className="flex items-center gap-2 flex-wrap">
+        {valid
+          ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          : <AlertTriangle className="w-4 h-4 text-red-600" />}
+        <span className={`text-xs font-semibold uppercase tracking-wide ${valid ? 'text-emerald-700' : 'text-red-700'}`}>{title}</span>
+        <span className={`text-xs rounded-full px-2 py-0.5 ${valid ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+          {valid ? 'Current' : 'Blocked'}
+        </span>
+        <span className="text-xs text-stone-400 ml-auto">{calculation.calculation_version} · {timestamp}</span>
+      </div>
+      <p className="text-xs text-stone-600 mt-2">{calculation.formula}</p>
+      <p className="text-xs text-stone-400 mt-1">{calculation.rounding}</p>
+      {calculation.reasons?.length > 0 && (
+        <ul className="mt-2 text-xs text-red-700 list-disc list-inside">
+          {calculation.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
 const BLANK_SPECIES = { species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '' };
 
 function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
@@ -1636,12 +1666,13 @@ function fmtWeir(L: number, unit: ResultUnit): string {
   }
 }
 
-function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateData, onRefresh }: {
+function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateData, calculation, onRefresh }: {
   bookId: string;
   exhibitId: string;
   tank: any | null;
   hydraulics: any | null;
   substrateData?: any | null;
+  calculation?: any | null;
   onRefresh: () => void;
 }) {
   const [headVal, setHeadVal]       = useState('');
@@ -1682,11 +1713,11 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   }, [hydraulics]);
 
   // Derive surface skim flow from hydraulics (same logic as WaterFlowTab)
-  const opVol    = computeEffectiveOpVol(tank, substrateData) ?? 0;
+  const opVol    = calculation?.results?.operating_volume_m3 ?? 0;
   const turnover = parseFloat(hydraulics?.target_turnover_rate) || 0;
   const skimPct  = parseFloat(hydraulics?.surface_skim_pct) || 30;
-  const totalM3h = opVol > 0 && turnover > 0 ? opVol * turnover : null;
-  const skimM3h  = totalM3h != null ? totalM3h * skimPct / 100 : null;
+  const totalM3h = calculation?.results?.total_return_flow_m3h ?? null;
+  const skimM3h  = calculation?.results?.surface_skim_flow_m3h ?? null;
   const skimLmin = skimM3h != null ? skimM3h * 1000 / 60 : null;
 
   const headRaw    = parseFloat(headVal) || 0;
@@ -1780,6 +1811,9 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
         <span className="text-xs text-indigo-500 ml-1">
           — {method === 'bazin_1888' ? 'Bazin alternative' : 'Francis recommended case'}
         </span>
+      </div>
+      <div className="px-5 pt-5">
+        <CalculationTrace calculation={calculation} title="Surface Skim Source Trace" />
       </div>
 
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2075,13 +2109,14 @@ function convertFlow(m3h: number | null, unit: FlowUnit): string {
   return (m3h * u.factor).toFixed(u.decimals);
 }
 
-function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateData, onRefresh }: {
+function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateData, calculation, onRefresh }: {
   bookId: string;
   exhibitId: string;
   tank: any;
   species: any[];
   hydraulics: any | null;
   substrateData?: any | null;
+  calculation?: any | null;
   onRefresh: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -2104,16 +2139,24 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
     notes:               hydraulics?.notes || '',
   };
 
-  const opVol   = computeEffectiveOpVol(tank, substrateData) ?? 0;
+  const opVol = !editing && calculation?.results?.operating_volume_m3 != null
+    ? calculation.results.operating_volume_m3
+    : editing ? computeEffectiveOpVol(tank, substrateData) ?? 0 : 0;
   const turnover = parseFloat(src.target_turnover_rate) || 0;
   const skimPct  = parseFloat(src.surface_skim_pct) || 0;
   const drainPct = parseFloat(src.bottom_drain_pct) || 0;
 
-  const totalM3h  = opVol > 0 && turnover > 0 ? opVol * turnover : null;
+  const totalM3h = !editing && calculation?.results?.total_return_flow_m3h != null
+    ? calculation.results.total_return_flow_m3h
+    : editing && opVol > 0 && turnover > 0 ? opVol * turnover : null;
   const totalLmin = totalM3h != null ? totalM3h * 1000 / 60 : null;
-  const skimM3h   = totalM3h != null ? totalM3h * skimPct / 100 : null;
+  const skimM3h = !editing && calculation?.results?.surface_skim_flow_m3h != null
+    ? calculation.results.surface_skim_flow_m3h
+    : totalM3h != null ? totalM3h * skimPct / 100 : null;
   const skimLmin  = skimM3h  != null ? skimM3h  * 1000 / 60 : null;
-  const drainM3h  = totalM3h != null ? totalM3h * drainPct / 100 : null;
+  const drainM3h = !editing && calculation?.results?.bottom_drain_flow_m3h != null
+    ? calculation.results.bottom_drain_flow_m3h
+    : totalM3h != null ? totalM3h * drainPct / 100 : null;
   const drainLmin = drainM3h != null ? drainM3h * 1000 / 60 : null;
   const splitOk   = Math.abs(skimPct + drainPct - 100) < 0.01;
 
@@ -2181,6 +2224,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
           </div>
         ))}
       </div>
+      <CalculationTrace calculation={calculation} title="Hydraulic Calculation Trace" />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         {/* Left — inputs */}
@@ -2442,6 +2486,9 @@ export default function ExhibitDetail() {
   const species = allSpecies.filter((s: any) => s.exhibit_id === exhibitId);
   const hydraulics  = allHydraulics.find((h: any) => h.exhibit_id === exhibitId) ?? null;
   const substrateData = allSubstrate.find((s: any) => s.exhibit_id === exhibitId) ?? null;
+  const engineeringCalculation = book.engineering_calculations?.exhibits?.find(
+    (calculation: any) => calculation.inputs?.exhibit_id === exhibitId,
+  ) ?? null;
   const unassigned = tanks.filter((t: any) => !t.exhibit_id);
 
   const TABS = [
@@ -2640,6 +2687,7 @@ export default function ExhibitDetail() {
           species={species}
           hydraulics={hydraulics}
           substrateData={substrateData}
+          calculation={engineeringCalculation}
           onRefresh={refresh}
         />
       )}
@@ -2652,6 +2700,7 @@ export default function ExhibitDetail() {
           tank={tank}
           hydraulics={hydraulics}
           substrateData={substrateData}
+          calculation={engineeringCalculation}
           onRefresh={refresh}
         />
       )}
