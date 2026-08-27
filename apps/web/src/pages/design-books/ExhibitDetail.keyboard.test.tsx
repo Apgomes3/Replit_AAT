@@ -10,10 +10,14 @@ import { useAuthStore } from '../../store/authStore';
 vi.mock('../../lib/api', () => ({
   default: {
     get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
   },
 }));
 
 const apiGet = vi.mocked(api.get);
+const apiPost = vi.mocked(api.post);
+const apiPut = vi.mocked(api.put);
 
 const currentPath = '/design-books/book-1/exhibits/exhibit-1';
 const book = {
@@ -21,6 +25,7 @@ const book = {
   book_code: 'DB-001',
   book_title: 'Aquarium Design Book',
   status: 'Draft',
+  project_id: 'project-1',
   exhibits: [{
     id: 'exhibit-1',
     exhibit_code: 'EX-01',
@@ -58,6 +63,8 @@ function renderExhibit(initialEntries = ['/design-books', currentPath]) {
 describe('ExhibitDetail Escape navigation', () => {
   beforeEach(() => {
     apiGet.mockResolvedValue({ data: book });
+    apiPost.mockResolvedValue({ data: {} });
+    apiPut.mockResolvedValue({ data: {} });
     useAuthStore.setState({
       user: {
         id: 'engineer-1',
@@ -112,5 +119,104 @@ describe('ExhibitDetail Escape navigation', () => {
 
     expect(headInput).toHaveValue(50);
     expect(screen.getByTestId('location')).toHaveTextContent(currentPath);
+  });
+
+  it('keeps project tanks separate and creates a linked tank from the PIM library', async () => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/design-books/')) return { data: book } as any;
+      if (url === '/tank-families') {
+        return {
+          data: { items: [{ id: 'family-1', name: 'Main Displays', product_count: 1 }] },
+        } as any;
+      }
+      if (url.startsWith('/product-masters?')) {
+        return {
+          data: {
+            items: [{
+              id: 'pim-tank-1',
+              product_code: 'PIM-MAIN-01',
+              product_name: 'PIM Main Display Tank',
+              tank_family_name: 'Main Displays',
+              shape_type: 'Rectangular',
+              gross_volume_m3: '58.8',
+            }],
+          },
+        } as any;
+      }
+      return { data: { items: [] } } as any;
+    });
+    const user = userEvent.setup();
+    renderExhibit();
+
+    expect(await screen.findByRole('button', { name: 'Project Tanks' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'PIM Tank Library' }));
+    expect(await screen.findByText('Create a linked project tank')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /PIM-MAIN-01.*PIM Main Display Tank/i }));
+    await user.click(screen.getByRole('button', { name: 'Create & Assign Linked Tank' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/tanks/from-pim', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: 'pim-tank-1',
+    }));
+  });
+
+  it('does not turn inherited PIM dimensions into overrides during an unrelated edit', async () => {
+    const linkedBook = {
+      ...book,
+      tanks: [{
+        id: 'linked-tank-1',
+        tank_code: 'PIM-MAIN-01',
+        tank_name: 'Linked Main Tank',
+        project_id: 'project-1',
+        exhibit_id: 'exhibit-1',
+        product_master_id: 'pim-tank-1',
+        pim_product_code: 'PIM-MAIN-01',
+        pim_product_name: 'PIM Main Display Tank',
+        pim_tank_family_name: 'Main Displays',
+        eff_tank_type: 'Display Tank',
+        eff_shape: 'Rectangular',
+        eff_length_mm: '6000',
+        eff_width_mm: '3500',
+        eff_height_mm: '2800',
+        eff_water_level_mm: '2500',
+        eff_primary_material: 'ACRYLIC',
+        gross_volume_m3: '58.8',
+        design_volume_m3: '52.5',
+        shape_type: null,
+        length_mm: null,
+        width_mm: null,
+        height_mm: null,
+        design_water_level_mm: null,
+        tank_type: null,
+        primary_material: null,
+        status: 'Active',
+      }],
+    };
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/design-books/')) return { data: linkedBook } as any;
+      return { data: { items: [] } } as any;
+    });
+    const user = userEvent.setup();
+    renderExhibit();
+
+    expect(await screen.findByRole('button', { name: 'PIM Tank Library' })).toBeInTheDocument();
+    await user.click((await screen.findAllByRole('button', { name: 'Edit' }))[0]);
+    const tankName = screen.getByPlaceholderText('e.g. Main Display Tank');
+    await user.clear(tankName);
+    await user.type(tankName, 'Project Display Name');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/tanks/linked-tank-1', expect.objectContaining({
+      tank_name: 'Project Display Name',
+      tank_type: null,
+      shape_type: null,
+      primary_material: null,
+      length_mm: null,
+      width_mm: null,
+      height_mm: null,
+      design_water_level_mm: null,
+    })));
   });
 });

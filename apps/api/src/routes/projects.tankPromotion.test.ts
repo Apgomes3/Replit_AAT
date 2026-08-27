@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const testSecret = 'tank-promotion-test-secret';
 const tankId = 'tank-1';
 const productId = 'product-1';
+const libraryTankId = 'pim-tank-1';
 
 const state = vi.hoisted(() => ({
   calls: [] as Array<{ sql: string; params: any[]; scope: 'query' | 'client' }>,
@@ -48,6 +49,38 @@ const state = vi.hoisted(() => ({
     operating_volume_m3: '33',
     surface_area_m2: null,
   },
+  libraryTank: {
+    id: 'pim-tank-1',
+    product_code: 'PIM-MAIN-01',
+    product_name: 'PIM Main Display Tank',
+    product_category: 'Tank',
+    application_type: 'Display Tank',
+    shape_type: 'Rectangular',
+    length_mm: '6000',
+    width_mm: '3500',
+    height_mm: '2800',
+    design_water_level_mm: '2500',
+    gross_volume_m3: '58.8',
+    operating_volume_m3: '52.5',
+    primary_material_code: 'ACRYLIC',
+    notes: 'Reusable tank details',
+    tank_family_name: 'Main Displays',
+  } as Record<string, any> | null,
+  exhibit: {
+    id: 'exhibit-1',
+    project_id: 'project-1',
+    exhibit_name: 'Main Exhibit',
+    project_code: 'PRJ-01',
+  },
+  existingExhibitTank: null as Record<string, any> | null,
+  linkedTank: null as Record<string, any> | null,
+  linkedInsertConflict: false,
+  patchProductValid: true,
+  assignmentTank: {
+    id: 'assignment-tank',
+    project_id: 'project-1',
+    product_master_id: 'pim-tank-1',
+  } as Record<string, any>,
   moduleAccess: { projects: 'manage', pim: 'manage' } as Record<string, string>,
   designBookStatus: 'Draft',
 }));
@@ -55,8 +88,31 @@ const state = vi.hoisted(() => ({
 vi.mock('../db', () => {
   const query = vi.fn(async (sql: string, params: any[] = []) => {
     state.calls.push({ sql, params, scope: 'query' });
+    if (sql.includes('SELECT rma.module_key, rma.access_level')) {
+      return {
+        rows: Object.entries(state.moduleAccess).map(([module_key, access_level]) => ({
+          module_key,
+          access_level,
+        })),
+      };
+    }
+    if (sql.includes("rma.module_key='pim'")) {
+      return { rows: [{ access_level: state.moduleAccess.pim }] };
+    }
     if (sql.includes('SELECT rma.access_level')) {
       return { rows: [{ access_level: state.moduleAccess[String(params[1])] || 'manage' }] };
+    }
+    if (sql.includes("FROM product_masters") && sql.includes("product_category='Tank'")) {
+      return { rows: state.patchProductValid ? [{ id: params[0] }] : [] };
+    }
+    if (sql.includes('SELECT id, project_id, product_master_id FROM tanks WHERE id=$1')) {
+      return { rows: [{ ...state.assignmentTank }] };
+    }
+    if (sql.includes('SELECT id, product_master_id FROM tanks WHERE id=$1')) {
+      return { rows: [{ ...state.assignmentTank }] };
+    }
+    if (sql.includes('SELECT id FROM exhibits WHERE id=$1 AND project_id=$2')) {
+      return { rows: [{ id: params[0] }] };
     }
     if (sql.includes('INSERT INTO tanks')) {
       return {
@@ -65,7 +121,7 @@ vi.mock('../db', () => {
           tank_code: params[0],
           project_id: params[1],
           tank_name: params[5],
-          product_master_id: null,
+          product_master_id: params[7] || null,
         }],
       };
     }
@@ -80,8 +136,41 @@ vi.mock('../db', () => {
     if (sql.includes('FROM design_books') && sql.includes('FOR SHARE')) {
       return { rows: [{ id: 'book-1', status: state.designBookStatus }] };
     }
-    if (sql.includes('FROM exhibits') && sql.includes('FOR SHARE')) {
-      return { rows: [{ id: 'exhibit-1', project_id: 'project-1' }] };
+    if (sql.includes('FROM exhibits e') && sql.includes('FOR UPDATE')) {
+      return { rows: [{ ...state.exhibit }] };
+    }
+    if (sql.includes('LEFT JOIN tank_families tf') && sql.includes("pm.product_category='Tank'")) {
+      const product = params[0] === state.libraryProduct.id ? state.libraryProduct : state.libraryTank;
+      return { rows: product ? [{ ...product }] : [] };
+    }
+    if (sql.includes('FROM tanks') && sql.includes('project_id=$1 AND exhibit_id=$2 AND product_master_id=$3')) {
+      return { rows: state.existingExhibitTank ? [{ ...state.existingExhibitTank }] : [] };
+    }
+    if (sql === 'SELECT tank_code FROM tanks WHERE project_id=$1 FOR UPDATE') {
+      return { rows: [] };
+    }
+    if (sql.includes('INSERT INTO tanks') && sql.includes('product_master_id')) {
+      if (state.linkedInsertConflict) {
+        throw Object.assign(new Error('duplicate exhibit assignment'), {
+          code: '23505',
+          constraint: 'idx_tanks_pim_assignment',
+        });
+      }
+      state.linkedTank = {
+        id: 'linked-project-tank',
+        tank_code: params[0],
+        project_id: params[1],
+        exhibit_id: params[2],
+        tank_name: params[3],
+        tank_type: null,
+        product_master_id: params[4],
+        shape_type: null,
+        length_mm: null,
+        width_mm: null,
+        height_mm: null,
+        design_water_level_mm: null,
+      };
+      return { rows: [state.linkedTank] };
     }
     if (sql.includes('FROM product_masters pm') && sql.includes('pm.source_tank_id')) {
       return { rows: state.promotedProduct ? [state.promotedProduct] : [] };
@@ -190,6 +279,38 @@ describe('project tank promotion into PIM', () => {
     state.sourceTank.product_master_id = null;
     state.promotedProduct = null;
     state.duplicatePimAssignment = null;
+    state.libraryTank = {
+      id: libraryTankId,
+      product_code: 'PIM-MAIN-01',
+      product_name: 'PIM Main Display Tank',
+      product_category: 'Tank',
+      application_type: 'Display Tank',
+      shape_type: 'Rectangular',
+      length_mm: '6000',
+      width_mm: '3500',
+      height_mm: '2800',
+      design_water_level_mm: '2500',
+      gross_volume_m3: '58.8',
+      operating_volume_m3: '52.5',
+      primary_material_code: 'ACRYLIC',
+      notes: 'Reusable tank details',
+      tank_family_name: 'Main Displays',
+    };
+    state.exhibit = {
+      id: 'exhibit-1',
+      project_id: 'project-1',
+      exhibit_name: 'Main Exhibit',
+      project_code: 'PRJ-01',
+    };
+    state.existingExhibitTank = null;
+    state.linkedTank = null;
+    state.linkedInsertConflict = false;
+    state.patchProductValid = true;
+    state.assignmentTank = {
+      id: 'assignment-tank',
+      project_id: 'project-1',
+      product_master_id: 'pim-tank-1',
+    };
     state.moduleAccess = { projects: 'manage', pim: 'manage' };
     state.designBookStatus = 'Draft';
   });
@@ -210,6 +331,208 @@ describe('project tank promotion into PIM', () => {
     expect(response.status).toBe(201);
     expect(response.body.product_master_id).toBeNull();
     expect(state.calls.some(call => call.sql.includes('INSERT INTO product_masters'))).toBe(false);
+  });
+
+  it('rejects PIM links submitted through ordinary project-tank creation', async () => {
+    const response = await request(app, 'POST', '/api/v1/tanks', 'engineer', {
+      tank_code: 'TK-BYPASS',
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      tank_name: 'Bypass Attempt',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_PIM_ASSIGNMENT');
+  });
+
+  it('requires PIM manage access for an unassigned linked project tank', async () => {
+    state.moduleAccess.pim = 'view';
+
+    const response = await request(app, 'POST', '/api/v1/tanks', 'engineer', {
+      tank_code: 'TK-LINKED',
+      project_id: 'project-1',
+      tank_name: 'Linked Project Tank',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('MODULE_READ_ONLY');
+  });
+
+  it('preserves project-level creation from a PIM tank for PIM managers', async () => {
+    const response = await request(app, 'POST', '/api/v1/tanks', 'engineer', {
+      tank_code: 'TK-LINKED',
+      project_id: 'project-1',
+      tank_name: 'Linked Project Tank',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.product_master_id).toBe(libraryTankId);
+  });
+
+  it('creates a project tank linked to a PIM tank and exposes inherited values', async () => {
+    const originalLibraryTank = { ...state.libraryTank };
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      id: 'linked-project-tank',
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      product_master_id: libraryTankId,
+      pim_product_code: 'PIM-MAIN-01',
+      eff_shape: 'Rectangular',
+      eff_length_mm: '6000',
+      eff_width_mm: '3500',
+      eff_height_mm: '2800',
+      eff_water_level_mm: '2500',
+      eff_primary_material: 'ACRYLIC',
+      gross_volume_m3: '58.8',
+    });
+    expect(response.body.tank_code).toBe('PIM-PIM-MAIN-01');
+    expect(state.linkedTank).toMatchObject({
+      product_master_id: libraryTankId,
+      shape_type: null,
+      length_mm: null,
+    });
+    expect(state.libraryTank).toEqual(originalLibraryTank);
+    expect(state.calls.some(call => call.sql.startsWith('UPDATE product_masters'))).toBe(false);
+  });
+
+  it('rejects an invalid PIM selection', async () => {
+    state.libraryTank = null;
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: 'not-a-tank',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_PIM_TANK');
+    expect(state.linkedTank).toBeNull();
+  });
+
+  it('rejects an exhibit from another project', async () => {
+    state.exhibit.project_id = 'project-2';
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_PROJECT');
+    expect(state.linkedTank).toBeNull();
+  });
+
+  it('rejects a duplicate exhibit assignment with a clear conflict', async () => {
+    state.existingExhibitTank = { id: 'existing-tank', tank_code: 'TK-EXISTING', tank_name: 'Existing PIM Tank' };
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('DUPLICATE_ASSIGNMENT');
+    expect(response.body.error.message).toContain('TK-EXISTING');
+    expect(state.linkedTank).toBeNull();
+  });
+
+  it('translates a database-level assignment race into a clear duplicate response', async () => {
+    state.linkedInsertConflict = true;
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toEqual({
+      code: 'DUPLICATE_ASSIGNMENT',
+      message: 'This PIM tank is already assigned to the exhibit.',
+    });
+    expect(state.linkedTank).toBeNull();
+  });
+
+  it('rejects changing a PIM link through the generic update endpoint', async () => {
+    state.moduleAccess.pim = 'hidden';
+
+    const response = await request(app, 'PATCH', `/api/v1/tanks/${tankId}`, 'engineer', {
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_PIM_ASSIGNMENT');
+  });
+
+  it('rejects every product link through the generic update path', async () => {
+    state.patchProductValid = false;
+
+    const response = await request(app, 'PATCH', `/api/v1/tanks/${tankId}`, 'engineer', {
+      product_master_id: 'non-tank-product',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_PIM_ASSIGNMENT');
+  });
+
+  it('rejects assigning an existing PIM-linked tank through the quick exhibit path', async () => {
+    const response = await request(app, 'PATCH', `/api/v1/tanks/${tankId}/exhibit`, 'engineer', {
+      exhibit_id: 'exhibit-1',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_PIM_ASSIGNMENT');
+  });
+
+  it('rejects assigning an existing PIM-linked tank through the general update path', async () => {
+    const response = await request(app, 'PUT', `/api/v1/tanks/${tankId}`, 'engineer', {
+      tank_name: 'Existing Linked Tank',
+      exhibit_id: 'exhibit-1',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_PIM_ASSIGNMENT');
+  });
+
+  it('rejects linked assignment without project design-edit authority', async () => {
+    state.moduleAccess.projects = 'view';
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('MODULE_READ_ONLY');
+    expect(state.calls.some(call => call.scope === 'client')).toBe(false);
+  });
+
+  it('rejects linked assignment without PIM access', async () => {
+    state.moduleAccess.pim = 'hidden';
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      design_book_id: 'book-1',
+      product_master_id: libraryTankId,
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('MODULE_READ_ONLY');
+    expect(state.calls.some(call => call.scope === 'client')).toBe(false);
   });
 
   it('explicitly creates and links a reusable PIM tank', async () => {
@@ -255,7 +578,7 @@ describe('project tank promotion into PIM', () => {
       surface_area_m2: 15,
     });
     const insert = state.calls.find(call => call.scope === 'client' && call.sql.includes('INSERT INTO tanks'))!;
-    expect(insert.params[5]).toBe('library-tank-1');
+    expect(insert.params[4]).toBe('library-tank-1');
   });
 
   it('rejects promotion by a viewer', async () => {

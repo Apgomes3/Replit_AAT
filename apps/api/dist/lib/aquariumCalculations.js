@@ -72,6 +72,7 @@ function calculateTankOperatingVolume(tank) {
     let formula = '';
     if (shape === 'custom') {
         calculated = positiveOrNull(tank?.operating_volume_m3 ?? tank?.design_volume_m3);
+        footprintArea = positiveOrNull(tank?.surface_area_m2);
         formula = 'Stored operating volume (custom tank)';
     }
     else if (shape === 'cylindrical' && innerWidth != null && innerWidth > 0 &&
@@ -90,7 +91,7 @@ function calculateTankOperatingVolume(tank) {
         const stored = positiveOrNull(tank?.operating_volume_m3 ?? tank?.design_volume_m3);
         if (stored != null) {
             calculated = stored;
-            footprintArea = null;
+            footprintArea = positiveOrNull(tank?.surface_area_m2);
             formula = 'Stored operating volume (dimensional calculation unavailable)';
         }
     }

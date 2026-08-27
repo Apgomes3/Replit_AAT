@@ -65,7 +65,31 @@ async function loadReleaseContext(
   let systems: any[] = [];
   if (book.project_id) {
     const exhibitResult = await runner('SELECT * FROM exhibits WHERE project_id=$1 ORDER BY exhibit_code', [book.project_id]);
-    const tankResult = await runner('SELECT * FROM tanks WHERE project_id=$1 ORDER BY tank_code', [book.project_id]);
+    const tankResult = await runner(
+      `SELECT t.*,
+         t.gross_volume_m3 AS project_gross_volume_m3,
+         t.operating_volume_m3 AS project_operating_volume_m3,
+         pm.product_code AS pim_product_code,
+         pm.product_name AS pim_product_name,
+         tf.name AS pim_tank_family_name,
+         COALESCE(t.tank_type, pm.application_type) AS eff_tank_type,
+         COALESCE(t.shape_type, pm.shape_type) AS eff_shape,
+         COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm,
+         COALESCE(t.width_mm, pm.width_mm) AS eff_width_mm,
+         COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
+         COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
+         COALESCE(t.primary_material, pm.primary_material_code) AS eff_primary_material,
+         COALESCE(t.notes, pm.notes) AS eff_notes,
+         COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
+         COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
+         COALESCE(t.surface_area_m2, pm.surface_area_m2) AS surface_area_m2
+       FROM tanks t
+       LEFT JOIN product_masters pm ON pm.id=t.product_master_id
+       LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
+       WHERE t.project_id=$1
+       ORDER BY t.tank_code`,
+      [book.project_id],
+    );
     const systemResult = await runner('SELECT * FROM systems WHERE project_id=$1 ORDER BY system_code', [book.project_id]);
     exhibits = exhibitResult.rows;
     tanks = tankResult.rows;
@@ -230,9 +254,17 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
 
     const tkResult = await query(
       `SELECT t.*,
+        t.gross_volume_m3 as project_gross_volume_m3,
+        t.operating_volume_m3 as project_operating_volume_m3,
         e.exhibit_name, e.water_type as exhibit_water_type,
         s.system_code, s.system_name,
         pm.product_code, pm.product_name as product_name,
+         pm.product_code as pim_product_code,
+         pm.product_name as pim_product_name,
+         tf.name as pim_tank_family_name,
+         COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
+         COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+         COALESCE(t.notes, pm.notes) as eff_notes,
         promoted_pm.id as promoted_product_master_id,
         promoted_pm.product_code as promoted_product_code,
         mat.material_code, mat.material_name,
@@ -289,6 +321,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
        LEFT JOIN exhibits e ON t.exhibit_id = e.id
        LEFT JOIN systems s ON t.system_id = s.id
        LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+        LEFT JOIN tank_families tf ON tf.id = pm.tank_family_id
        LEFT JOIN product_masters promoted_pm ON promoted_pm.source_tank_id = t.id
        LEFT JOIN materials mat ON t.material_id = mat.id
        WHERE t.project_id = $1

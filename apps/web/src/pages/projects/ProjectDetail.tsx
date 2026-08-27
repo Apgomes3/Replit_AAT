@@ -874,7 +874,6 @@ export default function ProjectDetail() {
         primary_material_code: t.product_material || t.primary_material || null,
         standard_status: 'Concept',
       });
-      await api.patch(`/tanks/${t.id}`, { product_master_id: pm.data.id });
       toast.success(`Saved as ${pm.data.product_code} in Tank Database`);
       qc.invalidateQueries({ queryKey: ['project-tanks', id] });
       setSaveTankDbModal(null);

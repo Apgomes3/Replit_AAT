@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const index_1 = __importDefault(require("./index"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const pimAssignmentIndexMigration_1 = require("./pimAssignmentIndexMigration");
 dotenv_1.default.config();
 const schema = `
 -- USERS & AUTH
@@ -526,9 +527,12 @@ ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS height_mm NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS design_water_level_mm NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS gross_volume_m3 NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS operating_volume_m3 NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS surface_area_m2 NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS wall_thickness_mm NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS weight_kg NUMERIC;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS product_master_id UUID REFERENCES product_masters(id);
+${pimAssignmentIndexMigration_1.pimAssignmentIndexMigration}
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS surface_area_m2 NUMERIC;
 
 CREATE TABLE IF NOT EXISTS tank_families (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -543,6 +547,10 @@ CREATE TABLE IF NOT EXISTS tank_families (
 
 
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_family_id UUID REFERENCES tank_families(id) ON DELETE SET NULL;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS source_tank_id UUID REFERENCES tanks(id) ON DELETE SET NULL;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS source_tank_snapshot JSONB;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_masters_source_tank
+  ON product_masters(source_tank_id) WHERE source_tank_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -301,6 +301,12 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
       s.system_code, s.system_name,
       pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
       pm.primary_material_code as product_material,
+      pm.product_code as pim_product_code,
+      pm.product_name as pim_product_name,
+      tf.name as pim_tank_family_name,
+      COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
+      COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+      COALESCE(t.notes, pm.notes) as eff_notes,
       COALESCE(t.shape_type, pm.shape_type) as eff_shape,
       COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
       COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
@@ -365,6 +371,7 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
      JOIN projects p ON t.project_id=p.id
      LEFT JOIN systems s ON t.system_id=s.id
      LEFT JOIN product_masters pm ON t.product_master_id=pm.id
+     LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
      ${where} ORDER BY t.sort_order, t.tank_code`, params);
   res.json({ items: result.rows });
 });
@@ -374,6 +381,12 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
     `SELECT t.*, e.exhibit_name, p.project_code, p.project_name,
       pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
       pm.primary_material_code as product_material,
+      pm.product_code as pim_product_code,
+      pm.product_name as pim_product_name,
+      tf.name as pim_tank_family_name,
+      COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
+      COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+      COALESCE(t.notes, pm.notes) as eff_notes,
       COALESCE(t.shape_type, pm.shape_type) as eff_shape,
       COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
       COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
@@ -424,14 +437,50 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
          pm.surface_area_m2
        ) as surface_area_m2
      FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
-     LEFT JOIN product_masters pm ON t.product_master_id=pm.id WHERE t.id=$1`, [req.params.id]);
+     LEFT JOIN product_masters pm ON t.product_master_id=pm.id
+     LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
+     WHERE t.id=$1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
 });
 
-router.post('/tanks', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+  try {
   const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
   if (!tank_code || !project_id || !tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
+  if (product_master_id && exhibit_id) {
+    return res.status(400).json({
+      error: {
+        code: 'INVALID_PIM_ASSIGNMENT',
+        message: 'Use the protected PIM tank assignment workflow to link a library tank to an exhibit.',
+      },
+    });
+  }
+  if (product_master_id) {
+    const access = await query(
+      `SELECT rma.access_level
+       FROM users u
+       LEFT JOIN roles r ON r.name=u.role
+       LEFT JOIN role_module_access rma ON rma.role_id=r.id AND rma.module_key='pim'
+       WHERE u.id=$1`,
+      [req.user!.id],
+    );
+    if (access.rows[0]?.access_level !== 'manage') {
+      return res.status(403).json({
+        error: { code: 'MODULE_READ_ONLY', message: 'PIM manage access is required to create a linked project tank.' },
+      });
+    }
+    const product = await query(
+      `SELECT id FROM product_masters
+       WHERE id=$1 AND product_category='Tank'`,
+      [product_master_id],
+    );
+    if (!product.rows[0]) {
+      return res.status(400).json({
+        error: { code: 'INVALID_PIM_TANK', message: 'The selected item is not a valid PIM tank.' },
+      });
+    }
+  }
   const qty = Math.max(1, parseInt(quantity) || 1);
   const l = length_mm ? parseFloat(length_mm) : null;
   const w = width_mm ? parseFloat(width_mm) : null;
@@ -468,146 +517,212 @@ router.post('/tanks', authenticate, requireRole('admin', 'engineer'), async (req
     }
   }
   res.status(201).json(tank);
+  } catch (error: any) {
+    if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
+      return res.status(409).json({
+        error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+      });
+    }
+    if (error?.code === '23505') {
+      return res.status(409).json({
+        error: { code: 'DUPLICATE_TANK', message: 'A tank with this code already exists in the project.' },
+      });
+    }
+    throw error;
+  }
 });
 
+// CREATE A PROJECT TANK FROM A REUSABLE PIM TANK
+// The PIM record remains library-owned; the new tank carries the relationship
+// and uses COALESCE-based effective values when it has no project override.
 router.post(
   '/tanks/from-pim',
   authenticate,
   requireRole('admin', 'engineer'),
-  requireModuleAccess('pim'),
+  requireModuleManage('projects'),
+  requireModuleManage('pim'),
   async (req: AuthRequest, res: Response) => {
-    const productMasterId = String(req.body.product_master_id || '').trim();
     const projectId = String(req.body.project_id || '').trim();
     const exhibitId = String(req.body.exhibit_id || '').trim();
     const designBookId = String(req.body.design_book_id || '').trim();
-    const tankCode = String(req.body.tank_code || '').trim().toUpperCase();
+    const productMasterId = String(req.body.product_master_id || '').trim();
+    const requestedCode = String(req.body.tank_code || '').trim().toUpperCase();
     const requestedName = String(req.body.tank_name || '').trim();
-    if (!productMasterId || !projectId || !exhibitId || !designBookId || !tankCode) {
+
+    if (!projectId || !exhibitId || !designBookId || !productMasterId) {
       return res.status(400).json({
-        error: { code: 'VALIDATION', message: 'PIM tank, Design Book, project, exhibit, and tank code are required.' },
+        error: { code: 'INVALID_REQUEST', message: 'project_id, exhibit_id, design_book_id and product_master_id are required.' },
       });
     }
-    if (tankCode.length > 50 || !/^[A-Z0-9][A-Z0-9._-]*$/.test(tankCode)) {
+    if (requestedCode && (requestedCode.length > 50 || !/^[A-Z0-9][A-Z0-9._-]*$/.test(requestedCode))) {
       return res.status(400).json({
         error: { code: 'VALIDATION', message: 'Tank code may contain only letters, numbers, dots, underscores, and hyphens.' },
       });
+    }
+    if (requestedName.length > 255) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: 'Tank name must be 255 characters or fewer.' } });
     }
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const bookResult = await client.query(
-        'SELECT id, status FROM design_books WHERE id=$1 AND project_id=$2 FOR SHARE',
-        [designBookId, projectId],
+
+      const exhibitResult = await client.query(
+        `SELECT e.id, e.project_id, e.exhibit_name, p.project_code
+         FROM exhibits e
+         JOIN projects p ON p.id=e.project_id
+         WHERE e.id=$1
+         FOR UPDATE`,
+        [exhibitId],
       );
-      if (!bookResult.rows[0]) {
+      const exhibit = exhibitResult.rows[0];
+      if (!exhibit) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Linked Design Book was not found.' } });
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found.' } });
       }
-      if (!['Draft', 'In Progress'].includes(bookResult.rows[0].status)) {
+      if (String(exhibit.project_id) !== projectId) {
         await client.query('ROLLBACK');
-        return res.status(409).json({
-          error: { code: 'DESIGN_BOOK_READ_ONLY', message: 'PIM tanks can only be assigned while the Design Book is editable.' },
+        return res.status(400).json({
+          error: { code: 'INVALID_PROJECT', message: 'The selected exhibit does not belong to the current project.' },
         });
       }
 
-      const exhibitResult = await client.query('SELECT id, project_id FROM exhibits WHERE id=$1 FOR SHARE', [exhibitId]);
-      if (!exhibitResult.rows[0] || String(exhibitResult.rows[0].project_id) !== projectId) {
+      const designBookResult = await client.query(
+        `SELECT id, status
+         FROM design_books
+         WHERE id=$1 AND project_id=$2
+         FOR SHARE`,
+        [designBookId, projectId],
+      );
+      const designBook = designBookResult.rows[0];
+      if (!designBook) {
         await client.query('ROLLBACK');
-        return res.status(400).json({
-          error: { code: 'INVALID_EXHIBIT', message: 'The selected exhibit does not belong to this project.' },
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Linked Design Book not found.' } });
+      }
+      if (!['Draft', 'In Progress'].includes(designBook.status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: { code: 'DESIGN_BOOK_READ_ONLY', message: 'Tanks can only be assigned while the Design Book is editable.' },
         });
       }
 
       const productResult = await client.query(
-        `SELECT pm.* FROM product_masters pm
-         WHERE pm.id::text=$1 AND (pm.product_category='Tank' OR pm.tank_family_id IS NOT NULL)
+        `SELECT pm.*, tf.name AS tank_family_name
+         FROM product_masters pm
+         LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
+         WHERE (pm.id::text=$1 OR pm.product_code=$1)
+           AND pm.product_category='Tank'
          FOR SHARE`,
         [productMasterId],
       );
       const product = productResult.rows[0];
       if (!product) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Selected PIM tank was not found.' } });
+        return res.status(400).json({
+          error: { code: 'INVALID_PIM_TANK', message: 'The selected item is not a valid PIM tank.' },
+        });
       }
 
-      const duplicateResult = await client.query(
-        `SELECT id, tank_code FROM tanks
+      const existingExhibitTank = await client.query(
+        `SELECT id, tank_code, tank_name
+         FROM tanks
          WHERE project_id=$1 AND exhibit_id=$2 AND product_master_id=$3
          FOR UPDATE`,
         [projectId, exhibitId, product.id],
       );
-      if (duplicateResult.rows[0]) {
+      if (existingExhibitTank.rows[0]) {
         await client.query('ROLLBACK');
         return res.status(409).json({
           error: {
-            code: 'DUPLICATE_PIM_ASSIGNMENT',
-            message: `This PIM tank is already assigned to the exhibit as ${duplicateResult.rows[0].tank_code}.`,
+            code: 'DUPLICATE_ASSIGNMENT',
+            message: `PIM tank ${product.product_code} is already assigned to exhibit ${exhibit.exhibit_name} as ${existingExhibitTank.rows[0].tank_code}.`,
+            existing_tank: existingExhibitTank.rows[0],
           },
         });
       }
 
+      const usedCodes = await client.query(
+        'SELECT tank_code FROM tanks WHERE project_id=$1 FOR UPDATE',
+        [projectId],
+      );
+      const used = new Set(usedCodes.rows.map((row: any) => String(row.tank_code).toUpperCase()));
+      const baseCode = (requestedCode || `PIM-${product.product_code}`).slice(0, 50);
+      let tankCode = baseCode;
+      let suffix = 2;
+      while (used.has(tankCode)) {
+        const suffixText = `-${suffix++}`;
+        tankCode = `${baseCode.slice(0, 50 - suffixText.length)}${suffixText}`;
+      }
       const tankName = requestedName || product.product_name;
+      const surfaceAreaM2 = product.surface_area_m2 ?? calculateWaterSurfaceAreaM2(
+        product.shape_type,
+        product.length_mm,
+        product.width_mm,
+      );
+
       const tankResult = await client.query(
         `INSERT INTO tanks
           (tank_code, project_id, exhibit_id, quantity, tank_name, tank_type,
-           product_master_id, status, notes)
-         VALUES ($1,$2,$3,1,$4,$5,$6,'Active',$7)
+           product_master_id, shape_type, gross_volume_m3, operating_volume_m3,
+           length_mm, width_mm, height_mm, design_water_level_mm,
+           primary_material, status, notes)
+         VALUES ($1,$2,$3,1,$4,NULL,$5,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'Active',NULL)
          RETURNING *`,
         [
           tankCode,
           projectId,
           exhibitId,
           tankName,
-          product.application_type || null,
           product.id,
-          req.body.notes ? String(req.body.notes).trim() : null,
         ],
       );
       const tank = tankResult.rows[0];
-      const surfaceAreaM2 = product.surface_area_m2 ?? calculateWaterSurfaceAreaM2(
-        product.shape_type,
-        product.length_mm,
-        product.width_mm,
-      );
-      await client.query(
-        `INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
-         VALUES ('tank',$1,'ASSIGN_FROM_PIM',$2,$3,$4)`,
-        [
-          tank.id,
-          req.user!.id,
-          JSON.stringify({
-            summary: `Tank ${tankCode} assigned from PIM product ${product.product_code}`,
-            product_master_id: product.id,
-            product_code: product.product_code,
-            exhibit_id: exhibitId,
-            design_book_id: designBookId,
-          }),
-          req.ip || null,
-        ],
-      );
+      if (!tank) {
+        await client.query('ROLLBACK');
+        return res.status(500).json({ error: { code: 'CREATE_FAILED', message: 'The linked project tank could not be created.' } });
+      }
       await client.query('COMMIT');
+
+      await logAudit(req.user!.id, 'tank', tank.id, 'CREATE_FROM_PIM', {
+        summary: `Project tank ${tank.tank_code} created from PIM tank ${product.product_code}`,
+        project_id: projectId,
+        exhibit_id: exhibitId,
+        design_book_id: designBookId,
+        product_master_id: product.id,
+        product_code: product.product_code,
+      }, req.ip || undefined);
+
       res.status(201).json({
         ...tank,
-        product_code: product.product_code,
-        product_name: product.product_name,
+        pim_product_code: product.product_code,
+        pim_product_name: product.product_name,
+        pim_tank_family_name: product.tank_family_name,
+        eff_tank_type: product.application_type,
         eff_shape: product.shape_type,
         eff_length_mm: product.length_mm,
         eff_width_mm: product.width_mm,
         eff_height_mm: product.height_mm,
         eff_water_level_mm: product.design_water_level_mm,
+        eff_primary_material: product.primary_material_code,
+        eff_notes: product.notes,
         gross_volume_m3: product.gross_volume_m3,
         design_volume_m3: product.operating_volume_m3,
         surface_area_m2: surfaceAreaM2,
       });
-    } catch (err: any) {
+    } catch (error: any) {
       await client.query('ROLLBACK');
-      if (err.code === '23505') {
+      if (error?.code === '23505') {
+        const assignmentConflict = error?.constraint === 'idx_tanks_pim_assignment';
         return res.status(409).json({
-          error: { code: 'CONFLICT', message: `Tank code "${tankCode}" already exists in this project. Use a different code.` },
+          error: {
+            code: assignmentConflict ? 'DUPLICATE_ASSIGNMENT' : 'DUPLICATE_TANK',
+            message: assignmentConflict
+              ? 'This PIM tank is already assigned to the exhibit.'
+              : 'A tank with this code already exists in the project.',
+          },
         });
       }
-      throw err;
+      throw error;
     } finally {
       client.release();
     }
@@ -863,19 +978,32 @@ router.patch('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async
   try {
     const { system_id, product_master_id } = req.body;
     const hasPM = 'product_master_id' in req.body;
-    const result = hasPM
-      ? await query(
-          'UPDATE tanks SET system_id=$1, product_master_id=$2, updated_at=NOW() WHERE id=$3 RETURNING *',
-          [system_id !== undefined ? (system_id || null) : undefined, product_master_id || null, req.params.id])
-      : await query(
-          'UPDATE tanks SET system_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
-          [system_id || null, req.params.id]);
+    if (hasPM) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_PIM_ASSIGNMENT',
+          message: 'Tank library relationships cannot be changed through the generic update endpoint.',
+        },
+      });
+    }
+    const result = await query(
+      'UPDATE tanks SET system_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
+      [system_id || null, req.params.id],
+    );
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
     res.json(result.rows[0]);
-  } catch (err: any) { throw err; }
+  } catch (err: any) {
+    if (err?.code === '23505' && err?.constraint === 'idx_tanks_pim_assignment') {
+      return res.status(409).json({
+        error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+      });
+    }
+    throw err;
+  }
 });
 
 router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  try {
   const {
     tank_code, tank_name, tank_type, shape_type,
     length_mm, width_mm, height_mm, design_water_level_mm,
@@ -885,6 +1013,22 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
     surface_area_m2,
   } = req.body;
   if (!tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
+  const hasExhibit = 'exhibit_id' in req.body;
+  if (hasExhibit && exhibit_id) {
+    const currentTank = await query(
+      'SELECT id, product_master_id FROM tanks WHERE id=$1',
+      [req.params.id],
+    );
+    if (!currentTank.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+    if (currentTank.rows[0].product_master_id) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_PIM_ASSIGNMENT',
+          message: 'Use the protected PIM tank assignment workflow to assign a library-linked tank to an exhibit.',
+        },
+      });
+    }
+  }
   const l = length_mm ? parseFloat(length_mm) : null;
   const w = width_mm ? parseFloat(width_mm) : null;
   const h = height_mm ? parseFloat(height_mm) : null;
@@ -916,7 +1060,6 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
     ? (requestedSurfaceArea == null ? null : Math.round(requestedSurfaceArea * 1e4) / 1e4)
     : calculateWaterSurfaceAreaM2(shape_type, isCyl ? null : il, iw);
   const qty = Math.max(1, parseInt(quantity) || 1);
-  const hasExhibit = 'exhibit_id' in req.body;
   const result = await query(
     `UPDATE tanks SET
       tank_code=COALESCE($1, tank_code), tank_name=$2, tank_type=$3, shape_type=$4,
@@ -944,17 +1087,58 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
          req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   res.json(result.rows[0]);
+  } catch (error: any) {
+    if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
+      return res.status(409).json({
+        error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+      });
+    }
+    throw error;
+  }
 });
 
 // Quick exhibit assignment for tanks
 router.patch('/tanks/:id/exhibit', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
-  const { exhibit_id } = req.body;
-  const result = await query(
-    'UPDATE tanks SET exhibit_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
-    [exhibit_id || null, req.params.id]
-  );
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
-  res.json(result.rows[0]);
+  try {
+    const { exhibit_id } = req.body;
+    const currentTank = await query(
+      'SELECT id, project_id, product_master_id FROM tanks WHERE id=$1',
+      [req.params.id],
+    );
+    if (!currentTank.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+    if (exhibit_id && currentTank.rows[0].product_master_id) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_PIM_ASSIGNMENT',
+          message: 'Use the protected PIM tank assignment workflow to assign a library-linked tank to an exhibit.',
+        },
+      });
+    }
+    if (exhibit_id) {
+      const targetExhibit = await query(
+        'SELECT id FROM exhibits WHERE id=$1 AND project_id=$2',
+        [exhibit_id, currentTank.rows[0].project_id],
+      );
+      if (!targetExhibit.rows[0]) {
+        return res.status(400).json({
+          error: { code: 'INVALID_PROJECT', message: 'The selected exhibit does not belong to this tank project.' },
+        });
+      }
+    }
+    const result = await query(
+      'UPDATE tanks SET exhibit_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
+      [exhibit_id || null, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
+      return res.status(409).json({
+        error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+      });
+    }
+    throw error;
+  }
 });
 
 router.delete('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {

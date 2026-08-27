@@ -57,6 +57,83 @@ const baseContext = () => ({
 });
 
 describe('Design Book version snapshots', () => {
+  it('uses inherited PIM tank dimensions and custom surface area in release calculations', async () => {
+    const tankRow: Record<string, any> = {
+      id: 'tank-1',
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      product_master_id: 'pim-tank-1',
+      eff_shape: 'Rectangular',
+      eff_length_mm: '6000',
+      eff_width_mm: '3500',
+      eff_height_mm: '2800',
+      eff_water_level_mm: '2500',
+      design_volume_m3: '52.5',
+      quantity: 1,
+    };
+    const hydraulicRows: Record<string, any>[] = [];
+    const substrateRows: Record<string, any>[] = [];
+    const runner = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM design_books db')) {
+        return { rows: [{
+          id: 'book-1',
+          project_id: 'project-1',
+          status: 'Draft',
+          project_scopes: ['Tanks'],
+          project_code: 'P-001',
+          project_name: 'Ocean Centre',
+        }] };
+      }
+      if (sql.includes('FROM exhibits')) {
+        return { rows: [{ id: 'exhibit-1', project_id: 'project-1', exhibit_code: 'EX-1', exhibit_name: 'Reef' }] };
+      }
+      if (sql.includes('FROM tanks t')) {
+        expect(sql).toContain('LEFT JOIN product_masters');
+        expect(sql).toContain('COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm');
+        expect(sql).toContain('COALESCE(t.surface_area_m2, pm.surface_area_m2) AS surface_area_m2');
+        return { rows: [{ ...tankRow }] };
+      }
+      if (sql.includes('FROM systems')) return { rows: [] };
+      if (sql.includes('FROM design_book_exhibit_species')) return { rows: [] };
+      if (sql.includes('FROM design_book_exhibit_hydraulics')) return { rows: hydraulicRows };
+      if (sql.includes('FROM design_book_exhibit_substrate')) return { rows: substrateRows };
+      if (sql.includes('FROM design_book_review_handovers')) return { rows: [] };
+      return { rows: [] };
+    });
+
+    const context = await versionSnapshotTestUtils.loadReleaseContext('book-1', runner as any, false, true);
+
+    expect(context.tanks[0]).toMatchObject({
+      product_master_id: 'pim-tank-1',
+      eff_length_mm: '6000',
+    });
+    expect(context.engineering_calculations.exhibits[0].results).toMatchObject({
+      operating_volume_m3: 52.5,
+    });
+
+    Object.assign(tankRow, {
+      eff_shape: 'Custom',
+      eff_length_mm: null,
+      eff_width_mm: null,
+      eff_height_mm: null,
+      eff_water_level_mm: null,
+      design_volume_m3: '40',
+      surface_area_m2: '20',
+    });
+    hydraulicRows.push({ exhibit_id: 'exhibit-1', target_turnover_rate: '4' });
+    substrateRows.push({ exhibit_id: 'exhibit-1', substrate_height_mm: '100' });
+
+    const customContext = await versionSnapshotTestUtils.loadReleaseContext('book-1', runner as any, false, true);
+    const customCalculation = customContext.engineering_calculations.exhibits[0];
+    expect(customContext.tanks[0].surface_area_m2).toBe('20');
+    expect(customCalculation.status).toBe('valid');
+    expect(customCalculation.inputs).toMatchObject({
+      substrate_volume_m3: 2,
+      substrate_source: 'footprint area × height',
+    });
+    expect(customCalculation.results.operating_volume_m3).toBe(38);
+  });
+
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 

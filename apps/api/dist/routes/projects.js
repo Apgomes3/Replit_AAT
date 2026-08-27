@@ -1,10 +1,43 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const db_1 = require("../db");
+const db_1 = __importStar(require("../db"));
 const auth_1 = require("../middleware/auth");
 const audit_1 = require("../db/audit");
 const multer_1 = __importDefault(require("multer"));
@@ -12,6 +45,7 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const crypto_1 = __importDefault(require("crypto"));
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
+const tankCalculations_1 = require("../lib/tankCalculations");
 const uploadsDir = path_1.default.join(__dirname, '../../uploads');
 if (!fs_1.default.existsSync(uploadsDir))
     fs_1.default.mkdirSync(uploadsDir, { recursive: true });
@@ -280,6 +314,12 @@ router.get('/tanks', auth_1.authenticate, async (req, res) => {
       s.system_code, s.system_name,
       pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
       pm.primary_material_code as product_material,
+      pm.product_code as pim_product_code,
+      pm.product_name as pim_product_name,
+      tf.name as pim_tank_family_name,
+      COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
+      COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+      COALESCE(t.notes, pm.notes) as eff_notes,
       COALESCE(t.shape_type, pm.shape_type) as eff_shape,
       COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
       COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
@@ -315,6 +355,20 @@ router.get('/tanks', auth_1.authenticate, async (req, res) => {
         END,
         t.operating_volume_m3, pm.operating_volume_m3
       ) as design_volume_m3,
+       COALESCE(
+         t.surface_area_m2,
+         CASE
+           WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+             THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
+           WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Custom'
+                AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+             THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
+           ELSE NULL
+         END,
+         pm.surface_area_m2
+       ) as surface_area_m2,
       COALESCE(
         (SELECT json_agg(
           json_build_object(
@@ -330,6 +384,7 @@ router.get('/tanks', auth_1.authenticate, async (req, res) => {
      JOIN projects p ON t.project_id=p.id
      LEFT JOIN systems s ON t.system_id=s.id
      LEFT JOIN product_masters pm ON t.product_master_id=pm.id
+     LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
      ${where} ORDER BY t.sort_order, t.tank_code`, params);
     res.json({ items: result.rows });
 });
@@ -337,6 +392,12 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
     const result = await (0, db_1.query)(`SELECT t.*, e.exhibit_name, p.project_code, p.project_name,
       pm.product_code, pm.product_name as product_name, pm.application_type as product_type,
       pm.primary_material_code as product_material,
+      pm.product_code as pim_product_code,
+      pm.product_name as pim_product_name,
+      tf.name as pim_tank_family_name,
+      COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
+      COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+      COALESCE(t.notes, pm.notes) as eff_notes,
       COALESCE(t.shape_type, pm.shape_type) as eff_shape,
       COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
       COALESCE(t.width_mm, pm.width_mm) as eff_width_mm,
@@ -371,48 +432,436 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
           ELSE NULL
         END,
         t.operating_volume_m3, pm.operating_volume_m3
-      ) as design_volume_m3
+       ) as design_volume_m3,
+       COALESCE(
+         t.surface_area_m2,
+         CASE
+           WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+             THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
+           WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Custom'
+                AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+             THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
+           ELSE NULL
+         END,
+         pm.surface_area_m2
+       ) as surface_area_m2
      FROM tanks t LEFT JOIN exhibits e ON t.exhibit_id=e.id JOIN projects p ON t.project_id=p.id
-     LEFT JOIN product_masters pm ON t.product_master_id=pm.id WHERE t.id=$1`, [req.params.id]);
+     LEFT JOIN product_masters pm ON t.product_master_id=pm.id
+     LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
+     WHERE t.id=$1`, [req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
     res.json(result.rows[0]);
 });
-router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
-    const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
-    if (!tank_code || !project_id || !tank_name)
-        return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
-    const qty = Math.max(1, parseInt(quantity) || 1);
-    const l = length_mm ? parseFloat(length_mm) : null;
-    const w = width_mm ? parseFloat(width_mm) : null;
-    const h = height_mm ? parseFloat(height_mm) : null;
-    const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
-    // Auto-calculate volumes from dimensions when not explicitly provided
-    const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
-    const calcGross = (gross_volume_m3 != null && gross_volume_m3 !== '')
-        ? parseFloat(gross_volume_m3)
-        : isCyl
-            ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
-            : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
-    const calcOp = (operating_volume_m3 != null && operating_volume_m3 !== '')
-        ? parseFloat(operating_volume_m3)
-        : isCyl
-            ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
-            : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
-    const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *', [tank_code, project_id, exhibit_id || null, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
-    const tank = result.rows[0];
-    if (qty > 1) {
-        const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
-        const instanceRows = Array.from({ length: qty }, (_, i) => ({
-            tank_id: tank.id,
-            instance_index: i + 1,
-            tag: `${tank_code.toUpperCase()}-${String(i + 1).padStart(pad, '0')}`,
-        }));
-        for (const inst of instanceRows) {
-            await (0, db_1.query)('INSERT INTO tank_instances (tank_id, instance_index, tag) VALUES ($1,$2,$3) ON CONFLICT (tank_id, instance_index) DO NOTHING', [inst.tank_id, inst.instance_index, inst.tag]);
+router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    try {
+        const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+        if (!tank_code || !project_id || !tank_name)
+            return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
+        if (product_master_id && exhibit_id) {
+            return res.status(400).json({
+                error: {
+                    code: 'INVALID_PIM_ASSIGNMENT',
+                    message: 'Use the protected PIM tank assignment workflow to link a library tank to an exhibit.',
+                },
+            });
         }
+        if (product_master_id) {
+            const access = await (0, db_1.query)(`SELECT rma.access_level
+       FROM users u
+       LEFT JOIN roles r ON r.name=u.role
+       LEFT JOIN role_module_access rma ON rma.role_id=r.id AND rma.module_key='pim'
+       WHERE u.id=$1`, [req.user.id]);
+            if (access.rows[0]?.access_level !== 'manage') {
+                return res.status(403).json({
+                    error: { code: 'MODULE_READ_ONLY', message: 'PIM manage access is required to create a linked project tank.' },
+                });
+            }
+            const product = await (0, db_1.query)(`SELECT id FROM product_masters
+       WHERE id=$1 AND product_category='Tank'`, [product_master_id]);
+            if (!product.rows[0]) {
+                return res.status(400).json({
+                    error: { code: 'INVALID_PIM_TANK', message: 'The selected item is not a valid PIM tank.' },
+                });
+            }
+        }
+        const qty = Math.max(1, parseInt(quantity) || 1);
+        const l = length_mm ? parseFloat(length_mm) : null;
+        const w = width_mm ? parseFloat(width_mm) : null;
+        const h = height_mm ? parseFloat(height_mm) : null;
+        const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
+        // Auto-calculate volumes from dimensions when not explicitly provided
+        const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
+        const calcGross = (gross_volume_m3 != null && gross_volume_m3 !== '')
+            ? parseFloat(gross_volume_m3)
+            : isCyl
+                ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
+                : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
+        const calcOp = (operating_volume_m3 != null && operating_volume_m3 !== '')
+            ? parseFloat(operating_volume_m3)
+            : isCyl
+                ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
+                : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
+        const surfaceAreaM2 = (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, l, w);
+        const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *', [tank_code, project_id, exhibit_id || null, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
+        const tank = result.rows[0];
+        if (qty > 1) {
+            const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
+            const instanceRows = Array.from({ length: qty }, (_, i) => ({
+                tank_id: tank.id,
+                instance_index: i + 1,
+                tag: `${tank_code.toUpperCase()}-${String(i + 1).padStart(pad, '0')}`,
+            }));
+            for (const inst of instanceRows) {
+                await (0, db_1.query)('INSERT INTO tank_instances (tank_id, instance_index, tag) VALUES ($1,$2,$3) ON CONFLICT (tank_id, instance_index) DO NOTHING', [inst.tank_id, inst.instance_index, inst.tag]);
+            }
+        }
+        res.status(201).json(tank);
     }
-    res.status(201).json(tank);
+    catch (error) {
+        if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
+            return res.status(409).json({
+                error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+            });
+        }
+        if (error?.code === '23505') {
+            return res.status(409).json({
+                error: { code: 'DUPLICATE_TANK', message: 'A tank with this code already exists in the project.' },
+            });
+        }
+        throw error;
+    }
+});
+// CREATE A PROJECT TANK FROM A REUSABLE PIM TANK
+// The PIM record remains library-owned; the new tank carries the relationship
+// and uses COALESCE-based effective values when it has no project override.
+router.post('/tanks/from-pim', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), (0, auth_1.requireModuleManage)('pim'), async (req, res) => {
+    const projectId = String(req.body.project_id || '').trim();
+    const exhibitId = String(req.body.exhibit_id || '').trim();
+    const designBookId = String(req.body.design_book_id || '').trim();
+    const productMasterId = String(req.body.product_master_id || '').trim();
+    const requestedCode = String(req.body.tank_code || '').trim().toUpperCase();
+    const requestedName = String(req.body.tank_name || '').trim();
+    if (!projectId || !exhibitId || !designBookId || !productMasterId) {
+        return res.status(400).json({
+            error: { code: 'INVALID_REQUEST', message: 'project_id, exhibit_id, design_book_id and product_master_id are required.' },
+        });
+    }
+    if (requestedCode && (requestedCode.length > 50 || !/^[A-Z0-9][A-Z0-9._-]*$/.test(requestedCode))) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'Tank code may contain only letters, numbers, dots, underscores, and hyphens.' },
+        });
+    }
+    if (requestedName.length > 255) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Tank name must be 255 characters or fewer.' } });
+    }
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const exhibitResult = await client.query(`SELECT e.id, e.project_id, e.exhibit_name, p.project_code
+         FROM exhibits e
+         JOIN projects p ON p.id=e.project_id
+         WHERE e.id=$1
+         FOR UPDATE`, [exhibitId]);
+        const exhibit = exhibitResult.rows[0];
+        if (!exhibit) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found.' } });
+        }
+        if (String(exhibit.project_id) !== projectId) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: { code: 'INVALID_PROJECT', message: 'The selected exhibit does not belong to the current project.' },
+            });
+        }
+        const designBookResult = await client.query(`SELECT id, status
+         FROM design_books
+         WHERE id=$1 AND project_id=$2
+         FOR SHARE`, [designBookId, projectId]);
+        const designBook = designBookResult.rows[0];
+        if (!designBook) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Linked Design Book not found.' } });
+        }
+        if (!['Draft', 'In Progress'].includes(designBook.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'DESIGN_BOOK_READ_ONLY', message: 'Tanks can only be assigned while the Design Book is editable.' },
+            });
+        }
+        const productResult = await client.query(`SELECT pm.*, tf.name AS tank_family_name
+         FROM product_masters pm
+         LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
+         WHERE (pm.id::text=$1 OR pm.product_code=$1)
+           AND pm.product_category='Tank'
+         FOR SHARE`, [productMasterId]);
+        const product = productResult.rows[0];
+        if (!product) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: { code: 'INVALID_PIM_TANK', message: 'The selected item is not a valid PIM tank.' },
+            });
+        }
+        const existingExhibitTank = await client.query(`SELECT id, tank_code, tank_name
+         FROM tanks
+         WHERE project_id=$1 AND exhibit_id=$2 AND product_master_id=$3
+         FOR UPDATE`, [projectId, exhibitId, product.id]);
+        if (existingExhibitTank.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: {
+                    code: 'DUPLICATE_ASSIGNMENT',
+                    message: `PIM tank ${product.product_code} is already assigned to exhibit ${exhibit.exhibit_name} as ${existingExhibitTank.rows[0].tank_code}.`,
+                    existing_tank: existingExhibitTank.rows[0],
+                },
+            });
+        }
+        const usedCodes = await client.query('SELECT tank_code FROM tanks WHERE project_id=$1 FOR UPDATE', [projectId]);
+        const used = new Set(usedCodes.rows.map((row) => String(row.tank_code).toUpperCase()));
+        const baseCode = (requestedCode || `PIM-${product.product_code}`).slice(0, 50);
+        let tankCode = baseCode;
+        let suffix = 2;
+        while (used.has(tankCode)) {
+            const suffixText = `-${suffix++}`;
+            tankCode = `${baseCode.slice(0, 50 - suffixText.length)}${suffixText}`;
+        }
+        const tankName = requestedName || product.product_name;
+        const surfaceAreaM2 = product.surface_area_m2 ?? (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(product.shape_type, product.length_mm, product.width_mm);
+        const tankResult = await client.query(`INSERT INTO tanks
+          (tank_code, project_id, exhibit_id, quantity, tank_name, tank_type,
+           product_master_id, shape_type, gross_volume_m3, operating_volume_m3,
+           length_mm, width_mm, height_mm, design_water_level_mm,
+           primary_material, status, notes)
+         VALUES ($1,$2,$3,1,$4,NULL,$5,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'Active',NULL)
+         RETURNING *`, [
+            tankCode,
+            projectId,
+            exhibitId,
+            tankName,
+            product.id,
+        ]);
+        const tank = tankResult.rows[0];
+        if (!tank) {
+            await client.query('ROLLBACK');
+            return res.status(500).json({ error: { code: 'CREATE_FAILED', message: 'The linked project tank could not be created.' } });
+        }
+        await client.query('COMMIT');
+        await (0, audit_1.logAudit)(req.user.id, 'tank', tank.id, 'CREATE_FROM_PIM', {
+            summary: `Project tank ${tank.tank_code} created from PIM tank ${product.product_code}`,
+            project_id: projectId,
+            exhibit_id: exhibitId,
+            design_book_id: designBookId,
+            product_master_id: product.id,
+            product_code: product.product_code,
+        }, req.ip || undefined);
+        res.status(201).json({
+            ...tank,
+            pim_product_code: product.product_code,
+            pim_product_name: product.product_name,
+            pim_tank_family_name: product.tank_family_name,
+            eff_tank_type: product.application_type,
+            eff_shape: product.shape_type,
+            eff_length_mm: product.length_mm,
+            eff_width_mm: product.width_mm,
+            eff_height_mm: product.height_mm,
+            eff_water_level_mm: product.design_water_level_mm,
+            eff_primary_material: product.primary_material_code,
+            eff_notes: product.notes,
+            gross_volume_m3: product.gross_volume_m3,
+            design_volume_m3: product.operating_volume_m3,
+            surface_area_m2: surfaceAreaM2,
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        if (error?.code === '23505') {
+            const assignmentConflict = error?.constraint === 'idx_tanks_pim_assignment';
+            return res.status(409).json({
+                error: {
+                    code: assignmentConflict ? 'DUPLICATE_ASSIGNMENT' : 'DUPLICATE_TANK',
+                    message: assignmentConflict
+                        ? 'This PIM tank is already assigned to the exhibit.'
+                        : 'A tank with this code already exists in the project.',
+                },
+            });
+        }
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+// PROMOTE A PROJECT TANK INTO THE REUSABLE PIM TANK LIBRARY
+router.post('/tanks/:id/promote-to-pim', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('pim'), async (req, res) => {
+    const productCode = String(req.body.product_code || '').trim().toUpperCase();
+    const productName = String(req.body.product_name || '').trim();
+    const requestedFamilyId = String(req.body.tank_family_id || req.body.family_id || '').trim();
+    const newFamily = req.body.new_family && typeof req.body.new_family === 'object' ? req.body.new_family : null;
+    const newFamilyCode = String(newFamily?.code || req.body.new_family_code || '').trim().toUpperCase();
+    const newFamilyName = String(newFamily?.name || req.body.new_family_name || '').trim();
+    const designBookId = String(req.body.design_book_id || '').trim();
+    if (!productCode || !productName) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'A reusable product code and name are required.' },
+        });
+    }
+    if (productCode.length > 50 || !/^[A-Z0-9][A-Z0-9._-]*$/.test(productCode)) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'Product code may contain only letters, numbers, dots, underscores, and hyphens.' },
+        });
+    }
+    if (productName.length > 255) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'Product name must be 255 characters or fewer.' },
+        });
+    }
+    if ((requestedFamilyId && (newFamilyCode || newFamilyName)) || (!!newFamilyCode !== !!newFamilyName)) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'Choose an existing tank family or provide both a new family code and name.' },
+        });
+    }
+    if (!requestedFamilyId && !newFamilyCode) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'A tank family is required for a reusable PIM tank.' },
+        });
+    }
+    if (!designBookId) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'The source Design Book is required for tank promotion.' },
+        });
+    }
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const sourceResult = await client.query(`SELECT t.*, p.project_code, p.project_name
+         FROM tanks t
+         JOIN projects p ON p.id=t.project_id
+         WHERE t.id=$1
+         FOR UPDATE`, [req.params.id]);
+        const source = sourceResult.rows[0];
+        if (!source) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project tank not found' } });
+        }
+        const designBookResult = await client.query(`SELECT id, status
+         FROM design_books
+         WHERE id=$1 AND project_id=$2
+         FOR SHARE`, [designBookId, source.project_id]);
+        if (!designBookResult.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Linked Design Book not found' } });
+        }
+        if (!['Draft', 'In Progress'].includes(designBookResult.rows[0].status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'DESIGN_BOOK_READ_ONLY', message: 'Tanks can only be promoted while the Design Book is editable.' },
+            });
+        }
+        const existing = await client.query(`SELECT pm.id, pm.product_code, pm.product_name
+         FROM product_masters pm
+         WHERE pm.source_tank_id=$1 OR pm.product_code=$2 OR pm.id=$3`, [source.id, productCode, source.product_master_id || null]);
+        if (existing.rows[0]) {
+            await client.query('ROLLBACK');
+            const match = existing.rows[0];
+            const isSourceLink = source.product_master_id && String(match.id) === String(source.product_master_id);
+            return res.status(409).json({
+                error: {
+                    code: 'DUPLICATE_PROMOTION',
+                    message: isSourceLink
+                        ? `This project tank is already linked to PIM product ${match.product_code}.`
+                        : `PIM product code ${match.product_code} is already in use.`,
+                },
+                existing_product: match,
+            });
+        }
+        let tankFamilyId = requestedFamilyId || null;
+        if (newFamilyCode) {
+            const familyResult = await client.query(`INSERT INTO tank_families (code, name, description, sort_order, is_system)
+           VALUES ($1,$2,$3,0,false)
+           RETURNING id, code, name, description`, [newFamilyCode, newFamilyName, newFamily?.description ? String(newFamily.description).trim() : null]);
+            tankFamilyId = familyResult.rows[0].id;
+        }
+        else {
+            const familyResult = await client.query('SELECT id FROM tank_families WHERE id::text=$1 OR code=$1', [requestedFamilyId]);
+            if (!familyResult.rows[0]) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: { code: 'VALIDATION', message: 'Selected tank family was not found.' } });
+            }
+            tankFamilyId = familyResult.rows[0].id;
+        }
+        const productResult = await client.query(`INSERT INTO product_masters
+          (product_code, tank_family_id, product_name, product_category, application_type,
+           primary_material_code, standard_status, notes, shape_type, length_mm, width_mm,
+            height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3,
+            surface_area_m2, manufacturer, model, source_tank_id, source_tank_snapshot)
+         VALUES ($1,$2,$3,'Tank',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb)
+         RETURNING *`, [
+            productCode,
+            tankFamilyId,
+            productName,
+            req.body.application_type || source.tank_type || null,
+            req.body.primary_material_code || source.primary_material || null,
+            req.body.standard_status || 'Concept',
+            req.body.notes !== undefined ? String(req.body.notes).trim() || null : source.notes || null,
+            source.shape_type || null,
+            source.length_mm || null,
+            source.width_mm || null,
+            source.height_mm || null,
+            source.design_water_level_mm || null,
+            source.gross_volume_m3 || null,
+            source.operating_volume_m3 || null,
+            source.surface_area_m2 ?? (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(source.shape_type, source.length_mm, source.width_mm),
+            req.body.manufacturer ? String(req.body.manufacturer).trim() : null,
+            req.body.model ? String(req.body.model).trim() : null,
+            source.id,
+            JSON.stringify({
+                design_book_id: designBookId,
+                tank_id: source.id,
+                tank_code: source.tank_code,
+                tank_name: source.tank_name,
+                project_id: source.project_id,
+                project_code: source.project_code,
+                project_name: source.project_name,
+            }),
+        ]);
+        const product = productResult.rows[0];
+        await client.query(`INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
+         VALUES ('product',$1,'PROMOTE_FROM_PROJECT_TANK',$2,$3,$4)`, [
+            product.id,
+            req.user.id,
+            JSON.stringify({
+                summary: `PIM tank ${productCode} promoted from project tank ${source.tank_code}`,
+                product_code: productCode,
+                source_tank_id: source.id,
+                source_tank_code: source.tank_code,
+                project_code: source.project_code,
+                design_book_id: designBookId,
+            }),
+            req.ip || null,
+        ]);
+        await client.query('COMMIT');
+        res.status(201).json({
+            ...product,
+            source_tank_id: source.id,
+            source_tank_code: source.tank_code,
+            source_project_code: source.project_code,
+            source_project_name: source.project_name,
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        if (error?.code === '23505') {
+            return res.status(409).json({
+                error: { code: 'DUPLICATE_PROMOTION', message: 'This tank or product code has already been promoted to the PIM library.' },
+            });
+        }
+        throw error;
+    }
+    finally {
+        client.release();
+    }
 });
 router.post('/tanks/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const orig = await (0, db_1.query)('SELECT * FROM tanks WHERE id=$1', [req.params.id]);
@@ -460,78 +909,150 @@ router.patch('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
     try {
         const { system_id, product_master_id } = req.body;
         const hasPM = 'product_master_id' in req.body;
-        const result = hasPM
-            ? await (0, db_1.query)('UPDATE tanks SET system_id=$1, product_master_id=$2, updated_at=NOW() WHERE id=$3 RETURNING *', [system_id !== undefined ? (system_id || null) : undefined, product_master_id || null, req.params.id])
-            : await (0, db_1.query)('UPDATE tanks SET system_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [system_id || null, req.params.id]);
+        if (hasPM) {
+            return res.status(400).json({
+                error: {
+                    code: 'INVALID_PIM_ASSIGNMENT',
+                    message: 'Tank library relationships cannot be changed through the generic update endpoint.',
+                },
+            });
+        }
+        const result = await (0, db_1.query)('UPDATE tanks SET system_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [system_id || null, req.params.id]);
         if (!result.rows[0])
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
         res.json(result.rows[0]);
     }
     catch (err) {
+        if (err?.code === '23505' && err?.constraint === 'idx_tanks_pim_assignment') {
+            return res.status(409).json({
+                error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+            });
+        }
         throw err;
     }
 });
 router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
-    const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, } = req.body;
-    if (!tank_name)
-        return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
-    const l = length_mm ? parseFloat(length_mm) : null;
-    const w = width_mm ? parseFloat(width_mm) : null;
-    const h = height_mm ? parseFloat(height_mm) : null;
-    const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
-    const t = wall_thickness_mm ? parseFloat(wall_thickness_mm) : 0;
-    const isCustom = (shape_type || '').toLowerCase() === 'custom';
-    const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
-    // Use inner dims when wall thickness is set (open-top: subtract one wall from height)
-    const il = !isCyl && l && t ? l - 2 * t : l;
-    const iw = w && t ? w - 2 * t : w;
-    const ih = h && t ? h - t : h;
-    const calcGross = isCustom
-        ? (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null)
-        : isCyl
-            ? (iw && ih ? Math.round(Math.PI * (iw / 2) * (iw / 2) * ih / 1e9 * 1e4) / 1e4 : null)
-            : (il && iw && ih ? Math.round(il * iw * ih / 1e9 * 1e4) / 1e4 : null);
-    const calcOp = isCustom
-        ? (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null)
-        : isCyl
-            ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
-            : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
-    const qty = Math.max(1, parseInt(quantity) || 1);
-    const hasExhibit = 'exhibit_id' in req.body;
-    const result = await (0, db_1.query)(`UPDATE tanks SET
+    try {
+        const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, surface_area_m2, } = req.body;
+        if (!tank_name)
+            return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
+        const hasExhibit = 'exhibit_id' in req.body;
+        if (hasExhibit && exhibit_id) {
+            const currentTank = await (0, db_1.query)('SELECT id, product_master_id FROM tanks WHERE id=$1', [req.params.id]);
+            if (!currentTank.rows[0])
+                return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+            if (currentTank.rows[0].product_master_id) {
+                return res.status(400).json({
+                    error: {
+                        code: 'INVALID_PIM_ASSIGNMENT',
+                        message: 'Use the protected PIM tank assignment workflow to assign a library-linked tank to an exhibit.',
+                    },
+                });
+            }
+        }
+        const l = length_mm ? parseFloat(length_mm) : null;
+        const w = width_mm ? parseFloat(width_mm) : null;
+        const h = height_mm ? parseFloat(height_mm) : null;
+        const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
+        const t = wall_thickness_mm ? parseFloat(wall_thickness_mm) : 0;
+        const isCustom = (shape_type || '').toLowerCase() === 'custom';
+        const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
+        const requestedSurfaceArea = surface_area_m2 !== undefined && surface_area_m2 !== ''
+            ? parseFloat(surface_area_m2)
+            : null;
+        if (requestedSurfaceArea != null && (!Number.isFinite(requestedSurfaceArea) || requestedSurfaceArea < 0)) {
+            return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Surface area must be a non-negative number.' } });
+        }
+        // Use inner dims when wall thickness is set (open-top: subtract one wall from height)
+        const il = !isCyl && l && t ? l - 2 * t : l;
+        const iw = w && t ? w - 2 * t : w;
+        const ih = h && t ? h - t : h;
+        const calcGross = isCustom
+            ? (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null)
+            : isCyl
+                ? (iw && ih ? Math.round(Math.PI * (iw / 2) * (iw / 2) * ih / 1e9 * 1e4) / 1e4 : null)
+                : (il && iw && ih ? Math.round(il * iw * ih / 1e9 * 1e4) / 1e4 : null);
+        const calcOp = isCustom
+            ? (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null)
+            : isCyl
+                ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
+                : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
+        const surfaceAreaM2 = isCustom
+            ? (requestedSurfaceArea == null ? null : Math.round(requestedSurfaceArea * 1e4) / 1e4)
+            : (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, isCyl ? null : il, iw);
+        const qty = Math.max(1, parseInt(quantity) || 1);
+        const result = await (0, db_1.query)(`UPDATE tanks SET
       tank_code=COALESCE($1, tank_code), tank_name=$2, tank_type=$3, shape_type=$4,
       length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
-      gross_volume_m3=$9, operating_volume_m3=$10,
-      primary_material=$11, status=$12, notes=$13, quantity=$14,
-      system_id=$15, material_id=$16, wall_thickness_mm=$17,
-      inner_length_mm=$18, inner_width_mm=$19, inner_height_mm=$20,
-      ${hasExhibit ? 'exhibit_id=$22,' : ''} updated_at=NOW()
-    WHERE id=$21 RETURNING *`, hasExhibit
-        ? [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
-            l, w, h, wl, calcGross, calcOp,
-            primary_material || null, status || 'Active', notes || null, qty,
-            system_id || null,
-            material_id || null, wall_thickness_mm ?? null,
-            inner_length_mm ?? null, inner_width_mm ?? null, inner_height_mm ?? null,
-            req.params.id, exhibit_id || null]
-        : [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
-            l, w, h, wl, calcGross, calcOp,
-            primary_material || null, status || 'Active', notes || null, qty,
-            system_id || null,
-            material_id || null, wall_thickness_mm ?? null,
-            inner_length_mm ?? null, inner_width_mm ?? null, inner_height_mm ?? null,
-            req.params.id]);
-    if (!result.rows[0])
-        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
-    res.json(result.rows[0]);
+      gross_volume_m3=$9, operating_volume_m3=$10, surface_area_m2=$11,
+      primary_material=$12, status=$13, notes=$14, quantity=$15,
+      system_id=$16, material_id=$17, wall_thickness_mm=$18,
+      inner_length_mm=$19, inner_width_mm=$20, inner_height_mm=$21,
+      ${hasExhibit ? 'exhibit_id=$23,' : ''} updated_at=NOW()
+    WHERE id=$22 RETURNING *`, hasExhibit
+            ? [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
+                l, w, h, wl, calcGross, calcOp, surfaceAreaM2,
+                primary_material || null, status || 'Active', notes || null, qty,
+                system_id || null,
+                material_id || null, wall_thickness_mm ?? null,
+                inner_length_mm ?? null, inner_width_mm ?? null, inner_height_mm ?? null,
+                req.params.id, exhibit_id || null]
+            : [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
+                l, w, h, wl, calcGross, calcOp, surfaceAreaM2,
+                primary_material || null, status || 'Active', notes || null, qty,
+                system_id || null,
+                material_id || null, wall_thickness_mm ?? null,
+                inner_length_mm ?? null, inner_width_mm ?? null, inner_height_mm ?? null,
+                req.params.id]);
+        if (!result.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
+            return res.status(409).json({
+                error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+            });
+        }
+        throw error;
+    }
 });
 // Quick exhibit assignment for tanks
 router.patch('/tanks/:id/exhibit', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
-    const { exhibit_id } = req.body;
-    const result = await (0, db_1.query)('UPDATE tanks SET exhibit_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [exhibit_id || null, req.params.id]);
-    if (!result.rows[0])
-        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
-    res.json(result.rows[0]);
+    try {
+        const { exhibit_id } = req.body;
+        const currentTank = await (0, db_1.query)('SELECT id, project_id, product_master_id FROM tanks WHERE id=$1', [req.params.id]);
+        if (!currentTank.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+        if (exhibit_id && currentTank.rows[0].product_master_id) {
+            return res.status(400).json({
+                error: {
+                    code: 'INVALID_PIM_ASSIGNMENT',
+                    message: 'Use the protected PIM tank assignment workflow to assign a library-linked tank to an exhibit.',
+                },
+            });
+        }
+        if (exhibit_id) {
+            const targetExhibit = await (0, db_1.query)('SELECT id FROM exhibits WHERE id=$1 AND project_id=$2', [exhibit_id, currentTank.rows[0].project_id]);
+            if (!targetExhibit.rows[0]) {
+                return res.status(400).json({
+                    error: { code: 'INVALID_PROJECT', message: 'The selected exhibit does not belong to this tank project.' },
+                });
+            }
+        }
+        const result = await (0, db_1.query)('UPDATE tanks SET exhibit_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [exhibit_id || null, req.params.id]);
+        if (!result.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
+            return res.status(409).json({
+                error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+            });
+        }
+        throw error;
+    }
 });
 router.delete('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     await (0, db_1.query)('DELETE FROM tank_instances WHERE tank_id=$1', [req.params.id]);

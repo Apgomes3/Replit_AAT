@@ -65,7 +65,28 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
     let systems = [];
     if (book.project_id) {
         const exhibitResult = await runner('SELECT * FROM exhibits WHERE project_id=$1 ORDER BY exhibit_code', [book.project_id]);
-        const tankResult = await runner('SELECT * FROM tanks WHERE project_id=$1 ORDER BY tank_code', [book.project_id]);
+        const tankResult = await runner(`SELECT t.*,
+         t.gross_volume_m3 AS project_gross_volume_m3,
+         t.operating_volume_m3 AS project_operating_volume_m3,
+         pm.product_code AS pim_product_code,
+         pm.product_name AS pim_product_name,
+         tf.name AS pim_tank_family_name,
+         COALESCE(t.tank_type, pm.application_type) AS eff_tank_type,
+         COALESCE(t.shape_type, pm.shape_type) AS eff_shape,
+         COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm,
+         COALESCE(t.width_mm, pm.width_mm) AS eff_width_mm,
+         COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
+         COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
+         COALESCE(t.primary_material, pm.primary_material_code) AS eff_primary_material,
+         COALESCE(t.notes, pm.notes) AS eff_notes,
+         COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
+         COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
+         COALESCE(t.surface_area_m2, pm.surface_area_m2) AS surface_area_m2
+       FROM tanks t
+       LEFT JOIN product_masters pm ON pm.id=t.product_master_id
+       LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
+       WHERE t.project_id=$1
+       ORDER BY t.tank_code`, [book.project_id]);
         const systemResult = await runner('SELECT * FROM systems WHERE project_id=$1 ORDER BY system_code', [book.project_id]);
         exhibits = exhibitResult.rows;
         tanks = tankResult.rows;
@@ -197,9 +218,19 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
        ORDER BY a.area_code, e.exhibit_code`, [row.project_id]);
         exhibits = exResult.rows;
         const tkResult = await (0, index_1.query)(`SELECT t.*,
+        t.gross_volume_m3 as project_gross_volume_m3,
+        t.operating_volume_m3 as project_operating_volume_m3,
         e.exhibit_name, e.water_type as exhibit_water_type,
         s.system_code, s.system_name,
         pm.product_code, pm.product_name as product_name,
+         pm.product_code as pim_product_code,
+         pm.product_name as pim_product_name,
+         tf.name as pim_tank_family_name,
+         COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
+         COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+         COALESCE(t.notes, pm.notes) as eff_notes,
+        promoted_pm.id as promoted_product_master_id,
+        promoted_pm.product_code as promoted_product_code,
         mat.material_code, mat.material_name,
         COALESCE(t.shape_type, pm.shape_type) as eff_shape,
         COALESCE(t.length_mm, pm.length_mm) as eff_length_mm,
@@ -235,11 +266,27 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
             ELSE NULL
           END,
           t.operating_volume_m3, pm.operating_volume_m3
-        ) as design_volume_m3
+        ) as design_volume_m3,
+        COALESCE(
+          t.surface_area_m2,
+          CASE
+            WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
+            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Custom'
+                 AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
+            ELSE NULL
+          END,
+          pm.surface_area_m2
+        ) as surface_area_m2
        FROM tanks t
        LEFT JOIN exhibits e ON t.exhibit_id = e.id
        LEFT JOIN systems s ON t.system_id = s.id
        LEFT JOIN product_masters pm ON t.product_master_id = pm.id
+        LEFT JOIN tank_families tf ON tf.id = pm.tank_family_id
+       LEFT JOIN product_masters promoted_pm ON promoted_pm.source_tank_id = t.id
        LEFT JOIN materials mat ON t.material_id = mat.id
        WHERE t.project_id = $1
        ORDER BY e.exhibit_code NULLS LAST, t.sort_order, t.tank_code`, [row.project_id]);
@@ -418,10 +465,20 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticat
     if (theming_volume_pct != null && Number(theming_volume_pct) > 100) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Theming percentage cannot exceed 100%.' } });
     }
-    const tankVolumeResult = await (0, index_1.query)(`SELECT SUM(COALESCE(t.operating_volume_m3, t.design_volume_m3, 0) * COALESCE(t.quantity, 1)) AS volume_m3
-     FROM tanks t WHERE t.exhibit_id=$1`, [req.params.exhibitId]);
+    const tankVolumeResult = await (0, index_1.query)(`SELECT SUM(COALESCE(t.operating_volume_m3, pm.operating_volume_m3, 0) * COALESCE(t.quantity, 1)) AS volume_m3
+     FROM tanks t
+     LEFT JOIN product_masters pm ON pm.id=t.product_master_id
+     WHERE t.exhibit_id=$1`, [req.params.exhibitId]);
     const grossOperatingVolume = Number(tankVolumeResult.rows[0]?.volume_m3);
-    const displacement = Number(substrate_volume_m3 || 0) + Number(theming_volume_m3 || 0);
+    if (theming_volume_pct != null && !(grossOperatingVolume > 0)) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'A known tank operating volume is required to use percentage-based theming displacement.' },
+        });
+    }
+    const resolvedThemingVolume = theming_volume_pct != null
+        ? Math.round(grossOperatingVolume * Number(theming_volume_pct) / 100 * 1e6) / 1e6
+        : (theming_volume_m3 ?? null);
+    const displacement = Number(substrate_volume_m3 || 0) + Number(resolvedThemingVolume || 0);
     if (grossOperatingVolume > 0 && displacement >= grossOperatingVolume) {
         return res.status(400).json({
             error: { code: 'VALIDATION', message: 'Substrate and theming displacement must be less than operating volume.' },
@@ -443,7 +500,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticat
        updated_at          = NOW()
      RETURNING *`, [req.params.id, req.params.exhibitId,
         substrate_type || null, substrate_height_mm ?? null, substrate_volume_m3 ?? null,
-        theming_type || null, theming_height_mm ?? null, theming_volume_m3 ?? null,
+        theming_type || null, theming_height_mm ?? null, resolvedThemingVolume,
         theming_volume_pct ?? null, notes || null]);
     res.json(result.rows[0]);
 });
@@ -892,7 +949,7 @@ const VERSION_REFERENCE_FIELDS = {
         'design_temperature_min', 'design_temperature_max', 'design_salinity', 'area_id', 'status', 'notes'],
     tanks: ['id', 'project_id', 'tank_code', 'exhibit_id', 'system_id', 'area_id', 'quantity',
         'tank_name', 'tank_type', 'product_master_id', 'shape_type', 'gross_volume_m3',
-        'operating_volume_m3', 'length_mm', 'width_mm', 'height_mm', 'design_water_level_mm',
+        'operating_volume_m3', 'surface_area_m2', 'length_mm', 'width_mm', 'height_mm', 'design_water_level_mm',
         'primary_material', 'material_id', 'wall_thickness_mm', 'inner_length_mm', 'inner_width_mm',
         'inner_height_mm', 'status', 'notes'],
     systems: ['id', 'project_id', 'system_code', 'area_id', 'exhibit_id', 'system_name', 'system_type',

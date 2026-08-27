@@ -62,6 +62,18 @@ const tank = {
         (0, vitest_1.expect)(calculated.status).toBe('invalid');
         (0, vitest_1.expect)(calculated.reasons).toContain('Substrate height requires tank footprint dimensions; enter a direct substrate volume for custom tanks.');
     });
+    (0, vitest_1.it)('uses a confirmed custom-tank surface area for height-based displacement', () => {
+        const calculated = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [{
+                id: 'custom',
+                tank_code: 'CUSTOM-1',
+                eff_shape: 'custom',
+                operating_volume_m3: 100,
+                surface_area_m2: 20,
+            }], { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 }, { substrate_height_mm: 100 });
+        (0, vitest_1.expect)(calculated.status).toBe('valid');
+        (0, vitest_1.expect)(calculated.inputs.substrate_volume_m3).toBe(2);
+        (0, vitest_1.expect)(calculated.results.operating_volume_m3).toBe(98);
+    });
     (0, vitest_1.it)('falls back to stored operating volume for a standard tank without dimensions', () => {
         const calculated = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [{ id: 'legacy', eff_shape: 'rectangular', operating_volume_m3: 12.5 }], { target_turnover_rate: 3, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
         (0, vitest_1.expect)(calculated.status).toBe('valid');

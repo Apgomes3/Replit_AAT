@@ -117,7 +117,7 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   const countRes = await query(`SELECT COUNT(*) FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id ${where}`, params);
   params.push(page_size, offset);
   const result = await query(
-    `SELECT pm.*, pf.product_family_name,
+    `SELECT pm.*, pf.product_family_name, tf.name AS tank_family_name,
        COALESCE(
          pm.surface_area_m2,
          CASE
@@ -133,6 +133,7 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
        COALESCE(sp.project_name, pm.source_tank_snapshot->>'project_name') AS source_project_name
      FROM product_masters pm
      LEFT JOIN product_families pf ON pm.product_family_id=pf.id
+     LEFT JOIN tank_families tf ON pm.tank_family_id=tf.id
      LEFT JOIN tanks st ON st.id=pm.source_tank_id
      LEFT JOIN projects sp ON sp.id=st.project_id
      ${where} ORDER BY pm.product_code LIMIT $${params.length-1} OFFSET $${params.length}`,
