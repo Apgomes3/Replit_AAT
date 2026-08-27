@@ -1272,7 +1272,7 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
   const [selected, setSelected] = useState<any | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [newForm, setNewForm] = useState({
-    tank_code: '', tank_name: '', shape_type: 'Rectangular',
+    tank_code: '', tank_name: exhibit.exhibit_name || '', shape_type: 'Rectangular',
     length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '',
     primary_material: '',
   });
