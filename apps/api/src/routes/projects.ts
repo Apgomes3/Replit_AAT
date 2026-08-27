@@ -1294,26 +1294,67 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.post('/systems', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const client = await pool.connect();
   try {
     const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
     if (!system_code || !project_id || !system_name) {
       return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'system_code, project_id and system_name are required' } });
     }
-    const result = await query(
+    await client.query('BEGIN');
+    if (exhibit_id) {
+      const exhibitResult = await client.query(
+        'SELECT id, project_id, exhibit_code, water_type FROM exhibits WHERE id=$1 FOR SHARE',
+        [exhibit_id],
+      );
+      const exhibit = exhibitResult.rows[0];
+      if (!exhibit) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Selected exhibit not found.' } });
+      }
+      if (String(exhibit.project_id) !== String(project_id)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: { code: 'OWNERSHIP_MISMATCH', message: 'The exhibit and system must belong to the same project.' },
+        });
+      }
+      if (!compatibleWaterTypes(water_type, exhibit.water_type)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: {
+            code: 'INCOMPATIBLE_WATER_TYPE',
+            message: `${exhibit.exhibit_code} uses ${exhibit.water_type} water and cannot be linked to a ${water_type} system.`,
+          },
+        });
+      }
+    }
+    const result = await client.query(
       'INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *',
       [system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status || 'Draft', duty_description || null, redundancy_strategy || null]);
+    if (exhibit_id) {
+      await client.query(
+        `INSERT INTO system_exhibit_links
+           (system_id, exhibit_id, link_type, flow_allocation_m3h, notes, sort_order, allocation_source, allocation_updated_at)
+         VALUES ($1,$2,'Primary',NULL,NULL,0,'calculated',NOW())`,
+        [result.rows[0].id, exhibit_id],
+      );
+    }
+    await client.query('COMMIT');
     await logAudit(req.user!.id, 'system', result.rows[0].id, 'CREATE', {
       summary: `System ${system_code} created`,
       system_code,
       system_name,
       system_type,
+      exhibit_id: exhibit_id || null,
     });
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
+    await client.query('ROLLBACK');
     if (err.code === '23505') {
       return res.status(409).json({ error: { code: 'CONFLICT', message: `System code "${req.body.system_code}" already exists in this project. Use a different code.` } });
     }
     throw err;
+  } finally {
+    client.release();
   }
 });
 

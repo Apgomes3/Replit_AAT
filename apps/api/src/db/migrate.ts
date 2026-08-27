@@ -1057,6 +1057,12 @@ CREATE INDEX IF NOT EXISTS idx_sel_system  ON system_exhibit_links(system_id);
 CREATE INDEX IF NOT EXISTS idx_sel_exhibit ON system_exhibit_links(exhibit_id);
 ALTER TABLE system_exhibit_links ADD COLUMN IF NOT EXISTS allocation_source VARCHAR(30) DEFAULT 'calculated';
 ALTER TABLE system_exhibit_links ADD COLUMN IF NOT EXISTS allocation_updated_at TIMESTAMPTZ;
+INSERT INTO system_exhibit_links
+  (system_id, exhibit_id, link_type, flow_allocation_m3h, notes, sort_order, allocation_source, allocation_updated_at)
+SELECT s.id, s.exhibit_id, 'Primary', NULL, NULL, 0, 'calculated', NOW()
+FROM systems s
+WHERE s.exhibit_id IS NOT NULL
+ON CONFLICT (system_id, exhibit_id) DO NOTHING;
 
 -- SUBSTRATE: height-based volume calculation fields
 ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS substrate_height_mm NUMERIC;
