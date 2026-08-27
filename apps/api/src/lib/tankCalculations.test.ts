@@ -10,7 +10,7 @@ describe('calculateWaterSurfaceAreaM2', () => {
     expect(calculateWaterSurfaceAreaM2('Cylindrical', null, 2000)).toBe(3.1416);
   });
 
-  it('does not infer a custom-shape surface area', () => {
-    expect(calculateWaterSurfaceAreaM2('Custom', 5000, 3000)).toBeNull();
+  it('calculates a custom tank footprint from confirmed outer dimensions', () => {
+    expect(calculateWaterSurfaceAreaM2('Custom', 5000, 3000)).toBe(15);
   });
 });

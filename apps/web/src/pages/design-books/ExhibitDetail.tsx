@@ -81,7 +81,7 @@ function waterSurfaceAreaM2(shape: unknown, lengthMm: unknown, widthMm: unknown)
   const normalizedShape = String(shape || '').toLowerCase();
   if (normalizedShape === 'cylindrical') return Math.PI * (width / 2) ** 2 / 1e6;
   const length = Number(lengthMm);
-  return normalizedShape !== 'custom' && length > 0 ? length * width / 1e6 : null;
+  return length > 0 ? length * width / 1e6 : null;
 }
 
 function CalculationTrace({ calculation, title = 'Calculation Trace' }: {
@@ -1099,11 +1099,12 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
   );
 }
 
-function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, canUsePim, onRefresh }: {
+function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assignedTanks, canUsePim, onRefresh }: {
   exhibit: any;
   projectId: string;
   designBookId: string;
   unassigned: any[];
+  assignedTanks: any[];
   canUsePim: boolean;
   onRefresh: () => void;
 }) {
@@ -1167,6 +1168,12 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, canUseP
     if (!newForm.tank_code.trim() || !newForm.tank_name.trim()) {
       return toast.error('Tank code and name are required');
     }
+    if (assignedTanks.length > 0) {
+      const current = assignedTanks.map(tank => `${tank.tank_code} — ${tank.tank_name}`).join(', ');
+      if (!window.confirm(
+        `This exhibit already has a tank in use: ${current}. Creating another tank may change which tank is used by the Design Book. Continue?`,
+      )) return;
+    }
     setSaving(true);
     try {
       await api.post('/tanks', {
@@ -1194,6 +1201,12 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, canUseP
 
   const handleCreateFromPim = async () => {
     if (!selectedPim) return;
+    if (assignedTanks.length > 0) {
+      const current = assignedTanks.map(tank => `${tank.tank_code} — ${tank.tank_name}`).join(', ');
+      if (!window.confirm(
+        `This exhibit already has a tank in use: ${current}. Creating a linked PIM tank may change which tank is used by the Design Book. Continue?`,
+      )) return;
+    }
     setConfirming(true);
     try {
       await api.post('/tanks/from-pim', {
@@ -1316,6 +1329,15 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, canUseP
 
         {mode === 'pim' && canUsePim && (
           <div className="space-y-4">
+            {assignedTanks.length > 0 && (
+              <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p className="font-semibold">Tank already in use</p>
+                <p className="mt-0.5">
+                  {assignedTanks.map(tank => `${tank.tank_code} — ${tank.tank_name}`).join(', ')} is already assigned to this exhibit.
+                  Creating a linked tank may change which tank the Design Book uses.
+                </p>
+              </div>
+            )}
             <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-3">
               <p className="text-sm font-semibold text-blue-800">Create a linked project tank</p>
               <p className="text-xs text-blue-700 mt-0.5">
@@ -1414,6 +1436,15 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, canUseP
 
         {mode === 'new' && (
           <div className="space-y-4">
+            {assignedTanks.length > 0 && (
+              <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p className="font-semibold">Tank already in use</p>
+                <p className="mt-0.5">
+                  {assignedTanks.map(tank => `${tank.tank_code} — ${tank.tank_name}`).join(', ')} is already assigned to this exhibit.
+                  Creating a new tank may change which tank the Design Book uses. You will be asked to confirm before it is created.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Tank Code *</label>
@@ -2911,20 +2942,13 @@ export default function ExhibitDetail() {
       <fieldset disabled={readOnly} className={readOnly ? 'opacity-90' : ''}>
       {activeTab === 'tank' && (
         <div className="space-y-5">
-          {exhibitTanks.map((exhibitTank: any) => (
-            <TankCard
-              key={exhibitTank.id}
-              tank={exhibitTank}
-              substrateData={substrateData}
-              onRefresh={refresh}
-            />
-          ))}
           {book.project_id ? (
             <AssignTankPanel
               exhibit={exhibit}
               projectId={book.project_id}
               designBookId={book.id}
               unassigned={unassigned}
+              assignedTanks={exhibitTanks}
               canUsePim={canUsePim}
               onRefresh={refresh}
             />
@@ -2934,6 +2958,14 @@ export default function ExhibitDetail() {
               <p className="text-stone-400 text-sm">No tank assigned. Link a project to this design book to manage tanks.</p>
             </div>
           ) : null}
+          {exhibitTanks.map((exhibitTank: any) => (
+            <TankCard
+              key={exhibitTank.id}
+              tank={exhibitTank}
+              substrateData={substrateData}
+              onRefresh={refresh}
+            />
+          ))}
           <SubstrateSection
             bookId={book.id}
             exhibitId={exhibitId!}

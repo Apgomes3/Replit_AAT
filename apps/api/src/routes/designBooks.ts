@@ -82,7 +82,20 @@ async function loadReleaseContext(
          COALESCE(t.notes, pm.notes) AS eff_notes,
          COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
          COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
-         COALESCE(t.surface_area_m2, pm.surface_area_m2) AS surface_area_m2
+         COALESCE(
+           t.surface_area_m2,
+           pm.surface_area_m2,
+           CASE
+             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
+             WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+                  AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
+             ELSE NULL
+           END
+         ) AS surface_area_m2
        FROM tanks t
        LEFT JOIN product_masters pm ON pm.id=t.product_master_id
        LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
@@ -305,17 +318,17 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
         ) as design_volume_m3,
         COALESCE(
           t.surface_area_m2,
+          pm.surface_area_m2,
           CASE
             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
               THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
-            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Custom'
+            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
                  AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
               THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
             ELSE NULL
-          END,
-          pm.surface_area_m2
+          END
         ) as surface_area_m2
        FROM tanks t
        LEFT JOIN exhibits e ON t.exhibit_id = e.id

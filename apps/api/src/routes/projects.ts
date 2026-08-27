@@ -344,17 +344,17 @@ router.get('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
       ) as design_volume_m3,
        COALESCE(
          t.surface_area_m2,
+         pm.surface_area_m2,
          CASE
            WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
              THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
-           WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Custom'
+            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
                 AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
              THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
            ELSE NULL
-         END,
-         pm.surface_area_m2
+          END
        ) as surface_area_m2,
       COALESCE(
         (SELECT json_agg(
@@ -1056,9 +1056,9 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
     : isCyl
       ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
       : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
-  const surfaceAreaM2 = isCustom
-    ? (requestedSurfaceArea == null ? null : Math.round(requestedSurfaceArea * 1e4) / 1e4)
-    : calculateWaterSurfaceAreaM2(shape_type, isCyl ? null : il, iw);
+  const surfaceAreaM2 = isCustom && requestedSurfaceArea != null
+    ? Math.round(requestedSurfaceArea * 1e4) / 1e4
+    : calculateWaterSurfaceAreaM2(shape_type, isCyl ? null : l, w);
   const qty = Math.max(1, parseInt(quantity) || 1);
   const result = await query(
     `UPDATE tanks SET
