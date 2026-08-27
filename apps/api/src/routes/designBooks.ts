@@ -270,7 +270,21 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
             ELSE NULL
           END,
           t.operating_volume_m3, pm.operating_volume_m3
-        ) as design_volume_m3
+        ) as design_volume_m3,
+        COALESCE(
+          t.surface_area_m2,
+          CASE
+            WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
+            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Custom'
+                 AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+              THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
+            ELSE NULL
+          END,
+          pm.surface_area_m2
+        ) as surface_area_m2
        FROM tanks t
        LEFT JOIN exhibits e ON t.exhibit_id = e.id
        LEFT JOIN systems s ON t.system_id = s.id
@@ -502,12 +516,22 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, requ
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Theming percentage cannot exceed 100%.' } });
   }
   const tankVolumeResult = await query(
-    `SELECT SUM(COALESCE(t.operating_volume_m3, t.design_volume_m3, 0) * COALESCE(t.quantity, 1)) AS volume_m3
-     FROM tanks t WHERE t.exhibit_id=$1`,
+    `SELECT SUM(COALESCE(t.operating_volume_m3, pm.operating_volume_m3, 0) * COALESCE(t.quantity, 1)) AS volume_m3
+     FROM tanks t
+     LEFT JOIN product_masters pm ON pm.id=t.product_master_id
+     WHERE t.exhibit_id=$1`,
     [req.params.exhibitId],
   );
   const grossOperatingVolume = Number(tankVolumeResult.rows[0]?.volume_m3);
-  const displacement = Number(substrate_volume_m3 || 0) + Number(theming_volume_m3 || 0);
+  if (theming_volume_pct != null && !(grossOperatingVolume > 0)) {
+    return res.status(400).json({
+      error: { code: 'VALIDATION', message: 'A known tank operating volume is required to use percentage-based theming displacement.' },
+    });
+  }
+  const resolvedThemingVolume = theming_volume_pct != null
+    ? Math.round(grossOperatingVolume * Number(theming_volume_pct) / 100 * 1e6) / 1e6
+    : (theming_volume_m3 ?? null);
+  const displacement = Number(substrate_volume_m3 || 0) + Number(resolvedThemingVolume || 0);
   if (grossOperatingVolume > 0 && displacement >= grossOperatingVolume) {
     return res.status(400).json({
       error: { code: 'VALIDATION', message: 'Substrate and theming displacement must be less than operating volume.' },
@@ -531,7 +555,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, requ
      RETURNING *`,
     [req.params.id, req.params.exhibitId,
      substrate_type || null, substrate_height_mm ?? null, substrate_volume_m3 ?? null,
-     theming_type || null, theming_height_mm ?? null, theming_volume_m3 ?? null,
+     theming_type || null, theming_height_mm ?? null, resolvedThemingVolume,
      theming_volume_pct ?? null, notes || null]
   );
   res.json(result.rows[0]);
@@ -1088,7 +1112,7 @@ const VERSION_REFERENCE_FIELDS = {
     'design_temperature_min', 'design_temperature_max', 'design_salinity', 'area_id', 'status', 'notes'],
   tanks: ['id', 'project_id', 'tank_code', 'exhibit_id', 'system_id', 'area_id', 'quantity',
     'tank_name', 'tank_type', 'product_master_id', 'shape_type', 'gross_volume_m3',
-    'operating_volume_m3', 'length_mm', 'width_mm', 'height_mm', 'design_water_level_mm',
+    'operating_volume_m3', 'surface_area_m2', 'length_mm', 'width_mm', 'height_mm', 'design_water_level_mm',
     'primary_material', 'material_id', 'wall_thickness_mm', 'inner_length_mm', 'inner_width_mm',
     'inner_height_mm', 'status', 'notes'],
   systems: ['id', 'project_id', 'system_code', 'area_id', 'exhibit_id', 'system_name', 'system_type',

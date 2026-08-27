@@ -7,7 +7,7 @@ import {
   Trash2, Check, CheckCircle2, Layers, FolderOpen, LinkIcon,
   SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
   ArrowUpToLine, Wind, BookOpen, Mountain, Palette, Calculator,
-  ArrowRight, ArrowLeft, AlertTriangle, MoreHorizontal, LockKeyhole,
+  ArrowRight, ArrowLeft, AlertTriangle, MoreHorizontal, LockKeyhole, LibraryBig,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -72,6 +72,15 @@ function fmtDim(v?: number | null) {
 function fmtVol(v?: number | null) {
   if (v == null) return '—';
   return parseFloat(String(v)).toFixed(3);
+}
+
+function waterSurfaceAreaM2(shape: unknown, lengthMm: unknown, widthMm: unknown): number | null {
+  const width = Number(widthMm);
+  if (!(width > 0)) return null;
+  const normalizedShape = String(shape || '').toLowerCase();
+  if (normalizedShape === 'cylindrical') return Math.PI * (width / 2) ** 2 / 1e6;
+  const length = Number(lengthMm);
+  return normalizedShape !== 'custom' && length > 0 ? length * width / 1e6 : null;
 }
 
 function CalculationTrace({ calculation, title = 'Calculation Trace' }: {
@@ -659,6 +668,9 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
     const grossVol = volCalc.gross;
     const opVol    = volCalc.op;
     const volFromInner = volCalc.fromInner;
+    const surfaceArea = tank.surface_area_m2 != null
+      ? Number(tank.surface_area_m2)
+      : waterSurfaceAreaM2(shape, viewIsCyl ? null : (thick ? viewInnerL : outerL), thick ? viewInnerW : outerW);
 
     const statusCls: Record<string, string> = {
       Active:         'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -740,7 +752,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
           )}
 
           {/* Volumes */}
-          {(grossVol != null || opVol != null) && (
+          {(grossVol != null || opVol != null || surfaceArea != null) && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide">Volumes</p>
@@ -752,7 +764,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                   {volFromInner ? 'inner dims' : 'outer dims'}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className={`grid gap-3 ${surfaceArea != null ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <div className="bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
                   <div className="text-xs text-blue-500 mb-1">Gross Volume</div>
                   <div className="text-2xl font-bold text-blue-700 font-mono leading-none">{fmtVol(grossVol)}</div>
@@ -774,6 +786,13 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                     </>;
                   })()}
                 </div>
+                {surfaceArea != null && (
+                  <div className="bg-teal-50 rounded-xl px-4 py-3 border border-teal-100">
+                    <div className="text-xs text-teal-600 mb-1">Water-Surface Area</div>
+                    <div className="text-2xl font-bold text-teal-700 font-mono leading-none">{surfaceArea.toFixed(3)}</div>
+                    <div className="text-xs text-teal-500 mt-0.5">m² footprint</div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1018,17 +1037,23 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
   );
 }
 
-function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
+function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, canUsePim, onRefresh }: {
   exhibit: any;
   projectId: string;
+  designBookId: string;
   unassigned: any[];
+  canUsePim: boolean;
   onRefresh: () => void;
 }) {
-  const [mode, setMode] = useState<'assign' | 'new'>('assign');
+  const [mode, setMode] = useState<'assign' | 'pim' | 'new'>('assign');
   const [selected, setSelected] = useState<any | null>(null);
+  const [selectedPim, setSelectedPim] = useState<any | null>(null);
+  const [pimSearch, setPimSearch] = useState('');
+  const [pimFamilyId, setPimFamilyId] = useState('');
+  const [pimForm, setPimForm] = useState({ tank_code: '', tank_name: exhibit.exhibit_name || '' });
   const [confirming, setConfirming] = useState(false);
   const [newForm, setNewForm] = useState({
-    tank_code: '', tank_name: '', shape_type: 'Rectangular',
+    tank_code: '', tank_name: exhibit.exhibit_name || '', shape_type: 'Rectangular',
     length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '',
     material_id: '', primary_material: '',
   });
@@ -1041,6 +1066,23 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
     enabled: mode === 'new',
   });
   const newMaterials: any[] = matData?.items || [];
+  const { data: pimFamiliesData } = useQuery({
+    queryKey: ['tank-families'],
+    queryFn: () => api.get('/tank-families').then(r => r.data),
+    enabled: mode === 'pim' && canUsePim,
+  });
+  const pimFamilies: any[] = pimFamiliesData?.items || [];
+  const { data: pimData, isLoading: pimLoading, isError: pimError } = useQuery({
+    queryKey: ['design-book-pim-tanks', pimSearch, pimFamilyId],
+    queryFn: () => {
+      const params = new URLSearchParams({ category: 'Tank', page_size: '200' });
+      if (pimSearch.trim()) params.set('q', pimSearch.trim());
+      if (pimFamilyId) params.set('tank_family_id', pimFamilyId);
+      return api.get(`/product-masters?${params.toString()}`).then(r => r.data);
+    },
+    enabled: mode === 'pim' && canUsePim,
+  });
+  const pimTanks: any[] = pimData?.items || [];
 
   const setF = (k: string, v: string) => setNewForm(f => ({ ...f, [k]: v }));
 
@@ -1087,7 +1129,39 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
     }
   };
 
+  const selectPimTank = (tank: any) => {
+    const next = selectedPim?.id === tank.id ? null : tank;
+    setSelectedPim(next);
+    setPimForm(next
+      ? { tank_code: String(next.product_code || '').toUpperCase(), tank_name: exhibit.exhibit_name || next.product_name || '' }
+      : { tank_code: '', tank_name: exhibit.exhibit_name || '' });
+  };
+
+  const handlePimAssign = async () => {
+    if (!selectedPim || !pimForm.tank_code.trim() || !pimForm.tank_name.trim()) {
+      return toast.error('Select a PIM tank and provide the project tank code and name');
+    }
+    setSaving(true);
+    try {
+      await api.post('/tanks/from-pim', {
+        product_master_id: selectedPim.id,
+        project_id: projectId,
+        exhibit_id: exhibit.id,
+        design_book_id: designBookId,
+        tank_code: pimForm.tank_code.trim().toUpperCase(),
+        tank_name: pimForm.tank_name.trim(),
+      });
+      toast.success('PIM tank linked and assigned to the exhibit');
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to assign PIM tank');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const isCyl = newForm.shape_type === 'Cylindrical';
+  const newSurfaceArea = waterSurfaceAreaM2(newForm.shape_type, newForm.length_mm, newForm.width_mm);
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -1098,8 +1172,18 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
             mode === 'assign' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:bg-stone-100'
           }`}
         >
-          <LinkIcon className="w-3.5 h-3.5" /> Assign Existing Tank
+          <LinkIcon className="w-3.5 h-3.5" /> Project Tanks
         </button>
+        {canUsePim && (
+          <button
+            onClick={() => { setMode('pim'); setSelected(null); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              mode === 'pim' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:bg-stone-100'
+            }`}
+          >
+            <LibraryBig className="w-3.5 h-3.5" /> PIM Tank Library
+          </button>
+        )}
         <button
           onClick={() => { setMode('new'); setSelected(null); }}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -1179,6 +1263,110 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
           )
         )}
 
+        {mode === 'pim' && canUsePim && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              Selecting a library tank creates a project tank linked to the PIM item. The reusable library record is not changed.
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                value={pimSearch}
+                onChange={e => setPimSearch(e.target.value)}
+                placeholder="Search PIM tanks by code or name…"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              <select
+                value={pimFamilyId}
+                onChange={e => setPimFamilyId(e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              >
+                <option value="">All tank families</option>
+                {pimFamilies.map((family: any) => (
+                  <option key={family.id} value={family.id}>{family.code} — {family.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {pimLoading ? (
+              <div className="py-8 text-center text-sm text-stone-400">Loading PIM tank library…</div>
+            ) : pimError ? (
+              <div className="py-8 text-center text-sm text-red-600">The PIM tank library could not be loaded.</div>
+            ) : pimTanks.length === 0 ? (
+              <div className="py-8 text-center text-sm text-stone-400">No PIM tanks match this search.</div>
+            ) : (
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {pimTanks.map((tank: any) => {
+                  const isSel = selectedPim?.id === tank.id;
+                  const area = tank.surface_area_m2 ?? waterSurfaceAreaM2(tank.shape_type, tank.length_mm, tank.width_mm);
+                  return (
+                    <button
+                      key={tank.id}
+                      onClick={() => selectPimTank(tank)}
+                      className={`w-full text-left flex items-center gap-3 rounded-xl px-4 py-3 border transition-all ${
+                        isSel
+                          ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-300'
+                          : 'bg-stone-50 border-stone-200 hover:border-blue-300 hover:bg-blue-50/30'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                        isSel ? 'border-blue-500 bg-blue-500' : 'border-stone-300'
+                      }`}>
+                        {isSel && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                      <span className="font-mono text-xs bg-white text-stone-600 px-1.5 py-0.5 rounded border border-stone-200 shrink-0">{tank.product_code}</span>
+                      <span className="font-medium text-stone-700 flex-1 truncate">{tank.product_name}</span>
+                      <ShapeBadge shape={tank.shape_type} />
+                      {area != null && <span className="text-xs font-mono text-stone-500">{Number(area).toFixed(3)} m²</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {selectedPim && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Project Tank Code *</label>
+                    <input
+                      value={pimForm.tank_code}
+                      onChange={e => setPimForm(f => ({ ...f, tank_code: e.target.value }))}
+                      className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm uppercase bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Project Tank Name *</label>
+                    <input
+                      value={pimForm.tank_name}
+                      onChange={e => setPimForm(f => ({ ...f, tank_name: e.target.value }))}
+                      className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-stone-600">
+                    Water-surface area:{' '}
+                    <span className="font-mono font-semibold">
+                      {(() => {
+                        const area = selectedPim.surface_area_m2 ?? waterSurfaceAreaM2(selectedPim.shape_type, selectedPim.length_mm, selectedPim.width_mm);
+                        return area == null ? '—' : `${Number(area).toFixed(3)} m²`;
+                      })()}
+                    </span>
+                  </p>
+                  <button
+                    onClick={handlePimAssign}
+                    disabled={saving || !pimForm.tank_code.trim() || !pimForm.tank_name.trim()}
+                    className="flex items-center gap-2 px-5 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors"
+                  >
+                    <Check className="w-4 h-4" />
+                    {saving ? 'Creating linked tank…' : 'Create Linked Project Tank'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {mode === 'new' && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -1225,6 +1413,12 @@ function AssignTankPanel({ exhibit, projectId, unassigned, onRefresh }: {
                 <input type="number" placeholder="0" value={newForm.design_water_level_mm} onChange={e => setF('design_water_level_mm', e.target.value)}
                   className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
               </div>
+            </div>
+            <div className="rounded-lg bg-stone-50 border border-stone-100 px-4 py-3 flex items-center justify-between">
+              <span className="text-xs font-medium text-stone-500">Water-surface area</span>
+              <span className="font-mono text-sm font-semibold text-stone-700">
+                {newSurfaceArea == null ? '—' : `${newSurfaceArea.toFixed(3)} m²`}
+              </span>
             </div>
             <div>
               <label className="block text-xs text-stone-500 mb-1">Material</label>
@@ -1368,7 +1562,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
         substrate_height_mm: form.substrate_height_mm ? parseFloat(form.substrate_height_mm) : null,
         substrate_volume_m3: finalSubVol,
         theming_type:        form.theming_type    || null,
-        theming_height_mm:   form.theming_height_mm ? parseFloat(form.theming_height_mm) : null,
+        theming_height_mm:   themVolumeMode === 'height' && form.theming_height_mm ? parseFloat(form.theming_height_mm) : null,
         theming_volume_m3:   finalThemVol,
         theming_volume_pct:  finalThemPct,
         notes:               form.notes           || null,
@@ -2508,6 +2702,7 @@ export default function ExhibitDetail() {
   const unassigned = tanks.filter((t: any) => !t.exhibit_id);
   const canEdit = user?.role === 'admin' || user?.role === 'engineer';
   const readOnly = !canEdit || !['Draft', 'In Progress'].includes(book.status);
+  const canUsePim = canEdit && user?.moduleAccess?.pim !== 'hidden';
 
   const TABS = [
     { id: 'tank',    label: 'Tank',         icon: <Layers     className="w-3.5 h-3.5" /> },
@@ -2676,7 +2871,9 @@ export default function ExhibitDetail() {
             <AssignTankPanel
               exhibit={exhibit}
               projectId={book.project_id}
+              designBookId={book.id}
               unassigned={unassigned}
+              canUsePim={canUsePim}
               onRefresh={refresh}
             />
           ) : (

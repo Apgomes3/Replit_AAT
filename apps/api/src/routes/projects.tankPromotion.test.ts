@@ -31,6 +31,23 @@ const state = vi.hoisted(() => ({
     notes: null,
   },
   promotedProduct: null as Record<string, any> | null,
+  duplicatePimAssignment: null as Record<string, any> | null,
+  libraryProduct: {
+    id: 'library-tank-1',
+    product_code: 'PIM-TNK-001',
+    product_name: 'Library Display Tank',
+    product_category: 'Tank',
+    tank_family_id: 'family-1',
+    application_type: 'Display Tank',
+    shape_type: 'Rectangular',
+    length_mm: '5000',
+    width_mm: '3000',
+    height_mm: '2500',
+    design_water_level_mm: '2200',
+    gross_volume_m3: '37.5',
+    operating_volume_m3: '33',
+    surface_area_m2: null,
+  },
   moduleAccess: { projects: 'manage', pim: 'manage' } as Record<string, string>,
   designBookStatus: 'Draft',
 }));
@@ -63,8 +80,30 @@ vi.mock('../db', () => {
     if (sql.includes('FROM design_books') && sql.includes('FOR SHARE')) {
       return { rows: [{ id: 'book-1', status: state.designBookStatus }] };
     }
+    if (sql.includes('FROM exhibits') && sql.includes('FOR SHARE')) {
+      return { rows: [{ id: 'exhibit-1', project_id: 'project-1' }] };
+    }
     if (sql.includes('FROM product_masters pm') && sql.includes('pm.source_tank_id')) {
       return { rows: state.promotedProduct ? [state.promotedProduct] : [] };
+    }
+    if (sql.includes('SELECT pm.* FROM product_masters pm')) {
+      return { rows: [{ ...state.libraryProduct }] };
+    }
+    if (sql.includes('FROM tanks') && sql.includes('product_master_id=$3')) {
+      return { rows: state.duplicatePimAssignment ? [state.duplicatePimAssignment] : [] };
+    }
+    if (sql.includes('INSERT INTO tanks')) {
+      return {
+        rows: [{
+          id: 'linked-project-tank',
+          tank_code: params[0],
+          project_id: params[1],
+          exhibit_id: params[2],
+          tank_name: params[3],
+          tank_type: params[4],
+          product_master_id: params[5],
+        }],
+      };
     }
     if (sql.startsWith('SELECT id FROM tank_families')) return { rows: [{ id: 'family-1' }] };
     if (sql.includes('INSERT INTO product_masters')) {
@@ -150,6 +189,7 @@ describe('project tank promotion into PIM', () => {
     state.calls.length = 0;
     state.sourceTank.product_master_id = null;
     state.promotedProduct = null;
+    state.duplicatePimAssignment = null;
     state.moduleAccess = { projects: 'manage', pim: 'manage' };
     state.designBookStatus = 'Draft';
   });
@@ -190,11 +230,32 @@ describe('project tank promotion into PIM', () => {
     });
     expect(state.calls.some(call => call.sql.startsWith('UPDATE tanks SET product_master_id'))).toBe(false);
     const insert = state.calls.find(call => call.sql.includes('INSERT INTO product_masters'))!;
-    expect(JSON.parse(insert.params[17])).toMatchObject({
+    expect(JSON.parse(insert.params[18])).toMatchObject({
       design_book_id: 'book-1',
       tank_code: 'TK-01',
       project_code: 'PRJ-01',
     });
+  });
+
+  it('creates a project tank linked to a selected PIM tank with water-surface area', async () => {
+    const response = await request(app, 'POST', '/api/v1/tanks/from-pim', 'engineer', {
+      design_book_id: 'book-1',
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+      product_master_id: 'library-tank-1',
+      tank_code: 'TK-LIB-01',
+      tank_name: 'Main Exhibit',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      tank_code: 'TK-LIB-01',
+      tank_name: 'Main Exhibit',
+      product_master_id: 'library-tank-1',
+      surface_area_m2: 15,
+    });
+    const insert = state.calls.find(call => call.scope === 'client' && call.sql.includes('INSERT INTO tanks'))!;
+    expect(insert.params[5]).toBe('library-tank-1');
   });
 
   it('rejects promotion by a viewer', async () => {

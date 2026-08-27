@@ -6,6 +6,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { calculateWaterSurfaceAreaM2 } from '../lib/tankCalculations';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -117,6 +118,16 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   params.push(page_size, offset);
   const result = await query(
     `SELECT pm.*, pf.product_family_name,
+       COALESCE(
+         pm.surface_area_m2,
+         CASE
+           WHEN pm.shape_type='Cylindrical' AND pm.width_mm IS NOT NULL
+             THEN ROUND((PI() * POWER(pm.width_mm / 2.0, 2) / 1000000.0)::numeric, 4)
+           WHEN pm.shape_type IS DISTINCT FROM 'Custom' AND pm.length_mm IS NOT NULL AND pm.width_mm IS NOT NULL
+             THEN ROUND((pm.length_mm * pm.width_mm / 1000000.0)::numeric, 4)
+           ELSE NULL
+         END
+       ) AS surface_area_m2,
        COALESCE(st.tank_code, pm.source_tank_snapshot->>'tank_code') AS source_tank_code,
        COALESCE(sp.project_code, pm.source_tank_snapshot->>'project_code') AS source_project_code,
        COALESCE(sp.project_name, pm.source_tank_snapshot->>'project_name') AS source_project_name
@@ -133,6 +144,16 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
 router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query(
     `SELECT pm.*, pf.product_family_name, m.material_name,
+       COALESCE(
+         pm.surface_area_m2,
+         CASE
+           WHEN pm.shape_type='Cylindrical' AND pm.width_mm IS NOT NULL
+             THEN ROUND((PI() * POWER(pm.width_mm / 2.0, 2) / 1000000.0)::numeric, 4)
+           WHEN pm.shape_type IS DISTINCT FROM 'Custom' AND pm.length_mm IS NOT NULL AND pm.width_mm IS NOT NULL
+             THEN ROUND((pm.length_mm * pm.width_mm / 1000000.0)::numeric, 4)
+           ELSE NULL
+         END
+       ) AS surface_area_m2,
        COALESCE(st.tank_code, pm.source_tank_snapshot->>'tank_code') AS source_tank_code,
        COALESCE(sp.project_code, pm.source_tank_snapshot->>'project_code') AS source_project_code,
        COALESCE(sp.project_name, pm.source_tank_snapshot->>'project_name') AS source_project_name
@@ -200,19 +221,24 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
     manufacturer, model,
   } = req.body;
   if (!product_code || !product_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_code and product_name required' } });
+  const surfaceAreaM2 = calculateWaterSurfaceAreaM2(
+    shape_type,
+    length_mm ? parseFloat(length_mm) : null,
+    width_mm ? parseFloat(width_mm) : null,
+  );
   const result = await query(
     `INSERT INTO product_masters
       (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
        design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
-       shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, cost,
+       shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, surface_area_m2, cost,
        manufacturer, model)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
     [
       product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
       design_flow_m3h || null, design_pressure_bar || null, design_head_m || null, power_kw || null,
       primary_material_code || null, standard_status || 'Concept', notes || null,
       shape_type || null, length_mm || null, width_mm || null, height_mm || null,
-      design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, 0,
+      design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, surfaceAreaM2, 0,
       manufacturer || null, model || null,
     ]);
   await logAudit(req.user!.id, 'product', result.rows[0].id, 'CREATE', {
