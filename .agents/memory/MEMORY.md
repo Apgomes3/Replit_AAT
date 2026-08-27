@@ -1,5 +1,5 @@
 - [PO vendor privacy](po-vendor-privacy.md) — vendor autocomplete must only surface names from purchase orders visible to the current user.
-- [Exhibit navigation](exhibit-navigation.md) — keep Back to Design Book prominent and expose exhibit tools from one accessible menu.
+- [Design Book detail navigation](exhibit-navigation.md) — keep Back prominent, close tools first, and never let Escape navigate from editable fields.
 - [Weir formula selection](weir-formula-selection.md) — recommend Francis within its approved range; keep Bazin explicit, selectable, and reviewable.
 - [Aquarium calculation policy](aquarium-calculation-policy.md) — turnover is cycles/hour; effective volume subtracts displacement; saved deviations remain explicit overrides.
 - [Design Book review snapshots](design-book-review-snapshots.md) — review and release use a frozen point-in-time package so shared project edits cannot silently change submitted work.

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link, useLocation } from 'react-router-dom';
+import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -9,6 +9,7 @@ import {
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
   Droplets, ArrowLeft, Route, FlaskConical, Wind,
   Layers, Package, ExternalLink, Zap, Weight, Maximize2, LockKeyhole,
+  MoreHorizontal,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -39,6 +40,11 @@ function storeFlowViewMode(viewMode: FlowViewMode) {
   } catch {
     // Browser storage can be unavailable or disabled; the in-memory preference still works.
   }
+}
+
+function isEditingField(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement
+    && (target.matches('input, select, textarea, [contenteditable="true"]') || target.isContentEditable);
 }
 
 const FLOW_LOOP_FIELDS = ['flow_source', 'filtration', 'bio_degas_m3h', 'link_bio_degas'] as const;
@@ -309,8 +315,11 @@ function EditLinkModal({ link, systemId, onClose, onSaved }: {
 export default function DesignBookLSSDetail() {
   const { bookId, systemId } = useParams<{ bookId: string; systemId: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const user = useAuthStore(state => state.user);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const toolsMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: liveSystem, isLoading: sysLoading } = useQuery({
     queryKey: ['system', systemId],
@@ -384,6 +393,46 @@ export default function DesignBookLSSDetail() {
   useEffect(() => {
     storeFlowViewMode(flowViewMode);
   }, [flowViewMode]);
+
+  useEffect(() => {
+    const closeToolsMenu = () => setShowToolsMenu(false);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (showToolsMenu) {
+        closeToolsMenu();
+        return;
+      }
+      if (event.defaultPrevented || isEditingField(event.target)) return;
+      if (showAddExhibit) {
+        setShowAddExhibit(false);
+        return;
+      }
+      if (editLink) {
+        setEditLink(null);
+        return;
+      }
+      if (pendingUnlinkLink) {
+        cancelDeleteLink();
+        return;
+      }
+      navigate(-1);
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    if (!showToolsMenu) {
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!toolsMenuRef.current?.contains(event.target as Node)) closeToolsMenu();
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [editLink, navigate, pendingUnlinkLink, showAddExhibit, showToolsMenu]);
 
   const hasUnsavedFlowChanges = Boolean(
     system && flowForm && !flowDraftMatchesSystem(flowForm, system),
@@ -850,6 +899,60 @@ export default function DesignBookLSSDetail() {
         </div>
       )}
 
+      <div className="flex items-center justify-end gap-2">
+        <Link
+          to={`/design-books/${bookId}?tab=lss`}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl px-4 py-2.5 shadow-sm transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Life Support Systems
+        </Link>
+        <div className="relative" ref={toolsMenuRef}>
+          <button
+            type="button"
+            onClick={() => setShowToolsMenu(current => !current)}
+            aria-label="Open LSS tools"
+            aria-expanded={showToolsMenu}
+            className="inline-flex items-center justify-center w-10 h-10 text-stone-600 hover:text-stone-800 border border-stone-200 rounded-xl bg-white hover:bg-stone-50 transition-colors"
+          >
+            <MoreHorizontal className="w-5 h-5" />
+          </button>
+          {showToolsMenu && (
+            <div
+              className="absolute right-0 top-full mt-2 z-30 w-56 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl"
+              role="menu"
+              aria-label="LSS tools"
+            >
+              <Link
+                to={`/design-books/${bookId}?tab=lss`}
+                onClick={() => setShowToolsMenu(false)}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                role="menuitem"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Life Support Systems
+              </Link>
+              <div className="my-1 border-t border-stone-100" />
+              {[
+                ['system-configuration', 'System Configuration'],
+                ['linked-exhibits', 'Linked Exhibits'],
+                ['flow-route', 'Flow Route'],
+              ].map(([target, label]) => (
+                <a
+                  key={target}
+                  href={`#${target}`}
+                  onClick={() => setShowToolsMenu(false)}
+                  className="block rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-50"
+                  role="menuitem"
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <fieldset disabled={readOnly} className={`contents ${readOnly ? 'opacity-90' : ''}`}>
       {/* System Configuration selector */}
       {(() => {
@@ -858,7 +961,7 @@ export default function DesignBookLSSDetail() {
         const localUnitId = pendingUnitId || system.compact_unit_id || '';
 
         return (
-          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div id="system-configuration" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
             <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
               <Layers className="w-4 h-4 text-stone-500" />
               <span className="text-sm font-semibold text-stone-700">System Configuration</span>
@@ -1143,7 +1246,7 @@ export default function DesignBookLSSDetail() {
       </div>
 
       {/* Exhibit Links panel */}
-      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      <div id="linked-exhibits" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-blue-50/30">
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-blue-600" />
@@ -1439,7 +1542,7 @@ export default function DesignBookLSSDetail() {
         };
 
         return (
-          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div id="flow-route" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
 
             {/* ── Header ──────────────────────────────────────────────────── */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-violet-50/30">
@@ -1803,13 +1906,6 @@ export default function DesignBookLSSDetail() {
       )}
       </fieldset>
 
-      {/* Back link */}
-      <div>
-        <Link to={`/design-books/${bookId}?tab=lss`}
-          className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-blue-600 transition-colors">
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Life Support Systems
-        </Link>
-      </div>
     </div>
   );
 }

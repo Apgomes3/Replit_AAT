@@ -1,9 +1,9 @@
 ---
-name: Exhibit navigation
-description: Navigation convention for Design Book exhibit detail pages.
+name: Design Book detail navigation
+description: Navigation convention for Design Book exhibit and LSS detail pages.
 ---
 
-Back to Design Book is the primary exhibit escape action and should remain visually prominent. Exhibit-level tools belong in the adjacent accessible tools menu, which can also be opened from the exhibit header context menu. Keyboard Escape should close that menu first, then navigate back only when focus is not in an editable field.
+Back is the primary escape action on Design Book exhibit and LSS detail pages and should remain visually prominent. Page-level tools belong in an adjacent accessible menu. Keyboard Escape should close that menu first, then navigate back only when focus is not in an editable field.
 
 **Why:** Users need an obvious way out of a detail page, while a single tools surface gives future actions a predictable home without crowding the header.
 
