@@ -754,7 +754,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
           )}
 
           {/* Volumes */}
-          {(grossVol != null || opVol != null || surfaceArea != null) && (
+          {(grossVol != null || opVol != null || surfaceArea != null || isCust) && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide">Volumes</p>
@@ -766,7 +766,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                   {volFromInner ? 'inner dims' : 'outer dims'}
                 </span>
               </div>
-              <div className={`grid gap-3 ${surfaceArea != null ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className={`grid gap-3 ${surfaceArea != null || isCust ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <div className="bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
                   <div className="text-xs text-blue-500 mb-1">Gross Volume</div>
                   <div className="text-2xl font-bold text-blue-700 font-mono leading-none">{fmtVol(grossVol)}</div>
@@ -793,6 +793,13 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                     <div className="text-xs text-teal-600 mb-1">Water-Surface Area</div>
                     <div className="text-2xl font-bold text-teal-700 font-mono leading-none">{surfaceArea.toFixed(3)}</div>
                     <div className="text-xs text-teal-500 mt-0.5">m² footprint</div>
+                  </div>
+                )}
+                {surfaceArea == null && isCust && (
+                  <div className="bg-amber-50 rounded-xl px-4 py-3 border border-amber-200">
+                    <div className="text-xs text-amber-700 mb-1">Water-Surface Area</div>
+                    <div className="text-sm font-semibold text-amber-800">Not set</div>
+                    <div className="text-xs text-amber-600 mt-0.5">Edit tank to confirm footprint</div>
                   </div>
                 )}
               </div>

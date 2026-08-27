@@ -764,6 +764,7 @@ export default function ProjectDetail() {
       design_water_level_mm: tank.eff_water_level_mm ?? tank.design_water_level_mm ?? '',
       gross_volume_m3: tank.gross_volume_m3 ?? '',
       operating_volume_m3: tank.operating_volume_m3 ?? '',
+      surface_area_m2: tank.surface_area_m2 ?? '',
       primary_material: tank.primary_material || '',
       status: tank.status || 'Active',
       quantity: tank.quantity ?? 1,
@@ -801,6 +802,7 @@ export default function ProjectDetail() {
         design_water_level_mm: tank.eff_water_level_mm ?? tank.design_water_level_mm ?? '',
         gross_volume_m3: tank.gross_volume_m3 ?? '',
         operating_volume_m3: tank.operating_volume_m3 ?? '',
+        surface_area_m2: tank.surface_area_m2 ?? '',
         primary_material: tank.primary_material || '',
         status: tank.status || 'Active',
         quantity: tank.quantity ?? 1,
@@ -2832,7 +2834,7 @@ export default function ProjectDetail() {
 
       {editTankModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="font-semibold text-slate-800">Edit Tank</h3>
@@ -2896,7 +2898,7 @@ export default function ProjectDetail() {
                   ))}
                 </select>
               </div>
-              {editTankForm.shape_type === 'Custom' ? (
+              {(editTankForm.shape_type || '').toLowerCase() === 'custom' ? (
                 <>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Gross Volume (m³)</label>
@@ -2909,6 +2911,28 @@ export default function ProjectDetail() {
                     <input type="number" min={0} step="0.001" value={editTankForm.operating_volume_m3 ?? ''}
                       onChange={e => setEditTankForm((f: any) => ({ ...f, operating_volume_m3: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono" />
+                  </div>
+                  <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                    <label className="block text-xs font-medium text-amber-800 mb-1">Water-Surface Area (m²)</label>
+                    <div className="flex items-center gap-2">
+                      <input type="number" min={0} step="0.0001" value={editTankForm.surface_area_m2 ?? ''}
+                        placeholder="Enter confirmed footprint area"
+                        onChange={e => setEditTankForm((f: any) => ({ ...f, surface_area_m2: e.target.value }))}
+                        className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-mono" />
+                      {Number(editTankForm.length_mm) > 0 && Number(editTankForm.width_mm) > 0 && (
+                        <button type="button"
+                          onClick={() => setEditTankForm((f: any) => ({
+                            ...f,
+                            surface_area_m2: (Number(f.length_mm) * Number(f.width_mm) / 1e6).toFixed(4),
+                          }))}
+                          className="shrink-0 whitespace-nowrap rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-100">
+                          Use L × W
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-xs text-amber-700">
+                      Confirm the water footprint explicitly for Custom tanks.
+                    </p>
                   </div>
                 </>
               ) : (
@@ -2980,7 +3004,7 @@ export default function ProjectDetail() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
               </div>
               {(() => {
-                const isCustom = editTankForm.shape_type === 'Custom';
+                const isCustom = (editTankForm.shape_type || '').toLowerCase() === 'custom';
                 const cyl = editTankForm.shape_type === 'Cylindrical';
                 if (isCustom) {
                   const gv = parseFloat(editTankForm.gross_volume_m3);

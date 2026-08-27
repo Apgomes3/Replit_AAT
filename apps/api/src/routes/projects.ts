@@ -892,7 +892,7 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
   const t  = wall_thickness_mm ? parseFloat(wall_thickness_mm) : 0;
   const isCustom = (shape_type || '').toLowerCase() === 'custom';
   const isCyl    = (shape_type || '').toLowerCase() === 'cylindrical';
-  const requestedSurfaceArea = surface_area_m2 !== undefined && surface_area_m2 !== ''
+  const requestedSurfaceArea = surface_area_m2 != null && surface_area_m2 !== ''
     ? parseFloat(surface_area_m2)
     : null;
   if (requestedSurfaceArea != null && (!Number.isFinite(requestedSurfaceArea) || requestedSurfaceArea < 0)) {
