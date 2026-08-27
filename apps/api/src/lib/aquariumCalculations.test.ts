@@ -107,6 +107,24 @@ describe('aquarium engineering calculations', () => {
     );
   });
 
+  it('uses a confirmed custom-tank surface area for height-based displacement', () => {
+    const calculated = calculateExhibitHydraulics(
+      exhibit,
+      [{
+        id: 'custom',
+        tank_code: 'CUSTOM-1',
+        eff_shape: 'custom',
+        operating_volume_m3: 100,
+        surface_area_m2: 20,
+      }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      { substrate_height_mm: 100 },
+    );
+    expect(calculated.status).toBe('valid');
+    expect(calculated.inputs.substrate_volume_m3).toBe(2);
+    expect(calculated.results.operating_volume_m3).toBe(98);
+  });
+
   it('falls back to stored operating volume for a standard tank without dimensions', () => {
     const calculated = calculateExhibitHydraulics(
       exhibit,

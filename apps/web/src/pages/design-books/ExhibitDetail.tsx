@@ -564,6 +564,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
       inner_height_mm:       tank.inner_height_mm ?? '',
       gross_volume_m3:       tank.gross_volume_m3 ?? '',
       operating_volume_m3:   tank.operating_volume_m3 ?? tank.design_volume_m3 ?? '',
+      surface_area_m2:       tank.surface_area_m2 ?? '',
       status:                tank.status || 'Active',
     });
     setOverrideInner(!!(tank.inner_length_mm || tank.inner_width_mm || tank.inner_height_mm));
@@ -610,6 +611,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
         inner_height_mm:       overrideInner ? (form.inner_height_mm || null) : null,
         gross_volume_m3:       isCust ? (form.gross_volume_m3 || null) : undefined,
         operating_volume_m3:   isCust ? (form.operating_volume_m3 || null) : undefined,
+        surface_area_m2:        isCust ? (form.surface_area_m2 || null) : undefined,
         status:                form.status,
       });
       toast.success('Tank updated');
@@ -987,7 +989,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
 
         {/* Volumes */}
         {isCust ? (
-          <div>
+          <div className="space-y-4">
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Volumes (m³) — direct input</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1020,6 +1022,32 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
                   {preview?.op != null ? `${preview.op.toFixed(3)} m³` : '—'}
                 </div>
               </div>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3">
+              <label className="block text-xs font-medium text-amber-800 mb-1">Water-Surface Area (m²)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  placeholder="Enter confirmed footprint area"
+                  value={form.surface_area_m2}
+                  onChange={e => setF('surface_area_m2', e.target.value)}
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+                {form.length_mm && form.width_mm && (
+                  <button
+                    type="button"
+                    onClick={() => setF('surface_area_m2', (Number(form.length_mm) * Number(form.width_mm) / 1e6).toFixed(4))}
+                    className="shrink-0 whitespace-nowrap rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                  >
+                    Use L × W
+                  </button>
+                )}
+              </div>
+              <p className="mt-1.5 text-xs text-amber-700">
+                Custom geometry is not inferred automatically. Use L × W only if those dimensions represent the water footprint.
+              </p>
             </div>
           </div>
         )}

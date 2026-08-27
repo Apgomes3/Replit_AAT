@@ -882,6 +882,7 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
     primary_material, status, notes, quantity,
     gross_volume_m3, operating_volume_m3, system_id, exhibit_id,
     material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm,
+    surface_area_m2,
   } = req.body;
   if (!tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
   const l = length_mm ? parseFloat(length_mm) : null;
@@ -891,6 +892,12 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
   const t  = wall_thickness_mm ? parseFloat(wall_thickness_mm) : 0;
   const isCustom = (shape_type || '').toLowerCase() === 'custom';
   const isCyl    = (shape_type || '').toLowerCase() === 'cylindrical';
+  const requestedSurfaceArea = surface_area_m2 !== undefined && surface_area_m2 !== ''
+    ? parseFloat(surface_area_m2)
+    : null;
+  if (requestedSurfaceArea != null && (!Number.isFinite(requestedSurfaceArea) || requestedSurfaceArea < 0)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Surface area must be a non-negative number.' } });
+  }
   // Use inner dims when wall thickness is set (open-top: subtract one wall from height)
   const il = !isCyl && l && t ? l - 2 * t : l;
   const iw = w && t ? w - 2 * t : w;
@@ -905,7 +912,9 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (
     : isCyl
       ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
       : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
-  const surfaceAreaM2 = calculateWaterSurfaceAreaM2(shape_type, isCyl ? null : il, iw);
+  const surfaceAreaM2 = isCustom
+    ? (requestedSurfaceArea == null ? null : Math.round(requestedSurfaceArea * 1e4) / 1e4)
+    : calculateWaterSurfaceAreaM2(shape_type, isCyl ? null : il, iw);
   const qty = Math.max(1, parseInt(quantity) || 1);
   const hasExhibit = 'exhibit_id' in req.body;
   const result = await query(

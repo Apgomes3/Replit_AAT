@@ -39,6 +39,7 @@ type Tank = {
   product_code?: string;
   product_shape?: string; product_length_mm?: number; product_width_mm?: number; product_height_mm?: number;
   product_water_level_mm?: number; product_gross_volume_m3?: number; product_operating_volume_m3?: number;
+  surface_area_m2?: number;
   product_material?: string; status?: string;
 };
 
@@ -55,7 +56,7 @@ export default function ProjectDetail() {
   const [showNewTank, setShowNewTank] = useState(false);
   const addTankBtnRef = useRef<HTMLSpanElement | null>(null);
   const [addTankBtnVisible, setAddTankBtnVisible] = useState(true);
-  const [tankColWidths, setTankColWidths] = useState<number[]>([40, 100, 180, 60, 120, 110, 80, 80, 80, 80, 110, 110, 90, 90, 80]);
+  const [tankColWidths, setTankColWidths] = useState<number[]>([40, 100, 180, 60, 120, 110, 80, 80, 80, 80, 110, 110, 100, 90, 90, 80]);
   const tankResizeRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
   const startTankColResize = (e: React.MouseEvent, colIdx: number) => {
     e.preventDefault();
@@ -572,6 +573,7 @@ export default function ProjectDetail() {
     { key: 'eff_width_mm' as any, header: 'W (mm)', render: (r: any) => fmt(r.eff_width_mm) },
     { key: 'eff_height_mm' as any, header: 'H (mm)', render: (r: any) => fmt(r.eff_height_mm) },
     { key: 'eff_water_level_mm' as any, header: 'Water Level (mm)', render: (r: any) => fmt(r.eff_water_level_mm) },
+    { key: 'surface_area_m2' as any, header: 'Surface Area (m²)', render: (r: any) => r.surface_area_m2 != null ? <span className="font-mono text-xs">{parseFloat(r.surface_area_m2).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">not set</span> },
     { key: 'gross_volume_m3' as any, header: 'Gross Vol (m³)', render: (r: any) => (r as any).gross_volume_m3 != null ? <span className="font-mono text-xs">{parseFloat((r as any).gross_volume_m3).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">no dims</span> },
     { key: 'design_volume_m3' as any, header: 'Design Vol (m³)', render: (r: any) => (r as any).design_volume_m3 != null ? <span className="font-mono text-xs">{parseFloat((r as any).design_volume_m3).toFixed(4)}</span> : <span className="text-slate-300 text-xs italic">no dims</span> },
     { key: 'product_material' as any, header: 'Material', render: (r: any) => r.product_material ? <EntityCode code={r.product_material} /> : <span className="text-slate-300">—</span> },
