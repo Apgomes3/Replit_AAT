@@ -8,8 +8,8 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import { Plus, BookMarked, FolderOpen, X, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '../../store/authStore';
 
-const STATUSES = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
 const SEARCH_DEBOUNCE_MS = 300;
 
 const EMPTY_FORM = {
@@ -24,6 +24,8 @@ const EMPTY_FORM = {
 export default function DesignBooksList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const user = useAuthStore(state => state.user);
+  const canCreate = user?.role === 'admin' || user?.role === 'engineer';
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
@@ -93,12 +95,11 @@ export default function DesignBooksList() {
       <PageHeader
         title="Design Books"
         subtitle="Engineering design documentation for aquarium projects"
-        icon={<BookMarked className="w-6 h-6 text-blue-600" />}
-        actions={
+        actions={canCreate ? (
           <Button onClick={() => setShowNew(true)}>
             <Plus className="w-4 h-4 mr-1.5" /> New Design Book
           </Button>
-        }
+        ) : undefined}
       />
 
       {/* Search */}
@@ -134,12 +135,12 @@ export default function DesignBooksList() {
               <BookMarked className="w-10 h-10 text-stone-300 mx-auto mb-3" />
               <p className="text-stone-500 font-medium">No design books yet</p>
               <p className="text-stone-400 text-sm mt-1">Create one from scratch or link to an existing project</p>
-              <button
+              {canCreate && <button
                 onClick={() => setShowNew(true)}
                 className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
               >
                 <Plus className="w-4 h-4" /> New Design Book
-              </button>
+              </button>}
             </div>
           )
         ) : (
@@ -191,7 +192,7 @@ export default function DesignBooksList() {
       </div>
 
       {/* New Design Book Modal */}
-      {showNew && (
+      {showNew && canCreate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200">
@@ -268,15 +269,8 @@ export default function DesignBooksList() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1.5">Status</label>
-                <select
-                  value={form.status}
-                  onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                >
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                New Design Books start as <strong>Draft</strong>. Designers submit them through the review workflow when ready.
               </div>
             </div>
 

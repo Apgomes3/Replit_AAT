@@ -62,12 +62,25 @@ const tank = {
         (0, vitest_1.expect)(calculated.status).toBe('invalid');
         (0, vitest_1.expect)(calculated.reasons).toContain('Substrate height requires tank footprint dimensions; enter a direct substrate volume for custom tanks.');
     });
+    (0, vitest_1.it)('falls back to stored operating volume for a standard tank without dimensions', () => {
+        const calculated = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [{ id: 'legacy', eff_shape: 'rectangular', operating_volume_m3: 12.5 }], { target_turnover_rate: 3, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        (0, vitest_1.expect)(calculated.status).toBe('valid');
+        (0, vitest_1.expect)(calculated.inputs.tanks[0].source).toBe('stored');
+        (0, vitest_1.expect)(calculated.results.operating_volume_m3).toBe(12.5);
+        (0, vitest_1.expect)(calculated.results.total_return_flow_m3h).toBe(37.5);
+    });
     (0, vitest_1.it)('marks saved system flow as a manual override', () => {
         const exhibitCalculation = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
         const system = (0, aquariumCalculations_1.calculateSystemEngineering)({ id: 'sys-1', design_flow_m3h: 120, system_config: 'bespoke' }, [{ id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' }], [exhibitCalculation], null);
         (0, vitest_1.expect)(system.status).toBe('override');
         (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBe(108);
         (0, vitest_1.expect)(system.results.flow_override_m3h).toBe(120);
+    });
+    (0, vitest_1.it)('propagates invalid linked exhibit calculations to bespoke systems', () => {
+        const invalidExhibit = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [], { surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({ id: 'sys-invalid', system_config: 'bespoke' }, [{ id: 'link-invalid', exhibit_id: 'ex-1', exhibit_code: 'EX-01', link_type: 'Primary' }], [invalidExhibit], null);
+        (0, vitest_1.expect)(system.status).toBe('invalid');
+        (0, vitest_1.expect)(system.reasons[0]).toContain('Linked exhibit EX-01 is invalid');
     });
     (0, vitest_1.it)('evaluates catalog volume, flow, status and water-type limits', () => {
         const unsuitable = (0, aquariumCalculations_1.evaluateCompactUnit)({

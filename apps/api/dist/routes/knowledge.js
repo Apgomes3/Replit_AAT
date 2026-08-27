@@ -4,6 +4,7 @@ const express_1 = require("express");
 const db_1 = require("../db");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
+router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('knowledge'));
 // MATERIALS
 router.get('/materials', auth_1.authenticate, async (req, res) => {
     const q = req.query.q ? `%${req.query.q}%` : null;

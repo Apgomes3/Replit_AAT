@@ -25,8 +25,9 @@ const uploadImage = (0, multer_1.default)({ storage: imageStorage, limits: { fil
         cb(null, file.mimetype.startsWith('image/'));
     } });
 const router = (0, express_1.Router)();
+router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('pim'));
 // PRODUCT FAMILIES
-router.get('/product-families', auth_1.authenticate, async (req, res) => {
+router.get('/product-families', async (req, res) => {
     const result = await (0, db_1.query)('SELECT pf.*, COUNT(pm.id) as product_count FROM product_families pf LEFT JOIN product_masters pm ON pm.product_family_id=pf.id GROUP BY pf.id ORDER BY pf.product_family_code');
     res.json({ items: result.rows });
 });

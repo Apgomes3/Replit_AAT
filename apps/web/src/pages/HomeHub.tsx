@@ -33,6 +33,18 @@ const ICON_MAP: Record<string, any> = {
 const DEFAULT_HREFS = ['/graph', '/documents', '/search', '/knowledge/design-rules'];
 const LS_KEY = 'shark_quick_links';
 
+function moduleForHref(href: string): string | null {
+  if (href.startsWith('/products') || href === '/pim') return 'pim';
+  if (href.startsWith('/purchase-orders') || href === '/order-management') return 'orders';
+  if (href.startsWith('/projects') || href.startsWith('/systems') || href === '/project-management') return 'projects';
+  if (href.startsWith('/design-book') || href.startsWith('/lss-compact-units')) return 'design_books';
+  if (href.startsWith('/documents')) return 'documents';
+  if (href.startsWith('/knowledge')) return 'knowledge';
+  if (href.startsWith('/graph')) return 'graph';
+  if (href.startsWith('/admin')) return 'admin';
+  return null;
+}
+
 function loadSaved(): string[] {
   try {
     const v = localStorage.getItem(LS_KEY);
@@ -51,6 +63,11 @@ function loadSaved(): string[] {
 export default function HomeHub() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const canSeeModule = (key: string | null) => {
+    if (!key) return true;
+    if (key === 'admin') return user?.role === 'admin';
+    return user?.moduleAccess?.[key] !== 'hidden';
+  };
   const [pinnedHrefs, setPinnedHrefs] = useState<string[]>(loadSaved);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -87,11 +104,13 @@ export default function HomeHub() {
   const { data: posData } = useQuery({
     queryKey: ['po-summary'],
     queryFn: () => api.get('/purchase-orders?page_size=200').then(r => r.data),
+    enabled: canSeeModule('orders'),
   });
 
   const { data: booksData } = useQuery({
     queryKey: ['design-books-summary'],
     queryFn: () => api.get('/design-books').then(r => r.data),
+    enabled: canSeeModule('design_books'),
   });
 
   const poTotal = posData?.total ?? posData?.items?.length ?? 0;
@@ -189,11 +208,15 @@ export default function HomeHub() {
     },
   ];
 
+  const visibleModules = modules.filter(module => canSeeModule(
+    module.id === 'design-book-engine' ? 'design_books' : module.id,
+  ));
+  const visibleQuickLinks = ALL_QUICK_LINKS.filter(link => canSeeModule(moduleForHref(link.href)));
   const pinnedLinks = pinnedHrefs
-    .map(href => ALL_QUICK_LINKS.find(l => l.href === href))
+    .map(href => visibleQuickLinks.find(l => l.href === href))
     .filter(Boolean) as typeof ALL_QUICK_LINKS;
 
-  const unpinned = ALL_QUICK_LINKS.filter(l => !pinnedHrefs.includes(l.href));
+  const unpinned = visibleQuickLinks.filter(l => !pinnedHrefs.includes(l.href));
 
   return (
     <div className="min-h-full" style={{ background: 'linear-gradient(160deg, #fafaf9 0%, #f5f3f0 100%)' }}>
@@ -210,7 +233,7 @@ export default function HomeHub() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-          {modules.map((mod, i) => {
+          {visibleModules.map((mod, i) => {
             const Icon = mod.icon;
             if (mod.comingSoon) {
               return (

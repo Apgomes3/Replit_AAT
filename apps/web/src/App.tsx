@@ -58,6 +58,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ModuleGuard({ moduleKey, children }: { moduleKey: string; children: React.ReactNode }) {
+  const user = useAuthStore(state => state.user);
+  if (user?.moduleAccess?.[moduleKey] === 'hidden') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -70,28 +76,28 @@ export default function App() {
           <Route path="/" element={<AuthGuard><Shell /></AuthGuard>}>
             <Route index element={<HomeHub />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="pim" element={<PIMDashboard />} />
-             <Route path="pim/products" element={<Navigate to="/products/masters" replace />} />
-             <Route path="pim/components" element={<Navigate to="/products/components" replace />} />
-            <Route path="order-management" element={<OrderManagementDashboard />} />
-            <Route path="project-management" element={<ProjectManagementDashboard />} />
-            <Route path="projects" element={<ProjectsList />} />
-            <Route path="projects/:id" element={<ProjectDetail />} />
-            <Route path="systems/:id" element={<SystemDetail />} />
-            <Route path="products" element={<ProductFamiliesList />} />
-            <Route path="products/masters" element={<ProductMastersList />} />
-            <Route path="products/masters/:id" element={<ProductMasterDetail />} />
-            <Route path="products/components" element={<ComponentsList />} />
-            <Route path="products/components/:id" element={<ComponentDetail />} />
-            <Route path="products/piping" element={<PipingList />} />
-            <Route path="products/tanks" element={<TanksList />} />
-            <Route path="products/drawings" element={<DrawingsLibrary />} />
-            <Route path="knowledge/materials" element={<MaterialsList />} />
-            <Route path="knowledge/specifications" element={<SpecificationsList />} />
-            <Route path="knowledge/design-rules" element={<DesignRulesList />} />
-            <Route path="documents" element={<DocumentsList />} />
-            <Route path="documents/:id" element={<DocumentDetail />} />
-            <Route path="graph" element={<GraphExplorer />} />
+            <Route path="pim" element={<ModuleGuard moduleKey="pim"><PIMDashboard /></ModuleGuard>} />
+             <Route path="pim/products" element={<ModuleGuard moduleKey="pim"><Navigate to="/products/masters" replace /></ModuleGuard>} />
+             <Route path="pim/components" element={<ModuleGuard moduleKey="pim"><Navigate to="/products/components" replace /></ModuleGuard>} />
+            <Route path="order-management" element={<ModuleGuard moduleKey="orders"><OrderManagementDashboard /></ModuleGuard>} />
+            <Route path="project-management" element={<ModuleGuard moduleKey="projects"><ProjectManagementDashboard /></ModuleGuard>} />
+            <Route path="projects" element={<ModuleGuard moduleKey="projects"><ProjectsList /></ModuleGuard>} />
+            <Route path="projects/:id" element={<ModuleGuard moduleKey="projects"><ProjectDetail /></ModuleGuard>} />
+            <Route path="systems/:id" element={<ModuleGuard moduleKey="projects"><SystemDetail /></ModuleGuard>} />
+            <Route path="products" element={<ModuleGuard moduleKey="pim"><ProductFamiliesList /></ModuleGuard>} />
+            <Route path="products/masters" element={<ModuleGuard moduleKey="pim"><ProductMastersList /></ModuleGuard>} />
+            <Route path="products/masters/:id" element={<ModuleGuard moduleKey="pim"><ProductMasterDetail /></ModuleGuard>} />
+            <Route path="products/components" element={<ModuleGuard moduleKey="pim"><ComponentsList /></ModuleGuard>} />
+            <Route path="products/components/:id" element={<ModuleGuard moduleKey="pim"><ComponentDetail /></ModuleGuard>} />
+            <Route path="products/piping" element={<ModuleGuard moduleKey="pim"><PipingList /></ModuleGuard>} />
+            <Route path="products/tanks" element={<ModuleGuard moduleKey="pim"><TanksList /></ModuleGuard>} />
+            <Route path="products/drawings" element={<ModuleGuard moduleKey="pim"><DrawingsLibrary /></ModuleGuard>} />
+            <Route path="knowledge/materials" element={<ModuleGuard moduleKey="knowledge"><MaterialsList /></ModuleGuard>} />
+            <Route path="knowledge/specifications" element={<ModuleGuard moduleKey="knowledge"><SpecificationsList /></ModuleGuard>} />
+            <Route path="knowledge/design-rules" element={<ModuleGuard moduleKey="knowledge"><DesignRulesList /></ModuleGuard>} />
+            <Route path="documents" element={<ModuleGuard moduleKey="documents"><DocumentsList /></ModuleGuard>} />
+            <Route path="documents/:id" element={<ModuleGuard moduleKey="documents"><DocumentDetail /></ModuleGuard>} />
+            <Route path="graph" element={<ModuleGuard moduleKey="graph"><GraphExplorer /></ModuleGuard>} />
             <Route path="search" element={<SearchPage />} />
             <Route path="admin/users" element={<AdminUsers />} />
              <Route path="admin" element={<Navigate to="/admin/users" replace />} />
@@ -103,14 +109,14 @@ export default function App() {
             <Route path="admin/audit-log" element={<AdminAuditLog />} />
             <Route path="admin/po-stage-roles" element={<AdminPOStageRoles />} />
             <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
-            <Route path="purchase-orders" element={<PurchaseOrdersList />} />
-            <Route path="purchase-orders/:id" element={<PurchaseOrderDetail />} />
-            <Route path="design-book-engine" element={<DesignBookEngineDashboard />} />
-            <Route path="design-books" element={<DesignBooksList />} />
-            <Route path="design-books/:id" element={<DesignBookDetail />} />
-            <Route path="design-books/:bookId/exhibits/:exhibitId" element={<ExhibitDetail />} />
-            <Route path="design-books/:bookId/lss/:systemId" element={<DesignBookLSSDetail />} />
-            <Route path="lss-compact-units" element={<LSSCompactUnitsCatalog />} />
+            <Route path="purchase-orders" element={<ModuleGuard moduleKey="orders"><PurchaseOrdersList /></ModuleGuard>} />
+            <Route path="purchase-orders/:id" element={<ModuleGuard moduleKey="orders"><PurchaseOrderDetail /></ModuleGuard>} />
+            <Route path="design-book-engine" element={<ModuleGuard moduleKey="design_books"><DesignBookEngineDashboard /></ModuleGuard>} />
+            <Route path="design-books" element={<ModuleGuard moduleKey="design_books"><DesignBooksList /></ModuleGuard>} />
+            <Route path="design-books/:id" element={<ModuleGuard moduleKey="design_books"><DesignBookDetail /></ModuleGuard>} />
+            <Route path="design-books/:bookId/exhibits/:exhibitId" element={<ModuleGuard moduleKey="design_books"><ExhibitDetail /></ModuleGuard>} />
+            <Route path="design-books/:bookId/lss/:systemId" element={<ModuleGuard moduleKey="design_books"><DesignBookLSSDetail /></ModuleGuard>} />
+            <Route path="lss-compact-units" element={<ModuleGuard moduleKey="design_books"><LSSCompactUnitsCatalog /></ModuleGuard>} />
           </Route>
         </Routes>
       </BrowserRouter>

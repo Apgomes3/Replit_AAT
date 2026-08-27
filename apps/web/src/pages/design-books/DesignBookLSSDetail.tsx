@@ -8,9 +8,10 @@ import {
   ChevronRight, Activity, Pencil, Save, X, Plus, Trash2,
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
   Droplets, ArrowLeft, Route, FlaskConical, Wind,
-  Layers, Package, ExternalLink, Zap, Weight, Maximize2,
+  Layers, Package, ExternalLink, Zap, Weight, Maximize2, LockKeyhole,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '../../store/authStore';
 
 const SYSTEM_TYPES = [
   'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
@@ -309,8 +310,9 @@ export default function DesignBookLSSDetail() {
   const { bookId, systemId } = useParams<{ bookId: string; systemId: string }>();
   const location = useLocation();
   const qc = useQueryClient();
+  const user = useAuthStore(state => state.user);
 
-  const { data: system, isLoading: sysLoading } = useQuery({
+  const { data: liveSystem, isLoading: sysLoading } = useQuery({
     queryKey: ['system', systemId],
     queryFn: () => api.get(`/systems/${systemId}`).then(r => r.data),
   });
@@ -318,7 +320,7 @@ export default function DesignBookLSSDetail() {
     queryKey: ['design-book', bookId],
     queryFn: () => api.get(`/design-books/${bookId}`).then(r => r.data),
   });
-  const { data: links = [], isLoading: linksLoading } = useQuery({
+  const { data: liveLinks = [], isLoading: linksLoading } = useQuery({
     queryKey: ['system-exhibit-links', systemId],
     queryFn: () => api.get(`/systems/${systemId}/exhibit-links`).then(r => r.data),
   });
@@ -326,6 +328,13 @@ export default function DesignBookLSSDetail() {
     queryKey: ['lss-compact-units'],
     queryFn: () => api.get('/lss-compact-units').then(r => r.data),
   });
+  const usesFrozenPackage = !!book && !['Draft', 'In Progress'].includes(book.status);
+  const system = usesFrozenPackage
+    ? (book.systems || []).find((item: any) => item.id === systemId)
+    : liveSystem;
+  const links = usesFrozenPackage
+    ? (book.system_links || []).filter((item: any) => item.system_id === systemId)
+    : liveLinks;
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['system', systemId] });
@@ -776,6 +785,8 @@ export default function DesignBookLSSDetail() {
   const exhibits: any[] = book?.exhibits || [];
   const linkedExhibitIds = new Set((links as any[]).map((l: any) => l.exhibit_id));
   const availableExhibits = exhibits.filter((ex: any) => !linkedExhibitIds.has(ex.id));
+  const canEdit = user?.role === 'admin' || user?.role === 'engineer';
+  const readOnly = !canEdit || (!!book && !['Draft', 'In Progress'].includes(book.status));
 
   const systemFlow = parseFloat(system.design_flow_m3h) || 0;
   const systemCalculation = book?.engineering_calculations?.systems?.find(
@@ -799,7 +810,7 @@ export default function DesignBookLSSDetail() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
       {/* Modals */}
-      {showAddExhibit && (
+      {showAddExhibit && !readOnly && (
         <AddExhibitModal
           systemId={systemId!}
           availableExhibits={availableExhibits}
@@ -807,7 +818,7 @@ export default function DesignBookLSSDetail() {
           onAdded={() => { setShowAddExhibit(false); refresh(); }}
         />
       )}
-      {editLink && (
+      {editLink && !readOnly && (
         <EditLinkModal
           link={editLink}
           systemId={systemId!}
@@ -832,7 +843,14 @@ export default function DesignBookLSSDetail() {
         <ChevronRight className="w-3.5 h-3.5" />
         <span className="text-stone-800 font-medium">{system.system_code}</span>
       </nav>
+      {readOnly && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 flex items-center gap-2">
+          <LockKeyhole className="w-4 h-4 shrink-0" />
+          Released revision — LSS configuration and Flow Route data are read-only.
+        </div>
+      )}
 
+      <fieldset disabled={readOnly} className={`contents ${readOnly ? 'opacity-90' : ''}`}>
       {/* System Configuration selector */}
       {(() => {
         const cfg = system.system_config || 'bespoke';
@@ -1769,7 +1787,7 @@ export default function DesignBookLSSDetail() {
         );
       })()}
 
-      {pendingUnlinkLink && (
+      {pendingUnlinkLink && !readOnly && (
         <ConfirmDialog
           title={`Remove exhibit link from ${system.system_name}?`}
           message={`This will unlink ${pendingUnlinkLink.exhibit_code} — ${pendingUnlinkLink.exhibit_name} from ${system.system_name}. Linked flow calculations and turnover values may change after the link is removed.`}
@@ -1783,6 +1801,7 @@ export default function DesignBookLSSDetail() {
           onCancel={cancelDeleteLink}
         />
       )}
+      </fieldset>
 
       {/* Back link */}
       <div>

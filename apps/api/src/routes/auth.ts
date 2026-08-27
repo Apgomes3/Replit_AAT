@@ -4,8 +4,24 @@ import jwt from 'jsonwebtoken';
 import { query } from '../db';
 import { authenticate, AuthRequest, JWT_SECRET } from '../middleware/auth';
 import { logAudit } from '../db/audit';
+import { MODULE_ACCESS_KEYS, ModuleAccessKey, ModuleAccessLevel } from '../lib/moduleAccess';
 
 const router = Router();
+
+async function getModuleAccess(role: string): Promise<Record<ModuleAccessKey, ModuleAccessLevel>> {
+  const result = await query(
+    `SELECT rma.module_key, rma.access_level
+     FROM role_module_access rma
+     JOIN roles r ON r.id=rma.role_id
+     WHERE r.name=$1`,
+    [role],
+  );
+  const access = Object.fromEntries(MODULE_ACCESS_KEYS.map(key => [key, 'manage'])) as Record<ModuleAccessKey, ModuleAccessLevel>;
+  for (const row of result.rows) {
+    if (MODULE_ACCESS_KEYS.includes(row.module_key)) access[row.module_key as ModuleAccessKey] = row.access_level;
+  }
+  return access;
+}
 
 router.post('/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
@@ -19,18 +35,19 @@ router.post('/login', async (req: Request, res: Response) => {
   if (!valid) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } });
 
   await query('UPDATE users SET last_login_at=NOW() WHERE id=$1', [user.id]);
+  const module_access = await getModuleAccess(user.role);
 
   const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
   res.json({
     token,
-    user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role }
+    user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, module_access }
   });
 });
 
 router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query('SELECT id, email, first_name, last_name, role, can_see_all_pos, created_at FROM users WHERE id = $1', [req.user!.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
-  res.json(result.rows[0]);
+  res.json({ ...result.rows[0], module_access: await getModuleAccess(result.rows[0].role) });
 });
 
 router.get('/dashboard-prefs', authenticate, async (req: AuthRequest, res: Response) => {

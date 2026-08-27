@@ -7,9 +7,10 @@ import {
   Trash2, Check, CheckCircle2, Layers, FolderOpen, LinkIcon,
   SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
   ArrowUpToLine, Wind, BookOpen, Mountain, Palette, Calculator,
-  ArrowRight, ArrowLeft, AlertTriangle, MoreHorizontal,
+  ArrowRight, ArrowLeft, AlertTriangle, MoreHorizontal, LockKeyhole,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '../../store/authStore';
 import {
   calculateBazinWeir,
   calculateFrancisWeir,
@@ -2413,6 +2414,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
 export default function ExhibitDetail() {
   const { bookId, exhibitId } = useParams<{ bookId: string; exhibitId: string }>();
   const qc = useQueryClient();
+  const user = useAuthStore(state => state.user);
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const activeTab: ExhibitTab = isExhibitTab(tabParam) ? tabParam : 'tank';
@@ -2490,6 +2492,8 @@ export default function ExhibitDetail() {
     (calculation: any) => calculation.inputs?.exhibit_id === exhibitId,
   ) ?? null;
   const unassigned = tanks.filter((t: any) => !t.exhibit_id);
+  const canEdit = user?.role === 'admin' || user?.role === 'engineer';
+  const readOnly = !canEdit || !['Draft', 'In Progress'].includes(book.status);
 
   const TABS = [
     { id: 'tank',    label: 'Tank',         icon: <Layers     className="w-3.5 h-3.5" /> },
@@ -2510,6 +2514,12 @@ export default function ExhibitDetail() {
         <ChevronRight className="w-3.5 h-3.5" />
         <span className="text-stone-700 font-medium">{exhibit.exhibit_name}</span>
       </nav>
+      {readOnly && (
+        <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 flex items-center gap-2">
+          <LockKeyhole className="w-4 h-4 shrink-0" />
+          Released revision — exhibit engineering data is read-only.
+        </div>
+      )}
 
       {/* Exhibit Header */}
       <div
@@ -2643,6 +2653,7 @@ export default function ExhibitDetail() {
       </div>
 
       {/* Tab Content */}
+      <fieldset disabled={readOnly} className={readOnly ? 'opacity-90' : ''}>
       {activeTab === 'tank' && (
         <div className="space-y-5">
           {tank ? (
@@ -2704,6 +2715,7 @@ export default function ExhibitDetail() {
           onRefresh={refresh}
         />
       )}
+      </fieldset>
     </div>
   );
 }

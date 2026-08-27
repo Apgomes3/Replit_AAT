@@ -1,8 +1,9 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
 
 const router = Router();
+router.use(authenticate, requireModuleAccess('knowledge'));
 
 // MATERIALS
 router.get('/materials', authenticate, async (req: AuthRequest, res: Response) => {

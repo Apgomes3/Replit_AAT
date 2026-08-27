@@ -20,6 +20,7 @@ const docStorage = multer_1.default.diskStorage({
 });
 const uploadDoc = (0, multer_1.default)({ storage: docStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 const router = (0, express_1.Router)();
+router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('orders'));
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
 function humanizeStatus(status) {
     if (!status)

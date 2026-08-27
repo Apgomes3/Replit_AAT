@@ -86,11 +86,19 @@ function calculateTankOperatingVolume(tank) {
         calculated = innerLength * innerWidth * operatingHeight / 1e9;
         formula = 'inner length × inner width × operating water height ÷ 1,000,000,000';
     }
+    if (calculated == null) {
+        const stored = positiveOrNull(tank?.operating_volume_m3 ?? tank?.design_volume_m3);
+        if (stored != null) {
+            calculated = stored;
+            footprintArea = null;
+            formula = 'Stored operating volume (dimensional calculation unavailable)';
+        }
+    }
     if (calculated != null && calculated > 0) {
         return {
             value_m3: (0, exports.roundEngineering)(calculated, exports.VOLUME_DECIMALS),
             footprint_area_m2: (0, exports.roundEngineering)(footprintArea, exports.VOLUME_DECIMALS),
-            source: shape === 'custom' ? 'stored' : 'dimensions',
+            source: footprintArea == null ? 'stored' : 'dimensions',
             formula,
             inputs: {
                 shape: shape || null,
@@ -288,6 +296,16 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
     const storedFlowDiffers = savedFlow != null && requiredFlow > 0 &&
         Math.abs(savedFlow - requiredFlow) > 0.005;
     const reasons = [];
+    for (const link of linked) {
+        const linkedCalculation = exhibitCalculations.find(item => item.inputs.exhibit_id === link.exhibit_id);
+        if (!linkedCalculation) {
+            reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} has no engineering calculation.`);
+        }
+        else if (linkedCalculation.status === 'invalid') {
+            const detail = linkedCalculation.reasons?.join(' ') || 'Invalid engineering inputs.';
+            reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} is invalid: ${detail}`);
+        }
+    }
     if (Math.abs(allocatedFlow - requiredFlow) > 0.005 && requiredFlow > 0) {
         reasons.push('Exhibit allocations do not equal the calculated required system flow.');
     }

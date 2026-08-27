@@ -65,11 +65,13 @@ function VersionCard({
   isLatest,
   onRestore,
   restoring,
+  readOnly,
 }: {
   ver: any;
   isLatest: boolean;
   onRestore: (ver: any) => void;
   restoring: boolean;
+  readOnly: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -128,15 +130,17 @@ function VersionCard({
               {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           )}
-          <button
-            onClick={() => onRestore(ver)}
-            disabled={restoring}
-            className="flex items-center gap-1.5 text-xs text-stone-600 hover:text-violet-700 border border-stone-200 hover:border-violet-300 bg-white px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 font-medium"
-            title="Restore this version"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            {restoring ? 'Restoring…' : 'Restore'}
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => onRestore(ver)}
+              disabled={restoring}
+              className="flex items-center gap-1.5 text-xs text-stone-600 hover:text-violet-700 border border-stone-200 hover:border-violet-300 bg-white px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 font-medium"
+              title="Restore this version"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              {restoring ? 'Restoring…' : 'Restore'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -146,9 +150,11 @@ function VersionCard({
 export default function VersionsTab({
   bookId,
   onBookRefresh,
+  readOnly = false,
 }: {
   bookId: string;
   onBookRefresh: () => void;
+  readOnly?: boolean;
 }) {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -259,7 +265,7 @@ export default function VersionsTab({
             </span>
           )}
         </div>
-        {!showCreate && (
+        {!readOnly && !showCreate && (
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-1.5 text-sm text-violet-700 hover:text-violet-900 border border-violet-200 bg-white hover:bg-violet-50 px-3 py-1.5 rounded-lg transition-colors font-medium"
@@ -358,6 +364,7 @@ export default function VersionsTab({
               isLatest={idx === 0}
               onRestore={v => setConfirmVer(v)}
               restoring={restoringId === ver.id}
+              readOnly={readOnly}
             />
           ))}
         </div>

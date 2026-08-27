@@ -1163,8 +1163,8 @@ export default function ProjectDetail() {
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Country</label>
-                    <CountryCombobox value={projectForm.country} onChange={v => setProjectForm((f: any) => ({ ...f, country: v }))} />
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Country or Region</label>
+                    <CountryCombobox label="country or region" value={projectForm.country} onChange={v => setProjectForm((f: any) => ({ ...f, country: v }))} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">City</label>

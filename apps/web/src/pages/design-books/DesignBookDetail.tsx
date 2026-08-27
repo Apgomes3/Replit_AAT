@@ -10,16 +10,19 @@ import {
   Droplets, ThermometerSun, FlaskConical, Layers,
   ChevronDown, ChevronUp, Waves, AlertCircle,
   Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2,
-  LinkIcon, SquarePlus, Check, CheckCircle2, RotateCcw, Calculator
+  LinkIcon, SquarePlus, Check, CheckCircle2, RotateCcw, Calculator,
+  ShieldCheck, AlertTriangle, LockKeyhole, GitFork, ExternalLink,
+  Send, UserCheck, ClipboardList, CalendarDays, Users
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import VersionsTab from './VersionsTab';
+import { useAuthStore } from '../../store/authStore';
+import ActivityLog from '../../components/ui/ActivityLog';
 
-const STATUSES = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
-type Tab = 'exhibits' | 'lss' | 'piping' | 'versions';
+type Tab = 'exhibits' | 'lss' | 'piping' | 'review' | 'versions';
 
 function isDesignBookTab(value: string | null): value is Tab {
-  return value === 'exhibits' || value === 'lss' || value === 'piping' || value === 'versions';
+  return value === 'exhibits' || value === 'lss' || value === 'piping' || value === 'review' || value === 'versions';
 }
 
 function WaterTypeBadge({ type }: { type?: string }) {
@@ -89,6 +92,456 @@ function fmtVol(v?: number | null) {
 function fmtNum(v?: number | null, decimals = 1) {
   if (v == null || v === undefined) return <span className="text-stone-400">—</span>;
   return <span className="font-mono text-xs">{parseFloat(String(v)).toFixed(decimals)}</span>;
+}
+
+function ReleaseModal({ book, onClose, onReleased }: {
+  book: any;
+  onClose: () => void;
+  onReleased: () => void;
+}) {
+  const [form, setForm] = useState({
+    revision: book.revision || '',
+    included_scope: Array.isArray(book.project_scopes) ? book.project_scopes : [],
+    release_notes: '',
+  });
+  const [releasing, setReleasing] = useState(false);
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['design-book-release-preflight', book.id],
+    queryFn: () => api.get(`/design-books/${book.id}/release-preflight`).then(r => r.data),
+  });
+  const checklist: any[] = data?.checklist || [];
+  const blockers: any[] = data?.blockers || [];
+  const canRelease = form.revision.trim() === String(book.revision || '').trim() &&
+    form.included_scope.length > 0 &&
+    form.release_notes.trim().length > 0 &&
+    blockers.length === 0;
+
+  const toggleScope = (scope: string) => {
+    setForm(current => ({
+      ...current,
+      included_scope: current.included_scope.includes(scope)
+        ? current.included_scope.filter(item => item !== scope)
+        : [...current.included_scope, scope],
+    }));
+  };
+
+  const handleRelease = async () => {
+    if (!canRelease) return;
+    setReleasing(true);
+    try {
+      await api.post(`/design-books/${book.id}/release`, form);
+      toast.success(`Design Book Rev ${book.revision} released`);
+      onReleased();
+    } catch (err: any) {
+      const message = err?.response?.data?.error?.message || 'Release failed';
+      toast.error(message);
+      if (err?.response?.status === 422) refetch();
+    } finally {
+      setReleasing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5 text-emerald-700" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-stone-900">Release Design Book</h2>
+              <p className="text-xs text-stone-500">Run engineering checks and freeze this revision as an accountable record.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-600"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-6 overflow-y-auto space-y-5">
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Pre-release checklist</h3>
+              {!isLoading && (
+                <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                  blockers.length ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {blockers.length ? `${blockers.length} blocker${blockers.length === 1 ? '' : 's'}` : 'Ready to release'}
+                </span>
+              )}
+            </div>
+            <div className="border border-stone-200 rounded-xl divide-y divide-stone-100 overflow-hidden">
+              {isLoading ? (
+                <div className="p-6 text-sm text-stone-400 text-center">Running engineering checks…</div>
+              ) : checklist.map(check => {
+                const passed = check.status === 'pass';
+                const blocked = check.status === 'blocked';
+                return (
+                  <div key={check.key} className="px-4 py-3 flex items-start gap-3">
+                    {passed
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                      : <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${blocked ? 'text-red-600' : 'text-amber-500'}`} />}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-stone-800">{check.label}</span>
+                        {!passed && (
+                          <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
+                            blocked ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>{check.severity}</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-stone-500 mt-0.5">{check.message}</p>
+                    </div>
+                    {!passed && check.href && (
+                      <Link to={check.href} onClick={onClose} className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0">
+                        Fix <ExternalLink className="w-3 h-3" />
+                      </Link>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Confirm revision</label>
+              <input
+                value={form.revision}
+                onChange={e => setForm(current => ({ ...current, revision: e.target.value }))}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              />
+              {form.revision.trim() !== String(book.revision || '').trim() && (
+                <p className="text-xs text-red-600 mt-1">Enter the current revision: {book.revision}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Included scope</label>
+              <div className="flex flex-wrap gap-1.5 min-h-10 border border-stone-200 rounded-lg p-2">
+                {(book.project_scopes || []).map((scope: string) => (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() => toggleScope(scope)}
+                    className={`text-xs px-2 py-1 rounded-md border ${
+                      form.included_scope.includes(scope)
+                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                        : 'bg-white border-stone-200 text-stone-500'
+                    }`}
+                  >
+                    {form.included_scope.includes(scope) && <Check className="w-3 h-3 inline mr-1" />}
+                    {scope}
+                  </button>
+                ))}
+                {(book.project_scopes || []).length === 0 && <span className="text-xs text-red-600">No project scope defined</span>}
+              </div>
+            </div>
+          </section>
+
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1">Release notes</label>
+            <textarea
+              rows={3}
+              value={form.release_notes}
+              onChange={e => setForm(current => ({ ...current, release_notes: e.target.value }))}
+              placeholder="Record what is included, key decisions, and the purpose of this release…"
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none"
+            />
+          </div>
+
+        </div>
+
+        <div className="px-6 py-4 border-t border-stone-200 bg-stone-50 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-stone-600 hover:text-stone-800">Cancel</button>
+          <button
+            onClick={handleRelease}
+            disabled={!canRelease || releasing || isLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-40"
+          >
+            <LockKeyhole className="w-4 h-4" />
+            {releasing ? 'Releasing…' : `Release Rev ${book.revision}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewRevisionModal({ book, onClose }: { book: any; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({
+    revision: '',
+    book_code: `${book.book_code}-`,
+    book_title: book.book_title,
+    notes: '',
+  });
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async () => {
+    if (!form.revision.trim() || !form.book_code.trim()) return toast.error('Revision and Design Book code are required');
+    setCreating(true);
+    try {
+      const result = await api.post(`/design-books/${book.id}/revisions`, form);
+      toast.success(`Revision ${form.revision.trim()} created`);
+      navigate(`/design-books/${result.data.id}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to create revision');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between">
+          <div className="flex items-center gap-2"><GitFork className="w-5 h-5 text-violet-600" /><h2 className="font-semibold">Create New Revision</h2></div>
+          <button onClick={onClose}><X className="w-5 h-5 text-stone-400" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-stone-600">The released package stays unchanged. A new Draft Design Book will copy its species, hydraulics, and theming data.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">New revision *</label>
+              <input value={form.revision} onChange={e => setForm(current => ({ ...current, revision: e.target.value }))} placeholder="B"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Unique book code *</label>
+              <input value={form.book_code} onChange={e => setForm(current => ({ ...current, book_code: e.target.value }))} placeholder="DB-001-B"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1">Title</label>
+            <input value={form.book_title} onChange={e => setForm(current => ({ ...current, book_title: e.target.value }))}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1">Revision notes</label>
+            <textarea rows={2} value={form.notes} onChange={e => setForm(current => ({ ...current, notes: e.target.value }))}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm resize-none" />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-stone-100 bg-stone-50 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-stone-600">Cancel</button>
+          <button onClick={handleCreate} disabled={creating} className="px-4 py-2 text-sm text-white bg-violet-600 hover:bg-violet-700 rounded-lg font-medium disabled:opacity-50">
+            {creating ? 'Creating…' : 'Create Draft Revision'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HandoverReportModal({ bookId, onClose, onSaved }: {
+  bookId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    meeting_date: new Date().toISOString().slice(0, 10),
+    title: 'Design–Engineering Review Handover',
+    attendees: '',
+    purpose: '',
+    discussion_summary: '',
+    decisions: '',
+    action_items: '',
+    open_items: '',
+    acceptance_notes: '',
+  });
+  const set = (key: string, value: string) => setForm(current => ({ ...current, [key]: value }));
+  const save = async () => {
+    if (!form.meeting_date || !form.title.trim()) return toast.error('Meeting date and title are required');
+    setSaving(true);
+    try {
+      await api.post(`/design-books/${bookId}/review-handovers`, form);
+      toast.success('Handover report saved');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to save handover report');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const textarea = (key: keyof typeof form, label: string, placeholder: string) => (
+    <div>
+      <label className="block text-xs font-medium text-stone-600 mb-1">{label}</label>
+      <textarea
+        rows={2}
+        value={form[key]}
+        onChange={event => set(key, event.target.value)}
+        placeholder={placeholder}
+        className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+      />
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <ClipboardList className="w-5 h-5 text-violet-600" />
+            <div>
+              <h2 className="font-semibold text-stone-900">Review Handover Report</h2>
+              <p className="text-xs text-stone-500">Optional meeting record between design and engineering.</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-stone-400" /></button>
+        </div>
+        <div className="p-6 overflow-y-auto space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Meeting date *</label>
+              <input type="date" value={form.meeting_date} onChange={event => set('meeting_date', event.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Report title *</label>
+              <input value={form.title} onChange={event => set('title', event.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1">Attendees</label>
+            <input value={form.attendees} onChange={event => set('attendees', event.target.value)}
+              placeholder="Names separated by commas"
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          {textarea('purpose', 'Meeting purpose', 'What was this handover intended to confirm?')}
+          {textarea('discussion_summary', 'Discussion summary', 'Key design and engineering topics reviewed…')}
+          {textarea('decisions', 'Decisions', 'Agreed decisions and approvals…')}
+          {textarea('action_items', 'Action items', 'Owner, action, and due date for each follow-up…')}
+          {textarea('open_items', 'Open items / risks', 'Anything unresolved at the end of the meeting…')}
+          {textarea('acceptance_notes', 'Handover acceptance notes', 'Scope accepted and any conditions…')}
+        </div>
+        <div className="px-6 py-4 border-t border-stone-200 bg-stone-50 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-stone-600">Cancel</button>
+          <button onClick={save} disabled={saving}
+            className="px-4 py-2 text-sm bg-violet-600 text-white rounded-lg font-medium hover:bg-violet-700 disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save Report'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewWorkflowTab({ book, canRecordHandover, onRefresh }: {
+  book: any;
+  canRecordHandover: boolean;
+  onRefresh: () => void;
+}) {
+  const qc = useQueryClient();
+  const [showReport, setShowReport] = useState(false);
+  const { data, isLoading } = useQuery({
+    queryKey: ['design-book-review-handovers', book.id],
+    queryFn: () => api.get(`/design-books/${book.id}/review-handovers`).then(response => response.data),
+  });
+  const handovers: any[] = data?.items || [];
+  const steps = ['Draft', 'For Review', 'Approved', 'Released'];
+  const currentIndex = book.status === 'In Progress' ? 0 : Math.max(0, steps.indexOf(book.status));
+  return (
+    <div className="space-y-5">
+      {showReport && (
+        <HandoverReportModal
+          bookId={book.id}
+          onClose={() => setShowReport(false)}
+          onSaved={() => {
+            setShowReport(false);
+            qc.invalidateQueries({ queryKey: ['design-book-review-handovers', book.id] });
+            qc.invalidateQueries({ queryKey: ['audit', 'design_book', book.id] });
+            onRefresh();
+          }}
+        />
+      )}
+      <div className="bg-white rounded-xl border border-stone-200 p-5">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="font-semibold text-stone-800">Review and release workflow</h2>
+            <p className="text-xs text-stone-500 mt-0.5">Design submits; management approves and releases.</p>
+          </div>
+          {canRecordHandover && book.status !== 'Released' && (
+            <button onClick={() => setShowReport(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 font-medium">
+              <ClipboardList className="w-4 h-4" /> New Handover Report
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {steps.map((step, index) => (
+            <div key={step} className="relative">
+              <div className={`h-1 rounded-full mb-3 ${index <= currentIndex ? 'bg-violet-500' : 'bg-stone-200'}`} />
+              <div className={`text-xs font-semibold ${index <= currentIndex ? 'text-violet-700' : 'text-stone-400'}`}>{step}</div>
+            </div>
+          ))}
+        </div>
+        <div className="grid sm:grid-cols-3 gap-3 mt-5 text-xs">
+          <div className="rounded-lg bg-stone-50 p-3">
+            <span className="text-stone-400">Submitted</span>
+            <p className="font-medium text-stone-700 mt-1">{book.review_submitted_at ? new Date(book.review_submitted_at).toLocaleString() : 'Not yet'}</p>
+            {book.review_submitted_by_name && <p className="text-stone-500">{book.review_submitted_by_name}</p>}
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3">
+            <span className="text-stone-400">Approved</span>
+            <p className="font-medium text-stone-700 mt-1">{book.approved_at ? new Date(book.approved_at).toLocaleString() : 'Not yet'}</p>
+            {book.approved_by_name && <p className="text-stone-500">{book.approved_by_name}</p>}
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3">
+            <span className="text-stone-400">Released</span>
+            <p className="font-medium text-stone-700 mt-1">{book.released_at ? new Date(book.released_at).toLocaleString() : 'Not yet'}</p>
+            {book.released_by_name && <p className="text-stone-500">{book.released_by_name}</p>}
+          </div>
+        </div>
+        {book.approval_notes && <div className="mt-4 text-sm text-stone-600 border-l-2 border-violet-300 pl-3">{book.approval_notes}</div>}
+      </div>
+
+      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-stone-100 flex items-center gap-2">
+          <ClipboardList className="w-4 h-4 text-violet-500" />
+          <h3 className="text-sm font-semibold text-stone-700">Handover reports</h3>
+          <span className="ml-auto text-xs text-stone-400">{handovers.length}</span>
+        </div>
+        {isLoading ? <div className="p-6 text-center text-sm text-stone-400">Loading reports…</div> :
+          handovers.length === 0 ? (
+            <div className="p-8 text-center text-sm text-stone-400">No handover meeting report was required for this review.</div>
+          ) : (
+            <div className="divide-y divide-stone-100">
+              {handovers.map(report => (
+                <details key={report.id} className="group px-5 py-4">
+                  <summary className="cursor-pointer list-none flex items-center gap-3">
+                    <CalendarDays className="w-4 h-4 text-violet-500" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-stone-800">{report.title}</p>
+                      <p className="text-xs text-stone-400">{new Date(report.meeting_date).toLocaleDateString()} · {report.created_by_name || 'Unknown'}</p>
+                    </div>
+                    <Users className="w-4 h-4 text-stone-300" />
+                    <span className="text-xs text-stone-500">{report.attendees?.length || 0}</span>
+                  </summary>
+                  <div className="mt-4 ml-7 grid sm:grid-cols-2 gap-4 text-sm">
+                    {[
+                      ['Attendees', report.attendees?.join(', ')],
+                      ['Purpose', report.purpose],
+                      ['Discussion', report.discussion_summary],
+                      ['Decisions', report.decisions],
+                      ['Action items', report.action_items],
+                      ['Open items / risks', report.open_items],
+                      ['Acceptance notes', report.acceptance_notes],
+                    ].filter(([, value]) => value).map(([label, value]) => (
+                      <div key={label}>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">{label}</p>
+                        <p className="text-stone-700 whitespace-pre-wrap mt-1">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+      </div>
+      <ActivityLog entityType="design_book" entityId={book.id} />
+    </div>
+  );
 }
 
 // ─── Species Section inside each Exhibit ────────────────────────────────────
@@ -525,7 +978,7 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
   );
 }
 
-function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
+function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () => void; readOnly?: boolean }) {
   const navigate = useNavigate();
   const systems: any[] = book.systems || [];
 
@@ -546,12 +999,14 @@ function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
         <p className="text-stone-500 font-medium">No systems yet</p>
         <p className="text-stone-400 text-sm mt-1 mb-5">Create a new Life Support System directly in this design book.</p>
         <div className="flex items-center justify-center gap-3">
-          <button
-            onClick={onNewLSS}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" /> New Life Support System
-          </button>
+          {!readOnly && (
+            <button
+              onClick={onNewLSS}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> New Life Support System
+            </button>
+          )}
           <Link
             to={`/projects/${book.project_id}`}
             className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-blue-600 border border-stone-200 bg-white px-3 py-2 rounded-lg transition-colors"
@@ -596,12 +1051,14 @@ function LSSTab({ book, onNewLSS }: { book: any; onNewLSS: () => void }) {
             <span className="text-xs bg-blue-50 text-blue-700 rounded-full px-1.5 py-0.5">{systems.length}</span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onNewLSS}
-              className="flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2.5 py-1.5 transition-colors"
-            >
-              <Plus className="w-3 h-3" /> New LSS
-            </button>
+            {!readOnly && (
+              <button
+                onClick={onNewLSS}
+                className="flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-md px-2.5 py-1.5 transition-colors"
+              >
+                <Plus className="w-3 h-3" /> New LSS
+              </button>
+            )}
             <Link
               to={`/projects/${book.project_id}`}
               className="text-xs text-stone-500 hover:text-blue-600 font-medium transition-colors flex items-center gap-1 border border-stone-200 bg-white rounded-md px-2.5 py-1.5"
@@ -1033,11 +1490,11 @@ function AddTankPanel({ exhibit, projectId, unassignedTanks, onRefresh, onClose 
 
 // ─── Exhibits Tab (list view — click to open exhibit detail page) ─────────────
 function ExhibitsTab({
-  book, exhibits, tanks, exhibitMap, onRefresh, onNewExhibit,
+  book, exhibits, tanks, exhibitMap, onRefresh, onNewExhibit, readOnly = false,
 }: {
   book: any; exhibits: any[]; tanks: any[];
   exhibitMap: Map<string | null, any[]>;
-  onRefresh: () => void; onNewExhibit: () => void;
+  onRefresh: () => void; onNewExhibit: () => void; readOnly?: boolean;
 }) {
   const navigate = useNavigate();
   const [deletingExhibit, setDeletingExhibit] = useState<string | null>(null);
@@ -1072,12 +1529,14 @@ function ExhibitsTab({
         <Layers className="w-10 h-10 text-stone-300 mx-auto mb-3" />
         <p className="text-stone-500 font-medium">No exhibits yet</p>
         <p className="text-stone-400 text-sm mt-1 mb-4">Create your first exhibit to start organising tanks and species.</p>
-        <button
-          onClick={onNewExhibit}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" /> New Exhibit
-        </button>
+        {!readOnly && (
+          <button
+            onClick={onNewExhibit}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> New Exhibit
+          </button>
+        )}
       </div>
     );
   }
@@ -1090,12 +1549,14 @@ function ExhibitsTab({
           {exhibits.length} exhibit{exhibits.length !== 1 ? 's' : ''} · {tanks.length} tank{tanks.length !== 1 ? 's' : ''}
           {totalGross > 0 && <span className="ml-2 font-mono text-stone-400">· {totalGross.toFixed(2)} m³ total</span>}
         </p>
-        <button
-          onClick={onNewExhibit}
-          className="flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors font-medium"
-        >
-          <Plus className="w-3.5 h-3.5" /> New Exhibit
-        </button>
+        {!readOnly && (
+          <button
+            onClick={onNewExhibit}
+            className="flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors font-medium"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Exhibit
+          </button>
+        )}
       </div>
 
       {/* Exhibit list table */}
@@ -1174,7 +1635,7 @@ function ExhibitsTab({
                     )}
                   </td>
                   <td className="px-3 py-3.5 text-right" onClick={e => e.stopPropagation()}>
-                    {deletingExhibit === exhibit.id ? (
+                    {!readOnly && deletingExhibit === exhibit.id ? (
                       <div className="flex items-center justify-end gap-1">
                         <span className="text-xs text-red-600 font-medium mr-1">Delete?</span>
                         <button
@@ -1186,7 +1647,7 @@ function ExhibitsTab({
                           className="px-2 py-0.5 text-xs text-stone-500 bg-stone-100 hover:bg-stone-200 rounded font-medium"
                         >No</button>
                       </div>
-                    ) : (
+                    ) : !readOnly ? (
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => setDeletingExhibit(exhibit.id)}
@@ -1197,7 +1658,7 @@ function ExhibitsTab({
                         </button>
                         <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-blue-500 transition-colors" />
                       </div>
-                    )}
+                    ) : <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-blue-500 transition-colors" />}
                   </td>
                 </tr>
               );
@@ -1235,6 +1696,7 @@ export default function DesignBookDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const user = useAuthStore(state => state.user);
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const tab: Tab = isDesignBookTab(tabParam) ? tabParam : 'exhibits';
@@ -1243,6 +1705,9 @@ export default function DesignBookDetail() {
   const [saving, setSaving] = useState(false);
   const [showNewExhibit, setShowNewExhibit] = useState(false);
   const [showNewLSS, setShowNewLSS] = useState(false);
+  const [showRelease, setShowRelease] = useState(false);
+  const [showNewRevision, setShowNewRevision] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', id],
     queryFn: () => api.get(`/design-books/${id}`).then(r => r.data),
@@ -1257,7 +1722,10 @@ export default function DesignBookDetail() {
   });
   const projects: any[] = projectsData?.items || [];
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ['design-book', id] });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['design-book', id] });
+    qc.invalidateQueries({ queryKey: ['design-book-release-preflight', id] });
+  };
 
   const handleTabChange = (nextTab: Tab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -1271,6 +1739,13 @@ export default function DesignBookDetail() {
   const exhibits: any[] = book.exhibits || [];
   const tanks: any[] = book.tanks || [];
   const systems: any[] = book.systems || [];
+  const isReleased = book.status === 'Released';
+  const isDesignReadOnly = !['Draft', 'In Progress'].includes(book.status);
+  const isDesigner = user?.role === 'admin' || user?.role === 'engineer';
+  const isManager = user?.role === 'admin' || user?.role === 'hq_manager' || user?.role === 'pmo';
+  const canSubmitReview = isDesigner && (book.status === 'Draft' || book.status === 'In Progress');
+  const canApprove = isManager && book.status === 'For Review';
+  const canRelease = isManager && book.status === 'Approved';
 
   const exhibitMap = new Map<string | null, any[]>();
   for (const t of tanks) {
@@ -1303,13 +1778,51 @@ export default function DesignBookDetail() {
     }
   };
 
+  const handleSubmitReview = async () => {
+    const response = window.prompt('Optional note for the reviewer:', '');
+    if (response === null) return;
+    const comment = response;
+    setTransitioning(true);
+    try {
+      await api.post(`/design-books/${id}/submit-review`, { comment });
+      toast.success('Design Book submitted for review');
+      refresh();
+      qc.invalidateQueries({ queryKey: ['design-books'] });
+      qc.invalidateQueries({ queryKey: ['audit', 'design_book', id] });
+      qc.invalidateQueries({ queryKey: ['lifecycle', 'design_book', id] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to submit for review');
+    } finally {
+      setTransitioning(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    const response = window.prompt('Optional approval notes or conditions:', '');
+    if (response === null) return;
+    const approvalNotes = response;
+    setTransitioning(true);
+    try {
+      await api.post(`/design-books/${id}/approve`, { approval_notes: approvalNotes });
+      toast.success('Design Book approved');
+      refresh();
+      qc.invalidateQueries({ queryKey: ['design-books'] });
+      qc.invalidateQueries({ queryKey: ['audit', 'design_book', id] });
+      qc.invalidateQueries({ queryKey: ['lifecycle', 'design_book', id] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to approve Design Book');
+    } finally {
+      setTransitioning(false);
+    }
+  };
+
   const startEdit = () => {
+    if (isDesignReadOnly) return;
     setEditForm({
       book_title: book.book_title,
       project_id: book.project_id || '',
       description: book.description || '',
       revision: book.revision || 'A',
-      status: book.status || 'Draft',
       notes: book.notes || '',
     });
     setEditMode(true);
@@ -1319,13 +1832,28 @@ export default function DesignBookDetail() {
     { key: 'exhibits', label: 'Exhibits', count: exhibits.length },
     { key: 'lss', label: 'Life Support Systems', count: systems.length },
     { key: 'piping', label: 'Piping & Fittings' },
+    { key: 'review', label: 'Review & Handover' },
     { key: 'versions', label: 'Versions' },
   ];
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* New Exhibit Modal */}
-      {showNewExhibit && book.project_id && (
+      {showRelease && (
+        <ReleaseModal
+          book={book}
+          onClose={() => setShowRelease(false)}
+          onReleased={() => {
+            setShowRelease(false);
+            refresh();
+            qc.invalidateQueries({ queryKey: ['design-books'] });
+          }}
+        />
+      )}
+      {showNewRevision && (
+        <NewRevisionModal book={book} onClose={() => setShowNewRevision(false)} />
+      )}
+      {showNewExhibit && book.project_id && !isDesignReadOnly && (
         <NewExhibitModal
           projectId={book.project_id}
           onClose={() => setShowNewExhibit(false)}
@@ -1333,7 +1861,7 @@ export default function DesignBookDetail() {
         />
       )}
       {/* New LSS Modal */}
-      {showNewLSS && book.project_id && (
+      {showNewLSS && book.project_id && !isDesignReadOnly && (
         <NewLSSModal
           projectId={book.project_id}
           bookId={book.id}
@@ -1388,11 +1916,10 @@ export default function DesignBookDetail() {
                   className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Status</label>
-                <select value={editForm.status} onChange={e => setEditForm((f: any) => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Workflow status</label>
+                <div className="w-full border border-stone-100 rounded-lg px-3 py-2 text-sm bg-stone-50 text-stone-600">
+                  {book.status} · changed through review actions
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 pt-2 border-t border-stone-100">
@@ -1431,12 +1958,60 @@ export default function DesignBookDetail() {
                 )}
               </div>
             </div>
-            <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50">
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
+            <div className="flex items-center gap-2">
+              {isReleased ? (
+                isDesigner && (
+                  <button onClick={() => setShowNewRevision(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 font-medium">
+                    <GitFork className="w-3.5 h-3.5" /> Create New Revision
+                  </button>
+                )
+              ) : (
+                <>
+                  {canSubmitReview && (
+                    <button onClick={handleSubmitReview} disabled={transitioning}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
+                      <Send className="w-3.5 h-3.5" /> Submit for Review
+                    </button>
+                  )}
+                  {canApprove && (
+                    <button onClick={handleApprove} disabled={transitioning}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 font-medium disabled:opacity-50">
+                      <UserCheck className="w-3.5 h-3.5" /> Approve
+                    </button>
+                  )}
+                  {canRelease && (
+                    <button onClick={() => setShowRelease(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Release
+                    </button>
+                  )}
+                  {isDesigner && (
+                    <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50">
+                      <Pencil className="w-3.5 h-3.5" /> Edit
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {isReleased && (
+        <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-start gap-3">
+          <LockKeyhole className="w-5 h-5 text-emerald-700 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-semibold text-emerald-900">Released revision — read-only</p>
+            <p className="text-sm text-emerald-800 mt-0.5">
+              Released {book.released_at ? new Date(book.released_at).toLocaleString() : ''}
+              {book.released_by_name ? ` by ${book.released_by_name}` : ''}. The package below is the immutable release snapshot.
+            </p>
+            {book.release_scope?.length > 0 && (
+              <p className="text-xs text-emerald-700 mt-1">Scope: {book.release_scope.join(', ')}</p>
+            )}
+            {book.release_notes && <p className="text-sm text-emerald-900 mt-2 italic">“{book.release_notes}”</p>}
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       {book.project_id && (
@@ -1488,11 +2063,12 @@ export default function DesignBookDetail() {
           tanks={tanks}
           exhibitMap={exhibitMap}
           onRefresh={refresh}
-          onNewExhibit={() => setShowNewExhibit(true)}
+          onNewExhibit={() => !isDesignReadOnly && setShowNewExhibit(true)}
+          readOnly={isDesignReadOnly}
         />
       )}
 
-      {tab === 'lss' && <LSSTab book={book} onNewLSS={() => setShowNewLSS(true)} />}
+      {tab === 'lss' && <LSSTab book={book} onNewLSS={() => !isDesignReadOnly && setShowNewLSS(true)} readOnly={isDesignReadOnly} />}
 
       {tab === 'piping' && (
         <div className="bg-white rounded-2xl border border-stone-200 border-dashed py-20 text-center">
@@ -1503,8 +2079,16 @@ export default function DesignBookDetail() {
         </div>
       )}
 
+      {tab === 'review' && (
+        <ReviewWorkflowTab
+          book={book}
+          canRecordHandover={(isDesigner || isManager) && book.status === 'For Review'}
+          onRefresh={refresh}
+        />
+      )}
+
       {tab === 'versions' && (
-        <VersionsTab bookId={id!} onBookRefresh={refresh} />
+        <VersionsTab bookId={id!} onBookRefresh={refresh} readOnly={isDesignReadOnly} />
       )}
     </div>
   );

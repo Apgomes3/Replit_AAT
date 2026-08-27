@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireRole, requireModuleAccess, AuthRequest } from '../middleware/auth';
 import { logAudit } from '../db/audit';
 import multer from 'multer';
 import path from 'path';
@@ -28,6 +28,13 @@ const uploadLogo = multer({
 });
 
 const router = Router();
+router.use(authenticate);
+router.use((req: AuthRequest, res: Response, next) => {
+  // Lifecycle and audit feeds are shared platform services used by other
+  // modules such as Design Books and Documents.
+  if (req.path.startsWith('/lifecycle/') || req.path.startsWith('/audit/')) return next();
+  return requireModuleAccess('projects')(req, res, next);
+});
 
 const paginate = (req: any) => {
   const page = parseInt(req.query.page) || 1;
@@ -235,7 +242,7 @@ router.get('/exhibits', authenticate, async (req: AuthRequest, res: Response) =>
   res.json({ items: result.rows });
 });
 
-router.put('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/exhibits/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { exhibit_code, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity, area_id, notes } = req.body;
   if (!exhibit_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'exhibit_name is required' } });
   const result = await query(
@@ -246,7 +253,7 @@ router.put('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response
   res.json(result.rows[0]);
 });
 
-router.delete('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/exhibits/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const result = await query('DELETE FROM exhibits WHERE id=$1 RETURNING id', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found' } });
   res.json({ deleted: true });
@@ -258,7 +265,7 @@ router.get('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response
   res.json(result.rows[0]);
 });
 
-router.post('/exhibits', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/exhibits', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity } = req.body;
   const result = await query('INSERT INTO exhibits (exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
     [exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity]);
@@ -393,7 +400,7 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
   res.json(result.rows[0]);
 });
 
-router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/tanks', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
   if (!tank_code || !project_id || !tank_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
   const qty = Math.max(1, parseInt(quantity) || 1);
@@ -433,7 +440,7 @@ router.post('/tanks', authenticate, async (req: AuthRequest, res: Response) => {
   res.status(201).json(tank);
 });
 
-router.post('/tanks/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/tanks/:id/duplicate', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const orig = await query('SELECT * FROM tanks WHERE id=$1', [req.params.id]);
   if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   const t = orig.rows[0];
@@ -457,7 +464,7 @@ router.post('/tanks/:id/duplicate', authenticate, async (req: AuthRequest, res: 
   res.status(201).json(newTank);
 });
 
-router.patch('/systems/reorder', authenticate, async (req: AuthRequest, res: Response) => {
+router.patch('/systems/reorder', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { orderedIds } = req.body;
   if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
   for (let i = 0; i < orderedIds.length; i++) {
@@ -466,7 +473,7 @@ router.patch('/systems/reorder', authenticate, async (req: AuthRequest, res: Res
   res.json({ ok: true });
 });
 
-router.patch('/tanks/reorder', authenticate, async (req: AuthRequest, res: Response) => {
+router.patch('/tanks/reorder', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { orderedIds } = req.body;
   if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
   for (let i = 0; i < orderedIds.length; i++) {
@@ -475,7 +482,7 @@ router.patch('/tanks/reorder', authenticate, async (req: AuthRequest, res: Respo
   res.json({ ok: true });
 });
 
-router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.patch('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   try {
     const { system_id, product_master_id } = req.body;
     const hasPM = 'product_master_id' in req.body;
@@ -491,7 +498,7 @@ router.patch('/tanks/:id', authenticate, async (req: AuthRequest, res: Response)
   } catch (err: any) { throw err; }
 });
 
-router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const {
     tank_code, tank_name, tank_type, shape_type,
     length_mm, width_mm, height_mm, design_water_level_mm,
@@ -553,7 +560,7 @@ router.put('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
 });
 
 // Quick exhibit assignment for tanks
-router.patch('/tanks/:id/exhibit', authenticate, async (req: AuthRequest, res: Response) => {
+router.patch('/tanks/:id/exhibit', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { exhibit_id } = req.body;
   const result = await query(
     'UPDATE tanks SET exhibit_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
@@ -563,7 +570,7 @@ router.patch('/tanks/:id/exhibit', authenticate, async (req: AuthRequest, res: R
   res.json(result.rows[0]);
 });
 
-router.delete('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   await query('DELETE FROM tank_instances WHERE tank_id=$1', [req.params.id]);
   const result = await query('DELETE FROM tanks WHERE id=$1 RETURNING id, tank_code', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
@@ -638,7 +645,7 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
   res.json({ ...result.rows[0], equipment: equipment.rows, tanks: tanks.rows });
 });
 
-router.post('/systems', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/systems', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   try {
     const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
     if (!system_code || !project_id || !system_name) {
@@ -662,7 +669,7 @@ router.post('/systems', authenticate, async (req: AuthRequest, res: Response) =>
   }
 });
 
-router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   try {
     const {
       system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr,
@@ -823,7 +830,7 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
         req.params.id,
       ]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-    await logAudit(req.user!.id, 'system', req.params.id, 'UPDATE', {
+    await logAudit(req.user!.id, 'system', String(req.params.id), 'UPDATE', {
       summary: 'System details updated',
       system_name,
       system_type,
@@ -840,7 +847,7 @@ router.put('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
   }
 });
 
-router.delete('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/systems/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   try {
     const result = await query('DELETE FROM systems WHERE id=$1 RETURNING id, system_code', [req.params.id]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
@@ -853,7 +860,7 @@ router.delete('/systems/:id', authenticate, async (req: AuthRequest, res: Respon
   }
 });
 
-router.post('/systems/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/duplicate', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const src = await query('SELECT * FROM systems WHERE id=$1', [req.params.id]);
   if (!src.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   const s = src.rows[0];
@@ -878,7 +885,7 @@ router.get('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest, 
   res.json(result.rows);
 });
 
-router.post('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/exhibit-links', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { exhibit_id, link_type, flow_allocation_m3h, notes, sort_order } = req.body;
   if (!exhibit_id) return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id is required' } });
   if (flow_allocation_m3h != null &&
@@ -927,7 +934,7 @@ router.post('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest,
   }
 });
 
-router.put('/systems/:id/exhibit-links/:linkId', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/exhibit-links/:linkId', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { link_type, flow_allocation_m3h, notes } = req.body;
   if (flow_allocation_m3h != null &&
       (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
@@ -951,7 +958,7 @@ router.put('/systems/:id/exhibit-links/:linkId', authenticate, async (req: AuthR
   res.json(enriched.rows[0]);
 });
 
-router.delete('/systems/:id/exhibit-links/:linkId', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/systems/:id/exhibit-links/:linkId', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const result = await query(
     'DELETE FROM system_exhibit_links WHERE id=$1 AND system_id=$2 RETURNING id',
     [req.params.linkId, req.params.id]
@@ -1074,7 +1081,7 @@ router.put('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
     'UPDATE equipment_instances SET equipment_name=$1, equipment_type=$2, design_flow_m3h=$3, design_head_m=$4, power_kw=$5, material_code=$6, status=$7, operational_duty=$8, serial_number=$9, installation_date=$10, commissioning_date=$11, updated_at=NOW() WHERE id=$12 RETURNING *',
     [equipment_name, equipment_type, design_flow_m3h, design_head_m, power_kw, material_code, status, operational_duty, serial_number, installation_date, commissioning_date, req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
-  await logAudit(req.user!.id, 'equipment', req.params.id, 'UPDATE', {
+  await logAudit(req.user!.id, 'equipment', String(req.params.id), 'UPDATE', {
     summary: 'Equipment details updated',
     equipment_name,
     equipment_type,
@@ -1085,7 +1092,7 @@ router.put('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
 });
 
 // LIFECYCLE TRANSITIONS
-router.post('/lifecycle/transition', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/lifecycle/transition', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { entity_type, entity_id, to_state, comment } = req.body;
   if (!entity_type || !entity_id || !to_state) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'entity_type, entity_id, to_state required' } });
 

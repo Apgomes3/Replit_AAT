@@ -1,8 +1,9 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
 import { query } from '../db';
 
 const router = Router();
+router.use(authenticate, requireModuleAccess('design_books'));
 
 const FIELDS = `
   lcu.*,

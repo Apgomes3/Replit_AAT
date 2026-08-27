@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LeftNav from './LeftNav';
+import { useAuthStore } from '../../store/authStore';
 
 function renderNav(props: Partial<React.ComponentProps<typeof LeftNav>> = {}) {
   return render(
@@ -29,6 +30,18 @@ function CollapsibleNavHarness() {
 describe('LeftNav accessibility behavior', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    useAuthStore.setState({
+      user: {
+        id: 'admin-1',
+        email: 'admin@example.com',
+        firstName: 'Admin',
+        lastName: 'User',
+        role: 'admin',
+        moduleAccess: {},
+      },
+      token: 'test-token',
+      isLoading: false,
+    });
   });
 
   it('exposes and preserves the expanded state of collapsible navigation sections', async () => {
@@ -85,5 +98,24 @@ describe('LeftNav accessibility behavior', () => {
     await user.click(toggle);
     expect(screen.getByRole('button', { name: 'Expand sidebar' }))
       .toHaveAttribute('title', 'Expand sidebar');
+  });
+
+  it('does not render modules hidden for the current role', () => {
+    useAuthStore.setState({
+      user: {
+        id: 'engineer-1',
+        email: 'engineer@example.com',
+        firstName: 'Design',
+        lastName: 'Engineer',
+        role: 'engineer',
+        moduleAccess: { pim: 'hidden', orders: 'manage' },
+      },
+    });
+
+    renderNav();
+
+    expect(screen.queryByText('PIM Management')).not.toBeInTheDocument();
+    expect(screen.getByText('Order Management')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Platform Admin' })).not.toBeInTheDocument();
   });
 });

@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
 import { traverseGraph, findProductReuse, findImpactedProjects } from '../services/graphService';
 import { query } from '../db';
 
 const router = Router();
+router.use(authenticate, requireModuleAccess('graph'));
 
 router.post('/query', authenticate, async (req: AuthRequest, res: Response) => {
   const { start_node, start_type, depth = 3 } = req.body;

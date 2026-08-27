@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Check, ShieldCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Check, ShieldCheck, Settings2, Eye, EyeOff } from 'lucide-react';
 import ModalDialog from '../../components/ui/ModalDialog';
 
 interface Role {
@@ -13,6 +13,13 @@ interface Role {
   description: string | null;
   is_system: boolean;
   sort_order: number;
+}
+
+interface RoleModule {
+  key: string;
+  label: string;
+  access_level: 'manage' | 'view' | 'hidden';
+  visible: boolean;
 }
 
 const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 w-full';
@@ -24,6 +31,8 @@ export default function AdminRoles() {
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: '', description: '', sort_order: '' });
+  const [moduleRole, setModuleRole] = useState<Role | null>(null);
+  const [moduleVisibility, setModuleVisibility] = useState<Record<string, boolean>>({});
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-roles'],
@@ -31,6 +40,19 @@ export default function AdminRoles() {
   });
 
   const roles: Role[] = data?.items || [];
+  const { data: moduleData, isLoading: modulesLoading } = useQuery({
+    queryKey: ['admin-role-modules', moduleRole?.id],
+    queryFn: () => api.get(`/admin/roles/${moduleRole!.id}/modules`).then(r => r.data),
+    enabled: !!moduleRole,
+  });
+  const roleModules: RoleModule[] = moduleData?.items || [];
+
+  useEffect(() => {
+    if (!moduleData?.items) return;
+    setModuleVisibility(Object.fromEntries(
+      (moduleData.items as RoleModule[]).map(item => [item.key, item.visible]),
+    ));
+  }, [moduleData]);
 
   const handleCreate = async () => {
     if (!newForm.name.trim()) { toast.error('Role name is required'); return; }
@@ -86,6 +108,22 @@ export default function AdminRoles() {
     }
   };
 
+  const saveModuleVisibility = async () => {
+    if (!moduleRole) return;
+    setSaving(true);
+    try {
+      await api.put(`/admin/roles/${moduleRole.id}/modules`, { modules: moduleVisibility });
+      toast.success(`Module visibility updated for ${moduleRole.name}`);
+      qc.invalidateQueries({ queryKey: ['admin-role-modules', moduleRole.id] });
+      qc.invalidateQueries({ queryKey: ['admin-roles'] });
+      setModuleRole(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to update module visibility');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       <PageHeader
@@ -103,7 +141,7 @@ export default function AdminRoles() {
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Description</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Order</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-24">Type</th>
-                <th className="w-24" />
+                <th className="w-40" />
               </tr>
             </thead>
             <tbody>
@@ -148,6 +186,14 @@ export default function AdminRoles() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
+                          <button
+                            aria-label={`Configure modules for ${role.name}`}
+                            title="Configure module visibility"
+                            onClick={() => setModuleRole(role)}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-violet-600 hover:bg-violet-50 rounded"
+                          >
+                            <Settings2 className="w-3.5 h-3.5" /> Modules
+                          </button>
                           <button aria-label={`Edit ${role.name}`} title="Edit role" onClick={() => startEdit(role)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
                           {!role.is_system && (
                             <button aria-label={`Delete ${role.name}`} title="Delete role" onClick={() => handleDelete(role)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -206,6 +252,68 @@ export default function AdminRoles() {
               <Button variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
               <Button onClick={handleCreate} disabled={saving || !newForm.name.trim()}>
                 {saving ? 'Creating...' : 'Create Role'}
+              </Button>
+            </div>
+          </ModalDialog>
+        </div>
+      )}
+
+      {moduleRole && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <ModalDialog onClose={() => setModuleRole(null)} labelledBy="role-modules-title" className="bg-white rounded-xl shadow-2xl w-full max-w-xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div>
+                <h2 id="role-modules-title" className="text-lg font-semibold text-slate-800 capitalize">{moduleRole.name} modules</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Choose which main areas users with this role can see.</p>
+              </div>
+              <button aria-label="Close module visibility" onClick={() => setModuleRole(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6">
+              {moduleRole.name === 'admin' && (
+                <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                  Administrators always retain access to every module so permissions can be recovered safely.
+                </div>
+              )}
+              {modulesLoading ? (
+                <div className="py-10 text-center text-sm text-slate-400">Loading modules...</div>
+              ) : (
+                <div className="space-y-2">
+                  {roleModules.map(module => {
+                    const visible = moduleVisibility[module.key] ?? module.visible;
+                    const locked = moduleRole.name === 'admin';
+                    return (
+                      <button
+                        key={module.key}
+                        type="button"
+                        disabled={locked}
+                        onClick={() => setModuleVisibility(current => ({ ...current, [module.key]: !visible }))}
+                        className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+                          visible ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-slate-50'
+                        } ${locked ? 'cursor-not-allowed opacity-75' : 'hover:border-blue-300'}`}
+                      >
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${visible ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                          {visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-slate-800">{module.label}</p>
+                          <p className="text-xs text-slate-500">{visible ? 'Visible in navigation and accessible' : 'Hidden from navigation and blocked'}</p>
+                        </div>
+                        <span className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${visible ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform mt-0.5 ${visible ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-xs text-slate-400 mt-4">
+                This controls module visibility. View-only and create/edit permissions can be added as the next level without changing this role setup.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
+              <Button variant="ghost" onClick={() => setModuleRole(null)}>Cancel</Button>
+              <Button onClick={saveModuleVisibility} disabled={saving || modulesLoading || moduleRole.name === 'admin'}>
+                {saving ? 'Saving...' : 'Save Visibility'}
               </Button>
             </div>
           </ModalDialog>

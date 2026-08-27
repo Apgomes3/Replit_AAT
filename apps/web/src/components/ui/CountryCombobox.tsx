@@ -7,9 +7,10 @@ interface Props {
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  label?: string;
 }
 
-export default function CountryCombobox({ value, onChange, placeholder = 'Select country…', className = '' }: Props) {
+export default function CountryCombobox({ value, onChange, placeholder, className = '', label = 'country' }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -18,6 +19,9 @@ export default function CountryCombobox({ value, onChange, placeholder = 'Select
   const restoreFocus = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
+  const selectLabel = `Select ${label}`;
+  const optionsLabel = `${label.charAt(0).toUpperCase()}${label.slice(1)} options`;
+  const searchLabel = label === 'country' ? 'Search countries' : `Search ${label}`;
 
   const filtered = search.trim()
     ? COUNTRIES.filter(c => c.toLowerCase().includes(search.toLowerCase()))
@@ -77,8 +81,8 @@ export default function CountryCombobox({ value, onChange, placeholder = 'Select
               setSearch(e.target.value);
               setActiveIndex(e.target.value.trim() ? 0 : -1);
             }}
-            placeholder={value || placeholder}
-            aria-label="Search countries"
+            placeholder={value || placeholder || `${selectLabel}…`}
+            aria-label={searchLabel}
             role="combobox"
             aria-expanded="true"
             aria-controls={listboxId}
@@ -113,7 +117,7 @@ export default function CountryCombobox({ value, onChange, placeholder = 'Select
           <button
             ref={triggerRef}
             type="button"
-            aria-label={value ? `Select country, currently ${value}` : 'Select country'}
+            aria-label={value ? `${selectLabel}, currently ${value}` : selectLabel}
             aria-haspopup="listbox"
             aria-expanded="false"
             onClick={() => {
@@ -129,12 +133,12 @@ export default function CountryCombobox({ value, onChange, placeholder = 'Select
             }}
             className={`flex-1 min-w-0 text-left truncate outline-none ${value ? 'text-slate-800' : 'text-slate-400'}`}
           >
-            {value || placeholder}
+            {value || placeholder || `${selectLabel}…`}
           </button>
         )}
         <div className="flex items-center gap-1 shrink-0 ml-2">
           {value && !open && (
-            <button type="button" aria-label="Clear selected country" title="Clear selected country" onClick={clear} className="text-slate-300 hover:text-slate-500">
+            <button type="button" aria-label={`Clear selected ${label}`} title={`Clear selected ${label}`} onClick={clear} className="text-slate-300 hover:text-slate-500">
               <X className="w-3.5 h-3.5" />
             </button>
           )}
@@ -142,7 +146,7 @@ export default function CountryCombobox({ value, onChange, placeholder = 'Select
         </div>
       </div>
       {open && (
-        <div id={listboxId} role="listbox" aria-label="Country options" className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+        <div id={listboxId} role="listbox" aria-label={optionsLabel} className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-4 py-3 text-sm text-slate-400">No countries match "{search}"</div>
           ) : (

@@ -5,6 +5,7 @@ import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { logAudit } from '../db/audit';
+import { MODULE_ACCESS_KEYS, MODULE_ACCESS_LABELS, ModuleAccessKey } from '../lib/moduleAccess';
 import { sendPasswordResetEmail, sendInviteEmail, isSmtpConfigured } from '../lib/email';
 import multer from 'multer';
 import csv from 'csv-parser';
@@ -564,7 +565,18 @@ router.delete('/categories/:id', authenticate, requireRole('admin'), async (req:
 
 // ROLES
 router.get('/roles', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM roles ORDER BY sort_order, name');
+  const result = await query(
+    `SELECT r.*,
+            COALESCE(
+              jsonb_object_agg(rma.module_key, rma.access_level)
+                FILTER (WHERE rma.module_key IS NOT NULL),
+              '{}'::jsonb
+            ) AS module_access
+     FROM roles r
+     LEFT JOIN role_module_access rma ON rma.role_id=r.id
+     GROUP BY r.id
+     ORDER BY r.sort_order, r.name`,
+  );
   res.json({ items: result.rows });
 });
 
@@ -575,6 +587,13 @@ router.post('/roles', authenticate, requireRole('admin'), async (req: AuthReques
     const result = await query(
       'INSERT INTO roles (name, description, sort_order) VALUES ($1,$2,$3) RETURNING *',
       [name.trim().toLowerCase(), description || null, sort_order || 0]);
+    await query(
+      `INSERT INTO role_module_access (role_id, module_key, access_level)
+       SELECT $1, module_key, 'manage'
+       FROM unnest($2::text[]) AS module_key
+       ON CONFLICT (role_id, module_key) DO NOTHING`,
+      [result.rows[0].id, MODULE_ACCESS_KEYS],
+    );
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
     if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'Role name already exists' } });
@@ -606,6 +625,70 @@ router.delete('/roles/:id', authenticate, requireRole('admin'), async (req: Auth
   if (existing.rows[0].is_system) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot delete a built-in role' } });
   await query('DELETE FROM roles WHERE id=$1', [req.params.id]);
   res.status(204).end();
+});
+
+router.get('/roles/:id/modules', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const role = await query('SELECT id, name FROM roles WHERE id=$1', [req.params.id]);
+  if (!role.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Role not found' } });
+  const result = await query(
+    `SELECT module_key, access_level
+     FROM role_module_access
+     WHERE role_id=$1`,
+    [req.params.id],
+  );
+  const access = new Map(result.rows.map(row => [row.module_key, row.access_level]));
+  res.json({
+    role: role.rows[0],
+    items: MODULE_ACCESS_KEYS.map(key => ({
+      key,
+      label: MODULE_ACCESS_LABELS[key],
+      access_level: access.get(key) || 'manage',
+      visible: (access.get(key) || 'manage') !== 'hidden',
+    })),
+  });
+});
+
+router.put('/roles/:id/modules', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const modules = req.body?.modules;
+  if (!modules || typeof modules !== 'object' || Array.isArray(modules)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'modules must be an object of module visibility values' } });
+  }
+  const role = await query('SELECT id, name FROM roles WHERE id=$1', [req.params.id]);
+  if (!role.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Role not found' } });
+  if (role.rows[0].name === 'admin' && MODULE_ACCESS_KEYS.some(key => modules[key] === false || modules[key] === 'hidden')) {
+    return res.status(400).json({ error: { code: 'ADMIN_ACCESS_REQUIRED', message: 'The admin role must retain access to every module.' } });
+  }
+  for (const key of Object.keys(modules)) {
+    if (!MODULE_ACCESS_KEYS.includes(key as ModuleAccessKey)) {
+      return res.status(400).json({ error: { code: 'INVALID_MODULE', message: `Unknown module: ${key}` } });
+    }
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const key of MODULE_ACCESS_KEYS) {
+      const requested = modules[key];
+      const level = requested === false || requested === 'hidden' ? 'hidden' : 'manage';
+      await client.query(
+        `INSERT INTO role_module_access (role_id, module_key, access_level)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (role_id, module_key)
+         DO UPDATE SET access_level=EXCLUDED.access_level, updated_at=NOW()`,
+        [req.params.id, key, level],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  await logAudit(req.user!.id, 'role', String(req.params.id), 'MODULE_ACCESS_UPDATE', {
+    summary: `Module visibility updated for role ${role.rows[0].name}`,
+    modules,
+  }, req.ip);
+  res.json({ ok: true });
 });
 
 // PENDING APPROVALS (admin/engineer only)

@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { query } from '../db';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
 import { createNotification, notifyAdminsAndManagers } from '../db/notifications';
 import { logAudit } from '../db/audit';
 
@@ -16,6 +16,7 @@ const docStorage = multer.diskStorage({
 const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = Router();
+router.use(authenticate, requireModuleAccess('orders'));
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
 

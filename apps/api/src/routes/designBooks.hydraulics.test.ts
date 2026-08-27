@@ -17,6 +17,9 @@ const state = vi.hoisted(() => ({
 vi.mock('../db', () => {
   const query = vi.fn(async (sql: string, params: any[] = []) => {
     state.calls.push({ sql, params });
+    if (sql.includes('SELECT status FROM design_books')) {
+      return { rows: [{ status: 'Draft' }] };
+    }
     return { rows: [{ id: 'hydraulics-1' }] };
   });
   return { query, default: { query } };
@@ -93,7 +96,7 @@ describe('design-book hydraulics weir persistence', () => {
     });
 
     expect(response.status).toBe(200);
-    const call = state.calls[0];
+    const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'))!;
     expect(call.sql).toContain('CASE WHEN $15');
     expect(call.params.slice(13, 20)).toEqual([false, false, false, false, false, false, false]);
   });
@@ -113,7 +116,8 @@ describe('design-book hydraulics weir persistence', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(state.calls[0].params.slice(13, 20)).toEqual([true, true, true, true, true, true, true]);
+    const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'))!;
+    expect(call.params.slice(13, 20)).toEqual([true, true, true, true, true, true, true]);
   });
 
   it('accepts the Bazin alternative as an explicit saved method', async () => {
@@ -131,15 +135,17 @@ describe('design-book hydraulics weir persistence', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(state.calls[0].params[7]).toBe(459.05);
-    expect(state.calls[0].params[8]).toBe('bazin_1888');
+    const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'))!;
+    expect(call.params[7]).toBe(459.05);
+    expect(call.params[8]).toBe('bazin_1888');
   });
 
   it('allows an explicit null to clear a saved basis field without treating it as omitted', async () => {
     const response = await request(app, token, { weir_formula_method: null });
 
     expect(response.status).toBe(200);
-    expect(state.calls[0].params[8]).toBeNull();
-    expect(state.calls[0].params[15]).toBe(true);
+    const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'))!;
+    expect(call.params[8]).toBeNull();
+    expect(call.params[15]).toBe(true);
   });
 });

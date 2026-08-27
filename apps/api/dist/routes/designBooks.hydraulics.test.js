@@ -51,6 +51,9 @@ const state = vitest_1.vi.hoisted(() => ({
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (sql, params = []) => {
         state.calls.push({ sql, params });
+        if (sql.includes('SELECT status FROM design_books')) {
+            return { rows: [{ status: 'Draft' }] };
+        }
         return { rows: [{ id: 'hydraulics-1' }] };
     });
     return { query, default: { query } };
@@ -117,9 +120,9 @@ function request(app, token, body) {
             bottom_drain_pct: 70,
         });
         (0, vitest_1.expect)(response.status).toBe(200);
-        const call = state.calls[0];
-        (0, vitest_1.expect)(call.sql).toContain('CASE WHEN $13');
-        (0, vitest_1.expect)(call.params.slice(12, 18)).toEqual([false, false, false, false, false, false]);
+        const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'));
+        (0, vitest_1.expect)(call.sql).toContain('CASE WHEN $15');
+        (0, vitest_1.expect)(call.params.slice(13, 20)).toEqual([false, false, false, false, false, false, false]);
     });
     (0, vitest_1.it)('updates all Francis basis fields when they are explicitly supplied', async () => {
         const response = await request(app, token, {
@@ -127,6 +130,7 @@ function request(app, token, body) {
             surface_skim_pct: 30,
             bottom_drain_pct: 70,
             weir_head_mm: 100,
+            weir_length_mm: 459.05,
             weir_formula_method: 'francis_184',
             weir_geometry: 'sharp_rectangular',
             weir_end_contractions: 2,
@@ -134,7 +138,8 @@ function request(app, token, body) {
             weir_downstream_head_mm: 0,
         });
         (0, vitest_1.expect)(response.status).toBe(200);
-        (0, vitest_1.expect)(state.calls[0].params.slice(12, 18)).toEqual([true, true, true, true, true, true]);
+        const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'));
+        (0, vitest_1.expect)(call.params.slice(13, 20)).toEqual([true, true, true, true, true, true, true]);
     });
     (0, vitest_1.it)('accepts the Bazin alternative as an explicit saved method', async () => {
         const response = await request(app, token, {
@@ -142,6 +147,7 @@ function request(app, token, body) {
             surface_skim_pct: 30,
             bottom_drain_pct: 70,
             weir_head_mm: 100,
+            weir_length_mm: 459.05,
             weir_formula_method: 'bazin_1888',
             weir_geometry: 'sharp_rectangular',
             weir_end_contractions: 2,
@@ -149,12 +155,15 @@ function request(app, token, body) {
             weir_downstream_head_mm: 0,
         });
         (0, vitest_1.expect)(response.status).toBe(200);
-        (0, vitest_1.expect)(state.calls[0].params[7]).toBe('bazin_1888');
+        const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'));
+        (0, vitest_1.expect)(call.params[7]).toBe(459.05);
+        (0, vitest_1.expect)(call.params[8]).toBe('bazin_1888');
     });
     (0, vitest_1.it)('allows an explicit null to clear a saved basis field without treating it as omitted', async () => {
         const response = await request(app, token, { weir_formula_method: null });
         (0, vitest_1.expect)(response.status).toBe(200);
-        (0, vitest_1.expect)(state.calls[0].params[7]).toBeNull();
-        (0, vitest_1.expect)(state.calls[0].params[13]).toBe(true);
+        const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'));
+        (0, vitest_1.expect)(call.params[8]).toBeNull();
+        (0, vitest_1.expect)(call.params[15]).toBe(true);
     });
 });

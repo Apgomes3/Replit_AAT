@@ -8,6 +8,7 @@ import {
 import clsx from 'clsx';
 import api from '../../lib/api';
 import { useCommandPalette } from '../../store/commandPaletteStore';
+import { useAuthStore } from '../../store/authStore';
 
 const RECENT_KEY = 'cmd-palette-recent';
 const MAX_RECENT = 6;
@@ -23,6 +24,17 @@ type SearchResult = {
 };
 
 type RecentItem = { href: string; label: string; code?: string; type: string };
+
+function moduleForHref(href: string): string | null {
+  if (href.startsWith('/products')) return 'pim';
+  if (href.startsWith('/purchase-orders')) return 'orders';
+  if (href.startsWith('/projects') || href.startsWith('/systems')) return 'projects';
+  if (href.startsWith('/documents')) return 'documents';
+  if (href.startsWith('/knowledge')) return 'knowledge';
+  if (href.startsWith('/graph')) return 'graph';
+  if (href.startsWith('/design-book')) return 'design_books';
+  return null;
+}
 
 const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; dot: string }> = {
   project:   { label: 'Project',   icon: FolderOpen, color: 'text-blue-600',   dot: 'bg-blue-500'   },
@@ -66,6 +78,11 @@ function useDebounce<T>(value: T, delay: number): T {
 export default function CommandPalette() {
   const { isOpen, open, close } = useCommandPalette();
   const navigate = useNavigate();
+  const user = useAuthStore(state => state.user);
+  const canSeeHref = (href: string) => {
+    const moduleKey = moduleForHref(href);
+    return !moduleKey || user?.moduleAccess?.[moduleKey] !== 'hidden';
+  };
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -81,7 +98,7 @@ export default function CommandPalette() {
     staleTime: 10000,
   });
 
-  const results: SearchResult[] = data?.results ?? [];
+  const results: SearchResult[] = (data?.results ?? []).filter((result: SearchResult) => canSeeHref(getHref(result)));
 
   const grouped = results.reduce((acc: Record<string, SearchResult[]>, r) => {
     (acc[r.type] = acc[r.type] || []).push(r);
@@ -94,7 +111,7 @@ export default function CommandPalette() {
 
   useEffect(() => {
     if (!isOpen) { setQuery(''); setCursor(-1); return; }
-    setRecent(loadRecent());
+    setRecent(loadRecent().filter(item => canSeeHref(item.href)));
     setTimeout(() => inputRef.current?.focus(), 30);
   }, [isOpen]);
 
@@ -237,7 +254,7 @@ export default function CommandPalette() {
                     { label: 'Components', href: '/products/components' },
                     { label: 'Documents', href: '/documents' },
                     { label: 'Graph', href: '/graph' },
-                  ].map(link => (
+                  ].filter(link => canSeeHref(link.href)).map(link => (
                     <button key={link.href}
                       onClick={() => { navigate(link.href); close(); }}
                       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-stone-50 hover:bg-blue-50 hover:text-blue-700 text-xs text-stone-500 transition-colors text-left group">

@@ -27,6 +27,14 @@ const uploadLogo = (0, multer_1.default)({
     limits: { fileSize: 5 * 1024 * 1024 },
 });
 const router = (0, express_1.Router)();
+router.use(auth_1.authenticate);
+router.use((req, res, next) => {
+    // Lifecycle and audit feeds are shared platform services used by other
+    // modules such as Design Books and Documents.
+    if (req.path.startsWith('/lifecycle/') || req.path.startsWith('/audit/'))
+        return next();
+    return (0, auth_1.requireModuleAccess)('projects')(req, res, next);
+});
 const paginate = (req) => {
     const page = parseInt(req.query.page) || 1;
     const page_size = Math.min(parseInt(req.query.page_size) || 25, 200);
@@ -218,7 +226,7 @@ router.get('/exhibits', auth_1.authenticate, async (req, res) => {
     const result = await (0, db_1.query)(`SELECT e.*, a.area_name, p.project_code FROM exhibits e LEFT JOIN areas a ON e.area_id=a.id JOIN projects p ON e.project_id=p.id ${where} ORDER BY e.exhibit_code`, params);
     res.json({ items: result.rows });
 });
-router.put('/exhibits/:id', auth_1.authenticate, async (req, res) => {
+router.put('/exhibits/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { exhibit_code, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity, area_id, notes } = req.body;
     if (!exhibit_name)
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'exhibit_name is required' } });
@@ -227,7 +235,7 @@ router.put('/exhibits/:id', auth_1.authenticate, async (req, res) => {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found' } });
     res.json(result.rows[0]);
 });
-router.delete('/exhibits/:id', auth_1.authenticate, async (req, res) => {
+router.delete('/exhibits/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const result = await (0, db_1.query)('DELETE FROM exhibits WHERE id=$1 RETURNING id', [req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found' } });
@@ -239,7 +247,7 @@ router.get('/exhibits/:id', auth_1.authenticate, async (req, res) => {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found' } });
     res.json(result.rows[0]);
 });
-router.post('/exhibits', auth_1.authenticate, async (req, res) => {
+router.post('/exhibits', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity } = req.body;
     const result = await (0, db_1.query)('INSERT INTO exhibits (exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity]);
     res.status(201).json(result.rows[0]);
@@ -370,7 +378,7 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
     res.json(result.rows[0]);
 });
-router.post('/tanks', auth_1.authenticate, async (req, res) => {
+router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
     if (!tank_code || !project_id || !tank_name)
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
@@ -406,7 +414,7 @@ router.post('/tanks', auth_1.authenticate, async (req, res) => {
     }
     res.status(201).json(tank);
 });
-router.post('/tanks/:id/duplicate', auth_1.authenticate, async (req, res) => {
+router.post('/tanks/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const orig = await (0, db_1.query)('SELECT * FROM tanks WHERE id=$1', [req.params.id]);
     if (!orig.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
@@ -430,7 +438,7 @@ router.post('/tanks/:id/duplicate', auth_1.authenticate, async (req, res) => {
     }
     res.status(201).json(newTank);
 });
-router.patch('/systems/reorder', auth_1.authenticate, async (req, res) => {
+router.patch('/systems/reorder', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds))
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
@@ -439,7 +447,7 @@ router.patch('/systems/reorder', auth_1.authenticate, async (req, res) => {
     }
     res.json({ ok: true });
 });
-router.patch('/tanks/reorder', auth_1.authenticate, async (req, res) => {
+router.patch('/tanks/reorder', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds))
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
@@ -448,7 +456,7 @@ router.patch('/tanks/reorder', auth_1.authenticate, async (req, res) => {
     }
     res.json({ ok: true });
 });
-router.patch('/tanks/:id', auth_1.authenticate, async (req, res) => {
+router.patch('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {
         const { system_id, product_master_id } = req.body;
         const hasPM = 'product_master_id' in req.body;
@@ -463,7 +471,7 @@ router.patch('/tanks/:id', auth_1.authenticate, async (req, res) => {
         throw err;
     }
 });
-router.put('/tanks/:id', auth_1.authenticate, async (req, res) => {
+router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, } = req.body;
     if (!tank_name)
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
@@ -518,14 +526,14 @@ router.put('/tanks/:id', auth_1.authenticate, async (req, res) => {
     res.json(result.rows[0]);
 });
 // Quick exhibit assignment for tanks
-router.patch('/tanks/:id/exhibit', auth_1.authenticate, async (req, res) => {
+router.patch('/tanks/:id/exhibit', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { exhibit_id } = req.body;
     const result = await (0, db_1.query)('UPDATE tanks SET exhibit_id=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [exhibit_id || null, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
     res.json(result.rows[0]);
 });
-router.delete('/tanks/:id', auth_1.authenticate, async (req, res) => {
+router.delete('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     await (0, db_1.query)('DELETE FROM tank_instances WHERE tank_id=$1', [req.params.id]);
     const result = await (0, db_1.query)('DELETE FROM tanks WHERE id=$1 RETURNING id, tank_code', [req.params.id]);
     if (!result.rows[0])
@@ -602,7 +610,7 @@ router.get('/systems/:id', auth_1.authenticate, async (req, res) => {
     ]);
     res.json({ ...result.rows[0], equipment: equipment.rows, tanks: tanks.rows });
 });
-router.post('/systems', auth_1.authenticate, async (req, res) => {
+router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {
         const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
         if (!system_code || !project_id || !system_name) {
@@ -624,7 +632,7 @@ router.post('/systems', auth_1.authenticate, async (req, res) => {
         throw err;
     }
 });
-router.put('/systems/:id', auth_1.authenticate, async (req, res) => {
+router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {
         const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy, loop1_flow_source, loop1_filtration, loop1_bio_degas_m3h, loop1_link_bio_degas, loop2_flow_source, loop2_filtration, loop2_bio_degas_m3h, loop2_link_bio_degas, loop3_flow_source, loop3_filtration, loop3_bio_degas_m3h, loop3_link_bio_degas, system_config, compact_unit_id, design_book_id, } = req.body;
         for (const [label, value] of [
@@ -750,7 +758,7 @@ router.put('/systems/:id', auth_1.authenticate, async (req, res) => {
         ]);
         if (!result.rows[0])
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-        await (0, audit_1.logAudit)(req.user.id, 'system', req.params.id, 'UPDATE', {
+        await (0, audit_1.logAudit)(req.user.id, 'system', String(req.params.id), 'UPDATE', {
             summary: 'System details updated',
             system_name,
             system_type,
@@ -767,7 +775,7 @@ router.put('/systems/:id', auth_1.authenticate, async (req, res) => {
         throw err;
     }
 });
-router.delete('/systems/:id', auth_1.authenticate, async (req, res) => {
+router.delete('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {
         const result = await (0, db_1.query)('DELETE FROM systems WHERE id=$1 RETURNING id, system_code', [req.params.id]);
         if (!result.rows[0])
@@ -781,7 +789,7 @@ router.delete('/systems/:id', auth_1.authenticate, async (req, res) => {
         throw err;
     }
 });
-router.post('/systems/:id/duplicate', auth_1.authenticate, async (req, res) => {
+router.post('/systems/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const src = await (0, db_1.query)('SELECT * FROM systems WHERE id=$1', [req.params.id]);
     if (!src.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
@@ -800,7 +808,7 @@ router.get('/systems/:id/exhibit-links', auth_1.authenticate, async (req, res) =
      ORDER BY sel.sort_order, e.exhibit_code`, [req.params.id]);
     res.json(result.rows);
 });
-router.post('/systems/:id/exhibit-links', auth_1.authenticate, async (req, res) => {
+router.post('/systems/:id/exhibit-links', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { exhibit_id, link_type, flow_allocation_m3h, notes, sort_order } = req.body;
     if (!exhibit_id)
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id is required' } });
@@ -843,7 +851,7 @@ router.post('/systems/:id/exhibit-links', auth_1.authenticate, async (req, res) 
         throw err;
     }
 });
-router.put('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, async (req, res) => {
+router.put('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { link_type, flow_allocation_m3h, notes } = req.body;
     if (flow_allocation_m3h != null &&
         (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
@@ -861,7 +869,7 @@ router.put('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, async (req
      FROM system_exhibit_links sel JOIN exhibits e ON sel.exhibit_id = e.id WHERE sel.id = $1`, [result.rows[0].id]);
     res.json(enriched.rows[0]);
 });
-router.delete('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, async (req, res) => {
+router.delete('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const result = await (0, db_1.query)('DELETE FROM system_exhibit_links WHERE id=$1 AND system_id=$2 RETURNING id', [req.params.linkId, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Link not found' } });
@@ -982,7 +990,7 @@ router.put('/equipment-instances/:id', auth_1.authenticate, async (req, res) => 
     const result = await (0, db_1.query)('UPDATE equipment_instances SET equipment_name=$1, equipment_type=$2, design_flow_m3h=$3, design_head_m=$4, power_kw=$5, material_code=$6, status=$7, operational_duty=$8, serial_number=$9, installation_date=$10, commissioning_date=$11, updated_at=NOW() WHERE id=$12 RETURNING *', [equipment_name, equipment_type, design_flow_m3h, design_head_m, power_kw, material_code, status, operational_duty, serial_number, installation_date, commissioning_date, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
-    await (0, audit_1.logAudit)(req.user.id, 'equipment', req.params.id, 'UPDATE', {
+    await (0, audit_1.logAudit)(req.user.id, 'equipment', String(req.params.id), 'UPDATE', {
         summary: 'Equipment details updated',
         equipment_name,
         equipment_type,
@@ -992,7 +1000,7 @@ router.put('/equipment-instances/:id', auth_1.authenticate, async (req, res) => 
     res.json(result.rows[0]);
 });
 // LIFECYCLE TRANSITIONS
-router.post('/lifecycle/transition', auth_1.authenticate, async (req, res) => {
+router.post('/lifecycle/transition', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const { entity_type, entity_id, to_state, comment } = req.body;
     if (!entity_type || !entity_id || !to_state)
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'entity_type, entity_id, to_state required' } });

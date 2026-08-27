@@ -3,8 +3,11 @@ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
+import { useAuthStore } from '../../store/authStore';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; end?: boolean };
+type ModuleKey = 'pim' | 'orders' | 'projects' | 'design_books' | 'documents' | 'knowledge' | 'graph';
+type NavSection = { id: string; moduleKey: ModuleKey; label: string; hub: string; icon: any; items: NavItemDef[] };
 
 const PIM_ITEMS: NavItemDef[] = [
   { id: 'products', to: '/products/masters', icon: Package, label: 'Products' },
@@ -13,20 +16,20 @@ const PIM_ITEMS: NavItemDef[] = [
   { id: 'tanks', to: '/products/tanks', icon: Container, label: 'Tanks' },
 ];
 
-const SECTIONS: { id: string; label: string; hub: string; icon: any; items: NavItemDef[] }[] = [
-  { id: 'pim', label: 'PIM Management', hub: '/pim', icon: Package, items: PIM_ITEMS },
+const SECTIONS: NavSection[] = [
+  { id: 'pim', moduleKey: 'pim', label: 'PIM Management', hub: '/pim', icon: Package, items: PIM_ITEMS },
   {
-    id: 'orders', label: 'Order Management', hub: '/order-management', icon: ShoppingCart,
+    id: 'orders', moduleKey: 'orders', label: 'Order Management', hub: '/order-management', icon: ShoppingCart,
     items: [{ id: 'purchase-orders', to: '/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' }],
   },
   {
-    id: 'projects', label: 'Project Management', hub: '/project-management', icon: FolderOpen,
+    id: 'projects', moduleKey: 'projects', label: 'Project Management', hub: '/project-management', icon: FolderOpen,
     items: [
       { id: 'projects', to: '/projects', icon: FolderOpen, label: 'Projects' },
     ],
   },
   {
-    id: 'design-book-engine', label: 'Design Book Engine', hub: '/design-book-engine', icon: BookMarked,
+    id: 'design-book-engine', moduleKey: 'design_books', label: 'Design Book Engine', hub: '/design-book-engine', icon: BookMarked,
     items: [
       { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
       { id: 'lss-catalog', to: '/lss-compact-units', icon: Layers, label: 'LSS Unit Catalog' },
@@ -74,7 +77,7 @@ function applySectionOrder(items: NavItemDef[], savedIds: string[] | undefined):
 }
 
 function DraggableSection({ section, savedOrder, onOrderChange, collapsed }: {
-  section: typeof SECTIONS[0];
+  section: NavSection;
   savedOrder: string[] | undefined;
   onOrderChange: (sectionId: string, newOrder: string[]) => void;
   collapsed: boolean;
@@ -315,6 +318,9 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
   const [showAdmin, setShowAdmin] = useState(false);
   const adminTriggerRef = useRef<HTMLButtonElement>(null);
   const { open: openPalette } = useCommandPalette();
+  const user = useAuthStore(state => state.user);
+  const moduleVisible = (moduleKey: ModuleKey) => user?.moduleAccess?.[moduleKey] !== 'hidden';
+  const visibleSections = SECTIONS.filter(section => moduleVisible(section.moduleKey));
 
   const handleOrderChange = (sectionId: string, newOrder: string[]) => {
     const next = { ...orders, [sectionId]: newOrder };
@@ -351,9 +357,9 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
       <div className="flex-1 overflow-y-auto py-2">
         <div className={clsx('px-1 space-y-0.5', collapsed && 'px-0.5')}>
           {([
-            { to: '/', icon: Home, label: 'Home', end: true },
-            { to: '/graph', icon: Network, label: 'Graph Explorer' },
-          ] as const).map(({ to, icon: Icon, label, end }: any) => (
+            { to: '/', icon: Home, label: 'Home', end: true, visible: true },
+            { to: '/graph', icon: Network, label: 'Graph Explorer', visible: moduleVisible('graph') },
+          ] as const).filter(item => item.visible).map(({ to, icon: Icon, label, end }: any) => (
             <NavLink
               key={to}
               to={to}
@@ -392,7 +398,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
           </button>
         </div>
 
-        {SECTIONS.map(section => (
+        {visibleSections.map(section => (
           <DraggableSection
             key={section.id}
             section={section}
@@ -403,7 +409,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
         ))}
       </div>
 
-      <div className="border-t border-stone-200/80 p-2">
+      {user?.role === 'admin' && <div className="border-t border-stone-200/80 p-2">
         <button
           ref={adminTriggerRef}
           onClick={() => setShowAdmin(v => !v)}
@@ -427,9 +433,9 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
           {!collapsed && <span>Platform Admin</span>}
           {!collapsed && <ChevronRight className={clsx('w-3.5 h-3.5 ml-auto transition-transform duration-200', showAdmin && 'rotate-90')} />}
         </button>
-      </div>
+      </div>}
 
-      {showAdmin && <AdminPopup onClose={closeAdminMenu} />}
+      {user?.role === 'admin' && showAdmin && <AdminPopup onClose={closeAdminMenu} />}
     </nav>
   );
 }

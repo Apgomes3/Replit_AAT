@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { logAudit } from '../db/audit';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -21,9 +21,10 @@ const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 10 * 102
 } });
 
 const router = Router();
+router.use(authenticate, requireModuleAccess('pim'));
 
 // PRODUCT FAMILIES
-router.get('/product-families', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/product-families', async (req: AuthRequest, res: Response) => {
   const result = await query('SELECT pf.*, COUNT(pm.id) as product_count FROM product_families pf LEFT JOIN product_masters pm ON pm.product_family_id=pf.id GROUP BY pf.id ORDER BY pf.product_family_code');
   res.json({ items: result.rows });
 });

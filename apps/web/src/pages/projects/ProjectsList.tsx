@@ -108,7 +108,7 @@ export default function ProjectsList() {
     { key: 'project_code', header: 'Code', sortable: true, render: r => <EntityCode code={r.project_code} /> },
     { key: 'project_name', header: 'Project Name', sortable: true, filterable: true, render: r => <span className="font-medium">{r.project_name}</span> },
     { key: 'client_name', header: 'Client', sortable: true, filterable: true },
-    { key: 'country', header: 'Country', sortable: true, filterable: true },
+    { key: 'country', header: 'Country or Region', sortable: true, filterable: true },
     { key: 'project_status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.project_status ?? '', render: r => <StatusBadge status={r.project_status} /> },
     { key: 'project_manager', header: 'PM', sortable: true, filterable: true },
     { key: 'target_completion_date', header: 'Target', sortable: true, sortValue: r => r.target_completion_date ?? '', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
@@ -157,7 +157,7 @@ export default function ProjectsList() {
                 { header: 'Code',        value: r => r.project_code ?? '' },
                 { header: 'Name',        value: r => r.project_name ?? '' },
                 { header: 'Client',      value: r => r.client_name ?? '' },
-                { header: 'Country',     value: r => r.country ?? '' },
+                { header: 'Country or Region', value: r => r.country ?? '' },
                 { header: 'Status',      value: r => r.project_status ?? '' },
                 { header: 'PM',          value: r => r.project_manager ?? '' },
                 { header: 'Target Date', value: r => csvDate(r.target_completion_date) },
@@ -233,8 +233,8 @@ export default function ProjectsList() {
                   className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Country</label>
-                <CountryCombobox value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} />
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Country or Region</label>
+                <CountryCombobox label="country or region" value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">City</label>

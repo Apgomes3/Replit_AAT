@@ -557,8 +557,29 @@ CREATE TABLE IF NOT EXISTS roles (
 INSERT INTO roles (name, description, is_system, sort_order) VALUES
   ('admin', 'Full platform access including user and configuration management', true, 10),
   ('engineer', 'Create and edit library data, projects and documents', true, 20),
-  ('viewer', 'Read-only access to all platform data', true, 30)
+  ('viewer', 'Read-only access to all platform data', true, 30),
+  ('hq_manager', 'HQ management and approval access', true, 40),
+  ('pmo', 'Project management office access', true, 50)
 ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS role_module_access (
+  role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  module_key VARCHAR(50) NOT NULL,
+  access_level VARCHAR(20) NOT NULL DEFAULT 'manage'
+    CHECK (access_level IN ('manage', 'view', 'hidden')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (role_id, module_key)
+);
+
+INSERT INTO role_module_access (role_id, module_key, access_level)
+SELECT r.id, m.module_key, 'manage'
+FROM roles r
+CROSS JOIN (VALUES
+  ('pim'), ('orders'), ('projects'), ('design_books'),
+  ('documents'), ('knowledge'), ('graph')
+) AS m(module_key)
+ON CONFLICT (role_id, module_key) DO NOTHING;
 
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS synonyms TEXT[] DEFAULT '{}';
 ALTER TABLE components ADD COLUMN IF NOT EXISTS synonyms TEXT[] DEFAULT '{}';
@@ -839,6 +860,77 @@ CREATE TABLE IF NOT EXISTS design_books (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_design_books_project ON design_books(project_id) WHERE project_id IS NOT NULL;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS release_scope TEXT[];
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS release_notes TEXT;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS released_by UUID REFERENCES users(id);
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS release_snapshot JSONB;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS review_submitted_by UUID REFERENCES users(id);
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS review_submitted_at TIMESTAMPTZ;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id);
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS approval_notes TEXT;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS review_snapshot JSONB;
+
+CREATE TABLE IF NOT EXISTS design_book_review_handovers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  meeting_date DATE NOT NULL,
+  title VARCHAR(255) NOT NULL DEFAULT 'Design–Engineering Review Handover',
+  attendees TEXT[] NOT NULL DEFAULT '{}',
+  purpose TEXT,
+  discussion_summary TEXT,
+  decisions TEXT,
+  action_items TEXT,
+  open_items TEXT,
+  acceptance_notes TEXT,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_db_review_handovers_book
+  ON design_book_review_handovers(design_book_id, meeting_date DESC);
+
+CREATE OR REPLACE FUNCTION prevent_released_design_book_parent_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD.status = 'Released' THEN
+    RAISE EXCEPTION 'Released Design Books are read-only'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS guard_released_design_book_parent ON design_books;
+CREATE TRIGGER guard_released_design_book_parent
+BEFORE UPDATE OR DELETE ON design_books
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_parent_mutation();
+
+-- Released Design Book-owned engineering records are immutable. Locking the
+-- parent row also serializes these writes against the atomic release action.
+CREATE OR REPLACE FUNCTION prevent_released_design_book_mutation()
+RETURNS TRIGGER AS $$
+DECLARE
+  parent_status TEXT;
+BEGIN
+  SELECT status INTO parent_status
+  FROM design_books
+  WHERE id = COALESCE(NEW.design_book_id, OLD.design_book_id)
+  FOR UPDATE;
+
+  IF parent_status = 'Released' THEN
+    RAISE EXCEPTION 'Released Design Books are read-only'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS guard_released_design_book_handovers ON design_book_review_handovers;
+CREATE TRIGGER guard_released_design_book_handovers
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_review_handovers
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 
 -- DESIGN BOOK: Exhibit Species
 CREATE TABLE IF NOT EXISTS design_book_exhibit_species (
@@ -856,6 +948,10 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_species (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_db_species_book ON design_book_exhibit_species(design_book_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_species ON design_book_exhibit_species;
+CREATE TRIGGER guard_released_design_book_species
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_exhibit_species
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 CREATE INDEX IF NOT EXISTS idx_db_species_exhibit ON design_book_exhibit_species(exhibit_id);
 
 -- DESIGN BOOK: Exhibit Hydraulics (water flow / turnover config)
@@ -872,7 +968,12 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_hydraulics (
   UNIQUE(design_book_id, exhibit_id)
 );
 CREATE INDEX IF NOT EXISTS idx_db_hydraulics_book ON design_book_exhibit_hydraulics(design_book_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_hydraulics ON design_book_exhibit_hydraulics;
+CREATE TRIGGER guard_released_design_book_hydraulics
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_exhibit_hydraulics
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_head_mm NUMERIC(8,2);
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_length_mm NUMERIC(10,2);
 -- Francis sizing basis. Existing head values are retained; these fields stay
 -- NULL until the saved design basis has been explicitly confirmed.
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS weir_formula_method VARCHAR(50);
@@ -900,6 +1001,10 @@ CREATE TABLE IF NOT EXISTS design_book_exhibit_substrate (
   UNIQUE(design_book_id, exhibit_id)
 );
 CREATE INDEX IF NOT EXISTS idx_db_substrate_book ON design_book_exhibit_substrate(design_book_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_substrate ON design_book_exhibit_substrate;
+CREATE TRIGGER guard_released_design_book_substrate
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_exhibit_substrate
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 
 -- DESIGN BOOK: Versions (point-in-time JSONB snapshots)
 CREATE TABLE IF NOT EXISTS design_book_versions (

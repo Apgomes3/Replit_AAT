@@ -5,6 +5,7 @@ const auth_1 = require("../middleware/auth");
 const graphService_1 = require("../services/graphService");
 const db_1 = require("../db");
 const router = (0, express_1.Router)();
+router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('graph'));
 router.post('/query', auth_1.authenticate, async (req, res) => {
     const { start_node, start_type, depth = 3 } = req.body;
     if (!start_node || !start_type)

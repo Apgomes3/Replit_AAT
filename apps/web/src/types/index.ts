@@ -5,6 +5,7 @@ export interface User {
   lastName: string;
   role: 'admin' | 'engineer' | 'viewer' | 'hq_manager' | 'pmo';
   canSeeAllPos?: boolean;
+  moduleAccess?: Record<string, 'manage' | 'view' | 'hidden'>;
 }
 
 export interface Project {
