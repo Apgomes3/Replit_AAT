@@ -1120,6 +1120,30 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
     material_id: '', primary_material: '',
   });
   const [saving, setSaving] = useState(false);
+  const [showAddPanel, setShowAddPanel] = useState(assignedTanks.length === 0);
+  const currentTank = assignedTanks[0] || null;
+
+  const closeAddPanel = () => {
+    setShowAddPanel(false);
+    setMode('assign');
+    setSelected(null);
+    setSelectedPim(null);
+  };
+
+  useEffect(() => {
+    if (assignedTanks.length === 0) setShowAddPanel(true);
+  }, [assignedTanks.length]);
+
+  useEffect(() => {
+    if (!showAddPanel || assignedTanks.length === 0) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeAddPanel();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [showAddPanel, assignedTanks.length]);
 
   const { data: matData } = useQuery({
     queryKey: ['materials-list'],
@@ -1152,10 +1176,19 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
 
   const handleConfirm = async () => {
     if (!selected) return;
+    if (currentTank && !window.confirm(
+      `${currentTank.tank_code} — ${currentTank.tank_name} is currently in use. Replace it with ${selected.tank_code} — ${selected.tank_name}?`,
+    )) return;
     setConfirming(true);
     try {
-      await api.patch(`/tanks/${selected.id}/exhibit`, { exhibit_id: exhibit.id });
-      toast.success(`${selected.tank_name} assigned to ${exhibit.exhibit_name}`);
+      await api.patch(`/tanks/${selected.id}/exhibit`, {
+        exhibit_id: exhibit.id,
+        replace_tank_id: currentTank?.id || null,
+      });
+      toast.success(currentTank
+        ? `${currentTank.tank_name} replaced with ${selected.tank_name}`
+        : `${selected.tank_name} assigned to ${exhibit.exhibit_name}`);
+      if (currentTank) closeAddPanel();
       onRefresh();
     } catch {
       toast.error('Failed to assign tank');
@@ -1168,19 +1201,16 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
     if (!newForm.tank_code.trim() || !newForm.tank_name.trim()) {
       return toast.error('Tank code and name are required');
     }
-    if (assignedTanks.length > 0) {
-      const current = assignedTanks.map(tank => `${tank.tank_code} — ${tank.tank_name}`).join(', ');
+    if (currentTank) {
       if (!window.confirm(
-        `This exhibit already has a tank in use: ${current}. Creating another tank may change which tank is used by the Design Book. Continue?`,
+        `${currentTank.tank_code} — ${currentTank.tank_name} is currently in use. Replace it with the new tank?`,
       )) return;
     }
     setSaving(true);
     try {
-      await api.post('/tanks', {
+      const payload = {
         tank_code: newForm.tank_code.trim().toUpperCase(),
         tank_name: newForm.tank_name.trim(),
-        project_id: projectId,
-        exhibit_id: exhibit.id,
         shape_type: newForm.shape_type || null,
         length_mm: newForm.length_mm || null,
         width_mm: newForm.width_mm || null,
@@ -1188,9 +1218,20 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
         design_water_level_mm: newForm.design_water_level_mm || null,
         material_id: newForm.material_id || null,
         primary_material: newForm.primary_material || null,
+        product_master_id: null,
         status: 'Active',
-      });
-      toast.success('Tank created and assigned');
+      };
+      if (currentTank) {
+        await api.put(`/tanks/${currentTank.id}`, payload);
+      } else {
+        await api.post('/tanks', {
+          ...payload,
+          project_id: projectId,
+          exhibit_id: exhibit.id,
+        });
+      }
+      toast.success(currentTank ? 'Existing tank replaced' : 'Tank created and assigned');
+      if (currentTank) closeAddPanel();
       onRefresh();
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message || 'Failed to create tank');
@@ -1201,10 +1242,9 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
 
   const handleCreateFromPim = async () => {
     if (!selectedPim) return;
-    if (assignedTanks.length > 0) {
-      const current = assignedTanks.map(tank => `${tank.tank_code} — ${tank.tank_name}`).join(', ');
+    if (currentTank) {
       if (!window.confirm(
-        `This exhibit already has a tank in use: ${current}. Creating a linked PIM tank may change which tank is used by the Design Book. Continue?`,
+        `${currentTank.tank_code} — ${currentTank.tank_name} is currently in use. Replace it with ${selectedPim.product_code} — ${selectedPim.product_name}?`,
       )) return;
     }
     setConfirming(true);
@@ -1214,8 +1254,12 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
         exhibit_id: exhibit.id,
         design_book_id: designBookId,
         product_master_id: selectedPim.id,
+        ...(currentTank ? { replace_tank_id: currentTank.id } : {}),
       });
-      toast.success(`${selectedPim.product_name} linked from the PIM Tank Library`);
+      toast.success(currentTank
+        ? `${currentTank.tank_name} replaced with ${selectedPim.product_name}`
+        : `${selectedPim.product_name} linked from the PIM Tank Library`);
+      if (currentTank) closeAddPanel();
       onRefresh();
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message || 'Failed to create linked project tank');
@@ -1227,35 +1271,60 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   const isCyl = newForm.shape_type === 'Cylindrical';
   const newSurfaceArea = waterSurfaceAreaM2(newForm.shape_type, newForm.length_mm, newForm.width_mm);
 
+  if (assignedTanks.length > 0 && !showAddPanel) {
+    return (
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => { setMode('new'); setShowAddPanel(true); }}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+        >
+          <SquarePlus className="w-4 h-4" /> Add a New Tank
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-      <div className="flex items-center gap-1 px-4 py-3 border-b border-stone-100 bg-stone-50/50">
-        <button
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-stone-100 bg-stone-50/50">
+        <div className="flex items-center gap-1">
+          <button
           onClick={() => { setMode('assign'); setSelected(null); }}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
             mode === 'assign' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:bg-stone-100'
           }`}
         >
           <LinkIcon className="w-3.5 h-3.5" /> Project Tanks
-        </button>
-        {canUsePim && (
-          <button
+          </button>
+          {canUsePim && (
+            <button
             onClick={() => { setMode('pim'); setSelected(null); setSelectedPim(null); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               mode === 'pim' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:bg-stone-100'
             }`}
           >
             <LibraryBig className="w-3.5 h-3.5" /> PIM Tank Library
-          </button>
-        )}
-        <button
+            </button>
+          )}
+          <button
           onClick={() => { setMode('new'); setSelected(null); }}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
             mode === 'new' ? 'bg-blue-600 text-white' : 'text-stone-600 hover:bg-stone-100'
           }`}
         >
           <SquarePlus className="w-3.5 h-3.5" /> Create New Tank
-        </button>
+          </button>
+        </div>
+        {assignedTanks.length > 0 && (
+          <button
+            type="button"
+            onClick={closeAddPanel}
+            className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-100"
+          >
+            <X className="w-3.5 h-3.5" /> Cancel
+          </button>
+        )}
       </div>
 
       <div className="p-5">

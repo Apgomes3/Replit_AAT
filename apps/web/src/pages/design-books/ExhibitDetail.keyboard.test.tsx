@@ -201,7 +201,11 @@ describe('ExhibitDetail Escape navigation', () => {
     const user = userEvent.setup();
     renderExhibit();
 
+    expect(await screen.findByRole('button', { name: 'Add a New Tank' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add a New Tank' }));
     expect(await screen.findByRole('button', { name: 'PIM Tank Library' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('button', { name: 'PIM Tank Library' })).not.toBeInTheDocument();
     await user.click((await screen.findAllByRole('button', { name: 'Edit' }))[0]);
     const tankName = screen.getByPlaceholderText('e.g. Main Display Tank');
     await user.clear(tankName);
