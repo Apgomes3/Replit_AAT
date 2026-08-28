@@ -992,6 +992,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     await user.click(route.getByRole('button', { name: 'Apply rate + quantity' }));
     expect(route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' })).toHaveValue(20);
+    await user.click(route.getByRole('button', { name: 'Show details for FF-500' }));
     expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(3);
 
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
@@ -1008,5 +1009,116 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
         })],
       }),
     ));
+  });
+
+  it('keeps selected fractionators independent while flipping with the keyboard', async () => {
+    const user = userEvent.setup();
+    const products = [
+      {
+        id: 'ff-500',
+        product_code: 'FF-500',
+        product_name: 'Foam Fractionator 500',
+        diameter_mm: 500,
+      },
+      {
+        id: 'ff-750',
+        product_code: 'FF-750',
+        product_name: 'Foam Fractionator 750',
+        diameter_mm: 750,
+      },
+    ];
+    renderFlowRoute({
+      ...baseSystem,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 19,
+        notes: 'Keep the skimmer bank accessible.',
+        products: [
+          { product_master_id: 'ff-500', product_code: 'FF-500', quantity: 1 },
+          { product_master_id: 'ff-750', product_code: 'FF-750', quantity: 2 },
+        ],
+      }],
+    }, baseBook, [], products);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const firstCard = route.getByRole('button', { name: 'Show details for FF-500' });
+    const secondCard = route.getByRole('button', { name: 'Show details for FF-750' });
+    route.getAllByText('Model diameter').forEach(detail => expect(detail).not.toBeVisible());
+
+    firstCard.focus();
+    await user.keyboard('{Enter}');
+
+    expect(route.getByRole('button', { name: 'Show compact summary for FF-500' })).toBeInTheDocument();
+    expect(route.getAllByText('Model diameter').filter(detail => detail.closest('[hidden]') === null)).toHaveLength(1);
+    expect(route.getAllByText('Calculated area').filter(detail => detail.closest('[hidden]') === null)).toHaveLength(1);
+    expect(route.getAllByText('Capacity status').filter(detail => detail.closest('[hidden]') === null)).toHaveLength(1);
+    expect(secondCard).not.toHaveAttribute('aria-expanded', 'true');
+    expect(route.getByRole('button', { name: 'Show details for FF-750' })).toHaveAttribute('aria-expanded', 'false');
+    expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(1);
+    expect(route.getAllByText('Keep the skimmer bank accessible.').length).toBeGreaterThan(0);
+    expect(apiPut).not.toHaveBeenCalled();
+
+    await user.click(route.getByRole('button', { name: 'Show compact summary for FF-500' }));
+    expect(route.getByRole('button', { name: 'Show details for FF-500' })).toBeInTheDocument();
+    expect(route.queryByRole('spinbutton', { name: 'FF-500 quantity' })).not.toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        fractionator_allocations: [expect.objectContaining({
+          parent_loop_number: 1,
+          process_rate_ls_m2: 19,
+          products: [
+            expect.objectContaining({ product_master_id: 'ff-500', quantity: 1 }),
+            expect.objectContaining({ product_master_id: 'ff-750', quantity: 2 }),
+          ],
+        })],
+      }),
+    ));
+  });
+
+  it('keeps flipped fractionator details read-only for released Flow Routes', async () => {
+    const user = userEvent.setup();
+    const product = {
+      id: 'ff-500',
+      product_code: 'FF-500',
+      product_name: 'Foam Fractionator 500',
+      diameter_mm: 500,
+    };
+    const releasedBook = {
+      ...baseBook,
+      status: 'Released',
+      systems: [{
+        ...baseSystem,
+        water_type: 'Marine',
+        loop1_filtration: 'Foam Fractionation',
+        fractionator_allocations: [{
+          parent_loop_number: 1,
+          process_rate_ls_m2: 19,
+          products: [{
+            product_master_id: 'ff-500',
+            product_code: 'FF-500',
+            product_name: 'Foam Fractionator 500',
+            diameter_mm: 500,
+            quantity: 1,
+          }],
+        }],
+      }],
+      system_links: [],
+    };
+    renderFlowRoute(baseSystem, releasedBook, [], [product]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Show details for FF-500' }));
+
+    expect(route.getByText('Model diameter')).toBeInTheDocument();
+    expect(route.queryByRole('spinbutton', { name: 'FF-500 quantity' })).not.toBeInTheDocument();
+    expect(route.queryByRole('button', { name: 'Remove FF-500' })).not.toBeInTheDocument();
   });
 });

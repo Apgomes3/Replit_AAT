@@ -53,6 +53,138 @@ function isEditingField(target: EventTarget | null): boolean {
     && (target.matches('input, select, textarea, [contenteditable="true"]') || target.isContentEditable);
 }
 
+function FractionatorProductCard({
+  product,
+  loopNumber,
+  calculation,
+  loopFlow,
+  currentRate,
+  statusLabel,
+  notes,
+  editable,
+  formatFlow,
+  onQuantityChange,
+  onRemove,
+}: {
+  product: any;
+  loopNumber: number;
+  calculation: any;
+  loopFlow: number | null;
+  currentRate: number;
+  statusLabel: string;
+  notes?: string;
+  editable: boolean;
+  formatFlow: (value: number | null) => string;
+  onQuantityChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const frontRef = useRef<HTMLButtonElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const setFlipped = (flipped: boolean) => {
+    if (frontRef.current) {
+      frontRef.current.hidden = flipped;
+      frontRef.current.setAttribute('aria-expanded', String(flipped));
+    }
+    if (detailRef.current) detailRef.current.hidden = !flipped;
+  };
+  const productId = String(product.product_master_id);
+  const detailsId = `fractionator-details-${loopNumber}-${productId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const diameter = Number(product.diameter_mm);
+  const quantity = Number(product.quantity);
+  const area = diameter > 0 && quantity > 0
+    ? Math.PI * Math.pow(diameter / 2000, 2) * quantity
+    : null;
+  const capacityLs = area != null && calculation.status !== 'incomplete'
+    ? area * calculation.rate
+    : null;
+  const parentFlowLs = loopFlow == null ? null : loopFlow / 3.6;
+
+  return (
+    <section
+      aria-label={`Foam Fractionator ${product.product_code}`}
+      className="min-w-0 rounded-md border border-current/20 bg-white/60 overflow-hidden"
+    >
+      <>
+        <button
+          ref={frontRef}
+          type="button"
+          aria-expanded={false}
+          aria-controls={detailsId}
+          aria-label={`Show details for ${product.product_code}`}
+          onClick={() => setFlipped(true)}
+          className="flex min-h-20 w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-white focus-visible:bg-white"
+        >
+          <span className="min-w-0 truncate text-sm font-semibold">{product.product_code}</span>
+          <span className="shrink-0 text-xs font-medium">
+            {product.quantity} unit{String(product.quantity) === '1' ? '' : 's'}
+          </span>
+        </button>
+        <div ref={detailRef} id={detailsId} hidden className="p-3 text-[10px]">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <strong className="block truncate text-sm">{product.product_code}</strong>
+              <span className="block text-[10px] opacity-70">{product.product_name}</span>
+            </div>
+            <button
+              type="button"
+              aria-expanded={true}
+              aria-controls={detailsId}
+              aria-label={`Show compact summary for ${product.product_code}`}
+              onClick={() => setFlipped(false)}
+              className="shrink-0 rounded border border-current/20 px-2 py-1 font-semibold hover:bg-white"
+            >
+              Compact view
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
+            <div><span className="block opacity-70">Model diameter</span><strong>{diameter > 0 ? `Ø${diameter} mm` : 'Unavailable'}</strong></div>
+            <div><span className="block opacity-70">Quantity</span><strong>{product.quantity} unit{String(product.quantity) === '1' ? '' : 's'}</strong></div>
+            <div><span className="block opacity-70">Calculated area</span><strong>{area != null ? `${area.toFixed(4)} m²` : 'Unavailable'}</strong></div>
+            <div><span className="block opacity-70">Parent loop flow</span><strong>{formatFlow(loopFlow)}{parentFlowLs != null ? ` (${parentFlowLs.toFixed(3)} L/s)` : ''}</strong></div>
+            <div><span className="block opacity-70">Selected process rate</span><strong>{calculation.status !== 'incomplete' ? `${calculation.rate.toFixed(2)} L/s/m²` : currentRate > 0 ? `${currentRate.toFixed(2)} L/s/m²` : '—'}</strong></div>
+            <div><span className="block opacity-70">Calculated capacity</span><strong>{capacityLs != null ? `${formatFlow(capacityLs * 3.6)} (${capacityLs.toFixed(3)} L/s)` : 'Unavailable'}</strong></div>
+            <div><span className="block opacity-70">Actual loading</span><strong>{calculation.status !== 'incomplete' ? `${calculation.actualLoading.toFixed(3)} L/s/m²` : 'Unavailable'}</strong></div>
+            <div><span className="block opacity-70">Capacity status</span><strong>{statusLabel}</strong></div>
+          </div>
+          {calculation.status === 'incomplete' && (
+            <p className="mt-2 font-semibold">{calculation.reason}</p>
+          )}
+          {calculation.advisory && (
+            <p className="mt-2 font-semibold">Advisory: selected rate is outside the recommended 18–22 L/s/m² range.</p>
+          )}
+          {notes && (
+            <p className="mt-2 opacity-80"><span className="font-semibold">Notes:</span> {notes}</p>
+          )}
+          {editable && (
+            <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-2 border-t border-current/10 pt-3">
+              <label className="text-[10px] font-medium">
+                Quantity
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  aria-label={`${product.product_code} quantity`}
+                  value={product.quantity}
+                  onChange={event => onQuantityChange(event.target.value)}
+                  className="mt-1 w-full rounded border border-current/20 px-2 py-1 text-xs bg-white"
+                />
+              </label>
+              <button
+                type="button"
+                aria-label={`Remove ${product.product_code}`}
+                onClick={onRemove}
+                className="rounded border border-current/20 p-2 hover:bg-white"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      </>
+    </section>
+  );
+}
+
 const FLOW_LOOP_FIELDS = [
   'name',
   'flow_source',
@@ -1912,24 +2044,39 @@ export default function DesignBookLSSDetail() {
                       ))}
                     </select>
                   </div>
-                  {allocation.products.map((product: any) => (
-                    <div key={product.product_master_id} className="grid grid-cols-[1fr_80px_auto] gap-2 items-center rounded bg-white/70 p-2">
-                      <div className="text-[10px]">
-                        <strong>{product.product_code} — {product.product_name}</strong>
-                        <span className="block opacity-70">{product.diameter_mm ? `Ø${product.diameter_mm} mm` : 'Diameter unavailable'}</span>
-                      </div>
-                      <input type="number" min="1" step="1" aria-label={`${product.product_code} quantity`}
-                        value={product.quantity} onChange={event => updateAllocation({
-                          products: allocation.products.map((item: any) => item.product_master_id === product.product_master_id
-                            ? { ...item, quantity: event.target.value } : item),
-                        })} className="w-full rounded border border-current/20 px-2 py-1 text-xs bg-white" />
-                      <button type="button" aria-label={`Remove ${product.product_code}`}
-                        onClick={() => updateAllocation({ products: allocation.products.filter(
-                          (item: any) => item.product_master_id !== product.product_master_id) })}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                </div>
+              )}
+              <div className="grid gap-2 sm:grid-cols-2">
+                    {selectedProducts.map((product: any) => {
+                      const productId = String(product.product_master_id);
+                      return (
+                        <FractionatorProductCard
+                          key={productId}
+                          product={product}
+                          loopNumber={n}
+                          calculation={calculation}
+                          loopFlow={loopFlow}
+                          currentRate={currentRate}
+                          statusLabel={statusLabel}
+                          notes={allocation.notes}
+                          editable={editable}
+                          formatFlow={fmtReferenceFlow}
+                          onQuantityChange={value => updateAllocation({
+                            products: allocation.products.map((item: any) =>
+                              item.product_master_id === product.product_master_id
+                                ? { ...item, quantity: value }
+                                : item),
+                          })}
+                          onRemove={() => updateAllocation({
+                            products: allocation.products.filter(
+                              (item: any) => item.product_master_id !== product.product_master_id),
+                          })}
+                        />
+                      );
+                    })}
+              </div>
+              {editable && (
+                <div className="space-y-3 mb-3 mt-3">
                   <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(250px,0.9fr)] gap-3 items-start">
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-1">
@@ -2042,21 +2189,8 @@ export default function DesignBookLSSDetail() {
                   </div>
                 </div>
               )}
-              {calculation.status === 'incomplete' ? (
+              {selectedProducts.length === 0 && calculation.status === 'incomplete' && (
                 <p className="text-[10px]">{calculation.reason}</p>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px]">
-                    <div><span className="block opacity-70">Models / count</span><strong>{calculation.products.map((p: any) => `${p.product_code} × ${p.quantity}`).join(', ')}</strong></div>
-                    <div><span className="block opacity-70">Total area</span><strong>{calculation.area.toFixed(4)} m²</strong></div>
-                    <div><span className="block opacity-70">Parent loop flow</span><strong>{fmtReferenceFlow(loopFlow)} ({calculation.flowLs.toFixed(3)} L/s)</strong></div>
-                    <div><span className="block opacity-70">Process rate</span><strong>{calculation.rate.toFixed(2)} L/s/m²</strong></div>
-                    <div><span className="block opacity-70">Calculated capacity</span><strong>{fmtReferenceFlow(calculation.capacityLs * 3.6)} ({calculation.capacityLs.toFixed(3)} L/s)</strong></div>
-                    <div><span className="block opacity-70">Actual loading</span><strong>{calculation.actualLoading.toFixed(3)} L/s/m²</strong></div>
-                  </div>
-                  {calculation.advisory && <p className="text-[10px] font-semibold mt-2">Advisory: selected rate is outside the recommended 18–22 L/s/m² range.</p>}
-                  {allocation.notes && !editable && <p className="text-[10px] mt-2 opacity-80">{allocation.notes}</p>}
-                </>
               )}
             </div>
           );
@@ -2570,7 +2704,7 @@ export default function DesignBookLSSDetail() {
                                 )}
                                 {pending && <span className="text-[10px] text-stone-400 italic">unsaved</span>}
                               </div>
-                              {LoopView({ n })}
+                              <LoopView n={n} />
                             </div>
                           );
                         })}
