@@ -1,13 +1,22 @@
 import { PoolClient } from 'pg';
+import artifact from './speciesCatalogArtifact.v1.json';
 
 export type SpeciesCatalogSeedRecord = {
   scientific_name: string;
   common_name: string | null;
   family: string;
   water_type: string;
-  average_size_cm: number;
-  reference_average_mass_kg: number;
+  average_size_cm: number | null;
+  reference_average_mass_kg: number | null;
   source: string;
+};
+
+export type SpeciesCatalogArtifact = {
+  version: number;
+  status: 'reviewed';
+  generated_at: string;
+  source: string;
+  records: SpeciesCatalogSeedRecord[];
 };
 
 type GbifImportGroup = {
@@ -37,6 +46,9 @@ export const GBIF_IMPORT_GROUPS: GbifImportGroup[] = [
 
 export const SPECIES_CATALOG_STAGE_ONE_SIZE = GBIF_IMPORT_GROUPS.length * SPECIES_PER_IMPORT_GROUP;
 
+export const SPECIES_CATALOG_ARTIFACT_VERSION = artifact.version;
+export const SPECIES_CATALOG_ARTIFACT = artifact as SpeciesCatalogArtifact;
+
 type GbifSpecies = {
   key: number;
   canonicalName?: string;
@@ -48,13 +60,13 @@ type GbifSpecies = {
   vernacularNames?: Array<{ vernacularName?: string; language?: string }>;
 };
 
-async function fetchGbifGroup(group: GbifImportGroup): Promise<SpeciesCatalogSeedRecord[]> {
+export async function fetchGbifGroup(group: GbifImportGroup): Promise<SpeciesCatalogSeedRecord[]> {
   const queryUrl = new URL('https://api.gbif.org/v1/species/search');
   queryUrl.searchParams.set('highertaxon_key', String(group.gbifFamilyKey));
   queryUrl.searchParams.set('rank', 'SPECIES');
   queryUrl.searchParams.set('status', 'ACCEPTED');
   queryUrl.searchParams.set('limit', '100');
-  const response = await fetch(queryUrl);
+  const response = await fetch(queryUrl, { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error(`GBIF import failed for ${group.family}: HTTP ${response.status}`);
   const payload = await response.json() as { results?: GbifSpecies[] };
   const seen = new Set<string>();
@@ -99,7 +111,7 @@ async function fetchGbifGroup(group: GbifImportGroup): Promise<SpeciesCatalogSee
   return records;
 }
 
-export async function loadSpeciesCatalogStageOne() {
+export async function fetchSpeciesCatalogStageOne() {
   const groups = await Promise.all(GBIF_IMPORT_GROUPS.map(fetchGbifGroup));
   const records = groups.flat();
   if (new Set(records.map(record => record.scientific_name.toLowerCase())).size !== records.length) {
@@ -108,15 +120,29 @@ export async function loadSpeciesCatalogStageOne() {
   return records;
 }
 
+function validateArtifact(records: SpeciesCatalogSeedRecord[]) {
+  if (!records.length) throw new Error('Species catalog artifact is empty');
+  const names = new Set<string>();
+  for (const record of records) {
+    const scientificName = String(record.scientific_name || '').trim();
+    if (!scientificName || !record.family || !record.water_type || !record.source) {
+      throw new Error('Species catalog artifact contains an incomplete record');
+    }
+    const key = scientificName.toLowerCase();
+    if (names.has(key)) throw new Error(`Species catalog artifact contains duplicate scientific name: ${scientificName}`);
+    names.add(key);
+  }
+  return records;
+}
+
+export async function loadSpeciesCatalogStageOne() {
+  return validateArtifact(SPECIES_CATALOG_ARTIFACT.records);
+}
+
 export async function seedSpeciesCatalog(client: PoolClient, userId: string | null) {
   const records = await loadSpeciesCatalogStageOne();
-  // Never remove a catalog row during seed maintenance: historical allocations
-  // retain their link and captured values even when an earlier starter is retired.
-  await client.query(
-    `UPDATE aquarium_species_catalog
-     SET active=false, updated_at=NOW()
-     WHERE source LIKE 'Curated starter import v1 — planning reference%'`,
-  );
+  // The reviewed artifact is immutable input for fresh setup. Never update or
+  // delete existing rows: allocations retain both their link and snapshots.
   for (const record of records) {
     await client.query(
       `INSERT INTO aquarium_species_catalog

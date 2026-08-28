@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Fish, Pencil, Plus, Search, Upload, X } from 'lucide-react';
+import { AlertTriangle, Check, Fish, Pencil, Plus, RefreshCw, Search, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -36,15 +36,30 @@ export default function SpeciesCatalog() {
   if (family) params.set('family', family);
   if (showInactive) params.set('include_inactive', 'true');
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    isError: catalogError,
+    error: catalogQueryError,
+    refetch: refetchCatalog,
+  } = useQuery({
     queryKey: ['species-catalog', search, waterType, family, showInactive],
     queryFn: () => api.get(`/species-catalog?${params}`).then(result => result.data),
   });
-  const { data: facets } = useQuery({
+  const {
+    data: facets,
+    isError: facetsError,
+    refetch: refetchFacets,
+  } = useQuery({
     queryKey: ['species-catalog-facets'],
     queryFn: () => api.get('/species-catalog/facets').then(result => result.data),
   });
   const items: any[] = data?.items || [];
+  const queryErrorMessage = (error: any) => error?.response?.data?.error?.message || 'The species catalog is temporarily unavailable. Please retry.';
+  const retryCatalog = async () => {
+    await Promise.all([refetchCatalog(), refetchFacets()]);
+    qc.invalidateQueries({ queryKey: ['species-catalog-picker'] });
+  };
 
   const openNew = () => {
     setEditing({ id: null });
@@ -146,10 +161,27 @@ export default function SpeciesCatalog() {
           Include inactive records
           <span className="ml-auto text-stone-400">{data?.total || 0} matching records</span>
         </label>
+        {facetsError && (
+          <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 md:col-span-4">
+            <span>Filters could not load. You can still search the catalog.</span>
+            <button type="button" onClick={() => refetchFacets()} className="font-semibold underline">Retry filters</button>
+          </div>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-        {isLoading ? <div className="p-10 text-center text-sm text-stone-400">Loading species catalog…</div> : (
+        {isLoading ? <div className="p-10 text-center text-sm text-stone-400">Loading species catalog…</div> : catalogError ? (
+          <div role="alert" className="flex flex-col items-center gap-3 p-12 text-center">
+            <AlertTriangle className="h-8 w-8 text-amber-600" />
+            <div>
+              <p className="font-medium text-stone-800">The species catalog could not be loaded</p>
+              <p className="mt-1 max-w-md text-sm text-stone-500">{queryErrorMessage(catalogQueryError)}</p>
+            </div>
+            <button type="button" onClick={retryCatalog} className="flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800">
+              <RefreshCw className="h-4 w-4" /> Retry catalog
+            </button>
+          </div>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-400">
@@ -190,7 +222,11 @@ export default function SpeciesCatalog() {
                   </tr>
                 ))}
                 {items.length === 0 && (
-                  <tr><td colSpan={canManage ? 7 : 6} className="p-12 text-center text-sm text-stone-400">No catalog species match these filters.</td></tr>
+                  <tr><td colSpan={canManage ? 7 : 6} className="p-12 text-center text-sm text-stone-400">
+                    {data?.total === 0 && !search && !waterType && !family && !showInactive
+                      ? 'The catalog is empty. Add or import a reviewed species set.'
+                      : 'No catalog species match these filters.'}
+                  </td></tr>
                 )}
               </tbody>
             </table>

@@ -33,14 +33,75 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.CatalogUnavailableError = exports.catalogPoolOptions = void 0;
+exports.catalogQuery = catalogQuery;
+exports.sendCatalogError = sendCatalogError;
 const express_1 = require("express");
 const db_1 = __importStar(require("../db"));
+const pg_1 = require("pg");
 const auth_1 = require("../middleware/auth");
 const audit_1 = require("../db/audit");
 const router = (0, express_1.Router)();
-router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const routeParam = (value) => Array.isArray(value) ? value[0] : value;
 const WATER_TYPES = new Set(['Marine', 'Freshwater', 'Brackish', 'Universal']);
+const CATALOG_QUERY_TIMEOUT_MS = 2500;
+exports.catalogPoolOptions = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    connectionTimeoutMillis: CATALOG_QUERY_TIMEOUT_MS,
+    statement_timeout: CATALOG_QUERY_TIMEOUT_MS,
+    // The client-side timeout is deliberately longer than PostgreSQL's timeout,
+    // allowing the server to cancel and release work before the client gives up.
+    query_timeout: CATALOG_QUERY_TIMEOUT_MS + 500,
+    max: 4,
+};
+const catalogPool = new pg_1.Pool(exports.catalogPoolOptions);
+class CatalogUnavailableError extends Error {
+    constructor() {
+        super(...arguments);
+        this.code = 'CATALOG_UNAVAILABLE';
+        this.status = 503;
+        this.retryable = true;
+    }
+}
+exports.CatalogUnavailableError = CatalogUnavailableError;
+async function catalogQuery(text, values = []) {
+    try {
+        return await catalogPool.query(text, values);
+    }
+    catch (error) {
+        if (error?.code === '57014' || /timeout|timed out/i.test(String(error?.message || ''))) {
+            throw new CatalogUnavailableError('The species catalog took too long to respond. Please retry.');
+        }
+        throw new CatalogUnavailableError('The species catalog is temporarily unavailable. Please retry shortly.');
+    }
+}
+async function ensureCatalogReady() {
+    const result = await catalogQuery(`SELECT to_regclass('public.aquarium_species_catalog')::text AS table_name`);
+    if (!result.rows[0]?.table_name) {
+        throw new CatalogUnavailableError('The species catalog is not ready yet. Run the database migration, then retry.');
+    }
+}
+function sendCatalogError(res, error) {
+    const unavailable = error instanceof CatalogUnavailableError;
+    return res.status(unavailable ? error.status : 500).json({
+        error: {
+            code: unavailable ? error.code : 'CATALOG_ERROR',
+            message: unavailable ? error.message : 'The species catalog could not be loaded. Please retry shortly.',
+            retryable: unavailable,
+        },
+    });
+}
+async function requireCatalogReady(_req, res, next) {
+    try {
+        await ensureCatalogReady();
+        next();
+    }
+    catch (error) {
+        sendCatalogError(res, error);
+    }
+}
+router.use(auth_1.authenticate, requireCatalogReady, (0, auth_1.requireModuleAccess)('design_books'));
 function text(value, label, required = false) {
     const result = typeof value === 'string' ? value.trim() : '';
     if (required && !result)
@@ -82,53 +143,68 @@ function errorMessage(error) {
     return error instanceof Error ? error.message : 'Unexpected catalog error';
 }
 router.get('/species-catalog/facets', async (_req, res) => {
-    const [families, waterTypes] = await Promise.all([
-        (0, db_1.query)(`SELECT family, COUNT(*)::int AS count FROM aquarium_species_catalog WHERE active=true GROUP BY family ORDER BY family`),
-        (0, db_1.query)(`SELECT water_type, COUNT(*)::int AS count FROM aquarium_species_catalog WHERE active=true GROUP BY water_type ORDER BY water_type`),
-    ]);
-    res.json({ families: families.rows, water_types: waterTypes.rows });
+    try {
+        const [families, waterTypes] = await Promise.all([
+            catalogQuery(`SELECT family, COUNT(*)::int AS count FROM aquarium_species_catalog WHERE active=true GROUP BY family ORDER BY family`),
+            catalogQuery(`SELECT water_type, COUNT(*)::int AS count FROM aquarium_species_catalog WHERE active=true GROUP BY water_type ORDER BY water_type`),
+        ]);
+        res.json({ families: families.rows, water_types: waterTypes.rows });
+    }
+    catch (error) {
+        sendCatalogError(res, error);
+    }
 });
 router.get('/species-catalog', async (req, res) => {
-    const q = String(req.query.q || '').trim();
-    const waterType = String(req.query.water_type || '').trim();
-    const family = String(req.query.family || '').trim();
-    const includeInactive = req.query.include_inactive === 'true';
-    const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 100));
-    const offset = Math.max(0, Number(req.query.offset) || 0);
-    const params = [];
-    const conditions = [];
-    if (!includeInactive)
-        conditions.push('active=true');
-    if (q) {
-        params.push(`%${q}%`);
-        conditions.push(`(scientific_name ILIKE $${params.length} OR common_name ILIKE $${params.length} OR family ILIKE $${params.length})`);
+    try {
+        const q = String(req.query.q || '').trim();
+        const waterType = String(req.query.water_type || '').trim();
+        const family = String(req.query.family || '').trim();
+        const includeInactive = req.query.include_inactive === 'true';
+        const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 100));
+        const offset = Math.max(0, Number(req.query.offset) || 0);
+        const params = [];
+        const conditions = [];
+        if (!includeInactive)
+            conditions.push('active=true');
+        if (q) {
+            params.push(`%${q}%`);
+            conditions.push(`(scientific_name ILIKE $${params.length} OR common_name ILIKE $${params.length} OR family ILIKE $${params.length})`);
+        }
+        if (waterType) {
+            params.push(waterType);
+            conditions.push(`water_type=$${params.length}`);
+        }
+        if (family) {
+            params.push(family);
+            conditions.push(`family=$${params.length}`);
+        }
+        params.push(limit, offset);
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const result = await catalogQuery(`SELECT *, COUNT(*) OVER()::int AS total_count
+       FROM aquarium_species_catalog ${where}
+       ORDER BY water_type, family, scientific_name
+       LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+        res.json({
+            items: result.rows.map(({ total_count, ...row }) => row),
+            total: result.rows[0]?.total_count || 0,
+            limit,
+            offset,
+        });
     }
-    if (waterType) {
-        params.push(waterType);
-        conditions.push(`water_type=$${params.length}`);
+    catch (error) {
+        sendCatalogError(res, error);
     }
-    if (family) {
-        params.push(family);
-        conditions.push(`family=$${params.length}`);
-    }
-    params.push(limit, offset);
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const result = await (0, db_1.query)(`SELECT *, COUNT(*) OVER()::int AS total_count
-     FROM aquarium_species_catalog ${where}
-     ORDER BY water_type, family, scientific_name
-     LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
-    res.json({
-        items: result.rows.map(({ total_count, ...row }) => row),
-        total: result.rows[0]?.total_count || 0,
-        limit,
-        offset,
-    });
 });
 router.get('/species-catalog/:id', async (req, res) => {
-    const result = await (0, db_1.query)('SELECT * FROM aquarium_species_catalog WHERE id=$1', [req.params.id]);
-    if (!result.rows[0])
-        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species catalog record not found' } });
-    res.json(result.rows[0]);
+    try {
+        const result = await catalogQuery('SELECT * FROM aquarium_species_catalog WHERE id=$1', [req.params.id]);
+        if (!result.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species catalog record not found' } });
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        sendCatalogError(res, error);
+    }
 });
 router.post('/species-catalog', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     let payload;

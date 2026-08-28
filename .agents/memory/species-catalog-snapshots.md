@@ -13,4 +13,4 @@ Catalog seed maintenance must deactivate superseded records rather than delete t
 
 **Why:** Deletion can clear live allocation links through foreign-key behavior and make stored version snapshots impossible to restore.
 
-**How to apply:** Keep stable catalog identities indefinitely once allocations may reference them; retire records with active status and retain provenance.
+**How to apply:** Keep stable catalog identities indefinitely once allocations may reference them. Routine setup imports a reviewed, versioned offline artifact with insert-only conflict handling. Live-source regeneration creates a candidate artifact for review and never writes the database. If a reviewed maintenance release supersedes a record, retire it explicitly with active status and retain provenance; never delete it.

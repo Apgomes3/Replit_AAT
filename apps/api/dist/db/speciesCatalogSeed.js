@@ -1,8 +1,14 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS = exports.SPECIES_PER_IMPORT_GROUP = void 0;
+exports.SPECIES_CATALOG_ARTIFACT = exports.SPECIES_CATALOG_ARTIFACT_VERSION = exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS = exports.SPECIES_PER_IMPORT_GROUP = void 0;
+exports.fetchGbifGroup = fetchGbifGroup;
+exports.fetchSpeciesCatalogStageOne = fetchSpeciesCatalogStageOne;
 exports.loadSpeciesCatalogStageOne = loadSpeciesCatalogStageOne;
 exports.seedSpeciesCatalog = seedSpeciesCatalog;
+const speciesCatalogArtifact_v1_json_1 = __importDefault(require("./speciesCatalogArtifact.v1.json"));
 exports.SPECIES_PER_IMPORT_GROUP = 40;
 exports.GBIF_IMPORT_GROUPS = [
     { family: 'Acanthuridae', gbifFamilyKey: 4233, waterType: 'Marine', averageSizeCm: 24, referenceAverageMassKg: 0.55 },
@@ -20,13 +26,15 @@ exports.GBIF_IMPORT_GROUPS = [
     { family: 'Tetraodontidae', gbifFamilyKey: 2219, waterType: 'Brackish', averageSizeCm: 28, referenceAverageMassKg: 0.9 },
 ];
 exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS.length * exports.SPECIES_PER_IMPORT_GROUP;
+exports.SPECIES_CATALOG_ARTIFACT_VERSION = speciesCatalogArtifact_v1_json_1.default.version;
+exports.SPECIES_CATALOG_ARTIFACT = speciesCatalogArtifact_v1_json_1.default;
 async function fetchGbifGroup(group) {
     const queryUrl = new URL('https://api.gbif.org/v1/species/search');
     queryUrl.searchParams.set('highertaxon_key', String(group.gbifFamilyKey));
     queryUrl.searchParams.set('rank', 'SPECIES');
     queryUrl.searchParams.set('status', 'ACCEPTED');
     queryUrl.searchParams.set('limit', '100');
-    const response = await fetch(queryUrl);
+    const response = await fetch(queryUrl, { signal: AbortSignal.timeout(10000) });
     if (!response.ok)
         throw new Error(`GBIF import failed for ${group.family}: HTTP ${response.status}`);
     const payload = await response.json();
@@ -69,7 +77,7 @@ async function fetchGbifGroup(group) {
     }
     return records;
 }
-async function loadSpeciesCatalogStageOne() {
+async function fetchSpeciesCatalogStageOne() {
     const groups = await Promise.all(exports.GBIF_IMPORT_GROUPS.map(fetchGbifGroup));
     const records = groups.flat();
     if (new Set(records.map(record => record.scientific_name.toLowerCase())).size !== records.length) {
@@ -77,13 +85,29 @@ async function loadSpeciesCatalogStageOne() {
     }
     return records;
 }
+function validateArtifact(records) {
+    if (!records.length)
+        throw new Error('Species catalog artifact is empty');
+    const names = new Set();
+    for (const record of records) {
+        const scientificName = String(record.scientific_name || '').trim();
+        if (!scientificName || !record.family || !record.water_type || !record.source) {
+            throw new Error('Species catalog artifact contains an incomplete record');
+        }
+        const key = scientificName.toLowerCase();
+        if (names.has(key))
+            throw new Error(`Species catalog artifact contains duplicate scientific name: ${scientificName}`);
+        names.add(key);
+    }
+    return records;
+}
+async function loadSpeciesCatalogStageOne() {
+    return validateArtifact(exports.SPECIES_CATALOG_ARTIFACT.records);
+}
 async function seedSpeciesCatalog(client, userId) {
     const records = await loadSpeciesCatalogStageOne();
-    // Never remove a catalog row during seed maintenance: historical allocations
-    // retain their link and captured values even when an earlier starter is retired.
-    await client.query(`UPDATE aquarium_species_catalog
-     SET active=false, updated_at=NOW()
-     WHERE source LIKE 'Curated starter import v1 — planning reference%'`);
+    // The reviewed artifact is immutable input for fresh setup. Never update or
+    // delete existing rows: allocations retain both their link and snapshots.
     for (const record of records) {
         await client.query(`INSERT INTO aquarium_species_catalog
          (scientific_name, common_name, family, water_type, average_size_cm,

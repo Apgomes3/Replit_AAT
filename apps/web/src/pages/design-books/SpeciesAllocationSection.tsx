@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Fish, Link2, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Check, Fish, Link2, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -52,12 +52,14 @@ function CatalogPicker({ form, setForm, customMode, setCustomMode }: {
 }) {
   const [search, setSearch] = useState(form.species_name);
   const [open, setOpen] = useState(false);
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['species-catalog-picker', search],
     queryFn: () => api.get(`/species-catalog?q=${encodeURIComponent(search)}&limit=12`).then(result => result.data),
     enabled: !customMode && open && search.trim().length >= 2,
   });
   const items: any[] = data?.items || [];
+  const errorMessage = (error as any)?.response?.data?.error?.message
+    || 'The species catalog is temporarily unavailable. You can retry or use a custom species.';
 
   if (customMode) {
     return (
@@ -95,8 +97,19 @@ function CatalogPicker({ form, setForm, customMode, setCustomMode }: {
       {open && search.trim().length >= 2 && (
         <div className="absolute z-30 mt-1 max-h-60 w-[26rem] max-w-[75vw] overflow-auto rounded-lg border border-stone-200 bg-white shadow-xl">
           {isFetching && <div className="px-3 py-2 text-xs text-stone-400">Searching catalog…</div>}
-          {!isFetching && items.length === 0 && <div className="px-3 py-2 text-xs text-stone-400">No active catalog match.</div>}
-          {items.map(item => (
+          {!isFetching && isError && (
+            <div role="alert" className="flex items-start gap-2 px-3 py-3 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <div>
+                <p>{errorMessage}</p>
+                <button type="button" onClick={() => refetch()} className="mt-1 inline-flex items-center gap-1 font-semibold underline">
+                  <RefreshCw className="h-3 w-3" /> Retry catalog search
+                </button>
+              </div>
+            </div>
+          )}
+          {!isFetching && !isError && items.length === 0 && <div className="px-3 py-2 text-xs text-stone-400">No active catalog match.</div>}
+          {!isError && items.map(item => (
             <button key={item.id} type="button"
               onClick={() => {
                 setForm(current => ({

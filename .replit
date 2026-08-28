@@ -67,6 +67,14 @@ externalPort = 3003
 localPort = 23639
 externalPort = 6000
 
+[[ports]]
+localPort = 31170
+externalPort = 8008
+
+[[ports]]
+localPort = 31184
+externalPort = 8000
+
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 120000
