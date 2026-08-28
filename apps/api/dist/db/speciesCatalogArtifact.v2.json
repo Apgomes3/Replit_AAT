@@ -1,0 +1,442 @@
+{
+    "version": 2,
+    "status": "reviewed",
+    "generated_at": "2026-08-28",
+    "base_version": 1,
+    "record_scope": "Penguin and aquarium-relevant shark expansion",
+    "source": "Taxonomy and common-name provenance: GBIF Backbone Taxonomy accepted species names, reviewed against public-aquarium reference usage. Water type and planning values are provisional references for early aquarium planning and require engineer verification before design use.",
+    "records": [
+        {
+            "scientific_name": "Aptenodytes forsteri",
+            "common_name": "Emperor penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 115,
+            "reference_average_mass_kg": 30,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Aptenodytes patagonicus",
+            "common_name": "King penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 90,
+            "reference_average_mass_kg": 13.5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes chrysocome",
+            "common_name": "Southern rockhopper penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 52,
+            "reference_average_mass_kg": 3.2,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes filholi",
+            "common_name": "Eastern rockhopper penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 55,
+            "reference_average_mass_kg": 3.5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes chrysolophus",
+            "common_name": "Macaroni penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 75,
+            "reference_average_mass_kg": 5.5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes schlegeli",
+            "common_name": "Royal penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 76,
+            "reference_average_mass_kg": 5.5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes moseleyi",
+            "common_name": "Northern rockhopper penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 70,
+            "reference_average_mass_kg": 5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes pachyrhynchus",
+            "common_name": "Fiordland penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 55,
+            "reference_average_mass_kg": 3.6,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes robustus",
+            "common_name": "Snares penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 62,
+            "reference_average_mass_kg": 4.5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptes sclateri",
+            "common_name": "Erect-crested penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 65,
+            "reference_average_mass_kg": 5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Eudyptula minor",
+            "common_name": "Little penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 33,
+            "reference_average_mass_kg": 1.2,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Megadyptes antipodes",
+            "common_name": "Yellow-eyed penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 66,
+            "reference_average_mass_kg": 6,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Pygoscelis adeliae",
+            "common_name": "Adelie penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 70,
+            "reference_average_mass_kg": 5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Pygoscelis antarcticus",
+            "common_name": "Chinstrap penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 72,
+            "reference_average_mass_kg": 4,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Pygoscelis papua",
+            "common_name": "Gentoo penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 80,
+            "reference_average_mass_kg": 6,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Spheniscus demersus",
+            "common_name": "African penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 65,
+            "reference_average_mass_kg": 3,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Spheniscus humboldti",
+            "common_name": "Humboldt penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 70,
+            "reference_average_mass_kg": 4.2,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Spheniscus magellanicus",
+            "common_name": "Magellanic penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 70,
+            "reference_average_mass_kg": 4.5,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Spheniscus mendiculus",
+            "common_name": "Galapagos penguin",
+            "family": "Spheniscidae",
+            "water_type": "Marine",
+            "average_size_cm": 50,
+            "reference_average_mass_kg": 2,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Spheniscidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Carcharhinus leucas",
+            "common_name": "Bull shark",
+            "family": "Carcharhinidae",
+            "water_type": "Brackish",
+            "average_size_cm": 240,
+            "reference_average_mass_kg": 130,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: brackish planning classification for this euryhaline species. Size and mass: provisional Carcharhinidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Carcharhinus melanopterus",
+            "common_name": "Blacktip reef shark",
+            "family": "Carcharhinidae",
+            "water_type": "Marine",
+            "average_size_cm": 160,
+            "reference_average_mass_kg": 24,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Carcharhinidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Carcharhinus amblyrhynchos",
+            "common_name": "Grey reef shark",
+            "family": "Carcharhinidae",
+            "water_type": "Marine",
+            "average_size_cm": 200,
+            "reference_average_mass_kg": 33,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Carcharhinidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Carcharhinus plumbeus",
+            "common_name": "Sandbar shark",
+            "family": "Carcharhinidae",
+            "water_type": "Marine",
+            "average_size_cm": 200,
+            "reference_average_mass_kg": 32,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Carcharhinidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Ginglymostoma cirratum",
+            "common_name": "Nurse shark",
+            "family": "Ginglymostomatidae",
+            "water_type": "Marine",
+            "average_size_cm": 250,
+            "reference_average_mass_kg": 90,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Ginglymostomatidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Nebrius ferrugineus",
+            "common_name": "Tawny nurse shark",
+            "family": "Ginglymostomatidae",
+            "water_type": "Marine",
+            "average_size_cm": 230,
+            "reference_average_mass_kg": 80,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Ginglymostomatidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Pseudoginglymostoma brevicaudatum",
+            "common_name": "Short-tail nurse shark",
+            "family": "Ginglymostomatidae",
+            "water_type": "Marine",
+            "average_size_cm": 85,
+            "reference_average_mass_kg": 8,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Ginglymostomatidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Hemiscyllium ocellatum",
+            "common_name": "Epaulette shark",
+            "family": "Hemiscylliidae",
+            "water_type": "Marine",
+            "average_size_cm": 110,
+            "reference_average_mass_kg": 8,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Hemiscylliidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Hemiscyllium trispeculare",
+            "common_name": "Speckled carpetshark",
+            "family": "Hemiscylliidae",
+            "water_type": "Marine",
+            "average_size_cm": 120,
+            "reference_average_mass_kg": 10,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Hemiscylliidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Chiloscyllium punctatum",
+            "common_name": "Brown-banded bamboo shark",
+            "family": "Hemiscylliidae",
+            "water_type": "Marine",
+            "average_size_cm": 120,
+            "reference_average_mass_kg": 15,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Hemiscylliidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Chiloscyllium plagiosum",
+            "common_name": "Whitespotted bamboo shark",
+            "family": "Hemiscylliidae",
+            "water_type": "Marine",
+            "average_size_cm": 95,
+            "reference_average_mass_kg": 8,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Hemiscylliidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Chiloscyllium hasseltii",
+            "common_name": "Hasselt's bamboo shark",
+            "family": "Hemiscylliidae",
+            "water_type": "Marine",
+            "average_size_cm": 60,
+            "reference_average_mass_kg": 3,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Hemiscylliidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Heterodontus portusjacksoni",
+            "common_name": "Port Jackson shark",
+            "family": "Heterodontidae",
+            "water_type": "Marine",
+            "average_size_cm": 165,
+            "reference_average_mass_kg": 20,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Heterodontidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Heterodontus francisci",
+            "common_name": "Horn shark",
+            "family": "Heterodontidae",
+            "water_type": "Marine",
+            "average_size_cm": 120,
+            "reference_average_mass_kg": 10,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Heterodontidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Heterodontus japonicus",
+            "common_name": "Japanese bullhead shark",
+            "family": "Heterodontidae",
+            "water_type": "Marine",
+            "average_size_cm": 120,
+            "reference_average_mass_kg": 10,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Heterodontidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Orectolobus maculatus",
+            "common_name": "Spotted wobbegong",
+            "family": "Orectolobidae",
+            "water_type": "Marine",
+            "average_size_cm": 200,
+            "reference_average_mass_kg": 30,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Orectolobidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Orectolobus ornatus",
+            "common_name": "Banded wobbegong",
+            "family": "Orectolobidae",
+            "water_type": "Marine",
+            "average_size_cm": 290,
+            "reference_average_mass_kg": 50,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Orectolobidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Orectolobus halei",
+            "common_name": "Gulf wobbegong",
+            "family": "Orectolobidae",
+            "water_type": "Marine",
+            "average_size_cm": 240,
+            "reference_average_mass_kg": 35,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Orectolobidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Stegostoma fasciatum",
+            "common_name": "Zebra shark",
+            "family": "Stegostomatidae",
+            "water_type": "Marine",
+            "average_size_cm": 230,
+            "reference_average_mass_kg": 30,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Stegostomatidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Scyliorhinus canicula",
+            "common_name": "Small-spotted catshark",
+            "family": "Scyliorhinidae",
+            "water_type": "Marine",
+            "average_size_cm": 100,
+            "reference_average_mass_kg": 3,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Scyliorhinidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Scyliorhinus stellaris",
+            "common_name": "Nursehound",
+            "family": "Scyliorhinidae",
+            "water_type": "Marine",
+            "average_size_cm": 150,
+            "reference_average_mass_kg": 12,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Scyliorhinidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Atelomycterus marmoratus",
+            "common_name": "Coral catshark",
+            "family": "Scyliorhinidae",
+            "water_type": "Marine",
+            "average_size_cm": 70,
+            "reference_average_mass_kg": 2,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Scyliorhinidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Mustelus antarcticus",
+            "common_name": "Gummy shark",
+            "family": "Triakidae",
+            "water_type": "Marine",
+            "average_size_cm": 150,
+            "reference_average_mass_kg": 20,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Triakidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Mustelus canis",
+            "common_name": "Smooth dogfish",
+            "family": "Triakidae",
+            "water_type": "Marine",
+            "average_size_cm": 120,
+            "reference_average_mass_kg": 10,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Triakidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Rhincodon typus",
+            "common_name": "Whale shark",
+            "family": "Rhincodontidae",
+            "water_type": "Marine",
+            "average_size_cm": 600,
+            "reference_average_mass_kg": 5000,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Rhincodontidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Carcharias taurus",
+            "common_name": "Sand tiger shark",
+            "family": "Odontaspididae",
+            "water_type": "Marine",
+            "average_size_cm": 250,
+            "reference_average_mass_kg": 100,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Odontaspididae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Sphyrna lewini",
+            "common_name": "Scalloped hammerhead",
+            "family": "Sphyrnidae",
+            "water_type": "Marine",
+            "average_size_cm": 250,
+            "reference_average_mass_kg": 50,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Sphyrnidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Sphyrna mokarran",
+            "common_name": "Great hammerhead",
+            "family": "Sphyrnidae",
+            "water_type": "Marine",
+            "average_size_cm": 350,
+            "reference_average_mass_kg": 140,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Sphyrnidae planning reference v2; verify before design use."
+        },
+        {
+            "scientific_name": "Notorynchus cepedianus",
+            "common_name": "Broadnose sevengill shark",
+            "family": "Hexanchidae",
+            "water_type": "Marine",
+            "average_size_cm": 250,
+            "reference_average_mass_kg": 100,
+            "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; common name reviewed against public-aquarium references. Water type: marine planning classification. Size and mass: provisional Hexanchidae planning reference v2; verify before design use."
+        }
+    ]
+}

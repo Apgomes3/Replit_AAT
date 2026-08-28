@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import {
   fetchSpeciesCatalogStageOne,
-  SPECIES_CATALOG_STAGE_ONE_SIZE,
+  SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE,
 } from './speciesCatalogSeed';
 
 type Artifact = {
@@ -18,15 +18,21 @@ function option(name: string, fallback: string) {
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
 }
 
-async function generate() {
+export function assertCandidateOutputPath(output: string) {
+  if (/^speciesCatalogArtifact\.v\d+\.json$/i.test(path.basename(output))) {
+    throw new Error('Candidate output cannot target a reviewed speciesCatalogArtifact file.');
+  }
+}
+
+export async function generate() {
   const version = Number(option('--version', '2'));
   if (!Number.isInteger(version) || version < 2) {
     throw new Error('Artifact version must be an integer greater than or equal to 2.');
   }
 
   const records = await fetchSpeciesCatalogStageOne();
-  if (records.length !== SPECIES_CATALOG_STAGE_ONE_SIZE) {
-    throw new Error(`Expected ${SPECIES_CATALOG_STAGE_ONE_SIZE} staged records, received ${records.length}.`);
+  if (records.length !== SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE) {
+    throw new Error(`Expected ${SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE} staged records, received ${records.length}.`);
   }
 
   const artifact: Artifact = {
@@ -38,13 +44,16 @@ async function generate() {
   };
   const output = option(
     '--out',
-    path.join(__dirname, `speciesCatalogArtifact.v${version}.json`),
+    path.join(__dirname, `speciesCatalogCandidate.v${version}.json`),
   );
+  assertCandidateOutputPath(output);
   await fs.writeFile(output, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');
   console.log(`Wrote ${records.length} records to ${output}. Review the candidate before using it.`);
 }
 
-generate().catch(error => {
-  console.error(`Species catalog artifact generation failed: ${error instanceof Error ? error.message : error}`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  generate().catch(error => {
+    console.error(`Species catalog artifact generation failed: ${error instanceof Error ? error.message : error}`);
+    process.exitCode = 1;
+  });
+}

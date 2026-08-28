@@ -1,5 +1,6 @@
 import { PoolClient } from 'pg';
-import artifact from './speciesCatalogArtifact.v1.json';
+import baseArtifact from './speciesCatalogArtifact.v1.json';
+import expansionArtifact from './speciesCatalogArtifact.v2.json';
 
 export type SpeciesCatalogSeedRecord = {
   scientific_name: string;
@@ -16,6 +17,8 @@ export type SpeciesCatalogArtifact = {
   status: 'reviewed';
   generated_at: string;
   source: string;
+  base_version?: number;
+  record_scope?: string;
   records: SpeciesCatalogSeedRecord[];
 };
 
@@ -44,10 +47,13 @@ export const GBIF_IMPORT_GROUPS: GbifImportGroup[] = [
   { family: 'Tetraodontidae', gbifFamilyKey: 2219, waterType: 'Brackish', averageSizeCm: 28, referenceAverageMassKg: 0.9 },
 ];
 
-export const SPECIES_CATALOG_STAGE_ONE_SIZE = GBIF_IMPORT_GROUPS.length * SPECIES_PER_IMPORT_GROUP;
-
-export const SPECIES_CATALOG_ARTIFACT_VERSION = artifact.version;
-export const SPECIES_CATALOG_ARTIFACT = artifact as SpeciesCatalogArtifact;
+export const SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE = GBIF_IMPORT_GROUPS.length * SPECIES_PER_IMPORT_GROUP;
+export const SPECIES_CATALOG_ARTIFACT_VERSION = expansionArtifact.version;
+export const SPECIES_CATALOG_ARTIFACT = {
+  ...expansionArtifact,
+  records: [...baseArtifact.records, ...expansionArtifact.records],
+} as SpeciesCatalogArtifact;
+export const SPECIES_CATALOG_STAGE_ONE_SIZE = SPECIES_CATALOG_ARTIFACT.records.length;
 
 type GbifSpecies = {
   key: number;
@@ -125,7 +131,15 @@ function validateArtifact(records: SpeciesCatalogSeedRecord[]) {
   const names = new Set<string>();
   for (const record of records) {
     const scientificName = String(record.scientific_name || '').trim();
-    if (!scientificName || !record.family || !record.water_type || !record.source) {
+    if (
+      !/^[A-Z][a-z-]+ [a-z][a-z-]+$/.test(scientificName)
+      || !record.family
+      || !record.water_type
+      || !['Marine', 'Freshwater', 'Brackish', 'Universal'].includes(record.water_type)
+      || !record.source
+      || !(record.average_size_cm == null || record.average_size_cm > 0)
+      || !(record.reference_average_mass_kg == null || record.reference_average_mass_kg > 0)
+    ) {
       throw new Error('Species catalog artifact contains an incomplete record');
     }
     const key = scientificName.toLowerCase();

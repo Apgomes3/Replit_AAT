@@ -8,9 +8,33 @@ const speciesCatalogSeed_1 = require("./speciesCatalogSeed");
         const records = await (0, speciesCatalogSeed_1.loadSpeciesCatalogStageOne)();
         (0, vitest_1.expect)(fetchSpy).not.toHaveBeenCalled();
         (0, vitest_1.expect)(speciesCatalogSeed_1.SPECIES_CATALOG_ARTIFACT.status).toBe('reviewed');
+        (0, vitest_1.expect)(speciesCatalogSeed_1.SPECIES_CATALOG_ARTIFACT.version).toBe(2);
         (0, vitest_1.expect)(records).toHaveLength(speciesCatalogSeed_1.SPECIES_CATALOG_STAGE_ONE_SIZE);
         (0, vitest_1.expect)(new Set(records.map(record => record.scientific_name.toLowerCase())).size).toBe(records.length);
         fetchSpy.mockRestore();
+    });
+    (0, vitest_1.it)('covers the reviewed penguin and aquarium-relevant shark expansion', async () => {
+        const records = await (0, speciesCatalogSeed_1.loadSpeciesCatalogStageOne)();
+        const penguins = records.filter(record => record.family === 'Spheniscidae');
+        const sharks = records.filter(record => record.scientific_name.toLowerCase().includes('shark')
+            || ['Carcharhinidae', 'Ginglymostomatidae', 'Hemiscylliidae', 'Heterodontidae',
+                'Orectolobidae', 'Stegostomatidae', 'Scyliorhinidae', 'Triakidae',
+                'Rhincodontidae', 'Odontaspididae', 'Sphyrnidae', 'Hexanchidae'].includes(record.family));
+        (0, vitest_1.expect)(penguins).toHaveLength(19);
+        (0, vitest_1.expect)(sharks).toHaveLength(29);
+        (0, vitest_1.expect)(new Set(sharks.map(record => record.family))).toEqual(new Set([
+            'Carcharhinidae', 'Ginglymostomatidae', 'Hemiscylliidae', 'Heterodontidae',
+            'Orectolobidae', 'Stegostomatidae', 'Scyliorhinidae', 'Triakidae',
+            'Rhincodontidae', 'Odontaspididae', 'Sphyrnidae', 'Hexanchidae',
+        ]));
+        (0, vitest_1.expect)(records.filter(record => record.family === 'Carcharhinidae' && record.water_type === 'Brackish'))
+            .toHaveLength(1);
+        for (const record of [...penguins, ...sharks]) {
+            (0, vitest_1.expect)(record.common_name).toBeTruthy();
+            (0, vitest_1.expect)(record.average_size_cm).toBeGreaterThan(0);
+            (0, vitest_1.expect)(record.reference_average_mass_kg).toBeGreaterThan(0);
+            (0, vitest_1.expect)(record.source).toMatch(/provisional/i);
+        }
     });
     (0, vitest_1.it)('inserts fresh records idempotently without updating or deleting existing identities', async () => {
         const query = vitest_1.vi.fn().mockResolvedValue({ rowCount: 1 });
@@ -22,5 +46,12 @@ const speciesCatalogSeed_1 = require("./speciesCatalogSeed");
             (0, vitest_1.expect)(sql).toContain('ON CONFLICT DO NOTHING');
             (0, vitest_1.expect)(sql).not.toMatch(/\b(?:UPDATE|DELETE)\b/);
         }
+    });
+    (0, vitest_1.it)('can be run again without turning the reviewed artifact into updates', async () => {
+        const query = vitest_1.vi.fn().mockResolvedValue({ rowCount: 0 });
+        await (0, speciesCatalogSeed_1.seedSpeciesCatalog)({ query }, null);
+        (0, vitest_1.expect)(query).toHaveBeenCalledTimes(speciesCatalogSeed_1.SPECIES_CATALOG_STAGE_ONE_SIZE);
+        (0, vitest_1.expect)(query.mock.calls.every(([sql]) => sql.includes('ON CONFLICT DO NOTHING'))).toBe(true);
+        (0, vitest_1.expect)(query.mock.calls.some(([sql]) => /\b(?:UPDATE|DELETE)\b/.test(sql))).toBe(false);
     });
 });

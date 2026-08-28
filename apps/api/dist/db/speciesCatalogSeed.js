@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SPECIES_CATALOG_ARTIFACT = exports.SPECIES_CATALOG_ARTIFACT_VERSION = exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS = exports.SPECIES_PER_IMPORT_GROUP = void 0;
+exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.SPECIES_CATALOG_ARTIFACT = exports.SPECIES_CATALOG_ARTIFACT_VERSION = exports.SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS = exports.SPECIES_PER_IMPORT_GROUP = void 0;
 exports.fetchGbifGroup = fetchGbifGroup;
 exports.fetchSpeciesCatalogStageOne = fetchSpeciesCatalogStageOne;
 exports.loadSpeciesCatalogStageOne = loadSpeciesCatalogStageOne;
 exports.seedSpeciesCatalog = seedSpeciesCatalog;
 const speciesCatalogArtifact_v1_json_1 = __importDefault(require("./speciesCatalogArtifact.v1.json"));
+const speciesCatalogArtifact_v2_json_1 = __importDefault(require("./speciesCatalogArtifact.v2.json"));
 exports.SPECIES_PER_IMPORT_GROUP = 40;
 exports.GBIF_IMPORT_GROUPS = [
     { family: 'Acanthuridae', gbifFamilyKey: 4233, waterType: 'Marine', averageSizeCm: 24, referenceAverageMassKg: 0.55 },
@@ -25,9 +26,13 @@ exports.GBIF_IMPORT_GROUPS = [
     { family: 'Osphronemidae', gbifFamilyKey: 8553, waterType: 'Freshwater', averageSizeCm: 20, referenceAverageMassKg: 0.25 },
     { family: 'Tetraodontidae', gbifFamilyKey: 2219, waterType: 'Brackish', averageSizeCm: 28, referenceAverageMassKg: 0.9 },
 ];
-exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS.length * exports.SPECIES_PER_IMPORT_GROUP;
-exports.SPECIES_CATALOG_ARTIFACT_VERSION = speciesCatalogArtifact_v1_json_1.default.version;
-exports.SPECIES_CATALOG_ARTIFACT = speciesCatalogArtifact_v1_json_1.default;
+exports.SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS.length * exports.SPECIES_PER_IMPORT_GROUP;
+exports.SPECIES_CATALOG_ARTIFACT_VERSION = speciesCatalogArtifact_v2_json_1.default.version;
+exports.SPECIES_CATALOG_ARTIFACT = {
+    ...speciesCatalogArtifact_v2_json_1.default,
+    records: [...speciesCatalogArtifact_v1_json_1.default.records, ...speciesCatalogArtifact_v2_json_1.default.records],
+};
+exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.SPECIES_CATALOG_ARTIFACT.records.length;
 async function fetchGbifGroup(group) {
     const queryUrl = new URL('https://api.gbif.org/v1/species/search');
     queryUrl.searchParams.set('highertaxon_key', String(group.gbifFamilyKey));
@@ -91,7 +96,13 @@ function validateArtifact(records) {
     const names = new Set();
     for (const record of records) {
         const scientificName = String(record.scientific_name || '').trim();
-        if (!scientificName || !record.family || !record.water_type || !record.source) {
+        if (!/^[A-Z][a-z-]+ [a-z][a-z-]+$/.test(scientificName)
+            || !record.family
+            || !record.water_type
+            || !['Marine', 'Freshwater', 'Brackish', 'Universal'].includes(record.water_type)
+            || !record.source
+            || !(record.average_size_cm == null || record.average_size_cm > 0)
+            || !(record.reference_average_mass_kg == null || record.reference_average_mass_kg > 0)) {
             throw new Error('Species catalog artifact contains an incomplete record');
         }
         const key = scientificName.toLowerCase();

@@ -123,4 +123,67 @@ describe('species catalog recovery states', () => {
     expect(await screen.findByText('Amphiprion ocellaris')).toBeVisible();
     await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
   });
+
+  it('discovers a reviewed penguin or shark through the existing catalog picker', async () => {
+    const shark = {
+      ...catalogItem,
+      id: 'species-shark',
+      scientific_name: 'Rhincodon typus',
+      common_name: 'Whale shark',
+      family: 'Rhincodontidae',
+      average_size_cm: 600,
+      reference_average_mass_kg: 5000,
+    };
+    apiGet.mockResolvedValue({ data: { items: [shark], total: 1 } });
+
+    renderWithQuery(
+      <SpeciesAllocationSection
+        bookId="book-1"
+        exhibitId="exhibit-1"
+        species={[]}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add species' }));
+    fireEvent.change(screen.getByPlaceholderText('Search scientific, common, or family name'), {
+      target: { value: 'whale' },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Rhincodon typus/i }));
+    expect(screen.getByText('Linked catalog reference selected')).toBeVisible();
+    expect(screen.getByPlaceholderText('600')).toBeVisible();
+    expect(screen.getByPlaceholderText('5000')).toBeVisible();
+  });
+
+  it('applies catalog search and family and water-type facets to the expanded records', async () => {
+    apiGet.mockImplementation((url: string) => Promise.resolve({
+      data: url === '/species-catalog/facets'
+        ? {
+            families: [
+              { family: 'Carcharhinidae', count: 4 },
+              { family: 'Spheniscidae', count: 19 },
+            ],
+            water_types: [
+              { water_type: 'Brackish', count: 1 },
+              { water_type: 'Marine', count: 46 },
+            ],
+          }
+        : { items: [], total: 0 },
+    }));
+
+    renderWithQuery(<SpeciesCatalog />);
+
+    fireEvent.change(screen.getByPlaceholderText('Search scientific name, common name, or family'), {
+      target: { value: 'penguin' },
+    });
+    await screen.findByRole('option', { name: 'Marine (46)' });
+    const [waterType, family] = await screen.findAllByRole('combobox');
+    fireEvent.change(waterType, { target: { value: 'Marine' } });
+    fireEvent.change(family, { target: { value: 'Spheniscidae' } });
+
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith(
+      '/species-catalog?limit=1000&q=penguin&water_type=Marine&family=Spheniscidae',
+    ));
+  });
 });
