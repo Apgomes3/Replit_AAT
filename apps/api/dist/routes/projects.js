@@ -1465,8 +1465,8 @@ router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'e
         const result = await client.query(`INSERT INTO systems
          (system_code, project_id, area_id, exhibit_id, system_name, system_type,
           design_flow_m3h, turnover_rate_hr, water_type, status, duty_description,
-          redundancy_strategy, calculation_version, last_calculated_at, calculation_inputs)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),$14)
+          redundancy_strategy, system_config, calculation_version, last_calculated_at, calculation_inputs)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULL,$13,NOW(),$14)
        RETURNING *`, [
             system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type,
             resolvedDesignFlowSource === 'manual_override' ? design_flow_m3h || null : null,
@@ -1569,6 +1569,16 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                 ? 'primary_exhibit'
                 : turnover_rate_hr != null ? 'manual_override' : 'primary_exhibit';
         const currentSystem = currentResult.rows[0];
+        const hasSystemConfig = Object.prototype.hasOwnProperty.call(req.body, 'system_config');
+        const hasCompactUnitId = Object.prototype.hasOwnProperty.call(req.body, 'compact_unit_id');
+        const resolvedSystemConfig = hasSystemConfig
+            ? (system_config || null)
+            : (currentSystem.system_config || null);
+        const resolvedCompactUnitId = hasCompactUnitId
+            ? (compact_unit_id || null)
+            : hasSystemConfig && resolvedSystemConfig !== 'compact'
+                ? null
+                : (currentSystem.compact_unit_id || null);
         const resolvedPercentage = (field, value) => Object.prototype.hasOwnProperty.call(req.body, field)
             ? (value === '' || value == null ? null : Number(value))
             : (currentSystem[field] == null ? null : Number(currentSystem[field]));
@@ -1633,8 +1643,8 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                 },
             });
         }
-        if ((system_config || 'bespoke') === 'compact') {
-            if (!compact_unit_id) {
+        if (hasSystemConfig && resolvedSystemConfig === 'compact') {
+            if (!resolvedCompactUnitId) {
                 return res.status(400).json({ error: { code: 'VALIDATION', message: 'Select a compact unit before saving compact configuration.' } });
             }
             if (!design_book_id) {
@@ -1646,7 +1656,7 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                     error: { code: 'DESIGN_BOOK_CONTEXT_MISMATCH', message: 'The Design Book must belong to the same project as the system.' },
                 });
             }
-            const unitResult = await (0, db_1.query)('SELECT * FROM lss_compact_units WHERE id=$1', [compact_unit_id]);
+            const unitResult = await (0, db_1.query)('SELECT * FROM lss_compact_units WHERE id=$1', [resolvedCompactUnitId]);
             const unit = unitResult.rows[0];
             if (!unit)
                 return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Compact unit not found.' } });
@@ -1730,7 +1740,7 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                 loop3_flow_source || null, loop3_filtration || null,
                 resolvedLoop3FlowPct, resolvedLoop3BioPct,
                 loop3_bio_degas_m3h ?? null, loop3_link_bio_degas ?? false,
-                system_config || 'bespoke', compact_unit_id || null,
+                resolvedSystemConfig, resolvedCompactUnitId,
                 aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
                 JSON.stringify({
                     design_flow_m3h: design_flow_m3h ?? null,
@@ -1739,8 +1749,8 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                     turnover_source: resolvedTurnoverSource,
                     turnover_unit: 'cycles_per_hour',
                     flow_unit: 'm3_per_hour',
-                    system_config: system_config || 'bespoke',
-                    compact_unit_id: compact_unit_id || null,
+                    system_config: resolvedSystemConfig,
+                    compact_unit_id: resolvedCompactUnitId,
                 }),
                 req.params.id,
             ]);
@@ -1851,6 +1861,111 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
             return res.status(409).json({ error: { code: 'CONFLICT', message: 'A system with that code already exists in this project.' } });
         }
         throw err;
+    }
+});
+// Reset contract: only LSS-owned inputs are cleared. Project tanks, exhibits,
+// Design Book exhibit hydraulics/substrate, and reusable PIM records are never
+// deleted or updated by this transaction.
+router.post('/systems/:id/configuration-reset', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const designBookId = req.body?.design_book_id;
+    if (!designBookId) {
+        return res.status(400).json({
+            error: { code: 'INVALID_REQUEST', message: 'design_book_id is required.' },
+        });
+    }
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const systemResult = await client.query('SELECT * FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
+        const lockedSystem = systemResult.rows[0];
+        if (!lockedSystem) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                error: { code: 'NOT_FOUND', message: 'System not found.' },
+            });
+        }
+        const designBookResult = await client.query(`SELECT id, status FROM design_books
+       WHERE id=$1 AND project_id=$2
+       FOR UPDATE`, [designBookId, lockedSystem.project_id]);
+        const lockedDesignBook = designBookResult.rows[0];
+        if (!lockedDesignBook) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: {
+                    code: 'DESIGN_BOOK_CONTEXT_MISMATCH',
+                    message: 'The Design Book must belong to the same project as the system.',
+                },
+            });
+        }
+        if (!['Draft', 'In Progress'].includes(lockedDesignBook.status)
+            || ['For Review', 'Approved', 'Released'].includes(lockedSystem.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: {
+                    code: 'DESIGN_BOOK_NOT_EDITABLE',
+                    message: 'Reviewed, approved, or released systems cannot be reconfigured.',
+                },
+            });
+        }
+        await client.query('DELETE FROM system_exhibit_links WHERE system_id=$1', [req.params.id]);
+        await client.query('DELETE FROM system_flow_side_streams WHERE system_id=$1', [req.params.id]);
+        await client.query('DELETE FROM system_flow_fractionator_allocations WHERE system_id=$1', [req.params.id]);
+        await client.query('DELETE FROM project_equipment_items WHERE system_id=$1', [req.params.id]);
+        const resetResult = await client.query(`UPDATE systems SET
+         exhibit_id=NULL,
+         system_type=NULL,
+         water_type=NULL,
+         design_flow_m3h=NULL,
+         turnover_rate_hr=NULL,
+         duty_description=NULL,
+         redundancy_strategy=NULL,
+         design_basis_reference=NULL,
+         system_config=NULL,
+         compact_unit_id=NULL,
+         calculation_version=NULL,
+         last_calculated_at=NULL,
+         calculation_inputs=NULL,
+         loop1_name='Loop 1', loop1_flow_source=NULL, loop1_filtration=NULL,
+         loop1_flow_pct=NULL, loop1_bio_degas_pct=NULL, loop1_bio_degas_m3h=NULL,
+         loop1_link_bio_degas=false,
+         loop2_name='Loop 2', loop2_flow_source=NULL, loop2_filtration=NULL,
+         loop2_flow_pct=NULL, loop2_bio_degas_pct=NULL, loop2_bio_degas_m3h=NULL,
+         loop2_link_bio_degas=false,
+         loop3_name='Loop 3', loop3_flow_source=NULL, loop3_filtration=NULL,
+         loop3_flow_pct=NULL, loop3_bio_degas_pct=NULL, loop3_bio_degas_m3h=NULL,
+         loop3_link_bio_degas=false,
+         updated_at=NOW()
+       WHERE id=$1
+       RETURNING *`, [req.params.id]);
+        await client.query(`INSERT INTO audit_logs
+         (entity_type, entity_id, action, actor_id, details, ip_address)
+       VALUES ('system',$1,'RESET_CONFIGURATION',$2,$3,$4)`, [
+            req.params.id,
+            req.user.id,
+            {
+                summary: `LSS configuration reset for ${lockedSystem.system_code}`,
+                design_book_id: designBookId,
+                preserved: ['project tanks', 'exhibits', 'tank hydraulics', 'PIM source data'],
+            },
+            req.ip || null,
+        ]);
+        await client.query('COMMIT');
+        res.json({
+            reset: true,
+            system: {
+                ...withoutStaleLinkedSystemFlow(resetResult.rows[0]),
+                equipment: [],
+                side_streams: [],
+                fractionator_allocations: [],
+            },
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
     }
 });
 router.get('/systems/:id/side-streams', auth_1.authenticate, async (req, res) => {

@@ -18,6 +18,7 @@ vi.mock('../../lib/api', () => ({
 
 const apiGet = vi.mocked(api.get);
 const apiPut = vi.mocked(api.put);
+const apiPost = vi.mocked(api.post);
 
 const baseSystem = {
   id: 'system-1',
@@ -184,6 +185,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
   beforeEach(() => {
     window.localStorage.clear();
     apiPut.mockResolvedValue({ data: {} });
+    apiPost.mockResolvedValue({ data: {} });
     useAuthStore.setState({
       user: {
         id: 'engineer-1',
@@ -228,6 +230,129 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(screen.getByRole('button', { name: /Link Exhibit/ })).toBeInTheDocument();
     expect(screen.getByText('125.0')).toBeInTheDocument();
   });
+
+  it('shows configuration as first-time setup and hides it after configuration is saved', async () => {
+    const user = userEvent.setup();
+    const unconfiguredSystem = {
+      ...baseSystem,
+      system_config: null,
+      compact_unit_id: null,
+    };
+    apiPut.mockImplementation(async (_url, payload: any) => {
+      Object.assign(unconfiguredSystem, {
+        system_config: payload.system_config,
+        compact_unit_id: payload.compact_unit_id,
+      });
+      return { data: unconfiguredSystem };
+    });
+    renderFlowRoute(
+      unconfiguredSystem,
+      baseBook,
+      [],
+      [],
+      '/design-books/book-1/lss/system-1',
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getByText('System Configuration')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Compact Unit/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Bespoke \/ Large System/ }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({ system_config: 'bespoke', compact_unit_id: null }),
+    ));
+    await waitFor(() => expect(screen.queryByText('System Configuration')).not.toBeInTheDocument());
+  });
+
+  it('requires destructive confirmation, preserves data on cancel, and reloads cleared state on reset', async () => {
+    const user = userEvent.setup();
+    const mutableSystem = { ...baseSystem };
+    const mutableBook = {
+      ...bookWithPrimarySplit,
+      engineering_calculations: {
+        ...bookWithPrimarySplit.engineering_calculations,
+        systems: [...bookWithPrimarySplit.engineering_calculations.systems],
+      },
+    };
+    apiPost.mockImplementation(async () => {
+      Object.assign(mutableSystem, {
+        system_config: null,
+        compact_unit_id: null,
+        design_flow_m3h: null,
+        turnover_rate_hr: null,
+        loop1_flow_source: null,
+        loop1_filtration: null,
+        loop1_flow_pct: null,
+        side_streams: [],
+        fractionator_allocations: [],
+      });
+      mutableBook.engineering_calculations.systems = [];
+      return { data: { system: mutableSystem } };
+    });
+    renderFlowRoute(
+      mutableSystem,
+      mutableBook,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1',
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    await user.click(screen.getByRole('button', { name: 'Open LSS tools' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Change System Configuration' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Confirming will erase this system’s existing LSS input and configuration data',
+    );
+    await user.click(screen.getByRole('button', { name: 'Keep Current Configuration' }));
+
+    expect(apiPost).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Link Exhibit/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Open LSS tools' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Change System Configuration' }));
+    await user.click(screen.getByRole('button', { name: 'Erase and Reconfigure' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith(
+      '/systems/system-1/configuration-reset',
+      { design_book_id: 'book-1' },
+    ));
+    await waitFor(() => expect(screen.getByText('System Configuration')).toBeInTheDocument());
+    expect(screen.queryByText('Bottom Drain')).not.toBeInTheDocument();
+    expect(screen.queryByText('100.0 m³/h')).not.toBeInTheDocument();
+  });
+
+  it('does not expose configuration reset for reviewed or released Design Books', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem, {
+      ...baseBook,
+      status: 'For Review',
+      systems: [baseSystem],
+      system_links: [],
+    }, [], [], '/design-books/book-1/lss/system-1');
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    await user.click(screen.getByRole('button', { name: 'Open LSS tools' }));
+    expect(screen.queryByRole('menuitem', { name: 'Change System Configuration' })).not.toBeInTheDocument();
+  });
+
+  it.each(['For Review', 'Approved', 'Released'])(
+    'does not expose configuration reset for a %s system in an editable Design Book',
+    async status => {
+      const user = userEvent.setup();
+      renderFlowRoute(
+        { ...baseSystem, status },
+        baseBook,
+        [],
+        [],
+        '/design-books/book-1/lss/system-1',
+      );
+      await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+      await user.click(screen.getByRole('button', { name: 'Open LSS tools' }));
+      expect(screen.queryByRole('menuitem', { name: 'Change System Configuration' })).not.toBeInTheDocument();
+    },
+  );
 
   it('supports keyboard tab navigation and honest equipment empty states', async () => {
     const user = userEvent.setup();

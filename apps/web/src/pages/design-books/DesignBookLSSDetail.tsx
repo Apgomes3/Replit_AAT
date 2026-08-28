@@ -675,7 +675,11 @@ export default function DesignBookLSSDetail() {
 
   // System config selector
   const [configSaving, setConfigSaving] = useState(false);
+  const [pendingConfig, setPendingConfig] = useState<'compact' | 'bespoke' | null>(null);
   const [pendingUnitId, setPendingUnitId] = useState<string>('');
+  const [showConfigReset, setShowConfigReset] = useState(false);
+  const [configResetSaving, setConfigResetSaving] = useState(false);
+  const [configResetError, setConfigResetError] = useState<string | null>(null);
 
   // Flow Route edit state
   const [flowEditMode, setFlowEditMode] = useState(false);
@@ -959,7 +963,7 @@ export default function DesignBookLSSDetail() {
         status:               editForm.status,
         duty_description:     editForm.duty_description   || null,
         redundancy_strategy:  editForm.redundancy_strategy || null,
-        system_config:        system.system_config        || 'bespoke',
+        system_config:        system.system_config        || null,
         compact_unit_id:      system.compact_unit_id      || null,
         design_book_id:       bookId,
         ...flowFields,
@@ -1005,6 +1009,10 @@ export default function DesignBookLSSDetail() {
   };
 
   const saveSystemConfig = async (config: 'compact' | 'bespoke', unitId?: string) => {
+    if (config === 'compact' && !unitId) {
+      setPendingConfig('compact');
+      return;
+    }
     setConfigSaving(true);
     try {
       const flowFields = buildFlowLoopFields(system);
@@ -1024,11 +1032,71 @@ export default function DesignBookLSSDetail() {
         ...flowFields,
       });
       toast.success(config === 'compact' ? 'Set to Compact Unit' : 'Set to Bespoke System');
+      setPendingConfig(null);
+      setPendingUnitId('');
       refresh();
-    } catch {
-      toast.error('Failed to update system configuration');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Failed to update system configuration');
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  const requestConfigReset = () => {
+    setShowToolsMenu(false);
+    setConfigResetError(null);
+    setShowConfigReset(true);
+  };
+
+  const cancelConfigReset = () => {
+    if (configResetSaving) return;
+    setShowConfigReset(false);
+    setConfigResetError(null);
+  };
+
+  const handleConfigReset = async () => {
+    if (configResetSaving) return;
+    setConfigResetSaving(true);
+    setConfigResetError(null);
+    try {
+      const response = await api.post(`/systems/${systemId}/configuration-reset`, {
+        design_book_id: bookId,
+      });
+      clearFlowDraft();
+      setEditMode(false);
+      setPendingConfig(null);
+      setPendingUnitId('');
+      setShowConfigReset(false);
+      if (response.data?.system) {
+        qc.setQueryData(['system', systemId], (current: any) => ({
+          ...current,
+          ...response.data.system,
+        }));
+      }
+      qc.setQueryData(['system-exhibit-links', systemId], []);
+      qc.setQueryData(['design-book', bookId], (current: any) => current ? ({
+        ...current,
+        systems: (current.systems || []).map((item: any) =>
+          item.id === systemId ? { ...item, ...(response.data?.system || {}) } : item),
+        system_links: (current.system_links || []).filter(
+          (item: any) => item.system_id !== systemId),
+        engineering_calculations: {
+          ...(current.engineering_calculations || {}),
+          systems: (current.engineering_calculations?.systems || []).filter(
+            (calculation: any) => calculation.inputs?.system_id !== systemId),
+        },
+      }) : current);
+      qc.invalidateQueries({ queryKey: ['system', systemId] });
+      qc.invalidateQueries({ queryKey: ['system-exhibit-links', systemId] });
+      qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+      toast.success('System configuration reset');
+    } catch (error: any) {
+      const message = error?.response?.data?.error?.message
+        || 'The system configuration could not be reset. No data was changed.';
+      setConfigResetError(message);
+      toast.error(message);
+    } finally {
+      setConfigResetSaving(false);
     }
   };
 
@@ -1058,7 +1126,7 @@ export default function DesignBookLSSDetail() {
         turnover_rate_hr:     system.turnover_rate_hr     || null,
         duty_description:     system.duty_description     || null,
         redundancy_strategy:  system.redundancy_strategy  || null,
-        system_config:        system.system_config        || 'bespoke',
+        system_config:        system.system_config        || null,
         compact_unit_id:      system.compact_unit_id      || null,
         design_book_id:       bookId,
         ...buildFlowLoopFields(flowForm),
@@ -1093,7 +1161,7 @@ export default function DesignBookLSSDetail() {
         turnover_rate_hr:    system.turnover_rate_hr    || null,
         duty_description:    system.duty_description    || null,
         redundancy_strategy: system.redundancy_strategy || null,
-        system_config:       system.system_config       || 'bespoke',
+        system_config:       system.system_config       || null,
         compact_unit_id:     system.compact_unit_id     || null,
         design_book_id:      bookId,
         ...buildFlowLoopFields(draft),
@@ -1130,7 +1198,7 @@ export default function DesignBookLSSDetail() {
         turnover_rate_hr:    system.turnover_rate_hr    || null,
         duty_description:    system.duty_description    || null,
         redundancy_strategy: system.redundancy_strategy || null,
-        system_config:       system.system_config       || 'bespoke',
+        system_config:       system.system_config       || null,
         compact_unit_id:     system.compact_unit_id     || null,
         design_book_id:      bookId,
         ...buildFlowLoopFields(draft, n),
@@ -1167,8 +1235,13 @@ export default function DesignBookLSSDetail() {
   const exhibits: any[] = book?.exhibits || [];
   const linkedExhibitIds = new Set((links as any[]).map((l: any) => l.exhibit_id));
   const availableExhibits = exhibits.filter((ex: any) => !linkedExhibitIds.has(ex.id));
-  const canEdit = user?.role === 'admin' || user?.role === 'engineer';
-  const readOnly = !canEdit || (!!book && !['Draft', 'In Progress'].includes(book.status));
+  const canManageProjects = user?.moduleAccess?.projects !== 'view'
+    && user?.moduleAccess?.projects !== 'hidden';
+  const canEdit = (user?.role === 'admin' || user?.role === 'engineer') && canManageProjects;
+  const readOnly = !canEdit
+    || (!!book && !['Draft', 'In Progress'].includes(book.status))
+    || ['For Review', 'Approved', 'Released'].includes(system.status);
+  const isConfigured = system.system_config === 'compact' || system.system_config === 'bespoke';
 
   const systemCalculation = book?.engineering_calculations?.systems?.find(
     (calculation: any) => calculation.inputs?.system_id === system.id,
@@ -1269,8 +1342,21 @@ export default function DesignBookLSSDetail() {
                 Back to Life Support Systems
               </Link>
               <div className="my-1 border-t border-stone-100" />
+              {isConfigured && !readOnly && (
+                <>
+                  <button
+                    type="button"
+                    onClick={requestConfigReset}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-700 hover:bg-red-50"
+                    role="menuitem"
+                  >
+                    <Settings2 className="w-4 h-4" />
+                    Change System Configuration
+                  </button>
+                  <div className="my-1 border-t border-stone-100" />
+                </>
+              )}
               {[
-                ['overview', 'system-configuration', 'System Configuration'],
                 ['overview', 'linked-exhibits', 'Linked Exhibits'],
                 ['flow', 'flow-route', 'Flow Route'],
               ].map(([tab, target, label]) => (
@@ -1337,10 +1423,10 @@ export default function DesignBookLSSDetail() {
         className="space-y-5"
       >
       {/* System Configuration selector */}
-      {(() => {
-        const cfg = system.system_config || 'bespoke';
-        const selectedUnit = (compactUnits as any[]).find(u => u.id === system.compact_unit_id);
+      {!isConfigured && (() => {
+        const cfg = pendingConfig;
         const localUnitId = pendingUnitId || system.compact_unit_id || '';
+        const selectedUnit = (compactUnits as any[]).find(u => u.id === localUnitId);
 
         return (
           <div id="system-configuration" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -1371,7 +1457,13 @@ export default function DesignBookLSSDetail() {
                 ] as const).map(opt => (
                   <button key={opt.key} type="button" disabled={configSaving}
                     onClick={() => {
-                      if (opt.key !== cfg) saveSystemConfig(opt.key, opt.key === 'compact' ? localUnitId : undefined);
+                      if (opt.key === 'compact') {
+                        setPendingConfig('compact');
+                        if (localUnitId) saveSystemConfig('compact', localUnitId);
+                      } else {
+                        setPendingConfig(null);
+                        saveSystemConfig('bespoke');
+                      }
                     }}
                     className={`text-left p-4 rounded-xl border-2 transition-all ${opt.color} disabled:opacity-60`}>
                     <div className={`flex items-center gap-2 mb-1.5 font-semibold text-sm ${opt.textColor}`}>
@@ -3167,6 +3259,20 @@ export default function DesignBookLSSDetail() {
           error={unlinkError || undefined}
           onConfirm={handleDeleteLink}
           onCancel={cancelDeleteLink}
+        />
+      )}
+      {showConfigReset && !readOnly && isConfigured && (
+        <ConfirmDialog
+          title={`Change configuration for ${system.system_name}?`}
+          message="Confirming will erase this system’s existing LSS input and configuration data, including flow and turnover inputs, linked exhibits, Flow Route data, compact-unit selection, and equipment selections. Project tanks, exhibits, tank hydraulics, and reusable PIM source data will not be changed."
+          confirmLabel={configResetError ? 'Retry Reset' : 'Erase and Reconfigure'}
+          cancelLabel="Keep Current Configuration"
+          danger
+          busy={configResetSaving}
+          busyLabel="Resetting…"
+          error={configResetError || undefined}
+          onConfirm={handleConfigReset}
+          onCancel={cancelConfigReset}
         />
       )}
 

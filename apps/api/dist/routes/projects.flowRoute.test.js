@@ -173,6 +173,8 @@ const basePayload = {
         state.currentSystem.loop2_flow_pct = null;
         state.currentSystem.loop2_bio_degas_pct = null;
         state.currentSystem.loop1_filtration = 'Sand Filter';
+        state.currentSystem.system_config = 'bespoke';
+        state.currentSystem.compact_unit_id = null;
         state.fractionatorCatalog = [];
     });
     (0, vitest_1.afterAll)(() => {
@@ -343,6 +345,15 @@ const basePayload = {
         (0, vitest_1.expect)(response.status).toBe(200);
         const nameUpdate = state.calls.find(call => call.sql.includes('loop1_name=$2'));
         (0, vitest_1.expect)(nameUpdate?.params.slice(1)).toEqual(['Main Filtration', 'Polishing', 'Reserve']);
+    });
+    (0, vitest_1.it)('preserves existing system configuration when a standard update omits configuration fields', async () => {
+        state.currentSystem.system_config = 'compact';
+        state.currentSystem.compact_unit_id = 'compact-unit-1';
+        const response = await request(app, basePayload);
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const systemUpdate = state.calls.find(call => call.sql.includes('system_config=$28, compact_unit_id=$29'));
+        (0, vitest_1.expect)(systemUpdate?.params[27]).toBe('compact');
+        (0, vitest_1.expect)(systemUpdate?.params[28]).toBe('compact-unit-1');
     });
     vitest_1.it.each([
         ['', 'Loop 1 name is required.'],
