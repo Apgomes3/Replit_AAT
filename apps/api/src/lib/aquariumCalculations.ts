@@ -490,6 +490,7 @@ export function evaluateCompactUnit(
   const maxVolume = numberOrNull(unit.max_tank_volume_m3);
   const maxFlow = numberOrNull(unit.max_flow_m3h);
   if (volume == null || volume <= 0) reasons.push('Operating volume is required to confirm compact-unit suitability.');
+  if (flow == null || flow <= 0) reasons.push('Required flow is required to confirm compact-unit suitability.');
   if (minVolume != null && volume != null && volume < minVolume) reasons.push(`Volume is below the catalog minimum of ${minVolume} m³.`);
   if (maxVolume != null && volume != null && volume > maxVolume) reasons.push(`Volume exceeds the catalog maximum of ${maxVolume} m³.`);
   if (maxFlow != null && flow != null && flow > maxFlow) reasons.push(`Required flow exceeds the catalog maximum of ${maxFlow} m³/h.`);
@@ -520,7 +521,10 @@ export function calculateSystemEngineering(
 ) {
   const linked = (links || []).map(link => {
     const exhibit = exhibitCalculations.find(calc => calc.inputs.exhibit_id === link.exhibit_id);
-    const required = exhibit?.status === 'valid'
+    const calculationIsCurrent = exhibit?.status === 'valid' &&
+      exhibit?.is_stale !== true &&
+      exhibit?.freshness !== 'stale';
+    const required = calculationIsCurrent
       ? exhibit.results.total_return_flow_m3h ?? null
       : null;
     const override = numberOrNull(link.flow_allocation_m3h);
@@ -555,12 +559,12 @@ export function calculateSystemEngineering(
     typeof system.calculation_inputs === 'object'
     ? system.calculation_inputs
     : {};
-  const designFlowSource = calculationInputs.design_flow_source === 'linked_exhibits'
-    ? 'linked_exhibits'
-    : savedFlow != null ? 'manual_override' : 'linked_exhibits';
-  const turnoverSource = calculationInputs.turnover_source === 'primary_exhibit'
-    ? 'primary_exhibit'
-    : savedTurnover != null ? 'manual_override' : 'primary_exhibit';
+  const designFlowSource = calculationInputs.design_flow_source === 'manual_override'
+    ? 'manual_override'
+    : 'linked_exhibits';
+  const turnoverSource = calculationInputs.turnover_source === 'manual_override'
+    ? 'manual_override'
+    : 'primary_exhibit';
   const hasFlowOverride = designFlowSource === 'manual_override' && savedFlow != null;
   const storedFlowDiffers = hasFlowOverride && requiredFlow != null &&
     Math.abs(savedFlow - requiredFlow) > 0.005;
@@ -570,9 +574,11 @@ export function calculateSystemEngineering(
       item => item.inputs.exhibit_id === link.exhibit_id);
     if (!linkedCalculation) {
       reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} has no engineering calculation.`);
-    } else if (linkedCalculation.status === 'invalid') {
+    } else if (linkedCalculation.status !== 'valid' ||
+               linkedCalculation.is_stale === true ||
+               linkedCalculation.freshness === 'stale') {
       const detail = linkedCalculation.reasons?.join(' ') || 'Invalid engineering inputs.';
-      reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} is invalid: ${detail}`);
+      reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} has no current usable engineering calculation: ${detail}`);
     }
   }
   if (allocatedFlow != null && requiredFlow != null &&
@@ -582,7 +588,9 @@ export function calculateSystemEngineering(
   const primaryLinks = linked.filter(link => link.link_type === 'Primary');
   const primary = primaryLinks.length === 1 ? primaryLinks[0] : null;
   const primaryCalc = primary && exhibitCalculations.find(calc => calc.inputs.exhibit_id === primary.exhibit_id);
-  const calculatedTurnover = primaryCalc?.status === 'valid'
+  const calculatedTurnover = primaryCalc?.status === 'valid' &&
+    primaryCalc?.is_stale !== true &&
+    primaryCalc?.freshness !== 'stale'
     ? primaryCalc.inputs.target_turnover_rate_cycles_per_hour ?? null
     : null;
   const turnover = turnoverSource === 'manual_override'
@@ -596,15 +604,21 @@ export function calculateSystemEngineering(
   const hasTurnoverOverride = turnoverSource === 'manual_override' && savedTurnover != null;
   const storedTurnoverDiffers = hasTurnoverOverride && calculatedTurnover != null &&
     Math.abs(savedTurnover - calculatedTurnover) > 0.005;
+  const designFlow = designFlowSource === 'manual_override'
+    ? savedFlow
+    : requiredFlow;
   const unitResult = system?.system_config === 'compact'
     ? evaluateCompactUnit(
       compactUnit,
       system?.water_type || primaryCalc?.inputs.water_type || null,
       linked.reduce((sum, link) => {
         const calc = exhibitCalculations.find(item => item.inputs.exhibit_id === link.exhibit_id);
-        return sum + (calc?.results.operating_volume_m3 || 0);
+        const calculationIsCurrent = calc?.status === 'valid' &&
+          calc?.is_stale !== true &&
+          calc?.freshness !== 'stale';
+        return sum + (calculationIsCurrent ? (calc?.results.operating_volume_m3 || 0) : 0);
       }, 0),
-      requiredFlow ?? savedFlow,
+      designFlow,
     )
     : {
         status: 'warning' as CalculationStatus,
@@ -612,9 +626,6 @@ export function calculateSystemEngineering(
         reasons: ['Bespoke system selected; no compact catalog limits apply.'],
       };
   if (system?.system_config === 'compact') reasons.push(...unitResult.reasons);
-  const designFlow = designFlowSource === 'manual_override'
-    ? savedFlow
-    : requiredFlow;
   const flowRoute = [1, 2, 3].map(loopNumber => {
     const allocationPct = numberOrNull(system?.[`loop${loopNumber}_flow_pct`]);
     const parentFlow = designFlow != null && designFlow > 0 && allocationPct != null

@@ -733,10 +733,10 @@ export default function DesignBookLSSDetail() {
     const turnoverSource = systemCalculation?.inputs?.turnover_source || 'primary_exhibit';
     const flowVal = systemCalculation?.results?.design_flow_m3h != null
       ? String(systemCalculation.results.design_flow_m3h)
-      : system.design_flow_m3h != null ? String(system.design_flow_m3h) : '';
+      : '';
     const turnoverVal = systemCalculation?.results?.turnover_rate_cycles_per_hour != null
       ? String(systemCalculation.results.turnover_rate_cycles_per_hour)
-      : system.turnover_rate_hr != null ? String(system.turnover_rate_hr) : '';
+      : '';
 
     setEditForm({
       system_code:         system.system_code,
@@ -985,13 +985,10 @@ export default function DesignBookLSSDetail() {
   const systemCalculation = book?.engineering_calculations?.systems?.find(
     (calculation: any) => calculation.inputs?.system_id === system.id,
   ) ?? null;
-  const systemFlow = Number(
-    systemCalculation?.results?.design_flow_m3h ?? system.design_flow_m3h,
-  ) || 0;
+  const calculatedSystemFlow = systemCalculation?.results?.design_flow_m3h;
+  const systemFlow = calculatedSystemFlow == null ? null : Number(calculatedSystemFlow);
   const systemTurnover =
-    systemCalculation?.results?.turnover_rate_cycles_per_hour ??
-    system.turnover_rate_hr ??
-    null;
+    systemCalculation?.results?.turnover_rate_cycles_per_hour ?? null;
   const exhibitCalculations: any[] = book?.engineering_calculations?.exhibits || [];
 
   // Values come exclusively from the API calculation contract.
@@ -1546,7 +1543,7 @@ export default function DesignBookLSSDetail() {
               <div className="border-t-2 border-stone-200 bg-stone-50/60 px-4 py-2 flex items-center justify-end gap-4 text-xs">
                 <span className="text-stone-500">Total exhibit flow</span>
                 <span className="font-mono font-semibold text-cyan-700">{totalCalculatedFlow.toFixed(1)} m³/h</span>
-                {systemFlow > 0 && (
+                {systemFlow != null && systemFlow > 0 && (
                   <>
                     <span className="text-stone-400">·</span>
                     <span className="text-stone-500">system design</span>
@@ -1583,17 +1580,11 @@ export default function DesignBookLSSDetail() {
           ? exhibitCalculations.find((calculation: any) =>
               calculation.inputs?.exhibit_id === primaryExLink.exhibit_id)
           : null;
-        // System flow is selected by the API contract, including any override.
-        const systemFlow = (() => {
-          const saved = systemCalculation?.results?.design_flow_m3h ?? 0;
-          if (saved > 0) return saved;
-          const configured = Number(system.design_flow_m3h);
-          if (Number.isFinite(configured) && configured > 0) return configured;
-          if (primaryCalculation?.results?.total_return_flow_m3h > 0) {
-            return primaryCalculation.results.total_return_flow_m3h;
-          }
-          return totalCalculatedFlow;
-        })();
+        // System flow is selected exclusively by the current API calculation
+        // contract, including an explicit manual override when configured.
+        const systemFlow = calculatedSystemFlow == null
+          ? null
+          : Number(calculatedSystemFlow);
 
         // Unit conversion helpers
         const UNIT_FACTORS: Record<string, number> = {

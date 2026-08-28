@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -59,7 +59,29 @@ const baseBook = {
   book_title: 'Aquarium Design Book',
   status: 'Draft',
   exhibits: [],
-  engineering_calculations: { systems: [], exhibits: [] },
+  engineering_calculations: {
+    systems: [{
+      status: 'override',
+      inputs: {
+        system_id: 'system-1',
+        design_flow_source: 'manual_override',
+        turnover_source: 'manual_override',
+      },
+      results: {
+        calculated_required_flow_m3h: null,
+        design_flow_m3h: 100,
+        turnover_rate_cycles_per_hour: 2,
+      },
+      flow_route: {
+        loops: [{
+          loop_number: 1,
+          allocation_pct: 40,
+          flow_m3h: 40,
+        }],
+      },
+    }],
+    exhibits: [],
+  },
 };
 
 const primaryLink = {
@@ -87,7 +109,7 @@ const primaryExhibitCalculation = {
 const bookWithPrimarySplit = {
   ...baseBook,
   engineering_calculations: {
-    systems: [],
+    systems: baseBook.engineering_calculations.systems,
     exhibits: [primaryExhibitCalculation],
   },
 };
@@ -143,6 +165,76 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('uses the fresh linked aggregate for the card and Flow Route after updates and reloads', async () => {
+    const linkedCalculation = (flow: number) => ({
+      status: 'valid',
+      freshness: 'fresh',
+      is_stale: false,
+      inputs: {
+        system_id: 'system-1',
+        design_flow_source: 'linked_exhibits',
+        turnover_source: 'primary_exhibit',
+      },
+      results: {
+        calculated_required_flow_m3h: flow,
+        design_flow_m3h: flow,
+        turnover_rate_cycles_per_hour: 2,
+      },
+    });
+    const linkedBook = (flow: number) => ({
+      ...bookWithPrimarySplit,
+      engineering_calculations: {
+        ...bookWithPrimarySplit.engineering_calculations,
+        systems: [linkedCalculation(flow)],
+      },
+    });
+    const staleStoredSystem = { ...baseSystem, design_flow_m3h: '350' };
+    const rendered = renderFlowRoute(staleStoredSystem, linkedBook(320), [primaryLink]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getAllByText('320.0 m³/h').length).toBeGreaterThan(0);
+    expect(document.querySelector('#flow-route')).toHaveTextContent('128.0 m³/h');
+    expect(screen.queryByText('350.0 m³/h')).not.toBeInTheDocument();
+
+    act(() => {
+      rendered.queryClient.setQueryData(['design-book', 'book-1'], linkedBook(300));
+    });
+    await waitFor(() => expect(screen.getAllByText('300.0 m³/h').length).toBeGreaterThan(0));
+    expect(document.querySelector('#flow-route')).toHaveTextContent('120.0 m³/h');
+
+    rendered.unmount();
+    renderFlowRoute(staleStoredSystem, linkedBook(320), [primaryLink]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    expect(screen.getAllByText('320.0 m³/h').length).toBeGreaterThan(0);
+    expect(screen.queryByText('350.0 m³/h')).not.toBeInTheDocument();
+  });
+
+  it('shows linked design flow as unavailable instead of falling back to persisted data', async () => {
+    renderFlowRoute(
+      { ...baseSystem, design_flow_m3h: '350' },
+      {
+        ...baseBook,
+        engineering_calculations: { systems: [], exhibits: [] },
+      },
+      [],
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+    expect(screen.getByText('Synced from linked exhibits')).toBeInTheDocument();
+    expect(screen.queryByText('350.0 m³/h')).not.toBeInTheDocument();
+    expect(document.querySelector('#flow-route')).not.toHaveTextContent('140.0 m³/h');
+  });
+
+  it('retains a persisted design flow only for an explicit manual override', async () => {
+    renderFlowRoute();
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getAllByText('100.0 m³/h').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Manual override').length).toBeGreaterThan(0);
+    expect(document.querySelector('#flow-route')).toHaveTextContent('40.0 m³/h');
   });
 
   it('keeps loop flow visible while hiding Bio/Degas details when the branch is not linked', async () => {
@@ -892,14 +984,15 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getByText('3 units')).toBeInTheDocument();
     expect(rateInput).toHaveValue(19);
 
-    await user.clear(rateInput);
-    await user.type(rateInput, '24');
-    await waitFor(() => expect(slider).toHaveValue('24'));
+    fireEvent.change(rateInput, { target: { value: '24' } });
+    await waitFor(() => expect(
+      route.getByRole('slider', { name: 'AAT process rate slider for Loop 1' }),
+    ).toHaveValue('24'));
     expect(route.getByText(/outside it are allowed with an advisory/)).toBeInTheDocument();
 
     await user.click(route.getByRole('button', { name: 'Apply rate + quantity' }));
-    expect(rateInput).toHaveValue(20);
-    expect(route.getByRole('spinbutton', { name: 'Quantity for FF-500' })).toHaveValue(3);
+    expect(route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' })).toHaveValue(20);
+    expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(3);
 
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
     await waitFor(() => expect(apiPut).toHaveBeenCalledWith(

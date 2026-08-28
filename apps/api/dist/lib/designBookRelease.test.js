@@ -43,6 +43,31 @@ function readyContext() {
         (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)(checklist)).toEqual([]);
         (0, vitest_1.expect)(checklist.every(check => check.status === 'pass')).toBe(true);
     });
+    (0, vitest_1.it)('accepts a valid linked-exhibit design flow without a stored legacy flow value', () => {
+        const context = readyContext();
+        context.systems[0].design_flow_m3h = null;
+        context.systems[0].calculation_inputs = {
+            design_flow_source: 'linked_exhibits',
+            turnover_source: 'primary_exhibit',
+        };
+        context.engineering_calculations.systems = [{
+                status: 'valid',
+                freshness: 'fresh',
+                inputs: {
+                    system_id: 'system-1',
+                    design_flow_source: 'linked_exhibits',
+                    turnover_source: 'primary_exhibit',
+                },
+                results: {
+                    calculated_required_flow_m3h: 120,
+                    design_flow_m3h: 120,
+                    turnover_rate_cycles_per_hour: 4,
+                },
+            }];
+        const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context);
+        (0, vitest_1.expect)(checklist.find(check => check.key === 'lss_configuration')?.status).toBe('pass');
+        (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)(checklist)).toEqual([]);
+    });
     (0, vitest_1.it)('blocks release when required metadata and engineering records are incomplete', () => {
         const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)({
             id: 'book-1',

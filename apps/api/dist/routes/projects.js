@@ -122,6 +122,16 @@ function tankDatabaseResponse(error) {
     };
 }
 const FLOW_SIDE_STREAM_PRESETS = ['Thermal', 'UV', 'Custom'];
+function withoutStaleLinkedSystemFlow(system) {
+    const source = system?.calculation_inputs?.design_flow_source === 'manual_override'
+        ? 'manual_override'
+        : 'linked_exhibits';
+    return {
+        ...system,
+        design_flow_m3h: source === 'manual_override' ? system.design_flow_m3h : null,
+        design_flow_source: source,
+    };
+}
 function normalizeSideStreams(value) {
     if (!Array.isArray(value))
         return null;
@@ -1352,7 +1362,10 @@ router.get('/systems', auth_1.authenticate, async (req, res) => {
     const countRes = await (0, db_1.query)(`SELECT COUNT(*) FROM systems s ${where}`, params);
     params.push(page_size, offset);
     const result = await (0, db_1.query)(`SELECT s.*, a.area_name, e.exhibit_name, p.project_code FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id ${where} ORDER BY s.system_code LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
-    res.json({ items: result.rows, pagination: { page, page_size, total: parseInt(countRes.rows[0].count) } });
+    res.json({
+        items: result.rows.map(withoutStaleLinkedSystemFlow),
+        pagination: { page, page_size, total: parseInt(countRes.rows[0].count) },
+    });
 });
 router.get('/systems/:id', auth_1.authenticate, async (req, res) => {
     const result = await (0, db_1.query)('SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id WHERE s.id::text=$1 OR s.system_code=$1', [req.params.id]);
@@ -1393,7 +1406,7 @@ router.get('/systems/:id', auth_1.authenticate, async (req, res) => {
         loadSystemFractionatorAllocations(sysId),
     ]);
     res.json({
-        ...result.rows[0],
+        ...withoutStaleLinkedSystemFlow(result.rows[0]),
         equipment: equipment.rows,
         tanks: tanks.rows,
         side_streams: sideStreams,
@@ -1415,7 +1428,7 @@ router.get('/systems/:id/fractionator-products', auth_1.authenticate, async (req
 router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const client = await db_1.default.connect();
     try {
-        const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy } = req.body;
+        const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, design_flow_source, turnover_source, water_type, status, duty_description, redundancy_strategy, } = req.body;
         if (!system_code || !project_id || !system_name) {
             return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'system_code, project_id and system_name are required' } });
         }
@@ -1443,7 +1456,30 @@ router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'e
                 });
             }
         }
-        const result = await client.query('INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *', [system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type, design_flow_m3h || null, turnover_rate_hr || null, water_type, status || 'Draft', duty_description || null, redundancy_strategy || null]);
+        const resolvedDesignFlowSource = design_flow_source === 'linked_exhibits'
+            ? 'linked_exhibits'
+            : 'manual_override';
+        const resolvedTurnoverSource = turnover_source === 'primary_exhibit'
+            ? 'primary_exhibit'
+            : 'manual_override';
+        const result = await client.query(`INSERT INTO systems
+         (system_code, project_id, area_id, exhibit_id, system_name, system_type,
+          design_flow_m3h, turnover_rate_hr, water_type, status, duty_description,
+          redundancy_strategy, calculation_version, last_calculated_at, calculation_inputs)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),$14)
+       RETURNING *`, [
+            system_code, project_id, area_id || null, exhibit_id || null, system_name, system_type,
+            resolvedDesignFlowSource === 'manual_override' ? design_flow_m3h || null : null,
+            resolvedTurnoverSource === 'manual_override' ? turnover_rate_hr || null : null,
+            water_type, status || 'Draft', duty_description || null, redundancy_strategy || null,
+            aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
+            JSON.stringify({
+                design_flow_source: resolvedDesignFlowSource,
+                turnover_source: resolvedTurnoverSource,
+                turnover_unit: 'cycles_per_hour',
+                flow_unit: 'm3_per_hour',
+            }),
+        ]);
         if (exhibit_id) {
             await client.query(`INSERT INTO system_exhibit_links
            (system_id, exhibit_id, link_type, flow_allocation_m3h, notes, sort_order, allocation_source, allocation_updated_at)
@@ -1472,7 +1508,7 @@ router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'e
 });
 router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {
-        const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy, loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct, loop1_bio_degas_m3h, loop1_link_bio_degas, loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct, loop2_bio_degas_m3h, loop2_link_bio_degas, loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct, loop3_bio_degas_m3h, loop3_link_bio_degas, loop1_name, loop2_name, loop3_name, side_streams, fractionator_allocations, system_config, compact_unit_id, design_book_id, } = req.body;
+        const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, design_flow_source, turnover_source, water_type, status, duty_description, redundancy_strategy, loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct, loop1_bio_degas_m3h, loop1_link_bio_degas, loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct, loop2_bio_degas_m3h, loop2_link_bio_degas, loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct, loop3_bio_degas_m3h, loop3_link_bio_degas, loop1_name, loop2_name, loop3_name, side_streams, fractionator_allocations, system_config, compact_unit_id, design_book_id, } = req.body;
         let normalizedSideStreams = null;
         try {
             normalizedSideStreams = normalizeSideStreams(side_streams);
@@ -1516,6 +1552,22 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         const currentResult = await (0, db_1.query)('SELECT * FROM systems WHERE id=$1', [req.params.id]);
         if (!currentResult.rows[0])
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        const currentCalculationInputs = currentResult.rows[0].calculation_inputs &&
+            typeof currentResult.rows[0].calculation_inputs === 'object'
+            ? currentResult.rows[0].calculation_inputs
+            : {};
+        const resolvedDesignFlowSource = design_flow_source === 'linked_exhibits' ||
+            design_flow_source === 'manual_override'
+            ? design_flow_source
+            : currentCalculationInputs.design_flow_source === 'linked_exhibits'
+                ? 'linked_exhibits'
+                : design_flow_m3h != null ? 'manual_override' : 'linked_exhibits';
+        const resolvedTurnoverSource = turnover_source === 'primary_exhibit' ||
+            turnover_source === 'manual_override'
+            ? turnover_source
+            : currentCalculationInputs.turnover_source === 'primary_exhibit'
+                ? 'primary_exhibit'
+                : turnover_rate_hr != null ? 'manual_override' : 'primary_exhibit';
         const currentSystem = currentResult.rows[0];
         const resolvedPercentage = (field, value) => Object.prototype.hasOwnProperty.call(req.body, field)
             ? (value === '' || value == null ? null : Number(value))
@@ -1665,7 +1717,9 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         updated_at=NOW()
        WHERE id=$32 RETURNING *`, [
                 system_code || null, system_name, system_type,
-                design_flow_m3h || null, turnover_rate_hr || null, water_type, status,
+                resolvedDesignFlowSource === 'manual_override' ? design_flow_m3h || null : null,
+                resolvedTurnoverSource === 'manual_override' ? turnover_rate_hr || null : null,
+                water_type, status,
                 duty_description, redundancy_strategy,
                 loop1_flow_source || null, loop1_filtration || null,
                 resolvedLoop1FlowPct, resolvedLoop1BioPct,
@@ -1681,6 +1735,8 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                 JSON.stringify({
                     design_flow_m3h: design_flow_m3h ?? null,
                     turnover_rate_hr: turnover_rate_hr ?? null,
+                    design_flow_source: resolvedDesignFlowSource,
+                    turnover_source: resolvedTurnoverSource,
                     turnover_unit: 'cycles_per_hour',
                     flow_unit: 'm3_per_hour',
                     system_config: system_config || 'bespoke',

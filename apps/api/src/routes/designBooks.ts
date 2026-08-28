@@ -221,12 +221,22 @@ async function loadReleaseContext(
     system.side_streams || [],
     system.fractionator_allocations || [],
   ));
+  const currentSystems = systems.map(system => {
+    const calculation = systemCalculations.find(
+      item => item.inputs.system_id === system.id);
+    return {
+      ...system,
+      stored_design_flow_m3h: system.design_flow_m3h,
+      design_flow_m3h: calculation?.results.design_flow_m3h ?? null,
+      design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
+    };
+  });
 
   const liveContext = {
     ...book,
     exhibits,
     tanks,
-    systems,
+    systems: currentSystems,
     system_links: links,
     species,
     hydraulics,
@@ -490,11 +500,21 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     system.side_streams || [],
     system.fractionator_allocations || [],
   ));
+  const currentSystems = systems.map(system => {
+    const calculation = systemCalculations.find(
+      item => item.inputs.system_id === system.id);
+    return {
+      ...system,
+      stored_design_flow_m3h: system.design_flow_m3h,
+      design_flow_m3h: calculation?.results.design_flow_m3h ?? null,
+      design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
+    };
+  });
 
   const livePackage = {
     exhibits,
     tanks,
-    systems,
+    systems: currentSystems,
     system_links: systemLinks,
     species,
     hydraulics,

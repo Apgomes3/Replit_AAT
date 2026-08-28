@@ -72,8 +72,15 @@ function buildDesignBookReleaseChecklist(context) {
         ...exhibitCalculations.filter(calculation => calculation.is_stale || calculation.freshness === 'stale'),
         ...systemCalculations.filter(calculation => calculation.is_stale || calculation.freshness === 'stale'),
     ];
-    const systemsWithoutConfiguration = systems.filter(system => !system.system_config || !system.system_type || !system.status ||
-        !Number.isFinite(Number(system.design_flow_m3h)) || Number(system.design_flow_m3h) <= 0);
+    const systemsWithoutConfiguration = systems.filter(system => {
+        const calculation = systemCalculations.find(item => item.inputs?.system_id === system.id);
+        const source = calculation?.inputs?.design_flow_source;
+        const authoritativeFlow = source === 'linked_exhibits'
+            ? calculation?.results?.design_flow_m3h
+            : system.design_flow_m3h;
+        return !system.system_config || !system.system_type || !system.status ||
+            !Number.isFinite(Number(authoritativeFlow)) || Number(authoritativeFlow) <= 0;
+    });
     const systemsWithoutFlowRoute = systems.filter(system => {
         const loops = flowRouteFields(system);
         return !loops.some(loop => flowLoopIsConfigured(loop));

@@ -103,6 +103,9 @@ const aquariumCalculations_1 = require("./aquariumCalculations");
     const baseSystem = {
         id: 'system-foam',
         design_flow_m3h: 100,
+        calculation_inputs: {
+            design_flow_source: 'manual_override',
+        },
         loop1_name: 'Foam loop',
         loop1_filtration: 'Foam Fractionation',
         loop1_flow_pct: 50,
@@ -268,10 +271,167 @@ const tank = {
     });
     (0, vitest_1.it)('marks saved system flow as a manual override', () => {
         const exhibitCalculation = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
-        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({ id: 'sys-1', design_flow_m3h: 120, system_config: 'bespoke' }, [{ id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' }], [exhibitCalculation], null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-1',
+            design_flow_m3h: 120,
+            system_config: 'bespoke',
+            calculation_inputs: { design_flow_source: 'manual_override' },
+        }, [{ id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' }], [exhibitCalculation], null);
         (0, vitest_1.expect)(system.status).toBe('override');
         (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBe(108);
         (0, vitest_1.expect)(system.results.flow_override_m3h).toBe(120);
+    });
+    (0, vitest_1.it)('ignores stale persisted flow unless manual override is explicit', () => {
+        const current = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [{ ...tank, project_operating_volume_m3: 80 }], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-linked-default',
+            design_flow_m3h: 350,
+            calculation_inputs: { turnover_source: 'primary_exhibit' },
+            loop1_flow_pct: 50,
+        }, [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }], [current], {
+            status: 'Active',
+            water_type: 'Marine',
+            max_flow_m3h: 325,
+        });
+        (0, vitest_1.expect)(system.inputs.design_flow_source).toBe('linked_exhibits');
+        (0, vitest_1.expect)(system.inputs.saved_design_flow_m3h).toBe(350);
+        (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBe(320);
+        (0, vitest_1.expect)(system.results.design_flow_m3h).toBe(320);
+        (0, vitest_1.expect)(system.results.flow_override_m3h).toBeNull();
+        (0, vitest_1.expect)(system.flow_route.loops[0].flow_m3h).toBe(160);
+    });
+    (0, vitest_1.it)('preserves manual override identity when the value equals the recommendation', () => {
+        const calculation = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-equal-override',
+            design_flow_m3h: 108,
+            turnover_rate_hr: 4,
+            calculation_inputs: {
+                design_flow_source: 'manual_override',
+                turnover_source: 'manual_override',
+            },
+        }, [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }], [calculation], null);
+        (0, vitest_1.expect)(system.status).toBe('override');
+        (0, vitest_1.expect)(system.inputs.design_flow_source).toBe('manual_override');
+        (0, vitest_1.expect)(system.inputs.turnover_source).toBe('manual_override');
+        (0, vitest_1.expect)(system.results.flow_override_m3h).toBe(108);
+        (0, vitest_1.expect)(system.results.turnover_override_cycles_per_hour).toBe(4);
+        (0, vitest_1.expect)(system.results.flow_override_differs_from_recommendation).toBe(false);
+        (0, vitest_1.expect)(system.results.turnover_override_differs_from_recommendation).toBe(false);
+    });
+    (0, vitest_1.it)('does not propagate a numeric flow from an invalid exhibit calculation', () => {
+        const invalid = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 90, bottom_drain_pct: 90 }, null);
+        (0, vitest_1.expect)(invalid.status).toBe('invalid');
+        (0, vitest_1.expect)(invalid.results.total_return_flow_m3h).not.toBeNull();
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-invalid-exhibit',
+            calculation_inputs: {
+                design_flow_source: 'linked_exhibits',
+                turnover_source: 'primary_exhibit',
+            },
+        }, [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }], [invalid], null);
+        (0, vitest_1.expect)(system.status).toBe('invalid');
+        (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBeNull();
+        (0, vitest_1.expect)(system.results.design_flow_m3h).toBeNull();
+        (0, vitest_1.expect)(system.results.turnover_rate_cycles_per_hour).toBeNull();
+    });
+    (0, vitest_1.it)('keeps an explicit manual flow available when the linked recommendation is unavailable', () => {
+        const incomplete = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [], null, null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-unavailable-override',
+            design_flow_m3h: 75,
+            calculation_inputs: {
+                design_flow_source: 'manual_override',
+                turnover_source: 'primary_exhibit',
+            },
+        }, [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }], [incomplete], null);
+        (0, vitest_1.expect)(system.status).toBe('invalid');
+        (0, vitest_1.expect)(system.inputs.design_flow_source).toBe('manual_override');
+        (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBeNull();
+        (0, vitest_1.expect)(system.results.design_flow_m3h).toBe(75);
+        (0, vitest_1.expect)(system.results.flow_override_m3h).toBe(75);
+    });
+    (0, vitest_1.it)('requires exactly one primary link before deriving system turnover', () => {
+        const first = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const second = (0, aquariumCalculations_1.calculateExhibitHydraulics)({ ...exhibit, id: 'ex-2' }, [{ ...tank, id: 'tank-2' }], { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const calculate = (linkType) => (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: `sys-${linkType}`,
+            calculation_inputs: {
+                design_flow_source: 'linked_exhibits',
+                turnover_source: 'primary_exhibit',
+            },
+        }, [
+            { id: 'link-1', exhibit_id: exhibit.id, link_type: linkType },
+            { id: 'link-2', exhibit_id: 'ex-2', link_type: linkType },
+        ], [first, second], null);
+        const noPrimary = calculate('Secondary');
+        (0, vitest_1.expect)(noPrimary.status).toBe('invalid');
+        (0, vitest_1.expect)(noPrimary.results.turnover_rate_cycles_per_hour).toBeNull();
+        (0, vitest_1.expect)(noPrimary.reasons.join(' ')).toContain('Exactly one Primary');
+        const multiplePrimary = calculate('Primary');
+        (0, vitest_1.expect)(multiplePrimary.status).toBe('invalid');
+        (0, vitest_1.expect)(multiplePrimary.results.turnover_rate_cycles_per_hour).toBeNull();
+        (0, vitest_1.expect)(multiplePrimary.reasons.join(' ')).toContain('Multiple Primary');
+    });
+    (0, vitest_1.it)('sums current linked exhibit flows without splitting the system design flow', () => {
+        const first = (0, aquariumCalculations_1.calculateExhibitHydraulics)({ id: 'ex-1', water_type: 'Marine' }, [{ ...tank, id: 'tank-1' }], { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 }, { substrate_volume_m3: 2 });
+        const second = (0, aquariumCalculations_1.calculateExhibitHydraulics)({ id: 'ex-2', water_type: 'Marine' }, [{ ...tank, id: 'tank-2', eff_length_mm: 2000, eff_width_mm: 1000 }], { target_turnover_rate: 3, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-linked',
+            design_flow_m3h: 999,
+            turnover_rate_hr: 9,
+            calculation_inputs: {
+                design_flow_source: 'linked_exhibits',
+                turnover_source: 'primary_exhibit',
+            },
+        }, [
+            { id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' },
+            { id: 'link-2', exhibit_id: 'ex-2', link_type: 'Secondary' },
+        ], [first, second], null);
+        (0, vitest_1.expect)(system.allocations.map((item) => item.required_flow_m3h))
+            .toEqual([50, 10.8]);
+        (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBe(60.8);
+        (0, vitest_1.expect)(system.results.design_flow_m3h).toBe(60.8);
+        (0, vitest_1.expect)(system.results.turnover_rate_cycles_per_hour).toBe(2);
+        (0, vitest_1.expect)(system.results.flow_override_m3h).toBeNull();
+    });
+    (0, vitest_1.it)('reports linked system flow as unavailable when any exhibit hydraulics are incomplete', () => {
+        const valid = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const incomplete = (0, aquariumCalculations_1.calculateExhibitHydraulics)({ id: 'ex-2', water_type: 'Marine' }, [], null, null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-incomplete',
+            calculation_inputs: {
+                design_flow_source: 'linked_exhibits',
+                turnover_source: 'primary_exhibit',
+            },
+        }, [
+            { id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' },
+            { id: 'link-2', exhibit_id: 'ex-2', link_type: 'Secondary' },
+        ], [valid, incomplete], null);
+        (0, vitest_1.expect)(system.status).toBe('invalid');
+        (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBeNull();
+        (0, vitest_1.expect)(system.results.design_flow_m3h).toBeNull();
+        (0, vitest_1.expect)(system.allocations[1].flow_unavailable_reason).toContain('incomplete');
+    });
+    (0, vitest_1.it)('does not use persisted linked flow or stale exhibit calculations as current', () => {
+        const stale = {
+            ...(0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null),
+            freshness: 'stale',
+            is_stale: true,
+        };
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-stale',
+            design_flow_m3h: 350,
+            system_config: 'compact',
+            calculation_inputs: { design_flow_source: 'linked_exhibits' },
+            loop1_flow_pct: 50,
+        }, [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }], [stale], { status: 'Active', water_type: 'Marine', max_flow_m3h: 1000 });
+        (0, vitest_1.expect)(system.status).toBe('invalid');
+        (0, vitest_1.expect)(system.results.design_flow_m3h).toBeNull();
+        (0, vitest_1.expect)(system.results.turnover_rate_cycles_per_hour).toBeNull();
+        (0, vitest_1.expect)(system.flow_route.loops[0].flow_m3h).toBeNull();
+        (0, vitest_1.expect)(system.suitability.reasons).toContain('Operating volume is required to confirm compact-unit suitability.');
+        (0, vitest_1.expect)(system.suitability.reasons).not.toContain('Required flow exceeds the catalog maximum of 1000 m³/h.');
     });
     (0, vitest_1.it)('derives side-stream flow from the canonical parent-loop basis', () => {
         (0, vitest_1.expect)((0, aquariumCalculations_1.calculateSideStreamFlow)(120, 50, 25)).toBe(15);
@@ -282,6 +442,9 @@ const tank = {
         const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
             id: 'sys-side-streams',
             design_flow_m3h: 100,
+            calculation_inputs: {
+                design_flow_source: 'manual_override',
+            },
             system_config: 'bespoke',
             loop1_name: 'Main Filtration',
             loop1_flow_pct: 60,
@@ -304,7 +467,7 @@ const tank = {
         const invalidExhibit = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [], { surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
         const system = (0, aquariumCalculations_1.calculateSystemEngineering)({ id: 'sys-invalid', system_config: 'bespoke' }, [{ id: 'link-invalid', exhibit_id: 'ex-1', exhibit_code: 'EX-01', link_type: 'Primary' }], [invalidExhibit], null);
         (0, vitest_1.expect)(system.status).toBe('invalid');
-        (0, vitest_1.expect)(system.reasons[0]).toContain('Linked exhibit EX-01 is invalid');
+        (0, vitest_1.expect)(system.reasons[0]).toContain('Linked exhibit EX-01 has no current usable engineering calculation');
     });
     (0, vitest_1.it)('evaluates catalog volume, flow, status and water-type limits', () => {
         const unsuitable = (0, aquariumCalculations_1.evaluateCompactUnit)({

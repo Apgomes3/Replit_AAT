@@ -185,11 +185,20 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         ? (await runner('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
         : [];
     const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, links.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculatedAt, system.side_streams || [], system.fractionator_allocations || []));
+    const currentSystems = systems.map(system => {
+        const calculation = systemCalculations.find(item => item.inputs.system_id === system.id);
+        return {
+            ...system,
+            stored_design_flow_m3h: system.design_flow_m3h,
+            design_flow_m3h: calculation?.results.design_flow_m3h ?? null,
+            design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
+        };
+    });
     const liveContext = {
         ...book,
         exhibits,
         tanks,
-        systems,
+        systems: currentSystems,
         system_links: links,
         species,
         hydraulics,
@@ -407,10 +416,19 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         ? (await (0, index_1.query)('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
         : [];
     const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, systemLinks.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculationTimestamp, system.side_streams || [], system.fractionator_allocations || []));
+    const currentSystems = systems.map(system => {
+        const calculation = systemCalculations.find(item => item.inputs.system_id === system.id);
+        return {
+            ...system,
+            stored_design_flow_m3h: system.design_flow_m3h,
+            design_flow_m3h: calculation?.results.design_flow_m3h ?? null,
+            design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
+        };
+    });
     const livePackage = {
         exhibits,
         tanks,
-        systems,
+        systems: currentSystems,
         system_links: systemLinks,
         species,
         hydraulics,

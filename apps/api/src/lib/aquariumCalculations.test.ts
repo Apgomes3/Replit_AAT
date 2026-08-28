@@ -132,6 +132,9 @@ describe('Foam Fractionator release readiness', () => {
   const baseSystem = {
     id: 'system-foam',
     design_flow_m3h: 100,
+    calculation_inputs: {
+      design_flow_source: 'manual_override',
+    },
     loop1_name: 'Foam loop',
     loop1_filtration: 'Foam Fractionation',
     loop1_flow_pct: 50,
@@ -383,7 +386,12 @@ describe('aquarium engineering calculations', () => {
       null,
     );
     const system = calculateSystemEngineering(
-      { id: 'sys-1', design_flow_m3h: 120, system_config: 'bespoke' },
+      {
+        id: 'sys-1',
+        design_flow_m3h: 120,
+        system_config: 'bespoke',
+        calculation_inputs: { design_flow_source: 'manual_override' },
+      },
       [{ id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' }],
       [exhibitCalculation],
       null,
@@ -391,6 +399,37 @@ describe('aquarium engineering calculations', () => {
     expect(system.status).toBe('override');
     expect(system.results.calculated_required_flow_m3h).toBe(108);
     expect(system.results.flow_override_m3h).toBe(120);
+  });
+
+  it('ignores stale persisted flow unless manual override is explicit', () => {
+    const current = calculateExhibitHydraulics(
+      exhibit,
+      [{ ...tank, project_operating_volume_m3: 80 }],
+      { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-linked-default',
+        design_flow_m3h: 350,
+        calculation_inputs: { turnover_source: 'primary_exhibit' },
+        loop1_flow_pct: 50,
+      },
+      [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }],
+      [current],
+      {
+        status: 'Active',
+        water_type: 'Marine',
+        max_flow_m3h: 325,
+      },
+    );
+
+    expect(system.inputs.design_flow_source).toBe('linked_exhibits');
+    expect(system.inputs.saved_design_flow_m3h).toBe(350);
+    expect(system.results.calculated_required_flow_m3h).toBe(320);
+    expect(system.results.design_flow_m3h).toBe(320);
+    expect(system.results.flow_override_m3h).toBeNull();
+    expect(system.flow_route.loops[0].flow_m3h).toBe(160);
   });
 
   it('preserves manual override identity when the value equals the recommendation', () => {
@@ -595,6 +634,42 @@ describe('aquarium engineering calculations', () => {
     expect(system.allocations[1].flow_unavailable_reason).toContain('incomplete');
   });
 
+  it('does not use persisted linked flow or stale exhibit calculations as current', () => {
+    const stale = {
+      ...calculateExhibitHydraulics(
+        exhibit,
+        [tank],
+        { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 },
+        null,
+      ),
+      freshness: 'stale',
+      is_stale: true,
+    };
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-stale',
+        design_flow_m3h: 350,
+        system_config: 'compact',
+        calculation_inputs: { design_flow_source: 'linked_exhibits' },
+        loop1_flow_pct: 50,
+      },
+      [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }],
+      [stale],
+      { status: 'Active', water_type: 'Marine', max_flow_m3h: 1000 },
+    );
+
+    expect(system.status).toBe('invalid');
+    expect(system.results.design_flow_m3h).toBeNull();
+    expect(system.results.turnover_rate_cycles_per_hour).toBeNull();
+    expect(system.flow_route.loops[0].flow_m3h).toBeNull();
+    expect(system.suitability.reasons).toContain(
+      'Operating volume is required to confirm compact-unit suitability.',
+    );
+    expect(system.suitability.reasons).not.toContain(
+      'Required flow exceeds the catalog maximum of 1000 m³/h.',
+    );
+  });
+
   it('derives side-stream flow from the canonical parent-loop basis', () => {
     expect(calculateSideStreamFlow(120, 50, 25)).toBe(15);
     expect(calculateSideStreamFlow(120, null, 25)).toBeNull();
@@ -606,6 +681,9 @@ describe('aquarium engineering calculations', () => {
       {
         id: 'sys-side-streams',
         design_flow_m3h: 100,
+        calculation_inputs: {
+          design_flow_source: 'manual_override',
+        },
         system_config: 'bespoke',
         loop1_name: 'Main Filtration',
         loop1_flow_pct: 60,
@@ -646,7 +724,9 @@ describe('aquarium engineering calculations', () => {
       null,
     );
     expect(system.status).toBe('invalid');
-    expect(system.reasons[0]).toContain('Linked exhibit EX-01 is invalid');
+    expect(system.reasons[0]).toContain(
+      'Linked exhibit EX-01 has no current usable engineering calculation',
+    );
   });
 
   it('evaluates catalog volume, flow, status and water-type limits', () => {

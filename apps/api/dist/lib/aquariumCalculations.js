@@ -450,6 +450,8 @@ function evaluateCompactUnit(unit, waterType, operatingVolumeM3, requiredFlowM3h
     const maxFlow = numberOrNull(unit.max_flow_m3h);
     if (volume == null || volume <= 0)
         reasons.push('Operating volume is required to confirm compact-unit suitability.');
+    if (flow == null || flow <= 0)
+        reasons.push('Required flow is required to confirm compact-unit suitability.');
     if (minVolume != null && volume != null && volume < minVolume)
         reasons.push(`Volume is below the catalog minimum of ${minVolume} m³.`);
     if (maxVolume != null && volume != null && volume > maxVolume)
@@ -476,7 +478,12 @@ function evaluateCompactUnit(unit, waterType, operatingVolumeM3, requiredFlowM3h
 function calculateSystemEngineering(system, links, exhibitCalculations, compactUnit, calculatedAt = new Date().toISOString(), sideStreams = system?.side_streams || [], fractionatorAllocations = system?.fractionator_allocations || []) {
     const linked = (links || []).map(link => {
         const exhibit = exhibitCalculations.find(calc => calc.inputs.exhibit_id === link.exhibit_id);
-        const required = exhibit?.results.total_return_flow_m3h ?? null;
+        const calculationIsCurrent = exhibit?.status === 'valid' &&
+            exhibit?.is_stale !== true &&
+            exhibit?.freshness !== 'stale';
+        const required = calculationIsCurrent
+            ? exhibit.results.total_return_flow_m3h ?? null
+            : null;
         const override = numberOrNull(link.flow_allocation_m3h);
         return {
             link_id: link.id,
@@ -487,13 +494,36 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
             allocation_m3h: override ?? required,
             allocation_source: override != null ? 'manual_override' : 'calculated',
             allocation_override_m3h: override,
+            flow_available: required != null,
+            flow_unavailable_reason: required == null
+                ? 'Current exhibit hydraulic inputs are incomplete or invalid.'
+                : null,
         };
     });
-    const requiredFlow = linked.reduce((sum, link) => sum + (link.required_flow_m3h || 0), 0);
-    const allocatedFlow = linked.reduce((sum, link) => sum + (link.allocation_m3h || 0), 0);
+    const linkedFlowsAvailable = linked.length > 0 &&
+        linked.every(link => link.required_flow_m3h != null);
+    const requiredFlow = linkedFlowsAvailable
+        ? linked.reduce((sum, link) => sum + Number(link.required_flow_m3h), 0)
+        : null;
+    const allocatedFlow = linked.length === 0
+        ? 0
+        : linked.every(link => link.allocation_m3h != null)
+            ? linked.reduce((sum, link) => sum + Number(link.allocation_m3h), 0)
+            : null;
     const savedFlow = positiveOrNull(system?.design_flow_m3h);
     const savedTurnover = positiveOrNull(system?.turnover_rate_hr);
-    const storedFlowDiffers = savedFlow != null && requiredFlow > 0 &&
+    const calculationInputs = system?.calculation_inputs &&
+        typeof system.calculation_inputs === 'object'
+        ? system.calculation_inputs
+        : {};
+    const designFlowSource = calculationInputs.design_flow_source === 'manual_override'
+        ? 'manual_override'
+        : 'linked_exhibits';
+    const turnoverSource = calculationInputs.turnover_source === 'manual_override'
+        ? 'manual_override'
+        : 'primary_exhibit';
+    const hasFlowOverride = designFlowSource === 'manual_override' && savedFlow != null;
+    const storedFlowDiffers = hasFlowOverride && requiredFlow != null &&
         Math.abs(savedFlow - requiredFlow) > 0.005;
     const reasons = [];
     for (const link of linked) {
@@ -501,22 +531,47 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
         if (!linkedCalculation) {
             reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} has no engineering calculation.`);
         }
-        else if (linkedCalculation.status === 'invalid') {
+        else if (linkedCalculation.status !== 'valid' ||
+            linkedCalculation.is_stale === true ||
+            linkedCalculation.freshness === 'stale') {
             const detail = linkedCalculation.reasons?.join(' ') || 'Invalid engineering inputs.';
-            reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} is invalid: ${detail}`);
+            reasons.push(`Linked exhibit ${link.exhibit_code || link.exhibit_id} has no current usable engineering calculation: ${detail}`);
         }
     }
-    if (Math.abs(allocatedFlow - requiredFlow) > 0.005 && requiredFlow > 0) {
+    if (allocatedFlow != null && requiredFlow != null &&
+        Math.abs(allocatedFlow - requiredFlow) > 0.005 && requiredFlow > 0) {
         reasons.push('Exhibit allocations do not equal the calculated required system flow.');
     }
-    const primary = linked.find(link => link.link_type === 'Primary') || linked[0];
+    const primaryLinks = linked.filter(link => link.link_type === 'Primary');
+    const primary = primaryLinks.length === 1 ? primaryLinks[0] : null;
     const primaryCalc = primary && exhibitCalculations.find(calc => calc.inputs.exhibit_id === primary.exhibit_id);
-    const turnover = primaryCalc?.inputs.target_turnover_rate_cycles_per_hour ?? null;
+    const calculatedTurnover = primaryCalc?.status === 'valid' &&
+        primaryCalc?.is_stale !== true &&
+        primaryCalc?.freshness !== 'stale'
+        ? primaryCalc.inputs.target_turnover_rate_cycles_per_hour ?? null
+        : null;
+    const turnover = turnoverSource === 'manual_override'
+        ? savedTurnover
+        : calculatedTurnover;
+    if (turnoverSource === 'primary_exhibit' && linked.length > 0 && primaryLinks.length !== 1) {
+        reasons.push(primaryLinks.length === 0
+            ? 'Exactly one Primary exhibit link is required to calculate system turnover.'
+            : 'Multiple Primary exhibit links make system turnover unavailable.');
+    }
+    const hasTurnoverOverride = turnoverSource === 'manual_override' && savedTurnover != null;
+    const storedTurnoverDiffers = hasTurnoverOverride && calculatedTurnover != null &&
+        Math.abs(savedTurnover - calculatedTurnover) > 0.005;
+    const designFlow = designFlowSource === 'manual_override'
+        ? savedFlow
+        : requiredFlow;
     const unitResult = system?.system_config === 'compact'
         ? evaluateCompactUnit(compactUnit, system?.water_type || primaryCalc?.inputs.water_type || null, linked.reduce((sum, link) => {
             const calc = exhibitCalculations.find(item => item.inputs.exhibit_id === link.exhibit_id);
-            return sum + (calc?.results.operating_volume_m3 || 0);
-        }, 0), requiredFlow || savedFlow)
+            const calculationIsCurrent = calc?.status === 'valid' &&
+                calc?.is_stale !== true &&
+                calc?.freshness !== 'stale';
+            return sum + (calculationIsCurrent ? (calc?.results.operating_volume_m3 || 0) : 0);
+        }, 0), designFlow)
         : {
             status: 'warning',
             suitable: null,
@@ -524,10 +579,9 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
         };
     if (system?.system_config === 'compact')
         reasons.push(...unitResult.reasons);
-    const designFlow = savedFlow ?? requiredFlow;
     const flowRoute = [1, 2, 3].map(loopNumber => {
         const allocationPct = numberOrNull(system?.[`loop${loopNumber}_flow_pct`]);
-        const parentFlow = designFlow > 0 && allocationPct != null
+        const parentFlow = designFlow != null && designFlow > 0 && allocationPct != null
             ? (0, exports.roundEngineering)(designFlow * allocationPct / 100, exports.FLOW_DECIMALS)
             : null;
         return {
@@ -572,8 +626,8 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
     return {
         calculation_version: exports.AQUARIUM_CALCULATION_VERSION,
         calculated_at: calculatedAt,
-        status: reasons.length ? 'invalid' : storedFlowDiffers ? 'override' : 'valid',
-        freshness: storedFlowDiffers ? 'override' : 'fresh',
+        status: reasons.length ? 'invalid' : hasFlowOverride || hasTurnoverOverride ? 'override' : 'valid',
+        freshness: hasFlowOverride || hasTurnoverOverride ? 'override' : 'fresh',
         is_stale: false,
         reasons,
         inputs: {
@@ -583,6 +637,8 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
             linked_exhibits: linked.length,
             saved_design_flow_m3h: savedFlow,
             saved_turnover_rate_cycles_per_hour: savedTurnover,
+            design_flow_source: designFlowSource,
+            turnover_source: turnoverSource,
             system_water_type: system?.water_type || null,
         },
         results: {
@@ -591,7 +647,14 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
             design_flow_m3h: (0, exports.roundEngineering)(designFlow, exports.FLOW_DECIMALS),
             turnover_rate_cycles_per_hour: turnover,
             allocation_total_m3h: (0, exports.roundEngineering)(allocatedFlow, exports.FLOW_DECIMALS),
-            flow_override_m3h: storedFlowDiffers ? savedFlow : null,
+            flow_override_m3h: hasFlowOverride ? savedFlow : null,
+            turnover_override_cycles_per_hour: hasTurnoverOverride ? savedTurnover : null,
+            flow_override_differs_from_recommendation: storedFlowDiffers,
+            turnover_override_differs_from_recommendation: storedTurnoverDiffers,
+            sync_state: {
+                design_flow: designFlowSource,
+                turnover: turnoverSource,
+            },
         },
         allocations: linked,
         flow_route: {

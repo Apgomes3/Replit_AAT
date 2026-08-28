@@ -95,6 +95,17 @@ function tankDatabaseResponse(error: any) {
 
 const FLOW_SIDE_STREAM_PRESETS = ['Thermal', 'UV', 'Custom'] as const;
 
+function withoutStaleLinkedSystemFlow(system: any) {
+  const source = system?.calculation_inputs?.design_flow_source === 'manual_override'
+    ? 'manual_override'
+    : 'linked_exhibits';
+  return {
+    ...system,
+    design_flow_m3h: source === 'manual_override' ? system.design_flow_m3h : null,
+    design_flow_source: source,
+  };
+}
+
 function normalizeSideStreams(value: unknown) {
   if (!Array.isArray(value)) return null;
   const normalized = value.map((stream: any, index: number) => {
@@ -1461,7 +1472,10 @@ router.get('/systems', authenticate, async (req: AuthRequest, res: Response) => 
   const countRes = await query(`SELECT COUNT(*) FROM systems s ${where}`, params);
   params.push(page_size, offset);
   const result = await query(`SELECT s.*, a.area_name, e.exhibit_name, p.project_code FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id ${where} ORDER BY s.system_code LIMIT $${params.length-1} OFFSET $${params.length}`, params);
-  res.json({ items: result.rows, pagination: { page, page_size, total: parseInt(countRes.rows[0].count) } });
+  res.json({
+    items: result.rows.map(withoutStaleLinkedSystemFlow),
+    pagination: { page, page_size, total: parseInt(countRes.rows[0].count) },
+  });
 });
 
 router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
@@ -1504,7 +1518,7 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
     loadSystemFractionatorAllocations(sysId),
   ]);
   res.json({
-    ...result.rows[0],
+    ...withoutStaleLinkedSystemFlow(result.rows[0]),
     equipment: equipment.rows,
     tanks: tanks.rows,
     side_streams: sideStreams,
