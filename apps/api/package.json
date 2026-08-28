@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
+    "species:catalog:seed": "tsx src/db/seedSpeciesCatalogCli.ts",
     "species:catalog:generate": "tsx src/db/generateSpeciesCatalogArtifact.ts"
   },
   "dependencies": {
