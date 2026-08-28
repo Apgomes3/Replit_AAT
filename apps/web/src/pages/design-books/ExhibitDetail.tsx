@@ -1188,8 +1188,8 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
       toast.success(currentTank
         ? `${currentTank.tank_name} replaced with ${selected.tank_name}`
         : `${selected.tank_name} assigned to ${exhibit.exhibit_name}`);
-      if (currentTank) closeAddPanel();
       onRefresh();
+      closeAddPanel();
     } catch {
       toast.error('Failed to assign tank');
     } finally {
@@ -1231,8 +1231,8 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
         });
       }
       toast.success(currentTank ? 'Existing tank replaced' : 'Tank created and assigned');
-      if (currentTank) closeAddPanel();
       onRefresh();
+      closeAddPanel();
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message || 'Failed to create tank');
     } finally {
@@ -1259,8 +1259,8 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
       toast.success(currentTank
         ? `${currentTank.tank_name} replaced with ${selectedPim.product_name}`
         : `${selectedPim.product_name} linked from the PIM Tank Library`);
-      if (currentTank) closeAddPanel();
       onRefresh();
+      closeAddPanel();
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message || 'Failed to create linked project tank');
     } finally {

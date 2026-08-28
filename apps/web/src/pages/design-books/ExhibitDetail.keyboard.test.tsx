@@ -162,6 +162,46 @@ describe('ExhibitDetail Escape navigation', () => {
     }));
   });
 
+  it('closes the creation panel after the first tank is created and refreshed', async () => {
+    const createdTank = {
+      id: 'tank-1',
+      tank_code: 'TK-01',
+      tank_name: 'Main Display Tank',
+      exhibit_id: 'exhibit-1',
+      shape_type: 'Rectangular',
+      status: 'Active',
+    };
+    let designBookFetches = 0;
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/design-books/')) {
+        designBookFetches += 1;
+        return {
+          data: designBookFetches === 1 ? book : { ...book, tanks: [createdTank] },
+        } as any;
+      }
+      return { data: { items: [] } } as any;
+    });
+    const user = userEvent.setup();
+    renderExhibit();
+
+    await user.click(await screen.findByRole('button', { name: 'Create New Tank' }));
+    await user.type(screen.getByPlaceholderText('e.g. TK-01'), 'TK-01');
+    const tankName = screen.getByPlaceholderText('e.g. Main Display Tank');
+    await user.clear(tankName);
+    await user.type(tankName, 'Main Display Tank');
+    await user.click(screen.getByRole('button', { name: 'Create & Assign Tank' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/tanks', expect.objectContaining({
+      tank_code: 'TK-01',
+      tank_name: 'Main Display Tank',
+      project_id: 'project-1',
+      exhibit_id: 'exhibit-1',
+    })));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add a New Tank' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Create & Assign Tank' })).not.toBeInTheDocument();
+    expect(screen.getByText('Main Display Tank')).toBeInTheDocument();
+  });
+
   it('does not turn inherited PIM dimensions into overrides during an unrelated edit', async () => {
     const linkedBook = {
       ...book,
