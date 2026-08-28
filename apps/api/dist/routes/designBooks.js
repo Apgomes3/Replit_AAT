@@ -395,6 +395,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         exhibits,
         tanks,
         systems,
+        system_links: systemLinks,
         species,
         hydraulics,
         substrate,

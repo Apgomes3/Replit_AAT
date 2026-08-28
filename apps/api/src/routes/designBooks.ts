@@ -469,6 +469,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     exhibits,
     tanks,
     systems,
+    system_links: systemLinks,
     species,
     hydraulics,
     substrate,

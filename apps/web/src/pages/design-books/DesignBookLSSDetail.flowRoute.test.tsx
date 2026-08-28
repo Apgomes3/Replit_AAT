@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,18 +61,48 @@ const baseBook = {
   engineering_calculations: { systems: [], exhibits: [] },
 };
 
-function renderFlowRoute(system = baseSystem, book = baseBook) {
+const primaryLink = {
+  id: 'link-1',
+  system_id: 'system-1',
+  exhibit_id: 'exhibit-1',
+  exhibit_code: 'EX-01',
+  link_type: 'Primary',
+};
+
+const primaryExhibitCalculation = {
+  status: 'valid',
+  inputs: {
+    exhibit_id: 'exhibit-1',
+    surface_skim_pct: 36,
+    bottom_drain_pct: 64,
+  },
+  results: {
+    total_return_flow_m3h: 125,
+    surface_skim_flow_m3h: 45,
+    bottom_drain_flow_m3h: 80,
+  },
+};
+
+const bookWithPrimarySplit = {
+  ...baseBook,
+  engineering_calculations: {
+    systems: [],
+    exhibits: [primaryExhibitCalculation],
+  },
+};
+
+function renderFlowRoute(system: any = baseSystem, book: any = baseBook, links: any[] = []) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
     if (url === '/design-books/book-1') return Promise.resolve({ data: book });
-    if (url === '/systems/system-1/exhibit-links') return Promise.resolve({ data: [] });
+    if (url === '/systems/system-1/exhibit-links') return Promise.resolve({ data: links });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/design-books/book-1/lss/system-1']}>
         <Routes>
@@ -81,6 +111,7 @@ function renderFlowRoute(system = baseSystem, book = baseBook) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...rendered, queryClient };
 }
 
 describe('DesignBookLSSDetail Flow Route allocations', () => {
@@ -124,6 +155,186 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getAllByText('176.1 US GPM').length).toBeGreaterThan(0);
     await user.click(route.getByRole('button', { name: 'Imperial GPM' }));
     expect(route.getAllByText('146.6 Imperial GPM').length).toBeGreaterThan(0);
+  });
+
+  it('shows the primary exhibit source split without changing the loop allocation', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem, bookWithPrimarySplit, [primaryLink]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText('Read-only · from linked exhibit')).toBeInTheDocument();
+    expect(route.getByText('EX-01')).toBeInTheDocument();
+    expect(route.getByText('64% · 80.0 m³/h')).toBeInTheDocument();
+    expect(route.getByText(/loop allocation remains an independent percentage/)).toBeInTheDocument();
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    await user.click(route.getByRole('button', { name: 'Surface Skim' }));
+    expect(route.getByText('(Surface Skimmer Box)')).toBeInTheDocument();
+    expect(route.getByText('36% · 45.0 m³/h')).toBeInTheDocument();
+    expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(40);
+
+    await user.click(route.getByRole('button', { name: 'L/s' }));
+    expect(route.getByText('36% · 12.5 L/s')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'US GPM' }));
+    expect(route.getByText('36% · 198.1 US GPM')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Imperial GPM' }));
+    expect(route.getByText('36% · 165.0 Imperial GPM')).toBeInTheDocument();
+
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop1_flow_source: 'Surface Skim',
+        loop1_flow_pct: 40,
+        loop1_bio_degas_pct: 25,
+      }),
+    ));
+  });
+
+  it('shows both exhibit components and their combined return flow', async () => {
+    renderFlowRoute(
+      { ...baseSystem, loop1_flow_source: 'Both Integrated' },
+      bookWithPrimarySplit,
+      [primaryLink],
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText('36% · 45.0 m³/h')).toBeInTheDocument();
+    expect(route.getByText('64% · 80.0 m³/h')).toBeInTheDocument();
+    expect(route.getByText('Combined exhibit return flow')).toBeInTheDocument();
+    expect(route.getByText('125.0 m³/h')).toBeInTheDocument();
+  });
+
+  it('does not use a secondary exhibit as an authoritative source reference', async () => {
+    renderFlowRoute(baseSystem, bookWithPrimarySplit, [{
+      ...primaryLink,
+      link_type: 'Secondary',
+    }]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText(/Exhibit split unavailable: No primary linked exhibit is configured/)).toBeInTheDocument();
+    expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
+  });
+
+  it('shows an unavailable state when multiple primary exhibit links are configured', async () => {
+    renderFlowRoute(baseSystem, bookWithPrimarySplit, [
+      primaryLink,
+      {
+        ...primaryLink,
+        id: 'link-2',
+        exhibit_id: 'exhibit-2',
+        exhibit_code: 'EX-02',
+      },
+    ]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText(/Exhibit split unavailable: Multiple primary linked exhibits are configured/)).toBeInTheDocument();
+    expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
+  });
+
+  it('clears the old source reference when the primary exhibit link changes', async () => {
+    const { queryClient } = renderFlowRoute(baseSystem, bookWithPrimarySplit, [primaryLink]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+    expect(route.getByText('64% · 80.0 m³/h')).toBeInTheDocument();
+
+    const replacementLink = {
+      ...primaryLink,
+      id: 'link-2',
+      exhibit_id: 'exhibit-2',
+      exhibit_code: 'EX-02',
+    };
+    const replacementBook = {
+      ...bookWithPrimarySplit,
+      engineering_calculations: {
+        systems: [],
+        exhibits: [{
+          status: 'valid',
+          inputs: {
+            exhibit_id: 'exhibit-2',
+            surface_skim_pct: 50,
+            bottom_drain_pct: 50,
+          },
+          results: {
+            total_return_flow_m3h: 100,
+            surface_skim_flow_m3h: 50,
+            bottom_drain_flow_m3h: 50,
+          },
+        }],
+      },
+    };
+    act(() => {
+      queryClient.setQueryData(['system-exhibit-links', 'system-1'], [replacementLink]);
+      queryClient.setQueryData(['design-book', 'book-1'], replacementBook);
+    });
+
+    await waitFor(() => expect(route.getByText('EX-02')).toBeInTheDocument());
+    expect(route.getByText('50% · 50.0 m³/h')).toBeInTheDocument();
+    expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
+  });
+
+  it('shows an unavailable state for an invalid primary exhibit calculation', async () => {
+    renderFlowRoute(baseSystem, {
+      ...bookWithPrimarySplit,
+      engineering_calculations: {
+        systems: [],
+        exhibits: [{ ...primaryExhibitCalculation, status: 'invalid' }],
+      },
+    }, [primaryLink]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText(/Exhibit split unavailable: The primary exhibit has no usable hydraulic split calculation/)).toBeInTheDocument();
+    expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
+  });
+
+  it('resolves the primary exhibit code from a frozen review package', async () => {
+    const frozenLink = {
+      id: primaryLink.id,
+      system_id: primaryLink.system_id,
+      exhibit_id: primaryLink.exhibit_id,
+      link_type: primaryLink.link_type,
+    };
+    renderFlowRoute(baseSystem, {
+      ...bookWithPrimarySplit,
+      status: 'For Review',
+      systems: [baseSystem],
+      system_links: [frozenLink],
+      exhibits: [{
+        id: 'exhibit-1',
+        exhibit_code: 'EX-01',
+        exhibit_name: 'Main Exhibit',
+      }],
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText('EX-01')).toBeInTheDocument();
+    expect(route.getByText('64% · 80.0 m³/h')).toBeInTheDocument();
+    expect(route.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
+
+  it('does not present a stale calculation as the current exhibit split', async () => {
+    renderFlowRoute(baseSystem, {
+      ...bookWithPrimarySplit,
+      engineering_calculations: {
+        systems: [],
+        exhibits: [{
+          ...primaryExhibitCalculation,
+          is_stale: true,
+          freshness: 'stale',
+        }],
+      },
+    }, [primaryLink]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText(/Exhibit split unavailable: The primary exhibit has no usable hydraulic split calculation/)).toBeInTheDocument();
+    expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
   });
 
   it('edits total-loop and linked branch percentages independently and saves canonical values', async () => {

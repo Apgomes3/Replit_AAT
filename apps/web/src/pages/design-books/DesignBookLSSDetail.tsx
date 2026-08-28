@@ -1395,8 +1395,14 @@ export default function DesignBookLSSDetail() {
           { label: 'Sand Filter',            value: 'Sand Filter',            saltwaterOnly: false },
         ];
         const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
-        // Hydraulics split % from the primary linked exhibit
-        const primaryExLink = (links as any[]).find((l: any) => l.link_type === 'Primary') ?? (links as any[])[0];
+        // Hydraulics split % from the primary linked exhibit.  Do not fall
+        // back to an arbitrary link: the source reference is authoritative
+        // only when it can be traced to the system's Primary exhibit.
+        const primaryExLinks = (links as any[]).filter((l: any) => l.link_type === 'Primary');
+        const primaryExLink = primaryExLinks.length === 1 ? primaryExLinks[0] : null;
+        const primaryExhibit = primaryExLink
+          ? exhibits.find((exhibit: any) => exhibit.id === primaryExLink.exhibit_id)
+          : null;
         const primaryCalculation = primaryExLink
           ? exhibitCalculations.find((calculation: any) =>
               calculation.inputs?.exhibit_id === primaryExLink.exhibit_id)
@@ -1430,6 +1436,145 @@ export default function DesignBookLSSDetail() {
           if (!(m3h > 0)) return '—';
           const val = m3h * UNIT_FACTORS[flowUnit];
           return `${val.toFixed(1)} ${UNIT_LABELS[flowUnit]}`;
+        };
+        const fmtReferenceFlow = (m3h: number | null): string => {
+          if (m3h == null || !Number.isFinite(m3h)) return '—';
+          const val = m3h * UNIT_FACTORS[flowUnit];
+          return `${val.toFixed(1)} ${UNIT_LABELS[flowUnit]}`;
+        };
+
+        type ExhibitSplitComponent = {
+          label: string;
+          exhibitLabel: string;
+          percentage: number | null;
+          flowM3h: number | null;
+        };
+
+        const finiteValue = (value: unknown): number | null => {
+          if (value === undefined || value === null || value === '') return null;
+          const number = Number(value);
+          return Number.isFinite(number) ? number : null;
+        };
+
+        const sourceReferenceFor = (source: unknown): {
+          unavailableReason?: string;
+          components: ExhibitSplitComponent[];
+          combinedFlowM3h: number | null;
+          exhibitCode: string;
+        } | null => {
+          const normalized = String(source || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+          const sourceKey = normalized === 'surfaceskim' || normalized === 'surfaceskimmerbox'
+            ? 'surface'
+            : normalized === 'bottomdrain'
+              ? 'bottom'
+              : normalized === 'bothintegrated'
+                ? 'both'
+                : null;
+          if (!sourceKey) return null;
+
+          const exhibitCode = primaryExLink?.exhibit_code ||
+            primaryExhibit?.exhibit_code ||
+            'Primary linked exhibit';
+          const unavailable = (reason: string) => ({
+            unavailableReason: reason,
+            components: [],
+            combinedFlowM3h: null,
+            exhibitCode,
+          });
+          if (primaryExLinks.length > 1) {
+            return unavailable('Multiple primary linked exhibits are configured; choose one authoritative Primary link.');
+          }
+          if (!primaryExLink) {
+            return unavailable('No primary linked exhibit is configured.');
+          }
+          if (!primaryCalculation || primaryCalculation.status !== 'valid' ||
+              primaryCalculation.is_stale === true || primaryCalculation.freshness === 'stale') {
+            return unavailable('The primary exhibit has no usable hydraulic split calculation.');
+          }
+
+          const surface: ExhibitSplitComponent = {
+            label: 'Surface Skim',
+            exhibitLabel: 'Surface Skimmer Box',
+            percentage: finiteValue(primaryCalculation.inputs?.surface_skim_pct),
+            flowM3h: finiteValue(primaryCalculation.results?.surface_skim_flow_m3h),
+          };
+          const bottom: ExhibitSplitComponent = {
+            label: 'Bottom Drain',
+            exhibitLabel: 'Bottom Drain',
+            percentage: finiteValue(primaryCalculation.inputs?.bottom_drain_pct),
+            flowM3h: finiteValue(primaryCalculation.results?.bottom_drain_flow_m3h),
+          };
+          const combinedFlowM3h = finiteValue(primaryCalculation.results?.total_return_flow_m3h);
+          const selected = sourceKey === 'surface'
+            ? [surface]
+            : sourceKey === 'bottom'
+              ? [bottom]
+              : [surface, bottom];
+          if (selected.some(component => component.percentage == null || component.flowM3h == null) ||
+              (sourceKey === 'both' && combinedFlowM3h == null)) {
+            return unavailable('The primary exhibit split or calculated flow is incomplete.');
+          }
+          return { components: selected, combinedFlowM3h, exhibitCode };
+        };
+
+        const SourceSplitReference = ({ source, compact = false }: {
+          source: unknown;
+          compact?: boolean;
+        }) => {
+          const reference = sourceReferenceFor(source);
+          if (!reference) return null;
+          return (
+            <div
+              data-testid="flow-route-source-reference"
+              className={`${compact ? 'mt-1.5 p-2' : 'mt-2.5 p-3'} rounded-lg border ${
+                reference.unavailableReason
+                  ? 'border-amber-200 bg-amber-50/70'
+                  : 'border-cyan-200 bg-cyan-50/60'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <GitBranch className={`w-3 h-3 shrink-0 ${
+                  reference.unavailableReason ? 'text-amber-600' : 'text-cyan-600'
+                }`} />
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-stone-600">
+                  Exhibit split reference
+                </span>
+                <span className="text-[10px] text-stone-400">Read-only · from linked exhibit</span>
+              </div>
+              {reference.unavailableReason ? (
+                <p className="text-[11px] text-amber-800 mt-1">
+                  Exhibit split unavailable: {reference.unavailableReason}
+                </p>
+              ) : (
+                <>
+                  <p className="text-[11px] text-stone-500 mt-1">
+                    Primary linked exhibit: <strong className="font-mono text-stone-700">{reference.exhibitCode}</strong>
+                  </p>
+                  <div className={`grid ${reference.components.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'} gap-2 mt-2`}>
+                    {reference.components.map(component => (
+                      <div key={component.label} className="rounded-md bg-white/70 border border-cyan-100 px-2 py-1.5">
+                        <div className="text-[10px] text-stone-500">
+                          {component.label} <span className="text-stone-400">({component.exhibitLabel})</span>
+                        </div>
+                        <div className="font-mono text-[11px] font-semibold text-cyan-800">
+                          {component.percentage}% · {fmtReferenceFlow(component.flowM3h)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {reference.components.length > 1 && (
+                    <div className="flex items-center justify-between gap-2 mt-2 text-[11px] text-stone-600">
+                      <span>Combined exhibit return flow</span>
+                      <strong className="font-mono text-cyan-800">{fmtReferenceFlow(reference.combinedFlowM3h)}</strong>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-stone-400 mt-2">
+                    Exhibit split only; loop allocation remains an independent percentage of total system flow.
+                  </p>
+                </>
+              )}
+            </div>
+          );
         };
 
         const LOOP_COLORS: Record<number, { badge: string; border: string; label: string }> = {
@@ -1496,6 +1641,7 @@ export default function DesignBookLSSDetail() {
                   <span className="font-medium text-stone-800">{src}</span>
                 </div>
               ) : <div className="text-xs text-stone-300 italic">No source set</div>}
+              {src && <SourceSplitReference source={src} />}
               {filt && (
                 <div className="flex items-center gap-2 text-sm">
                   <FlaskConical className="w-3.5 h-3.5 text-violet-500 shrink-0" />
@@ -1560,6 +1706,7 @@ export default function DesignBookLSSDetail() {
                   ))}
                 </div>
               </div>
+              {curSrc && <SourceSplitReference source={curSrc} />}
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">Filtration Type</label>
                 <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
@@ -1872,6 +2019,9 @@ export default function DesignBookLSSDetail() {
                                 <option value="">— None —</option>
                                 {FLOW_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
+                              {listRowForm.flow_source && (
+                                <SourceSplitReference source={listRowForm.flow_source} compact />
+                              )}
                             </td>
                             <td className="px-3 py-2">
                               <select value={listRowForm.filtration} onChange={e => setLRF('filtration', e.target.value)}
@@ -1956,9 +2106,12 @@ export default function DesignBookLSSDetail() {
                           </td>
                           <td className="px-3 py-3">
                             {src ? (
-                              <span className="flex items-center gap-1.5 text-stone-700">
-                                <Droplets className="w-3 h-3 text-cyan-500 shrink-0" /> {src}
-                              </span>
+                              <>
+                                <span className="flex items-center gap-1.5 text-stone-700">
+                                  <Droplets className="w-3 h-3 text-cyan-500 shrink-0" /> {src}
+                                </span>
+                                <SourceSplitReference source={src} compact />
+                              </>
                             ) : <span className="text-stone-300 text-xs italic">—</span>}
                           </td>
                           <td className="px-3 py-3">
