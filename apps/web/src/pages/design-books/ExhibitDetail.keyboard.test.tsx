@@ -277,6 +277,8 @@ describe('ExhibitDetail Escape navigation', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('button', { name: 'PIM Tank Library' })).not.toBeInTheDocument();
     await user.click((await screen.findAllByRole('button', { name: 'Edit' }))[0]);
+    expect(screen.queryByLabelText('Construction Type')).not.toBeInTheDocument();
+    expect(screen.getByText('Material', { selector: 'label' })).toBeInTheDocument();
     const tankName = screen.getByPlaceholderText('e.g. Main Display Tank');
     await user.clear(tankName);
     await user.type(tankName, 'Project Display Name');

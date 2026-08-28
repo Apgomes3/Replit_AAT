@@ -439,7 +439,6 @@ function LegacySpeciesSection({ bookId, exhibitId, species, onRefresh }: {
 
 // ─── Tank Card with Inline Edit ───────────────────────────────────────────────
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Custom'];
-const TANK_CONSTRUCTION_TYPES = ['Acrylic', 'Acrylic with FRP', 'FRP/Steel with Window', 'FRP/Steel', 'Glass', 'PP'];
 const TANK_CREATE_FIELD_LABELS: Record<string, string> = {
   tank_code: 'Tank code',
   tank_name: 'Tank name',
@@ -876,21 +875,13 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
       </div>
 
       <div className="p-5 space-y-4">
-        {/* Tank Code + Construction Type */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Tank Code */}
+        <div>
           <div>
             <label className="block text-xs font-medium text-stone-500 mb-1">Tank Code</label>
             <input type="text" placeholder="TK-01" value={form.tank_code}
               onChange={e => setF('tank_code', e.target.value.toUpperCase())}
               className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1">Construction Type</label>
-            <select value={form.tank_type} onChange={e => setF('tank_type', e.target.value)}
-              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-              <option value="">{tank.product_master_id ? `Use PIM default (${tank.eff_tank_type || 'not set'})` : '— Select —'}</option>
-              {TANK_CONSTRUCTION_TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
           </div>
         </div>
 
