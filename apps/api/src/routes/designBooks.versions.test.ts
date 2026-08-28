@@ -139,6 +139,11 @@ describe('Design Book version snapshots', () => {
     expect(context.engineering_calculations.exhibits[0].results).toMatchObject({
       operating_volume_m3: 52.5,
     });
+    expect(context.engineering_calculations.exhibits[0].aat_reference).toMatchObject({
+      status: 'valid',
+      inputs: { effective_operating_volume_m3: 52.5 },
+      results: { recommended_flow_m3h: expect.any(Number) },
+    });
 
     Object.assign(tankRow, {
       eff_shape: 'Custom',

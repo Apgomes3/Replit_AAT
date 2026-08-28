@@ -13,6 +13,17 @@ export const ALLOCATION_TOLERANCE_PCT = 0.01;
 export const VOLUME_DECIMALS = 4;
 export const FLOW_DECIMALS = 3;
 export const FOAM_FRACTIONATOR_MATCH_TOLERANCE_PCT = 5;
+export const AAT_TARGET_TIME_DECIMALS = 6;
+export const AAT_TIME_MINUTES_DECIMALS = 2;
+export const AAT_TURNOVER_DECIMALS = 3;
+
+const AAT_SMALL_VOLUME_THRESHOLD_M3 = 1;
+const AAT_LARGE_VOLUME_THRESHOLD_M3 = 100;
+const AAT_SMALL_VOLUME_TIME_HOURS = 0.25;
+const AAT_MID_VOLUME_TIME_COEFFICIENT = 0.2265939594;
+const AAT_MID_VOLUME_TIME_EXPONENT = 0.3478773096;
+const AAT_LARGE_VOLUME_TIME_COEFFICIENT = 0.8850796805;
+const AAT_LARGE_VOLUME_TIME_EXPONENT = 0.04959964583;
 
 export type CalculationStatus = 'valid' | 'warning' | 'invalid' | 'override';
 
@@ -28,6 +39,98 @@ const positiveOrNull = (value: any): number | null => {
 
 export const roundEngineering = (value: number | null, decimals: number): number | null =>
   value == null || !Number.isFinite(value) ? null : Number(value.toFixed(decimals));
+
+/**
+ * Calculates the AAT reference flow from net/effective exhibit operating
+ * volume.  This is advisory only: it is deliberately independent of the
+ * designer's saved target turnover rate.
+ */
+export function calculateAatRecommendedFlow(
+  effectiveOperatingVolumeM3: unknown,
+  calculatedAt = new Date().toISOString(),
+) {
+  const parsedVolume = positiveOrNull(effectiveOperatingVolumeM3);
+  const roundedVolume = roundEngineering(parsedVolume, VOLUME_DECIMALS);
+  const volume = roundedVolume != null && roundedVolume > 0 ? roundedVolume : null;
+  const rule = {
+    volume_unit: 'm3',
+    turnover_time_unit: 'hours',
+    turnover_rate_unit: TURNOVER_UNIT,
+    flow_unit: FLOW_UNIT,
+    below_volume_m3: AAT_SMALL_VOLUME_THRESHOLD_M3,
+    below_volume_target_turnover_time_hours: AAT_SMALL_VOLUME_TIME_HOURS,
+    first_power_curve: {
+      minimum_volume_m3: AAT_SMALL_VOLUME_THRESHOLD_M3,
+      maximum_volume_m3: AAT_LARGE_VOLUME_THRESHOLD_M3,
+      maximum_is_exclusive: true,
+      coefficient: AAT_MID_VOLUME_TIME_COEFFICIENT,
+      exponent: AAT_MID_VOLUME_TIME_EXPONENT,
+    },
+    second_power_curve: {
+      minimum_volume_m3: AAT_LARGE_VOLUME_THRESHOLD_M3,
+      maximum_volume_m3: null,
+      maximum_is_exclusive: false,
+      coefficient: AAT_LARGE_VOLUME_TIME_COEFFICIENT,
+      exponent: AAT_LARGE_VOLUME_TIME_EXPONENT,
+    },
+  };
+  const base = {
+    calculation_version: AQUARIUM_CALCULATION_VERSION,
+    calculated_at: calculatedAt,
+    freshness: 'fresh' as const,
+    is_stale: false,
+    inputs: {
+      effective_operating_volume_m3: volume,
+    },
+    formula: 'target turnover time T = 0.25 h when V < 1 m³; T = 0.2265939594 × V^0.3478773096 h when 1 m³ ≤ V < 100 m³; T = 0.8850796805 × V^0.04959964583 h when V ≥ 100 m³; recommended flow = V ÷ T; recommended turnover = 1 ÷ T',
+    rule,
+    units: {
+      volume: 'm³',
+      turnover_time: 'hours',
+      turnover_rate: TURNOVER_UNIT,
+      flow: FLOW_UNIT,
+    },
+    rounding: `Effective operating volume is rounded to ${VOLUME_DECIMALS} decimals m³ before selecting and evaluating the AAT rule; turnover time is rounded to ${AAT_TARGET_TIME_DECIMALS} decimals hours and ${AAT_TIME_MINUTES_DECIMALS} decimals minutes; turnover rate and flow are rounded to ${AAT_TURNOVER_DECIMALS} and ${FLOW_DECIMALS} decimals respectively.`,
+  };
+
+  if (volume == null) {
+    return {
+      ...base,
+      status: 'invalid' as CalculationStatus,
+      reasons: ['AAT reference is unavailable because net/effective operating volume is missing or invalid.'],
+      results: {
+        target_turnover_time_hours: null,
+        target_turnover_time_minutes: null,
+        recommended_turnover_rate_cycles_per_hour: null,
+        recommended_flow_m3h: null,
+      },
+    };
+  }
+
+  const targetTurnoverTimeHours = volume < AAT_SMALL_VOLUME_THRESHOLD_M3
+    ? AAT_SMALL_VOLUME_TIME_HOURS
+    : volume < AAT_LARGE_VOLUME_THRESHOLD_M3
+      ? AAT_MID_VOLUME_TIME_COEFFICIENT * Math.pow(volume, AAT_MID_VOLUME_TIME_EXPONENT)
+      : AAT_LARGE_VOLUME_TIME_COEFFICIENT * Math.pow(volume, AAT_LARGE_VOLUME_TIME_EXPONENT);
+  const recommendedTurnoverRate = 1 / targetTurnoverTimeHours;
+  const recommendedFlow = volume / targetTurnoverTimeHours;
+
+  return {
+    ...base,
+    status: 'valid' as CalculationStatus,
+    reasons: [],
+    results: {
+      target_turnover_time_hours: roundEngineering(targetTurnoverTimeHours, AAT_TARGET_TIME_DECIMALS),
+      target_turnover_time_minutes: roundEngineering(targetTurnoverTimeHours * 60, AAT_TIME_MINUTES_DECIMALS),
+      recommended_turnover_rate_cycles_per_hour: roundEngineering(recommendedTurnoverRate, AAT_TURNOVER_DECIMALS),
+      recommended_flow_m3h: roundEngineering(recommendedFlow, FLOW_DECIMALS),
+    },
+  };
+}
+
+// Keep the acronym-readable spelling available to callers that use AAT as a
+// proper initialism while preserving the project's existing camel-case style.
+export const calculateAATRecommendedFlow = calculateAatRecommendedFlow;
 
 export function calculateSideStreamFlow(
   systemFlowM3h: unknown,
@@ -277,6 +380,7 @@ export function calculateExhibitHydraulics(
   const themingResult = displacementVolume(substrate, 'theming', footprintArea, rawOperating);
   const displaced = substrateResult.value_m3 + themingResult.value_m3;
   const effectiveOperating = Math.max(0, rawOperating - displaced);
+  const aatReference = calculateAatRecommendedFlow(effectiveOperating, calculatedAt);
   const turnover = positiveOrNull(hydraulics?.target_turnover_rate);
   const surfacePct = numberOrNull(hydraulics?.surface_skim_pct) ?? 30;
   const bottomPct = numberOrNull(hydraulics?.bottom_drain_pct) ?? 70;
@@ -337,6 +441,7 @@ export function calculateExhibitHydraulics(
       substrate_source: substrateResult.source,
       theming_volume_m3: roundEngineering(themingResult.value_m3, VOLUME_DECIMALS),
       theming_source: themingResult.source,
+      aat_reference_volume_m3: aatReference.inputs.effective_operating_volume_m3,
       target_turnover_rate_cycles_per_hour: turnover,
       surface_skim_pct: surfacePct,
       bottom_drain_pct: bottomPct,
@@ -348,6 +453,7 @@ export function calculateExhibitHydraulics(
       bottom_drain_flow_m3h: roundEngineering(bottomFlow, FLOW_DECIMALS),
       allocation_total_pct: roundEngineering(allocationTotal, 2),
     },
+    aat_reference: aatReference,
     formula: 'effective operating volume = gross operating volume − substrate displacement − theming displacement; return flow = effective operating volume × turnover',
     rounding: `Volumes rounded to ${VOLUME_DECIMALS} decimals m³; flows rounded to ${FLOW_DECIMALS} decimals m³/h.`,
   };

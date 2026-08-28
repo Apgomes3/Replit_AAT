@@ -121,6 +121,106 @@ describe('ExhibitDetail Escape navigation', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(currentPath);
   });
 
+  it('shows the AAT flow as a unit-aware reference without replacing the saved design target', async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        ...book,
+        tanks: [{
+          id: 'tank-1',
+          exhibit_id: 'exhibit-1',
+          eff_shape: 'Custom',
+          operating_volume_m3: 24,
+        }],
+        hydraulics: [{
+          exhibit_id: 'exhibit-1',
+          target_turnover_rate: 4,
+          surface_skim_pct: 30,
+          bottom_drain_pct: 70,
+        }],
+        engineering_calculations: {
+          exhibits: [{
+            status: 'valid',
+            calculation_version: 'aquarium-hydraulics-v1',
+            calculated_at: '2026-08-28T00:00:00.000Z',
+            inputs: { exhibit_id: 'exhibit-1' },
+            results: {
+              operating_volume_m3: 24,
+              total_return_flow_m3h: 96,
+              surface_skim_flow_m3h: 28.8,
+              bottom_drain_flow_m3h: 67.2,
+            },
+            aat_reference: {
+              status: 'valid',
+              inputs: { effective_operating_volume_m3: 24 },
+              results: {
+                target_turnover_time_hours: 0.684,
+                target_turnover_time_minutes: 41.04,
+                recommended_turnover_rate_cycles_per_hour: 2.083,
+                recommended_flow_m3h: 50,
+              },
+            },
+            formula: 'effective operating volume × saved target turnover',
+            rounding: 'flows rounded to 3 decimals',
+          }],
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderExhibit([`${currentPath}?tab=flow`]);
+
+    expect(await screen.findByText('AAT Recommended Exhibit Flow')).toBeInTheDocument();
+    expect(screen.getByText('Reference only')).toBeInTheDocument();
+    expect(screen.getByText('50.000 m³/h')).toBeInTheDocument();
+    expect(screen.getByText('833.3 L/min')).toBeInTheDocument();
+    expect(screen.getByText(/does not set or replace/i)).toBeInTheDocument();
+    expect(screen.getByText('4×')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'L/s' }));
+    expect(screen.getByText('13.89 L/s')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const targetInput = screen.getByDisplayValue('4');
+    await user.clear(targetInput);
+    await user.type(targetInput, '5');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalled());
+    const savedPayload = apiPut.mock.calls[0][1] as Record<string, unknown>;
+    expect(savedPayload.target_turnover_rate).toBe(5);
+    expect(savedPayload).not.toHaveProperty('aat_reference');
+    expect(screen.getByText('50.000 m³/h')).toBeInTheDocument();
+  });
+
+  it('shows a clear unavailable AAT state when effective volume is invalid', async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        ...book,
+        engineering_calculations: {
+          exhibits: [{
+            status: 'invalid',
+            calculation_version: 'aquarium-hydraulics-v1',
+            calculated_at: '2026-08-28T00:00:00.000Z',
+            inputs: { exhibit_id: 'exhibit-1' },
+            results: { operating_volume_m3: 0 },
+            aat_reference: {
+              status: 'invalid',
+              reasons: ['AAT reference is unavailable because net/effective operating volume is missing or invalid.'],
+              inputs: { effective_operating_volume_m3: null },
+              results: { recommended_flow_m3h: null },
+            },
+            reasons: ['Operating volume is missing or invalid.'],
+            formula: 'effective operating volume',
+            rounding: 'volumes rounded to 4 decimals',
+          }],
+        },
+      },
+    });
+    renderExhibit([`${currentPath}?tab=flow`]);
+
+    expect(await screen.findByText('AAT reference unavailable.')).toBeInTheDocument();
+    expect(screen.getByText(/net\/effective operating volume is missing or invalid/i)).toBeInTheDocument();
+  });
+
   it('keeps project tanks separate and creates a linked tank from the PIM library', async () => {
     apiGet.mockImplementation(async (url: string) => {
       if (url.startsWith('/design-books/')) return { data: book } as any;

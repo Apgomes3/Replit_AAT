@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculateAatRecommendedFlow,
   calculateFoamFractionatorCapacity,
   calculateExhibitHydraulics,
   calculateSideStreamFlow,
@@ -7,6 +8,79 @@ import {
   compatibleWaterTypes,
   evaluateCompactUnit,
 } from './aquariumCalculations';
+
+describe('AAT recommended exhibit flow', () => {
+  it.each([
+    { volume: 0.8, timeHours: 0.25, flowM3h: 3.2, turnover: 4 },
+    { volume: 6, timeHours: 0.4226194608, flowM3h: 14.1971692183, turnover: 2.3661948697 },
+    { volume: 123.4272, timeHours: 1.1238687854, flowM3h: 109.8234968368, turnover: 0.8897835877 },
+  ])('matches the supplied worked example for $volume m³', ({ volume, timeHours, flowM3h, turnover }) => {
+    const result = calculateAatRecommendedFlow(volume, '2026-08-28T00:00:00.000Z');
+
+    expect(result.status).toBe('valid');
+    expect(result.calculated_at).toBe('2026-08-28T00:00:00.000Z');
+    expect(result.inputs.effective_operating_volume_m3).toBe(volume);
+    expect(result.results.target_turnover_time_hours).toBeCloseTo(timeHours, 5);
+    expect(result.results.target_turnover_time_minutes).toBeCloseTo(timeHours * 60, 1);
+    expect(result.results.recommended_flow_m3h).toBeCloseTo(flowM3h, 3);
+    expect(result.results.recommended_turnover_rate_cycles_per_hour).toBeCloseTo(turnover, 3);
+  });
+
+  it('switches to the first power curve at exactly 1 m³', () => {
+    const result = calculateAatRecommendedFlow(1);
+    const expectedTime = 0.2265939594 * Math.pow(1, 0.3478773096);
+
+    expect(result.results.target_turnover_time_hours).toBeCloseTo(expectedTime, 6);
+    expect(result.results.recommended_turnover_rate_cycles_per_hour).toBeCloseTo(1 / expectedTime, 3);
+    expect(result.results.recommended_flow_m3h).toBeCloseTo(1 / expectedTime, 3);
+    expect(result.results.recommended_turnover_rate_cycles_per_hour).not.toBe(4);
+  });
+
+  it('switches to the second power curve at exactly 100 m³', () => {
+    const result = calculateAatRecommendedFlow(100);
+    const expectedTime = 0.8850796805 * Math.pow(100, 0.04959964583);
+
+    expect(result.results.target_turnover_time_hours).toBeCloseTo(expectedTime, 6);
+    expect(result.results.recommended_flow_m3h).toBeCloseTo(100 / expectedTime, 3);
+  });
+
+  it.each([
+    { input: 0.99994, canonical: 0.9999, expectedRule: 'fixed' },
+    { input: 0.99999, canonical: 1, expectedRule: 'first' },
+    { input: 99.99994, canonical: 99.9999, expectedRule: 'first' },
+    { input: 99.99999, canonical: 100, expectedRule: 'second' },
+  ])('uses the published canonical volume at rounded boundaries for $input', ({ input, canonical, expectedRule }) => {
+    const result = calculateAatRecommendedFlow(input);
+    const expectedTime = expectedRule === 'fixed'
+      ? 0.25
+      : expectedRule === 'first'
+        ? 0.2265939594 * Math.pow(canonical, 0.3478773096)
+        : 0.8850796805 * Math.pow(canonical, 0.04959964583);
+
+    expect(result.inputs.effective_operating_volume_m3).toBe(canonical);
+    expect(result.results.target_turnover_time_hours).toBeCloseTo(expectedTime, 6);
+  });
+
+  it('continues the second power curve above 4000 m³ without a cap', () => {
+    const volume = 4001;
+    const expectedTime = 0.8850796805 * Math.pow(volume, 0.04959964583);
+    const result = calculateAatRecommendedFlow(volume);
+
+    expect(result.results.target_turnover_time_hours).toBeCloseTo(expectedTime, 6);
+    expect(result.results.recommended_turnover_rate_cycles_per_hour).toBeCloseTo(1 / expectedTime, 3);
+    expect(result.results.recommended_turnover_rate_cycles_per_hour).toBeGreaterThan(0.66);
+    expect(result.results.recommended_flow_m3h).toBeCloseTo(volume / expectedTime, 3);
+  });
+
+  it.each([null, '', 0, -1, 'not-a-volume'])('returns an unavailable reference for invalid volume %s', volume => {
+    const result = calculateAatRecommendedFlow(volume);
+
+    expect(result.status).toBe('invalid');
+    expect(result.reasons[0]).toContain('unavailable');
+    expect(result.inputs.effective_operating_volume_m3).toBeNull();
+    expect(result.results.recommended_flow_m3h).toBeNull();
+  });
+});
 
 describe('Foam Fractionator capacity', () => {
   const model = (code: string, diameter_mm: number | null, quantity: number) => ({
@@ -140,6 +214,12 @@ describe('aquarium engineering calculations', () => {
     expect(calculated.results.bottom_drain_flow_m3h).toBe(67.2);
     expect(calculated.inputs.turnover_unit).toBe('cycles_per_hour');
     expect(calculated.calculated_at).toBe('2026-08-26T10:00:00.000Z');
+    expect(calculated.aat_reference).toMatchObject({
+      status: 'valid',
+      inputs: { effective_operating_volume_m3: 24 },
+      results: { recommended_flow_m3h: expect.any(Number) },
+    });
+    expect(calculated.aat_reference.rule.first_power_curve.maximum_is_exclusive).toBe(true);
   });
 
   it('blocks invalid allocation totals and missing turnover', () => {

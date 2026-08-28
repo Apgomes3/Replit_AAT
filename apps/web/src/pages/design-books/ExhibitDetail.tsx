@@ -2582,6 +2582,10 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
     : totalM3h != null ? totalM3h * drainPct / 100 : null;
   const drainLmin = drainM3h != null ? drainM3h * 1000 / 60 : null;
   const splitOk   = Math.abs(skimPct + drainPct - 100) < 0.01;
+  const aatReference = calculation?.aat_reference ?? null;
+  const aatResults = aatReference?.results ?? {};
+  const aatAvailable = aatReference?.status === 'valid'
+    && aatResults.recommended_flow_m3h != null;
 
   // Total biomass from species
   const totalBiomass = species.reduce((s, sp) => {
@@ -2800,7 +2804,62 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
             </table>
           </div>
 
-          {/* AAT Reference */}
+          {/* AAT calculated reference */}
+          <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-amber-100 bg-amber-50/60 flex items-center gap-2 flex-wrap">
+              <Calculator className="w-4 h-4 text-amber-600" />
+              <span className="text-sm font-semibold text-amber-900">AAT Recommended Exhibit Flow</span>
+              <span className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5">
+                Reference only
+              </span>
+            </div>
+            {aatAvailable ? (
+              <div className="p-5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="rounded-lg border border-stone-100 bg-stone-50/60 px-3 py-2.5">
+                    <p className="text-xs text-stone-400">Net / effective volume</p>
+                    <p className="font-mono text-sm font-semibold text-stone-700 mt-0.5">
+                      {Number(aatReference.inputs.effective_operating_volume_m3).toFixed(3)} m³
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-stone-100 bg-stone-50/60 px-3 py-2.5">
+                    <p className="text-xs text-stone-400">Target turnover time</p>
+                    <p className="font-mono text-sm font-semibold text-stone-700 mt-0.5">
+                      {Number(aatResults.target_turnover_time_hours).toFixed(3)} h
+                    </p>
+                    <p className="text-xs text-stone-400">{Number(aatResults.target_turnover_time_minutes).toFixed(1)} min</p>
+                  </div>
+                  <div className="rounded-lg border border-stone-100 bg-stone-50/60 px-3 py-2.5">
+                    <p className="text-xs text-stone-400">Recommended turnover</p>
+                    <p className="font-mono text-sm font-semibold text-stone-700 mt-0.5">
+                      {Number(aatResults.recommended_turnover_rate_cycles_per_hour).toFixed(3)}×/h
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
+                    <p className="text-xs text-amber-700">Recommended flow</p>
+                    <p className="font-mono text-sm font-semibold text-amber-900 mt-0.5">
+                      {Number(aatResults.recommended_flow_m3h).toFixed(3)} m³/h
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      {convertFlow(aatResults.recommended_flow_m3h, flowUnit)} {FLOW_UNITS.find(u => u.key === flowUnit)!.label}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-stone-500 mt-4">
+                  Informational AAT reference based on net/effective volume. It does not set or replace the designer&apos;s selected Target Turnover Rate.
+                </p>
+              </div>
+            ) : (
+              <div className="px-5 py-4">
+                <p className="text-sm text-stone-500">AAT reference unavailable.</p>
+                <p className="text-xs text-stone-400 mt-1">
+                  {aatReference?.reasons?.[0] || 'Enter a valid net/effective operating volume to calculate a reference.'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* AAT category reference */}
           <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
             <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-stone-400" />
