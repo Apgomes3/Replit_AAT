@@ -1235,6 +1235,13 @@ export default function DesignBookLSSDetail() {
   const exhibits: any[] = book?.exhibits || [];
   const linkedExhibitIds = new Set((links as any[]).map((l: any) => l.exhibit_id));
   const availableExhibits = exhibits.filter((ex: any) => !linkedExhibitIds.has(ex.id));
+  const linkedExhibitPathFor = (exhibitId: unknown): string | null => {
+    const normalizedId = exhibitId == null ? '' : String(exhibitId).trim();
+    if (!bookId || !normalizedId || !exhibits.some((exhibit: any) => String(exhibit.id) === normalizedId)) {
+      return null;
+    }
+    return `/design-books/${bookId}/exhibits/${encodeURIComponent(normalizedId)}`;
+  };
   const canManageProjects = user?.moduleAccess?.projects !== 'view'
     && user?.moduleAccess?.projects !== 'hidden';
   const canEdit = (user?.role === 'admin' || user?.role === 'engineer') && canManageProjects;
@@ -1821,10 +1828,31 @@ export default function DesignBookLSSDetail() {
                 {(links as any[]).map((link: any) => (
                   <tr key={link.id} className="border-t border-stone-100 hover:bg-blue-50/20 transition-colors">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">{link.exhibit_code}</span>
-                        <span className="font-medium text-stone-800">{link.exhibit_name}</span>
-                      </div>
+                      {(() => {
+                        const exhibitPath = linkedExhibitPathFor(link.exhibit_id);
+                        const exhibitLabel = [link.exhibit_code, link.exhibit_name].filter(Boolean).join(' — ')
+                          || 'linked exhibit';
+                        const identity = (
+                          <>
+                            <span className="font-mono text-xs text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">{link.exhibit_code}</span>
+                            <span className="font-medium text-stone-800">{link.exhibit_name}</span>
+                          </>
+                        );
+                        return exhibitPath ? (
+                          <Link
+                            to={exhibitPath}
+                            aria-label={`Open exhibit ${exhibitLabel}`}
+                            title="Open exhibit detail"
+                            className="flex items-center gap-2 rounded-md -mx-1 px-1 py-0.5 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+                          >
+                            {identity}
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            {identity}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <WaterTypeBadge type={link.exhibit_water_type} />
@@ -1849,11 +1877,16 @@ export default function DesignBookLSSDetail() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setEditLink(link)}
+                        <button
+                          type="button"
+                          aria-label={`Edit link for ${link.exhibit_code || link.exhibit_name || 'linked exhibit'}`}
+                          onClick={() => setEditLink(link)}
                           className="text-stone-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 transition-colors">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          type="button"
+                          aria-label={`Remove link for ${link.exhibit_code || link.exhibit_name || 'linked exhibit'}`}
                           onClick={() => requestDeleteLink(link)}
                           disabled={deletingLink === link.id}
                           className="text-stone-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-50">
@@ -1901,7 +1934,7 @@ export default function DesignBookLSSDetail() {
         const primaryExLinks = (links as any[]).filter((l: any) => l.link_type === 'Primary');
         const primaryExLink = primaryExLinks.length === 1 ? primaryExLinks[0] : null;
         const primaryExhibit = primaryExLink
-          ? exhibits.find((exhibit: any) => exhibit.id === primaryExLink.exhibit_id)
+          ? exhibits.find((exhibit: any) => String(exhibit.id) === String(primaryExLink.exhibit_id))
           : null;
         const primaryCalculation = primaryExLink
           ? exhibitCalculations.find((calculation: any) =>
@@ -1955,6 +1988,7 @@ export default function DesignBookLSSDetail() {
           components: ExhibitSplitComponent[];
           combinedFlowM3h: number | null;
           exhibitCode: string;
+          exhibitId: string | null;
         } | null => {
           const normalized = String(source || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
           const sourceKey = normalized === 'surfaceskim' || normalized === 'surfaceskimmerbox'
@@ -1974,6 +2008,7 @@ export default function DesignBookLSSDetail() {
             components: [],
             combinedFlowM3h: null,
             exhibitCode,
+            exhibitId: null,
           });
           if (primaryExLinks.length > 1) {
             return unavailable('Multiple primary linked exhibits are configured; choose one authoritative Primary link.');
@@ -2008,7 +2043,12 @@ export default function DesignBookLSSDetail() {
               (sourceKey === 'both' && combinedFlowM3h == null)) {
             return unavailable('The primary exhibit split or calculated flow is incomplete.');
           }
-          return { components: selected, combinedFlowM3h, exhibitCode };
+          return {
+            components: selected,
+            combinedFlowM3h,
+            exhibitCode,
+            exhibitId: primaryExhibit ? String(primaryExhibit.id) : null,
+          };
         };
 
         const SourceSplitReference = ({ source, compact = false }: {
@@ -2017,6 +2057,7 @@ export default function DesignBookLSSDetail() {
         }) => {
           const reference = sourceReferenceFor(source);
           if (!reference) return null;
+          const exhibitPath = linkedExhibitPathFor(reference.exhibitId);
           return (
             <div
               data-testid="flow-route-source-reference"
@@ -2042,7 +2083,19 @@ export default function DesignBookLSSDetail() {
               ) : (
                 <>
                   <p className="text-[11px] text-stone-500 mt-1">
-                    Primary linked exhibit: <strong className="font-mono text-stone-700">{reference.exhibitCode}</strong>
+                    Primary linked exhibit:{' '}
+                    {exhibitPath ? (
+                      <Link
+                        to={exhibitPath}
+                        aria-label={`Open exhibit ${reference.exhibitCode}`}
+                        title="Open exhibit detail"
+                        className="font-mono text-blue-700 hover:text-blue-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 rounded"
+                      >
+                        {reference.exhibitCode}
+                      </Link>
+                    ) : (
+                      <strong className="font-mono text-stone-700">{reference.exhibitCode}</strong>
+                    )}
                   </p>
                   <div className={`grid ${reference.components.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'} gap-2 mt-2`}>
                     {reference.components.map(component => (

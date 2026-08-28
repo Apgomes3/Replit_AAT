@@ -90,6 +90,7 @@ const primaryLink = {
   system_id: 'system-1',
   exhibit_id: 'exhibit-1',
   exhibit_code: 'EX-01',
+  exhibit_name: 'Main Exhibit',
   link_type: 'Primary',
 };
 
@@ -113,6 +114,14 @@ const bookWithPrimarySplit = {
     systems: baseBook.engineering_calculations.systems,
     exhibits: [primaryExhibitCalculation],
   },
+};
+
+const bookWithLinkedExhibits = {
+  ...bookWithPrimarySplit,
+  exhibits: [
+    { id: 'exhibit-1', exhibit_code: 'EX-01', exhibit_name: 'Main Exhibit' },
+    { id: 'exhibit-2', exhibit_code: 'EX-02', exhibit_name: 'Secondary Exhibit' },
+  ],
 };
 
 function LocationProbe() {
@@ -230,6 +239,132 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(screen.getByRole('button', { name: /Link Exhibit/ })).toBeInTheDocument();
     expect(screen.getByText('125.0')).toBeInTheDocument();
   });
+
+  it('opens the selected linked exhibit from the table without changing neighboring controls', async () => {
+    const user = userEvent.setup();
+    const secondaryLink = {
+      ...primaryLink,
+      id: 'link-2',
+      exhibit_id: 'exhibit-2',
+      exhibit_code: 'EX-02',
+      exhibit_name: 'Secondary Exhibit',
+      link_type: 'Secondary',
+    };
+    renderFlowRoute(
+      baseSystem,
+      bookWithLinkedExhibits,
+      [primaryLink, secondaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=overview',
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const table = screen.getByRole('table');
+    const secondaryRow = within(table).getByText('Secondary Exhibit').closest('tr');
+    expect(secondaryRow).not.toBeNull();
+    const exhibitLink = within(secondaryRow!).getByRole('link', {
+      name: 'Open exhibit EX-02 — Secondary Exhibit',
+    });
+    expect(exhibitLink).toHaveAttribute('href', '/design-books/book-1/exhibits/exhibit-2');
+
+    await user.click(within(secondaryRow!).getByRole('button', { name: 'Edit link for EX-02' }));
+    expect(screen.getByText('Edit Exhibit Link')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-1/lss/system-1?tab=overview',
+    );
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByText('Edit Exhibit Link')).not.toBeInTheDocument();
+    await user.click(exhibitLink);
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-1/exhibits/exhibit-2',
+    );
+  });
+
+  it('opens the primary exhibit from the Flow Route split reference', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(
+      { ...baseSystem, loop1_flow_source: 'Both Integrated' },
+      bookWithLinkedExhibits,
+      [primaryLink],
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const route = within(document.querySelector('#flow-route')!);
+    const exhibitLink = route.getByRole('link', { name: 'Open exhibit EX-01' });
+    expect(exhibitLink).toHaveAttribute('href', '/design-books/book-1/exhibits/exhibit-1');
+
+    await user.click(route.getByRole('button', { name: 'List' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-1/lss/system-1?tab=flow',
+    );
+    await user.click(route.getByRole('button', { name: 'Card' }));
+    await user.click(route.getByRole('link', { name: 'Open exhibit EX-01' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-1/exhibits/exhibit-1',
+    );
+  });
+
+  it('keeps snapshot-only exhibit references readable but non-clickable', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(
+      baseSystem,
+      {
+        ...bookWithPrimarySplit,
+        engineering_calculations: {
+          ...bookWithPrimarySplit.engineering_calculations,
+          exhibits: [{
+            ...primaryExhibitCalculation,
+            inputs: {
+              ...primaryExhibitCalculation.inputs,
+              exhibit_id: 'snapshot-only-exhibit',
+            },
+          }],
+        },
+      },
+      [{
+        ...primaryLink,
+        exhibit_id: 'snapshot-only-exhibit',
+        exhibit_code: 'EX-SNAPSHOT',
+        exhibit_name: 'Archived Snapshot',
+      }],
+      [],
+      '/design-books/book-1/lss/system-1?tab=overview',
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('EX-SNAPSHOT')).toBeInTheDocument();
+    expect(within(table).queryByRole('link', { name: /EX-SNAPSHOT/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Flow Route' }));
+    const route = within(document.querySelector('#flow-route')!);
+    expect(route.getByText('EX-SNAPSHOT')).toBeInTheDocument();
+    expect(route.queryByRole('link', { name: 'Open exhibit EX-SNAPSHOT' })).not.toBeInTheDocument();
+  });
+
+  it.each(['For Review', 'Released'])(
+    'keeps linked-exhibit navigation available for %s LSS views',
+    async status => {
+      renderFlowRoute(
+        baseSystem,
+        {
+          ...bookWithLinkedExhibits,
+          status,
+          systems: [baseSystem],
+          system_links: [primaryLink],
+        },
+        [primaryLink],
+        [],
+        '/design-books/book-1/lss/system-1',
+      );
+      await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+      expect(screen.getByRole('link', {
+        name: 'Open exhibit EX-01 — Main Exhibit',
+      })).toHaveAttribute('href', '/design-books/book-1/exhibits/exhibit-1');
+    },
+  );
 
   it('shows configuration as first-time setup and hides it after configuration is saved', async () => {
     const user = userEvent.setup();
