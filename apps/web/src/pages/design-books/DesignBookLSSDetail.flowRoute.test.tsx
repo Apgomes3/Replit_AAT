@@ -50,6 +50,7 @@ const baseSystem = {
   loop3_bio_degas_pct: null,
   loop3_bio_degas_m3h: null,
   loop3_link_bio_degas: false,
+  side_streams: [],
 };
 
 const baseBook = {
@@ -515,5 +516,125 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getByText('Bio/Degas:')).toBeInTheDocument();
     expect(route.getByText(/25% of loop/)).toBeInTheDocument();
     expect(route.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
+
+  it('renames a main loop and saves preset and custom side-stream details together', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const loopName = route.getByRole('textbox', { name: 'Loop 1 name' });
+    await user.clear(loopName);
+    await user.type(loopName, 'Main Filtration');
+    await user.click(route.getByRole('button', { name: /Thermal/ }));
+    await user.type(route.getByRole('spinbutton', { name: 'Thermal side stream percentage' }), '25');
+    await user.type(route.getByRole('textbox', { name: 'Thermal side stream notes' }), 'Heat exchanger branch');
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop1_name: 'Main Filtration',
+        side_streams: [
+          expect.objectContaining({
+            parent_loop_number: 1,
+            name: 'Thermal',
+            preset: 'Thermal',
+            flow_pct: 25,
+            notes: 'Heat exchanger branch',
+          }),
+        ],
+      }),
+    ));
+  });
+
+  it('shows side streams nested in card and list views and follows unit conversion', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({
+      ...baseSystem,
+      loop1_name: 'Main Filtration',
+      side_streams: [{
+        id: 'side-1',
+        parent_loop_number: 1,
+        name: 'UV Contact',
+        preset: 'UV',
+        flow_pct: 50,
+        notes: 'Duty UV branch',
+        sort_order: 0,
+      }],
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText('Main Filtration')).toBeInTheDocument();
+    expect(route.getByText('UV Contact')).toBeInTheDocument();
+    expect(route.getByText('20.0 m³/h')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'L/s' }));
+    expect(route.getByText('5.6 L/s')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'US GPM' }));
+    expect(route.getByText('88.1 US GPM')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Imperial GPM' }));
+    expect(route.getByText('73.3 Imperial GPM')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'List' }));
+    expect(route.getByText('↳ UV Contact')).toBeInTheDocument();
+    expect(route.getByText(/50% of parent · 73.3 Imperial GPM/)).toBeInTheDocument();
+  });
+
+  it('keeps the percentage visible when the parent loop flow is unavailable', async () => {
+    renderFlowRoute({
+      ...baseSystem,
+      loop1_flow_pct: null,
+      side_streams: [{
+        id: 'side-1',
+        parent_loop_number: 1,
+        name: 'Thermal',
+        preset: 'Thermal',
+        flow_pct: 30,
+        notes: null,
+        sort_order: 0,
+      }],
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText('30% of parent')).toBeInTheDocument();
+    expect(route.getByText('Unavailable')).toBeInTheDocument();
+    expect(route.getByText(/Set the parent loop allocation/)).toBeInTheDocument();
+  });
+
+  it('uses the canonical calculated system flow when no saved design-flow override exists', async () => {
+    renderFlowRoute(
+      {
+        ...baseSystem,
+        design_flow_m3h: null,
+        loop1_flow_pct: 50,
+        side_streams: [{
+          id: 'side-1',
+          parent_loop_number: 1,
+          name: 'Thermal',
+          preset: 'Thermal',
+          flow_pct: 50,
+          notes: null,
+          sort_order: 0,
+        }],
+      },
+      {
+        ...baseBook,
+        engineering_calculations: {
+          exhibits: [],
+          systems: [{
+            inputs: { system_id: 'system-1' },
+            results: { design_flow_m3h: 80 },
+          }],
+        },
+      },
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText('20.0 m³/h')).toBeInTheDocument();
+    expect(route.queryByText('Unavailable')).not.toBeInTheDocument();
   });
 });

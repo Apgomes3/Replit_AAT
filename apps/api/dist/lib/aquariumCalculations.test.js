@@ -88,6 +88,33 @@ const tank = {
         (0, vitest_1.expect)(system.results.calculated_required_flow_m3h).toBe(108);
         (0, vitest_1.expect)(system.results.flow_override_m3h).toBe(120);
     });
+    (0, vitest_1.it)('derives side-stream flow from the canonical parent-loop basis', () => {
+        (0, vitest_1.expect)((0, aquariumCalculations_1.calculateSideStreamFlow)(120, 50, 25)).toBe(15);
+        (0, vitest_1.expect)((0, aquariumCalculations_1.calculateSideStreamFlow)(120, null, 25)).toBeNull();
+        (0, vitest_1.expect)((0, aquariumCalculations_1.calculateSideStreamFlow)(120, 50, 101)).toBeNull();
+    });
+    (0, vitest_1.it)('includes named loops and side streams in system engineering output without inflating allocations', () => {
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-side-streams',
+            design_flow_m3h: 100,
+            system_config: 'bespoke',
+            loop1_name: 'Main Filtration',
+            loop1_flow_pct: 60,
+        }, [], [], null, '2026-08-28T00:00:00.000Z', [
+            { id: 'thermal', parent_loop_number: 1, name: 'Thermal', flow_pct: 25, sort_order: 0 },
+            { id: 'uv', parent_loop_number: 1, name: 'UV', flow_pct: 40, sort_order: 1 },
+        ]);
+        (0, vitest_1.expect)(system.results.design_flow_m3h).toBe(100);
+        (0, vitest_1.expect)(system.results.allocation_total_m3h).toBe(0);
+        (0, vitest_1.expect)(system.flow_route.side_streams_are_branches).toBe(true);
+        (0, vitest_1.expect)(system.flow_route.loops[0]).toMatchObject({
+            name: 'Main Filtration',
+            allocation_pct: 60,
+            flow_m3h: 60,
+        });
+        (0, vitest_1.expect)(system.flow_route.loops[0].side_streams.map((stream) => stream.flow_m3h))
+            .toEqual([15, 24]);
+    });
     (0, vitest_1.it)('propagates invalid linked exhibit calculations to bespoke systems', () => {
         const invalidExhibit = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [], { surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
         const system = (0, aquariumCalculations_1.calculateSystemEngineering)({ id: 'sys-invalid', system_config: 'bespoke' }, [{ id: 'link-invalid', exhibit_id: 'ex-1', exhibit_code: 'EX-01', link_type: 'Primary' }], [invalidExhibit], null);

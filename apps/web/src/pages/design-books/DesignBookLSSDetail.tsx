@@ -48,6 +48,7 @@ function isEditingField(target: EventTarget | null): boolean {
 }
 
 const FLOW_LOOP_FIELDS = [
+  'name',
   'flow_source',
   'filtration',
   'flow_pct',
@@ -58,8 +59,9 @@ const FLOW_LOOP_FIELDS = [
 const FLOW_UNSAVED_CONFIRMATION = 'You have unsaved Flow Route changes. Leave this page and discard them?';
 
 function createFlowDraft(system: any) {
-  const draft: Record<string, string | boolean> = {};
+  const draft: Record<string, any> = {};
   for (const n of [1, 2, 3]) {
+    draft[`loop${n}_name`] = system[`loop${n}_name`] || `Loop ${n}`;
     draft[`loop${n}_flow_source`] = system[`loop${n}_flow_source`] || '';
     draft[`loop${n}_filtration`] = system[`loop${n}_filtration`] || '';
     draft[`loop${n}_flow_pct`] =
@@ -70,6 +72,10 @@ function createFlowDraft(system: any) {
       system[`loop${n}_bio_degas_m3h`] != null ? String(system[`loop${n}_bio_degas_m3h`]) : '';
     draft[`loop${n}_link_bio_degas`] = !!system[`loop${n}_link_bio_degas`];
   }
+  draft.side_streams = (system.side_streams || []).map((stream: any) => ({
+    ...stream,
+    flow_pct: stream.flow_pct != null ? String(stream.flow_pct) : '',
+  }));
   return draft;
 }
 
@@ -80,12 +86,14 @@ function flowDraftLoopHasData(draft: Record<string, any>, n: number) {
     (draft[`loop${n}_flow_pct`] != null && draft[`loop${n}_flow_pct`] !== '') ||
     (draft[`loop${n}_bio_degas_pct`] != null && draft[`loop${n}_bio_degas_pct`] !== '') ||
     (draft[`loop${n}_bio_degas_m3h`] != null && draft[`loop${n}_bio_degas_m3h`] !== '') ||
-    draft[`loop${n}_link_bio_degas`]
+    draft[`loop${n}_link_bio_degas`] ||
+    (draft.side_streams || []).some((stream: any) => Number(stream.parent_loop_number) === n)
   );
 }
 
 function flowDraftMatchesSystem(draft: Record<string, any>, system: any) {
-  return [1, 2, 3].every(n => (
+  const loopsMatch = [1, 2, 3].every(n => (
+    (draft[`loop${n}_name`] || `Loop ${n}`) === (system[`loop${n}_name`] || `Loop ${n}`) &&
     (draft[`loop${n}_flow_source`] || '') === (system[`loop${n}_flow_source`] || '') &&
     (draft[`loop${n}_filtration`] || '') === (system[`loop${n}_filtration`] || '') &&
     (draft[`loop${n}_flow_pct`] || '') === (
@@ -99,6 +107,17 @@ function flowDraftMatchesSystem(draft: Record<string, any>, system: any) {
     ) &&
     !!draft[`loop${n}_link_bio_degas`] === !!system[`loop${n}_link_bio_degas`]
   ));
+  const comparableStreams = (streams: any[]) => streams.map((stream: any) => ({
+    id: stream.id || null,
+    parent_loop_number: Number(stream.parent_loop_number),
+    name: String(stream.name || ''),
+    preset: stream.preset || null,
+    flow_pct: stream.flow_pct === '' || stream.flow_pct == null ? null : Number(stream.flow_pct),
+    notes: stream.notes || null,
+    sort_order: Number(stream.sort_order || 0),
+  }));
+  return loopsMatch && JSON.stringify(comparableStreams(draft.side_streams || [])) ===
+    JSON.stringify(comparableStreams(system.side_streams || []));
 }
 
 function nullableNumber(value: unknown): number | null {
@@ -116,6 +135,7 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
   const fields: Record<string, any> = {};
   for (const n of [1, 2, 3]) {
     const cleared = n === clearedLoop;
+    fields[`loop${n}_name`] = cleared ? `Loop ${n}` : (String(draft[`loop${n}_name`] || '').trim() || `Loop ${n}`);
     fields[`loop${n}_flow_source`] = cleared ? null : (draft[`loop${n}_flow_source`] || null);
     fields[`loop${n}_filtration`] = cleared ? null : (draft[`loop${n}_filtration`] || null);
     fields[`loop${n}_flow_pct`] = cleared ? null : nullableNumber(draft[`loop${n}_flow_pct`]);
@@ -123,6 +143,17 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
     fields[`loop${n}_bio_degas_m3h`] = cleared ? null : nullableNumber(draft[`loop${n}_bio_degas_m3h`]);
     fields[`loop${n}_link_bio_degas`] = cleared ? false : !!draft[`loop${n}_link_bio_degas`];
   }
+  fields.side_streams = (draft.side_streams || [])
+    .filter((stream: any) => Number(stream.parent_loop_number) !== clearedLoop)
+    .map((stream: any, index: number) => ({
+      ...(stream.id && !String(stream.id).startsWith('draft-') ? { id: stream.id } : {}),
+      parent_loop_number: Number(stream.parent_loop_number),
+      name: String(stream.name || '').trim(),
+      preset: stream.preset || 'Custom',
+      flow_pct: nullableNumber(stream.flow_pct),
+      notes: String(stream.notes || '').trim() || null,
+      sort_order: index,
+    }));
   return fields;
 }
 
@@ -142,6 +173,23 @@ function flowAllocationError(draft: Record<string, any>): string | null {
     }
     const flowPct = nullableNumber(draft[`loop${n}_flow_pct`]);
     if (flowPct != null) total += flowPct;
+  }
+  for (const loopNumber of [1, 2, 3]) {
+    const streams = (draft.side_streams || [])
+      .filter((stream: any) => Number(stream.parent_loop_number) === loopNumber);
+    let sideStreamTotal = 0;
+    for (const stream of streams) {
+      const name = String(stream.name || '').trim();
+      if (!name) return `Every side stream under Loop ${loopNumber} requires a name.`;
+      const percentage = nullableNumber(stream.flow_pct);
+      if (percentage == null || percentage < 0 || percentage > 100) {
+        return `${name} allocation must be between 0% and 100%.`;
+      }
+      sideStreamTotal += percentage;
+    }
+    if (sideStreamTotal > 100.000001) {
+      return `Side streams under Loop ${loopNumber} total ${sideStreamTotal.toFixed(1)}%. Reduce them to 100% or less before saving.`;
+    }
   }
   return total > 100.000001
     ? `Active loop allocations total ${total.toFixed(1)}%. Reduce them to 100% or less before saving.`
@@ -442,6 +490,12 @@ export default function DesignBookLSSDetail() {
   const [flowSaving,   setFlowSaving]   = useState(false);
   const [flowForm,     setFlowForm]     = useState<any>(null);
   const setFF = (k: string, v: any) => setFlowForm((f: any) => ({ ...f, [k]: v }));
+  const setFlowSideStreams = (update: (streams: any[]) => any[]) => {
+    setFlowForm((draft: any) => ({
+      ...(draft || createFlowDraft(systemRef.current)),
+      side_streams: update([...(draft?.side_streams || createFlowDraft(systemRef.current).side_streams)]),
+    }));
+  };
   const [flowViewMode, setFlowViewMode] = useState<FlowViewMode>(getStoredFlowViewMode);
   const [flowUnit, setFlowUnit] = useState<'M3H' | 'LS' | 'US_GPM' | 'IMP_GPM'>('M3H');
   const [expandedCardLoops, setExpandedCardLoops] = useState<number[]>([1]);
@@ -577,11 +631,12 @@ export default function DesignBookLSSDetail() {
   };
 
   const getFlowDraftRow = (draft: any, n: number) => ({
+    name: draft[`loop${n}_name`] || `Loop ${n}`,
     flow_source: draft[`loop${n}_flow_source`] || '',
     filtration: draft[`loop${n}_filtration`] || '',
-    flow_pct: draft[`loop${n}_flow_pct`] || '',
-    bio_degas_pct: draft[`loop${n}_bio_degas_pct`] || '',
-    bio_degas_m3h: draft[`loop${n}_bio_degas_m3h`] || '',
+    flow_pct: draft[`loop${n}_flow_pct`] != null ? draft[`loop${n}_flow_pct`] : '',
+    bio_degas_pct: draft[`loop${n}_bio_degas_pct`] != null ? draft[`loop${n}_bio_degas_pct`] : '',
+    bio_degas_m3h: draft[`loop${n}_bio_degas_m3h`] != null ? draft[`loop${n}_bio_degas_m3h`] : '',
     link_bio_degas: !!draft[`loop${n}_link_bio_degas`],
   });
 
@@ -762,8 +817,8 @@ export default function DesignBookLSSDetail() {
       toast.success('Flow route saved');
       clearFlowDraft();
       refresh();
-    } catch {
-      toast.error('Failed to save flow route');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Failed to save flow route');
     } finally {
       setFlowSaving(false);
     }
@@ -1584,9 +1639,11 @@ export default function DesignBookLSSDetail() {
         };
 
         const loopHasData = (n: number) =>
-          !!(system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] ||
+          !!((system[`loop${n}_name`] && system[`loop${n}_name`] !== `Loop ${n}`) ||
+             system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] ||
              system[`loop${n}_flow_pct`] != null || system[`loop${n}_bio_degas_pct`] != null ||
-             system[`loop${n}_bio_degas_m3h`] != null || system[`loop${n}_link_bio_degas`]);
+             system[`loop${n}_bio_degas_m3h`] != null || system[`loop${n}_link_bio_degas`] ||
+             (system.side_streams || []).some((stream: any) => Number(stream.parent_loop_number) === n));
 
         const activeLoops: number[] = [1, 2, 3].filter(loopHasData);
         const nextLoopToAdd: number | undefined = [1, 2, 3].find(n =>
@@ -1617,6 +1674,17 @@ export default function DesignBookLSSDetail() {
         ).length;
         const unallocatedPct = Math.max(0, 100 - allocationTotal);
         const allocationValidation = flowAllocationError(allocationSource);
+        const loopName = (source: any, n: number) =>
+          String(source?.[`loop${n}_name`] || `Loop ${n}`);
+        const sideStreamsFor = (source: any, n: number) =>
+          (source?.side_streams || [])
+            .filter((stream: any) => Number(stream.parent_loop_number) === n)
+            .sort((left: any, right: any) => Number(left.sort_order || 0) - Number(right.sort_order || 0));
+        const fmtSideStreamFlow = (value: number | null) => {
+          if (value == null) return 'Unavailable';
+          const converted = value * UNIT_FACTORS[flowUnit];
+          return `${converted.toFixed(1)} ${UNIT_LABELS[flowUnit]}`;
+        };
 
         // ── Read-only loop card ────────────────────────────────────────────
         const LoopView = ({ n }: { n: number }) => {
@@ -1630,7 +1698,8 @@ export default function DesignBookLSSDetail() {
           const bioFlow = loopFlow != null && bioPct != null
             ? loopFlow * bioPct / 100
             : nullableNumber(bio);
-          if (!src && !filt && loopPct == null && bio == null && bioPct == null && !linked)
+          const sideStreams = sideStreamsFor(system, n);
+          if (!src && !filt && loopPct == null && bio == null && bioPct == null && !linked && sideStreams.length === 0)
             return <div className="text-xs text-stone-300 italic py-2">Not configured</div>;
           return (
             <div className="space-y-2">
@@ -1674,6 +1743,34 @@ export default function DesignBookLSSDetail() {
                   </span>
                 </div>
               )}
+              {sideStreams.length > 0 && (
+                <div className="mt-3 border-l-2 border-cyan-200 pl-3 space-y-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-cyan-700">
+                    Side streams
+                  </div>
+                  {sideStreams.map((stream: any) => {
+                    const percentage = nullableNumber(stream.flow_pct);
+                    const derivedFlow = loopFlow != null && percentage != null
+                      ? loopFlow * percentage / 100
+                      : null;
+                    return (
+                      <div key={stream.id || `${stream.name}-${stream.sort_order}`} className="rounded-md border border-cyan-100 bg-cyan-50/40 px-2.5 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-stone-700">{stream.name}</span>
+                          <span className="text-[10px] text-stone-500">{percentage ?? '—'}% of parent</span>
+                        </div>
+                        <div className={`font-mono text-xs mt-0.5 ${derivedFlow == null ? 'text-amber-700' : 'text-cyan-800'}`}>
+                          {fmtSideStreamFlow(derivedFlow)}
+                        </div>
+                        {derivedFlow == null && (
+                          <p className="text-[10px] text-amber-700 mt-0.5">Set the parent loop allocation to calculate branch flow.</p>
+                        )}
+                        {stream.notes && <p className="text-[10px] text-stone-500 mt-1">{stream.notes}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         };
@@ -1684,6 +1781,7 @@ export default function DesignBookLSSDetail() {
           const srcKey  = `loop${n}_flow_source`;
           const filtKey = `loop${n}_filtration`;
           const pctKey  = `loop${n}_flow_pct`;
+          const nameKey = `loop${n}_name`;
           const bioPctKey = `loop${n}_bio_degas_pct`;
           const lnkKey  = `loop${n}_link_bio_degas`;
           const linked: boolean = !!flowForm[lnkKey];
@@ -1693,8 +1791,38 @@ export default function DesignBookLSSDetail() {
           const bioPct = nullableNumber(flowForm[bioPctKey]);
           const loopFlow = flowForPercentage(loopPct);
           const bioFlow = loopFlow != null && bioPct != null ? loopFlow * bioPct / 100 : null;
+          const sideStreams = sideStreamsFor(flowForm, n);
+          const updateSideStream = (id: string, field: string, value: any) => {
+            setFlowSideStreams(streams => streams.map(stream =>
+              stream.id === id ? { ...stream, [field]: value } : stream));
+          };
+          const addSideStream = (preset: 'Thermal' | 'UV' | 'Custom') => {
+            const id = `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            setFlowSideStreams(streams => [
+              ...streams,
+              {
+                id,
+                parent_loop_number: n,
+                name: preset === 'Custom' ? '' : preset,
+                preset,
+                flow_pct: '',
+                notes: '',
+                sort_order: sideStreams.length,
+              },
+            ]);
+          };
           return (
             <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1.5">Loop name</label>
+                <input
+                  value={flowForm[nameKey]}
+                  onChange={event => setFF(nameKey, event.target.value)}
+                  aria-label={`Loop ${n} name`}
+                  placeholder={`Loop ${n}`}
+                  className={inputCls}
+                />
+              </div>
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">Flow Source</label>
                 <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
@@ -1769,6 +1897,81 @@ export default function DesignBookLSSDetail() {
                   </div>
                 ) : (
                   <p className="text-xs text-stone-400">Not connected. Enable the link to define the Bio/Degas branch percentage.</p>
+                )}
+              </div>
+              <div className="border-t border-stone-100 pt-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <div className="text-xs font-semibold text-stone-700">Side streams</div>
+                    <p className="text-[10px] text-stone-400">Branches use a percentage of this parent loop and do not change system allocation.</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {(['Thermal', 'UV', 'Custom'] as const).map(preset => (
+                      <button key={preset} type="button" onClick={() => addSideStream(preset)}
+                        className="text-[10px] border border-cyan-200 text-cyan-700 bg-white hover:bg-cyan-50 rounded px-2 py-1">
+                        <Plus className="w-3 h-3 inline mr-0.5" /> {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {sideStreams.length === 0 ? (
+                  <p className="text-xs text-stone-400 italic">No side streams configured.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {sideStreams.map((stream: any) => {
+                      const percentage = nullableNumber(stream.flow_pct);
+                      const derivedFlow = loopFlow != null && percentage != null
+                        ? loopFlow * percentage / 100
+                        : null;
+                      return (
+                        <div key={stream.id} className="rounded-lg border border-cyan-100 bg-cyan-50/30 p-3">
+                          <div className="grid sm:grid-cols-[120px_1fr_110px_auto] gap-2 items-start">
+                            <select value={stream.preset || 'Custom'}
+                              onChange={event => {
+                                const preset = event.target.value;
+                                updateSideStream(stream.id, 'preset', preset);
+                                if (preset !== 'Custom') updateSideStream(stream.id, 'name', preset);
+                              }}
+                              aria-label={`${stream.name || 'New'} side stream preset`}
+                              className={`${inputCls} bg-white`}>
+                              <option>Thermal</option>
+                              <option>UV</option>
+                              <option>Custom</option>
+                            </select>
+                            <input value={stream.name}
+                              onChange={event => updateSideStream(stream.id, 'name', event.target.value)}
+                              aria-label={`Loop ${n} side stream name`}
+                              placeholder="Required side stream name"
+                              className={inputCls} />
+                            <div>
+                              <input type="number" min="0" max="100" step="0.1"
+                                value={stream.flow_pct}
+                                onChange={event => updateSideStream(stream.id, 'flow_pct', event.target.value)}
+                                aria-label={`${stream.name || 'New'} side stream percentage`}
+                                placeholder="% of parent"
+                                className={inputCls} />
+                              <div className={`font-mono text-[10px] mt-1 ${derivedFlow == null ? 'text-amber-700' : 'text-cyan-800'}`}>
+                                {fmtSideStreamFlow(derivedFlow)}
+                              </div>
+                            </div>
+                            <button type="button" aria-label={`Remove ${stream.name || 'side stream'}`}
+                              onClick={() => setFlowSideStreams(streams => streams.filter(item => item.id !== stream.id))}
+                              className="text-stone-400 hover:text-red-600 p-2">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <textarea rows={2} value={stream.notes || ''}
+                            onChange={event => updateSideStream(stream.id, 'notes', event.target.value)}
+                            aria-label={`${stream.name || 'New'} side stream notes`}
+                            placeholder="Notes (optional)"
+                            className={`${inputCls} mt-2 resize-none`} />
+                          {derivedFlow == null && (
+                            <p className="text-[10px] text-amber-700 mt-1">Parent loop flow unavailable; the percentage will still be saved.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
@@ -1878,7 +2081,7 @@ export default function DesignBookLSSDetail() {
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
-                              <span className="text-sm font-semibold text-stone-700">Loop {n}</span>
+                              <span className="text-sm font-semibold text-stone-700">{loopName(flowForm, n)}</span>
                             </div>
                             {n > 1 && (
                               <button type="button" onClick={() => {
@@ -1888,6 +2091,9 @@ export default function DesignBookLSSDetail() {
                                 setFF(`loop${n}_bio_degas_pct`, '');
                                 setFF(`loop${n}_bio_degas_m3h`, '');
                                 setFF(`loop${n}_link_bio_degas`, false);
+                                setFF(`loop${n}_name`, `Loop ${n}`);
+                                setFlowSideStreams(streams =>
+                                  streams.filter(stream => Number(stream.parent_loop_number) !== n));
                                 setExpandedCardLoops(prev => prev.filter(x => x !== n));
                               }} className="text-xs text-stone-400 hover:text-red-500 flex items-center gap-0.5 transition-colors">
                                 <X className="w-3 h-3" /> Remove
@@ -1936,7 +2142,7 @@ export default function DesignBookLSSDetail() {
                             <div key={n} className={`rounded-lg border p-4 ${colors.border} ${pending ? 'opacity-60 border-dashed' : ''}`}>
                               <div className="flex items-center gap-2 mb-3">
                                 <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
-                                <span className={`text-sm font-semibold ${colors.label}`}>Loop {n}</span>
+                                <span className={`text-sm font-semibold ${colors.label}`}>{loopName(system, n)}</span>
                                 {pending && <span className="text-[10px] text-stone-400 italic">unsaved</span>}
                               </div>
                               {LoopView({ n })}
@@ -1979,7 +2185,7 @@ export default function DesignBookLSSDetail() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-stone-100 bg-stone-50/60">
-                      <th className="text-left px-4 py-2.5 text-xs font-medium text-stone-500 w-12">#</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-stone-500 min-w-32">Loop</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Flow Source</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Filtration</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Loop Flow ({UNIT_LABELS[flowUnit]})</th>
@@ -2011,7 +2217,13 @@ export default function DesignBookLSSDetail() {
                         return (
                           <tr key={n} className="bg-blue-50/20">
                             <td className="px-4 py-2.5">
-                              <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                              <div className="flex items-center gap-2">
+                                <span className={`w-5 h-5 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                                <input value={listRowForm.name}
+                                  onChange={event => setLRF('name', event.target.value)}
+                                  aria-label={`Loop ${n} name`}
+                                  className="w-28 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                              </div>
                             </td>
                             <td className="px-3 py-2">
                               <select value={listRowForm.flow_source} onChange={e => setLRF('flow_source', e.target.value)}
@@ -2095,6 +2307,8 @@ export default function DesignBookLSSDetail() {
                       const loopPct = nullableNumber(flowForm ? flowForm[`loop${n}_flow_pct`] : system[`loop${n}_flow_pct`]);
                       const bioPct = nullableNumber(flowForm ? flowForm[`loop${n}_bio_degas_pct`] : system[`loop${n}_bio_degas_pct`]);
                       const linked = flowForm ? !!flowForm[`loop${n}_link_bio_degas`] : !!system[`loop${n}_link_bio_degas`];
+                      const displayedSource = flowForm || system;
+                      const displayedSideStreams = sideStreamsFor(displayedSource, n);
                       const loopFlow = flowForPercentage(loopPct);
                       const bioFlow = loopFlow != null && bioPct != null
                         ? loopFlow * bioPct / 100
@@ -2102,7 +2316,10 @@ export default function DesignBookLSSDetail() {
                       return (
                         <tr key={n} className="hover:bg-stone-50/60 group">
                           <td className="px-4 py-3">
-                            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`w-5 h-5 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                              <span className="text-xs font-semibold text-stone-700">{loopName(displayedSource, n)}</span>
+                            </div>
                           </td>
                           <td className="px-3 py-3">
                             {src ? (
@@ -2113,6 +2330,25 @@ export default function DesignBookLSSDetail() {
                                 <SourceSplitReference source={src} compact />
                               </>
                             ) : <span className="text-stone-300 text-xs italic">—</span>}
+                            {displayedSideStreams.length > 0 && (
+                              <div className="mt-2 border-l-2 border-cyan-200 pl-2 space-y-1.5">
+                                {displayedSideStreams.map((stream: any) => {
+                                  const percentage = nullableNumber(stream.flow_pct);
+                                  const streamFlow = loopFlow != null && percentage != null
+                                    ? loopFlow * percentage / 100
+                                    : null;
+                                  return (
+                                    <div key={stream.id || `${stream.name}-${stream.sort_order}`} className="text-[10px]">
+                                      <div className="font-semibold text-cyan-800">↳ {stream.name}</div>
+                                      <div className={streamFlow == null ? 'text-amber-700' : 'text-stone-500'}>
+                                        {percentage ?? '—'}% of parent · {fmtSideStreamFlow(streamFlow)}
+                                      </div>
+                                      {stream.notes && <div className="text-stone-400">{stream.notes}</div>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-3">
                             {filt ? (
@@ -2151,6 +2387,15 @@ export default function DesignBookLSSDetail() {
                                 setListRowForm(getFlowDraftRow(draft, n));
                               }} className="text-xs text-stone-400 hover:text-blue-600 border border-stone-200 rounded px-2 py-1 flex items-center gap-1 bg-white">
                                 <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                              <button onClick={() => {
+                                const draft = flowForm || createFlowDraft(system);
+                                setFlowForm(draft);
+                                setExpandedCardLoops(prev => prev.includes(n) ? prev : [...prev, n]);
+                                setFlowEditMode(true);
+                                setFlowViewMode('card');
+                              }} className="text-xs text-cyan-700 hover:text-cyan-900 border border-cyan-200 rounded px-2 py-1 bg-white whitespace-nowrap">
+                                Side streams
                               </button>
                               {n > 1 && (
                                 <button onClick={() => deleteLoop(n)}

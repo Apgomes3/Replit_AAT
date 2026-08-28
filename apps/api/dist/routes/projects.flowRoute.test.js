@@ -65,6 +65,9 @@ vitest_1.vi.mock('../db', () => {
         if (sql.includes('SELECT * FROM systems WHERE id=$1')) {
             return { rows: [{ ...state.currentSystem }] };
         }
+        if (sql.includes('FROM system_flow_side_streams')) {
+            return { rows: [] };
+        }
         if (sql.includes('SELECT DISTINCT water_type FROM exhibits')) {
             return { rows: [] };
         }
@@ -74,7 +77,12 @@ vitest_1.vi.mock('../db', () => {
         return { rows: [] };
     });
     return {
-        default: { connect: vitest_1.vi.fn() },
+        default: {
+            connect: vitest_1.vi.fn(async () => ({
+                query,
+                release: vitest_1.vi.fn(),
+            })),
+        },
         query,
     };
 });
@@ -203,5 +211,55 @@ const basePayload = {
             code: 'VALIDATION',
             message: 'Loop 1 Bio/Degas allocation must be between 0% and 100%.',
         });
+    });
+    (0, vitest_1.it)('persists custom loop names and multiple parent-owned side streams', async () => {
+        const response = await request(app, {
+            ...basePayload,
+            loop1_name: 'Main Filtration',
+            loop2_name: 'Polishing',
+            loop3_name: 'Reserve',
+            side_streams: [
+                {
+                    parent_loop_number: 1,
+                    name: 'Thermal',
+                    preset: 'Thermal',
+                    flow_pct: 25,
+                    notes: 'Heat exchanger branch',
+                    sort_order: 0,
+                },
+                {
+                    parent_loop_number: 1,
+                    name: 'UV Contact',
+                    preset: 'UV',
+                    flow_pct: 40,
+                    notes: null,
+                    sort_order: 1,
+                },
+            ],
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const nameUpdate = state.calls.find(call => call.sql.includes('loop1_name=$2'));
+        (0, vitest_1.expect)(nameUpdate?.params.slice(1)).toEqual(['Main Filtration', 'Polishing', 'Reserve']);
+        const inserts = state.calls.filter(call => call.sql.includes('INSERT INTO system_flow_side_streams'));
+        (0, vitest_1.expect)(inserts).toHaveLength(2);
+        (0, vitest_1.expect)(inserts[0].params.slice(1, 6)).toEqual([1, 'Thermal', 'Thermal', 25, 'Heat exchanger branch']);
+        (0, vitest_1.expect)(inserts[1].params.slice(1, 6)).toEqual([1, 'UV Contact', 'UV', 40, null]);
+        (0, vitest_1.expect)(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
+        (0, vitest_1.expect)(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
+    });
+    (0, vitest_1.it)('rejects side streams whose combined parent percentage exceeds 100 percent', async () => {
+        const response = await request(app, {
+            ...basePayload,
+            side_streams: [
+                { parent_loop_number: 2, name: 'Thermal', preset: 'Thermal', flow_pct: 60 },
+                { parent_loop_number: 2, name: 'UV', preset: 'UV', flow_pct: 45 },
+            ],
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error).toEqual({
+            code: 'VALIDATION',
+            message: 'Side streams under Loop 2 total 105.0%. Reduce them to 100% or less.',
+        });
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(false);
     });
 });

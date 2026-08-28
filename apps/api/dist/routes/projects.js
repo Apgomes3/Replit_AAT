@@ -121,6 +121,57 @@ function tankDatabaseResponse(error) {
         ...(field ? { field } : {}),
     };
 }
+const FLOW_SIDE_STREAM_PRESETS = ['Thermal', 'UV', 'Custom'];
+function normalizeSideStreams(value) {
+    if (!Array.isArray(value))
+        return null;
+    const normalized = value.map((stream, index) => {
+        const parentLoopNumber = Number(stream?.parent_loop_number);
+        const name = String(stream?.name || '').trim();
+        const flowPct = stream?.flow_pct == null || stream.flow_pct === ''
+            ? Number.NaN
+            : Number(stream.flow_pct);
+        const preset = stream?.preset == null || stream.preset === ''
+            ? null
+            : String(stream.preset).trim();
+        if (!Number.isInteger(parentLoopNumber) || parentLoopNumber < 1 || parentLoopNumber > 3) {
+            throw new Error(`Side stream ${index + 1} must belong to Loop 1, Loop 2, or Loop 3.`);
+        }
+        if (!name)
+            throw new Error(`Side stream ${index + 1} requires a name.`);
+        if (name.length > 255)
+            throw new Error(`Side stream ${index + 1} name must be 255 characters or fewer.`);
+        if (!Number.isFinite(flowPct) || flowPct < 0 || flowPct > 100) {
+            throw new Error(`${name} allocation must be between 0% and 100%.`);
+        }
+        if (preset && !FLOW_SIDE_STREAM_PRESETS.includes(preset)) {
+            throw new Error(`${name} has an unsupported preset.`);
+        }
+        return {
+            id: stream?.id ? String(stream.id) : null,
+            parent_loop_number: parentLoopNumber,
+            name,
+            preset,
+            flow_pct: flowPct,
+            notes: stream?.notes == null || stream.notes === '' ? null : String(stream.notes),
+            sort_order: Number.isInteger(Number(stream?.sort_order)) ? Number(stream.sort_order) : index,
+        };
+    });
+    for (const loopNumber of [1, 2, 3]) {
+        const total = normalized
+            .filter(stream => stream.parent_loop_number === loopNumber)
+            .reduce((sum, stream) => sum + stream.flow_pct, 0);
+        if (total > 100.000001) {
+            throw new Error(`Side streams under Loop ${loopNumber} total ${total.toFixed(1)}%. Reduce them to 100% or less.`);
+        }
+    }
+    return normalized;
+}
+async function loadSystemSideStreams(systemId, runner = db_1.query) {
+    return (await runner(`SELECT * FROM system_flow_side_streams
+     WHERE system_id=$1
+     ORDER BY parent_loop_number, sort_order, created_at, id`, [systemId])).rows;
+}
 // PROJECTS
 router.get('/projects', auth_1.authenticate, async (req, res) => {
     const { page, page_size, offset } = paginate(req);
@@ -1244,7 +1295,7 @@ router.get('/systems/:id', auth_1.authenticate, async (req, res) => {
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
     const sysId = result.rows[0].id;
-    const [equipment, tanks] = await Promise.all([
+    const [equipment, tanks, sideStreams] = await Promise.all([
         (0, db_1.query)(`SELECT pei.*, pm.product_code, pm.product_name, c.component_code, c.component_name,
               po.id   AS released_po_id,
               po.po_code AS released_po_code
@@ -1274,8 +1325,9 @@ router.get('/systems/:id', auth_1.authenticate, async (req, res) => {
        LEFT JOIN purchase_orders po ON po.id = poi.po_id
        WHERE t.system_id = $1
        ORDER BY t.tank_code`, [sysId]),
+        loadSystemSideStreams(sysId),
     ]);
-    res.json({ ...result.rows[0], equipment: equipment.rows, tanks: tanks.rows });
+    res.json({ ...result.rows[0], equipment: equipment.rows, tanks: tanks.rows, side_streams: sideStreams });
 });
 router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     const client = await db_1.default.connect();
@@ -1337,7 +1389,22 @@ router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'e
 });
 router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {
-        const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy, loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct, loop1_bio_degas_m3h, loop1_link_bio_degas, loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct, loop2_bio_degas_m3h, loop2_link_bio_degas, loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct, loop3_bio_degas_m3h, loop3_link_bio_degas, system_config, compact_unit_id, design_book_id, } = req.body;
+        const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, status, duty_description, redundancy_strategy, loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct, loop1_bio_degas_m3h, loop1_link_bio_degas, loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct, loop2_bio_degas_m3h, loop2_link_bio_degas, loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct, loop3_bio_degas_m3h, loop3_link_bio_degas, loop1_name, loop2_name, loop3_name, side_streams, system_config, compact_unit_id, design_book_id, } = req.body;
+        let normalizedSideStreams = null;
+        try {
+            normalizedSideStreams = normalizeSideStreams(side_streams);
+        }
+        catch (error) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+        }
+        for (const [loopNumber, name] of [[1, loop1_name], [2, loop2_name], [3, loop3_name]]) {
+            if (name != null && !String(name).trim()) {
+                return res.status(400).json({ error: { code: 'VALIDATION', message: `Loop ${loopNumber} name is required.` } });
+            }
+            if (name != null && String(name).trim().length > 255) {
+                return res.status(400).json({ error: { code: 'VALIDATION', message: `Loop ${loopNumber} name must be 255 characters or fewer.` } });
+            }
+        }
         for (const [label, value] of [
             ['Design flow', design_flow_m3h],
             ['Turnover rate', turnover_rate_hr],
@@ -1464,7 +1531,14 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                 }
             }
         }
-        const result = await (0, db_1.query)(`UPDATE systems SET
+        const saveClient = await db_1.default.connect();
+        let result;
+        let namedSystem;
+        let existingSideStreams = [];
+        let savedSideStreams = [];
+        try {
+            await saveClient.query('BEGIN');
+            result = await saveClient.query(`UPDATE systems SET
         system_code=COALESCE($1,system_code), system_name=$2, system_type=$3,
         design_flow_m3h=$4, turnover_rate_hr=$5, water_type=$6, status=$7,
         duty_description=$8, redundancy_strategy=$9,
@@ -1478,41 +1552,116 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         calculation_version=$30, last_calculated_at=NOW(), calculation_inputs=$31,
         updated_at=NOW()
        WHERE id=$32 RETURNING *`, [
-            system_code || null, system_name, system_type,
-            design_flow_m3h || null, turnover_rate_hr || null, water_type, status,
-            duty_description, redundancy_strategy,
-            loop1_flow_source || null, loop1_filtration || null,
-            resolvedLoop1FlowPct, resolvedLoop1BioPct,
-            loop1_bio_degas_m3h ?? null, loop1_link_bio_degas ?? false,
-            loop2_flow_source || null, loop2_filtration || null,
-            resolvedLoop2FlowPct, resolvedLoop2BioPct,
-            loop2_bio_degas_m3h ?? null, loop2_link_bio_degas ?? false,
-            loop3_flow_source || null, loop3_filtration || null,
-            resolvedLoop3FlowPct, resolvedLoop3BioPct,
-            loop3_bio_degas_m3h ?? null, loop3_link_bio_degas ?? false,
-            system_config || 'bespoke', compact_unit_id || null,
-            aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
-            JSON.stringify({
-                design_flow_m3h: design_flow_m3h ?? null,
-                turnover_rate_hr: turnover_rate_hr ?? null,
-                turnover_unit: 'cycles_per_hour',
-                flow_unit: 'm3_per_hour',
-                system_config: system_config || 'bespoke',
-                compact_unit_id: compact_unit_id || null,
-            }),
-            req.params.id,
-        ]);
-        if (!result.rows[0])
-            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+                system_code || null, system_name, system_type,
+                design_flow_m3h || null, turnover_rate_hr || null, water_type, status,
+                duty_description, redundancy_strategy,
+                loop1_flow_source || null, loop1_filtration || null,
+                resolvedLoop1FlowPct, resolvedLoop1BioPct,
+                loop1_bio_degas_m3h ?? null, loop1_link_bio_degas ?? false,
+                loop2_flow_source || null, loop2_filtration || null,
+                resolvedLoop2FlowPct, resolvedLoop2BioPct,
+                loop2_bio_degas_m3h ?? null, loop2_link_bio_degas ?? false,
+                loop3_flow_source || null, loop3_filtration || null,
+                resolvedLoop3FlowPct, resolvedLoop3BioPct,
+                loop3_bio_degas_m3h ?? null, loop3_link_bio_degas ?? false,
+                system_config || 'bespoke', compact_unit_id || null,
+                aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
+                JSON.stringify({
+                    design_flow_m3h: design_flow_m3h ?? null,
+                    turnover_rate_hr: turnover_rate_hr ?? null,
+                    turnover_unit: 'cycles_per_hour',
+                    flow_unit: 'm3_per_hour',
+                    system_config: system_config || 'bespoke',
+                    compact_unit_id: compact_unit_id || null,
+                }),
+                req.params.id,
+            ]);
+            if (!result.rows[0]) {
+                await saveClient.query('ROLLBACK');
+                return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+            }
+            namedSystem = result.rows[0];
+            const sideStreamQuery = saveClient.query.bind(saveClient);
+            existingSideStreams = await loadSystemSideStreams(String(req.params.id), sideStreamQuery);
+            const namedResult = await saveClient.query(`UPDATE systems SET
+           loop1_name=$2, loop2_name=$3, loop3_name=$4, updated_at=NOW()
+         WHERE id=$1 RETURNING *`, [
+                req.params.id,
+                loop1_name == null ? (currentSystem.loop1_name || 'Loop 1') : String(loop1_name).trim(),
+                loop2_name == null ? (currentSystem.loop2_name || 'Loop 2') : String(loop2_name).trim(),
+                loop3_name == null ? (currentSystem.loop3_name || 'Loop 3') : String(loop3_name).trim(),
+            ]);
+            namedSystem = namedResult.rows[0] || namedSystem;
+            if (normalizedSideStreams) {
+                const existing = existingSideStreams;
+                const existingIds = new Set(existing.map((stream) => String(stream.id)));
+                const requestedIds = new Set(normalizedSideStreams.filter(stream => stream.id && existingIds.has(stream.id)).map(stream => stream.id));
+                for (const stream of existing) {
+                    if (!requestedIds.has(String(stream.id))) {
+                        await saveClient.query('DELETE FROM system_flow_side_streams WHERE id=$1 AND system_id=$2', [stream.id, req.params.id]);
+                    }
+                }
+                for (const stream of normalizedSideStreams) {
+                    if (stream.id && existingIds.has(stream.id)) {
+                        await saveClient.query(`UPDATE system_flow_side_streams
+               SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
+                   sort_order=$8, updated_at=NOW()
+               WHERE id=$1 AND system_id=$2`, [stream.id, req.params.id, stream.parent_loop_number, stream.name, stream.preset,
+                            stream.flow_pct, stream.notes, stream.sort_order]);
+                    }
+                    else {
+                        await saveClient.query(`INSERT INTO system_flow_side_streams
+                 (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
+                            stream.flow_pct, stream.notes, stream.sort_order]);
+                    }
+                }
+            }
+            savedSideStreams = await loadSystemSideStreams(String(req.params.id), sideStreamQuery);
+            await saveClient.query('COMMIT');
+        }
+        catch (error) {
+            await saveClient.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            saveClient.release();
+        }
+        const auditShape = (stream) => ({
+            id: stream.id,
+            parent_loop_number: Number(stream.parent_loop_number),
+            name: stream.name,
+            preset: stream.preset || null,
+            flow_pct: Number(stream.flow_pct),
+            notes: stream.notes || null,
+            sort_order: Number(stream.sort_order || 0),
+        });
+        const existingById = new Map(existingSideStreams.map(stream => [String(stream.id), auditShape(stream)]));
+        const savedById = new Map(savedSideStreams.map(stream => [String(stream.id), auditShape(stream)]));
+        const sideStreamChanges = {
+            added: savedSideStreams.filter(stream => !existingById.has(String(stream.id))).map(auditShape),
+            updated: savedSideStreams
+                .filter(stream => existingById.has(String(stream.id)) &&
+                JSON.stringify(existingById.get(String(stream.id))) !== JSON.stringify(auditShape(stream)))
+                .map(stream => ({ before: existingById.get(String(stream.id)), after: auditShape(stream) })),
+            removed: existingSideStreams.filter(stream => !savedById.has(String(stream.id))).map(auditShape),
+        };
         await (0, audit_1.logAudit)(req.user.id, 'system', String(req.params.id), 'UPDATE', {
-            summary: 'System details updated',
+            summary: normalizedSideStreams ? 'System details and flow-route hierarchy updated' : 'System details updated',
             system_name,
             system_type,
             status,
             design_flow_m3h,
             water_type,
+            loop_names: [
+                namedSystem.loop1_name || currentSystem.loop1_name || 'Loop 1',
+                namedSystem.loop2_name || currentSystem.loop2_name || 'Loop 2',
+                namedSystem.loop3_name || currentSystem.loop3_name || 'Loop 3',
+            ],
+            side_stream_count: savedSideStreams.length,
+            side_stream_changes: sideStreamChanges,
         });
-        res.json(result.rows[0]);
+        res.json({ ...namedSystem, side_streams: savedSideStreams });
     }
     catch (err) {
         if (err.code === '23505') {
@@ -1520,6 +1669,120 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         }
         throw err;
     }
+});
+router.get('/systems/:id/side-streams', auth_1.authenticate, async (req, res) => {
+    const system = await (0, db_1.query)('SELECT id FROM systems WHERE id=$1', [req.params.id]);
+    if (!system.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    res.json({ items: await loadSystemSideStreams(String(req.params.id)), presets: FLOW_SIDE_STREAM_PRESETS });
+});
+router.post('/systems/:id/side-streams', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    let stream;
+    try {
+        stream = normalizeSideStreams([req.body])?.[0];
+    }
+    catch (error) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
+    const client = await db_1.default.connect();
+    let created;
+    try {
+        await client.query('BEGIN');
+        const system = await client.query('SELECT id FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
+        if (!system.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        }
+        const total = (await client.query(`SELECT COALESCE(SUM(flow_pct), 0)::numeric AS total
+       FROM system_flow_side_streams WHERE system_id=$1 AND parent_loop_number=$2`, [req.params.id, stream.parent_loop_number])).rows[0]?.total;
+        if (Number(total || 0) + stream.flow_pct > 100.000001) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: { code: 'SIDE_STREAM_ALLOCATION_EXCEEDS_100', message: `Side streams under Loop ${stream.parent_loop_number} cannot exceed 100%.` },
+            });
+        }
+        created = (await client.query(`INSERT INTO system_flow_side_streams
+         (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
+            stream.flow_pct, stream.notes, stream.sort_order])).rows[0];
+        await client.query('COMMIT');
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+    await (0, audit_1.logAudit)(req.user.id, 'system', String(req.params.id), 'ADD_SIDE_STREAM', {
+        summary: `${stream.name} side stream added to Loop ${stream.parent_loop_number}`,
+        side_stream: created,
+    });
+    res.status(201).json(created);
+});
+router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    let stream;
+    try {
+        stream = normalizeSideStreams([req.body])?.[0];
+    }
+    catch (error) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
+    const client = await db_1.default.connect();
+    let previous;
+    let updated;
+    try {
+        await client.query('BEGIN');
+        const system = await client.query('SELECT id FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
+        if (!system.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        }
+        const current = await client.query('SELECT * FROM system_flow_side_streams WHERE id=$1 AND system_id=$2', [req.params.sideStreamId, req.params.id]);
+        if (!current.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Side stream not found' } });
+        }
+        previous = current.rows[0];
+        const total = (await client.query(`SELECT COALESCE(SUM(flow_pct), 0)::numeric AS total
+       FROM system_flow_side_streams
+       WHERE system_id=$1 AND parent_loop_number=$2 AND id<>$3`, [req.params.id, stream.parent_loop_number, req.params.sideStreamId])).rows[0]?.total;
+        if (Number(total || 0) + stream.flow_pct > 100.000001) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: { code: 'SIDE_STREAM_ALLOCATION_EXCEEDS_100', message: `Side streams under Loop ${stream.parent_loop_number} cannot exceed 100%.` },
+            });
+        }
+        updated = (await client.query(`UPDATE system_flow_side_streams
+       SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
+           sort_order=$8, updated_at=NOW()
+       WHERE id=$1 AND system_id=$2 RETURNING *`, [req.params.sideStreamId, req.params.id, stream.parent_loop_number, stream.name,
+            stream.preset, stream.flow_pct, stream.notes, stream.sort_order])).rows[0];
+        await client.query('COMMIT');
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+    await (0, audit_1.logAudit)(req.user.id, 'system', String(req.params.id), 'UPDATE_SIDE_STREAM', {
+        summary: `${stream.name} side stream updated`,
+        before: previous,
+        after: updated,
+    });
+    res.json(updated);
+});
+router.delete('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    const result = await (0, db_1.query)('DELETE FROM system_flow_side_streams WHERE id=$1 AND system_id=$2 RETURNING *', [req.params.sideStreamId, req.params.id]);
+    if (!result.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Side stream not found' } });
+    await (0, audit_1.logAudit)(req.user.id, 'system', String(req.params.id), 'DELETE_SIDE_STREAM', {
+        summary: `${result.rows[0].name} side stream removed`,
+        side_stream_id: req.params.sideStreamId,
+    });
+    res.json({ deleted: true, id: req.params.sideStreamId });
 });
 router.delete('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {

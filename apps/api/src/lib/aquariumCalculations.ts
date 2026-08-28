@@ -28,6 +28,27 @@ const positiveOrNull = (value: any): number | null => {
 export const roundEngineering = (value: number | null, decimals: number): number | null =>
   value == null || !Number.isFinite(value) ? null : Number(value.toFixed(decimals));
 
+export function calculateSideStreamFlow(
+  systemFlowM3h: unknown,
+  parentLoopPct: unknown,
+  sideStreamPct: unknown,
+): number | null {
+  if (
+    systemFlowM3h == null || systemFlowM3h === '' ||
+    parentLoopPct == null || parentLoopPct === '' ||
+    sideStreamPct == null || sideStreamPct === ''
+  ) return null;
+  const systemFlow = numberOrNull(systemFlowM3h);
+  const parentPct = numberOrNull(parentLoopPct);
+  const branchPct = numberOrNull(sideStreamPct);
+  if (
+    systemFlow == null || systemFlow < 0 ||
+    parentPct == null || parentPct < 0 || parentPct > 100 ||
+    branchPct == null || branchPct < 0 || branchPct > 100
+  ) return null;
+  return roundEngineering(systemFlow * parentPct / 100 * branchPct / 100, FLOW_DECIMALS);
+}
+
 export function compatibleWaterTypes(left?: string | null, right?: string | null): boolean {
   if (!left || !right) return true;
   const normalize = (value: string) => {
@@ -301,6 +322,7 @@ export function calculateSystemEngineering(
   exhibitCalculations: any[],
   compactUnit: any | null,
   calculatedAt = new Date().toISOString(),
+  sideStreams: any[] = system?.side_streams || [],
 ) {
   const linked = (links || []).map(link => {
     const exhibit = exhibitCalculations.find(calc => calc.inputs.exhibit_id === link.exhibit_id);
@@ -356,6 +378,30 @@ export function calculateSystemEngineering(
         reasons: ['Bespoke system selected; no compact catalog limits apply.'],
       };
   if (system?.system_config === 'compact') reasons.push(...unitResult.reasons);
+  const designFlow = savedFlow ?? requiredFlow;
+  const flowRoute = [1, 2, 3].map(loopNumber => {
+    const allocationPct = numberOrNull(system?.[`loop${loopNumber}_flow_pct`]);
+    const parentFlow = designFlow > 0 && allocationPct != null
+      ? roundEngineering(designFlow * allocationPct / 100, FLOW_DECIMALS)
+      : null;
+    return {
+      loop_number: loopNumber,
+      name: String(system?.[`loop${loopNumber}_name`] || `Loop ${loopNumber}`),
+      allocation_pct: allocationPct,
+      flow_m3h: parentFlow,
+      side_streams: sideStreams
+        .filter(stream => Number(stream.parent_loop_number) === loopNumber)
+        .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0))
+        .map(stream => ({
+          ...stream,
+          flow_m3h: calculateSideStreamFlow(designFlow, allocationPct, stream.flow_pct),
+          flow_available: parentFlow != null,
+          flow_unavailable_reason: parentFlow == null
+            ? 'Parent loop allocation is unavailable.'
+            : null,
+        })),
+    };
+  });
 
   return {
     calculation_version: AQUARIUM_CALCULATION_VERSION,
@@ -376,12 +422,17 @@ export function calculateSystemEngineering(
     results: {
       calculated_required_flow_m3h: roundEngineering(requiredFlow, FLOW_DECIMALS),
       allocated_flow_m3h: roundEngineering(allocatedFlow, FLOW_DECIMALS),
-      design_flow_m3h: roundEngineering(savedFlow ?? requiredFlow, FLOW_DECIMALS),
+      design_flow_m3h: roundEngineering(designFlow, FLOW_DECIMALS),
       turnover_rate_cycles_per_hour: turnover,
       allocation_total_m3h: roundEngineering(allocatedFlow, FLOW_DECIMALS),
       flow_override_m3h: storedFlowDiffers ? savedFlow : null,
     },
     allocations: linked,
+    flow_route: {
+      flow_unit: FLOW_UNIT,
+      side_streams_are_branches: true,
+      loops: flowRoute,
+    },
     suitability: unitResult,
     formula: 'system required flow = sum of linked exhibit return flows; unassigned exhibit allocations use calculated flow',
     rounding: `Flows rounded to ${FLOW_DECIMALS} decimals m³/h; comparison tolerance is 0.005 m³/h.`,

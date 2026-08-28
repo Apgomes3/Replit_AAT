@@ -20,10 +20,21 @@ const baseContext = () => ({
     project_id: 'project-1',
     system_code: 'LSS-1',
     system_name: 'Primary LSS',
+    loop1_name: 'Main Filtration',
     loop1_flow_source: 'Calculated',
     loop1_flow_pct: '55',
     loop1_bio_degas_pct: '30',
     loop1_bio_degas_m3h: '12.5',
+    side_streams: [{
+      id: 'side-stream-1',
+      system_id: 'system-1',
+      parent_loop_number: 1,
+      name: 'Thermal',
+      preset: 'Thermal',
+      flow_pct: '25',
+      notes: 'Heat exchanger branch',
+      sort_order: 0,
+    }],
   }],
   system_links: [{
     id: 'link-1',
@@ -155,7 +166,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(2);
+    expect(snapshot.schema_version).toBe(3);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -186,8 +197,16 @@ describe('Design Book version snapshots', () => {
     });
     expect(snapshot.live_references.systems[0]).toMatchObject({
       id: 'system-1',
+      loop1_name: 'Main Filtration',
       loop1_flow_source: 'Calculated',
       loop1_flow_pct: '55',
+      side_streams: [
+        expect.objectContaining({
+          parent_loop_number: 1,
+          name: 'Thermal',
+          flow_pct: '25',
+        }),
+      ],
       loop1_bio_degas_pct: '30',
       loop1_bio_degas_m3h: '12.5',
     });
@@ -238,7 +257,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(2);
+    expect(insertParams[6]).toBe(3);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 

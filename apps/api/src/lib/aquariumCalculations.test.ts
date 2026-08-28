@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateExhibitHydraulics,
+  calculateSideStreamFlow,
   calculateSystemEngineering,
   compatibleWaterTypes,
   evaluateCompactUnit,
@@ -154,6 +155,43 @@ describe('aquarium engineering calculations', () => {
     expect(system.status).toBe('override');
     expect(system.results.calculated_required_flow_m3h).toBe(108);
     expect(system.results.flow_override_m3h).toBe(120);
+  });
+
+  it('derives side-stream flow from the canonical parent-loop basis', () => {
+    expect(calculateSideStreamFlow(120, 50, 25)).toBe(15);
+    expect(calculateSideStreamFlow(120, null, 25)).toBeNull();
+    expect(calculateSideStreamFlow(120, 50, 101)).toBeNull();
+  });
+
+  it('includes named loops and side streams in system engineering output without inflating allocations', () => {
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-side-streams',
+        design_flow_m3h: 100,
+        system_config: 'bespoke',
+        loop1_name: 'Main Filtration',
+        loop1_flow_pct: 60,
+      },
+      [],
+      [],
+      null,
+      '2026-08-28T00:00:00.000Z',
+      [
+        { id: 'thermal', parent_loop_number: 1, name: 'Thermal', flow_pct: 25, sort_order: 0 },
+        { id: 'uv', parent_loop_number: 1, name: 'UV', flow_pct: 40, sort_order: 1 },
+      ],
+    );
+
+    expect(system.results.design_flow_m3h).toBe(100);
+    expect(system.results.allocation_total_m3h).toBe(0);
+    expect(system.flow_route.side_streams_are_branches).toBe(true);
+    expect(system.flow_route.loops[0]).toMatchObject({
+      name: 'Main Filtration',
+      allocation_pct: 60,
+      flow_m3h: 60,
+    });
+    expect(system.flow_route.loops[0].side_streams.map((stream: any) => stream.flow_m3h))
+      .toEqual([15, 24]);
   });
 
   it('propagates invalid linked exhibit calculations to bespoke systems', () => {

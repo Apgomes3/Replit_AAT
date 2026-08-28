@@ -1154,24 +1154,42 @@ ALTER TABLE systems ADD COLUMN IF NOT EXISTS last_calculated_at TIMESTAMPTZ;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS calculation_inputs JSONB;
 
 -- SYSTEMS: flow route loop configuration
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_name           VARCHAR(255) NOT NULL DEFAULT 'Loop 1';
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_flow_source    VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_filtration     VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_flow_pct       NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_bio_degas_pct  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_bio_degas_m3h  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_link_bio_degas BOOLEAN DEFAULT false;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_name           VARCHAR(255) NOT NULL DEFAULT 'Loop 2';
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_flow_source    VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_filtration     VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_flow_pct       NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_bio_degas_pct  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_bio_degas_m3h  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_link_bio_degas BOOLEAN DEFAULT false;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_name           VARCHAR(255) NOT NULL DEFAULT 'Loop 3';
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_flow_source    VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_filtration     VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_flow_pct       NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_bio_degas_pct  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_bio_degas_m3h  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_link_bio_degas BOOLEAN DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS system_flow_side_streams (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_id          UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  parent_loop_number SMALLINT NOT NULL CHECK (parent_loop_number BETWEEN 1 AND 3),
+  name               VARCHAR(255) NOT NULL CHECK (BTRIM(name) <> ''),
+  preset             VARCHAR(30),
+  flow_pct           NUMERIC(6,3) NOT NULL CHECK (flow_pct >= 0 AND flow_pct <= 100),
+  notes              TEXT,
+  sort_order         INTEGER NOT NULL DEFAULT 0,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_system_flow_side_streams_parent
+  ON system_flow_side_streams(system_id, parent_loop_number, sort_order, created_at);
 
 -- PROCUREMENT FIELDS: vendor, delivery date, payment/shipping terms, priority, UOM
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255);

@@ -31,6 +31,20 @@ router.use(authenticate, requireModuleAccess('design_books'));
 type DbRunner = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
 const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
 
+async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
+  if (!systems.length) return systems;
+  const rows = (await runner(
+    `SELECT * FROM system_flow_side_streams
+     WHERE system_id = ANY($1::uuid[])
+     ORDER BY parent_loop_number, sort_order, created_at, id`,
+    [systems.map(system => system.id)],
+  )).rows;
+  return systems.map(system => ({
+    ...system,
+    side_streams: rows.filter(stream => stream.system_id === system.id),
+  }));
+}
+
 function nullableSpeciesNumber(value: unknown, label: string, allowZero = false): number | null {
   if (value == null || value === '') return null;
   const parsed = Number(value);
@@ -146,7 +160,7 @@ async function loadReleaseContext(
     const systemResult = await runner('SELECT * FROM systems WHERE project_id=$1 ORDER BY system_code', [book.project_id]);
     exhibits = exhibitResult.rows;
     tanks = tankResult.rows;
-    systems = systemResult.rows;
+    systems = await attachSystemSideStreams(runner, systemResult.rows);
   }
 
   const speciesResult = await runner(
@@ -197,6 +211,7 @@ async function loadReleaseContext(
     exhibitCalculations,
     compactUnits.find(unit => unit.id === system.compact_unit_id) || null,
     calculatedAt,
+    system.side_streams || [],
   ));
 
   const liveContext = {
@@ -399,7 +414,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
        ORDER BY a.area_code NULLS LAST, e.exhibit_code NULLS LAST, s.system_code`,
       [row.project_id]
     );
-    systems = sysResult.rows;
+    systems = await attachSystemSideStreams(query, sysResult.rows);
   }
 
   const speciesResult = await query(
@@ -463,6 +478,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     exhibitCalculations,
     compactUnits.find(unit => unit.id === system.compact_unit_id) || null,
     calculationTimestamp,
+    system.side_streams || [],
   ));
 
   const livePackage = {
@@ -1338,7 +1354,7 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
-const VERSION_SNAPSHOT_SCHEMA = 2;
+const VERSION_SNAPSHOT_SCHEMA = 3;
 const VERSION_REFERENCE_FIELDS = {
   project: ['id', 'project_code', 'project_name'],
   exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -1351,11 +1367,12 @@ const VERSION_REFERENCE_FIELDS = {
   systems: ['id', 'project_id', 'system_code', 'area_id', 'exhibit_id', 'system_name', 'system_type',
     'design_flow_m3h', 'turnover_rate_hr', 'water_type', 'status', 'primary_control_panel_code',
     'duty_description', 'redundancy_strategy', 'design_basis_reference', 'system_config', 'compact_unit_id',
-    'calculation_version', 'calculation_inputs', 'loop1_flow_source', 'loop1_filtration',
+    'calculation_version', 'calculation_inputs', 'loop1_name', 'loop1_flow_source', 'loop1_filtration',
     'loop1_flow_pct', 'loop1_bio_degas_pct', 'loop1_bio_degas_m3h', 'loop1_link_bio_degas',
-    'loop2_flow_source', 'loop2_filtration', 'loop2_flow_pct', 'loop2_bio_degas_pct',
-    'loop2_bio_degas_m3h', 'loop2_link_bio_degas', 'loop3_flow_source', 'loop3_filtration',
-    'loop3_flow_pct', 'loop3_bio_degas_pct', 'loop3_bio_degas_m3h', 'loop3_link_bio_degas'],
+    'loop2_name', 'loop2_flow_source', 'loop2_filtration', 'loop2_flow_pct', 'loop2_bio_degas_pct',
+    'loop2_bio_degas_m3h', 'loop2_link_bio_degas', 'loop3_name', 'loop3_flow_source', 'loop3_filtration',
+    'loop3_flow_pct', 'loop3_bio_degas_pct', 'loop3_bio_degas_m3h', 'loop3_link_bio_degas',
+    'side_streams'],
   system_links: ['id', 'system_id', 'exhibit_id', 'link_type', 'flow_allocation_m3h', 'notes',
     'sort_order', 'allocation_source', 'allocation_updated_at'],
 };
