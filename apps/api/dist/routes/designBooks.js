@@ -55,9 +55,12 @@ async function attachSystemSideStreams(runner, systems) {
     const rows = (await runner(`SELECT * FROM system_flow_side_streams
      WHERE system_id = ANY($1::uuid[])
      ORDER BY parent_loop_number, sort_order, created_at, id`, [systems.map(system => system.id)])).rows;
+    const fractionators = (await runner(`SELECT * FROM system_flow_fractionator_allocations
+     WHERE system_id = ANY($1::uuid[]) ORDER BY parent_loop_number`, [systems.map(system => system.id)])).rows;
     return systems.map(system => ({
         ...system,
         side_streams: rows.filter(stream => stream.system_id === system.id),
+        fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
     }));
 }
 function nullableSpeciesNumber(value, label, allowZero = false) {
@@ -117,6 +120,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         const tankResult = await runner(`SELECT t.*,
          t.gross_volume_m3 AS project_gross_volume_m3,
          t.operating_volume_m3 AS project_operating_volume_m3,
+         pm.operating_volume_m3 AS pim_operating_volume_m3,
          pm.product_code AS pim_product_code,
          pm.product_name AS pim_product_name,
          tf.name AS pim_tank_family_name,
@@ -180,7 +184,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
     const compactUnits = compactUnitIds.length
         ? (await runner('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
         : [];
-    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, links.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculatedAt, system.side_streams || []));
+    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, links.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculatedAt, system.side_streams || [], system.fractionator_allocations || []));
     const liveContext = {
         ...book,
         exhibits,
@@ -286,6 +290,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         const tkResult = await (0, index_1.query)(`SELECT t.*,
         t.gross_volume_m3 as project_gross_volume_m3,
         t.operating_volume_m3 as project_operating_volume_m3,
+        pm.operating_volume_m3 as pim_operating_volume_m3,
         e.exhibit_name, e.water_type as exhibit_water_type,
         s.system_code, s.system_name,
         pm.product_code, pm.product_name as product_name,
@@ -401,7 +406,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
     const compactUnits = compactUnitIds.length > 0
         ? (await (0, index_1.query)('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
         : [];
-    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, systemLinks.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculationTimestamp, system.side_streams || []));
+    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, systemLinks.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculationTimestamp, system.side_streams || [], system.fractionator_allocations || []));
     const livePackage = {
         exhibits,
         tanks,

@@ -54,7 +54,12 @@ const state = vitest_1.vi.hoisted(() => ({
         loop2_bio_degas_pct: null,
         loop3_flow_pct: null,
         loop3_bio_degas_pct: null,
+        loop1_filtration: 'Sand Filter',
+        loop2_filtration: 'Pressurized Bag Filter',
+        loop3_filtration: null,
+        design_flow_m3h: '100',
     },
+    fractionatorCatalog: [],
 }));
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (sql, params = []) => {
@@ -66,6 +71,12 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [{ ...state.currentSystem }] };
         }
         if (sql.includes('FROM system_flow_side_streams')) {
+            return { rows: [] };
+        }
+        if (sql.includes("pf.product_family_code='PFM-FF'")) {
+            return { rows: state.fractionatorCatalog };
+        }
+        if (sql.includes('FROM system_flow_fractionator_allocations')) {
             return { rows: [] };
         }
         if (sql.includes('SELECT DISTINCT water_type FROM exhibits')) {
@@ -161,6 +172,8 @@ const basePayload = {
         state.currentSystem.loop1_bio_degas_pct = '25';
         state.currentSystem.loop2_flow_pct = null;
         state.currentSystem.loop2_bio_degas_pct = null;
+        state.currentSystem.loop1_filtration = 'Sand Filter';
+        state.fractionatorCatalog = [];
     });
     (0, vitest_1.afterAll)(() => {
         delete process.env.JWT_SECRET;
@@ -199,6 +212,68 @@ const basePayload = {
         const update = state.calls.find(call => call.sql.includes('UPDATE systems SET'));
         (0, vitest_1.expect)(update?.params[11]).toBe(40);
         (0, vitest_1.expect)(update?.params[12]).toBe(25);
+    });
+    (0, vitest_1.it)('persists Foam Fractionator snapshots and status against the parent loop', async () => {
+        state.fractionatorCatalog = [{
+                id: '11111111-1111-4111-8111-111111111111',
+                product_code: 'PM-FF-800',
+                product_name: 'Foam Fractionator FF-800',
+                diameter_mm: '800',
+            }];
+        const response = await request(app, {
+            ...basePayload,
+            water_type: 'Marine',
+            loop1_filtration: 'Foam Fractionation',
+            loop1_flow_pct: 36,
+            fractionator_allocations: [{
+                    parent_loop_number: 1,
+                    process_rate_ls_m2: 20,
+                    notes: 'Duty allocation',
+                    products: [{
+                            product_master_id: '11111111-1111-4111-8111-111111111111',
+                            quantity: 2,
+                        }],
+                }],
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const insert = state.calls.find(call => call.sql.includes('INSERT INTO system_flow_fractionator_allocations'));
+        (0, vitest_1.expect)(insert?.params[1]).toBe(1);
+        (0, vitest_1.expect)(insert?.params[2]).toBe(20);
+        (0, vitest_1.expect)(JSON.parse(insert?.params[4])).toEqual([vitest_1.expect.objectContaining({
+                product_code: 'PM-FF-800',
+                diameter_mm: 800,
+                quantity: 2,
+            })]);
+        (0, vitest_1.expect)(['matched', 'required_above_capacity', 'capacity_above_required'])
+            .toContain(insert?.params[5]);
+    });
+    (0, vitest_1.it)('rejects products outside the Foam Fractionator family', async () => {
+        const response = await request(app, {
+            ...basePayload,
+            water_type: 'Marine',
+            loop1_filtration: 'Foam Fractionation',
+            loop1_flow_pct: 50,
+            fractionator_allocations: [{
+                    parent_loop_number: 1,
+                    process_rate_ls_m2: 20,
+                    products: [{
+                            product_master_id: '22222222-2222-4222-8222-222222222222',
+                            quantity: 1,
+                        }],
+                }],
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.message).toContain('not a Foam Fractionator');
+    });
+    (0, vitest_1.it)('rejects Foam Fractionation on freshwater systems through the API', async () => {
+        const response = await request(app, {
+            ...basePayload,
+            loop1_filtration: 'Foam Fractionation',
+            loop1_flow_pct: 50,
+            fractionator_allocations: [],
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.message).toContain('only available for Marine or Salt Water');
     });
     (0, vitest_1.it)('rejects individual percentages outside the allowed range', async () => {
         const response = await request(app, {
@@ -247,19 +322,35 @@ const basePayload = {
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
     });
-    (0, vitest_1.it)('rejects side streams whose combined parent percentage exceeds 100 percent', async () => {
+    (0, vitest_1.it)('persists multiple independent 100 percent side streams under one parent', async () => {
         const response = await request(app, {
             ...basePayload,
             side_streams: [
-                { parent_loop_number: 2, name: 'Thermal', preset: 'Thermal', flow_pct: 60 },
-                { parent_loop_number: 2, name: 'UV', preset: 'UV', flow_pct: 45 },
+                { parent_loop_number: 2, name: 'Thermal', preset: 'Thermal', flow_pct: 100 },
+                { parent_loop_number: 2, name: 'UV', preset: 'UV', flow_pct: 100 },
             ],
         });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const inserts = state.calls.filter(call => call.sql.includes('INSERT INTO system_flow_side_streams'));
+        (0, vitest_1.expect)(inserts).toHaveLength(2);
+        (0, vitest_1.expect)(inserts.map(insert => insert.params[4])).toEqual([100, 100]);
+    });
+    (0, vitest_1.it)('preserves saved loop names when a partial update omits them', async () => {
+        state.currentSystem.loop1_name = 'Main Filtration';
+        state.currentSystem.loop2_name = 'Polishing';
+        state.currentSystem.loop3_name = 'Reserve';
+        const response = await request(app, basePayload);
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const nameUpdate = state.calls.find(call => call.sql.includes('loop1_name=$2'));
+        (0, vitest_1.expect)(nameUpdate?.params.slice(1)).toEqual(['Main Filtration', 'Polishing', 'Reserve']);
+    });
+    vitest_1.it.each([
+        ['', 'Loop 1 name is required.'],
+        ['x'.repeat(256), 'Loop 1 name must be 255 characters or fewer.'],
+    ])('rejects invalid loop names', async (loop1Name, message) => {
+        const response = await request(app, { ...basePayload, loop1_name: loop1Name });
         (0, vitest_1.expect)(response.status).toBe(400);
-        (0, vitest_1.expect)(response.body.error).toEqual({
-            code: 'VALIDATION',
-            message: 'Side streams under Loop 2 total 105.0%. Reduce them to 100% or less.',
-        });
+        (0, vitest_1.expect)(response.body.error).toEqual({ code: 'VALIDATION', message });
         (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(false);
     });
 });

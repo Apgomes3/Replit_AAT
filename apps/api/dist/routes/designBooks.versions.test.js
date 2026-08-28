@@ -119,6 +119,7 @@ const baseContext = () => ({
             }
             if (sql.includes('FROM tanks t')) {
                 (0, vitest_1.expect)(sql).toContain('LEFT JOIN product_masters');
+                (0, vitest_1.expect)(sql).toContain('pm.operating_volume_m3 AS pim_operating_volume_m3');
                 (0, vitest_1.expect)(sql).toContain('COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm');
                 (0, vitest_1.expect)(sql).toContain('t.surface_area_m2');
                 (0, vitest_1.expect)(sql).toContain('pm.surface_area_m2');
@@ -144,6 +145,11 @@ const baseContext = () => ({
         });
         (0, vitest_1.expect)(context.engineering_calculations.exhibits[0].results).toMatchObject({
             operating_volume_m3: 52.5,
+        });
+        (0, vitest_1.expect)(context.engineering_calculations.exhibits[0].aat_reference).toMatchObject({
+            status: 'valid',
+            inputs: { effective_operating_volume_m3: 52.5 },
+            results: { recommended_flow_m3h: vitest_1.expect.any(Number) },
         });
         Object.assign(tankRow, {
             eff_shape: 'Custom',

@@ -7,8 +7,10 @@
  * any engineering logic of its own.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.roundEngineering = exports.FLOW_DECIMALS = exports.VOLUME_DECIMALS = exports.ALLOCATION_TOLERANCE_PCT = exports.FLOW_UNIT = exports.TURNOVER_UNIT = exports.AQUARIUM_CALCULATION_VERSION = void 0;
+exports.calculateAATRecommendedFlow = exports.roundEngineering = exports.AAT_TURNOVER_DECIMALS = exports.AAT_TIME_MINUTES_DECIMALS = exports.AAT_TARGET_TIME_DECIMALS = exports.FOAM_FRACTIONATOR_MATCH_TOLERANCE_PCT = exports.FLOW_DECIMALS = exports.VOLUME_DECIMALS = exports.ALLOCATION_TOLERANCE_PCT = exports.FLOW_UNIT = exports.TURNOVER_UNIT = exports.AQUARIUM_CALCULATION_VERSION = void 0;
+exports.calculateAatRecommendedFlow = calculateAatRecommendedFlow;
 exports.calculateSideStreamFlow = calculateSideStreamFlow;
+exports.calculateFoamFractionatorCapacity = calculateFoamFractionatorCapacity;
 exports.compatibleWaterTypes = compatibleWaterTypes;
 exports.calculateTankOperatingVolume = calculateTankOperatingVolume;
 exports.calculateExhibitHydraulics = calculateExhibitHydraulics;
@@ -20,6 +22,17 @@ exports.FLOW_UNIT = 'm3_per_hour';
 exports.ALLOCATION_TOLERANCE_PCT = 0.01;
 exports.VOLUME_DECIMALS = 4;
 exports.FLOW_DECIMALS = 3;
+exports.FOAM_FRACTIONATOR_MATCH_TOLERANCE_PCT = 5;
+exports.AAT_TARGET_TIME_DECIMALS = 6;
+exports.AAT_TIME_MINUTES_DECIMALS = 2;
+exports.AAT_TURNOVER_DECIMALS = 3;
+const AAT_SMALL_VOLUME_THRESHOLD_M3 = 1;
+const AAT_LARGE_VOLUME_THRESHOLD_M3 = 100;
+const AAT_SMALL_VOLUME_TIME_HOURS = 0.25;
+const AAT_MID_VOLUME_TIME_COEFFICIENT = 0.2265939594;
+const AAT_MID_VOLUME_TIME_EXPONENT = 0.3478773096;
+const AAT_LARGE_VOLUME_TIME_COEFFICIENT = 0.8850796805;
+const AAT_LARGE_VOLUME_TIME_EXPONENT = 0.04959964583;
 const numberOrNull = (value) => {
     const result = Number(value);
     return Number.isFinite(result) ? result : null;
@@ -30,6 +43,90 @@ const positiveOrNull = (value) => {
 };
 const roundEngineering = (value, decimals) => value == null || !Number.isFinite(value) ? null : Number(value.toFixed(decimals));
 exports.roundEngineering = roundEngineering;
+/**
+ * Calculates the AAT reference flow from net/effective exhibit operating
+ * volume.  This is advisory only: it is deliberately independent of the
+ * designer's saved target turnover rate.
+ */
+function calculateAatRecommendedFlow(effectiveOperatingVolumeM3, calculatedAt = new Date().toISOString()) {
+    const parsedVolume = positiveOrNull(effectiveOperatingVolumeM3);
+    const roundedVolume = (0, exports.roundEngineering)(parsedVolume, exports.VOLUME_DECIMALS);
+    const volume = roundedVolume != null && roundedVolume > 0 ? roundedVolume : null;
+    const rule = {
+        volume_unit: 'm3',
+        turnover_time_unit: 'hours',
+        turnover_rate_unit: exports.TURNOVER_UNIT,
+        flow_unit: exports.FLOW_UNIT,
+        below_volume_m3: AAT_SMALL_VOLUME_THRESHOLD_M3,
+        below_volume_target_turnover_time_hours: AAT_SMALL_VOLUME_TIME_HOURS,
+        first_power_curve: {
+            minimum_volume_m3: AAT_SMALL_VOLUME_THRESHOLD_M3,
+            maximum_volume_m3: AAT_LARGE_VOLUME_THRESHOLD_M3,
+            maximum_is_exclusive: true,
+            coefficient: AAT_MID_VOLUME_TIME_COEFFICIENT,
+            exponent: AAT_MID_VOLUME_TIME_EXPONENT,
+        },
+        second_power_curve: {
+            minimum_volume_m3: AAT_LARGE_VOLUME_THRESHOLD_M3,
+            maximum_volume_m3: null,
+            maximum_is_exclusive: false,
+            coefficient: AAT_LARGE_VOLUME_TIME_COEFFICIENT,
+            exponent: AAT_LARGE_VOLUME_TIME_EXPONENT,
+        },
+    };
+    const base = {
+        calculation_version: exports.AQUARIUM_CALCULATION_VERSION,
+        calculated_at: calculatedAt,
+        freshness: 'fresh',
+        is_stale: false,
+        inputs: {
+            effective_operating_volume_m3: volume,
+        },
+        formula: 'target turnover time T = 0.25 h when V < 1 m³; T = 0.2265939594 × V^0.3478773096 h when 1 m³ ≤ V < 100 m³; T = 0.8850796805 × V^0.04959964583 h when V ≥ 100 m³; recommended flow = V ÷ T; recommended turnover = 1 ÷ T',
+        rule,
+        units: {
+            volume: 'm³',
+            turnover_time: 'hours',
+            turnover_rate: exports.TURNOVER_UNIT,
+            flow: exports.FLOW_UNIT,
+        },
+        rounding: `Effective operating volume is rounded to ${exports.VOLUME_DECIMALS} decimals m³ before selecting and evaluating the AAT rule; turnover time is rounded to ${exports.AAT_TARGET_TIME_DECIMALS} decimals hours and ${exports.AAT_TIME_MINUTES_DECIMALS} decimals minutes; turnover rate and flow are rounded to ${exports.AAT_TURNOVER_DECIMALS} and ${exports.FLOW_DECIMALS} decimals respectively.`,
+    };
+    if (volume == null) {
+        return {
+            ...base,
+            status: 'invalid',
+            reasons: ['AAT reference is unavailable because net/effective operating volume is missing or invalid.'],
+            results: {
+                target_turnover_time_hours: null,
+                target_turnover_time_minutes: null,
+                recommended_turnover_rate_cycles_per_hour: null,
+                recommended_flow_m3h: null,
+            },
+        };
+    }
+    const targetTurnoverTimeHours = volume < AAT_SMALL_VOLUME_THRESHOLD_M3
+        ? AAT_SMALL_VOLUME_TIME_HOURS
+        : volume < AAT_LARGE_VOLUME_THRESHOLD_M3
+            ? AAT_MID_VOLUME_TIME_COEFFICIENT * Math.pow(volume, AAT_MID_VOLUME_TIME_EXPONENT)
+            : AAT_LARGE_VOLUME_TIME_COEFFICIENT * Math.pow(volume, AAT_LARGE_VOLUME_TIME_EXPONENT);
+    const recommendedTurnoverRate = 1 / targetTurnoverTimeHours;
+    const recommendedFlow = volume / targetTurnoverTimeHours;
+    return {
+        ...base,
+        status: 'valid',
+        reasons: [],
+        results: {
+            target_turnover_time_hours: (0, exports.roundEngineering)(targetTurnoverTimeHours, exports.AAT_TARGET_TIME_DECIMALS),
+            target_turnover_time_minutes: (0, exports.roundEngineering)(targetTurnoverTimeHours * 60, exports.AAT_TIME_MINUTES_DECIMALS),
+            recommended_turnover_rate_cycles_per_hour: (0, exports.roundEngineering)(recommendedTurnoverRate, exports.AAT_TURNOVER_DECIMALS),
+            recommended_flow_m3h: (0, exports.roundEngineering)(recommendedFlow, exports.FLOW_DECIMALS),
+        },
+    };
+}
+// Keep the acronym-readable spelling available to callers that use AAT as a
+// proper initialism while preserving the project's existing camel-case style.
+exports.calculateAATRecommendedFlow = calculateAatRecommendedFlow;
 function calculateSideStreamFlow(systemFlowM3h, parentLoopPct, sideStreamPct) {
     if (systemFlowM3h == null || systemFlowM3h === '' ||
         parentLoopPct == null || parentLoopPct === '' ||
@@ -43,6 +140,80 @@ function calculateSideStreamFlow(systemFlowM3h, parentLoopPct, sideStreamPct) {
         branchPct == null || branchPct < 0 || branchPct > 100)
         return null;
     return (0, exports.roundEngineering)(systemFlow * parentPct / 100 * branchPct / 100, exports.FLOW_DECIMALS);
+}
+function calculateFoamFractionatorCapacity(parentLoopFlowM3h, processRateLsM2, products) {
+    const parentFlowM3h = parentLoopFlowM3h == null || parentLoopFlowM3h === ''
+        ? null
+        : numberOrNull(parentLoopFlowM3h);
+    const processRate = positiveOrNull(processRateLsM2);
+    const selectedProducts = Array.isArray(products) ? products.map(product => {
+        const quantity = Number(product?.quantity);
+        const diameterMm = positiveOrNull(product?.diameter_mm);
+        const unitAreaM2 = diameterMm == null ? null : Math.PI * Math.pow(diameterMm / 2000, 2);
+        return {
+            product_master_id: product?.product_master_id || null,
+            product_code: product?.product_code || null,
+            product_name: product?.product_name || null,
+            quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 0,
+            diameter_mm: diameterMm,
+            unit_area_m2: (0, exports.roundEngineering)(unitAreaM2, exports.VOLUME_DECIMALS),
+            total_area_m2: unitAreaM2 == null || !(quantity > 0)
+                ? null
+                : (0, exports.roundEngineering)(unitAreaM2 * quantity, exports.VOLUME_DECIMALS),
+        };
+    }) : [];
+    const reasons = [];
+    if (parentFlowM3h == null || parentFlowM3h < 0)
+        reasons.push('Parent loop allocation is unavailable.');
+    if (!selectedProducts.length)
+        reasons.push('Select at least one Foam Fractionator.');
+    if (selectedProducts.some(product => product.quantity <= 0))
+        reasons.push('Every selected fractionator requires a positive whole-number quantity.');
+    if (selectedProducts.some(product => product.diameter_mm == null))
+        reasons.push('Every selected fractionator requires a valid saved diameter.');
+    if (processRate == null)
+        reasons.push('Enter an AAT process rate greater than zero.');
+    const totalArea = !selectedProducts.length
+        || reasons.some(reason => reason.includes('diameter') || reason.includes('quantity'))
+        ? null
+        : selectedProducts.reduce((sum, product) => sum + Math.PI * Math.pow(Number(product.diameter_mm) / 2000, 2) * product.quantity, 0);
+    const parentFlowLs = parentFlowM3h == null ? null : parentFlowM3h / 3.6;
+    const capacityLs = totalArea == null || processRate == null ? null : totalArea * processRate;
+    const actualLoading = totalArea == null || totalArea <= 0 || parentFlowLs == null
+        ? null
+        : parentFlowLs / totalArea;
+    let matchStatus = 'incomplete';
+    if (!reasons.length && capacityLs != null && parentFlowLs != null) {
+        const tolerance = Math.max(capacityLs, parentFlowLs) * exports.FOAM_FRACTIONATOR_MATCH_TOLERANCE_PCT / 100;
+        matchStatus = Math.abs(capacityLs - parentFlowLs) <= tolerance
+            ? 'matched'
+            : parentFlowLs > capacityLs
+                ? 'required_above_capacity'
+                : 'capacity_above_required';
+    }
+    return {
+        status: reasons.length ? 'invalid' : 'valid',
+        match_status: matchStatus,
+        reasons,
+        advisory: processRate != null && (processRate < 18 || processRate > 22)
+            ? 'Selected process rate is outside the recommended AAT range of 18–22 L/s/m².'
+            : null,
+        inputs: {
+            process_rate_ls_m2: processRate,
+            recommended_process_rate_ls_m2: { minimum: 18, maximum: 22 },
+            parent_loop_flow_m3h: (0, exports.roundEngineering)(parentFlowM3h, exports.FLOW_DECIMALS),
+            products: selectedProducts,
+        },
+        results: {
+            selected_count: selectedProducts.reduce((sum, product) => sum + product.quantity, 0),
+            total_area_m2: (0, exports.roundEngineering)(totalArea, exports.VOLUME_DECIMALS),
+            parent_loop_flow_ls: (0, exports.roundEngineering)(parentFlowLs, exports.FLOW_DECIMALS),
+            capacity_ls: (0, exports.roundEngineering)(capacityLs, exports.FLOW_DECIMALS),
+            capacity_m3h: (0, exports.roundEngineering)(capacityLs == null ? null : capacityLs * 3.6, exports.FLOW_DECIMALS),
+            actual_loading_ls_m2: (0, exports.roundEngineering)(actualLoading, exports.FLOW_DECIMALS),
+        },
+        formula: 'area = Σ(quantity × π × (diameter ÷ 2)²); capacity = total area × process rate; actual loading = parent loop flow ÷ total area',
+    };
 }
 function compatibleWaterTypes(left, right) {
     if (!left || !right)
@@ -69,6 +240,9 @@ function dimension(tank, key) {
  */
 function calculateTankOperatingVolume(tank) {
     const shape = String(tank?.eff_shape || tank?.shape_type || '').toLowerCase();
+    const projectStoredVolume = positiveOrNull(tank?.project_operating_volume_m3 ?? tank?.operating_volume_m3);
+    const pimStoredVolume = positiveOrNull(tank?.pim_operating_volume_m3);
+    const storedOperatingVolume = projectStoredVolume ?? pimStoredVolume;
     const wall = positiveOrNull(tank?.wall_thickness_mm) || 0;
     const outerLength = dimension(tank, 'eff_length_mm') ?? dimension(tank, 'length_mm');
     const outerWidth = dimension(tank, 'eff_width_mm') ?? dimension(tank, 'width_mm');
@@ -86,9 +260,16 @@ function calculateTankOperatingVolume(tank) {
     let footprintArea = null;
     let formula = '';
     if (shape === 'custom') {
-        calculated = positiveOrNull(tank?.operating_volume_m3 ?? tank?.design_volume_m3);
+        calculated = storedOperatingVolume ?? positiveOrNull(tank?.design_volume_m3);
         footprintArea = positiveOrNull(tank?.surface_area_m2);
         formula = 'Stored operating volume (custom tank)';
+    }
+    else if (storedOperatingVolume != null) {
+        calculated = storedOperatingVolume;
+        footprintArea = positiveOrNull(tank?.surface_area_m2);
+        formula = projectStoredVolume != null
+            ? 'Stored project-tank operating volume'
+            : 'Stored PIM tank operating volume';
     }
     else if (shape === 'cylindrical' && innerWidth != null && innerWidth > 0 &&
         operatingHeight != null && operatingHeight > 0) {
@@ -114,7 +295,7 @@ function calculateTankOperatingVolume(tank) {
         return {
             value_m3: (0, exports.roundEngineering)(calculated, exports.VOLUME_DECIMALS),
             footprint_area_m2: (0, exports.roundEngineering)(footprintArea, exports.VOLUME_DECIMALS),
-            source: footprintArea == null ? 'stored' : 'dimensions',
+            source: formula.startsWith('Stored') ? 'stored' : 'dimensions',
             formula,
             inputs: {
                 shape: shape || null,
@@ -174,6 +355,7 @@ function calculateExhibitHydraulics(exhibit, tanks, hydraulics, substrate, calcu
     const themingResult = displacementVolume(substrate, 'theming', footprintArea, rawOperating);
     const displaced = substrateResult.value_m3 + themingResult.value_m3;
     const effectiveOperating = Math.max(0, rawOperating - displaced);
+    const aatReference = calculateAatRecommendedFlow(effectiveOperating, calculatedAt);
     const turnover = positiveOrNull(hydraulics?.target_turnover_rate);
     const surfacePct = numberOrNull(hydraulics?.surface_skim_pct) ?? 30;
     const bottomPct = numberOrNull(hydraulics?.bottom_drain_pct) ?? 70;
@@ -235,6 +417,7 @@ function calculateExhibitHydraulics(exhibit, tanks, hydraulics, substrate, calcu
             substrate_source: substrateResult.source,
             theming_volume_m3: (0, exports.roundEngineering)(themingResult.value_m3, exports.VOLUME_DECIMALS),
             theming_source: themingResult.source,
+            aat_reference_volume_m3: aatReference.inputs.effective_operating_volume_m3,
             target_turnover_rate_cycles_per_hour: turnover,
             surface_skim_pct: surfacePct,
             bottom_drain_pct: bottomPct,
@@ -246,6 +429,7 @@ function calculateExhibitHydraulics(exhibit, tanks, hydraulics, substrate, calcu
             bottom_drain_flow_m3h: (0, exports.roundEngineering)(bottomFlow, exports.FLOW_DECIMALS),
             allocation_total_pct: (0, exports.roundEngineering)(allocationTotal, 2),
         },
+        aat_reference: aatReference,
         formula: 'effective operating volume = gross operating volume − substrate displacement − theming displacement; return flow = effective operating volume × turnover',
         rounding: `Volumes rounded to ${exports.VOLUME_DECIMALS} decimals m³; flows rounded to ${exports.FLOW_DECIMALS} decimals m³/h.`,
     };
@@ -289,7 +473,7 @@ function evaluateCompactUnit(unit, waterType, operatingVolumeM3, requiredFlowM3h
         },
     };
 }
-function calculateSystemEngineering(system, links, exhibitCalculations, compactUnit, calculatedAt = new Date().toISOString(), sideStreams = system?.side_streams || []) {
+function calculateSystemEngineering(system, links, exhibitCalculations, compactUnit, calculatedAt = new Date().toISOString(), sideStreams = system?.side_streams || [], fractionatorAllocations = system?.fractionator_allocations || []) {
     const linked = (links || []).map(link => {
         const exhibit = exhibitCalculations.find(calc => calc.inputs.exhibit_id === link.exhibit_id);
         const required = exhibit?.results.total_return_flow_m3h ?? null;
@@ -362,8 +546,29 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
                     ? 'Parent loop allocation is unavailable.'
                     : null,
             })),
+            foam_fractionation: String(system?.[`loop${loopNumber}_filtration`] || '') === 'Foam Fractionation'
+                ? (() => {
+                    const allocation = fractionatorAllocations.find(item => Number(item.parent_loop_number) === loopNumber);
+                    return {
+                        allocation_id: allocation?.id || null,
+                        notes: allocation?.notes || null,
+                        ...calculateFoamFractionatorCapacity(parentFlow, allocation?.process_rate_ls_m2, allocation?.products || []),
+                    };
+                })()
+                : null,
         };
     });
+    for (const loop of flowRoute) {
+        const foam = loop.foam_fractionation;
+        if (!foam)
+            continue;
+        if (foam.match_status === 'incomplete') {
+            reasons.push(`${loop.name} Foam Fractionator capacity is incomplete: ${foam.reasons.join(' ')}`);
+        }
+        else if (foam.match_status === 'required_above_capacity') {
+            reasons.push(`${loop.name} required flow is above the selected Foam Fractionator capacity.`);
+        }
+    }
     return {
         calculation_version: exports.AQUARIUM_CALCULATION_VERSION,
         calculated_at: calculatedAt,
