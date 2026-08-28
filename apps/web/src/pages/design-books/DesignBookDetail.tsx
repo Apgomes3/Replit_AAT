@@ -786,8 +786,10 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
 
   const flowVal = parseFloat(form.design_flow_m3h);
   const turnoverVal = parseFloat(form.turnover_rate_hr);
-  const isFlowOverridden  = computedFlow     !== null && form.design_flow_m3h  !== '' && Math.abs(flowVal     - computedFlow)     > 0.005;
-  const isTurnoverOverridden = computedTurnover !== null && form.turnover_rate_hr !== '' && Math.abs(turnoverVal - computedTurnover) > 0.005;
+  const isFlowOverridden = form.design_flow_m3h !== '' &&
+    (computedFlow === null || Math.abs(flowVal - computedFlow) > 0.005);
+  const isTurnoverOverridden = form.turnover_rate_hr !== '' &&
+    (computedTurnover === null || Math.abs(turnoverVal - computedTurnover) > 0.005);
 
   const handleSave = async () => {
     if (!form.system_code.trim() || !form.system_name.trim()) {
@@ -803,8 +805,10 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
         status:              form.status              || 'Draft',
         project_id:          projectId,
         exhibit_id:          form.exhibit_id          || null,
-        design_flow_m3h:     form.design_flow_m3h     ? parseFloat(form.design_flow_m3h)     : null,
-        turnover_rate_hr:    form.turnover_rate_hr    ? parseFloat(form.turnover_rate_hr)    : null,
+        design_flow_m3h:     isFlowOverridden && form.design_flow_m3h ? parseFloat(form.design_flow_m3h) : null,
+        turnover_rate_hr:    isTurnoverOverridden && form.turnover_rate_hr ? parseFloat(form.turnover_rate_hr) : null,
+        design_flow_source:  isFlowOverridden ? 'manual_override' : 'linked_exhibits',
+        turnover_source:     isTurnoverOverridden ? 'manual_override' : 'primary_exhibit',
         duty_description:    form.duty_description    || null,
         redundancy_strategy: form.redundancy_strategy || null,
       });
@@ -983,6 +987,9 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
 function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () => void; readOnly?: boolean }) {
   const navigate = useNavigate();
   const systems: any[] = book.systems || [];
+  const calculations: any[] = book.engineering_calculations?.systems || [];
+  const calculationFor = (systemId: string) =>
+    calculations.find((item: any) => item.inputs?.system_id === systemId) ?? null;
 
   if (!book.project_id) {
     return (
@@ -1021,7 +1028,10 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
   }
 
   // Aggregate stats
-  const totalFlow = systems.reduce((s, sys) => s + (parseFloat(sys.design_flow_m3h) || 0), 0);
+  const totalFlow = systems.reduce((sum, system) => {
+    const calculation = calculationFor(system.id);
+    return sum + (Number(calculation?.results?.design_flow_m3h) || 0);
+  }, 0);
   const activeSystems = systems.filter(s => s.status === 'Active' || s.status === 'Released').length;
   const totalEquipment = systems.reduce((s, sys) => s + (parseInt(sys.equipment_count) || 0), 0);
 
@@ -1086,8 +1096,12 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
               </tr>
             </thead>
             <tbody>
-              {systems.map((sys: any) => (
-                <tr
+              {systems.map((sys: any) => {
+                const calculation = calculationFor(sys.id);
+                const flow = calculation?.results?.design_flow_m3h ?? null;
+                const turnover = calculation?.results?.turnover_rate_cycles_per_hour ?? null;
+                const overridden = calculation?.inputs?.design_flow_source === 'manual_override';
+                return <tr
                   key={sys.id}
                   onClick={() => navigate(`/design-books/${book.id}/lss/${sys.id}`)}
                   className="border-t border-stone-100 hover:bg-blue-50/40 cursor-pointer transition-colors group"
@@ -1099,8 +1113,13 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
                   <td className="px-4 py-2.5"><SystemTypeBadge type={sys.system_type} /></td>
                   <td className="px-4 py-2.5"><SystemConfigBadge config={sys.system_config} /></td>
                   <td className="px-4 py-2.5"><WaterTypeBadge type={sys.water_type} /></td>
-                  <td className="px-4 py-2.5 text-right">{fmtNum(sys.design_flow_m3h)}</td>
-                  <td className="px-4 py-2.5 text-right">{fmtNum(sys.turnover_rate_hr)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {fmtNum(flow)}
+                    <span className={`block text-[10px] ${overridden ? 'text-amber-700' : 'text-stone-400'}`}>
+                      {overridden ? 'manual override' : flow != null ? 'linked exhibits' : 'unavailable'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right">{fmtNum(turnover)}</td>
                   <td className="px-4 py-2.5 text-right">
                     {parseInt(sys.equipment_count) > 0
                       ? <span className="font-mono text-xs text-stone-600">{sys.equipment_count}</span>
@@ -1110,8 +1129,8 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
                   <td className="px-4 py-2.5 text-right">
                     <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-blue-400 inline-block" />
                   </td>
-                </tr>
-              ))}
+                </tr>;
+              })}
             </tbody>
           </table>
         </div>

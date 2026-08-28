@@ -50,6 +50,34 @@ describe('Design Book release policy', () => {
     expect(checklist.every(check => check.status === 'pass')).toBe(true);
   });
 
+  it('accepts a valid linked-exhibit design flow without a stored legacy flow value', () => {
+    const context = readyContext();
+    context.systems![0].design_flow_m3h = null;
+    context.systems![0].calculation_inputs = {
+      design_flow_source: 'linked_exhibits',
+      turnover_source: 'primary_exhibit',
+    };
+    context.engineering_calculations!.systems = [{
+      status: 'valid',
+      freshness: 'fresh',
+      inputs: {
+        system_id: 'system-1',
+        design_flow_source: 'linked_exhibits',
+        turnover_source: 'primary_exhibit',
+      },
+      results: {
+        calculated_required_flow_m3h: 120,
+        design_flow_m3h: 120,
+        turnover_rate_cycles_per_hour: 4,
+      },
+    }];
+
+    const checklist = buildDesignBookReleaseChecklist(context);
+
+    expect(checklist.find(check => check.key === 'lss_configuration')?.status).toBe('pass');
+    expect(releaseBlockers(checklist)).toEqual([]);
+  });
+
   it('blocks release when required metadata and engineering records are incomplete', () => {
     const checklist = buildDesignBookReleaseChecklist({
       id: 'book-1',

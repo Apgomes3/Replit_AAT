@@ -393,6 +393,208 @@ describe('aquarium engineering calculations', () => {
     expect(system.results.flow_override_m3h).toBe(120);
   });
 
+  it('preserves manual override identity when the value equals the recommendation', () => {
+    const calculation = calculateExhibitHydraulics(
+      exhibit,
+      [tank],
+      { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-equal-override',
+        design_flow_m3h: 108,
+        turnover_rate_hr: 4,
+        calculation_inputs: {
+          design_flow_source: 'manual_override',
+          turnover_source: 'manual_override',
+        },
+      },
+      [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }],
+      [calculation],
+      null,
+    );
+
+    expect(system.status).toBe('override');
+    expect(system.inputs.design_flow_source).toBe('manual_override');
+    expect(system.inputs.turnover_source).toBe('manual_override');
+    expect(system.results.flow_override_m3h).toBe(108);
+    expect(system.results.turnover_override_cycles_per_hour).toBe(4);
+    expect(system.results.flow_override_differs_from_recommendation).toBe(false);
+    expect(system.results.turnover_override_differs_from_recommendation).toBe(false);
+  });
+
+  it('does not propagate a numeric flow from an invalid exhibit calculation', () => {
+    const invalid = calculateExhibitHydraulics(
+      exhibit,
+      [tank],
+      { target_turnover_rate: 4, surface_skim_pct: 90, bottom_drain_pct: 90 },
+      null,
+    );
+    expect(invalid.status).toBe('invalid');
+    expect(invalid.results.total_return_flow_m3h).not.toBeNull();
+
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-invalid-exhibit',
+        calculation_inputs: {
+          design_flow_source: 'linked_exhibits',
+          turnover_source: 'primary_exhibit',
+        },
+      },
+      [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }],
+      [invalid],
+      null,
+    );
+
+    expect(system.status).toBe('invalid');
+    expect(system.results.calculated_required_flow_m3h).toBeNull();
+    expect(system.results.design_flow_m3h).toBeNull();
+    expect(system.results.turnover_rate_cycles_per_hour).toBeNull();
+  });
+
+  it('keeps an explicit manual flow available when the linked recommendation is unavailable', () => {
+    const incomplete = calculateExhibitHydraulics(
+      exhibit,
+      [],
+      null,
+      null,
+    );
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-unavailable-override',
+        design_flow_m3h: 75,
+        calculation_inputs: {
+          design_flow_source: 'manual_override',
+          turnover_source: 'primary_exhibit',
+        },
+      },
+      [{ id: 'link-1', exhibit_id: exhibit.id, link_type: 'Primary' }],
+      [incomplete],
+      null,
+    );
+
+    expect(system.status).toBe('invalid');
+    expect(system.inputs.design_flow_source).toBe('manual_override');
+    expect(system.results.calculated_required_flow_m3h).toBeNull();
+    expect(system.results.design_flow_m3h).toBe(75);
+    expect(system.results.flow_override_m3h).toBe(75);
+  });
+
+  it('requires exactly one primary link before deriving system turnover', () => {
+    const first = calculateExhibitHydraulics(
+      exhibit,
+      [tank],
+      { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    const second = calculateExhibitHydraulics(
+      { ...exhibit, id: 'ex-2' },
+      [{ ...tank, id: 'tank-2' }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    const calculate = (linkType: string) => calculateSystemEngineering(
+      {
+        id: `sys-${linkType}`,
+        calculation_inputs: {
+          design_flow_source: 'linked_exhibits',
+          turnover_source: 'primary_exhibit',
+        },
+      },
+      [
+        { id: 'link-1', exhibit_id: exhibit.id, link_type: linkType },
+        { id: 'link-2', exhibit_id: 'ex-2', link_type: linkType },
+      ],
+      [first, second],
+      null,
+    );
+
+    const noPrimary = calculate('Secondary');
+    expect(noPrimary.status).toBe('invalid');
+    expect(noPrimary.results.turnover_rate_cycles_per_hour).toBeNull();
+    expect(noPrimary.reasons.join(' ')).toContain('Exactly one Primary');
+
+    const multiplePrimary = calculate('Primary');
+    expect(multiplePrimary.status).toBe('invalid');
+    expect(multiplePrimary.results.turnover_rate_cycles_per_hour).toBeNull();
+    expect(multiplePrimary.reasons.join(' ')).toContain('Multiple Primary');
+  });
+
+  it('sums current linked exhibit flows without splitting the system design flow', () => {
+    const first = calculateExhibitHydraulics(
+      { id: 'ex-1', water_type: 'Marine' },
+      [{ ...tank, id: 'tank-1' }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      { substrate_volume_m3: 2 },
+    );
+    const second = calculateExhibitHydraulics(
+      { id: 'ex-2', water_type: 'Marine' },
+      [{ ...tank, id: 'tank-2', eff_length_mm: 2000, eff_width_mm: 1000 }],
+      { target_turnover_rate: 3, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-linked',
+        design_flow_m3h: 999,
+        turnover_rate_hr: 9,
+        calculation_inputs: {
+          design_flow_source: 'linked_exhibits',
+          turnover_source: 'primary_exhibit',
+        },
+      },
+      [
+        { id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' },
+        { id: 'link-2', exhibit_id: 'ex-2', link_type: 'Secondary' },
+      ],
+      [first, second],
+      null,
+    );
+
+    expect(system.allocations.map((item: any) => item.required_flow_m3h))
+      .toEqual([50, 10.8]);
+    expect(system.results.calculated_required_flow_m3h).toBe(60.8);
+    expect(system.results.design_flow_m3h).toBe(60.8);
+    expect(system.results.turnover_rate_cycles_per_hour).toBe(2);
+    expect(system.results.flow_override_m3h).toBeNull();
+  });
+
+  it('reports linked system flow as unavailable when any exhibit hydraulics are incomplete', () => {
+    const valid = calculateExhibitHydraulics(
+      exhibit,
+      [tank],
+      { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    const incomplete = calculateExhibitHydraulics(
+      { id: 'ex-2', water_type: 'Marine' },
+      [],
+      null,
+      null,
+    );
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-incomplete',
+        calculation_inputs: {
+          design_flow_source: 'linked_exhibits',
+          turnover_source: 'primary_exhibit',
+        },
+      },
+      [
+        { id: 'link-1', exhibit_id: 'ex-1', link_type: 'Primary' },
+        { id: 'link-2', exhibit_id: 'ex-2', link_type: 'Secondary' },
+      ],
+      [valid, incomplete],
+      null,
+    );
+
+    expect(system.status).toBe('invalid');
+    expect(system.results.calculated_required_flow_m3h).toBeNull();
+    expect(system.results.design_flow_m3h).toBeNull();
+    expect(system.allocations[1].flow_unavailable_reason).toContain('incomplete');
+  });
+
   it('derives side-stream flow from the canonical parent-loop basis', () => {
     expect(calculateSideStreamFlow(120, 50, 25)).toBe(15);
     expect(calculateSideStreamFlow(120, null, 25)).toBeNull();

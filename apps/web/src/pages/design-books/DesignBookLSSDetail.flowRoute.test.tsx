@@ -803,6 +803,57 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.queryByText('Unavailable')).not.toBeInTheDocument();
   });
 
+  it('refreshes the displayed system flow when the design-book calculation changes', async () => {
+    const { queryClient, unmount } = renderFlowRoute(
+      { ...baseSystem, design_flow_m3h: null },
+      {
+        ...baseBook,
+        engineering_calculations: {
+          exhibits: [],
+          systems: [{
+            inputs: {
+              system_id: 'system-1',
+              design_flow_source: 'linked_exhibits',
+              turnover_source: 'primary_exhibit',
+            },
+            results: {
+              calculated_required_flow_m3h: 80,
+              design_flow_m3h: 80,
+              turnover_rate_cycles_per_hour: 2,
+            },
+          }],
+        },
+      },
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    expect(screen.getByText('80.0 m³/h')).toBeInTheDocument();
+
+    act(() => {
+      queryClient.setQueryData(['design-book', 'book-1'], {
+        ...baseBook,
+        engineering_calculations: {
+          exhibits: [],
+          systems: [{
+            inputs: {
+              system_id: 'system-1',
+              design_flow_source: 'linked_exhibits',
+              turnover_source: 'primary_exhibit',
+            },
+            results: {
+              calculated_required_flow_m3h: 125,
+              design_flow_m3h: 125,
+              turnover_rate_cycles_per_hour: 2.5,
+            },
+          }],
+        },
+      });
+    });
+
+    await waitFor(() => expect(screen.getByText('125.0 m³/h')).toBeInTheDocument());
+    expect(screen.getAllByText('2.5 ×/h').length).toBeGreaterThan(0);
+    unmount();
+  });
+
   it('synchronizes fractionator rate controls and only applies sizing when requested', async () => {
     const user = userEvent.setup();
     const product = {

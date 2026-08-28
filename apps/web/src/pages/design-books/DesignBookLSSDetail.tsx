@@ -729,24 +729,14 @@ export default function DesignBookLSSDetail() {
   };
 
   const startEdit = () => {
-    let flowVal     = system.design_flow_m3h  != null ? String(system.design_flow_m3h)  : '';
-    let turnoverVal = system.turnover_rate_hr != null ? String(system.turnover_rate_hr) : '';
-
-    // Auto-compute from primary exhibit when values are missing
-    if ((!flowVal || !turnoverVal) && (links as any[]).length > 0 && book) {
-      const primaryLink = (links as any[]).find((l: any) => l.link_type === 'Primary') ?? (links as any[])[0];
-      if (primaryLink) {
-        const hydr    = (book.hydraulics || []).find((h: any) => h.exhibit_id === primaryLink.exhibit_id);
-        const exTanks = (book.tanks      || []).filter((t: any) => t.exhibit_id === primaryLink.exhibit_id);
-        const opVol   = exTanks.reduce((s: number, t: any) =>
-          s + (parseFloat(t.operating_volume_m3 ?? t.design_volume_m3) || 0), 0);
-        const targetRate = parseFloat(hydr?.target_turnover_rate) || 0;
-        if (opVol > 0 && targetRate > 0) {
-          if (!flowVal)     flowVal     = (opVol * targetRate).toFixed(2);
-          if (!turnoverVal) turnoverVal = targetRate.toFixed(2);
-        }
-      }
-    }
+    const flowSource = systemCalculation?.inputs?.design_flow_source || 'linked_exhibits';
+    const turnoverSource = systemCalculation?.inputs?.turnover_source || 'primary_exhibit';
+    const flowVal = systemCalculation?.results?.design_flow_m3h != null
+      ? String(systemCalculation.results.design_flow_m3h)
+      : system.design_flow_m3h != null ? String(system.design_flow_m3h) : '';
+    const turnoverVal = systemCalculation?.results?.turnover_rate_cycles_per_hour != null
+      ? String(systemCalculation.results.turnover_rate_cycles_per_hour)
+      : system.turnover_rate_hr != null ? String(system.turnover_rate_hr) : '';
 
     setEditForm({
       system_code:         system.system_code,
@@ -755,6 +745,8 @@ export default function DesignBookLSSDetail() {
       water_type:          system.water_type  || '',
       design_flow_m3h:     flowVal,
       turnover_rate_hr:    turnoverVal,
+      design_flow_source:  flowSource,
+      turnover_source:     turnoverSource,
       status:              system.status            || 'Draft',
       duty_description:    system.duty_description  || '',
       redundancy_strategy: system.redundancy_strategy || '',
@@ -774,6 +766,8 @@ export default function DesignBookLSSDetail() {
         water_type:           editForm.water_type    || null,
         design_flow_m3h:      editForm.design_flow_m3h    ? parseFloat(editForm.design_flow_m3h)   : null,
         turnover_rate_hr:     editForm.turnover_rate_hr   ? parseFloat(editForm.turnover_rate_hr)  : null,
+        design_flow_source:   editForm.design_flow_source,
+        turnover_source:      editForm.turnover_source,
         status:               editForm.status,
         duty_description:     editForm.duty_description   || null,
         redundancy_strategy:  editForm.redundancy_strategy || null,
@@ -988,10 +982,16 @@ export default function DesignBookLSSDetail() {
   const canEdit = user?.role === 'admin' || user?.role === 'engineer';
   const readOnly = !canEdit || (!!book && !['Draft', 'In Progress'].includes(book.status));
 
-  const systemFlow = parseFloat(system.design_flow_m3h) || 0;
   const systemCalculation = book?.engineering_calculations?.systems?.find(
     (calculation: any) => calculation.inputs?.system_id === system.id,
   ) ?? null;
+  const systemFlow = Number(
+    systemCalculation?.results?.design_flow_m3h ?? system.design_flow_m3h,
+  ) || 0;
+  const systemTurnover =
+    systemCalculation?.results?.turnover_rate_cycles_per_hour ??
+    system.turnover_rate_hr ??
+    null;
   const exhibitCalculations: any[] = book?.engineering_calculations?.exhibits || [];
 
   // Values come exclusively from the API calculation contract.
@@ -1294,12 +1294,54 @@ export default function DesignBookLSSDetail() {
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Design Flow (m³/h)</label>
                 <input type="number" step="0.1" min="0" value={editForm.design_flow_m3h}
-                  onChange={e => setEF('design_flow_m3h', e.target.value)} className={inputCls} />
+                  onChange={e => setEditForm((form: any) => ({
+                    ...form,
+                    design_flow_m3h: e.target.value,
+                    design_flow_source: 'manual_override',
+                  }))} className={inputCls} />
+                <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
+                  <span className={editForm.design_flow_source === 'manual_override' ? 'text-amber-700' : 'text-blue-700'}>
+                    {editForm.design_flow_source === 'manual_override' ? 'Manual override' : 'Synced from linked exhibits'}
+                  </span>
+                  {editForm.design_flow_source === 'manual_override' && (
+                    <button type="button" className="text-blue-700 hover:underline"
+                      onClick={() => setEditForm((form: any) => ({
+                        ...form,
+                        design_flow_m3h: systemCalculation?.results?.calculated_required_flow_m3h != null
+                          ? String(systemCalculation.results.calculated_required_flow_m3h)
+                          : '',
+                        design_flow_source: 'linked_exhibits',
+                      }))}>
+                      Use linked exhibits
+                    </button>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Turnover Rate (×/h)</label>
                 <input type="number" step="0.1" min="0" value={editForm.turnover_rate_hr}
-                  onChange={e => setEF('turnover_rate_hr', e.target.value)} className={inputCls} />
+                  onChange={e => setEditForm((form: any) => ({
+                    ...form,
+                    turnover_rate_hr: e.target.value,
+                    turnover_source: 'manual_override',
+                  }))} className={inputCls} />
+                <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
+                  <span className={editForm.turnover_source === 'manual_override' ? 'text-amber-700' : 'text-blue-700'}>
+                    {editForm.turnover_source === 'manual_override' ? 'Manual override' : 'Synced from primary exhibit'}
+                  </span>
+                  {editForm.turnover_source === 'manual_override' && (
+                    <button type="button" className="text-blue-700 hover:underline"
+                      onClick={() => setEditForm((form: any) => ({
+                        ...form,
+                        turnover_rate_hr: systemCalculation?.results?.turnover_rate_cycles_per_hour != null
+                          ? String(systemCalculation.results.turnover_rate_cycles_per_hour)
+                          : '',
+                        turnover_source: 'primary_exhibit',
+                      }))}>
+                      Use primary exhibit
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             <div>
@@ -1360,19 +1402,26 @@ export default function DesignBookLSSDetail() {
               {[
                 {
                   label: 'Design Flow',
-                  value: system.design_flow_m3h != null ? `${parseFloat(system.design_flow_m3h).toFixed(1)} m³/h` : '—',
+                  value: systemFlow > 0 ? `${systemFlow.toFixed(1)} m³/h` : 'Unavailable',
+                  detail: systemCalculation?.inputs?.design_flow_source === 'manual_override'
+                    ? 'Manual override'
+                    : 'Synced from linked exhibits',
                   icon: <Gauge className="w-4 h-4 text-cyan-600" />,
                   bg: 'bg-cyan-50',
                 },
                 {
                   label: 'Turnover Rate',
-                  value: system.turnover_rate_hr != null ? `${parseFloat(system.turnover_rate_hr).toFixed(1)} ×/h` : '—',
+                  value: systemTurnover != null ? `${Number(systemTurnover).toFixed(1)} ×/h` : 'Unavailable',
+                  detail: systemCalculation?.inputs?.turnover_source === 'manual_override'
+                    ? 'Manual override'
+                    : 'Synced from primary exhibit',
                   icon: <Droplets className="w-4 h-4 text-blue-500" />,
                   bg: 'bg-blue-50',
                 },
                 {
                   label: 'Linked Exhibits',
                   value: (links as any[]).length,
+                  detail: null,
                   icon: <GitBranch className="w-4 h-4 text-violet-500" />,
                   bg: 'bg-violet-50',
                 },
@@ -1382,6 +1431,11 @@ export default function DesignBookLSSDetail() {
                   <div>
                     <div className="text-xs text-stone-500">{c.label}</div>
                     <div className="font-semibold text-stone-800 text-sm">{c.value}</div>
+                    {c.detail && (
+                      <div className={`text-[10px] ${c.detail === 'Manual override' ? 'text-amber-700' : 'text-stone-400'}`}>
+                        {c.detail}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
