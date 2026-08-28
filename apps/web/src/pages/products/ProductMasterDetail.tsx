@@ -392,6 +392,14 @@ export default function ProductMasterDetail() {
   };
 
   const handleSaveDimensions = async () => {
+    const rawDiameter = dimensionsForm.diameter_mm;
+    if (rawDiameter !== null && rawDiameter !== undefined && String(rawDiameter).trim() !== '') {
+      const diameter = Number(rawDiameter);
+      if (!Number.isFinite(diameter) || diameter < 0) {
+        toast.error('Diameter must be a finite, non-negative value');
+        return;
+      }
+    }
     setDimensionsSaving(true);
     try {
       await api.put(`/product-masters/${id}/dimensions`, dimensionsForm);
@@ -1214,17 +1222,17 @@ export default function ProductMasterDetail() {
                   </div>
                   {editingDimensions ? (
                     <div className="p-3 grid grid-cols-2 gap-2">
-                      {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['weight_kg','Weight (kg)'],['inlet_dn_mm','Inlet DN (mm)'],['outlet_dn_mm','Outlet DN (mm)']].map(([k,l]) => (
-                        <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
+                      {[['length_mm','Length (mm)'],['width_mm','Width (mm)'],['height_mm','Height (mm)'],['diameter_mm','Diameter (mm)'],['weight_kg','Weight (kg)'],['inlet_dn_mm','Inlet DN (mm)'],['outlet_dn_mm','Outlet DN (mm)']].map(([k,l]) => (
+                        <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" min={k === 'diameter_mm' ? 0 : undefined} step={k === 'diameter_mm' ? 'any' : undefined} value={dimensionsForm[k] ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
                       ))}
                       <div className="col-span-2"><label className="block text-xs text-slate-500 mb-0.5">Notes</label><input value={dimensionsForm.notes ?? ''} onChange={e => setDimensionsForm((f:any) => ({...f,notes:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
                     </div>
                   ) : (
                     <div className="p-3">
-                      {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                      {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Diameter',dimensionsData?.diameter_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
                         ? <p className="text-xs text-slate-300 text-center py-2">No dimensions recorded — click Edit to add</p>
                         : <div className="space-y-1">
-                            {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                            {[['Length',dimensionsData?.length_mm,'mm'],['Width',dimensionsData?.width_mm,'mm'],['Height',dimensionsData?.height_mm,'mm'],['Diameter',dimensionsData?.diameter_mm,'mm'],['Weight',dimensionsData?.weight_kg,'kg'],['Inlet DN',dimensionsData?.inlet_dn_mm,'mm'],['Outlet DN',dimensionsData?.outlet_dn_mm,'mm'],['Notes',dimensionsData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
                               <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
                             ))}
                           </div>}

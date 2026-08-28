@@ -69,6 +69,15 @@ vitest_1.vi.mock('../db', () => {
                     }],
             };
         }
+        if (sql.includes("SET status='Released'")) {
+            return { rows: [{ id: bookId, status: 'Released', revision: 'A' }] };
+        }
+        if (sql.includes('SELECT COALESCE(MAX(version_number)')) {
+            return { rows: [{ next: 1 }] };
+        }
+        if (sql.includes('INSERT INTO design_book_versions')) {
+            return { rows: [{ id: 'version-1', version_number: 1 }] };
+        }
         return { rows: [] };
     });
     const client = { query, release: vitest_1.vi.fn() };
@@ -101,6 +110,30 @@ function validSnapshot() {
             systems: [],
         },
     };
+}
+function snapshotWithAllocations(flowPct, bioDegasPct) {
+    const snapshot = validSnapshot();
+    snapshot.project_scopes = ['Aquarium', 'LSS'];
+    snapshot.systems = [{
+            id: 'system-1',
+            system_code: 'LSS-01',
+            system_config: 'Recirculating',
+            system_type: 'Life Support',
+            status: 'Design',
+            design_flow_m3h: 120,
+            calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
+            loop1_flow_source: 'Exhibit return',
+            loop1_filtration: 'Mechanical and biological',
+            loop1_flow_pct: flowPct,
+            loop1_bio_degas_pct: bioDegasPct,
+            loop1_bio_degas_m3h: 12,
+            loop1_link_bio_degas: true,
+        }];
+    snapshot.engineering_calculations.systems = [{
+            status: 'valid',
+            inputs: { system_id: 'system-1' },
+        }];
+    return snapshot;
 }
 function requestRelease(app, role) {
     return new Promise((resolve, reject) => {
@@ -143,6 +176,39 @@ function requestRelease(app, role) {
             });
             req.on('error', reject);
             req.write(payload);
+            req.end();
+        });
+    });
+}
+function requestPreflight(app) {
+    return new Promise((resolve, reject) => {
+        const server = app.listen(0, '127.0.0.1', () => {
+            const address = server.address();
+            if (!address || typeof address === 'string') {
+                server.close();
+                reject(new Error('Could not determine test server port'));
+                return;
+            }
+            const token = jsonwebtoken_1.default.sign({ id: 'reviewer-1', email: 'reviewer@example.com', role: 'hq_manager' }, testSecret);
+            const req = node_http_1.default.request({
+                host: '127.0.0.1',
+                port: address.port,
+                path: `/api/v1/design-books/${bookId}/release-preflight`,
+                method: 'GET',
+                headers: { Authorization: `Bearer ${token}` },
+            }, res => {
+                let response = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => { response += chunk; });
+                res.on('end', () => {
+                    server.close(error => {
+                        if (error)
+                            return reject(error);
+                        resolve({ status: res.statusCode ?? 0, body: JSON.parse(response) });
+                    });
+                });
+            });
+            req.on('error', reject);
             req.end();
         });
     });
@@ -199,5 +265,36 @@ function requestRelease(app, role) {
         (0, vitest_1.expect)(response.body.error.code).toBe('RELEASE_BLOCKED');
         (0, vitest_1.expect)(response.body.blockers.map((item) => item.key)).toContain('calculations');
         (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE design_books'))).toBe(false);
+    });
+    (0, vitest_1.it)('reports nullable frozen allocations as separate non-blocking preflight warnings', async () => {
+        state.snapshot = snapshotWithAllocations(null, null);
+        const response = await requestPreflight(app);
+        const loopAllocation = response.body.checklist.find((item) => item.key === 'flow_route_allocations');
+        const branchAllocation = response.body.checklist.find((item) => item.key === 'bio_degas_allocations');
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(loopAllocation).toMatchObject({ status: 'warning', affected_ids: ['system-1'] });
+        (0, vitest_1.expect)(loopAllocation.message).toMatch(/LSS-01 · Loop 1/);
+        (0, vitest_1.expect)(branchAllocation).toMatchObject({ status: 'warning', affected_ids: ['system-1'] });
+        (0, vitest_1.expect)(response.body.blockers.map((item) => item.key)).not.toContain('flow_route_allocations');
+        (0, vitest_1.expect)(response.body.blockers.map((item) => item.key)).not.toContain('bio_degas_allocations');
+    });
+    vitest_1.it.each([
+        ['reviewed', 60, 25],
+        ['intentional zero', 0, 0],
+    ])('passes %s frozen allocation percentages in preflight', async (_label, flowPct, bioDegasPct) => {
+        state.snapshot = snapshotWithAllocations(flowPct, bioDegasPct);
+        const response = await requestPreflight(app);
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('pass');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('pass');
+    });
+    (0, vitest_1.it)('allows release with nullable allocation warnings and freezes them in the checklist', async () => {
+        state.snapshot = snapshotWithAllocations(null, null);
+        const response = await requestRelease(app, 'hq_manager');
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body.status).toBe('Released');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('warning');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
     });
 });

@@ -22,8 +22,29 @@ function flowRouteFields(system) {
         source: system?.[`loop${loop}_flow_source`],
         filtration: system?.[`loop${loop}_filtration`],
         bioDegas: system?.[`loop${loop}_bio_degas_m3h`],
+        flowPct: system?.[`loop${loop}_flow_pct`],
+        bioDegasPct: system?.[`loop${loop}_bio_degas_pct`],
         linked: system?.[`loop${loop}_link_bio_degas`],
     }));
+}
+function flowLoopIsConfigured(loop) {
+    return !!(loop.source ||
+        loop.filtration ||
+        loop.flowPct != null ||
+        loop.bioDegasPct != null ||
+        loop.bioDegas != null ||
+        loop.linked);
+}
+function flowLoopLabel(system, loopNumber) {
+    const systemLabel = system?.system_code || system?.system_name || system?.id;
+    return systemLabel ? `${systemLabel} · Loop ${loopNumber}` : `Loop ${loopNumber}`;
+}
+function listLabels(labels) {
+    if (labels.length <= 1)
+        return labels[0] || '';
+    if (labels.length === 2)
+        return labels.join(' and ');
+    return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
 }
 /**
  * The release policy is intentionally kept pure so the API and automated
@@ -55,12 +76,17 @@ function buildDesignBookReleaseChecklist(context) {
         !Number.isFinite(Number(system.design_flow_m3h)) || Number(system.design_flow_m3h) <= 0);
     const systemsWithoutFlowRoute = systems.filter(system => {
         const loops = flowRouteFields(system);
-        return !loops.some(loop => loop.source || loop.filtration || loop.bioDegas != null || loop.linked);
+        return !loops.some(loop => flowLoopIsConfigured(loop));
     });
     const systemsWithIncompleteFlowRoute = systems.filter(system => {
-        const loops = flowRouteFields(system).filter(loop => loop.source || loop.filtration || loop.bioDegas != null || loop.linked);
+        const loops = flowRouteFields(system).filter(loop => flowLoopIsConfigured(loop));
         return loops.length > 0 && loops.some(loop => !loop.source || !loop.filtration);
     });
+    const configuredFlowLoops = (hasLssScope ? systems : []).flatMap(system => flowRouteFields(system)
+        .map((loop, index) => ({ system, loop, label: flowLoopLabel(system, index + 1) }))
+        .filter(({ loop }) => flowLoopIsConfigured(loop)));
+    const unreviewedFlowLoops = configuredFlowLoops.filter(({ loop }) => loop.flowPct == null);
+    const unreviewedBioDegasBranches = configuredFlowLoops.filter(({ loop }) => loop.linked && loop.bioDegasPct == null);
     return [
         item('metadata', 'Book metadata', 'blocker', !!context.book_code?.trim() && !!context.book_title?.trim() && !!context.revision?.trim(), context.book_code && context.book_title && context.revision
             ? 'Book code, title, and revision are present.'
@@ -102,6 +128,16 @@ function buildDesignBookReleaseChecklist(context) {
                 : systemsWithIncompleteFlowRoute.length
                     ? `${systemsWithIncompleteFlowRoute.length} Flow Route entr${systemsWithIncompleteFlowRoute.length === 1 ? 'y is' : 'ies are'} incomplete.`
                     : 'Flow Route data is complete.', `/design-books/${context.id}?tab=lss`, [...systemsWithoutFlowRoute, ...systemsWithIncompleteFlowRoute].map(system => system.id)),
+        item('flow_route_allocations', 'Loop flow allocations', 'warning', unreviewedFlowLoops.length === 0, unreviewedFlowLoops.length
+            ? `${listLabels(unreviewedFlowLoops.map(({ label }) => label))} ${unreviewedFlowLoops.length === 1 ? 'has' : 'have'} an unreviewed total-flow percentage. Blank means unreviewed; 0% is an intentional allocation.`
+            : configuredFlowLoops.length
+                ? 'Every configured loop has a reviewed total-flow percentage; 0% is retained as an intentional allocation.'
+                : 'No configured Flow Route loops require total-flow allocation review.', `/design-books/${context.id}?tab=lss`, [...new Set(unreviewedFlowLoops.map(({ system }) => system.id).filter(Boolean))]),
+        item('bio_degas_allocations', 'Bio/Degas branch allocations', 'warning', unreviewedBioDegasBranches.length === 0, unreviewedBioDegasBranches.length
+            ? `${listLabels(unreviewedBioDegasBranches.map(({ label }) => label))} ${unreviewedBioDegasBranches.length === 1 ? 'has' : 'have'} an unreviewed linked Bio/Degas branch percentage. Blank means unreviewed; 0% is an intentional allocation.`
+            : configuredFlowLoops.some(({ loop }) => loop.linked)
+                ? 'Every linked Bio/Degas branch has a reviewed percentage; 0% is retained as an intentional allocation.'
+                : 'No linked Bio/Degas branches require allocation review.', `/design-books/${context.id}?tab=lss`, [...new Set(unreviewedBioDegasBranches.map(({ system }) => system.id).filter(Boolean))]),
         item('calculations', 'Engineering calculations', 'blocker', invalidExhibitCalculations.length === 0 && invalidSystemCalculations.length === 0, invalidExhibitCalculations.length || invalidSystemCalculations.length
             ? `${invalidExhibitCalculations.length + invalidSystemCalculations.length} engineering calculation${invalidExhibitCalculations.length + invalidSystemCalculations.length === 1 ? ' is' : 's are'} unresolved: ${invalidExhibitCalculations[0]?.reasons?.join(' ') ||
                 invalidSystemCalculations[0]?.reasons?.join(' ') ||

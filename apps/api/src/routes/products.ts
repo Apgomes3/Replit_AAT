@@ -693,6 +693,9 @@ const resolveProductId = async (param: string): Promise<string | null> => {
 const nullableHydraulicValue = (value: unknown) =>
   value === null || value === undefined || (typeof value === 'string' && value.trim() === '') ? null : value;
 
+const nullableDimensionValue = (value: unknown) =>
+  value === null || value === undefined || (typeof value === 'string' && value.trim() === '') ? null : value;
+
 router.get('/product-masters/:id/dimensions', authenticate, async (req: AuthRequest, res: Response) => {
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
@@ -703,13 +706,29 @@ router.get('/product-masters/:id/dimensions', authenticate, async (req: AuthRequ
 router.put('/product-masters/:id/dimensions', authenticate, async (req: AuthRequest, res: Response) => {
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  const { length_mm, width_mm, height_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes } = req.body;
+  const body = req.body || {};
+  const existing = await query('SELECT length_mm, width_mm, height_mm, diameter_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes FROM product_dimensions WHERE product_master_id=$1', [pid]);
+  const current = existing.rows[0] || {};
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+  const rawDiameter = body.diameter_mm;
+  const diameterBlank = rawDiameter === null || rawDiameter === undefined || (typeof rawDiameter === 'string' && rawDiameter.trim() === '');
+  if (!diameterBlank && (typeof rawDiameter !== 'number' && typeof rawDiameter !== 'string' || !Number.isFinite(Number(rawDiameter)) || Number(rawDiameter) < 0)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'diameter_mm must be a finite, non-negative measurement' } });
+  }
+  const diameter_mm = has('diameter_mm') ? (diameterBlank ? null : Number(rawDiameter)) : (current.diameter_mm ?? null);
+  const length_mm = has('length_mm') ? nullableDimensionValue(body.length_mm) : (current.length_mm ?? null);
+  const width_mm = has('width_mm') ? nullableDimensionValue(body.width_mm) : (current.width_mm ?? null);
+  const height_mm = has('height_mm') ? nullableDimensionValue(body.height_mm) : (current.height_mm ?? null);
+  const weight_kg = has('weight_kg') ? nullableDimensionValue(body.weight_kg) : (current.weight_kg ?? null);
+  const inlet_dn_mm = has('inlet_dn_mm') ? nullableDimensionValue(body.inlet_dn_mm) : (current.inlet_dn_mm ?? null);
+  const outlet_dn_mm = has('outlet_dn_mm') ? nullableDimensionValue(body.outlet_dn_mm) : (current.outlet_dn_mm ?? null);
+  const notes = has('notes') ? nullableDimensionValue(body.notes) : (current.notes ?? null);
   const r = await query(`
-    INSERT INTO product_dimensions (product_master_id, length_mm, width_mm, height_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())
+    INSERT INTO product_dimensions (product_master_id, length_mm, width_mm, height_mm, diameter_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
     ON CONFLICT (product_master_id) DO UPDATE SET
-      length_mm=$2, width_mm=$3, height_mm=$4, weight_kg=$5, inlet_dn_mm=$6, outlet_dn_mm=$7, notes=$8, updated_at=NOW()
-    RETURNING *`, [pid, length_mm||null, width_mm||null, height_mm||null, weight_kg||null, inlet_dn_mm||null, outlet_dn_mm||null, notes||null]);
+      length_mm=$2, width_mm=$3, height_mm=$4, diameter_mm=$5, weight_kg=$6, inlet_dn_mm=$7, outlet_dn_mm=$8, notes=$9, updated_at=NOW()
+    RETURNING *`, [pid, length_mm, width_mm, height_mm, diameter_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes]);
   res.json(r.rows[0]);
 });
 
