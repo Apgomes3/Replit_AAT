@@ -10,3 +10,4 @@
 - [Exhibit tank replacement](exhibit-tank-replacement.md) — hide assignment tools once a tank is in use; explicit replacement preserves the project-tank identity.
 - [Species catalog snapshots](species-catalog-snapshots.md) — allocations capture values; setup uses reviewed offline artifacts, and maintenance preserves referenced identities.
 - [Flow Route exhibit references](flow-route-exhibit-references.md) — source splits require exactly one fresh Primary exhibit; loop and Bio/Degas allocations remain independent.
+- [Flow Route side streams](flow-route-side-streams.md) — each side stream is an independent 0–100% branch; sibling percentages are never summed.

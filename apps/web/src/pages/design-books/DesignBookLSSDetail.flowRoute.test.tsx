@@ -532,10 +532,11 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
-    await user.click(route.getByRole('button', { name: 'Edit' }));
+    await user.click(route.getByRole('button', { name: 'Edit Loop 1 name' }));
     const loopName = route.getByRole('textbox', { name: 'Loop 1 name' });
     await user.clear(loopName);
     await user.type(loopName, 'Main Filtration');
+    await user.click(route.getByRole('button', { name: 'Save Loop 1 name' }));
     await user.click(route.getByRole('button', { name: /Thermal/ }));
     await user.type(route.getByRole('spinbutton', { name: 'Thermal side stream percentage' }), '25');
     await user.type(route.getByRole('textbox', { name: 'Thermal side stream notes' }), 'Heat exchanger branch');
@@ -556,6 +557,162 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
         ],
       }),
     ));
+  });
+
+  it('cancels an inline rename without changing the Flow Route draft', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({ ...baseSystem, loop1_name: 'Main Filtration' });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit Main Filtration name' }));
+    const loopName = route.getByRole('textbox', { name: 'Loop 1 name' });
+    await user.clear(loopName);
+    await user.type(loopName, 'Temporary Name');
+    await user.click(route.getByRole('button', { name: 'Cancel Loop 1 name' }));
+
+    expect(route.getByRole('button', { name: 'Edit Main Filtration name' })).toBeInTheDocument();
+    expect(route.queryByText('Temporary Name')).not.toBeInTheDocument();
+    expect(apiPut).not.toHaveBeenCalled();
+  });
+
+  it('supports keyboard save and cancel while renaming a loop inline', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({ ...baseSystem, loop1_name: 'Main Filtration' });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit Main Filtration name' }));
+    let loopName = route.getByRole('textbox', { name: 'Loop 1 name' });
+    await user.clear(loopName);
+    await user.type(loopName, 'Temporary Name{Escape}');
+    expect(route.getByRole('button', { name: 'Edit Main Filtration name' })).toBeInTheDocument();
+
+    await user.click(route.getByRole('button', { name: 'Edit Main Filtration name' }));
+    loopName = route.getByRole('textbox', { name: 'Loop 1 name' });
+    await user.clear(loopName);
+    await user.type(loopName, 'Primary Treatment{Enter}');
+    expect(route.getByRole('button', { name: 'Edit Primary Treatment name' })).toBeInTheDocument();
+
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({ loop1_name: 'Primary Treatment' }),
+    ));
+  });
+
+  it('persists a list-view rename without replacing other loop or side-stream data', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({
+      ...baseSystem,
+      loop1_name: 'Main Filtration',
+      loop2_name: 'Polishing',
+      loop2_flow_source: 'Surface Skim',
+      loop2_filtration: 'Pressurized Bag Filter',
+      loop2_flow_pct: 35,
+      side_streams: [{
+        id: 'side-1',
+        parent_loop_number: 1,
+        name: 'UV Contact',
+        preset: 'UV',
+        flow_pct: 100,
+        notes: null,
+        sort_order: 0,
+      }],
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'List' }));
+    const polishingRow = route.getByText('Polishing').closest('tr')!;
+    await user.click(within(polishingRow).getByRole('button', { name: /Edit/ }));
+    const loopName = route.getByRole('textbox', { name: 'Loop 2 name' });
+    await user.clear(loopName);
+    await user.type(loopName, 'Secondary Polishing');
+    await user.click(within(loopName.closest('tr')!).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop1_name: 'Main Filtration',
+        loop2_name: 'Secondary Polishing',
+        loop2_flow_source: 'Surface Skim',
+        loop2_filtration: 'Pressurized Bag Filter',
+        loop2_flow_pct: 35,
+        side_streams: [expect.objectContaining({
+          id: 'side-1',
+          parent_loop_number: 1,
+          name: 'UV Contact',
+          flow_pct: 100,
+        })],
+      }),
+    ));
+  });
+
+  it('saves multiple side streams at 100 percent because each is an independent branch', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    await user.click(route.getByRole('button', { name: /Thermal/ }));
+    await user.type(route.getByRole('spinbutton', { name: 'Thermal side stream percentage' }), '100');
+    await user.click(route.getByRole('button', { name: /UV/ }));
+    await user.type(route.getByRole('spinbutton', { name: 'UV side stream percentage' }), '100');
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        side_streams: [
+          expect.objectContaining({ name: 'Thermal', flow_pct: 100 }),
+          expect.objectContaining({ name: 'UV', flow_pct: 100 }),
+        ],
+      }),
+    ));
+  });
+
+  it('keeps a saved rename and side stream visible after reload and when editing resumes', async () => {
+    const user = userEvent.setup();
+    const firstRender = renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    let route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit Loop 1 name' }));
+    const loopName = route.getByRole('textbox', { name: 'Loop 1 name' });
+    await user.clear(loopName);
+    await user.type(loopName, 'Main Filtration');
+    await user.click(route.getByRole('button', { name: 'Save Loop 1 name' }));
+    await user.click(route.getByRole('button', { name: /Thermal/ }));
+    await user.type(route.getByRole('spinbutton', { name: 'Thermal side stream percentage' }), '100');
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+
+    const savedPayload = await waitFor(() => {
+      const call = apiPut.mock.calls.find(([url]) => url === '/systems/system-1');
+      expect(call).toBeDefined();
+      return call![1] as any;
+    });
+    const reloadedSystem = {
+      ...baseSystem,
+      ...savedPayload,
+      side_streams: savedPayload.side_streams.map((stream: any, index: number) => ({
+        ...stream,
+        id: `saved-side-${index + 1}`,
+      })),
+    };
+
+    firstRender.unmount();
+    renderFlowRoute(reloadedSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    route = within(document.querySelector('#flow-route')!);
+    expect(route.getByRole('button', { name: 'Edit Main Filtration name' })).toBeInTheDocument();
+    expect(route.getByText('Thermal')).toBeInTheDocument();
+    expect(route.getByText('100% of parent')).toBeInTheDocument();
+    expect(route.getAllByText('40.0 m³/h').length).toBeGreaterThan(0);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    expect(route.getByRole('spinbutton', { name: 'Thermal side stream percentage' })).toHaveValue(100);
   });
 
   it('shows side streams nested in card and list views and follows unit conversion', async () => {

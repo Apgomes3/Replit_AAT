@@ -127,14 +127,6 @@ function normalizeSideStreams(value: unknown) {
       sort_order: Number.isInteger(Number(stream?.sort_order)) ? Number(stream.sort_order) : index,
     };
   });
-  for (const loopNumber of [1, 2, 3]) {
-    const total = normalized
-      .filter(stream => stream.parent_loop_number === loopNumber)
-      .reduce((sum, stream) => sum + stream.flow_pct, 0);
-    if (total > 100.000001) {
-      throw new Error(`Side streams under Loop ${loopNumber} total ${total.toFixed(1)}%. Reduce them to 100% or less.`);
-    }
-  }
   return normalized;
 }
 
@@ -2006,17 +1998,6 @@ router.post('/systems/:id/side-streams', authenticate, requireRole('admin', 'eng
       await client.query('ROLLBACK');
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
     }
-    const total = (await client.query(
-      `SELECT COALESCE(SUM(flow_pct), 0)::numeric AS total
-       FROM system_flow_side_streams WHERE system_id=$1 AND parent_loop_number=$2`,
-      [req.params.id, stream!.parent_loop_number],
-    )).rows[0]?.total;
-    if (Number(total || 0) + stream!.flow_pct > 100.000001) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        error: { code: 'SIDE_STREAM_ALLOCATION_EXCEEDS_100', message: `Side streams under Loop ${stream!.parent_loop_number} cannot exceed 100%.` },
-      });
-    }
     created = (await client.query(
       `INSERT INTO system_flow_side_streams
          (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order)
@@ -2064,18 +2045,6 @@ router.put('/systems/:id/side-streams/:sideStreamId', authenticate, requireRole(
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Side stream not found' } });
     }
     previous = current.rows[0];
-    const total = (await client.query(
-      `SELECT COALESCE(SUM(flow_pct), 0)::numeric AS total
-       FROM system_flow_side_streams
-       WHERE system_id=$1 AND parent_loop_number=$2 AND id<>$3`,
-      [req.params.id, stream!.parent_loop_number, req.params.sideStreamId],
-    )).rows[0]?.total;
-    if (Number(total || 0) + stream!.flow_pct > 100.000001) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        error: { code: 'SIDE_STREAM_ALLOCATION_EXCEEDS_100', message: `Side streams under Loop ${stream!.parent_loop_number} cannot exceed 100%.` },
-      });
-    }
     updated = (await client.query(
       `UPDATE system_flow_side_streams
        SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,

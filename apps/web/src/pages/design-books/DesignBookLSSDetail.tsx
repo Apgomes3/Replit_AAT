@@ -208,7 +208,6 @@ function flowAllocationError(draft: Record<string, any>): string | null {
   for (const loopNumber of [1, 2, 3]) {
     const streams = (draft.side_streams || [])
       .filter((stream: any) => Number(stream.parent_loop_number) === loopNumber);
-    let sideStreamTotal = 0;
     for (const stream of streams) {
       const name = String(stream.name || '').trim();
       if (!name) return `Every side stream under Loop ${loopNumber} requires a name.`;
@@ -216,10 +215,6 @@ function flowAllocationError(draft: Record<string, any>): string | null {
       if (percentage == null || percentage < 0 || percentage > 100) {
         return `${name} allocation must be between 0% and 100%.`;
       }
-      sideStreamTotal += percentage;
-    }
-    if (sideStreamTotal > 100.000001) {
-      return `Side streams under Loop ${loopNumber} total ${sideStreamTotal.toFixed(1)}%. Reduce them to 100% or less before saving.`;
     }
   }
   return total > 100.000001
@@ -525,7 +520,11 @@ export default function DesignBookLSSDetail() {
   const [flowEditMode, setFlowEditMode] = useState(false);
   const [flowSaving,   setFlowSaving]   = useState(false);
   const [flowForm,     setFlowForm]     = useState<any>(null);
-  const setFF = (k: string, v: any) => setFlowForm((f: any) => ({ ...f, [k]: v }));
+  const [inlineLoopRename, setInlineLoopRename] = useState<{ loopNumber: number; value: string } | null>(null);
+  const setFF = (k: string, v: any) => setFlowForm((f: any) => ({
+    ...(f || createFlowDraft(systemRef.current)),
+    [k]: v,
+  }));
   const setFlowSideStreams = (update: (streams: any[]) => any[]) => {
     setFlowForm((draft: any) => ({
       ...(draft || createFlowDraft(systemRef.current)),
@@ -552,6 +551,29 @@ export default function DesignBookLSSDetail() {
       const draftKey = `loop${listEditRow}_${k}`;
       setFlowForm((f: any) => ({ ...(f || createFlowDraft(systemRef.current)), [draftKey]: v }));
     }
+  };
+
+  const beginInlineLoopRename = (loopNumber: number) => {
+    const source = flowForm || systemRef.current;
+    setInlineLoopRename({
+      loopNumber,
+      value: String(source?.[`loop${loopNumber}_name`] || `Loop ${loopNumber}`),
+    });
+  };
+
+  const commitInlineLoopRename = () => {
+    if (!inlineLoopRename) return;
+    const value = inlineLoopRename.value.trim();
+    if (!value) {
+      toast.error(`Loop ${inlineLoopRename.loopNumber} name is required`);
+      return;
+    }
+    if (value.length > 255) {
+      toast.error(`Loop ${inlineLoopRename.loopNumber} name must be 255 characters or fewer`);
+      return;
+    }
+    setFF(`loop${inlineLoopRename.loopNumber}_name`, value);
+    setInlineLoopRename(null);
   };
 
   useEffect(() => {
@@ -666,6 +688,7 @@ export default function DesignBookLSSDetail() {
   }, [hasUnsavedFlowChanges, location.pathname, location.search]);
 
   const clearFlowDraft = () => {
+    setInlineLoopRename(null);
     setFlowForm(null);
     setFlowEditMode(false);
     setListEditRow(null);
@@ -2097,7 +2120,6 @@ export default function DesignBookLSSDetail() {
           const srcKey  = `loop${n}_flow_source`;
           const filtKey = `loop${n}_filtration`;
           const pctKey  = `loop${n}_flow_pct`;
-          const nameKey = `loop${n}_name`;
           const bioPctKey = `loop${n}_bio_degas_pct`;
           const lnkKey  = `loop${n}_link_bio_degas`;
           const linked: boolean = !!flowForm[lnkKey];
@@ -2129,16 +2151,6 @@ export default function DesignBookLSSDetail() {
           };
           return (
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1.5">Loop name</label>
-                <input
-                  value={flowForm[nameKey]}
-                  onChange={event => setFF(nameKey, event.target.value)}
-                  aria-label={`Loop ${n} name`}
-                  placeholder={`Loop ${n}`}
-                  className={inputCls}
-                />
-              </div>
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">Flow Source</label>
                 <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
@@ -2400,7 +2412,45 @@ export default function DesignBookLSSDetail() {
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
-                              <span className="text-sm font-semibold text-stone-700">{loopName(flowForm, n)}</span>
+                              {inlineLoopRename?.loopNumber === n ? (
+                                <div className="flex items-center gap-1.5" onKeyDown={event => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    commitInlineLoopRename();
+                                  } else if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    setInlineLoopRename(null);
+                                  }
+                                }}>
+                                  <input
+                                    autoFocus
+                                    value={inlineLoopRename.value}
+                                    onChange={event => setInlineLoopRename({
+                                      loopNumber: n,
+                                      value: event.target.value,
+                                    })}
+                                    aria-label={`Loop ${n} name`}
+                                    maxLength={255}
+                                    className="w-44 border border-violet-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40"
+                                  />
+                                  <button type="button" onClick={commitInlineLoopRename}
+                                    aria-label={`Save Loop ${n} name`}
+                                    className="text-xs text-emerald-700 hover:text-emerald-900 border border-emerald-200 rounded px-1.5 py-1">
+                                    Save
+                                  </button>
+                                  <button type="button" onClick={() => setInlineLoopRename(null)}
+                                    aria-label={`Cancel Loop ${n} name`}
+                                    className="text-xs text-stone-500 hover:text-stone-700 border border-stone-200 rounded px-1.5 py-1">
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => beginInlineLoopRename(n)}
+                                  aria-label={`Edit ${loopName(flowForm, n)} name`}
+                                  className="text-sm font-semibold text-stone-700 hover:text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400/40 rounded px-1 -mx-1">
+                                  {loopName(flowForm, n)}
+                                </button>
+                              )}
                             </div>
                             {n > 1 && (
                               <button type="button" onClick={() => {
@@ -2461,7 +2511,18 @@ export default function DesignBookLSSDetail() {
                             <div key={n} className={`rounded-lg border p-4 ${colors.border} ${pending ? 'opacity-60 border-dashed' : ''}`}>
                               <div className="flex items-center gap-2 mb-3">
                                 <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
-                                <span className={`text-sm font-semibold ${colors.label}`}>{loopName(system, n)}</span>
+                                {!readOnly ? (
+                                  <button type="button" onClick={() => {
+                                    startFlowEdit();
+                                    beginInlineLoopRename(n);
+                                  }}
+                                    aria-label={`Edit ${loopName(system, n)} name`}
+                                    className={`text-sm font-semibold ${colors.label} hover:underline focus:outline-none focus:ring-2 focus:ring-violet-400/40 rounded px-1 -mx-1`}>
+                                    {loopName(system, n)}
+                                  </button>
+                                ) : (
+                                  <span className={`text-sm font-semibold ${colors.label}`}>{loopName(system, n)}</span>
+                                )}
                                 {pending && <span className="text-[10px] text-stone-400 italic">unsaved</span>}
                               </div>
                               {LoopView({ n })}

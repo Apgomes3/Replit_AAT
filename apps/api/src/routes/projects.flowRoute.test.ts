@@ -314,20 +314,41 @@ describe('system Flow Route allocation persistence', () => {
     expect(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
   });
 
-  it('rejects side streams whose combined parent percentage exceeds 100 percent', async () => {
+  it('persists multiple independent 100 percent side streams under one parent', async () => {
     const response = await request(app, {
       ...basePayload,
       side_streams: [
-        { parent_loop_number: 2, name: 'Thermal', preset: 'Thermal', flow_pct: 60 },
-        { parent_loop_number: 2, name: 'UV', preset: 'UV', flow_pct: 45 },
+        { parent_loop_number: 2, name: 'Thermal', preset: 'Thermal', flow_pct: 100 },
+        { parent_loop_number: 2, name: 'UV', preset: 'UV', flow_pct: 100 },
       ],
     });
 
+    expect(response.status).toBe(200);
+    const inserts = state.calls.filter(call => call.sql.includes('INSERT INTO system_flow_side_streams'));
+    expect(inserts).toHaveLength(2);
+    expect(inserts.map(insert => insert.params[4])).toEqual([100, 100]);
+  });
+
+  it('preserves saved loop names when a partial update omits them', async () => {
+    state.currentSystem.loop1_name = 'Main Filtration';
+    state.currentSystem.loop2_name = 'Polishing';
+    state.currentSystem.loop3_name = 'Reserve';
+
+    const response = await request(app, basePayload);
+
+    expect(response.status).toBe(200);
+    const nameUpdate = state.calls.find(call => call.sql.includes('loop1_name=$2'));
+    expect(nameUpdate?.params.slice(1)).toEqual(['Main Filtration', 'Polishing', 'Reserve']);
+  });
+
+  it.each([
+    ['', 'Loop 1 name is required.'],
+    ['x'.repeat(256), 'Loop 1 name must be 255 characters or fewer.'],
+  ])('rejects invalid loop names', async (loop1Name, message) => {
+    const response = await request(app, { ...basePayload, loop1_name: loop1Name });
+
     expect(response.status).toBe(400);
-    expect(response.body.error).toEqual({
-      code: 'VALIDATION',
-      message: 'Side streams under Loop 2 total 105.0%. Reduce them to 100% or less.',
-    });
+    expect(response.body.error).toEqual({ code: 'VALIDATION', message });
     expect(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(false);
   });
 });
