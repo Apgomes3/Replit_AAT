@@ -230,6 +230,66 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(apiPut).not.toHaveBeenCalled();
   });
 
+  it('allows nullable allocations to remain blank when saving a draft', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({
+      ...baseSystem,
+      loop1_flow_pct: null,
+      loop1_bio_degas_pct: null,
+      loop1_link_bio_degas: true,
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop1_flow_pct: null,
+        loop1_bio_degas_pct: null,
+        loop1_link_bio_degas: true,
+      }),
+    ));
+  });
+
+  it('labels reviewed zero allocations as intentional instead of unreviewed', async () => {
+    renderFlowRoute({
+      ...baseSystem,
+      loop1_flow_pct: 0,
+      loop1_bio_degas_pct: 0,
+      loop1_link_bio_degas: true,
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getAllByText(/0% \(intentional zero allocation\)/)).toHaveLength(2);
+    expect(route.queryByText('allocation not reviewed')).not.toBeInTheDocument();
+  });
+
+  it('shows separate nullable allocation warnings from the frozen review package', async () => {
+    const reviewBook = {
+      ...baseBook,
+      status: 'For Review',
+      systems: [{
+        ...baseSystem,
+        loop1_flow_pct: null,
+        loop1_bio_degas_pct: null,
+        loop1_link_bio_degas: true,
+      }],
+      system_links: [],
+    };
+
+    renderFlowRoute(baseSystem, reviewBook);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getByText(/configured loop has an unreviewed total-flow percentage/)).toBeInTheDocument();
+    expect(route.getByText(/linked Bio\/Degas branch has an unreviewed branch percentage/)).toBeInTheDocument();
+    expect(route.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
+
   it('renders frozen released allocations read-only', async () => {
     const releasedBook = {
       ...baseBook,

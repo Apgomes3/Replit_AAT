@@ -32,6 +32,8 @@ function readyContext(): DesignBookReleaseContext {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       loop1_flow_source: 'Exhibit return',
       loop1_filtration: 'Mechanical and biological',
+      loop1_flow_pct: 100,
+      loop1_bio_degas_pct: 100,
       loop1_bio_degas_m3h: 120,
     }],
     engineering_calculations: {
@@ -92,6 +94,50 @@ describe('Design Book release policy', () => {
     const calculations = buildDesignBookReleaseChecklist(context).find(check => check.key === 'calculations');
     expect(calculations?.status).toBe('blocked');
     expect(calculations?.affected_ids).toContain('system-1');
+  });
+
+  it('warns separately about nullable loop and linked Bio/Degas percentages', () => {
+    const context = readyContext();
+    context.systems![0] = {
+      ...context.systems![0],
+      loop1_flow_pct: null,
+      loop1_bio_degas_pct: null,
+      loop1_link_bio_degas: true,
+    };
+
+    const checklist = buildDesignBookReleaseChecklist(context);
+    const loopWarning = checklist.find(check => check.key === 'flow_route_allocations');
+    const branchWarning = checklist.find(check => check.key === 'bio_degas_allocations');
+
+    expect(loopWarning?.status).toBe('warning');
+    expect(loopWarning?.message).toMatch(/Loop 1/);
+    expect(loopWarning?.message).toMatch(/Blank means unreviewed/);
+    expect(branchWarning?.status).toBe('warning');
+    expect(branchWarning?.message).toMatch(/Bio\/Degas/);
+    expect(branchWarning?.message).toMatch(/Blank means unreviewed/);
+    expect(releaseBlockers(checklist).map(check => check.key)).not.toContain('flow_route_allocations');
+    expect(releaseBlockers(checklist).map(check => check.key)).not.toContain('bio_degas_allocations');
+  });
+
+  it('treats reviewed zero allocations as intentional rather than unreviewed', () => {
+    const context = readyContext();
+    context.systems![0] = {
+      ...context.systems![0],
+      loop1_flow_pct: 0,
+      loop1_bio_degas_pct: 0,
+      loop1_link_bio_degas: true,
+    };
+
+    const checklist = buildDesignBookReleaseChecklist(context);
+
+    expect(checklist.find(check => check.key === 'flow_route_allocations')).toMatchObject({
+      status: 'pass',
+    });
+    expect(checklist.find(check => check.key === 'bio_degas_allocations')).toMatchObject({
+      status: 'pass',
+    });
+    expect(checklist.find(check => check.key === 'flow_route_allocations')?.message).toMatch(/0%/);
+    expect(checklist.find(check => check.key === 'bio_degas_allocations')?.message).toMatch(/intentional/);
   });
 
   it('never allows release while any blocker remains', () => {

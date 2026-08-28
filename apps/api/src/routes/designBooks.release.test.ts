@@ -35,6 +35,15 @@ vi.mock('../db', () => {
         }],
       };
     }
+    if (sql.includes("SET status='Released'")) {
+      return { rows: [{ id: bookId, status: 'Released', revision: 'A' }] };
+    }
+    if (sql.includes('SELECT COALESCE(MAX(version_number)')) {
+      return { rows: [{ next: 1 }] };
+    }
+    if (sql.includes('INSERT INTO design_book_versions')) {
+      return { rows: [{ id: 'version-1', version_number: 1 }] };
+    }
     return { rows: [] };
   });
   const client = { query, release: vi.fn() };
@@ -68,6 +77,31 @@ function validSnapshot() {
       systems: [],
     },
   };
+}
+
+function snapshotWithAllocations(flowPct: number | null, bioDegasPct: number | null) {
+  const snapshot = validSnapshot();
+  snapshot.project_scopes = ['Aquarium', 'LSS'];
+  snapshot.systems = [{
+    id: 'system-1',
+    system_code: 'LSS-01',
+    system_config: 'Recirculating',
+    system_type: 'Life Support',
+    status: 'Design',
+    design_flow_m3h: 120,
+    calculation_version: AQUARIUM_CALCULATION_VERSION,
+    loop1_flow_source: 'Exhibit return',
+    loop1_filtration: 'Mechanical and biological',
+    loop1_flow_pct: flowPct,
+    loop1_bio_degas_pct: bioDegasPct,
+    loop1_bio_degas_m3h: 12,
+    loop1_link_bio_degas: true,
+  }];
+  snapshot.engineering_calculations.systems = [{
+    status: 'valid',
+    inputs: { system_id: 'system-1' },
+  }];
+  return snapshot;
 }
 
 function requestRelease(app: Express, role: string): Promise<{ status: number; body: any }> {
@@ -110,6 +144,39 @@ function requestRelease(app: Express, role: string): Promise<{ status: number; b
       });
       req.on('error', reject);
       req.write(payload);
+      req.end();
+    });
+  });
+}
+
+function requestPreflight(app: Express): Promise<{ status: number; body: any }> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Could not determine test server port'));
+        return;
+      }
+      const token = jwt.sign({ id: 'reviewer-1', email: 'reviewer@example.com', role: 'hq_manager' }, testSecret);
+      const req = http.request({
+        host: '127.0.0.1',
+        port: address.port,
+        path: `/api/v1/design-books/${bookId}/release-preflight`,
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      }, res => {
+        let response = '';
+        res.setEncoding('utf8');
+        res.on('data', chunk => { response += chunk; });
+        res.on('end', () => {
+          server.close(error => {
+            if (error) return reject(error);
+            resolve({ status: res.statusCode ?? 0, body: JSON.parse(response) });
+          });
+        });
+      });
+      req.on('error', reject);
       req.end();
     });
   });
@@ -178,5 +245,45 @@ describe('Design Book release API blocker enforcement', () => {
     expect(response.body.error.code).toBe('RELEASE_BLOCKED');
     expect(response.body.blockers.map((item: any) => item.key)).toContain('calculations');
     expect(state.calls.some(call => call.sql.includes('UPDATE design_books'))).toBe(false);
+  });
+
+  it('reports nullable frozen allocations as separate non-blocking preflight warnings', async () => {
+    state.snapshot = snapshotWithAllocations(null, null);
+
+    const response = await requestPreflight(app);
+    const loopAllocation = response.body.checklist.find((item: any) => item.key === 'flow_route_allocations');
+    const branchAllocation = response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations');
+
+    expect(response.status).toBe(200);
+    expect(loopAllocation).toMatchObject({ status: 'warning', affected_ids: ['system-1'] });
+    expect(loopAllocation.message).toMatch(/LSS-01 · Loop 1/);
+    expect(branchAllocation).toMatchObject({ status: 'warning', affected_ids: ['system-1'] });
+    expect(response.body.blockers.map((item: any) => item.key)).not.toContain('flow_route_allocations');
+    expect(response.body.blockers.map((item: any) => item.key)).not.toContain('bio_degas_allocations');
+  });
+
+  it.each([
+    ['reviewed', 60, 25],
+    ['intentional zero', 0, 0],
+  ])('passes %s frozen allocation percentages in preflight', async (_label, flowPct, bioDegasPct) => {
+    state.snapshot = snapshotWithAllocations(flowPct, bioDegasPct);
+
+    const response = await requestPreflight(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('pass');
+    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('pass');
+  });
+
+  it('allows release with nullable allocation warnings and freezes them in the checklist', async () => {
+    state.snapshot = snapshotWithAllocations(null, null);
+
+    const response = await requestRelease(app, 'hq_manager');
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('Released');
+    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
+    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
   });
 });

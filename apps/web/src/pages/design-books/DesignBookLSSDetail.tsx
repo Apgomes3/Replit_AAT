@@ -107,6 +107,11 @@ function nullableNumber(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+function allocationStatus(value: number | null, basis: 'system' | 'loop') {
+  if (value == null) return 'allocation not reviewed';
+  return value === 0 ? '0% (intentional zero allocation)' : `${value}% of ${basis}`;
+}
+
 function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
   const fields: Record<string, any> = {};
   for (const n of [1, 2, 3]) {
@@ -1447,12 +1452,23 @@ export default function DesignBookLSSDetail() {
           return pct != null && systemFlow > 0 ? systemFlow * pct / 100 : null;
         };
         const allocationSource = flowForm || system;
+        const allocationLoops = [1, 2, 3].filter(n =>
+          !!(allocationSource[`loop${n}_flow_source`] ||
+            allocationSource[`loop${n}_filtration`] ||
+            allocationSource[`loop${n}_flow_pct`] != null ||
+            allocationSource[`loop${n}_bio_degas_pct`] != null ||
+            allocationSource[`loop${n}_bio_degas_m3h`] != null ||
+            allocationSource[`loop${n}_link_bio_degas`]));
         const allocationTotal = [1, 2, 3].reduce(
           (sum, n) => sum + (nullableNumber(allocationSource[`loop${n}_flow_pct`]) ?? 0),
           0,
         );
-        const allocationPending = activeLoops.filter(
+        const allocationPending = allocationLoops.filter(
           n => nullableNumber(allocationSource[`loop${n}_flow_pct`]) == null,
+        ).length;
+        const branchAllocationPending = allocationLoops.filter(
+          n => !!allocationSource[`loop${n}_link_bio_degas`] &&
+            nullableNumber(allocationSource[`loop${n}_bio_degas_pct`]) == null,
         ).length;
         const unallocatedPct = Math.max(0, 100 - allocationTotal);
         const allocationValidation = flowAllocationError(allocationSource);
@@ -1494,7 +1510,7 @@ export default function DesignBookLSSDetail() {
                   {fmtFlow(loopFlow ?? 0)}
                 </span>
                 <span className="text-stone-400 text-xs">
-                  · {loopPct != null ? `${loopPct}% of system` : 'allocation not reviewed'}
+                  · {allocationStatus(loopPct, 'system')}
                 </span>
               </div>
               {linked && (
@@ -1505,7 +1521,7 @@ export default function DesignBookLSSDetail() {
                     {fmtFlow(bioFlow ?? 0)}
                   </span>
                   <span className="text-stone-400 text-xs">
-                    · {bioPct != null ? `${bioPct}% of loop` : 'allocation not reviewed'}
+                    · {allocationStatus(bioPct, 'loop')}
                   </span>
                   <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
                     linked
@@ -1678,12 +1694,27 @@ export default function DesignBookLSSDetail() {
                   {fmtFlow(systemFlow * unallocatedPct / 100)}
                 </strong>
               </div>
-              {(allocationPending > 0 || allocationValidation) && (
-                <p className={`col-span-2 sm:col-span-4 text-xs ${
+              {(allocationPending > 0 || branchAllocationPending > 0 || allocationValidation) && (
+                <div className={`col-span-2 sm:col-span-4 text-xs ${
                   allocationValidation ? 'text-red-700' : 'text-amber-700'
                 }`}>
-                  {allocationValidation || `${allocationPending} configured loop${allocationPending === 1 ? ' still needs' : 's still need'} allocation review.`}
-                </p>
+                  {allocationValidation ? (
+                    <p>{allocationValidation}</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {allocationPending > 0 && (
+                        <p>
+                          {allocationPending} configured loop{allocationPending === 1 ? '' : 's'} has{allocationPending === 1 ? '' : 've'} an unreviewed total-flow percentage. Blank means unreviewed; 0% is an intentional allocation.
+                        </p>
+                      )}
+                      {branchAllocationPending > 0 && (
+                        <p>
+                          {branchAllocationPending} linked Bio/Degas branch{branchAllocationPending === 1 ? '' : 'es'} has{branchAllocationPending === 1 ? '' : 've'} an unreviewed branch percentage. Blank means unreviewed; 0% is an intentional allocation.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -1940,7 +1971,7 @@ export default function DesignBookLSSDetail() {
                           <td className="px-3 py-3 font-mono text-xs">
                             <span className="text-stone-800">{fmtFlow(loopFlow ?? 0)}</span>
                             <span className="block text-stone-400 font-sans text-[10px]">
-                              {loopPct != null ? `${loopPct}% of system` : 'Not reviewed'}
+                              {allocationStatus(loopPct, 'system')}
                             </span>
                           </td>
                           <td className="px-3 py-3 font-mono text-xs">
@@ -1948,7 +1979,7 @@ export default function DesignBookLSSDetail() {
                               <span className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-emerald-700 font-semibold">{fmtFlow(bioFlow ?? 0)}</span>
                                 <span className="text-stone-400 font-sans text-[10px]">
-                                  {bioPct != null ? `${bioPct}% of loop` : 'Not reviewed'}
+                                  {allocationStatus(bioPct, 'loop')}
                                 </span>
                                 <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-sans">
                                   linked
