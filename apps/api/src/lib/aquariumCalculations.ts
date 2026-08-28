@@ -258,6 +258,11 @@ export function calculateTankOperatingVolume(tank: any): {
   inputs: Record<string, number | string | null>;
 } {
   const shape = String(tank?.eff_shape || tank?.shape_type || '').toLowerCase();
+  const projectStoredVolume = positiveOrNull(
+    tank?.project_operating_volume_m3 ?? tank?.operating_volume_m3,
+  );
+  const pimStoredVolume = positiveOrNull(tank?.pim_operating_volume_m3);
+  const storedOperatingVolume = projectStoredVolume ?? pimStoredVolume;
   const wall = positiveOrNull(tank?.wall_thickness_mm) || 0;
   const outerLength = dimension(tank, 'eff_length_mm') ?? dimension(tank, 'length_mm');
   const outerWidth = dimension(tank, 'eff_width_mm') ?? dimension(tank, 'width_mm');
@@ -276,9 +281,15 @@ export function calculateTankOperatingVolume(tank: any): {
   let footprintArea: number | null = null;
   let formula = '';
   if (shape === 'custom') {
-    calculated = positiveOrNull(tank?.operating_volume_m3 ?? tank?.design_volume_m3);
+    calculated = storedOperatingVolume ?? positiveOrNull(tank?.design_volume_m3);
     footprintArea = positiveOrNull(tank?.surface_area_m2);
     formula = 'Stored operating volume (custom tank)';
+  } else if (storedOperatingVolume != null) {
+    calculated = storedOperatingVolume;
+    footprintArea = positiveOrNull(tank?.surface_area_m2);
+    formula = projectStoredVolume != null
+      ? 'Stored project-tank operating volume'
+      : 'Stored PIM tank operating volume';
   } else if (shape === 'cylindrical' && innerWidth != null && innerWidth > 0 &&
              operatingHeight != null && operatingHeight > 0) {
     footprintArea = Math.PI * Math.pow(innerWidth / 2, 2) / 1e6;
@@ -304,7 +315,7 @@ export function calculateTankOperatingVolume(tank: any): {
     return {
       value_m3: roundEngineering(calculated, VOLUME_DECIMALS),
       footprint_area_m2: roundEngineering(footprintArea, VOLUME_DECIMALS),
-      source: footprintArea == null ? 'stored' : 'dimensions',
+      source: formula.startsWith('Stored') ? 'stored' : 'dimensions',
       formula,
       inputs: {
         shape: shape || null,

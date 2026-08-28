@@ -503,13 +503,19 @@ function calcInnerDims(
 function computeTankOpVol(tank: any): number | null {
   if (!tank) return null;
   const shape = (tank.eff_shape || tank.shape_type || '').toLowerCase();
+  const projectStored = parseFloat(
+    tank.project_operating_volume_m3 ?? tank.operating_volume_m3,
+  ) || null;
+  const pimStored = parseFloat(tank.pim_operating_volume_m3) || null;
+  const stored = projectStored ?? pimStored;
   if (shape === 'custom') {
-    return parseFloat(tank.operating_volume_m3 ?? tank.design_volume_m3) || null;
+    return stored ?? (parseFloat(tank.design_volume_m3) || null);
   }
+  if (stored != null) return stored;
   const thick  = tank.wall_thickness_mm ? parseFloat(tank.wall_thickness_mm) : null;
   const outerW = parseFloat(tank.eff_width_mm  || tank.width_mm)  || null;
   const outerL = parseFloat(tank.eff_length_mm || tank.length_mm) || null;
-  const wlv    = tank.design_water_level_mm ? parseFloat(tank.design_water_level_mm) : null;
+  const wlv    = parseFloat(tank.eff_water_level_mm ?? tank.design_water_level_mm) || null;
   // Prefer explicitly stored inner dims, then compute from outer − wall
   const innerW = tank.inner_width_mm  ? parseFloat(tank.inner_width_mm)  : (thick && outerW ? outerW - 2 * thick : outerW);
   const innerL = tank.inner_length_mm ? parseFloat(tank.inner_length_mm) : (thick && outerL ? outerL - 2 * thick : outerL);
@@ -523,7 +529,7 @@ function computeTankOpVol(tank: any): number | null {
     if (effL) return Math.round(effL * effW * wlv / 1e9 * 1e4) / 1e4;
   }
   // Fall back to stored value (e.g. product master with pre-computed volume)
-  return parseFloat(tank.operating_volume_m3 ?? tank.design_volume_m3) || null;
+  return parseFloat(tank.design_volume_m3) || null;
 }
 
 // Returns raw op vol minus substrate + theming displacement.
@@ -2584,8 +2590,27 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
   const splitOk   = Math.abs(skimPct + drainPct - 100) < 0.01;
   const aatReference = calculation?.aat_reference ?? null;
   const aatResults = aatReference?.results ?? {};
+  const aatPayloadStale = calculation?.is_stale === true || aatReference?.is_stale === true;
+  const aatPayloadIncomplete = calculation != null && (
+    aatReference == null
+    || (
+      aatReference?.status === 'valid'
+      && (
+        aatReference?.inputs?.effective_operating_volume_m3 == null
+        || aatResults.recommended_flow_m3h == null
+      )
+    )
+  );
   const aatAvailable = aatReference?.status === 'valid'
+    && !aatPayloadStale
+    && !aatPayloadIncomplete
     && aatResults.recommended_flow_m3h != null;
+  const aatUnavailableReason = aatPayloadStale
+    ? 'The AAT calculation is stale. Refresh the Design Book before using this reference.'
+    : aatPayloadIncomplete
+      ? 'The AAT calculation payload is incomplete. Refresh the Design Book to recalculate it.'
+      : aatReference?.reasons?.[0]
+        || 'Enter a valid net/effective operating volume to calculate a reference.';
 
   // Total biomass from species
   const totalBiomass = species.reduce((s, sp) => {
@@ -2853,7 +2878,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
               <div className="px-5 py-4">
                 <p className="text-sm text-stone-500">AAT reference unavailable.</p>
                 <p className="text-xs text-stone-400 mt-1">
-                  {aatReference?.reasons?.[0] || 'Enter a valid net/effective operating volume to calculate a reference.'}
+                  {aatUnavailableReason}
                 </p>
               </div>
             )}

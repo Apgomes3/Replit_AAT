@@ -116,6 +116,7 @@ describe('Design Book version snapshots', () => {
       }
       if (sql.includes('FROM tanks t')) {
         expect(sql).toContain('LEFT JOIN product_masters');
+        expect(sql).toContain('pm.operating_volume_m3 AS pim_operating_volume_m3');
         expect(sql).toContain('COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm');
         expect(sql).toContain('t.surface_area_m2');
         expect(sql).toContain('pm.surface_area_m2');

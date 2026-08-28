@@ -323,6 +323,58 @@ describe('aquarium engineering calculations', () => {
     expect(calculated.results.total_return_flow_m3h).toBe(37.5);
   });
 
+  it('prefers a stored project-tank operating volume over complete dimensions', () => {
+    const calculated = calculateExhibitHydraulics(
+      exhibit,
+      [{
+        id: 'assigned-project-tank',
+        eff_shape: 'rectangular',
+        eff_length_mm: 5000,
+        eff_width_mm: 4000,
+        eff_water_level_mm: 3000,
+        project_operating_volume_m3: 42,
+        operating_volume_m3: 42,
+      }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+
+    expect(calculated.inputs.tanks[0]).toMatchObject({
+      source: 'stored',
+      formula: 'Stored project-tank operating volume',
+      value_m3: 42,
+    });
+    expect(calculated.results.operating_volume_m3).toBe(42);
+    expect(calculated.aat_reference.inputs.effective_operating_volume_m3).toBe(42);
+  });
+
+  it('uses linked PIM operating volume when the project tank inherits catalog values', () => {
+    const calculated = calculateExhibitHydraulics(
+      exhibit,
+      [{
+        id: 'assigned-pim-tank',
+        product_master_id: 'pim-tank',
+        eff_shape: 'rectangular',
+        eff_length_mm: 5000,
+        eff_width_mm: 4000,
+        eff_water_level_mm: 3000,
+        project_operating_volume_m3: null,
+        operating_volume_m3: null,
+        pim_operating_volume_m3: 48,
+      }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      { substrate_volume_m3: 3, theming_volume_m3: 5 },
+    );
+
+    expect(calculated.inputs.tanks[0]).toMatchObject({
+      source: 'stored',
+      formula: 'Stored PIM tank operating volume',
+      value_m3: 48,
+    });
+    expect(calculated.results.operating_volume_m3).toBe(40);
+    expect(calculated.aat_reference.inputs.effective_operating_volume_m3).toBe(40);
+  });
+
   it('marks saved system flow as a manual override', () => {
     const exhibitCalculation = calculateExhibitHydraulics(
       exhibit,

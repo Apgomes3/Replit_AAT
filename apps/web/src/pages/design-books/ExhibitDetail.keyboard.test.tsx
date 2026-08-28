@@ -221,6 +221,53 @@ describe('ExhibitDetail Escape navigation', () => {
     expect(screen.getByText(/net\/effective operating volume is missing or invalid/i)).toBeInTheDocument();
   });
 
+  it.each([
+    {
+      label: 'stale',
+      calculation: {
+        status: 'valid',
+        is_stale: true,
+        inputs: { exhibit_id: 'exhibit-1' },
+        results: { operating_volume_m3: 24 },
+        aat_reference: {
+          status: 'valid',
+          is_stale: true,
+          inputs: { effective_operating_volume_m3: 24 },
+          results: { recommended_flow_m3h: 50 },
+        },
+      },
+      expected: /calculation is stale/i,
+    },
+    {
+      label: 'incomplete',
+      calculation: {
+        status: 'valid',
+        is_stale: false,
+        inputs: { exhibit_id: 'exhibit-1' },
+        results: { operating_volume_m3: 24 },
+      },
+      expected: /payload is incomplete/i,
+    },
+  ])('does not invent an AAT result from a $label calculation payload', async ({ calculation, expected }) => {
+    apiGet.mockResolvedValue({
+      data: {
+        ...book,
+        tanks: [{
+          id: 'tank-1',
+          exhibit_id: 'exhibit-1',
+          eff_shape: 'Custom',
+          operating_volume_m3: 24,
+        }],
+        engineering_calculations: { exhibits: [calculation] },
+      },
+    });
+    renderExhibit([`${currentPath}?tab=flow`]);
+
+    expect(await screen.findByText('AAT reference unavailable.')).toBeInTheDocument();
+    expect(screen.getByText(expected)).toBeInTheDocument();
+    expect(screen.queryByText('50.000 m³/h')).not.toBeInTheDocument();
+  });
+
   it('keeps project tanks separate and creates a linked tank from the PIM library', async () => {
     apiGet.mockImplementation(async (url: string) => {
       if (url.startsWith('/design-books/')) return { data: book } as any;
