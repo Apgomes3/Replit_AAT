@@ -1,0 +1,75 @@
+export const FOAM_RECOMMENDED_PROCESS_RATE_LS_M2 = 20;
+export const FOAM_PROCESS_RATE_SLIDER_MIN = 10;
+export const FOAM_PROCESS_RATE_SLIDER_MAX = 30;
+
+export function calculateFoamFractionatorSizingRecommendation(
+  parentLoopFlowM3h: unknown,
+  products: any[],
+  currentRate?: unknown,
+) {
+  const parentFlowM3h = Number(parentLoopFlowM3h);
+  if (!Number.isFinite(parentFlowM3h) || parentFlowM3h <= 0) {
+    return {
+      status: 'incomplete' as const,
+      reason: 'Set the parent loop allocation above zero to size the fractionator.',
+    };
+  }
+  if (!Array.isArray(products) || products.length === 0) {
+    return {
+      status: 'incomplete' as const,
+      reason: 'Select a Foam Fractionator to see sizing guidance.',
+    };
+  }
+  const productRecommendations = products.map(product => {
+    const diameterMm = Number(product?.diameter_mm);
+    const unitAreaM2 = diameterMm > 0 ? Math.PI * Math.pow(diameterMm / 2000, 2) : null;
+    const quantity = Number(product?.quantity);
+    return {
+      ...product,
+      diameter_mm: Number.isFinite(diameterMm) && diameterMm > 0 ? diameterMm : null,
+      unitAreaM2,
+      quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 0,
+      suggestedQuantity: unitAreaM2
+        ? Math.max(1, Math.ceil((parentFlowM3h / 3.6) /
+          (FOAM_RECOMMENDED_PROCESS_RATE_LS_M2 * unitAreaM2)))
+        : null,
+    };
+  });
+  if (productRecommendations.some(product => product.unitAreaM2 == null)) {
+    return {
+      status: 'incomplete' as const,
+      reason: 'A selected fractionator has no valid saved diameter.',
+      products: productRecommendations,
+    };
+  }
+
+  const parentFlowLs = parentFlowM3h / 3.6;
+  const requiredAreaM2 = parentFlowLs / FOAM_RECOMMENDED_PROCESS_RATE_LS_M2;
+  const selectedAreaM2 = productRecommendations.reduce(
+    (sum, product) => sum + (product.unitAreaM2 as number) * product.quantity,
+    0,
+  );
+  const recommendedCapacityLs = selectedAreaM2 * FOAM_RECOMMENDED_PROCESS_RATE_LS_M2;
+  const selectedRate = Number(currentRate);
+  const selectedCapacityLs = selectedRate > 0 && Number.isFinite(selectedRate)
+    ? selectedAreaM2 * selectedRate
+    : null;
+  const tolerance = Math.max(parentFlowLs, recommendedCapacityLs) * 0.05;
+  const coverageStatus = recommendedCapacityLs < parentFlowLs - tolerance
+    ? 'below' as const
+    : recommendedCapacityLs > parentFlowLs + tolerance
+      ? 'above' as const
+      : 'near' as const;
+
+  return {
+    status: 'ready' as const,
+    recommendedRateLsM2: FOAM_RECOMMENDED_PROCESS_RATE_LS_M2,
+    parentFlowLs,
+    requiredAreaM2,
+    selectedAreaM2,
+    recommendedCapacityLs,
+    selectedCapacityLs,
+    coverageStatus,
+    products: productRecommendations,
+  };
+}

@@ -92,11 +92,19 @@ const bookWithPrimarySplit = {
   },
 };
 
-function renderFlowRoute(system: any = baseSystem, book: any = baseBook, links: any[] = []) {
+function renderFlowRoute(
+  system: any = baseSystem,
+  book: any = baseBook,
+  links: any[] = [],
+  fractionatorProducts: any[] = [],
+) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
     if (url === '/design-books/book-1') return Promise.resolve({ data: book });
     if (url === '/systems/system-1/exhibit-links') return Promise.resolve({ data: links });
+    if (url === '/systems/system-1/fractionator-products') {
+      return Promise.resolve({ data: { items: fractionatorProducts } });
+    }
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -636,5 +644,68 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     expect(route.getByText('20.0 m³/h')).toBeInTheDocument();
     expect(route.queryByText('Unavailable')).not.toBeInTheDocument();
+  });
+
+  it('synchronizes fractionator rate controls and only applies sizing when requested', async () => {
+    const user = userEvent.setup();
+    const product = {
+      id: 'ff-500',
+      product_code: 'FF-500',
+      product_name: 'Foam Fractionator 500',
+      diameter_mm: 500,
+    };
+    renderFlowRoute({
+      ...baseSystem,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 19,
+        notes: null,
+        products: [{
+          product_master_id: 'ff-500',
+          product_code: 'FF-500',
+          product_name: 'Foam Fractionator 500',
+          diameter_mm: 500,
+          quantity: 1,
+        }],
+      }],
+    }, baseBook, [], [product]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const slider = route.getByRole('slider', { name: 'AAT process rate slider for Loop 1' });
+    const rateInput = route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' });
+
+    expect(slider).toHaveValue('19');
+    expect(rateInput).toHaveValue(19);
+    expect(route.getByText('Suggested standalone quantity')).toBeInTheDocument();
+    expect(route.getByText('3 units')).toBeInTheDocument();
+    expect(rateInput).toHaveValue(19);
+
+    await user.clear(rateInput);
+    await user.type(rateInput, '24');
+    await waitFor(() => expect(slider).toHaveValue('24'));
+    expect(route.getByText(/outside it are allowed with an advisory/)).toBeInTheDocument();
+
+    await user.click(route.getByRole('button', { name: 'Apply rate + quantity' }));
+    expect(rateInput).toHaveValue(20);
+    expect(route.getByRole('spinbutton', { name: 'Quantity for FF-500' })).toHaveValue(3);
+
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        fractionator_allocations: [expect.objectContaining({
+          parent_loop_number: 1,
+          process_rate_ls_m2: 20,
+          products: [expect.objectContaining({
+            product_master_id: 'ff-500',
+            quantity: 3,
+          })],
+        })],
+      }),
+    ));
   });
 });

@@ -13,6 +13,12 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
+import {
+  calculateFoamFractionatorSizingRecommendation,
+  FOAM_PROCESS_RATE_SLIDER_MAX,
+  FOAM_PROCESS_RATE_SLIDER_MIN,
+  FOAM_RECOMMENDED_PROCESS_RATE_LS_M2,
+} from './foamFractionatorSizing';
 
 const SYSTEM_TYPES = [
   'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
@@ -1721,13 +1727,17 @@ export default function DesignBookLSSDetail() {
         const fractionatorFor = (source: any, n: number) =>
           (source?.fractionator_allocations || []).find(
             (allocation: any) => Number(allocation.parent_loop_number) === n);
-        const fractionatorCalculation = (source: any, n: number, loopFlow: number | null) => {
+        const selectedFractionatorProducts = (source: any, n: number) => {
           const allocation = fractionatorFor(source, n);
-          const products = (allocation?.products || []).map((selected: any) => {
+          return (allocation?.products || []).map((selected: any) => {
             const catalog = fractionatorProducts.find(
               (product: any) => product.id === selected.product_master_id);
             return { ...(catalog || {}), ...selected };
           });
+        };
+        const fractionatorCalculation = (source: any, n: number, loopFlow: number | null) => {
+          const allocation = fractionatorFor(source, n);
+          const products = selectedFractionatorProducts(source, n);
           if (loopFlow == null) return { status: 'incomplete', reason: 'Set the parent loop allocation to calculate capacity.' };
           if (!products.length) return { status: 'incomplete', reason: 'Select at least one Foam Fractionator.' };
           if (products.some((product: any) => !(Number(product.diameter_mm) > 0))) {
@@ -1771,6 +1781,42 @@ export default function DesignBookLSSDetail() {
               ? allocations.map((item: any) => Number(item.parent_loop_number) === n ? { ...item, ...changes } : item)
               : [...allocations, { ...allocation, ...changes }];
           });
+          const selectedProducts = selectedFractionatorProducts(source, n);
+          const recommendation: any = calculateFoamFractionatorSizingRecommendation(
+            loopFlow,
+            selectedProducts,
+            allocation.process_rate_ls_m2,
+          );
+          const currentRate = Number(allocation.process_rate_ls_m2);
+          const sliderValue = Number.isFinite(currentRate) && currentRate > 0
+            ? Math.min(FOAM_PROCESS_RATE_SLIDER_MAX, Math.max(FOAM_PROCESS_RATE_SLIDER_MIN, currentRate))
+            : FOAM_RECOMMENDED_PROCESS_RATE_LS_M2;
+          const applyRecommendedRate = () => {
+            if (recommendation.status !== 'ready') return;
+            updateAllocation({ process_rate_ls_m2: String(recommendation.recommendedRateLsM2) });
+          };
+          const applyRecommendedSizing = (productId?: string) => {
+            if (recommendation.status !== 'ready') return;
+            const target = productId
+              ? recommendation.products.find((product: any) => product.product_master_id === productId)
+              : recommendation.products.length === 1 ? recommendation.products[0] : null;
+            updateAllocation({
+              process_rate_ls_m2: String(recommendation.recommendedRateLsM2),
+              ...(target ? {
+                products: allocation.products.map((product: any) =>
+                  product.product_master_id === target.product_master_id
+                    ? { ...product, quantity: String(target.suggestedQuantity) }
+                    : product),
+              } : {}),
+            });
+          };
+          const recommendationStatus = recommendation.status === 'ready'
+            ? recommendation.coverageStatus === 'below'
+              ? 'Below suggested capacity'
+              : recommendation.coverageStatus === 'above'
+                ? 'Above suggested capacity'
+                : 'Near suggested capacity'
+            : null;
           return (
             <div className={`rounded-lg border p-3 ${statusStyle}`}>
               <div className="flex items-center justify-between gap-2 mb-2">
@@ -1816,20 +1862,115 @@ export default function DesignBookLSSDetail() {
                       </button>
                     </div>
                   ))}
-                  <div className="grid sm:grid-cols-2 gap-2">
+                  <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(250px,0.9fr)] gap-3 items-start">
                     <div>
-                      <label className="block text-[10px] font-medium mb-1">AAT process rate (L/s/m²)</label>
-                      <input type="number" min="0.001" step="0.1" value={allocation.process_rate_ls_m2}
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <label htmlFor={`fractionator-rate-${n}`} className="text-[10px] font-medium">
+                          AAT process rate (L/s/m²)
+                        </label>
+                        <span className="font-mono text-xs font-semibold text-violet-700">
+                          {allocation.process_rate_ls_m2 || '—'}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={FOAM_PROCESS_RATE_SLIDER_MIN}
+                        max={FOAM_PROCESS_RATE_SLIDER_MAX}
+                        step="0.1"
+                        value={sliderValue}
                         onChange={event => updateAllocation({ process_rate_ls_m2: event.target.value })}
-                        className={`${inputCls} bg-white`} />
-                      <p className="text-[10px] mt-1">Recommended: 18–22 L/s/m²</p>
+                        aria-label={`AAT process rate slider for Loop ${n}`}
+                        className="w-full accent-violet-600"
+                      />
+                      <div className="flex justify-between text-[9px] text-stone-400">
+                        <span>{FOAM_PROCESS_RATE_SLIDER_MIN}</span>
+                        <span>Recommended: 18–22</span>
+                        <span>{FOAM_PROCESS_RATE_SLIDER_MAX}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          id={`fractionator-rate-${n}`}
+                          type="number"
+                          min="0.001"
+                          step="0.1"
+                          value={allocation.process_rate_ls_m2}
+                          onChange={event => updateAllocation({ process_rate_ls_m2: event.target.value })}
+                          aria-label={`AAT process rate for Loop ${n}`}
+                          className={`${inputCls} bg-white max-w-32`}
+                        />
+                        <span className="text-[10px] text-stone-500">L/s/m²</span>
+                        {(currentRate > 0 && (currentRate < FOAM_PROCESS_RATE_SLIDER_MIN || currentRate > FOAM_PROCESS_RATE_SLIDER_MAX)) && (
+                          <span className="text-[9px] text-stone-500">Type any positive value; slider is 10–30.</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] mt-1">Recommended operating range: 18–22 L/s/m². Values outside it are allowed with an advisory.</p>
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-medium mb-1">Notes</label>
-                      <textarea rows={2} value={allocation.notes || ''}
-                        onChange={event => updateAllocation({ notes: event.target.value })}
-                        className={`${inputCls} bg-white resize-none`} />
+                    <div className="rounded-md border border-cyan-200 bg-cyan-50/70 p-2.5 text-[10px] text-cyan-950">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="font-semibold">Sizing guidance</span>
+                        <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[9px] font-medium text-cyan-700">Informational</span>
+                      </div>
+                      {recommendation.status === 'ready' ? (
+                        <>
+                          <p className="text-cyan-900/80">
+                            Based on <strong>{recommendation.parentFlowLs.toFixed(2)} L/s</strong> parent flow at the suggested
+                            <strong> {recommendation.recommendedRateLsM2} L/s/m²</strong> rate, the required area is
+                            <strong> {recommendation.requiredAreaM2.toFixed(4)} m²</strong>.
+                          </p>
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-2">
+                            <span>Selected area</span>
+                            <strong>{recommendation.selectedAreaM2.toFixed(4)} m²</strong>
+                            <span>Capacity at suggested rate</span>
+                            <strong>{recommendation.recommendedCapacityLs.toFixed(2)} L/s</strong>
+                            <span>Current status</span>
+                            <strong>{recommendationStatus}</strong>
+                          </div>
+                          <div className="mt-2 space-y-1.5">
+                            {recommendation.products.map((product: any) => (
+                              <div key={product.product_master_id} className="rounded bg-white/70 px-2 py-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-medium">{product.product_code}</span>
+                                  <span>Ø{product.diameter_mm} mm</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 mt-0.5">
+                                  <span>Suggested standalone quantity</span>
+                                  <strong>{product.suggestedQuantity} unit{product.suggestedQuantity === 1 ? '' : 's'}</strong>
+                                </div>
+                                {recommendation.products.length > 1 && (
+                                  <button type="button" onClick={() => applyRecommendedSizing(product.product_master_id)}
+                                    className="mt-1 text-[9px] font-semibold text-cyan-700 hover:text-cyan-900 underline">
+                                    Use {product.suggestedQuantity} for this model
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 mt-2">
+                            <button type="button" onClick={applyRecommendedRate}
+                              className="rounded border border-cyan-300 bg-white px-2 py-1 font-semibold text-cyan-700 hover:bg-cyan-100">
+                              Use {recommendation.recommendedRateLsM2} L/s/m²
+                            </button>
+                            {recommendation.products.length === 1 && (
+                              <button type="button" onClick={() => applyRecommendedSizing()}
+                                className="rounded border border-cyan-300 bg-cyan-700 px-2 py-1 font-semibold text-white hover:bg-cyan-800">
+                                Apply rate + quantity
+                              </button>
+                            )}
+                          </div>
+                          <p className="mt-1.5 text-[9px] text-cyan-900/70">
+                            Suggestions do not save or replace your values until you explicitly apply them.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-cyan-900/80">{recommendation.reason}</p>
+                      )}
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium mb-1">Notes</label>
+                    <textarea rows={2} value={allocation.notes || ''}
+                      onChange={event => updateAllocation({ notes: event.target.value })}
+                      className={`${inputCls} bg-white resize-none`} />
                   </div>
                 </div>
               )}
