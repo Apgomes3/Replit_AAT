@@ -76,6 +76,14 @@ function createFlowDraft(system: any) {
     ...stream,
     flow_pct: stream.flow_pct != null ? String(stream.flow_pct) : '',
   }));
+  draft.fractionator_allocations = (system.fractionator_allocations || []).map((allocation: any) => ({
+    ...allocation,
+    process_rate_ls_m2: allocation.process_rate_ls_m2 != null ? String(allocation.process_rate_ls_m2) : '',
+    products: (allocation.products || []).map((product: any) => ({
+      ...product,
+      quantity: String(product.quantity),
+    })),
+  }));
   return draft;
 }
 
@@ -88,6 +96,8 @@ function flowDraftLoopHasData(draft: Record<string, any>, n: number) {
     (draft[`loop${n}_bio_degas_m3h`] != null && draft[`loop${n}_bio_degas_m3h`] !== '') ||
     draft[`loop${n}_link_bio_degas`] ||
     (draft.side_streams || []).some((stream: any) => Number(stream.parent_loop_number) === n)
+    || (draft.fractionator_allocations || []).some(
+      (allocation: any) => Number(allocation.parent_loop_number) === n)
   );
 }
 
@@ -117,7 +127,9 @@ function flowDraftMatchesSystem(draft: Record<string, any>, system: any) {
     sort_order: Number(stream.sort_order || 0),
   }));
   return loopsMatch && JSON.stringify(comparableStreams(draft.side_streams || [])) ===
-    JSON.stringify(comparableStreams(system.side_streams || []));
+    JSON.stringify(comparableStreams(system.side_streams || []))
+    && JSON.stringify(draft.fractionator_allocations || []) ===
+      JSON.stringify(createFlowDraft(system).fractionator_allocations || []);
 }
 
 function nullableNumber(value: unknown): number | null {
@@ -153,6 +165,19 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
       flow_pct: nullableNumber(stream.flow_pct),
       notes: String(stream.notes || '').trim() || null,
       sort_order: index,
+    }));
+  fields.fractionator_allocations = (draft.fractionator_allocations || [])
+    .filter((allocation: any) =>
+      Number(allocation.parent_loop_number) !== clearedLoop
+      && draft[`loop${Number(allocation.parent_loop_number)}_filtration`] === 'Foam Fractionation')
+    .map((allocation: any) => ({
+      parent_loop_number: Number(allocation.parent_loop_number),
+      process_rate_ls_m2: nullableNumber(allocation.process_rate_ls_m2),
+      notes: String(allocation.notes || '').trim() || null,
+      products: (allocation.products || []).map((product: any) => ({
+        product_master_id: product.product_master_id,
+        quantity: Number(product.quantity),
+      })),
     }));
   return fields;
 }
@@ -451,6 +476,11 @@ export default function DesignBookLSSDetail() {
     queryKey: ['lss-compact-units'],
     queryFn: () => api.get('/lss-compact-units').then(r => r.data),
   });
+  const { data: fractionatorProducts = [] } = useQuery({
+    queryKey: ['foam-fractionator-products', systemId],
+    queryFn: () => api.get(`/systems/${systemId}/fractionator-products`).then(r => r.data.items),
+    enabled: !!systemId,
+  });
   const usesFrozenPackage = !!book && !['Draft', 'In Progress'].includes(book.status);
   const system = usesFrozenPackage
     ? (book.systems || []).find((item: any) => item.id === systemId)
@@ -494,6 +524,14 @@ export default function DesignBookLSSDetail() {
     setFlowForm((draft: any) => ({
       ...(draft || createFlowDraft(systemRef.current)),
       side_streams: update([...(draft?.side_streams || createFlowDraft(systemRef.current).side_streams)]),
+    }));
+  };
+  const setFractionatorAllocations = (update: (allocations: any[]) => any[]) => {
+    setFlowForm((draft: any) => ({
+      ...(draft || createFlowDraft(systemRef.current)),
+      fractionator_allocations: update([
+        ...(draft?.fractionator_allocations || createFlowDraft(systemRef.current).fractionator_allocations),
+      ]),
     }));
   };
   const [flowViewMode, setFlowViewMode] = useState<FlowViewMode>(getStoredFlowViewMode);
@@ -1680,6 +1718,140 @@ export default function DesignBookLSSDetail() {
           (source?.side_streams || [])
             .filter((stream: any) => Number(stream.parent_loop_number) === n)
             .sort((left: any, right: any) => Number(left.sort_order || 0) - Number(right.sort_order || 0));
+        const fractionatorFor = (source: any, n: number) =>
+          (source?.fractionator_allocations || []).find(
+            (allocation: any) => Number(allocation.parent_loop_number) === n);
+        const fractionatorCalculation = (source: any, n: number, loopFlow: number | null) => {
+          const allocation = fractionatorFor(source, n);
+          const products = (allocation?.products || []).map((selected: any) => {
+            const catalog = fractionatorProducts.find(
+              (product: any) => product.id === selected.product_master_id);
+            return { ...(catalog || {}), ...selected };
+          });
+          if (loopFlow == null) return { status: 'incomplete', reason: 'Set the parent loop allocation to calculate capacity.' };
+          if (!products.length) return { status: 'incomplete', reason: 'Select at least one Foam Fractionator.' };
+          if (products.some((product: any) => !(Number(product.diameter_mm) > 0))) {
+            return { status: 'incomplete', reason: 'A selected fractionator has no valid saved diameter.' };
+          }
+          const rate = Number(allocation?.process_rate_ls_m2);
+          if (!(rate > 0)) return { status: 'incomplete', reason: 'Enter an AAT process rate greater than zero.' };
+          const area = products.reduce((sum: number, product: any) =>
+            sum + Math.PI * Math.pow(Number(product.diameter_mm) / 2000, 2) * Number(product.quantity), 0);
+          const flowLs = loopFlow / 3.6;
+          const capacityLs = area * rate;
+          const tolerance = Math.max(flowLs, capacityLs) * 0.05;
+          return {
+            status: Math.abs(flowLs - capacityLs) <= tolerance ? 'matched'
+              : flowLs > capacityLs ? 'required_above_capacity' : 'capacity_above_required',
+            products, area, flowLs, rate, capacityLs, actualLoading: flowLs / area,
+            advisory: rate < 18 || rate > 22,
+          };
+        };
+        const FractionatorSummary = ({ source, n, loopFlow, editable = false }: {
+          source: any; n: number; loopFlow: number | null; editable?: boolean;
+        }) => {
+          const allocation = fractionatorFor(source, n) || {
+            parent_loop_number: n, process_rate_ls_m2: '', notes: '', products: [],
+          };
+          const calculation: any = fractionatorCalculation(source, n, loopFlow);
+          const statusStyle = calculation.status === 'matched'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : calculation.status === 'required_above_capacity'
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : calculation.status === 'capacity_above_required'
+                ? 'border-blue-200 bg-blue-50 text-blue-800'
+                : 'border-amber-200 bg-amber-50 text-amber-800';
+          const statusLabel = calculation.status === 'matched' ? 'Matched / within 5%'
+            : calculation.status === 'required_above_capacity' ? 'Required flow above capacity'
+            : calculation.status === 'capacity_above_required' ? 'Capacity above required flow'
+            : 'Calculation incomplete';
+          const updateAllocation = (changes: any) => setFractionatorAllocations(allocations => {
+            const existing = allocations.find((item: any) => Number(item.parent_loop_number) === n);
+            return existing
+              ? allocations.map((item: any) => Number(item.parent_loop_number) === n ? { ...item, ...changes } : item)
+              : [...allocations, { ...allocation, ...changes }];
+          });
+          return (
+            <div className={`rounded-lg border p-3 ${statusStyle}`}>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-xs font-semibold">Foam Fractionator capacity</span>
+                <span className="text-[10px] font-semibold">{statusLabel}</span>
+              </div>
+              {editable && (
+                <div className="space-y-3 mb-3">
+                  <div>
+                    <label className="block text-[10px] font-medium mb-1">Add fractionator model</label>
+                    <select value="" onChange={event => {
+                      if (!event.target.value) return;
+                      const selected = fractionatorProducts.find((product: any) => product.id === event.target.value);
+                      if (!selected || allocation.products.some((product: any) => product.product_master_id === selected.id)) return;
+                      updateAllocation({ products: [...allocation.products, {
+                        product_master_id: selected.id, product_code: selected.product_code,
+                        product_name: selected.product_name, diameter_mm: selected.diameter_mm, quantity: '1',
+                      }] });
+                    }} className={`${inputCls} bg-white`}>
+                      <option value="">— Select Foam Fractionator —</option>
+                      {fractionatorProducts.map((product: any) => (
+                        <option key={product.id} value={product.id}>
+                          {product.product_code} — {product.product_name} — {product.diameter_mm ? `Ø${product.diameter_mm} mm` : 'diameter unavailable'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {allocation.products.map((product: any) => (
+                    <div key={product.product_master_id} className="grid grid-cols-[1fr_80px_auto] gap-2 items-center rounded bg-white/70 p-2">
+                      <div className="text-[10px]">
+                        <strong>{product.product_code} — {product.product_name}</strong>
+                        <span className="block opacity-70">{product.diameter_mm ? `Ø${product.diameter_mm} mm` : 'Diameter unavailable'}</span>
+                      </div>
+                      <input type="number" min="1" step="1" aria-label={`${product.product_code} quantity`}
+                        value={product.quantity} onChange={event => updateAllocation({
+                          products: allocation.products.map((item: any) => item.product_master_id === product.product_master_id
+                            ? { ...item, quantity: event.target.value } : item),
+                        })} className="w-full rounded border border-current/20 px-2 py-1 text-xs bg-white" />
+                      <button type="button" aria-label={`Remove ${product.product_code}`}
+                        onClick={() => updateAllocation({ products: allocation.products.filter(
+                          (item: any) => item.product_master_id !== product.product_master_id) })}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-medium mb-1">AAT process rate (L/s/m²)</label>
+                      <input type="number" min="0.001" step="0.1" value={allocation.process_rate_ls_m2}
+                        onChange={event => updateAllocation({ process_rate_ls_m2: event.target.value })}
+                        className={`${inputCls} bg-white`} />
+                      <p className="text-[10px] mt-1">Recommended: 18–22 L/s/m²</p>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium mb-1">Notes</label>
+                      <textarea rows={2} value={allocation.notes || ''}
+                        onChange={event => updateAllocation({ notes: event.target.value })}
+                        className={`${inputCls} bg-white resize-none`} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {calculation.status === 'incomplete' ? (
+                <p className="text-[10px]">{calculation.reason}</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px]">
+                    <div><span className="block opacity-70">Models / count</span><strong>{calculation.products.map((p: any) => `${p.product_code} × ${p.quantity}`).join(', ')}</strong></div>
+                    <div><span className="block opacity-70">Total area</span><strong>{calculation.area.toFixed(4)} m²</strong></div>
+                    <div><span className="block opacity-70">Parent loop flow</span><strong>{fmtReferenceFlow(loopFlow)} ({calculation.flowLs.toFixed(3)} L/s)</strong></div>
+                    <div><span className="block opacity-70">Process rate</span><strong>{calculation.rate.toFixed(2)} L/s/m²</strong></div>
+                    <div><span className="block opacity-70">Calculated capacity</span><strong>{fmtReferenceFlow(calculation.capacityLs * 3.6)} ({calculation.capacityLs.toFixed(3)} L/s)</strong></div>
+                    <div><span className="block opacity-70">Actual loading</span><strong>{calculation.actualLoading.toFixed(3)} L/s/m²</strong></div>
+                  </div>
+                  {calculation.advisory && <p className="text-[10px] font-semibold mt-2">Advisory: selected rate is outside the recommended 18–22 L/s/m² range.</p>}
+                  {allocation.notes && !editable && <p className="text-[10px] mt-2 opacity-80">{allocation.notes}</p>}
+                </>
+              )}
+            </div>
+          );
+        };
         const fmtSideStreamFlow = (value: number | null) => {
           if (value == null) return 'Unavailable';
           const converted = value * UNIT_FACTORS[flowUnit];
@@ -1717,6 +1889,9 @@ export default function DesignBookLSSDetail() {
                   <span className="text-stone-500 text-xs">Filtration:</span>
                   <span className="font-medium text-stone-800">{filt}</span>
                 </div>
+              )}
+              {filt === 'Foam Fractionation' && (
+                <FractionatorSummary source={system} n={n} loopFlow={loopFlow} />
               )}
               <div className="flex items-center gap-2 text-sm flex-wrap">
                 <Gauge className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
@@ -1852,6 +2027,9 @@ export default function DesignBookLSSDetail() {
                   })}
                 </div>
               </div>
+              {curFilt === 'Foam Fractionation' && (
+                <FractionatorSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
+              )}
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">
                   Loop Flow Allocation (% of total system flow)

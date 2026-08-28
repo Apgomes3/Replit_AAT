@@ -19,7 +19,12 @@ const state = vi.hoisted(() => ({
     loop2_bio_degas_pct: null,
     loop3_flow_pct: null,
     loop3_bio_degas_pct: null,
+    loop1_filtration: 'Sand Filter',
+    loop2_filtration: 'Pressurized Bag Filter',
+    loop3_filtration: null,
+    design_flow_m3h: '100',
   } as Record<string, any>,
+  fractionatorCatalog: [] as any[],
 }));
 
 vi.mock('../db', () => {
@@ -32,6 +37,12 @@ vi.mock('../db', () => {
       return { rows: [{ ...state.currentSystem }] };
     }
     if (sql.includes('FROM system_flow_side_streams')) {
+      return { rows: [] };
+    }
+    if (sql.includes("pf.product_family_code='PFM-FF'")) {
+      return { rows: state.fractionatorCatalog };
+    }
+    if (sql.includes('FROM system_flow_fractionator_allocations')) {
       return { rows: [] };
     }
     if (sql.includes('SELECT DISTINCT water_type FROM exhibits')) {
@@ -134,6 +145,8 @@ describe('system Flow Route allocation persistence', () => {
     state.currentSystem.loop1_bio_degas_pct = '25';
     state.currentSystem.loop2_flow_pct = null;
     state.currentSystem.loop2_bio_degas_pct = null;
+    state.currentSystem.loop1_filtration = 'Sand Filter';
+    state.fractionatorCatalog = [];
   });
 
   afterAll(() => {
@@ -179,6 +192,75 @@ describe('system Flow Route allocation persistence', () => {
     const update = state.calls.find(call => call.sql.includes('UPDATE systems SET'));
     expect(update?.params[11]).toBe(40);
     expect(update?.params[12]).toBe(25);
+  });
+
+  it('persists Foam Fractionator snapshots and status against the parent loop', async () => {
+    state.fractionatorCatalog = [{
+      id: '11111111-1111-4111-8111-111111111111',
+      product_code: 'PM-FF-800',
+      product_name: 'Foam Fractionator FF-800',
+      diameter_mm: '800',
+    }];
+    const response = await request(app, {
+      ...basePayload,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      loop1_flow_pct: 36,
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 20,
+        notes: 'Duty allocation',
+        products: [{
+          product_master_id: '11111111-1111-4111-8111-111111111111',
+          quantity: 2,
+        }],
+      }],
+    });
+
+    expect(response.status).toBe(200);
+    const insert = state.calls.find(call =>
+      call.sql.includes('INSERT INTO system_flow_fractionator_allocations'));
+    expect(insert?.params[1]).toBe(1);
+    expect(insert?.params[2]).toBe(20);
+    expect(JSON.parse(insert?.params[4])).toEqual([expect.objectContaining({
+      product_code: 'PM-FF-800',
+      diameter_mm: 800,
+      quantity: 2,
+    })]);
+    expect(['matched', 'required_above_capacity', 'capacity_above_required'])
+      .toContain(insert?.params[5]);
+  });
+
+  it('rejects products outside the Foam Fractionator family', async () => {
+    const response = await request(app, {
+      ...basePayload,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      loop1_flow_pct: 50,
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 20,
+        products: [{
+          product_master_id: '22222222-2222-4222-8222-222222222222',
+          quantity: 1,
+        }],
+      }],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toContain('not a Foam Fractionator');
+  });
+
+  it('rejects Foam Fractionation on freshwater systems through the API', async () => {
+    const response = await request(app, {
+      ...basePayload,
+      loop1_filtration: 'Foam Fractionation',
+      loop1_flow_pct: 50,
+      fractionator_allocations: [],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toContain('only available for Marine or Salt Water');
   });
 
   it('rejects individual percentages outside the allowed range', async () => {

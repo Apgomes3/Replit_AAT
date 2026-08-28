@@ -1,11 +1,115 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculateFoamFractionatorCapacity,
   calculateExhibitHydraulics,
   calculateSideStreamFlow,
   calculateSystemEngineering,
   compatibleWaterTypes,
   evaluateCompactUnit,
 } from './aquariumCalculations';
+
+describe('Foam Fractionator capacity', () => {
+  const model = (code: string, diameter_mm: number | null, quantity: number) => ({
+    product_master_id: code,
+    product_code: code,
+    product_name: `Fractionator ${code}`,
+    diameter_mm,
+    quantity,
+  });
+
+  it('totals circular area across models and reports a matched capacity', () => {
+    const result = calculateFoamFractionatorCapacity(
+      36,
+      20,
+      [model('FF-1000', 1000, 1), model('FF-500', 500, 1)],
+    );
+
+    expect(result.results.selected_count).toBe(2);
+    expect(result.results.total_area_m2).toBeCloseTo(0.9817, 4);
+    expect(result.results.parent_loop_flow_ls).toBe(10);
+    expect(result.results.capacity_ls).toBeCloseTo(19.635, 3);
+    expect(result.results.actual_loading_ls_m2).toBeCloseTo(10.186, 3);
+    expect(result.match_status).toBe('capacity_above_required');
+  });
+
+  it('reports required flow above capacity', () => {
+    const result = calculateFoamFractionatorCapacity(72, 18, [model('FF-500', 500, 1)]);
+    expect(result.match_status).toBe('required_above_capacity');
+  });
+
+  it('accepts out-of-range rates with an advisory', () => {
+    const result = calculateFoamFractionatorCapacity(18, 25, [model('FF-500', 500, 1)]);
+    expect(result.advisory).toContain('18–22');
+    expect(result.status).toBe('valid');
+  });
+
+  it.each([
+    { flow: null, rate: 20, products: [model('FF-500', 500, 1)], reason: 'Parent loop' },
+    { flow: 18, rate: 20, products: [], reason: 'Select at least one' },
+    { flow: 18, rate: 20, products: [model('FF-500', null, 1)], reason: 'saved diameter' },
+  ])('returns an incomplete result when required inputs are unavailable', ({ flow, rate, products, reason }) => {
+    const result = calculateFoamFractionatorCapacity(flow, rate, products);
+    expect(result.match_status).toBe('incomplete');
+    expect(result.reasons.join(' ')).toContain(reason);
+  });
+});
+
+describe('Foam Fractionator release readiness', () => {
+  const baseSystem = {
+    id: 'system-foam',
+    design_flow_m3h: 100,
+    loop1_name: 'Foam loop',
+    loop1_filtration: 'Foam Fractionation',
+    loop1_flow_pct: 50,
+  };
+
+  it('makes incomplete Foam Fractionator inputs invalidate the system calculation', () => {
+    const result = calculateSystemEngineering(
+      baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [],
+      [{ parent_loop_number: 1, process_rate_ls_m2: null, products: [] }],
+    );
+    expect(result.status).toBe('invalid');
+    expect(result.reasons.join(' ')).toContain('Foam Fractionator capacity is incomplete');
+  });
+
+  it('makes insufficient Foam Fractionator capacity invalidate the system calculation', () => {
+    const result = calculateSystemEngineering(
+      baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [],
+      [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 18,
+        products: [{
+          product_master_id: 'ff-small',
+          product_code: 'FF-SMALL',
+          product_name: 'Small Fractionator',
+          diameter_mm: 250,
+          quantity: 1,
+        }],
+      }],
+    );
+    expect(result.status).toBe('invalid');
+    expect(result.reasons.join(' ')).toContain('required flow is above');
+  });
+
+  it('does not invalidate a system with adequate Foam Fractionator capacity', () => {
+    const result = calculateSystemEngineering(
+      baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [],
+      [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 20,
+        products: [{
+          product_master_id: 'ff-large',
+          product_code: 'FF-LARGE',
+          product_name: 'Large Fractionator',
+          diameter_mm: 2000,
+          quantity: 1,
+        }],
+      }],
+    );
+    expect(result.flow_route.loops[0].foam_fractionation.match_status).toBe('capacity_above_required');
+    expect(result.reasons.some(reason => reason.includes('Foam Fractionator'))).toBe(false);
+  });
+});
 
 const exhibit = { id: 'ex-1', water_type: 'Marine' };
 const tank = {

@@ -39,9 +39,15 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
      ORDER BY parent_loop_number, sort_order, created_at, id`,
     [systems.map(system => system.id)],
   )).rows;
+  const fractionators = (await runner(
+    `SELECT * FROM system_flow_fractionator_allocations
+     WHERE system_id = ANY($1::uuid[]) ORDER BY parent_loop_number`,
+    [systems.map(system => system.id)],
+  )).rows;
   return systems.map(system => ({
     ...system,
     side_streams: rows.filter(stream => stream.system_id === system.id),
+    fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
   }));
 }
 
@@ -212,6 +218,7 @@ async function loadReleaseContext(
     compactUnits.find(unit => unit.id === system.compact_unit_id) || null,
     calculatedAt,
     system.side_streams || [],
+    system.fractionator_allocations || [],
   ));
 
   const liveContext = {
@@ -479,6 +486,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     compactUnits.find(unit => unit.id === system.compact_unit_id) || null,
     calculationTimestamp,
     system.side_streams || [],
+    system.fractionator_allocations || [],
   ));
 
   const livePackage = {

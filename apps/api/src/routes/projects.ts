@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import {
   AQUARIUM_CALCULATION_VERSION,
   calculateExhibitHydraulics,
+  calculateFoamFractionatorCapacity,
   compatibleWaterTypes,
   evaluateCompactUnit,
 } from '../lib/aquariumCalculations';
@@ -147,6 +148,90 @@ async function loadSystemSideStreams(
      ORDER BY parent_loop_number, sort_order, created_at, id`,
     [systemId],
   )).rows;
+}
+
+async function loadSystemFractionatorAllocations(
+  systemId: string,
+  runner: (text: string, params?: any[]) => Promise<{ rows: any[] }> = query,
+) {
+  return (await runner(
+    `SELECT * FROM system_flow_fractionator_allocations
+     WHERE system_id=$1 ORDER BY parent_loop_number`,
+    [systemId],
+  )).rows;
+}
+
+async function normalizeFractionatorAllocations(
+  value: unknown,
+  system: any,
+  runner: (text: string, params?: any[]) => Promise<{ rows: any[] }> = query,
+) {
+  if (!Array.isArray(value)) return null;
+  const seenLoops = new Set<number>();
+  const normalized = [];
+  for (const [index, allocation] of value.entries()) {
+    const loopNumber = Number(allocation?.parent_loop_number);
+    if (!Number.isInteger(loopNumber) || loopNumber < 1 || loopNumber > 3 || seenLoops.has(loopNumber)) {
+      throw new Error(`Fractionator allocation ${index + 1} must belong to one unique main loop.`);
+    }
+    seenLoops.add(loopNumber);
+    if (String(system?.[`loop${loopNumber}_filtration`] || '') !== 'Foam Fractionation') {
+      throw new Error(`Loop ${loopNumber} must use Foam Fractionation before equipment can be allocated.`);
+    }
+    const rate = allocation?.process_rate_ls_m2 == null || allocation.process_rate_ls_m2 === ''
+      ? null : Number(allocation.process_rate_ls_m2);
+    if (rate != null && (!Number.isFinite(rate) || rate <= 0)) {
+      throw new Error(`Loop ${loopNumber} AAT process rate must be greater than zero.`);
+    }
+    const notes = allocation?.notes == null ? null : String(allocation.notes).trim() || null;
+    if (notes && notes.length > 5000) throw new Error(`Loop ${loopNumber} fractionator notes are too long.`);
+    const requestedProducts = Array.isArray(allocation?.products) ? allocation.products : [];
+    const productIds: string[] = [];
+    const quantities = new Map<string, number>();
+    for (const product of requestedProducts) {
+      const id = String(product?.product_master_id || '');
+      const quantity = Number(product?.quantity);
+      if (!id || !Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error(`Loop ${loopNumber} fractionator quantities must be positive whole numbers.`);
+      }
+      if (quantities.has(id)) throw new Error(`Loop ${loopNumber} contains the same fractionator model more than once.`);
+      productIds.push(id);
+      quantities.set(id, quantity);
+    }
+    const catalog = productIds.length ? (await runner(
+      `SELECT pm.id, pm.product_code, pm.product_name, pd.diameter_mm
+       FROM product_masters pm
+       JOIN product_families pf ON pf.id=pm.product_family_id
+       LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
+       WHERE pm.id = ANY($1::uuid[]) AND pf.product_family_code='PFM-FF'`,
+      [productIds],
+    )).rows : [];
+    if (catalog.length !== productIds.length) {
+      throw new Error(`Loop ${loopNumber} includes a product that is not a Foam Fractionator.`);
+    }
+    const products = productIds.map(id => {
+      const product = catalog.find(item => String(item.id) === id);
+      return {
+        product_master_id: product.id,
+        product_code: product.product_code,
+        product_name: product.product_name,
+        diameter_mm: product.diameter_mm == null ? null : Number(product.diameter_mm),
+        quantity: quantities.get(id),
+      };
+    });
+    const flowPct = system?.[`loop${loopNumber}_flow_pct`];
+    const parentFlow = flowPct == null || system?.design_flow_m3h == null
+      ? null : Number(system.design_flow_m3h) * Number(flowPct) / 100;
+    const calculation = calculateFoamFractionatorCapacity(parentFlow, rate, products);
+    normalized.push({
+      parent_loop_number: loopNumber,
+      process_rate_ls_m2: rate,
+      notes,
+      products,
+      calculation_status: calculation.match_status,
+    });
+  }
+  return normalized;
 }
 
 // PROJECTS
@@ -1391,7 +1476,7 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
   const result = await query('SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id WHERE s.id::text=$1 OR s.system_code=$1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   const sysId = result.rows[0].id;
-  const [equipment, tanks, sideStreams] = await Promise.all([
+  const [equipment, tanks, sideStreams, fractionatorAllocations] = await Promise.all([
     query(
       `SELECT pei.*, pm.product_code, pm.product_name, c.component_code, c.component_name,
               po.id   AS released_po_id,
@@ -1424,8 +1509,29 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
        WHERE t.system_id = $1
        ORDER BY t.tank_code`, [sysId]),
     loadSystemSideStreams(sysId),
+    loadSystemFractionatorAllocations(sysId),
   ]);
-  res.json({ ...result.rows[0], equipment: equipment.rows, tanks: tanks.rows, side_streams: sideStreams });
+  res.json({
+    ...result.rows[0],
+    equipment: equipment.rows,
+    tanks: tanks.rows,
+    side_streams: sideStreams,
+    fractionator_allocations: fractionatorAllocations,
+  });
+});
+
+router.get('/systems/:id/fractionator-products', authenticate, async (req: AuthRequest, res: Response) => {
+  const system = await query('SELECT id FROM systems WHERE id=$1', [req.params.id]);
+  if (!system.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+  const result = await query(
+    `SELECT pm.id, pm.product_code, pm.product_name, pm.standard_status, pd.diameter_mm
+     FROM product_masters pm
+     JOIN product_families pf ON pf.id=pm.product_family_id
+     LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
+     WHERE pf.product_family_code='PFM-FF' AND COALESCE(pm.status, 'Active')='Active'
+     ORDER BY pm.product_code`,
+  );
+  res.json({ items: result.rows });
 });
 
 router.post('/systems', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
@@ -1505,6 +1611,7 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
       loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct,
       loop3_bio_degas_m3h, loop3_link_bio_degas,
       loop1_name, loop2_name, loop3_name, side_streams,
+      fractionator_allocations,
       system_config, compact_unit_id, design_book_id,
     } = req.body;
     let normalizedSideStreams: ReturnType<typeof normalizeSideStreams> = null;
@@ -1561,6 +1668,25 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
     const resolvedLoop2BioPct = resolvedPercentage('loop2_bio_degas_pct', loop2_bio_degas_pct);
     const resolvedLoop3FlowPct = resolvedPercentage('loop3_flow_pct', loop3_flow_pct);
     const resolvedLoop3BioPct = resolvedPercentage('loop3_bio_degas_pct', loop3_bio_degas_pct);
+    const intendedSystem = {
+      ...currentSystem,
+      design_flow_m3h: Object.prototype.hasOwnProperty.call(req.body, 'design_flow_m3h')
+        ? (design_flow_m3h === '' || design_flow_m3h == null ? null : Number(design_flow_m3h))
+        : currentSystem.design_flow_m3h,
+      loop1_filtration: Object.prototype.hasOwnProperty.call(req.body, 'loop1_filtration') ? loop1_filtration : currentSystem.loop1_filtration,
+      loop2_filtration: Object.prototype.hasOwnProperty.call(req.body, 'loop2_filtration') ? loop2_filtration : currentSystem.loop2_filtration,
+      loop3_filtration: Object.prototype.hasOwnProperty.call(req.body, 'loop3_filtration') ? loop3_filtration : currentSystem.loop3_filtration,
+      loop1_flow_pct: resolvedLoop1FlowPct,
+      loop2_flow_pct: resolvedLoop2FlowPct,
+      loop3_flow_pct: resolvedLoop3FlowPct,
+    };
+    let normalizedFractionators: Awaited<ReturnType<typeof normalizeFractionatorAllocations>> = null;
+    try {
+      normalizedFractionators = await normalizeFractionatorAllocations(
+        fractionator_allocations, intendedSystem);
+    } catch (error: any) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
     const loopAllocationTotal = [
       resolvedLoop1FlowPct,
       resolvedLoop2FlowPct,
@@ -1575,6 +1701,16 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
       });
     }
     const intendedWaterType = water_type || currentResult.rows[0].water_type;
+    const foamLoops = [1, 2, 3].filter(
+      loopNumber => intendedSystem[`loop${loopNumber}_filtration`] === 'Foam Fractionation');
+    if (foamLoops.length && !['Marine', 'Salt Water'].includes(String(intendedWaterType))) {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION',
+          message: `Foam Fractionation is only available for Marine or Salt Water systems (Loop${foamLoops.length > 1 ? 's' : ''} ${foamLoops.join(', ')}).`,
+        },
+      });
+    }
     const linkedWaterTypes = await query(
       `SELECT e.exhibit_code, e.water_type
        FROM system_exhibit_links sel
@@ -1682,6 +1818,7 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
     let namedSystem: any;
     let existingSideStreams: any[] = [];
     let savedSideStreams: any[] = [];
+    let savedFractionators: any[] = [];
     try {
       await saveClient.query('BEGIN');
       result = await saveClient.query(
@@ -1776,6 +1913,22 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
         }
       }
       savedSideStreams = await loadSystemSideStreams(String(req.params.id), sideStreamQuery);
+      if (normalizedFractionators) {
+        await saveClient.query(
+          'DELETE FROM system_flow_fractionator_allocations WHERE system_id=$1',
+          [req.params.id],
+        );
+        for (const allocation of normalizedFractionators) {
+          await saveClient.query(
+            `INSERT INTO system_flow_fractionator_allocations
+               (system_id, parent_loop_number, process_rate_ls_m2, notes, products, calculation_status)
+             VALUES ($1,$2,$3,$4,$5::jsonb,$6)`,
+            [req.params.id, allocation.parent_loop_number, allocation.process_rate_ls_m2,
+              allocation.notes, JSON.stringify(allocation.products), allocation.calculation_status],
+          );
+        }
+      }
+      savedFractionators = await loadSystemFractionatorAllocations(String(req.params.id), sideStreamQuery);
       await saveClient.query('COMMIT');
     } catch (error) {
       await saveClient.query('ROLLBACK');
@@ -1815,9 +1968,14 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
         namedSystem.loop3_name || currentSystem.loop3_name || 'Loop 3',
       ],
       side_stream_count: savedSideStreams.length,
+      fractionator_allocation_count: savedFractionators.length,
       side_stream_changes: sideStreamChanges,
     });
-    res.json({ ...namedSystem, side_streams: savedSideStreams });
+    res.json({
+      ...namedSystem,
+      side_streams: savedSideStreams,
+      fractionator_allocations: savedFractionators,
+    });
   } catch (err: any) {
     if (err.code === '23505') {
       return res.status(409).json({ error: { code: 'CONFLICT', message: 'A system with that code already exists in this project.' } });

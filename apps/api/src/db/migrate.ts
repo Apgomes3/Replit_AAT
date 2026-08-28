@@ -1191,6 +1191,23 @@ CREATE TABLE IF NOT EXISTS system_flow_side_streams (
 CREATE INDEX IF NOT EXISTS idx_system_flow_side_streams_parent
   ON system_flow_side_streams(system_id, parent_loop_number, sort_order, created_at);
 
+CREATE TABLE IF NOT EXISTS system_flow_fractionator_allocations (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_id          UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  parent_loop_number SMALLINT NOT NULL CHECK (parent_loop_number BETWEEN 1 AND 3),
+  process_rate_ls_m2 NUMERIC(10,4),
+  notes              TEXT,
+  products           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  calculation_status VARCHAR(40) NOT NULL DEFAULT 'incomplete',
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(system_id, parent_loop_number),
+  CHECK (process_rate_ls_m2 IS NULL OR process_rate_ls_m2 > 0),
+  CHECK (jsonb_typeof(products) = 'array')
+);
+CREATE INDEX IF NOT EXISTS idx_system_flow_fractionators_parent
+  ON system_flow_fractionator_allocations(system_id, parent_loop_number);
+
 -- PROCUREMENT FIELDS: vendor, delivery date, payment/shipping terms, priority, UOM
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS required_by_date DATE;
