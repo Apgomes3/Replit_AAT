@@ -21,6 +21,8 @@ const baseContext = () => ({
     system_code: 'LSS-1',
     system_name: 'Primary LSS',
     loop1_flow_source: 'Calculated',
+    loop1_flow_pct: '55',
+    loop1_bio_degas_pct: '30',
     loop1_bio_degas_m3h: '12.5',
   }],
   system_links: [{
@@ -181,6 +183,13 @@ describe('Design Book version snapshots', () => {
       exhibit_id: 'exhibit-1',
       flow_allocation_m3h: '12.5',
       allocation_source: 'manual',
+    });
+    expect(snapshot.live_references.systems[0]).toMatchObject({
+      id: 'system-1',
+      loop1_flow_source: 'Calculated',
+      loop1_flow_pct: '55',
+      loop1_bio_degas_pct: '30',
+      loop1_bio_degas_m3h: '12.5',
     });
   });
 

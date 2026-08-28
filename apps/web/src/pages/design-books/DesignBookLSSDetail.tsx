@@ -47,7 +47,14 @@ function isEditingField(target: EventTarget | null): boolean {
     && (target.matches('input, select, textarea, [contenteditable="true"]') || target.isContentEditable);
 }
 
-const FLOW_LOOP_FIELDS = ['flow_source', 'filtration', 'bio_degas_m3h', 'link_bio_degas'] as const;
+const FLOW_LOOP_FIELDS = [
+  'flow_source',
+  'filtration',
+  'flow_pct',
+  'bio_degas_pct',
+  'bio_degas_m3h',
+  'link_bio_degas',
+] as const;
 const FLOW_UNSAVED_CONFIRMATION = 'You have unsaved Flow Route changes. Leave this page and discard them?';
 
 function createFlowDraft(system: any) {
@@ -55,6 +62,10 @@ function createFlowDraft(system: any) {
   for (const n of [1, 2, 3]) {
     draft[`loop${n}_flow_source`] = system[`loop${n}_flow_source`] || '';
     draft[`loop${n}_filtration`] = system[`loop${n}_filtration`] || '';
+    draft[`loop${n}_flow_pct`] =
+      system[`loop${n}_flow_pct`] != null ? String(system[`loop${n}_flow_pct`]) : '';
+    draft[`loop${n}_bio_degas_pct`] =
+      system[`loop${n}_bio_degas_pct`] != null ? String(system[`loop${n}_bio_degas_pct`]) : '';
     draft[`loop${n}_bio_degas_m3h`] =
       system[`loop${n}_bio_degas_m3h`] != null ? String(system[`loop${n}_bio_degas_m3h`]) : '';
     draft[`loop${n}_link_bio_degas`] = !!system[`loop${n}_link_bio_degas`];
@@ -66,7 +77,9 @@ function flowDraftLoopHasData(draft: Record<string, any>, n: number) {
   return !!(
     draft[`loop${n}_flow_source`] ||
     draft[`loop${n}_filtration`] ||
-    draft[`loop${n}_bio_degas_m3h`] ||
+    (draft[`loop${n}_flow_pct`] != null && draft[`loop${n}_flow_pct`] !== '') ||
+    (draft[`loop${n}_bio_degas_pct`] != null && draft[`loop${n}_bio_degas_pct`] !== '') ||
+    (draft[`loop${n}_bio_degas_m3h`] != null && draft[`loop${n}_bio_degas_m3h`] !== '') ||
     draft[`loop${n}_link_bio_degas`]
   );
 }
@@ -75,11 +88,59 @@ function flowDraftMatchesSystem(draft: Record<string, any>, system: any) {
   return [1, 2, 3].every(n => (
     (draft[`loop${n}_flow_source`] || '') === (system[`loop${n}_flow_source`] || '') &&
     (draft[`loop${n}_filtration`] || '') === (system[`loop${n}_filtration`] || '') &&
+    (draft[`loop${n}_flow_pct`] || '') === (
+      system[`loop${n}_flow_pct`] != null ? String(system[`loop${n}_flow_pct`]) : ''
+    ) &&
+    (draft[`loop${n}_bio_degas_pct`] || '') === (
+      system[`loop${n}_bio_degas_pct`] != null ? String(system[`loop${n}_bio_degas_pct`]) : ''
+    ) &&
     (draft[`loop${n}_bio_degas_m3h`] || '') === (
       system[`loop${n}_bio_degas_m3h`] != null ? String(system[`loop${n}_bio_degas_m3h`]) : ''
     ) &&
     !!draft[`loop${n}_link_bio_degas`] === !!system[`loop${n}_link_bio_degas`]
   ));
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
+  const fields: Record<string, any> = {};
+  for (const n of [1, 2, 3]) {
+    const cleared = n === clearedLoop;
+    fields[`loop${n}_flow_source`] = cleared ? null : (draft[`loop${n}_flow_source`] || null);
+    fields[`loop${n}_filtration`] = cleared ? null : (draft[`loop${n}_filtration`] || null);
+    fields[`loop${n}_flow_pct`] = cleared ? null : nullableNumber(draft[`loop${n}_flow_pct`]);
+    fields[`loop${n}_bio_degas_pct`] = cleared ? null : nullableNumber(draft[`loop${n}_bio_degas_pct`]);
+    fields[`loop${n}_bio_degas_m3h`] = cleared ? null : nullableNumber(draft[`loop${n}_bio_degas_m3h`]);
+    fields[`loop${n}_link_bio_degas`] = cleared ? false : !!draft[`loop${n}_link_bio_degas`];
+  }
+  return fields;
+}
+
+function flowAllocationError(draft: Record<string, any>): string | null {
+  let total = 0;
+  for (const n of [1, 2, 3]) {
+    for (const [key, label] of [
+      [`loop${n}_flow_pct`, `Loop ${n} allocation`],
+      [`loop${n}_bio_degas_pct`, `Loop ${n} Bio/Degas allocation`],
+    ] as const) {
+      const raw = draft[key];
+      if (raw === undefined || raw === null || raw === '') continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        return `${label} must be between 0% and 100%.`;
+      }
+    }
+    const flowPct = nullableNumber(draft[`loop${n}_flow_pct`]);
+    if (flowPct != null) total += flowPct;
+  }
+  return total > 100.000001
+    ? `Active loop allocations total ${total.toFixed(1)}%. Reduce them to 100% or less before saving.`
+    : null;
 }
 
 function WaterTypeBadge({ type }: { type?: string }) {
@@ -377,7 +438,7 @@ export default function DesignBookLSSDetail() {
   const [flowForm,     setFlowForm]     = useState<any>(null);
   const setFF = (k: string, v: any) => setFlowForm((f: any) => ({ ...f, [k]: v }));
   const [flowViewMode, setFlowViewMode] = useState<FlowViewMode>(getStoredFlowViewMode);
-  const [flowUnit, setFlowUnit] = useState<'M3H' | 'LS' | 'GPM'>('M3H');
+  const [flowUnit, setFlowUnit] = useState<'M3H' | 'LS' | 'US_GPM' | 'IMP_GPM'>('M3H');
   const [expandedCardLoops, setExpandedCardLoops] = useState<number[]>([1]);
   const [listEditRow, setListEditRow] = useState<number | null>(null);
   const [listRowForm, setListRowForm] = useState<any>(null);
@@ -513,6 +574,8 @@ export default function DesignBookLSSDetail() {
   const getFlowDraftRow = (draft: any, n: number) => ({
     flow_source: draft[`loop${n}_flow_source`] || '',
     filtration: draft[`loop${n}_filtration`] || '',
+    flow_pct: draft[`loop${n}_flow_pct`] || '',
+    bio_degas_pct: draft[`loop${n}_bio_degas_pct`] || '',
     bio_degas_m3h: draft[`loop${n}_bio_degas_m3h`] || '',
     link_bio_degas: !!draft[`loop${n}_link_bio_degas`],
   });
@@ -576,6 +639,7 @@ export default function DesignBookLSSDetail() {
     if (!editForm.system_name.trim()) return toast.error('System name is required');
     setEditSaving(true);
     try {
+      const flowFields = buildFlowLoopFields(system);
       await api.put(`/systems/${systemId}`, {
         system_code:          editForm.system_code,
         system_name:          editForm.system_name,
@@ -586,21 +650,10 @@ export default function DesignBookLSSDetail() {
         status:               editForm.status,
         duty_description:     editForm.duty_description   || null,
         redundancy_strategy:  editForm.redundancy_strategy || null,
-        loop1_flow_source:    system.loop1_flow_source    || null,
-        loop1_filtration:     system.loop1_filtration     || null,
-        loop1_bio_degas_m3h:  system.loop1_bio_degas_m3h  ?? null,
-        loop1_link_bio_degas: !!system.loop1_link_bio_degas,
-        loop2_flow_source:    system.loop2_flow_source    || null,
-        loop2_filtration:     system.loop2_filtration     || null,
-        loop2_bio_degas_m3h:  system.loop2_bio_degas_m3h  ?? null,
-        loop2_link_bio_degas: !!system.loop2_link_bio_degas,
-        loop3_flow_source:    system.loop3_flow_source    || null,
-        loop3_filtration:     system.loop3_filtration     || null,
-        loop3_bio_degas_m3h:  system.loop3_bio_degas_m3h  ?? null,
-        loop3_link_bio_degas: !!system.loop3_link_bio_degas,
         system_config:        system.system_config        || 'bespoke',
         compact_unit_id:      system.compact_unit_id      || null,
         design_book_id:       bookId,
+        ...flowFields,
       });
       toast.success('System updated');
       setEditMode(false);
@@ -645,6 +698,7 @@ export default function DesignBookLSSDetail() {
   const saveSystemConfig = async (config: 'compact' | 'bespoke', unitId?: string) => {
     setConfigSaving(true);
     try {
+      const flowFields = buildFlowLoopFields(system);
       await api.put(`/systems/${systemId}`, {
         system_code:         system.system_code,
         system_name:         system.system_name,
@@ -655,21 +709,10 @@ export default function DesignBookLSSDetail() {
         turnover_rate_hr:    system.turnover_rate_hr     || null,
         duty_description:    system.duty_description     || null,
         redundancy_strategy: system.redundancy_strategy  || null,
-        loop1_flow_source:    system.loop1_flow_source    || null,
-        loop1_filtration:     system.loop1_filtration     || null,
-        loop1_bio_degas_m3h:  system.loop1_bio_degas_m3h  ?? null,
-        loop1_link_bio_degas: !!system.loop1_link_bio_degas,
-        loop2_flow_source:    system.loop2_flow_source    || null,
-        loop2_filtration:     system.loop2_filtration     || null,
-        loop2_bio_degas_m3h:  system.loop2_bio_degas_m3h  ?? null,
-        loop2_link_bio_degas: !!system.loop2_link_bio_degas,
-        loop3_flow_source:    system.loop3_flow_source    || null,
-        loop3_filtration:     system.loop3_filtration     || null,
-        loop3_bio_degas_m3h:  system.loop3_bio_degas_m3h  ?? null,
-        loop3_link_bio_degas: !!system.loop3_link_bio_degas,
         system_config:   config,
         compact_unit_id: config === 'compact' ? (unitId || null) : null,
         design_book_id:  bookId,
+        ...flowFields,
       });
       toast.success(config === 'compact' ? 'Set to Compact Unit' : 'Set to Bespoke System');
       refresh();
@@ -682,14 +725,18 @@ export default function DesignBookLSSDetail() {
 
   const startFlowEdit = (addLoop?: number) => {
     const draft = flowForm || createFlowDraft(system);
-    const active = [1, 2, 3].filter(n => n === 1 || flowDraftLoopHasData(draft, n));
-    const expanded = addLoop && !active.includes(addLoop) ? [...active, addLoop] : active;
+    const active = [1, 2, 3].filter(n => flowDraftLoopHasData(draft, n));
+    const expanded = addLoop && !active.includes(addLoop)
+      ? [...active, addLoop]
+      : (active.length > 0 ? active : [1]);
     setExpandedCardLoops(expanded);
     setFlowForm(draft);
     setFlowEditMode(true);
   };
 
   const saveFlowRoute = async () => {
+    const validationMessage = flowAllocationError(flowForm || {});
+    if (validationMessage) return toast.error(validationMessage);
     setFlowSaving(true);
     try {
       await api.put(`/systems/${systemId}`, {
@@ -705,18 +752,7 @@ export default function DesignBookLSSDetail() {
         system_config:        system.system_config        || 'bespoke',
         compact_unit_id:      system.compact_unit_id      || null,
         design_book_id:       bookId,
-        loop1_flow_source:    flowForm.loop1_flow_source    || null,
-        loop1_filtration:     flowForm.loop1_filtration     || null,
-        loop1_bio_degas_m3h:  flowForm.loop1_bio_degas_m3h  ? parseFloat(flowForm.loop1_bio_degas_m3h)  : null,
-        loop1_link_bio_degas: flowForm.loop1_link_bio_degas,
-        loop2_flow_source:    flowForm.loop2_flow_source    || null,
-        loop2_filtration:     flowForm.loop2_filtration     || null,
-        loop2_bio_degas_m3h:  flowForm.loop2_bio_degas_m3h  ? parseFloat(flowForm.loop2_bio_degas_m3h)  : null,
-        loop2_link_bio_degas: flowForm.loop2_link_bio_degas,
-        loop3_flow_source:    flowForm.loop3_flow_source    || null,
-        loop3_filtration:     flowForm.loop3_filtration     || null,
-        loop3_bio_degas_m3h:  flowForm.loop3_bio_degas_m3h  ? parseFloat(flowForm.loop3_bio_degas_m3h)  : null,
-        loop3_link_bio_degas: flowForm.loop3_link_bio_degas,
+        ...buildFlowLoopFields(flowForm),
       });
       toast.success('Flow route saved');
       clearFlowDraft();
@@ -730,19 +766,14 @@ export default function DesignBookLSSDetail() {
 
   const saveListRow = async (n: number) => {
     if (!listRowForm) return;
+    const draft = { ...(flowForm || createFlowDraft(system) as any) };
+    for (const key of FLOW_LOOP_FIELDS) {
+      draft[`loop${n}_${key}`] = listRowForm[key];
+    }
+    const validationMessage = flowAllocationError(draft);
+    if (validationMessage) return toast.error(validationMessage);
     setFlowSaving(true);
     try {
-      const draft = { ...(flowForm || createFlowDraft(system) as any) };
-      for (const key of FLOW_LOOP_FIELDS) {
-        draft[`loop${n}_${key}`] = listRowForm[key];
-      }
-      const loopFields: any = {};
-      for (const ln of [1, 2, 3]) {
-        loopFields[`loop${ln}_flow_source`]    = draft[`loop${ln}_flow_source`] || null;
-        loopFields[`loop${ln}_filtration`]     = draft[`loop${ln}_filtration`] || null;
-        loopFields[`loop${ln}_bio_degas_m3h`]  = draft[`loop${ln}_bio_degas_m3h`] ? parseFloat(draft[`loop${ln}_bio_degas_m3h`]) : null;
-        loopFields[`loop${ln}_link_bio_degas`] = !!draft[`loop${ln}_link_bio_degas`];
-      }
       await api.put(`/systems/${systemId}`, {
         system_code:         system.system_code,
         system_name:         system.system_name,
@@ -756,7 +787,7 @@ export default function DesignBookLSSDetail() {
         system_config:       system.system_config       || 'bespoke',
         compact_unit_id:     system.compact_unit_id     || null,
         design_book_id:      bookId,
-        ...loopFields,
+        ...buildFlowLoopFields(draft),
       });
       toast.success(`Loop ${n} saved`);
       // Await refetch so the loop stays visible in the list until new data arrives
@@ -780,13 +811,6 @@ export default function DesignBookLSSDetail() {
     setFlowSaving(true);
     try {
       const draft = flowForm || createFlowDraft(system);
-      const loopFields: any = {};
-      for (const ln of [1, 2, 3]) {
-        loopFields[`loop${ln}_flow_source`]    = ln === n ? null : (draft[`loop${ln}_flow_source`] || null);
-        loopFields[`loop${ln}_filtration`]     = ln === n ? null : (draft[`loop${ln}_filtration`] || null);
-        loopFields[`loop${ln}_bio_degas_m3h`]  = ln === n ? null : (draft[`loop${ln}_bio_degas_m3h`] ? parseFloat(draft[`loop${ln}_bio_degas_m3h`]) : null);
-        loopFields[`loop${ln}_link_bio_degas`] = ln === n ? false : !!draft[`loop${ln}_link_bio_degas`];
-      }
       await api.put(`/systems/${systemId}`, {
         system_code:         system.system_code,
         system_name:         system.system_name,
@@ -800,7 +824,7 @@ export default function DesignBookLSSDetail() {
         system_config:       system.system_config       || 'bespoke',
         compact_unit_id:     system.compact_unit_id     || null,
         design_book_id:      bookId,
-        ...loopFields,
+        ...buildFlowLoopFields(draft, n),
       });
       toast.success(`Loop ${n} removed`);
       clearFlowDraft();
@@ -1372,39 +1396,31 @@ export default function DesignBookLSSDetail() {
           ? exhibitCalculations.find((calculation: any) =>
               calculation.inputs?.exhibit_id === primaryExLink.exhibit_id)
           : null;
-        const surfacePct = primaryCalculation?.inputs?.surface_skim_pct ?? 30;
-        const bottomPct  = primaryCalculation?.inputs?.bottom_drain_pct ?? 70;
         // System flow is selected by the API contract, including any override.
         const systemFlow = (() => {
           const saved = systemCalculation?.results?.design_flow_m3h ?? 0;
           if (saved > 0) return saved;
+          const configured = Number(system.design_flow_m3h);
+          if (Number.isFinite(configured) && configured > 0) return configured;
           if (primaryCalculation?.results?.total_return_flow_m3h > 0) {
             return primaryCalculation.results.total_return_flow_m3h;
           }
           return totalCalculatedFlow;
         })();
 
-        const surfaceFlow = primaryCalculation?.results?.surface_skim_flow_m3h ??
-          systemFlow * (surfacePct / 100);
-        const bottomFlow  = primaryCalculation?.results?.bottom_drain_flow_m3h ??
-          systemFlow * (bottomPct / 100);
-        const srcPct = (src: string): number =>
-          src === 'Bottom Drain' ? bottomPct :
-          src === 'Surface Skim' ? surfacePct : 100;
-        const linkedFlowForSource = (src: string): number => {
-          if (src === 'Bottom Drain')  return bottomFlow;
-          if (src === 'Surface Skim')  return surfaceFlow;
-          return systemFlow;
-        };
-        const linkedFlowLabel = (src: string): string => {
-          if (src === 'Bottom Drain')  return `bottom drain (${bottomPct}%)`;
-          if (src === 'Surface Skim')  return `surface skim (${surfacePct}%)`;
-          return 'total exhibit flow';
-        };
-
         // Unit conversion helpers
-        const UNIT_FACTORS: Record<string, number> = { M3H: 1, LS: 1000 / 3600, GPM: 4.40287 };
-        const UNIT_LABELS:  Record<string, string>  = { M3H: 'm³/h', LS: 'L/s', GPM: 'GPM' };
+        const UNIT_FACTORS: Record<string, number> = {
+          M3H: 1,
+          LS: 1000 / 3600,
+          US_GPM: 4.4028675,
+          IMP_GPM: 3.6661541,
+        };
+        const UNIT_LABELS: Record<string, string> = {
+          M3H: 'm³/h',
+          LS: 'L/s',
+          US_GPM: 'US GPM',
+          IMP_GPM: 'Imperial GPM',
+        };
         const fmtFlow = (m3h: number): string => {
           if (!(m3h > 0)) return '—';
           const val = m3h * UNIT_FACTORS[flowUnit];
@@ -1419,19 +1435,41 @@ export default function DesignBookLSSDetail() {
 
         const loopHasData = (n: number) =>
           !!(system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] ||
+             system[`loop${n}_flow_pct`] != null || system[`loop${n}_bio_degas_pct`] != null ||
              system[`loop${n}_bio_degas_m3h`] != null || system[`loop${n}_link_bio_degas`]);
 
-        const activeLoops: number[]        = [1, 2, 3].filter(n => n === 1 || loopHasData(n));
-        const nextLoopToAdd: number | undefined = [2, 3].find(n => !loopHasData(n) && (n === 2 || loopHasData(n - 1)));
+        const activeLoops: number[] = [1, 2, 3].filter(loopHasData);
+        const nextLoopToAdd: number | undefined = [1, 2, 3].find(n =>
+          !loopHasData(n) && (n === 1 || loopHasData(n - 1)));
         const canAddNext = nextLoopToAdd != null && nextLoopToAdd <= 3;
+        const flowForPercentage = (percentage: unknown): number | null => {
+          const pct = nullableNumber(percentage);
+          return pct != null && systemFlow > 0 ? systemFlow * pct / 100 : null;
+        };
+        const allocationSource = flowForm || system;
+        const allocationTotal = [1, 2, 3].reduce(
+          (sum, n) => sum + (nullableNumber(allocationSource[`loop${n}_flow_pct`]) ?? 0),
+          0,
+        );
+        const allocationPending = activeLoops.filter(
+          n => nullableNumber(allocationSource[`loop${n}_flow_pct`]) == null,
+        ).length;
+        const unallocatedPct = Math.max(0, 100 - allocationTotal);
+        const allocationValidation = flowAllocationError(allocationSource);
 
         // ── Read-only loop card ────────────────────────────────────────────
         const LoopView = ({ n }: { n: number }) => {
           const src    = system[`loop${n}_flow_source`];
           const filt   = system[`loop${n}_filtration`];
           const bio    = system[`loop${n}_bio_degas_m3h`];
+          const loopPct = nullableNumber(system[`loop${n}_flow_pct`]);
+          const bioPct = nullableNumber(system[`loop${n}_bio_degas_pct`]);
           const linked = !!system[`loop${n}_link_bio_degas`];
-          if (!src && !filt && bio == null && !linked)
+          const loopFlow = flowForPercentage(loopPct);
+          const bioFlow = loopFlow != null && bioPct != null
+            ? loopFlow * bioPct / 100
+            : nullableNumber(bio);
+          if (!src && !filt && loopPct == null && bio == null && bioPct == null && !linked)
             return <div className="text-xs text-stone-300 italic py-2">Not configured</div>;
           return (
             <div className="space-y-2">
@@ -1449,18 +1487,28 @@ export default function DesignBookLSSDetail() {
                   <span className="font-medium text-stone-800">{filt}</span>
                 </div>
               )}
-              {src && (
+              <div className="flex items-center gap-2 text-sm flex-wrap">
+                <Gauge className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
+                <span className="text-stone-500 text-xs">Loop flow:</span>
+                <span className="font-mono font-semibold text-xs text-stone-800">
+                  {fmtFlow(loopFlow ?? 0)}
+                </span>
+                <span className="text-stone-400 text-xs">
+                  · {loopPct != null ? `${loopPct}% of system` : 'allocation not reviewed'}
+                </span>
+              </div>
+              {linked && (
                 <div className="flex items-center gap-2 text-sm flex-wrap">
                   <Wind className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   <span className="text-stone-500 text-xs">Bio/Degas:</span>
-                  <span className="flex items-center gap-1.5 flex-wrap">
-                    <span className={`font-mono font-semibold text-xs ${linked ? 'text-emerald-700' : 'text-stone-700'}`}>
-                      {fmtFlow(linkedFlowForSource(src))}
-                    </span>
-                    <span className="text-stone-400 text-xs">· {srcPct(src)}% of exhibit</span>
-                    {linked && (
-                      <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">linked</span>
-                    )}
+                  <span className="font-mono font-semibold text-xs text-emerald-700">
+                    {fmtFlow(bioFlow ?? 0)}
+                  </span>
+                  <span className="text-stone-400 text-xs">
+                    · {bioPct != null ? `${bioPct}% of loop` : 'allocation not reviewed'}
+                  </span>
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                    linked
                   </span>
                 </div>
               )}
@@ -1473,11 +1521,16 @@ export default function DesignBookLSSDetail() {
           if (!flowForm) return null;
           const srcKey  = `loop${n}_flow_source`;
           const filtKey = `loop${n}_filtration`;
-          const bioKey  = `loop${n}_bio_degas_m3h`;
+          const pctKey  = `loop${n}_flow_pct`;
+          const bioPctKey = `loop${n}_bio_degas_pct`;
           const lnkKey  = `loop${n}_link_bio_degas`;
           const linked: boolean = !!flowForm[lnkKey];
           const curSrc  = flowForm[srcKey]  as string;
           const curFilt = flowForm[filtKey] as string;
+          const loopPct = nullableNumber(flowForm[pctKey]);
+          const bioPct = nullableNumber(flowForm[bioPctKey]);
+          const loopFlow = flowForPercentage(loopPct);
+          const bioFlow = loopFlow != null && bioPct != null ? loopFlow * bioPct / 100 : null;
           return (
             <div className="space-y-4">
               <div>
@@ -1509,8 +1562,26 @@ export default function DesignBookLSSDetail() {
                 </div>
               </div>
               <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1.5">
+                  Loop Flow Allocation (% of total system flow)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input type="number" step="0.1" min="0" max="100" placeholder="e.g. 60"
+                    aria-label={`Loop ${n} flow allocation percentage`}
+                    value={flowForm[pctKey]} onChange={e => setFF(pctKey, e.target.value)}
+                    className={`${inputCls} max-w-32`} />
+                  <span className="text-xs text-stone-400">%</span>
+                  <span className="text-xs text-stone-500">
+                    = <strong className="font-mono text-stone-700">{fmtFlow(loopFlow ?? 0)}</strong>
+                  </span>
+                </div>
+                {loopPct == null && (
+                  <p className="text-[10px] text-stone-400 mt-1">Leave blank until this loop allocation is reviewed.</p>
+                )}
+              </div>
+              <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-stone-500">Bio / Degas Flow (m³/h)</label>
+                  <label className="text-xs font-medium text-stone-500">Bio / Degas Branch</label>
                   <label className="flex items-center gap-1.5 text-xs text-stone-500 cursor-pointer select-none">
                     <input type="checkbox" checked={linked} onChange={e => setFF(lnkKey, e.target.checked)}
                       className="rounded border-stone-300 text-emerald-600 focus:ring-emerald-400/40" />
@@ -1518,23 +1589,23 @@ export default function DesignBookLSSDetail() {
                   </label>
                 </div>
                 {linked ? (
-                  <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 font-mono text-emerald-800 font-semibold text-sm">
-                    {fmtFlow(linkedFlowForSource(curSrc))}{' '}
-                    <span className="text-emerald-600 font-normal text-xs">· {srcPct(curSrc)}% of exhibit</span>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <input type="number" step="0.1" min="0" max="100" placeholder="e.g. 25"
+                        aria-label={`Loop ${n} Bio/Degas allocation percentage`}
+                        value={flowForm[bioPctKey]} onChange={e => setFF(bioPctKey, e.target.value)}
+                        className={`${inputCls} max-w-32`} />
+                      <span className="text-xs text-stone-400">% of loop</span>
+                      <span className="text-xs text-emerald-700">
+                        = <strong className="font-mono">{fmtFlow(bioFlow ?? 0)}</strong>
+                      </span>
+                    </div>
+                    {bioPct == null && (
+                      <p className="text-[10px] text-stone-400">Leave blank until this branch allocation is reviewed.</p>
+                    )}
                   </div>
                 ) : (
-                  <div>
-                    {curSrc && linkedFlowForSource(curSrc) > 0 && (
-                      <div className="text-xs text-stone-400 mb-1.5">
-                        Exhibit ref:{' '}
-                        <span className="font-mono text-stone-600">{fmtFlow(linkedFlowForSource(curSrc))}</span>
-                        {' '}· {srcPct(curSrc)}% of exhibit
-                      </div>
-                    )}
-                    <input type="number" step="0.1" min="0" placeholder="e.g. 12.5"
-                      value={flowForm[bioKey]} onChange={e => setFF(bioKey, e.target.value)}
-                      className={inputCls} />
-                  </div>
+                  <p className="text-xs text-stone-400">Not connected. Enable the link to define the Bio/Degas branch percentage.</p>
                 )}
               </div>
             </div>
@@ -1556,10 +1627,10 @@ export default function DesignBookLSSDetail() {
               <div className="flex items-center gap-2">
                 {/* Unit toggle */}
                 <div className="flex rounded-md border border-stone-200 overflow-hidden text-xs">
-                  {(['M3H', 'LS', 'GPM'] as const).map((u, i) => (
+                  {(['M3H', 'LS', 'US_GPM', 'IMP_GPM'] as const).map((u, i) => (
                     <button key={u} onClick={() => setFlowUnit(u)}
                       className={`px-2 py-1 transition-colors ${i > 0 ? 'border-l border-stone-200' : ''} ${flowUnit === u ? 'bg-cyan-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
-                      {u === 'M3H' ? 'm³/h' : u === 'LS' ? 'L/s' : 'GPM'}
+                      {UNIT_LABELS[u]}
                     </button>
                   ))}
                 </div>
@@ -1575,13 +1646,45 @@ export default function DesignBookLSSDetail() {
                   </button>
                 </div>
                 {/* Edit button — card view only */}
-                {flowViewMode === 'card' && !flowEditMode && (
+                {flowViewMode === 'card' && !flowEditMode && !readOnly && (
                   <button onClick={() => startFlowEdit()}
                     className="flex items-center gap-1 text-xs text-violet-700 hover:text-violet-900 border border-violet-200 bg-white rounded-md px-2.5 py-1.5 transition-colors">
                     <Pencil className="w-3 h-3" /> Edit
                   </button>
                 )}
               </div>
+            </div>
+
+            <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-3 border-b ${
+              allocationValidation ? 'bg-red-50 border-red-200' : 'bg-stone-50/50 border-stone-100'
+            }`}>
+              <div>
+                <span className="block text-[10px] uppercase tracking-wide text-stone-400">Allocated</span>
+                <strong className="text-sm text-stone-800">{allocationTotal.toFixed(1)}%</strong>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-wide text-stone-400">Allocated flow</span>
+                <strong className="font-mono text-sm text-stone-800">
+                  {fmtFlow(systemFlow * allocationTotal / 100)}
+                </strong>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-wide text-stone-400">Unallocated</span>
+                <strong className="text-sm text-stone-800">{unallocatedPct.toFixed(1)}%</strong>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-wide text-stone-400">Unallocated flow</span>
+                <strong className="font-mono text-sm text-stone-800">
+                  {fmtFlow(systemFlow * unallocatedPct / 100)}
+                </strong>
+              </div>
+              {(allocationPending > 0 || allocationValidation) && (
+                <p className={`col-span-2 sm:col-span-4 text-xs ${
+                  allocationValidation ? 'text-red-700' : 'text-amber-700'
+                }`}>
+                  {allocationValidation || `${allocationPending} configured loop${allocationPending === 1 ? ' still needs' : 's still need'} allocation review.`}
+                </p>
+              )}
             </div>
 
             {/* ── Card View ───────────────────────────────────────────────── */}
@@ -1603,6 +1706,8 @@ export default function DesignBookLSSDetail() {
                               <button type="button" onClick={() => {
                                 setFF(`loop${n}_flow_source`, '');
                                 setFF(`loop${n}_filtration`, '');
+                                setFF(`loop${n}_flow_pct`, '');
+                                setFF(`loop${n}_bio_degas_pct`, '');
                                 setFF(`loop${n}_bio_degas_m3h`, '');
                                 setFF(`loop${n}_link_bio_degas`, false);
                                 setExpandedCardLoops(prev => prev.filter(x => x !== n));
@@ -1611,7 +1716,7 @@ export default function DesignBookLSSDetail() {
                               </button>
                             )}
                           </div>
-                          <LoopEditor n={n} />
+                          {LoopEditor({ n })}
                         </div>
                       );
                     })}
@@ -1656,12 +1761,12 @@ export default function DesignBookLSSDetail() {
                                 <span className={`text-sm font-semibold ${colors.label}`}>Loop {n}</span>
                                 {pending && <span className="text-[10px] text-stone-400 italic">unsaved</span>}
                               </div>
-                              <LoopView n={n} />
+                              {LoopView({ n })}
                             </div>
                           );
                         })}
                       </div>
-                      {canAddNext && pendingLoop == null && (
+                      {canAddNext && pendingLoop == null && !readOnly && (
                         <button onClick={() => startFlowEdit(nextLoopToAdd)}
                           className="mt-4 w-full py-2.5 text-xs text-stone-400 border border-dashed border-stone-200 rounded-lg hover:border-blue-300 hover:text-blue-600 transition-colors flex items-center justify-center gap-1.5">
                           <Plus className="w-3.5 h-3.5" /> Add Loop {nextLoopToAdd}
@@ -1699,8 +1804,8 @@ export default function DesignBookLSSDetail() {
                       <th className="text-left px-4 py-2.5 text-xs font-medium text-stone-500 w-12">#</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Flow Source</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Filtration</th>
+                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Loop Flow ({UNIT_LABELS[flowUnit]})</th>
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Bio / Degas ({UNIT_LABELS[flowUnit]})</th>
-                      <th className="text-center px-3 py-2.5 text-xs font-medium text-stone-500 w-16">Linked</th>
                       <th className="px-3 py-2.5 w-24" />
                     </tr>
                   </thead>
@@ -1709,7 +1814,6 @@ export default function DesignBookLSSDetail() {
                       ...activeLoops,
                       ...(flowForm
                         ? [1, 2, 3].filter(loop =>
-                            loop === 1 ||
                             flowDraftLoopHasData(flowForm, loop) ||
                             expandedCardLoops.includes(loop)
                           )
@@ -1721,6 +1825,11 @@ export default function DesignBookLSSDetail() {
 
                       if (isEditing && listRowForm) {
                         const linked: boolean = !!listRowForm.link_bio_degas;
+                        const rowLoopFlow = flowForPercentage(listRowForm.flow_pct);
+                        const rowBioPct = nullableNumber(listRowForm.bio_degas_pct);
+                        const rowBioFlow = rowLoopFlow != null && rowBioPct != null
+                          ? rowLoopFlow * rowBioPct / 100
+                          : null;
                         return (
                           <tr key={n} className="bg-blue-50/20">
                             <td className="px-4 py-2.5">
@@ -1745,29 +1854,29 @@ export default function DesignBookLSSDetail() {
                               </select>
                             </td>
                             <td className="px-3 py-2">
-                              {linked ? (
-                                <span className="text-xs font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded flex items-center gap-1.5">
-                                  {fmtFlow(linkedFlowForSource(listRowForm.flow_source || ''))}
-                                  <span className="text-emerald-600 font-sans font-normal">· {srcPct(listRowForm.flow_source || '')}%</span>
-                                </span>
-                              ) : (
-                                <div>
-                                  {listRowForm.flow_source && linkedFlowForSource(listRowForm.flow_source) > 0 && (
-                                    <div className="text-[10px] text-stone-400 mb-1">
-                                      ref: <span className="font-mono">{fmtFlow(linkedFlowForSource(listRowForm.flow_source))}</span>
-                                      {' '}· {srcPct(listRowForm.flow_source)}%
-                                    </div>
-                                  )}
-                                  <input type="number" step="0.1" min="0" placeholder="0.0"
-                                    value={listRowForm.bio_degas_m3h}
-                                    onChange={e => setLRF('bio_degas_m3h', e.target.value)}
-                                    className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
-                                </div>
-                              )}
+                              <input type="number" step="0.1" min="0" max="100" placeholder="%"
+                                aria-label={`Loop ${n} flow allocation percentage`}
+                                value={listRowForm.flow_pct}
+                                onChange={e => setLRF('flow_pct', e.target.value)}
+                                className="w-20 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                              <div className="text-[10px] text-stone-500 mt-1 font-mono">{fmtFlow(rowLoopFlow ?? 0)}</div>
                             </td>
-                            <td className="px-3 py-2 text-center">
-                              <input type="checkbox" checked={linked} onChange={e => setLRF('link_bio_degas', e.target.checked)}
-                                className="rounded border-stone-300 text-emerald-600" />
+                            <td className="px-3 py-2">
+                              <label className="flex items-center gap-1 text-[10px] text-stone-500 mb-1">
+                                <input type="checkbox" checked={linked} onChange={e => setLRF('link_bio_degas', e.target.checked)}
+                                  className="rounded border-stone-300 text-emerald-600" />
+                                Linked
+                              </label>
+                              {linked && (
+                                <>
+                                  <input type="number" step="0.1" min="0" max="100" placeholder="% of loop"
+                                    aria-label={`Loop ${n} Bio/Degas allocation percentage`}
+                                    value={listRowForm.bio_degas_pct}
+                                    onChange={e => setLRF('bio_degas_pct', e.target.value)}
+                                    className="w-24 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                  <div className="text-[10px] text-emerald-700 mt-1 font-mono">{fmtFlow(rowBioFlow ?? 0)}</div>
+                                </>
+                              )}
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-1 justify-end">
@@ -1802,7 +1911,13 @@ export default function DesignBookLSSDetail() {
                       const src    = flowForm ? flowForm[`loop${n}_flow_source`] : system[`loop${n}_flow_source`];
                       const filt   = flowForm ? flowForm[`loop${n}_filtration`] : system[`loop${n}_filtration`];
                       const bio    = flowForm ? flowForm[`loop${n}_bio_degas_m3h`] : system[`loop${n}_bio_degas_m3h`];
+                      const loopPct = nullableNumber(flowForm ? flowForm[`loop${n}_flow_pct`] : system[`loop${n}_flow_pct`]);
+                      const bioPct = nullableNumber(flowForm ? flowForm[`loop${n}_bio_degas_pct`] : system[`loop${n}_bio_degas_pct`]);
                       const linked = flowForm ? !!flowForm[`loop${n}_link_bio_degas`] : !!system[`loop${n}_link_bio_degas`];
+                      const loopFlow = flowForPercentage(loopPct);
+                      const bioFlow = loopFlow != null && bioPct != null
+                        ? loopFlow * bioPct / 100
+                        : nullableNumber(bio);
                       return (
                         <tr key={n} className="hover:bg-stone-50/60 group">
                           <td className="px-4 py-3">
@@ -1823,28 +1938,26 @@ export default function DesignBookLSSDetail() {
                             ) : <span className="text-stone-300 text-xs italic">—</span>}
                           </td>
                           <td className="px-3 py-3 font-mono text-xs">
-                            {src ? (
-                              <span className="flex items-center gap-1.5 flex-wrap">
-                                <span className={linked ? 'text-emerald-700 font-semibold' : 'text-stone-700'}>
-                                  {fmtFlow(linkedFlowForSource(src))}
-                                </span>
-                                <span className="text-stone-400 font-sans text-xs">· {srcPct(src)}%</span>
-                                {linked && (
-                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-sans">linked</span>
-                                )}
-                              </span>
-                            ) : bio != null && bio !== ''
-                              ? <span className="text-stone-800">{fmtFlow(parseFloat(bio))}</span>
-                              : <span className="text-stone-300">—</span>
-                            }
+                            <span className="text-stone-800">{fmtFlow(loopFlow ?? 0)}</span>
+                            <span className="block text-stone-400 font-sans text-[10px]">
+                              {loopPct != null ? `${loopPct}% of system` : 'Not reviewed'}
+                            </span>
                           </td>
-                          <td className="px-3 py-3 text-center">
-                            {linked
-                              ? <Check className="w-3.5 h-3.5 text-emerald-500 mx-auto" />
-                              : <span className="text-stone-200 text-xs">—</span>
-                            }
+                          <td className="px-3 py-3 font-mono text-xs">
+                            {linked ? (
+                              <span className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-emerald-700 font-semibold">{fmtFlow(bioFlow ?? 0)}</span>
+                                <span className="text-stone-400 font-sans text-[10px]">
+                                  {bioPct != null ? `${bioPct}% of loop` : 'Not reviewed'}
+                                </span>
+                                <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-sans">
+                                  linked
+                                </span>
+                              </span>
+                            ) : <span className="text-stone-200 text-xs">—</span>}
                           </td>
                           <td className="px-3 py-3">
+                            {!readOnly && (
                             <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => {
                                 const draft = flowForm || createFlowDraft(system);
@@ -1862,6 +1975,7 @@ export default function DesignBookLSSDetail() {
                                 </button>
                               )}
                             </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -1870,7 +1984,7 @@ export default function DesignBookLSSDetail() {
                 </table>
 
                 {/* Add next loop footer */}
-                {canAddNext && listEditRow !== nextLoopToAdd && (
+                {canAddNext && listEditRow !== nextLoopToAdd && !readOnly && (
                   <div className="px-4 py-3 border-t border-stone-100 bg-stone-50/30">
                     <button onClick={() => {
                       const draft = flowForm || createFlowDraft(system);

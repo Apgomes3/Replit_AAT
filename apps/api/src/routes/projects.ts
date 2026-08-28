@@ -1440,9 +1440,12 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
     const {
       system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr,
       water_type, status, duty_description, redundancy_strategy,
-      loop1_flow_source, loop1_filtration, loop1_bio_degas_m3h, loop1_link_bio_degas,
-      loop2_flow_source, loop2_filtration, loop2_bio_degas_m3h, loop2_link_bio_degas,
-      loop3_flow_source, loop3_filtration, loop3_bio_degas_m3h, loop3_link_bio_degas,
+      loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct,
+      loop1_bio_degas_m3h, loop1_link_bio_degas,
+      loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct,
+      loop2_bio_degas_m3h, loop2_link_bio_degas,
+      loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct,
+      loop3_bio_degas_m3h, loop3_link_bio_degas,
       system_config, compact_unit_id, design_book_id,
     } = req.body;
     for (const [label, value] of [
@@ -1456,8 +1459,48 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
         return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a non-negative number.` } });
       }
     }
-    const currentResult = await query('SELECT id, project_id, water_type FROM systems WHERE id=$1', [req.params.id]);
+    for (const [label, value] of [
+      ['Loop 1 allocation', loop1_flow_pct],
+      ['Loop 1 Bio/Degas allocation', loop1_bio_degas_pct],
+      ['Loop 2 allocation', loop2_flow_pct],
+      ['Loop 2 Bio/Degas allocation', loop2_bio_degas_pct],
+      ['Loop 3 allocation', loop3_flow_pct],
+      ['Loop 3 Bio/Degas allocation', loop3_bio_degas_pct],
+    ] as Array<[string, any]>) {
+      if (value != null && value !== '' && (
+        !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100
+      )) {
+        return res.status(400).json({
+          error: { code: 'VALIDATION', message: `${label} must be between 0% and 100%.` },
+        });
+      }
+    }
+    const currentResult = await query('SELECT * FROM systems WHERE id=$1', [req.params.id]);
     if (!currentResult.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    const currentSystem = currentResult.rows[0];
+    const resolvedPercentage = (field: string, value: any) =>
+      Object.prototype.hasOwnProperty.call(req.body, field)
+        ? (value === '' || value == null ? null : Number(value))
+        : (currentSystem[field] == null ? null : Number(currentSystem[field]));
+    const resolvedLoop1FlowPct = resolvedPercentage('loop1_flow_pct', loop1_flow_pct);
+    const resolvedLoop1BioPct = resolvedPercentage('loop1_bio_degas_pct', loop1_bio_degas_pct);
+    const resolvedLoop2FlowPct = resolvedPercentage('loop2_flow_pct', loop2_flow_pct);
+    const resolvedLoop2BioPct = resolvedPercentage('loop2_bio_degas_pct', loop2_bio_degas_pct);
+    const resolvedLoop3FlowPct = resolvedPercentage('loop3_flow_pct', loop3_flow_pct);
+    const resolvedLoop3BioPct = resolvedPercentage('loop3_bio_degas_pct', loop3_bio_degas_pct);
+    const loopAllocationTotal = [
+      resolvedLoop1FlowPct,
+      resolvedLoop2FlowPct,
+      resolvedLoop3FlowPct,
+    ].reduce((sum: number, value: number | null) => sum + (value ?? 0), 0);
+    if (loopAllocationTotal > 100.000001) {
+      return res.status(400).json({
+        error: {
+          code: 'FLOW_ALLOCATION_EXCEEDS_100',
+          message: `Active loop allocations total ${loopAllocationTotal.toFixed(1)}%. Reduce them to 100% or less before saving.`,
+        },
+      });
+    }
     const intendedWaterType = water_type || currentResult.rows[0].water_type;
     const linkedWaterTypes = await query(
       `SELECT e.exhibit_code, e.water_type
@@ -1566,22 +1609,28 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), async
         system_code=COALESCE($1,system_code), system_name=$2, system_type=$3,
         design_flow_m3h=$4, turnover_rate_hr=$5, water_type=$6, status=$7,
         duty_description=$8, redundancy_strategy=$9,
-        loop1_flow_source=$10, loop1_filtration=$11, loop1_bio_degas_m3h=$12, loop1_link_bio_degas=$13,
-        loop2_flow_source=$14, loop2_filtration=$15, loop2_bio_degas_m3h=$16, loop2_link_bio_degas=$17,
-        loop3_flow_source=$18, loop3_filtration=$19, loop3_bio_degas_m3h=$20, loop3_link_bio_degas=$21,
-        system_config=$22, compact_unit_id=$23,
-        calculation_version=$24, last_calculated_at=NOW(), calculation_inputs=$25,
+        loop1_flow_source=$10, loop1_filtration=$11, loop1_flow_pct=$12, loop1_bio_degas_pct=$13,
+        loop1_bio_degas_m3h=$14, loop1_link_bio_degas=$15,
+        loop2_flow_source=$16, loop2_filtration=$17, loop2_flow_pct=$18, loop2_bio_degas_pct=$19,
+        loop2_bio_degas_m3h=$20, loop2_link_bio_degas=$21,
+        loop3_flow_source=$22, loop3_filtration=$23, loop3_flow_pct=$24, loop3_bio_degas_pct=$25,
+        loop3_bio_degas_m3h=$26, loop3_link_bio_degas=$27,
+        system_config=$28, compact_unit_id=$29,
+        calculation_version=$30, last_calculated_at=NOW(), calculation_inputs=$31,
         updated_at=NOW()
-       WHERE id=$26 RETURNING *`,
+       WHERE id=$32 RETURNING *`,
       [
         system_code || null, system_name, system_type,
         design_flow_m3h || null, turnover_rate_hr || null, water_type, status,
         duty_description, redundancy_strategy,
         loop1_flow_source || null, loop1_filtration || null,
+        resolvedLoop1FlowPct, resolvedLoop1BioPct,
         loop1_bio_degas_m3h ?? null, loop1_link_bio_degas ?? false,
         loop2_flow_source || null, loop2_filtration || null,
+        resolvedLoop2FlowPct, resolvedLoop2BioPct,
         loop2_bio_degas_m3h ?? null, loop2_link_bio_degas ?? false,
         loop3_flow_source || null, loop3_filtration || null,
+        resolvedLoop3FlowPct, resolvedLoop3BioPct,
         loop3_bio_degas_m3h ?? null, loop3_link_bio_degas ?? false,
         system_config || 'bespoke', compact_unit_id || null,
         AQUARIUM_CALCULATION_VERSION,
