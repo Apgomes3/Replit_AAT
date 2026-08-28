@@ -400,26 +400,45 @@ export function calculateExhibitHydraulics(
   const surfaceFlow = totalFlow == null ? null : totalFlow * surfacePct / 100;
   const bottomFlow = totalFlow == null ? null : totalFlow * bottomPct / 100;
   const reasons: string[] = [];
-  for (const [label, value] of [
-    ['Substrate volume', substrate?.substrate_volume_m3],
-    ['Substrate height', substrate?.substrate_height_mm],
-    ['Theming volume', substrate?.theming_volume_m3],
-    ['Theming height', substrate?.theming_height_mm],
-    ['Theming percentage', substrate?.theming_volume_pct],
-  ] as Array<[string, any]>) {
-    if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
-      reasons.push(`${label} must be a finite, non-negative value.`);
-    }
+  const substrateDirectVolume = positiveOrNull(substrate?.substrate_volume_m3);
+  const themingDirectVolume = positiveOrNull(substrate?.theming_volume_m3);
+  const substrateHeight = positiveOrNull(substrate?.substrate_height_mm);
+  const themingHeight = positiveOrNull(substrate?.theming_height_mm);
+  const invalidNonNegative = (value: any) =>
+    value != null && (!Number.isFinite(Number(value)) || Number(value) < 0);
+  const addInvalidInputReason = (label: string, value: any) => {
+    if (invalidNonNegative(value)) reasons.push(`${label} must be a finite, non-negative value.`);
+  };
+
+  // Direct volumes are always meaningful saved inputs, even when a later
+  // height or percentage value is left over from an earlier calculation mode.
+  addInvalidInputReason('Substrate volume', substrate?.substrate_volume_m3);
+  addInvalidInputReason('Theming volume', substrate?.theming_volume_m3);
+
+  // Height and percentage validation follows the same precedence as
+  // displacementVolume. Inactive values must not invalidate an otherwise
+  // usable direct-volume calculation.
+  if (substrateDirectVolume == null) {
+    addInvalidInputReason('Substrate height', substrate?.substrate_height_mm);
   }
-  if (numberOrNull(substrate?.theming_volume_pct) != null &&
-      Number(substrate.theming_volume_pct) > 100) {
-    reasons.push('Theming percentage cannot exceed 100%.');
+  if (themingDirectVolume == null) {
+    addInvalidInputReason('Theming height', substrate?.theming_height_mm);
   }
-  if (positiveOrNull(substrate?.substrate_height_mm) != null && footprintArea <= 0) {
+  if (substrateDirectVolume == null && substrateHeight != null && footprintArea <= 0) {
     reasons.push('Substrate height requires tank footprint dimensions; enter a direct substrate volume for custom tanks.');
   }
-  if (positiveOrNull(substrate?.theming_height_mm) != null && footprintArea <= 0) {
+  if (themingDirectVolume == null && themingHeight != null && footprintArea <= 0) {
     reasons.push('Theming height requires tank footprint dimensions; enter a direct theming volume for custom tanks.');
+  }
+  const themingPercentageIsActive = themingResult.source === 'operating volume × percentage';
+  if (themingPercentageIsActive ||
+      (themingDirectVolume == null && themingHeight == null &&
+       substrate?.theming_volume_pct != null)) {
+    addInvalidInputReason('Theming percentage', substrate?.theming_volume_pct);
+    if (numberOrNull(substrate?.theming_volume_pct) != null &&
+        Number(substrate.theming_volume_pct) > 100) {
+      reasons.push('Theming percentage cannot exceed 100%.');
+    }
   }
   if (rawOperating <= 0) reasons.push('Operating volume is missing or invalid.');
   if (rawOperating > 0 && displaced >= rawOperating) {

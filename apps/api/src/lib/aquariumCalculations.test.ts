@@ -295,6 +295,36 @@ describe('aquarium engineering calculations', () => {
     );
   });
 
+  it('ignores an inactive substrate height when a direct volume is saved', () => {
+    const calculated = calculateExhibitHydraulics(
+      exhibit,
+      [{ id: 'custom', eff_shape: 'custom', operating_volume_m3: 20 }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      { substrate_volume_m3: 3, substrate_height_mm: 100 },
+    );
+
+    expect(calculated.status).toBe('valid');
+    expect(calculated.inputs.substrate_source).toBe('direct volume override');
+    expect(calculated.results.operating_volume_m3).toBe(17);
+  });
+
+  it('ignores inactive theming height and percentage when a direct volume is saved', () => {
+    const calculated = calculateExhibitHydraulics(
+      exhibit,
+      [{ id: 'custom', eff_shape: 'custom', operating_volume_m3: 20 }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      {
+        theming_volume_m3: 3,
+        theming_height_mm: 100,
+        theming_volume_pct: 150,
+      },
+    );
+
+    expect(calculated.status).toBe('valid');
+    expect(calculated.inputs.theming_source).toBe('direct volume override');
+    expect(calculated.results.operating_volume_m3).toBe(17);
+  });
+
   it('uses a confirmed custom-tank surface area for height-based displacement', () => {
     const calculated = calculateExhibitHydraulics(
       exhibit,
@@ -311,6 +341,102 @@ describe('aquarium engineering calculations', () => {
     expect(calculated.status).toBe('valid');
     expect(calculated.inputs.substrate_volume_m3).toBe(2);
     expect(calculated.results.operating_volume_m3).toBe(98);
+  });
+
+  it('validates an active theming percentage but ignores it when height supplies displacement', () => {
+    const validHeight = calculateExhibitHydraulics(
+      exhibit,
+      [tank],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      { theming_height_mm: 100, theming_volume_pct: 150 },
+    );
+    expect(validHeight.status).toBe('valid');
+    expect(validHeight.inputs.theming_source).toBe('footprint area × height');
+
+    const invalidPercentage = calculateExhibitHydraulics(
+      exhibit,
+      [tank],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      { theming_volume_pct: 150 },
+    );
+    expect(invalidPercentage.status).toBe('invalid');
+    expect(invalidPercentage.reasons).toContain('Theming percentage cannot exceed 100%.');
+  });
+
+  it('keeps the linked LSS trace valid for the Kaoshiung Main Tank calculation', () => {
+    const mainTank = calculateExhibitHydraulics(
+      { id: 'kaoshiung-main-tank', water_type: 'Marine' },
+      [{ id: 'custom-main-tank', eff_shape: 'custom', operating_volume_m3: 519.84 }],
+      { target_turnover_rate: 0.84, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      {
+        substrate_volume_m3: 8.664,
+        substrate_height_mm: 100,
+        theming_volume_m3: 129.96,
+        theming_height_mm: 200,
+        theming_volume_pct: 150,
+      },
+    );
+    const system = calculateSystemEngineering(
+      {
+        id: 'kaoshiung-main-tank-lss',
+        system_config: 'bespoke',
+        calculation_inputs: {
+          design_flow_source: 'linked_exhibits',
+          turnover_source: 'primary_exhibit',
+        },
+        loop1_name: 'Foam Fractionator loop',
+        loop1_filtration: 'Foam Fractionation',
+        loop1_flow_pct: 70,
+      },
+      [{
+        id: 'main-tank-link',
+        exhibit_id: 'kaoshiung-main-tank',
+        exhibit_code: 'MAIN-TANK',
+        link_type: 'Primary',
+      }],
+      [mainTank],
+      null,
+      '2026-08-28T00:00:00.000Z',
+      [],
+      [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 20,
+        products: [{
+          product_master_id: 'ff-main-tank',
+          product_code: 'FF-MAIN-TANK',
+          product_name: 'Main Tank Foam Fractionator',
+          diameter_mm: 1991.86,
+          quantity: 1,
+        }],
+      }],
+    );
+
+    expect(mainTank.status).toBe('valid');
+    expect(mainTank.inputs).toMatchObject({
+      gross_operating_volume_m3: 519.84,
+      substrate_volume_m3: 8.664,
+      theming_volume_m3: 129.96,
+    });
+    expect(mainTank.results).toMatchObject({
+      operating_volume_m3: 381.216,
+      total_return_flow_m3h: 320.221,
+    });
+    expect(system.status).toBe('valid');
+    expect(system.results).toMatchObject({
+      calculated_required_flow_m3h: 320.221,
+      design_flow_m3h: 320.221,
+      allocated_flow_m3h: 320.221,
+    });
+    expect(system.flow_route.loops[0].foam_fractionation).toMatchObject({
+      match_status: 'matched',
+      inputs: {
+        parent_loop_flow_m3h: 224.155,
+      },
+      results: {
+        capacity_m3h: 224.357,
+      },
+    });
+    expect(system.reasons).toEqual([]);
   });
 
   it('falls back to stored operating volume for a standard tank without dimensions', () => {

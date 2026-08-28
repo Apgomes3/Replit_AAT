@@ -44,6 +44,7 @@ const vitest_1 = require("vitest");
 const testSecret = 'configuration-reset-test-secret';
 const state = vitest_1.vi.hoisted(() => ({
     calls: [],
+    auditRows: [],
     bookStatus: 'Draft',
     systemStatus: 'Draft',
     moduleAccess: 'manage',
@@ -54,6 +55,14 @@ vitest_1.vi.mock('../db', () => {
         state.calls.push({ sql, params });
         if (state.failOn && sql.includes(state.failOn))
             throw new Error('simulated database failure');
+        if (sql.replace(/\s+/g, ' ').trim().toLowerCase().startsWith('insert into audit_logs')) {
+            state.auditRows.push({
+                entityType: 'system',
+                entityId: String(params[0]),
+                action: 'RESET_CONFIGURATION',
+                details: params[2] ?? null,
+            });
+        }
         if (sql.includes('SELECT * FROM systems WHERE id=$1 FOR UPDATE')) {
             return {
                 rows: [{
@@ -158,6 +167,7 @@ function request(app, role = 'engineer') {
     });
     (0, vitest_1.beforeEach)(() => {
         state.calls.length = 0;
+        state.auditRows.length = 0;
         state.bookStatus = 'Draft';
         state.systemStatus = 'Draft';
         state.moduleAccess = 'manage';
@@ -186,6 +196,14 @@ function request(app, role = 'engineer') {
         (0, vitest_1.expect)(sql).toContain('DELETE FROM project_equipment_items');
         (0, vitest_1.expect)(sql).toContain('RESET_CONFIGURATION');
         (0, vitest_1.expect)(sql).toContain('COMMIT');
+        (0, vitest_1.expect)(state.auditRows).toContainEqual(vitest_1.expect.objectContaining({
+            entityType: 'system',
+            entityId: 'system-1',
+            action: 'RESET_CONFIGURATION',
+            details: vitest_1.expect.objectContaining({
+                summary: 'LSS configuration reset for LSS-01',
+            }),
+        }));
         (0, vitest_1.expect)(sql).not.toMatch(/DELETE FROM (tanks|exhibits|design_book_exhibit_hydraulics|product_masters)/);
         (0, vitest_1.expect)(sql).not.toMatch(/UPDATE (tanks|exhibits|design_book_exhibit_hydraulics|product_masters)/);
     });
