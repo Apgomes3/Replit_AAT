@@ -82,6 +82,45 @@ const buildSort = (sort, allowed = ['project_code', 'project_name', 'project_sta
     const col = sort.replace(/^-/, '');
     return allowed.includes(col) ? `${col} ${dir}` : 'created_at DESC';
 };
+const tankNumericFields = {
+    length_mm: 'Length',
+    width_mm: 'Width',
+    height_mm: 'Height',
+    design_water_level_mm: 'Water level',
+    gross_volume_m3: 'Gross volume',
+    operating_volume_m3: 'Operating volume',
+    surface_area_m2: 'Water-surface area',
+};
+function tankNumberError(value, field) {
+    if (value === undefined || value === null || value === '')
+        return null;
+    const number = Number(value);
+    if (Number.isFinite(number) && number >= 0)
+        return null;
+    return {
+        code: 'VALIDATION',
+        field,
+        message: `${tankNumericFields[field]} must be a non-negative number.`,
+    };
+}
+function tankDatabaseField(error) {
+    const source = `${error?.constraint || ''} ${error?.column || ''}`.toLowerCase();
+    const fields = [
+        'tank_code', 'tank_name', 'project_id', 'exhibit_id', 'system_id',
+        'product_master_id', 'material_id', ...Object.keys(tankNumericFields),
+    ];
+    return fields.find(field => source.includes(field));
+}
+function tankDatabaseResponse(error) {
+    const field = tankDatabaseField(error);
+    return {
+        code: error?.code === '23503' ? 'INVALID_REFERENCE' : 'INVALID_REQUEST',
+        message: field
+            ? `The selected ${field.replace(/_mm$/, '').replace(/_/g, ' ')} is no longer valid.`
+            : 'The tank could not be saved. Check the tank details and try again.',
+        ...(field ? { field } : {}),
+    };
+}
 // PROJECTS
 router.get('/projects', auth_1.authenticate, async (req, res) => {
     const { page, page_size, offset } = paginate(req);
@@ -458,12 +497,28 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
 router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     try {
         const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
-        if (!tank_code || !project_id || !tank_name)
-            return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_code, project_id and tank_name required' } });
+        const tankCode = String(tank_code ?? '').trim();
+        const tankName = String(tank_name ?? '').trim();
+        if (!tankCode)
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_code', message: 'Tank code is required.' } });
+        if (!project_id)
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'project_id', message: 'Project is required.' } });
+        if (!tankName)
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_name', message: 'Tank name is required.' } });
+        if (tankCode.length > 50)
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_code', message: 'Tank code must be 50 characters or fewer.' } });
+        if (tankName.length > 255)
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_name', message: 'Tank name must be 255 characters or fewer.' } });
+        for (const field of Object.keys(tankNumericFields)) {
+            const validationError = tankNumberError(req.body[field], field);
+            if (validationError)
+                return res.status(400).json({ error: validationError });
+        }
         if (product_master_id && exhibit_id) {
             return res.status(400).json({
                 error: {
                     code: 'INVALID_PIM_ASSIGNMENT',
+                    field: 'product_master_id',
                     message: 'Use the protected PIM tank assignment workflow to link a library tank to an exhibit.',
                 },
             });
@@ -505,7 +560,7 @@ router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'eng
                 ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
                 : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
         const surfaceAreaM2 = (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, l, w);
-        const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *', [tank_code, project_id, exhibit_id || null, system_id || null, qty, tank_name, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
+        const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *', [tankCode, project_id, exhibit_id || null, system_id || null, qty, tankName, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
         const tank = result.rows[0];
         if (qty > 1) {
             const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -523,13 +578,16 @@ router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'eng
     catch (error) {
         if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
             return res.status(409).json({
-                error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+                error: { code: 'DUPLICATE_ASSIGNMENT', field: 'product_master_id', message: 'This PIM tank is already assigned to the exhibit.' },
             });
         }
         if (error?.code === '23505') {
             return res.status(409).json({
-                error: { code: 'DUPLICATE_TANK', message: 'A tank with this code already exists in the project.' },
+                error: { code: 'DUPLICATE_TANK', field: 'tank_code', message: 'A tank with this code already exists in the project.' },
             });
+        }
+        if (error?.code === '22P02' || error?.code === '23503') {
+            return res.status(400).json({ error: tankDatabaseResponse(error) });
         }
         throw error;
     }
@@ -962,8 +1020,20 @@ router.patch('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
 router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     try {
         const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, product_master_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, surface_area_m2, } = req.body;
-        if (!tank_name)
-            return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'tank_name is required' } });
+        if (!String(tank_name ?? '').trim()) {
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_name', message: 'Tank name is required.' } });
+        }
+        if (tank_code != null && String(tank_code).trim().length > 50) {
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_code', message: 'Tank code must be 50 characters or fewer.' } });
+        }
+        if (String(tank_name).trim().length > 255) {
+            return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_name', message: 'Tank name must be 255 characters or fewer.' } });
+        }
+        for (const field of Object.keys(tankNumericFields)) {
+            const validationError = tankNumberError(req.body[field], field);
+            if (validationError)
+                return res.status(400).json({ error: validationError });
+        }
         const hasExhibit = 'exhibit_id' in req.body;
         const hasProductMaster = 'product_master_id' in req.body;
         if (hasProductMaster && product_master_id) {
@@ -998,7 +1068,9 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
             ? parseFloat(surface_area_m2)
             : null;
         if (requestedSurfaceArea != null && (!Number.isFinite(requestedSurfaceArea) || requestedSurfaceArea < 0)) {
-            return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Surface area must be a non-negative number.' } });
+            return res.status(400).json({
+                error: { code: 'VALIDATION', field: 'surface_area_m2', message: 'Water-surface area must be a non-negative number.' },
+            });
         }
         // Use inner dims when wall thickness is set (open-top: subtract one wall from height)
         const il = !isCyl && l && t ? l - 2 * t : l;
@@ -1044,8 +1116,16 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
     catch (error) {
         if (error?.code === '23505' && error?.constraint === 'idx_tanks_pim_assignment') {
             return res.status(409).json({
-                error: { code: 'DUPLICATE_ASSIGNMENT', message: 'This PIM tank is already assigned to the exhibit.' },
+                error: { code: 'DUPLICATE_ASSIGNMENT', field: 'product_master_id', message: 'This PIM tank is already assigned to the exhibit.' },
             });
+        }
+        if (error?.code === '23505') {
+            return res.status(409).json({
+                error: { code: 'DUPLICATE_TANK', field: 'tank_code', message: 'A tank with this code already exists in the project.' },
+            });
+        }
+        if (error?.code === '22P02' || error?.code === '23503') {
+            return res.status(400).json({ error: tankDatabaseResponse(error) });
         }
         throw error;
     }

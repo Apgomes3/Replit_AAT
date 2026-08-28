@@ -202,6 +202,36 @@ describe('ExhibitDetail Escape navigation', () => {
     expect(screen.getByText('Main Display Tank')).toBeInTheDocument();
   });
 
+  it('keeps entered tank values and shows a server error on the affected field', async () => {
+    apiPost.mockRejectedValueOnce({
+      response: {
+        data: {
+          error: {
+            code: 'DUPLICATE_TANK',
+            field: 'tank_code',
+            message: 'A tank with this code already exists in the project.',
+          },
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderExhibit();
+
+    await user.click(await screen.findByRole('button', { name: 'Create New Tank' }));
+    const tankCode = screen.getByLabelText('Tank Code *');
+    const tankName = screen.getByLabelText('Tank Name *');
+    await user.type(tankCode, 'TK-01');
+    await user.clear(tankName);
+    await user.type(tankName, 'Main Display Tank');
+    await user.click(screen.getByRole('button', { name: 'Create & Assign Tank' }));
+
+    expect(await screen.findByText('A tank with this code already exists in the project.')).toBeInTheDocument();
+    expect(tankCode).toHaveValue('TK-01');
+    expect(tankName).toHaveValue('Main Display Tank');
+    expect(tankCode).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Create & Assign Tank' })).toBeInTheDocument();
+  });
+
   it('does not turn inherited PIM dimensions into overrides during an unrelated edit', async () => {
     const linkedBook = {
       ...book,

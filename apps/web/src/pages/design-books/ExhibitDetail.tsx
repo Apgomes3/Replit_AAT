@@ -440,6 +440,17 @@ function LegacySpeciesSection({ bookId, exhibitId, species, onRefresh }: {
 // ─── Tank Card with Inline Edit ───────────────────────────────────────────────
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Custom'];
 const TANK_CONSTRUCTION_TYPES = ['Acrylic', 'Acrylic with FRP', 'FRP/Steel with Window', 'FRP/Steel', 'Glass', 'PP'];
+const TANK_CREATE_FIELD_LABELS: Record<string, string> = {
+  tank_code: 'Tank code',
+  tank_name: 'Tank name',
+  shape_type: 'Shape',
+  length_mm: 'Length',
+  width_mm: 'Width',
+  height_mm: 'Height',
+  design_water_level_mm: 'Water level',
+  material_id: 'Material',
+  primary_material: 'Material',
+};
 
 function calcVolumes(shape: string, l: string, w: string, h: string, wl: string, gv: string, ov: string, wallThickness?: string) {
   const s = shape.toLowerCase();
@@ -1120,6 +1131,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
     length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '',
     material_id: '', primary_material: '',
   });
+  const [newFieldErrors, setNewFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(assignedTanks.length === 0);
   const currentTank = assignedTanks[0] || null;
@@ -1173,7 +1185,29 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   });
   const pimTanks: any[] = pimTanksData?.items || [];
 
-  const setF = (k: string, v: string) => setNewForm(f => ({ ...f, [k]: v }));
+  const setF = (k: string, v: string) => {
+    setNewForm(f => ({ ...f, [k]: v }));
+    setNewFieldErrors(errors => {
+      if (!errors[k]) return errors;
+      const next = { ...errors };
+      delete next[k];
+      return next;
+    });
+  };
+
+  const newInputClass = (field: string, extra = '') => [
+    'w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
+    newFieldErrors[field]
+      ? 'border border-red-400 bg-red-50/30 focus:ring-red-500/30'
+      : 'border border-stone-200 focus:ring-blue-500/30',
+    extra,
+  ].join(' ');
+
+  const fieldError = (field: string) => newFieldErrors[field] ? (
+    <p id={`new-tank-${field}-error`} role="alert" className="mt-1 text-xs font-medium text-red-600">
+      {newFieldErrors[field]}
+    </p>
+  ) : null;
 
   const handleConfirm = async () => {
     if (!selected) return;
@@ -1199,14 +1233,33 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   };
 
   const handleCreate = async () => {
-    if (!newForm.tank_code.trim() || !newForm.tank_name.trim()) {
-      return toast.error('Tank code and name are required');
+    const validationErrors: Record<string, string> = {};
+    if (!newForm.tank_code.trim()) validationErrors.tank_code = 'Tank code is required.';
+    else if (newForm.tank_code.trim().length > 50) validationErrors.tank_code = 'Tank code must be 50 characters or fewer.';
+    if (!newForm.tank_name.trim()) validationErrors.tank_name = 'Tank name is required.';
+    else if (newForm.tank_name.trim().length > 255) validationErrors.tank_name = 'Tank name must be 255 characters or fewer.';
+    ([
+      ['length_mm', 'Length'],
+      ['width_mm', 'Width'],
+      ['height_mm', 'Height'],
+      ['design_water_level_mm', 'Water level'],
+    ] as const).forEach(([field, label]) => {
+      const value = newForm[field];
+      if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+        validationErrors[field] = `${label} must be a non-negative number.`;
+      }
+    });
+    if (Object.keys(validationErrors).length > 0) {
+      setNewFieldErrors(validationErrors);
+      toast.error(Object.values(validationErrors)[0]);
+      return;
     }
     if (currentTank) {
       if (!window.confirm(
         `${currentTank.tank_code} — ${currentTank.tank_name} is currently in use. Replace it with the new tank?`,
       )) return;
     }
+    setNewFieldErrors({});
     setSaving(true);
     try {
       const payload = {
@@ -1235,7 +1288,15 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
       onRefresh();
       closeAddPanel();
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || 'Failed to create tank');
+      const serverError = err?.response?.data?.error;
+      const message = serverError?.message || 'Failed to create tank';
+      const field = typeof serverError?.field === 'string' ? serverError.field : '';
+      if (field && Object.prototype.hasOwnProperty.call(newForm, field)) {
+        setNewFieldErrors({ [field]: message });
+        toast.error(`${TANK_CREATE_FIELD_LABELS[field] || 'Tank field'}: ${message}`);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setSaving(false);
     }
@@ -1517,47 +1578,68 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
             )}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Tank Code *</label>
-                <input type="text" placeholder="e.g. TK-01"
+                <label htmlFor="new-tank-code" className="block text-xs font-medium text-stone-500 mb-1">Tank Code *</label>
+                <input id="new-tank-code" type="text" placeholder="e.g. TK-01" maxLength={50}
                   value={newForm.tank_code} onChange={e => setF('tank_code', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                  aria-invalid={!!newFieldErrors.tank_code}
+                  aria-describedby={newFieldErrors.tank_code ? 'new-tank-tank_code-error' : undefined}
+                  className={newInputClass('tank_code', 'uppercase')} />
+                {fieldError('tank_code')}
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Shape</label>
-                <select value={newForm.shape_type} onChange={e => setF('shape_type', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                <label htmlFor="new-tank-shape" className="block text-xs font-medium text-stone-500 mb-1">Shape</label>
+                <select id="new-tank-shape" value={newForm.shape_type} onChange={e => setF('shape_type', e.target.value)}
+                  aria-invalid={!!newFieldErrors.shape_type}
+                  aria-describedby={newFieldErrors.shape_type ? 'new-tank-shape_type-error' : undefined}
+                  className={newInputClass('shape_type', 'bg-white')}>
                   {TANK_SHAPES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+                {fieldError('shape_type')}
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Tank Name *</label>
-              <input type="text" placeholder="e.g. Main Display Tank"
+              <label htmlFor="new-tank-name" className="block text-xs font-medium text-stone-500 mb-1">Tank Name *</label>
+              <input id="new-tank-name" type="text" placeholder="e.g. Main Display Tank" maxLength={255}
                 value={newForm.tank_name} onChange={e => setF('tank_name', e.target.value)}
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                aria-invalid={!!newFieldErrors.tank_name}
+                aria-describedby={newFieldErrors.tank_name ? 'new-tank-tank_name-error' : undefined}
+                className={newInputClass('tank_name')} />
+              {fieldError('tank_name')}
             </div>
             <div className={`grid gap-3 ${isCyl ? 'grid-cols-3' : 'grid-cols-4'}`}>
               {!isCyl && (
                 <div>
-                  <label className="block text-xs text-stone-500 mb-1">Length (mm)</label>
-                  <input type="number" placeholder="0" value={newForm.length_mm} onChange={e => setF('length_mm', e.target.value)}
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                  <label htmlFor="new-tank-length" className="block text-xs text-stone-500 mb-1">Length (mm)</label>
+                  <input id="new-tank-length" type="number" min="0" placeholder="0" value={newForm.length_mm} onChange={e => setF('length_mm', e.target.value)}
+                    aria-invalid={!!newFieldErrors.length_mm}
+                    aria-describedby={newFieldErrors.length_mm ? 'new-tank-length_mm-error' : undefined}
+                    className={newInputClass('length_mm')} />
+                  {fieldError('length_mm')}
                 </div>
               )}
               <div>
-                <label className="block text-xs text-stone-500 mb-1">{isCyl ? 'Diameter (mm)' : 'Width (mm)'}</label>
-                <input type="number" placeholder="0" value={newForm.width_mm} onChange={e => setF('width_mm', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <label htmlFor="new-tank-width" className="block text-xs text-stone-500 mb-1">{isCyl ? 'Diameter (mm)' : 'Width (mm)'}</label>
+                <input id="new-tank-width" type="number" min="0" placeholder="0" value={newForm.width_mm} onChange={e => setF('width_mm', e.target.value)}
+                  aria-invalid={!!newFieldErrors.width_mm}
+                  aria-describedby={newFieldErrors.width_mm ? 'new-tank-width_mm-error' : undefined}
+                  className={newInputClass('width_mm')} />
+                {fieldError('width_mm')}
               </div>
               <div>
-                <label className="block text-xs text-stone-500 mb-1">Height (mm)</label>
-                <input type="number" placeholder="0" value={newForm.height_mm} onChange={e => setF('height_mm', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <label htmlFor="new-tank-height" className="block text-xs text-stone-500 mb-1">Height (mm)</label>
+                <input id="new-tank-height" type="number" min="0" placeholder="0" value={newForm.height_mm} onChange={e => setF('height_mm', e.target.value)}
+                  aria-invalid={!!newFieldErrors.height_mm}
+                  aria-describedby={newFieldErrors.height_mm ? 'new-tank-height_mm-error' : undefined}
+                  className={newInputClass('height_mm')} />
+                {fieldError('height_mm')}
               </div>
               <div>
-                <label className="block text-xs text-stone-500 mb-1">Water Level (mm)</label>
-                <input type="number" placeholder="0" value={newForm.design_water_level_mm} onChange={e => setF('design_water_level_mm', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <label htmlFor="new-tank-water-level" className="block text-xs text-stone-500 mb-1">Water Level (mm)</label>
+                <input id="new-tank-water-level" type="number" min="0" placeholder="0" value={newForm.design_water_level_mm} onChange={e => setF('design_water_level_mm', e.target.value)}
+                  aria-invalid={!!newFieldErrors.design_water_level_mm}
+                  aria-describedby={newFieldErrors.design_water_level_mm ? 'new-tank-design_water_level_mm-error' : undefined}
+                  className={newInputClass('design_water_level_mm')} />
+                {fieldError('design_water_level_mm')}
               </div>
             </div>
             <div className="rounded-lg bg-stone-50 border border-stone-100 px-4 py-3 flex items-center justify-between">
@@ -1567,15 +1649,18 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
               </span>
             </div>
             <div>
-              <label className="block text-xs text-stone-500 mb-1">Material</label>
+              <label htmlFor="new-tank-material" className="block text-xs text-stone-500 mb-1">Material</label>
               <select
+                id="new-tank-material"
                 value={newForm.material_id}
                 onChange={e => {
                   const mat = newMaterials.find((m: any) => m.id === e.target.value);
                   setF('material_id', e.target.value);
                   setF('primary_material', mat ? mat.material_name : '');
                 }}
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                aria-invalid={!!newFieldErrors.material_id}
+                aria-describedby={newFieldErrors.material_id ? 'new-tank-material_id-error' : undefined}
+                className={newInputClass('material_id', 'bg-white')}
               >
                 <option value="">— Select material —</option>
                 {newMaterials.map((m: any) => (
@@ -1584,6 +1669,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
                   </option>
                 ))}
               </select>
+              {fieldError('material_id')}
             </div>
             <div className="flex justify-end">
               <button onClick={handleCreate} disabled={saving}

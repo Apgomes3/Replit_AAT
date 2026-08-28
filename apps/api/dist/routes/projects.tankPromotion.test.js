@@ -110,6 +110,7 @@ const state = vitest_1.vi.hoisted(() => ({
     existingExhibitTank: null,
     linkedTank: null,
     linkedInsertConflict: false,
+    ordinaryInsertConflict: false,
     patchProductValid: true,
     assignmentTank: {
         id: 'assignment-tank',
@@ -149,6 +150,12 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [{ id: params[0] }] };
         }
         if (sql.includes('INSERT INTO tanks')) {
+            if (state.ordinaryInsertConflict) {
+                throw Object.assign(new Error('duplicate tank code'), {
+                    code: '23505',
+                    constraint: 'tanks_project_id_tank_code_key',
+                });
+            }
             return {
                 rows: [{
                         id: 'project-only-tank',
@@ -329,6 +336,7 @@ function request(app, method, path, role, body = {}) {
         state.existingExhibitTank = null;
         state.linkedTank = null;
         state.linkedInsertConflict = false;
+        state.ordinaryInsertConflict = false;
         state.patchProductValid = true;
         state.assignmentTank = {
             id: 'assignment-tank',
@@ -352,6 +360,32 @@ function request(app, method, path, role, body = {}) {
         (0, vitest_1.expect)(response.status).toBe(201);
         (0, vitest_1.expect)(response.body.product_master_id).toBeNull();
         (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('INSERT INTO product_masters'))).toBe(false);
+    });
+    (0, vitest_1.it)('identifies the field responsible for ordinary tank validation failures', async () => {
+        const response = await request(app, 'POST', '/api/v1/tanks', 'engineer', {
+            project_id: 'project-1',
+            tank_name: 'Project-only Tank',
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error).toEqual({
+            code: 'VALIDATION',
+            field: 'tank_code',
+            message: 'Tank code is required.',
+        });
+    });
+    (0, vitest_1.it)('identifies the tank code when ordinary creation hits a duplicate', async () => {
+        state.ordinaryInsertConflict = true;
+        const response = await request(app, 'POST', '/api/v1/tanks', 'engineer', {
+            tank_code: 'TK-PROJECT',
+            project_id: 'project-1',
+            tank_name: 'Project-only Tank',
+        });
+        (0, vitest_1.expect)(response.status).toBe(409);
+        (0, vitest_1.expect)(response.body.error).toEqual({
+            code: 'DUPLICATE_TANK',
+            field: 'tank_code',
+            message: 'A tank with this code already exists in the project.',
+        });
     });
     (0, vitest_1.it)('rejects PIM links submitted through ordinary project-tank creation', async () => {
         const response = await request(app, 'POST', '/api/v1/tanks', 'engineer', {
