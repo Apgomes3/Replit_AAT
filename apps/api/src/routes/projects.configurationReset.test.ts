@@ -9,6 +9,7 @@ const testSecret = 'configuration-reset-test-secret';
 
 const state = vi.hoisted(() => ({
   calls: [] as Array<{ sql: string; params: any[] }>,
+  auditRows: [] as Array<{ entityType: string; entityId: string; action: string; details: Record<string, unknown> | null }>,
   bookStatus: 'Draft',
   systemStatus: 'Draft',
   moduleAccess: 'manage',
@@ -19,6 +20,14 @@ vi.mock('../db', () => {
   const clientQuery = vi.fn(async (sql: string, params: any[] = []) => {
     state.calls.push({ sql, params });
     if (state.failOn && sql.includes(state.failOn)) throw new Error('simulated database failure');
+    if (sql.replace(/\s+/g, ' ').trim().toLowerCase().startsWith('insert into audit_logs')) {
+      state.auditRows.push({
+        entityType: 'system',
+        entityId: String(params[0]),
+        action: 'RESET_CONFIGURATION',
+        details: (params[2] as Record<string, unknown> | null) ?? null,
+      });
+    }
     if (sql.includes('SELECT * FROM systems WHERE id=$1 FOR UPDATE')) {
       return {
         rows: [{
@@ -128,6 +137,7 @@ describe('safe LSS configuration reset', () => {
 
   beforeEach(() => {
     state.calls.length = 0;
+    state.auditRows.length = 0;
     state.bookStatus = 'Draft';
     state.systemStatus = 'Draft';
     state.moduleAccess = 'manage';
@@ -159,6 +169,14 @@ describe('safe LSS configuration reset', () => {
     expect(sql).toContain('DELETE FROM project_equipment_items');
     expect(sql).toContain('RESET_CONFIGURATION');
     expect(sql).toContain('COMMIT');
+    expect(state.auditRows).toContainEqual(expect.objectContaining({
+      entityType: 'system',
+      entityId: 'system-1',
+      action: 'RESET_CONFIGURATION',
+      details: expect.objectContaining({
+        summary: 'LSS configuration reset for LSS-01',
+      }),
+    }));
     expect(sql).not.toMatch(/DELETE FROM (tanks|exhibits|design_book_exhibit_hydraulics|product_masters)/);
     expect(sql).not.toMatch(/UPDATE (tanks|exhibits|design_book_exhibit_hydraulics|product_masters)/);
   });
