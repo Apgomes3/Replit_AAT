@@ -8,7 +8,7 @@ const speciesCatalogSeed_1 = require("./speciesCatalogSeed");
         const records = await (0, speciesCatalogSeed_1.loadSpeciesCatalogStageOne)();
         (0, vitest_1.expect)(fetchSpy).not.toHaveBeenCalled();
         (0, vitest_1.expect)(speciesCatalogSeed_1.SPECIES_CATALOG_ARTIFACT.status).toBe('reviewed');
-        (0, vitest_1.expect)(speciesCatalogSeed_1.SPECIES_CATALOG_ARTIFACT.version).toBe(2);
+        (0, vitest_1.expect)(speciesCatalogSeed_1.SPECIES_CATALOG_ARTIFACT.version).toBe(3);
         (0, vitest_1.expect)(records).toHaveLength(speciesCatalogSeed_1.SPECIES_CATALOG_STAGE_ONE_SIZE);
         (0, vitest_1.expect)(new Set(records.map(record => record.scientific_name.toLowerCase())).size).toBe(records.length);
         fetchSpy.mockRestore();
@@ -30,6 +30,23 @@ const speciesCatalogSeed_1 = require("./speciesCatalogSeed");
         (0, vitest_1.expect)(records.filter(record => record.family === 'Carcharhinidae' && record.water_type === 'Brackish'))
             .toHaveLength(1);
         for (const record of [...penguins, ...sharks]) {
+            (0, vitest_1.expect)(record.common_name).toBeTruthy();
+            (0, vitest_1.expect)(record.average_size_cm).toBeGreaterThan(0);
+            (0, vitest_1.expect)(record.reference_average_mass_kg).toBeGreaterThan(0);
+            (0, vitest_1.expect)(record.source).toMatch(/provisional/i);
+        }
+    });
+    (0, vitest_1.it)('covers the reviewed marine pelagic fish expansion without duplicate identities', async () => {
+        const records = await (0, speciesCatalogSeed_1.loadSpeciesCatalogStageOne)();
+        const pelagic = records.filter(record => ['Carangidae', 'Scombridae'].includes(record.family));
+        (0, vitest_1.expect)(pelagic).toHaveLength(29);
+        (0, vitest_1.expect)(pelagic.every(record => record.water_type === 'Marine')).toBe(true);
+        (0, vitest_1.expect)(new Set(pelagic.map(record => record.family))).toEqual(new Set(['Carangidae', 'Scombridae']));
+        (0, vitest_1.expect)(pelagic.filter(record => record.family === 'Carangidae').map(record => record.common_name))
+            .toEqual(vitest_1.expect.arrayContaining(['Giant trevally', 'Crevalle jack', 'Greater amberjack']));
+        (0, vitest_1.expect)(pelagic.filter(record => record.family === 'Scombridae').map(record => record.common_name))
+            .toEqual(vitest_1.expect.arrayContaining(['Yellowfin tuna', 'Atlantic mackerel', 'Atlantic bonito', 'Wahoo']));
+        for (const record of pelagic) {
             (0, vitest_1.expect)(record.common_name).toBeTruthy();
             (0, vitest_1.expect)(record.average_size_cm).toBeGreaterThan(0);
             (0, vitest_1.expect)(record.reference_average_mass_kg).toBeGreaterThan(0);

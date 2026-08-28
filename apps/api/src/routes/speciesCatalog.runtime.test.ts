@@ -21,6 +21,15 @@ async function waitForServer() {
 }
 
 beforeAll(async () => {
+  const compiledSeed = require(`${process.cwd()}/apps/api/dist/db/speciesCatalogSeed.js`) as {
+    seedSpeciesCatalog: (client: any, userId: string | null) => Promise<number>;
+  };
+  const client = await db.connect();
+  try {
+    await compiledSeed.seedSpeciesCatalog(client, null);
+  } finally {
+    client.release();
+  }
   server = spawn(process.execPath, ['apps/api/dist/index.js'], {
     env: { ...process.env, PORT: String(port) },
     stdio: 'ignore',
@@ -34,6 +43,78 @@ afterAll(async () => {
 });
 
 describe('compiled species catalog runtime', () => {
+  it('serves active shark and pelagic records through search and family facets', async () => {
+    const admin = (await db.query(`SELECT id,email,role FROM users WHERE email='admin@edp.com'`)).rows[0];
+    const auth = (user: any) => ({
+      authorization: `Bearer ${jwt.sign(user, process.env.JWT_SECRET || 'edp-secret-change-in-production')}`,
+      'content-type': 'application/json',
+    });
+    const inactiveName = `Hiddenus ${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    await db.query(
+      `INSERT INTO aquarium_species_catalog
+         (scientific_name, common_name, family, water_type, average_size_cm,
+          reference_average_mass_kg, source, active, created_by, updated_by)
+       VALUES ($1,'Hidden test fish','Testidae','Marine',20,.4,'Runtime active-filter test',false,$2,$2)`,
+      [inactiveName, admin.id],
+    );
+
+    try {
+      const commonSearch = await fetch(`${baseUrl}/species-catalog?q=yellowfin&limit=12`, {
+        headers: auth(admin),
+      });
+      const commonPayload = await commonSearch.json() as any;
+      expect(commonSearch.status).toBe(200);
+      expect(commonPayload.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          scientific_name: 'Thunnus albacares',
+          common_name: 'Yellowfin tuna',
+          family: 'Scombridae',
+          active: true,
+        }),
+      ]));
+
+      const scientificSearch = await fetch(`${baseUrl}/species-catalog?q=Rhincodon%20typus&limit=12`, {
+        headers: auth(admin),
+      });
+      const scientificPayload = await scientificSearch.json() as any;
+      expect(scientificSearch.status).toBe(200);
+      expect(scientificPayload.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          scientific_name: 'Rhincodon typus',
+          family: 'Rhincodontidae',
+          active: true,
+        }),
+      ]));
+
+      const inactiveSearch = await fetch(
+        `${baseUrl}/species-catalog?q=${encodeURIComponent(inactiveName)}&limit=12`,
+        { headers: auth(admin) },
+      );
+      expect((await inactiveSearch.json() as any).items).toHaveLength(0);
+      const inactiveIncluded = await fetch(
+        `${baseUrl}/species-catalog?q=${encodeURIComponent(inactiveName)}&include_inactive=true&limit=12`,
+        { headers: auth(admin) },
+      );
+      expect((await inactiveIncluded.json() as any).items).toEqual([
+        expect.objectContaining({ scientific_name: inactiveName, active: false }),
+      ]);
+
+      const facets = await fetch(`${baseUrl}/species-catalog/facets`, { headers: auth(admin) });
+      const facetsPayload = await facets.json() as any;
+      expect(facets.status).toBe(200);
+      expect(facetsPayload.families).toEqual(expect.arrayContaining([
+        expect.objectContaining({ family: 'Carangidae' }),
+        expect.objectContaining({ family: 'Scombridae' }),
+        expect.objectContaining({ family: 'Rhincodontidae' }),
+      ]));
+      expect(facetsPayload.water_types).toEqual(expect.arrayContaining([
+        expect.objectContaining({ water_type: 'Marine' }),
+      ]));
+    } finally {
+      await db.query('DELETE FROM aquarium_species_catalog WHERE scientific_name=$1', [inactiveName]);
+    }
+  });
+
   it('preserves snapshots and denies view-only writes', async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const admin = (await db.query(`SELECT id,email,role FROM users WHERE email='admin@edp.com'`)).rows[0];

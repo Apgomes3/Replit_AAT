@@ -14,7 +14,7 @@ describe('reviewed species catalog artifact', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(SPECIES_CATALOG_ARTIFACT.status).toBe('reviewed');
-    expect(SPECIES_CATALOG_ARTIFACT.version).toBe(2);
+    expect(SPECIES_CATALOG_ARTIFACT.version).toBe(3);
     expect(records).toHaveLength(SPECIES_CATALOG_STAGE_ONE_SIZE);
     expect(new Set(records.map(record => record.scientific_name.toLowerCase())).size).toBe(records.length);
     fetchSpy.mockRestore();
@@ -38,6 +38,25 @@ describe('reviewed species catalog artifact', () => {
     expect(records.filter(record => record.family === 'Carcharhinidae' && record.water_type === 'Brackish'))
       .toHaveLength(1);
     for (const record of [...penguins, ...sharks]) {
+      expect(record.common_name).toBeTruthy();
+      expect(record.average_size_cm).toBeGreaterThan(0);
+      expect(record.reference_average_mass_kg).toBeGreaterThan(0);
+      expect(record.source).toMatch(/provisional/i);
+    }
+  });
+
+  it('covers the reviewed marine pelagic fish expansion without duplicate identities', async () => {
+    const records = await loadSpeciesCatalogStageOne();
+    const pelagic = records.filter(record => ['Carangidae', 'Scombridae'].includes(record.family));
+
+    expect(pelagic).toHaveLength(29);
+    expect(pelagic.every(record => record.water_type === 'Marine')).toBe(true);
+    expect(new Set(pelagic.map(record => record.family))).toEqual(new Set(['Carangidae', 'Scombridae']));
+    expect(pelagic.filter(record => record.family === 'Carangidae').map(record => record.common_name))
+      .toEqual(expect.arrayContaining(['Giant trevally', 'Crevalle jack', 'Greater amberjack']));
+    expect(pelagic.filter(record => record.family === 'Scombridae').map(record => record.common_name))
+      .toEqual(expect.arrayContaining(['Yellowfin tuna', 'Atlantic mackerel', 'Atlantic bonito', 'Wahoo']));
+    for (const record of pelagic) {
       expect(record.common_name).toBeTruthy();
       expect(record.average_size_cm).toBeGreaterThan(0);
       expect(record.reference_average_mass_kg).toBeGreaterThan(0);

@@ -24,6 +24,14 @@ async function waitForServer() {
     throw new Error('Compiled API did not start');
 }
 (0, vitest_1.beforeAll)(async () => {
+    const compiledSeed = require(`${process.cwd()}/apps/api/dist/db/speciesCatalogSeed.js`);
+    const client = await db.connect();
+    try {
+        await compiledSeed.seedSpeciesCatalog(client, null);
+    }
+    finally {
+        client.release();
+    }
     server = (0, child_process_1.spawn)(process.execPath, ['apps/api/dist/index.js'], {
         env: { ...process.env, PORT: String(port) },
         stdio: 'ignore',
@@ -35,6 +43,65 @@ async function waitForServer() {
     await db.end();
 });
 (0, vitest_1.describe)('compiled species catalog runtime', () => {
+    (0, vitest_1.it)('serves active shark and pelagic records through search and family facets', async () => {
+        const admin = (await db.query(`SELECT id,email,role FROM users WHERE email='admin@edp.com'`)).rows[0];
+        const auth = (user) => ({
+            authorization: `Bearer ${jsonwebtoken_1.default.sign(user, process.env.JWT_SECRET || 'edp-secret-change-in-production')}`,
+            'content-type': 'application/json',
+        });
+        const inactiveName = `Hiddenus ${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        await db.query(`INSERT INTO aquarium_species_catalog
+         (scientific_name, common_name, family, water_type, average_size_cm,
+          reference_average_mass_kg, source, active, created_by, updated_by)
+       VALUES ($1,'Hidden test fish','Testidae','Marine',20,.4,'Runtime active-filter test',false,$2,$2)`, [inactiveName, admin.id]);
+        try {
+            const commonSearch = await fetch(`${baseUrl}/species-catalog?q=yellowfin&limit=12`, {
+                headers: auth(admin),
+            });
+            const commonPayload = await commonSearch.json();
+            (0, vitest_1.expect)(commonSearch.status).toBe(200);
+            (0, vitest_1.expect)(commonPayload.items).toEqual(vitest_1.expect.arrayContaining([
+                vitest_1.expect.objectContaining({
+                    scientific_name: 'Thunnus albacares',
+                    common_name: 'Yellowfin tuna',
+                    family: 'Scombridae',
+                    active: true,
+                }),
+            ]));
+            const scientificSearch = await fetch(`${baseUrl}/species-catalog?q=Rhincodon%20typus&limit=12`, {
+                headers: auth(admin),
+            });
+            const scientificPayload = await scientificSearch.json();
+            (0, vitest_1.expect)(scientificSearch.status).toBe(200);
+            (0, vitest_1.expect)(scientificPayload.items).toEqual(vitest_1.expect.arrayContaining([
+                vitest_1.expect.objectContaining({
+                    scientific_name: 'Rhincodon typus',
+                    family: 'Rhincodontidae',
+                    active: true,
+                }),
+            ]));
+            const inactiveSearch = await fetch(`${baseUrl}/species-catalog?q=${encodeURIComponent(inactiveName)}&limit=12`, { headers: auth(admin) });
+            (0, vitest_1.expect)((await inactiveSearch.json()).items).toHaveLength(0);
+            const inactiveIncluded = await fetch(`${baseUrl}/species-catalog?q=${encodeURIComponent(inactiveName)}&include_inactive=true&limit=12`, { headers: auth(admin) });
+            (0, vitest_1.expect)((await inactiveIncluded.json()).items).toEqual([
+                vitest_1.expect.objectContaining({ scientific_name: inactiveName, active: false }),
+            ]);
+            const facets = await fetch(`${baseUrl}/species-catalog/facets`, { headers: auth(admin) });
+            const facetsPayload = await facets.json();
+            (0, vitest_1.expect)(facets.status).toBe(200);
+            (0, vitest_1.expect)(facetsPayload.families).toEqual(vitest_1.expect.arrayContaining([
+                vitest_1.expect.objectContaining({ family: 'Carangidae' }),
+                vitest_1.expect.objectContaining({ family: 'Scombridae' }),
+                vitest_1.expect.objectContaining({ family: 'Rhincodontidae' }),
+            ]));
+            (0, vitest_1.expect)(facetsPayload.water_types).toEqual(vitest_1.expect.arrayContaining([
+                vitest_1.expect.objectContaining({ water_type: 'Marine' }),
+            ]));
+        }
+        finally {
+            await db.query('DELETE FROM aquarium_species_catalog WHERE scientific_name=$1', [inactiveName]);
+        }
+    });
     (0, vitest_1.it)('preserves snapshots and denies view-only writes', async () => {
         const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         const admin = (await db.query(`SELECT id,email,role FROM users WHERE email='admin@edp.com'`)).rows[0];

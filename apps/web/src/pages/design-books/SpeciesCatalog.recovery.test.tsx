@@ -156,6 +156,38 @@ describe('species catalog recovery states', () => {
     expect(screen.getByPlaceholderText('5000')).toBeVisible();
   });
 
+  it('discovers a reviewed pelagic fish by common name and selects its catalog snapshot', async () => {
+    const pelagic = {
+      ...catalogItem,
+      id: 'species-pelagic',
+      scientific_name: 'Caranx ignobilis',
+      common_name: 'Giant trevally',
+      family: 'Carangidae',
+      average_size_cm: 100,
+      reference_average_mass_kg: 17,
+    };
+    apiGet.mockResolvedValue({ data: { items: [pelagic], total: 1 } });
+
+    renderWithQuery(
+      <SpeciesAllocationSection
+        bookId="book-1"
+        exhibitId="exhibit-1"
+        species={[]}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add species' }));
+    fireEvent.change(screen.getByPlaceholderText('Search scientific, common, or family name'), {
+      target: { value: 'trevally' },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Caranx ignobilis/i }));
+    expect(screen.getByText('Linked catalog reference selected')).toBeVisible();
+    expect(screen.getByPlaceholderText('100')).toBeVisible();
+    expect(screen.getByPlaceholderText('17')).toBeVisible();
+  });
+
   it('applies catalog search and family and water-type facets to the expanded records', async () => {
     apiGet.mockImplementation((url: string) => Promise.resolve({
       data: url === '/species-catalog/facets'
@@ -185,5 +217,18 @@ describe('species catalog recovery states', () => {
     await waitFor(() => expect(apiGet).toHaveBeenCalledWith(
       '/species-catalog?limit=1000&q=penguin&water_type=Marine&family=Spheniscidae',
     ));
+  });
+
+  it('resets search, facets, and inactive visibility together', async () => {
+    apiGet.mockResolvedValue({ data: { items: [], total: 0 } });
+
+    renderWithQuery(<SpeciesCatalog />);
+    fireEvent.change(screen.getByPlaceholderText('Search scientific name, common name, or family'), {
+      target: { value: 'tuna' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    expect(screen.getByPlaceholderText('Search scientific name, common name, or family')).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
   });
 });

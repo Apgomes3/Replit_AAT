@@ -10,6 +10,7 @@ exports.loadSpeciesCatalogStageOne = loadSpeciesCatalogStageOne;
 exports.seedSpeciesCatalog = seedSpeciesCatalog;
 const speciesCatalogArtifact_v1_json_1 = __importDefault(require("./speciesCatalogArtifact.v1.json"));
 const speciesCatalogArtifact_v2_json_1 = __importDefault(require("./speciesCatalogArtifact.v2.json"));
+const speciesCatalogArtifact_v3_json_1 = __importDefault(require("./speciesCatalogArtifact.v3.json"));
 exports.SPECIES_PER_IMPORT_GROUP = 40;
 exports.GBIF_IMPORT_GROUPS = [
     { family: 'Acanthuridae', gbifFamilyKey: 4233, waterType: 'Marine', averageSizeCm: 24, referenceAverageMassKg: 0.55 },
@@ -27,10 +28,10 @@ exports.GBIF_IMPORT_GROUPS = [
     { family: 'Tetraodontidae', gbifFamilyKey: 2219, waterType: 'Brackish', averageSizeCm: 28, referenceAverageMassKg: 0.9 },
 ];
 exports.SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE = exports.GBIF_IMPORT_GROUPS.length * exports.SPECIES_PER_IMPORT_GROUP;
-exports.SPECIES_CATALOG_ARTIFACT_VERSION = speciesCatalogArtifact_v2_json_1.default.version;
+exports.SPECIES_CATALOG_ARTIFACT_VERSION = speciesCatalogArtifact_v3_json_1.default.version;
 exports.SPECIES_CATALOG_ARTIFACT = {
-    ...speciesCatalogArtifact_v2_json_1.default,
-    records: [...speciesCatalogArtifact_v1_json_1.default.records, ...speciesCatalogArtifact_v2_json_1.default.records],
+    ...speciesCatalogArtifact_v3_json_1.default,
+    records: [...speciesCatalogArtifact_v1_json_1.default.records, ...speciesCatalogArtifact_v2_json_1.default.records, ...speciesCatalogArtifact_v3_json_1.default.records],
 };
 exports.SPECIES_CATALOG_STAGE_ONE_SIZE = exports.SPECIES_CATALOG_ARTIFACT.records.length;
 async function fetchGbifGroup(group) {

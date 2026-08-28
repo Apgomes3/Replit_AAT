@@ -29,6 +29,7 @@ export default function SpeciesCatalog() {
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
+  const hasFilters = Boolean(search || waterType || family || showInactive);
 
   const params = new URLSearchParams({ limit: '1000' });
   if (search) params.set('q', search);
@@ -161,6 +162,12 @@ export default function SpeciesCatalog() {
           Include inactive records
           <span className="ml-auto text-stone-400">{data?.total || 0} matching records</span>
         </label>
+        {hasFilters && (
+          <button type="button" onClick={() => { setSearch(''); setWaterType(''); setFamily(''); setShowInactive(false); }}
+            className="justify-self-start text-xs font-medium text-blue-700 hover:text-blue-900 md:col-span-4">
+            Clear filters
+          </button>
+        )}
         {facetsError && (
           <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 md:col-span-4">
             <span>Filters could not load. You can still search the catalog.</span>

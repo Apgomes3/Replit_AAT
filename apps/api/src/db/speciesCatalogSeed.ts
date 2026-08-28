@@ -1,6 +1,7 @@
 import { PoolClient } from 'pg';
 import baseArtifact from './speciesCatalogArtifact.v1.json';
 import expansionArtifact from './speciesCatalogArtifact.v2.json';
+import pelagicArtifact from './speciesCatalogArtifact.v3.json';
 
 export type SpeciesCatalogSeedRecord = {
   scientific_name: string;
@@ -48,10 +49,10 @@ export const GBIF_IMPORT_GROUPS: GbifImportGroup[] = [
 ];
 
 export const SPECIES_CATALOG_GBIF_STAGE_ONE_SIZE = GBIF_IMPORT_GROUPS.length * SPECIES_PER_IMPORT_GROUP;
-export const SPECIES_CATALOG_ARTIFACT_VERSION = expansionArtifact.version;
+export const SPECIES_CATALOG_ARTIFACT_VERSION = pelagicArtifact.version;
 export const SPECIES_CATALOG_ARTIFACT = {
-  ...expansionArtifact,
-  records: [...baseArtifact.records, ...expansionArtifact.records],
+  ...pelagicArtifact,
+  records: [...baseArtifact.records, ...expansionArtifact.records, ...pelagicArtifact.records],
 } as SpeciesCatalogArtifact;
 export const SPECIES_CATALOG_STAGE_ONE_SIZE = SPECIES_CATALOG_ARTIFACT.records.length;
 
