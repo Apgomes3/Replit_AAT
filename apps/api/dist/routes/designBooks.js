@@ -1138,9 +1138,10 @@ const VERSION_REFERENCE_FIELDS = {
         'design_flow_m3h', 'turnover_rate_hr', 'water_type', 'status', 'primary_control_panel_code',
         'duty_description', 'redundancy_strategy', 'design_basis_reference', 'system_config', 'compact_unit_id',
         'calculation_version', 'calculation_inputs', 'loop1_flow_source', 'loop1_filtration',
-        'loop1_bio_degas_m3h', 'loop1_link_bio_degas', 'loop2_flow_source', 'loop2_filtration',
+        'loop1_flow_pct', 'loop1_bio_degas_pct', 'loop1_bio_degas_m3h', 'loop1_link_bio_degas',
+        'loop2_flow_source', 'loop2_filtration', 'loop2_flow_pct', 'loop2_bio_degas_pct',
         'loop2_bio_degas_m3h', 'loop2_link_bio_degas', 'loop3_flow_source', 'loop3_filtration',
-        'loop3_bio_degas_m3h', 'loop3_link_bio_degas'],
+        'loop3_flow_pct', 'loop3_bio_degas_pct', 'loop3_bio_degas_m3h', 'loop3_link_bio_degas'],
     system_links: ['id', 'system_id', 'exhibit_id', 'link_type', 'flow_allocation_m3h', 'notes',
         'sort_order', 'allocation_source', 'allocation_updated_at'],
 };

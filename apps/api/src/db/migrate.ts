@@ -714,7 +714,7 @@ CREATE TABLE IF NOT EXISTS product_electrical (
 CREATE TABLE IF NOT EXISTS product_hydraulic (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
-  design_flow_m3h NUMERIC, min_flow_m3h NUMERIC, max_flow_m3h NUMERIC,
+  design_flow_m3h NUMERIC, min_flow_m3h NUMERIC, max_flow_m3h NUMERIC, venturi_flow_m3h NUMERIC,
   design_head_m NUMERIC, design_pressure_bar NUMERIC, max_pressure_bar NUMERIC,
   npsh_required_m NUMERIC, fluid_type VARCHAR(100),
   min_temperature_c NUMERIC, max_temperature_c NUMERIC,
@@ -1182,6 +1182,9 @@ ALTER TABLE po_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20) DEFAULT 'EA';
 
 -- USERS: last login timestamp for audit awareness
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
+-- PRODUCT HYDRAULICS: optional vendor-specified Venturi flow (m³/h)
+ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS venturi_flow_m3h NUMERIC;
 `;
 
 async function migrate() {

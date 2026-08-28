@@ -690,6 +690,9 @@ const resolveProductId = async (param: string): Promise<string | null> => {
   return r.rows[0]?.id ?? null;
 };
 
+const nullableHydraulicValue = (value: unknown) =>
+  value === null || value === undefined || (typeof value === 'string' && value.trim() === '') ? null : value;
+
 router.get('/product-masters/:id/dimensions', authenticate, async (req: AuthRequest, res: Response) => {
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
@@ -740,13 +743,28 @@ router.get('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
 router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  const { design_flow_m3h, min_flow_m3h, max_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes } = req.body;
+  const { design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes } = req.body;
+  const venturiFlow = venturi_flow_m3h === null || venturi_flow_m3h === undefined ||
+    (typeof venturi_flow_m3h === 'string' && venturi_flow_m3h.trim() === '')
+    ? null
+    : (typeof venturi_flow_m3h === 'number' || typeof venturi_flow_m3h === 'string')
+      ? Number(venturi_flow_m3h)
+      : Number.NaN;
+  if (venturiFlow !== null && (!Number.isFinite(venturiFlow) || venturiFlow < 0)) {
+    return res.status(400).json({
+      error: { code: 'INVALID_VENTURI_FLOW', message: 'Venturi flow must be a finite, non-negative value in m³/h' },
+    });
+  }
   const r = await query(`
-    INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+    INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
     ON CONFLICT (product_master_id) DO UPDATE SET
-      design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, design_head_m=$5, design_pressure_bar=$6, max_pressure_bar=$7, npsh_required_m=$8, fluid_type=$9, min_temperature_c=$10, max_temperature_c=$11, notes=$12, updated_at=NOW()
-    RETURNING *`, [pid, design_flow_m3h||null, min_flow_m3h||null, max_flow_m3h||null, design_head_m||null, design_pressure_bar||null, max_pressure_bar||null, npsh_required_m||null, fluid_type||null, min_temperature_c||null, max_temperature_c||null, notes||null]);
+      design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, venturi_flow_m3h=$5, design_head_m=$6, design_pressure_bar=$7, max_pressure_bar=$8, npsh_required_m=$9, fluid_type=$10, min_temperature_c=$11, max_temperature_c=$12, notes=$13, updated_at=NOW()
+    RETURNING *`, [pid, nullableHydraulicValue(design_flow_m3h), nullableHydraulicValue(min_flow_m3h), nullableHydraulicValue(max_flow_m3h), venturiFlow, nullableHydraulicValue(design_head_m), nullableHydraulicValue(design_pressure_bar), nullableHydraulicValue(max_pressure_bar), nullableHydraulicValue(npsh_required_m), nullableHydraulicValue(fluid_type), nullableHydraulicValue(min_temperature_c), nullableHydraulicValue(max_temperature_c), nullableHydraulicValue(notes)]);
+  await logAudit(req.user!.id, 'product', pid, 'UPDATE', {
+    summary: 'Product hydraulic data updated',
+    venturi_flow_m3h: venturiFlow,
+  });
   res.json(r.rows[0]);
 });
 
