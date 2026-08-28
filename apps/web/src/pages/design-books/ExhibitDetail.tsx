@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
+import SpeciesSection from './SpeciesAllocationSection';
 import {
   calculateBazinWeir,
   calculateFrancisWeir,
@@ -117,7 +118,7 @@ function CalculationTrace({ calculation, title = 'Calculation Trace' }: {
 }
 const BLANK_SPECIES = { species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '' };
 
-function SpeciesSection({ bookId, exhibitId, species, onRefresh }: {
+function LegacySpeciesSection({ bookId, exhibitId, species, onRefresh }: {
   bookId: string;
   exhibitId: string;
   species: any[];

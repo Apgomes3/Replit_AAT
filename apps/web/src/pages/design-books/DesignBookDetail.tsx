@@ -15,6 +15,7 @@ import {
   Send, UserCheck, ClipboardList, CalendarDays, Users, LibraryBig
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import SpeciesSection from './SpeciesAllocationSection';
 import VersionsTab from './VersionsTab';
 import { useAuthStore } from '../../store/authStore';
 import ActivityLog from '../../components/ui/ActivityLog';
@@ -548,7 +549,7 @@ function ReviewWorkflowTab({ book, canRecordHandover, onRefresh }: {
 // ─── Species Section inside each Exhibit ────────────────────────────────────
 const BLANK_SPECIES = { species_name: '', common_name: '', quantity: '', avg_size_cm: '', biomass_kg: '' };
 
-function SpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
+function LegacySpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
   bookId: string;
   exhibitId: string;
   allSpecies: any[];

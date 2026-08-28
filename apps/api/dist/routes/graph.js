@@ -15,11 +15,11 @@ router.post('/query', auth_1.authenticate, async (req, res) => {
     res.json(result);
 });
 router.get('/product-reuse/:productId', auth_1.authenticate, async (req, res) => {
-    const rows = await (0, graphService_1.findProductReuse)(req.params.productId);
+    const rows = await (0, graphService_1.findProductReuse)(String(req.params.productId));
     res.json({ items: rows });
 });
 router.get('/impact/:productId', auth_1.authenticate, async (req, res) => {
-    const rows = await (0, graphService_1.findImpactedProjects)(req.params.productId);
+    const rows = await (0, graphService_1.findImpactedProjects)(String(req.params.productId));
     res.json({ items: rows });
 });
 router.get('/relationships', auth_1.authenticate, async (req, res) => {

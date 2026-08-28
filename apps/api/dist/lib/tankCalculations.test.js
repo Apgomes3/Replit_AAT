@@ -9,7 +9,7 @@ const tankCalculations_1 = require("./tankCalculations");
     (0, vitest_1.it)('calculates a cylindrical water-surface footprint from diameter', () => {
         (0, vitest_1.expect)((0, tankCalculations_1.calculateWaterSurfaceAreaM2)('Cylindrical', null, 2000)).toBe(3.1416);
     });
-    (0, vitest_1.it)('does not infer a custom-shape surface area', () => {
-        (0, vitest_1.expect)((0, tankCalculations_1.calculateWaterSurfaceAreaM2)('Custom', 5000, 3000)).toBeNull();
+    (0, vitest_1.it)('calculates a custom tank footprint from confirmed outer dimensions', () => {
+        (0, vitest_1.expect)((0, tankCalculations_1.calculateWaterSurfaceAreaM2)('Custom', 5000, 3000)).toBe(15);
     });
 });

@@ -467,7 +467,7 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
       title: 'PO Pending Approval',
       body: `PO #${po.po_code} has been submitted for approval by ${actorName}.`,
       entityType: 'purchase_order',
-      entityId: id,
+      entityId: String(id),
       excludeUserId: user.id,
     });
   }
@@ -515,7 +515,7 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
       title: 'PO Approved',
       body: `Your PO #${poRes.rows[0].po_code} has been approved.`,
       entityType: 'purchase_order',
-      entityId: id,
+      entityId: String(id),
     });
   }
   res.json({ status: 'purchase_order' });
@@ -559,7 +559,7 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
       title: 'PO Sent Back for Corrections',
       body: `Your PO #${poRes.rows[0].po_code} was sent back for corrections${comment ? `: ${comment}` : '.'}`,
       entityType: 'purchase_order',
-      entityId: id,
+      entityId: String(id),
     });
   }
   res.json({ status: 'draft' });
@@ -634,7 +634,7 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
       title: 'PO Stage Updated',
       body: `Your PO #${po.po_code} has moved to stage: ${next.replace(/_/g, ' ')}.`,
       entityType: 'purchase_order',
-      entityId: id,
+      entityId: String(id),
     });
   }
   const updated = await query('SELECT fo_number FROM purchase_orders WHERE id=$1', [id]);

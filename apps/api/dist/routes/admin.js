@@ -319,7 +319,7 @@ router.patch('/users/:id/password', auth_1.authenticate, (0, auth_1.requireRole)
     const hash = await bcryptjs_1.default.hash(password, 10);
     await (0, db_1.query)('UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, req.params.id]);
     await (0, db_1.query)('DELETE FROM refresh_tokens WHERE user_id=$1', [req.params.id]);
-    await (0, audit_1.logAudit)(req.user.id, 'user', req.params.id, 'RESET_PASSWORD', {
+    await (0, audit_1.logAudit)(req.user.id, 'user', String(req.params.id), 'RESET_PASSWORD', {
         summary: 'User password reset',
         target_email: existing.rows[0].email,
     });
@@ -390,7 +390,7 @@ router.delete('/users/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'
         // Finally delete the user
         await client.query('DELETE FROM users WHERE id=$1', [userId]);
         await client.query('COMMIT');
-        await (0, audit_1.logAudit)(req.user.id, 'user', userId, 'DELETE', {
+        await (0, audit_1.logAudit)(req.user.id, 'user', String(userId), 'DELETE', {
             summary: `User account deleted for ${existing.rows[0].email}`,
             target_user_id: userId,
             target_email: existing.rows[0].email,

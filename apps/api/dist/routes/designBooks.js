@@ -45,9 +45,47 @@ const audit_1 = require("../db/audit");
 const designBookRelease_1 = require("../lib/designBookRelease");
 const designBookWorkflow_1 = require("../lib/designBookWorkflow");
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
+const speciesAllocations_1 = require("../lib/speciesAllocations");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const routeParam = (value) => Array.isArray(value) ? value[0] : value;
+function nullableSpeciesNumber(value, label, allowZero = false) {
+    if (value == null || value === '')
+        return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || (allowZero ? parsed < 0 : parsed <= 0)) {
+        throw new Error(`${label} must be ${allowZero ? 'a non-negative' : 'a positive'} number.`);
+    }
+    return parsed;
+}
+function nullableSpeciesQuantity(value) {
+    if (value == null || value === '')
+        return null;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0)
+        throw new Error('Quantity must be a non-negative whole number.');
+    return parsed;
+}
+async function loadCatalogSpecies(id) {
+    if (!id)
+        return null;
+    const result = await (0, index_1.query)('SELECT * FROM aquarium_species_catalog WHERE id=$1', [id]);
+    return result.rows[0] || null;
+}
+function speciesValueSources(row) {
+    return {
+        ...row,
+        avg_size_source: row.avg_size_override_cm != null
+            ? 'override'
+            : row.catalog_species_id ? 'catalog_snapshot' : 'manual',
+        reference_mass_source: row.reference_mass_override_kg != null
+            ? 'override'
+            : row.catalog_species_id ? 'catalog_snapshot' : row.reference_average_mass_kg != null ? 'manual' : null,
+        biomass_source: row.catalog_species_id
+            ? row.biomass_override_kg != null ? 'override' : row.biomass_kg != null ? 'calculated' : null
+            : row.biomass_kg != null ? 'manual' : null,
+    };
+}
 async function insertAudit(runner, actorId, entityType, entityId, action, details, ipAddress) {
     await runner(`INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
      VALUES ($1,$2,$3,$4,$5,$6)`, [entityType, entityId, action, actorId, details, ipAddress || null]);
@@ -81,7 +119,20 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
          COALESCE(t.notes, pm.notes) AS eff_notes,
          COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
          COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
-         COALESCE(t.surface_area_m2, pm.surface_area_m2) AS surface_area_m2
+         COALESCE(
+           t.surface_area_m2,
+           pm.surface_area_m2,
+           CASE
+             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
+                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
+             WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+                  AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
+                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
+               THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
+             ELSE NULL
+           END
+         ) AS surface_area_m2
        FROM tanks t
        LEFT JOIN product_masters pm ON pm.id=t.product_master_id
        LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
@@ -92,10 +143,14 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         tanks = tankResult.rows;
         systems = systemResult.rows;
     }
-    const speciesResult = await runner('SELECT * FROM design_book_exhibit_species WHERE design_book_id=$1 ORDER BY exhibit_id, sort_order', [id]);
+    const speciesResult = await runner(`SELECT s.*, c.family AS catalog_family, c.water_type AS catalog_water_type,
+            c.active AS catalog_active
+     FROM design_book_exhibit_species s
+     LEFT JOIN aquarium_species_catalog c ON c.id=s.catalog_species_id
+     WHERE s.design_book_id=$1 ORDER BY s.exhibit_id, s.sort_order`, [id]);
     const hydraulicsResult = await runner('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [id]);
     const substrateResult = await runner('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1', [id]);
-    const species = speciesResult.rows;
+    const species = speciesResult.rows.map(speciesValueSources);
     const hydraulics = hydraulicsResult.rows;
     const substrate = substrateResult.rows;
     const handovers = (await runner(`SELECT h.*, u.first_name || ' ' || u.last_name AS created_by_name
@@ -269,17 +324,17 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         ) as design_volume_m3,
         COALESCE(
           t.surface_area_m2,
+          pm.surface_area_m2,
           CASE
             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
               THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
-            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Custom'
+            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
                  AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
               THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
             ELSE NULL
-          END,
-          pm.surface_area_m2
+          END
         ) as surface_area_m2
        FROM tanks t
        LEFT JOIN exhibits e ON t.exhibit_id = e.id
@@ -302,8 +357,12 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
        ORDER BY a.area_code NULLS LAST, e.exhibit_code NULLS LAST, s.system_code`, [row.project_id]);
         systems = sysResult.rows;
     }
-    const speciesResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_species WHERE design_book_id = $1 ORDER BY exhibit_id, sort_order, species_name`, [req.params.id]);
-    species = speciesResult.rows;
+    const speciesResult = await (0, index_1.query)(`SELECT s.*, c.family AS catalog_family, c.water_type AS catalog_water_type,
+            c.active AS catalog_active
+     FROM design_book_exhibit_species s
+     LEFT JOIN aquarium_species_catalog c ON c.id=s.catalog_species_id
+     WHERE s.design_book_id = $1 ORDER BY s.exhibit_id, s.sort_order, s.species_name`, [req.params.id]);
+    species = speciesResult.rows.map(speciesValueSources);
     const hydraulicsResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id = $1`, [req.params.id]);
     const hydraulics = hydraulicsResult.rows;
     const substrateResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_substrate WHERE design_book_id = $1`, [req.params.id]);
@@ -427,25 +486,143 @@ router.delete('/design-books/:id', auth_1.authenticate, (0, auth_1.requireRole)(
     res.json({ deleted: true });
 });
 // Species CRUD
-router.post('/design-books/:id/species', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.post('/design-books/:id/species', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
         return;
-    const { exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order } = req.body;
-    if (!exhibit_id || !species_name)
-        return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id and species_name are required' } });
-    const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_species (design_book_id, exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [req.params.id, exhibit_id, species_name, common_name || null, quantity || null, avg_size_cm || null, biomass_kg || null, notes || null, sort_order || 0]);
-    res.status(201).json(result.rows[0]);
+    const catalogId = req.body.catalog_species_id || req.body.catalog_id || null;
+    const catalog = await loadCatalogSpecies(catalogId);
+    if (catalogId && !catalog)
+        return res.status(400).json({ error: { code: 'INVALID_CATALOG_SPECIES', message: 'Selected catalog species does not exist.' } });
+    if (catalog && !catalog.active)
+        return res.status(409).json({ error: { code: 'INACTIVE_CATALOG_SPECIES', message: 'Inactive catalog species cannot be added to a new allocation.' } });
+    const speciesName = String(catalog?.scientific_name || req.body.species_name || '').trim();
+    const exhibitId = String(req.body.exhibit_id || '').trim();
+    if (!exhibitId || !speciesName)
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id and a catalog or custom scientific name are required.' } });
+    try {
+        const quantity = nullableSpeciesQuantity(req.body.quantity);
+        const avgSizeOverride = catalog ? nullableSpeciesNumber(req.body.avg_size_override_cm, 'Average size override') : null;
+        const massOverride = catalog ? nullableSpeciesNumber(req.body.reference_mass_override_kg, 'Reference mass override') : null;
+        const biomassOverride = catalog
+            ? nullableSpeciesNumber(req.body.biomass_override_kg ?? req.body.biomass_kg, 'Biomass override', true)
+            : null;
+        const manualAverageSize = catalog ? null : nullableSpeciesNumber(req.body.avg_size_cm, 'Average size');
+        const manualReferenceMass = catalog ? null : nullableSpeciesNumber(req.body.reference_average_mass_kg, 'Reference average mass');
+        const manualBiomass = catalog ? null : nullableSpeciesNumber(req.body.biomass_kg, 'Biomass', true);
+        const calculated = (0, speciesAllocations_1.calculateSpeciesAllocation)({
+            quantity,
+            catalogLinked: !!catalog,
+            catalogAverageSizeCm: catalog ? nullableSpeciesNumber(catalog.average_size_cm, 'Catalog average size') : null,
+            catalogReferenceMassKg: catalog ? nullableSpeciesNumber(catalog.reference_average_mass_kg, 'Catalog reference mass') : null,
+            manualAverageSizeCm: manualAverageSize,
+            manualReferenceMassKg: manualReferenceMass,
+            manualBiomassKg: manualBiomass,
+            averageSizeOverrideCm: avgSizeOverride,
+            referenceMassOverrideKg: massOverride,
+            biomassOverrideKg: biomassOverride,
+        });
+        const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_species
+         (design_book_id, exhibit_id, catalog_species_id, species_name, common_name, quantity,
+          avg_size_cm, reference_average_mass_kg, biomass_kg, avg_size_override_cm,
+          reference_mass_override_kg, biomass_override_kg, notes, sort_order)
+       SELECT db.id, e.id, $3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+       FROM design_books db
+       JOIN exhibits e ON e.id=$2 AND e.project_id=db.project_id
+       WHERE db.id=$1
+       RETURNING *`, [req.params.id, exhibitId, catalogId, speciesName, catalog?.common_name || req.body.common_name || null,
+            quantity, calculated.average_size_cm, calculated.reference_average_mass_kg, calculated.biomass_kg,
+            avgSizeOverride, massOverride, biomassOverride,
+            req.body.notes || null, Number(req.body.sort_order) || 0]);
+        if (!result.rows[0]) {
+            return res.status(400).json({ error: { code: 'INVALID_EXHIBIT', message: 'Exhibit must belong to the Design Book project.' } });
+        }
+        res.status(201).json(speciesValueSources(result.rows[0]));
+    }
+    catch (error) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
 });
-router.put('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.put('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
         return;
-    const { species_name, common_name, quantity, avg_size_cm, biomass_kg, notes } = req.body;
-    const result = await (0, index_1.query)(`UPDATE design_book_exhibit_species SET species_name=$1, common_name=$2, quantity=$3, avg_size_cm=$4, biomass_kg=$5, notes=$6, updated_at=NOW()
-     WHERE id=$7 AND design_book_id=$8 RETURNING *`, [species_name, common_name || null, quantity || null, avg_size_cm || null, biomass_kg || null, notes || null, req.params.speciesId, req.params.id]);
-    if (!result.rows[0])
+    const existingResult = await (0, index_1.query)(`SELECT s.*
+     FROM design_book_exhibit_species s
+     JOIN design_books db ON db.id=s.design_book_id
+     JOIN exhibits e ON e.id=s.exhibit_id AND e.project_id=db.project_id
+     WHERE s.id=$1 AND s.design_book_id=$2`, [req.params.speciesId, req.params.id]);
+    const existing = existingResult.rows[0];
+    if (!existing)
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species entry not found' } });
-    res.json(result.rows[0]);
+    const catalogId = req.body.catalog_species_id !== undefined || req.body.catalog_id !== undefined
+        ? req.body.catalog_species_id || req.body.catalog_id || null
+        : existing.catalog_species_id;
+    const catalog = await loadCatalogSpecies(catalogId);
+    if (catalogId && !catalog)
+        return res.status(400).json({ error: { code: 'INVALID_CATALOG_SPECIES', message: 'Selected catalog species does not exist.' } });
+    const catalogChanged = String(catalogId || '') !== String(existing.catalog_species_id || '');
+    if (catalog && !catalog.active && catalogChanged) {
+        return res.status(409).json({ error: { code: 'INACTIVE_CATALOG_SPECIES', message: 'Inactive catalog species cannot be selected for a new allocation.' } });
+    }
+    try {
+        const quantity = nullableSpeciesQuantity(Object.prototype.hasOwnProperty.call(req.body, 'quantity') ? req.body.quantity : existing.quantity);
+        const hasAvgOverride = Object.prototype.hasOwnProperty.call(req.body, 'avg_size_override_cm');
+        const hasMassOverride = Object.prototype.hasOwnProperty.call(req.body, 'reference_mass_override_kg');
+        const hasBiomassOverride = Object.prototype.hasOwnProperty.call(req.body, 'biomass_override_kg')
+            || Object.prototype.hasOwnProperty.call(req.body, 'biomass_kg');
+        const avgSizeOverride = catalog
+            ? nullableSpeciesNumber(hasAvgOverride ? req.body.avg_size_override_cm : existing.avg_size_override_cm, 'Average size override')
+            : null;
+        const massOverride = catalog
+            ? nullableSpeciesNumber(hasMassOverride ? req.body.reference_mass_override_kg : existing.reference_mass_override_kg, 'Reference mass override')
+            : null;
+        const biomassOverride = catalog
+            ? nullableSpeciesNumber(hasBiomassOverride ? req.body.biomass_override_kg ?? req.body.biomass_kg : existing.biomass_override_kg, 'Biomass override', true)
+            : null;
+        const refreshCatalog = catalogChanged || req.body.refresh_catalog === true;
+        const averageCatalogBaseline = refreshCatalog || (hasAvgOverride && avgSizeOverride == null && existing.avg_size_override_cm != null)
+            ? catalog?.average_size_cm
+            : existing.avg_size_cm;
+        const massCatalogBaseline = refreshCatalog || (hasMassOverride && massOverride == null && existing.reference_mass_override_kg != null)
+            ? catalog?.reference_average_mass_kg
+            : existing.reference_average_mass_kg;
+        const manualAverageSize = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'avg_size_cm') ? req.body.avg_size_cm : existing.avg_size_cm, 'Average size');
+        const manualReferenceMass = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'reference_average_mass_kg')
+            ? req.body.reference_average_mass_kg
+            : existing.reference_average_mass_kg, 'Reference average mass');
+        const manualBiomass = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'biomass_kg') ? req.body.biomass_kg : existing.biomass_kg, 'Biomass', true);
+        const calculated = (0, speciesAllocations_1.calculateSpeciesAllocation)({
+            quantity,
+            catalogLinked: !!catalog,
+            catalogAverageSizeCm: catalog ? nullableSpeciesNumber(averageCatalogBaseline, 'Catalog average size') : null,
+            catalogReferenceMassKg: catalog ? nullableSpeciesNumber(massCatalogBaseline, 'Catalog reference mass') : null,
+            manualAverageSizeCm: manualAverageSize,
+            manualReferenceMassKg: manualReferenceMass,
+            manualBiomassKg: manualBiomass,
+            averageSizeOverrideCm: avgSizeOverride,
+            referenceMassOverrideKg: massOverride,
+            biomassOverrideKg: biomassOverride,
+        });
+        const speciesName = String(catalog && refreshCatalog ? catalog.scientific_name : req.body.species_name || existing.species_name).trim();
+        const commonName = catalog && refreshCatalog
+            ? catalog.common_name
+            : req.body.common_name !== undefined ? req.body.common_name || null : existing.common_name;
+        if (!speciesName)
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'Scientific name is required.' } });
+        const result = await (0, index_1.query)(`UPDATE design_book_exhibit_species
+       SET catalog_species_id=$1, species_name=$2, common_name=$3, quantity=$4,
+           avg_size_cm=$5, reference_average_mass_kg=$6, biomass_kg=$7,
+           avg_size_override_cm=$8, reference_mass_override_kg=$9,
+           biomass_override_kg=$10, notes=$11, updated_at=NOW()
+       WHERE id=$12 AND design_book_id=$13 RETURNING *`, [catalogId, speciesName, commonName, quantity,
+            calculated.average_size_cm, calculated.reference_average_mass_kg, calculated.biomass_kg,
+            avgSizeOverride, massOverride, biomassOverride,
+            req.body.notes !== undefined ? req.body.notes || null : existing.notes,
+            req.params.speciesId, req.params.id]);
+        res.json(speciesValueSources(result.rows[0]));
+    }
+    catch (error) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
 });
 router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
@@ -602,7 +779,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
         })]);
     res.json(result.rows[0]);
 });
-router.delete('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.delete('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
         return;
     const result = await (0, index_1.query)('DELETE FROM design_book_exhibit_species WHERE id=$1 AND design_book_id=$2 RETURNING id', [req.params.speciesId, req.params.id]);
@@ -895,8 +1072,13 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
         const next = created.rows[0];
         for (const row of snapshot.species || []) {
             await client.query(`INSERT INTO design_book_exhibit_species
-             (design_book_id, exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [next.id, row.exhibit_id, row.species_name, row.common_name, row.quantity, row.avg_size_cm, row.biomass_kg, row.notes, row.sort_order || 0]);
+             (design_book_id, exhibit_id, catalog_species_id, species_name, common_name, quantity,
+              avg_size_cm, reference_average_mass_kg, biomass_kg, avg_size_override_cm,
+              reference_mass_override_kg, biomass_override_kg, notes, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [next.id, row.exhibit_id, row.catalog_species_id, row.species_name, row.common_name,
+                row.quantity, row.avg_size_cm, row.reference_average_mass_kg, row.biomass_kg,
+                row.avg_size_override_cm, row.reference_mass_override_kg, row.biomass_override_kg,
+                row.notes, row.sort_order || 0]);
         }
         for (const row of snapshot.hydraulics || []) {
             await client.query(`INSERT INTO design_book_exhibit_hydraulics
@@ -1333,9 +1515,13 @@ router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate
         await client.query('DELETE FROM design_book_exhibit_species WHERE design_book_id=$1', [req.params.id]);
         for (const sp of frozen.species || []) {
             await client.query(`INSERT INTO design_book_exhibit_species
-           (design_book_id, exhibit_id, species_name, common_name, quantity, avg_size_cm, biomass_kg, notes, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.params.id, sp.exhibit_id, sp.species_name, sp.common_name, sp.quantity ?? null, sp.avg_size_cm ?? null,
-                sp.biomass_kg ?? null, sp.notes ?? null, sp.sort_order ?? 0]);
+           (design_book_id, exhibit_id, catalog_species_id, species_name, common_name, quantity,
+            avg_size_cm, reference_average_mass_kg, biomass_kg, avg_size_override_cm,
+            reference_mass_override_kg, biomass_override_kg, notes, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [req.params.id, sp.exhibit_id, sp.catalog_species_id ?? null, sp.species_name, sp.common_name,
+                sp.quantity ?? null, sp.avg_size_cm ?? null, sp.reference_average_mass_kg ?? null,
+                sp.biomass_kg ?? null, sp.avg_size_override_cm ?? null, sp.reference_mass_override_kg ?? null,
+                sp.biomass_override_kg ?? null, sp.notes ?? null, sp.sort_order ?? 0]);
         }
         await client.query('DELETE FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [req.params.id]);
         for (const h of frozen.hydraulics || []) {

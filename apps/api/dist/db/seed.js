@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const index_1 = __importDefault(require("./index"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const speciesCatalogSeed_1 = require("./speciesCatalogSeed");
 dotenv_1.default.config();
 async function seed() {
     const client = await index_1.default.connect();
@@ -39,6 +40,8 @@ async function seed() {
         const pmoId = pmoRes.rows[0].id;
         const hqRes = await client.query(`SELECT id FROM users WHERE email = 'hqmanager@edp.com'`);
         const hqId = hqRes.rows[0].id;
+        const seededSpecies = await (0, speciesCatalogSeed_1.seedSpeciesCatalog)(client, adminId);
+        console.log(`Species catalog ready (${seededSpecies} staged starter records).`);
         // Materials
         await client.query(`
       INSERT INTO materials (material_code, material_name, material_category, density, chemical_resistance, temperature_limit) VALUES

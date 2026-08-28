@@ -8,3 +8,4 @@
 - [Vitest debounce timing](vitest-debounce-timing.md) — keep fake timers limited to debounce assertions; restore real timers before Testing Library async UI assertions.
 - [Project tank promotion](project-tank-promotion.md) — PIM promotion is explicit and independent; never convert or mutate the source project tank.
 - [Exhibit tank replacement](exhibit-tank-replacement.md) — hide assignment tools once a tank is in use; explicit replacement preserves the project-tank identity.
+- [Species catalog snapshots](species-catalog-snapshots.md) — allocations capture catalog values; same-link edits preserve them, and seed maintenance never deletes referenced catalog rows.

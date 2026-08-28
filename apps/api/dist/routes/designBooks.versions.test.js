@@ -35,7 +35,21 @@ const baseContext = () => ({
             flow_allocation_m3h: '12.5',
             allocation_source: 'manual',
         }],
-    species: [{ id: 'species-1', exhibit_id: 'exhibit-1', species_name: 'Clownfish', sort_order: 1 }],
+    species: [{
+            id: 'species-1',
+            exhibit_id: 'exhibit-1',
+            catalog_species_id: 'catalog-1',
+            species_name: 'Amphiprion ocellaris',
+            common_name: 'Common clownfish',
+            quantity: 10,
+            avg_size_cm: '11',
+            reference_average_mass_kg: '0.08',
+            biomass_kg: '1.2',
+            avg_size_override_cm: '11',
+            reference_mass_override_kg: null,
+            biomass_override_kg: '1.2',
+            sort_order: 1,
+        }],
     hydraulics: [{
             id: 'hydraulic-1',
             exhibit_id: 'exhibit-1',
@@ -93,7 +107,9 @@ const baseContext = () => ({
             if (sql.includes('FROM tanks t')) {
                 (0, vitest_1.expect)(sql).toContain('LEFT JOIN product_masters');
                 (0, vitest_1.expect)(sql).toContain('COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm');
-                (0, vitest_1.expect)(sql).toContain('COALESCE(t.surface_area_m2, pm.surface_area_m2) AS surface_area_m2');
+                (0, vitest_1.expect)(sql).toContain('t.surface_area_m2');
+                (0, vitest_1.expect)(sql).toContain('pm.surface_area_m2');
+                (0, vitest_1.expect)(sql).toContain("COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'");
                 return { rows: [{ ...tankRow }] };
             }
             if (sql.includes('FROM systems'))
@@ -152,6 +168,15 @@ const baseContext = () => ({
             substrate_height_mm: '80',
             theming_height_mm: '500',
             theming_volume_pct: '8.5',
+        });
+        (0, vitest_1.expect)(snapshot.frozen.species[0]).toMatchObject({
+            catalog_species_id: 'catalog-1',
+            species_name: 'Amphiprion ocellaris',
+            avg_size_cm: '11',
+            reference_average_mass_kg: '0.08',
+            biomass_kg: '1.2',
+            avg_size_override_cm: '11',
+            biomass_override_kg: '1.2',
         });
         (0, vitest_1.expect)(snapshot.live_references.system_links[0]).toMatchObject({
             system_id: 'system-1',

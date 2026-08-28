@@ -15,12 +15,12 @@ router.post('/query', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 router.get('/product-reuse/:productId', authenticate, async (req: AuthRequest, res: Response) => {
-  const rows = await findProductReuse(req.params.productId);
+  const rows = await findProductReuse(String(req.params.productId));
   res.json({ items: rows });
 });
 
 router.get('/impact/:productId', authenticate, async (req: AuthRequest, res: Response) => {
-  const rows = await findImpactedProjects(req.params.productId);
+  const rows = await findImpactedProjects(String(req.params.productId));
   res.json({ items: rows });
 });
 

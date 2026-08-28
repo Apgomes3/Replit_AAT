@@ -1,6 +1,7 @@
 import pool from './index';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import { seedSpeciesCatalog } from './speciesCatalogSeed';
 dotenv.config();
 
 async function seed() {
@@ -39,6 +40,9 @@ async function seed() {
     const pmoId = pmoRes.rows[0].id;
     const hqRes = await client.query(`SELECT id FROM users WHERE email = 'hqmanager@edp.com'`);
     const hqId = hqRes.rows[0].id;
+
+    const seededSpecies = await seedSpeciesCatalog(client, adminId);
+    console.log(`Species catalog ready (${seededSpecies} staged starter records).`);
 
     // Materials
     await client.query(`

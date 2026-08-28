@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -33,6 +33,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
       { id: 'lss-catalog', to: '/lss-compact-units', icon: Layers, label: 'LSS Unit Catalog' },
+      { id: 'species-catalog', to: '/species-catalog', icon: Fish, label: 'Species Catalog' },
     ],
   },
 ];

@@ -962,6 +962,47 @@ BEFORE INSERT OR UPDATE OR DELETE ON design_book_exhibit_species
 FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 CREATE INDEX IF NOT EXISTS idx_db_species_exhibit ON design_book_exhibit_species(exhibit_id);
 
+-- AQUARIUM SPECIES: shared reference catalog. Values copied onto allocations
+-- are intentionally independent so catalog corrections never rewrite history.
+CREATE TABLE IF NOT EXISTS aquarium_species_catalog (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scientific_name VARCHAR(255) NOT NULL,
+  common_name VARCHAR(255),
+  family VARCHAR(150) NOT NULL,
+  water_type VARCHAR(50) NOT NULL,
+  average_size_cm NUMERIC(10,2),
+  reference_average_mass_kg NUMERIC(12,4),
+  source TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (length(trim(scientific_name)) > 0),
+  CHECK (length(trim(family)) > 0),
+  CHECK (length(trim(water_type)) > 0),
+  CHECK (average_size_cm IS NULL OR average_size_cm > 0),
+  CHECK (reference_average_mass_kg IS NULL OR reference_average_mass_kg > 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_aquarium_species_scientific_name
+  ON aquarium_species_catalog (LOWER(scientific_name));
+CREATE INDEX IF NOT EXISTS idx_aquarium_species_search
+  ON aquarium_species_catalog (LOWER(scientific_name), LOWER(common_name), LOWER(family));
+CREATE INDEX IF NOT EXISTS idx_aquarium_species_filters
+  ON aquarium_species_catalog (water_type, family, active);
+
+ALTER TABLE design_book_exhibit_species
+  ADD COLUMN IF NOT EXISTS catalog_species_id UUID REFERENCES aquarium_species_catalog(id) ON DELETE SET NULL;
+ALTER TABLE design_book_exhibit_species
+  ADD COLUMN IF NOT EXISTS reference_average_mass_kg NUMERIC(12,4);
+ALTER TABLE design_book_exhibit_species
+  ADD COLUMN IF NOT EXISTS avg_size_override_cm NUMERIC(10,2);
+ALTER TABLE design_book_exhibit_species
+  ADD COLUMN IF NOT EXISTS reference_mass_override_kg NUMERIC(12,4);
+ALTER TABLE design_book_exhibit_species
+  ADD COLUMN IF NOT EXISTS biomass_override_kg NUMERIC(12,4);
+CREATE INDEX IF NOT EXISTS idx_db_species_catalog ON design_book_exhibit_species(catalog_species_id);
+
 -- DESIGN BOOK: Exhibit Hydraulics (water flow / turnover config)
 CREATE TABLE IF NOT EXISTS design_book_exhibit_hydraulics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1061,6 +1102,12 @@ CREATE INDEX IF NOT EXISTS idx_sel_system  ON system_exhibit_links(system_id);
 CREATE INDEX IF NOT EXISTS idx_sel_exhibit ON system_exhibit_links(exhibit_id);
 ALTER TABLE system_exhibit_links ADD COLUMN IF NOT EXISTS allocation_source VARCHAR(30) DEFAULT 'calculated';
 ALTER TABLE system_exhibit_links ADD COLUMN IF NOT EXISTS allocation_updated_at TIMESTAMPTZ;
+INSERT INTO system_exhibit_links
+  (system_id, exhibit_id, link_type, flow_allocation_m3h, notes, sort_order, allocation_source, allocation_updated_at)
+SELECT s.id, s.exhibit_id, 'Primary', NULL, NULL, 0, 'calculated', NOW()
+FROM systems s
+WHERE s.exhibit_id IS NOT NULL
+ON CONFLICT (system_id, exhibit_id) DO NOTHING;
 
 -- SUBSTRATE: height-based volume calculation fields
 ALTER TABLE design_book_exhibit_substrate ADD COLUMN IF NOT EXISTS substrate_height_mm NUMERIC;

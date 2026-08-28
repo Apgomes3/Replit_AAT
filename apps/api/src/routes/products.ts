@@ -266,7 +266,7 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
   await query('DELETE FROM documents WHERE product_id=$1', [id]);
   const result = await query('DELETE FROM product_masters WHERE id::text=$1 RETURNING id, product_code', [id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  await logAudit(req.user!.id, 'product', id, 'DELETE', {
+  await logAudit(req.user!.id, 'product', String(id), 'DELETE', {
     summary: `Product ${result.rows[0].product_code} deleted`,
     product_code: result.rows[0].product_code,
   });
@@ -644,7 +644,7 @@ router.delete('/components/:id', authenticate, async (req: AuthRequest, res: Res
   await query('DELETE FROM entity_relationships WHERE source_id=$1 OR target_id=$1', [id]);
   const result = await query('DELETE FROM components WHERE id::text=$1 RETURNING id, component_code', [id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-  await logAudit(req.user!.id, 'component', id, 'DELETE', {
+  await logAudit(req.user!.id, 'component', String(id), 'DELETE', {
     summary: `Component ${result.rows[0].component_code} deleted`,
     component_code: result.rows[0].component_code,
   });
@@ -691,14 +691,14 @@ const resolveProductId = async (param: string): Promise<string | null> => {
 };
 
 router.get('/product-masters/:id/dimensions', authenticate, async (req: AuthRequest, res: Response) => {
-  const pid = await resolveProductId(req.params.id);
+  const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const r = await query('SELECT * FROM product_dimensions WHERE product_master_id=$1', [pid]);
   res.json(r.rows[0] || {});
 });
 
 router.put('/product-masters/:id/dimensions', authenticate, async (req: AuthRequest, res: Response) => {
-  const pid = await resolveProductId(req.params.id);
+  const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const { length_mm, width_mm, height_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes } = req.body;
   const r = await query(`
@@ -711,14 +711,14 @@ router.put('/product-masters/:id/dimensions', authenticate, async (req: AuthRequ
 });
 
 router.get('/product-masters/:id/electrical', authenticate, async (req: AuthRequest, res: Response) => {
-  const pid = await resolveProductId(req.params.id);
+  const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const r = await query('SELECT * FROM product_electrical WHERE product_master_id=$1', [pid]);
   res.json(r.rows[0] || {});
 });
 
 router.put('/product-masters/:id/electrical', authenticate, async (req: AuthRequest, res: Response) => {
-  const pid = await resolveProductId(req.params.id);
+  const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const { rated_power_kw, voltage_v, phases, frequency_hz, full_load_current_a, rated_speed_rpm, motor_type, insulation_class, protection_class, efficiency_class, notes } = req.body;
   const r = await query(`
@@ -731,14 +731,14 @@ router.put('/product-masters/:id/electrical', authenticate, async (req: AuthRequ
 });
 
 router.get('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {
-  const pid = await resolveProductId(req.params.id);
+  const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const r = await query('SELECT * FROM product_hydraulic WHERE product_master_id=$1', [pid]);
   res.json(r.rows[0] || {});
 });
 
 router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {
-  const pid = await resolveProductId(req.params.id);
+  const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const { design_flow_m3h, min_flow_m3h, max_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes } = req.body;
   const r = await query(`

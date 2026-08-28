@@ -5,6 +5,7 @@ export type NotificationType =
   | 'po_approved'
   | 'po_rejected'
   | 'po_transitioned'
+  | 'po_assigned'
   | 'system';
 
 export async function createNotification(opts: {
