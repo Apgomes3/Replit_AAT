@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DesignBookLSSDetail from './DesignBookLSSDetail';
 import api from '../../lib/api';
@@ -114,11 +114,17 @@ const bookWithPrimarySplit = {
   },
 };
 
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname}{location.search}{location.hash}</output>;
+}
+
 function renderFlowRoute(
   system: any = baseSystem,
   book: any = baseBook,
   links: any[] = [],
   fractionatorProducts: any[] = [],
+  initialEntry = '/design-books/book-1/lss/system-1?tab=flow',
 ) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
@@ -135,7 +141,8 @@ function renderFlowRoute(
   });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/design-books/book-1/lss/system-1']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <LocationProbe />
         <Routes>
           <Route path="/design-books/:bookId/lss/:systemId" element={<DesignBookLSSDetail />} />
         </Routes>
@@ -143,6 +150,34 @@ function renderFlowRoute(
     </QueryClientProvider>,
   );
   return { ...rendered, queryClient };
+}
+
+function renderBrowserFlowRoute() {
+  apiGet.mockImplementation((url: string) => {
+    if (url === '/systems/system-1') return Promise.resolve({ data: baseSystem });
+    if (url === '/design-books/book-1') return Promise.resolve({ data: baseBook });
+    if (url === '/systems/system-1/exhibit-links') return Promise.resolve({ data: [] });
+    if (url === '/systems/system-1/fractionator-products') {
+      return Promise.resolve({ data: { items: [] } });
+    }
+    if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
+    return Promise.reject(new Error(`Unexpected GET ${url}`));
+  });
+  window.history.replaceState({}, '', '/design-books/book-1/lss/system-1?tab=flow');
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <LocationProbe />
+        <Routes>
+          <Route path="/design-books/:bookId/lss/:systemId" element={<DesignBookLSSDetail />} />
+          <Route path="/design-books/:bookId" element={<div>Design book destination</div>} />
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>,
+  );
 }
 
 describe('DesignBookLSSDetail Flow Route allocations', () => {
@@ -165,6 +200,138 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('opens on an accessible system overview with linked flow information', async () => {
+    renderFlowRoute(
+      baseSystem,
+      bookWithPrimarySplit,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1',
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map(tab => tab.textContent)).toEqual([
+      'System Overview',
+      'Flow Route',
+      'UV Selection',
+      'Thermal Selection',
+      'Ozone Selection',
+      'Other Equipment',
+    ]);
+    expect(screen.getByRole('tab', { name: 'System Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel', { name: 'System Overview' })).toBeVisible();
+    expect(screen.getByText('Design Flow')).toBeInTheDocument();
+    expect(screen.getByText('Turnover Rate')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Link Exhibit/ })).toBeInTheDocument();
+    expect(screen.getByText('125.0')).toBeInTheDocument();
+  });
+
+  it('supports keyboard tab navigation and honest equipment empty states', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(
+      baseSystem,
+      baseBook,
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?view=details&tab=other#equipment',
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const otherTab = screen.getByRole('tab', { name: 'Other Equipment' });
+    expect(otherTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-1/lss/system-1?view=details&tab=other#equipment',
+    );
+    otherTab.focus();
+    await user.keyboard('{ArrowLeft}');
+
+    expect(screen.getByRole('tab', { name: 'Ozone Selection' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Ozone Selection' })).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{Home}');
+    const overviewTab = screen.getByRole('tab', { name: 'System Overview' });
+    expect(overviewTab).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(otherTab).toHaveFocus();
+    expect(screen.getByRole('tabpanel', { name: 'Other Equipment' })).toHaveTextContent('Not configured');
+    await user.click(screen.getByRole('tab', { name: 'UV Selection' }));
+    expect(screen.getByRole('tabpanel', { name: 'UV Selection' })).toHaveTextContent(
+      'UV equipment selection will be available here',
+    );
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-1/lss/system-1?view=details&tab=uv#equipment',
+    );
+  });
+
+  it('preserves unsaved Flow Route edits while switching tabs', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderFlowRoute();
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const allocation = route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' });
+    await user.clear(allocation);
+    await user.type(allocation, '55');
+
+    await user.click(screen.getByRole('tab', { name: 'System Overview' }));
+    expect(screen.getByRole('tab', { name: /Flow Route/ })).toHaveTextContent('*');
+    await user.click(screen.getByRole('tab', { name: /Flow Route/ }));
+    expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(55);
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    const beforeUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  it('blocks destructive in-app navigation until unsaved Flow Route edits are confirmed', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const rendered = renderBrowserFlowRoute();
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const allocation = route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' });
+    await user.clear(allocation);
+    await user.type(allocation, '55');
+
+    await user.click(screen.getByRole('link', { name: 'Back to Life Support Systems' }));
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'You have unsaved Flow Route changes. Leave this page and discard them?',
+    );
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-1/lss/system-1?tab=flow',
+    );
+    expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(55);
+
+    confirmSpy.mockReturnValue(true);
+    await user.click(screen.getByRole('link', { name: 'Back to Life Support Systems' }));
+    await screen.findByText('Design book destination');
+    expect(screen.getByTestId('location')).toHaveTextContent('/design-books/book-1?tab=lss');
+
+    rendered.unmount();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('keeps reviewed records read-only across the overview and Flow Route tabs', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem, {
+      ...baseBook,
+      status: 'Released',
+      systems: [baseSystem],
+      system_links: [],
+    }, [], [], '/design-books/book-1/lss/system-1');
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
+    await user.click(screen.getByRole('tab', { name: 'Flow Route' }));
+    expect(within(document.querySelector('#flow-route')!).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 
   it('uses the fresh linked aggregate for the card and Flow Route after updates and reloads', async () => {

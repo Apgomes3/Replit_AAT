@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useParams, Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -30,6 +30,31 @@ const STATUSES   = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Rele
 const LINK_TYPES = ['Primary', 'Secondary', 'Emergency', 'Backup', 'Observation', 'Redundant'];
 const FLOW_ROUTE_VIEW_STORAGE_KEY = 'lss-flow-route-view';
 type FlowViewMode = 'card' | 'list';
+type LssTab = 'overview' | 'flow' | 'uv' | 'thermal' | 'ozone' | 'other';
+
+const LSS_TABS: Array<{ id: LssTab; label: string }> = [
+  { id: 'overview', label: 'System Overview' },
+  { id: 'flow', label: 'Flow Route' },
+  { id: 'uv', label: 'UV Selection' },
+  { id: 'thermal', label: 'Thermal Selection' },
+  { id: 'ozone', label: 'Ozone Selection' },
+  { id: 'other', label: 'Other Equipment' },
+];
+
+function isLssTab(value: string | null): value is LssTab {
+  return LSS_TABS.some(tab => tab.id === value);
+}
+
+function EquipmentEmptyState({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white px-5 py-14 text-center">
+      <Settings2 className="mx-auto mb-3 h-8 w-8 text-stone-200" />
+      <h2 className="text-sm font-semibold text-stone-700">{title}</h2>
+      <p className="mx-auto mt-1 max-w-md text-sm text-stone-400">{description}</p>
+      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-stone-300">Not configured</p>
+    </div>
+  );
+}
 
 function getStoredFlowViewMode(): FlowViewMode {
   try {
@@ -588,10 +613,14 @@ export default function DesignBookLSSDetail() {
   const { bookId, systemId } = useParams<{ bookId: string; systemId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const qc = useQueryClient();
   const user = useAuthStore(state => state.user);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Partial<Record<LssTab, HTMLButtonElement>>>({});
+  const tabParam = searchParams.get('tab');
+  const activeTab: LssTab = isLssTab(tabParam) ? tabParam : 'overview';
 
   const { data: liveSystem, isLoading: sysLoading } = useQuery({
     queryKey: ['system', systemId],
@@ -756,6 +785,32 @@ export default function DesignBookLSSDetail() {
     system && flowForm && !flowDraftMatchesSystem(flowForm, system),
   );
 
+  const handleTabChange = (nextTab: LssTab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', nextTab);
+    navigate({
+      pathname: location.pathname,
+      search: `?${nextParams.toString()}`,
+      hash: location.hash,
+    });
+    setShowToolsMenu(false);
+  };
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tab: LssTab) => {
+    const currentIndex = LSS_TABS.findIndex(item => item.id === tab);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % LSS_TABS.length;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + LSS_TABS.length) % LSS_TABS.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = LSS_TABS.length - 1;
+    if (nextIndex === currentIndex) return;
+
+    event.preventDefault();
+    const nextTab = LSS_TABS[nextIndex].id;
+    handleTabChange(nextTab);
+    tabRefs.current[nextTab]?.focus();
+  };
+
   useEffect(() => {
     if (!hasUnsavedFlowChanges) return;
 
@@ -778,10 +833,7 @@ export default function DesignBookLSSDetail() {
     const shouldAllowNavigation = (url?: string | URL | null) => {
       if (!url) return true;
       const destination = new URL(String(url), window.location.href);
-      if (
-        destination.origin !== window.location.origin ||
-        (destination.pathname === location.pathname && destination.search === location.search)
-      ) return true;
+      if (destination.origin !== window.location.origin || destination.pathname === location.pathname) return true;
       return window.confirm(FLOW_UNSAVED_CONFIRMATION);
     };
 
@@ -800,7 +852,11 @@ export default function DesignBookLSSDetail() {
       const nextHistoryIndex = event.state?.idx;
       const nextUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       const currentUrl = `${location.pathname}${location.search}${location.hash}`;
-      if (nextUrl === currentUrl || window.confirm(FLOW_UNSAVED_CONFIRMATION)) return;
+      if (
+        nextUrl === currentUrl
+        || window.location.pathname === location.pathname
+        || window.confirm(FLOW_UNSAVED_CONFIRMATION)
+      ) return;
 
       restoringHistory = true;
       event.stopImmediatePropagation();
@@ -1214,26 +1270,72 @@ export default function DesignBookLSSDetail() {
               </Link>
               <div className="my-1 border-t border-stone-100" />
               {[
-                ['system-configuration', 'System Configuration'],
-                ['linked-exhibits', 'Linked Exhibits'],
-                ['flow-route', 'Flow Route'],
-              ].map(([target, label]) => (
-                <a
+                ['overview', 'system-configuration', 'System Configuration'],
+                ['overview', 'linked-exhibits', 'Linked Exhibits'],
+                ['flow', 'flow-route', 'Flow Route'],
+              ].map(([tab, target, label]) => (
+                <Link
                   key={target}
-                  href={`#${target}`}
+                  to={`/design-books/${bookId}/lss/${systemId}?tab=${tab}#${target}`}
                   onClick={() => setShowToolsMenu(false)}
                   className="block rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-50"
                   role="menuitem"
                 >
                   {label}
-                </a>
+                </Link>
               ))}
             </div>
           )}
         </div>
       </div>
 
+      <h1 className="sr-only">{system.system_name}</h1>
+
+      <div
+        role="tablist"
+        aria-label="Life Support System sections"
+        className="flex gap-1 overflow-x-auto rounded-xl border border-stone-200 bg-stone-50 p-1"
+      >
+        {LSS_TABS.map(tab => {
+          const selected = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              ref={element => {
+                tabRefs.current[tab.id] = element || undefined;
+              }}
+              id={`lss-tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={`lss-panel-${tab.id}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => handleTabChange(tab.id)}
+              onKeyDown={event => handleTabKeyDown(event, tab.id)}
+              className={`min-w-max flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
+                selected
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-stone-500 hover:bg-white/70 hover:text-stone-700'
+              }`}
+            >
+              {tab.label}
+              {tab.id === 'flow' && hasUnsavedFlowChanges && (
+                <span className="ml-1.5 text-amber-600" aria-label="unsaved changes">*</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <fieldset disabled={readOnly} className={`contents ${readOnly ? 'opacity-90' : ''}`}>
+      <div
+        id="lss-panel-overview"
+        role="tabpanel"
+        aria-labelledby="lss-tab-overview"
+        tabIndex={0}
+        hidden={activeTab !== 'overview'}
+        className="space-y-5"
+      >
       {/* System Configuration selector */}
       {(() => {
         const cfg = system.system_config || 'bespoke';
@@ -1514,7 +1616,7 @@ export default function DesignBookLSSDetail() {
                     )}
                     <WaterTypeBadge type={system.water_type} />
                   </div>
-                  <h1 className="text-xl font-bold text-stone-900 mt-1">{system.system_name}</h1>
+                  <div className="text-xl font-bold text-stone-900 mt-1">{system.system_name}</div>
                   {system.duty_description && (
                     <p className="text-sm text-stone-500 mt-1 leading-relaxed max-w-2xl">{system.duty_description}</p>
                   )}
@@ -1689,6 +1791,7 @@ export default function DesignBookLSSDetail() {
       </div>
 
       <EngineeringTrace calculation={systemCalculation} />
+      </div>
 
       {/* Flow Route panel */}
       {(() => {
@@ -2489,6 +2592,14 @@ export default function DesignBookLSSDetail() {
         };
 
         return (
+          <div
+            id="lss-panel-flow"
+            role="tabpanel"
+            aria-labelledby="lss-tab-flow"
+            tabIndex={0}
+            hidden={activeTab !== 'flow'}
+            className="space-y-5"
+          >
           <div id="flow-route" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
 
             {/* ── Header ──────────────────────────────────────────────────── */}
@@ -2989,8 +3100,60 @@ export default function DesignBookLSSDetail() {
             )}
 
           </div>
+          </div>
         );
       })()}
+
+      <div
+        id="lss-panel-uv"
+        role="tabpanel"
+        aria-labelledby="lss-tab-uv"
+        tabIndex={0}
+        hidden={activeTab !== 'uv'}
+      >
+        <EquipmentEmptyState
+          title="UV Selection"
+          description="UV equipment selection will be available here once the system equipment catalog is connected."
+        />
+      </div>
+      <div
+        id="lss-panel-thermal"
+        role="tabpanel"
+        aria-labelledby="lss-tab-thermal"
+        tabIndex={0}
+        hidden={activeTab !== 'thermal'}
+      >
+        <EquipmentEmptyState
+          title="Thermal Selection"
+          description="Heating and chilling equipment selection is not configured for this system yet."
+        />
+      </div>
+      <div
+        id="lss-panel-ozone"
+        role="tabpanel"
+        aria-labelledby="lss-tab-ozone"
+        tabIndex={0}
+        hidden={activeTab !== 'ozone'}
+      >
+        <EquipmentEmptyState
+          title="Ozone Selection"
+          description="Ozone equipment selection is not configured for this system yet."
+        />
+      </div>
+      <div
+        id="lss-panel-other"
+        role="tabpanel"
+        aria-labelledby="lss-tab-other"
+        tabIndex={0}
+        hidden={activeTab !== 'other'}
+      >
+        <EquipmentEmptyState
+          title="Other Equipment"
+          description="Additional equipment selections will appear here when they are configured for this system."
+        />
+      </div>
+
+      </fieldset>
 
       {pendingUnlinkLink && !readOnly && (
         <ConfirmDialog
@@ -3006,7 +3169,6 @@ export default function DesignBookLSSDetail() {
           onCancel={cancelDeleteLink}
         />
       )}
-      </fieldset>
 
     </div>
   );
