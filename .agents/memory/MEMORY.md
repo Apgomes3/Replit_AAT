@@ -11,4 +11,5 @@
 - [Species catalog snapshots](species-catalog-snapshots.md) — allocations capture values; setup uses reviewed offline artifacts, and maintenance preserves referenced identities.
 - [Flow Route exhibit references](flow-route-exhibit-references.md) — source splits require exactly one fresh Primary exhibit; loop and Bio/Degas allocations remain independent.
 - [Flow Route side streams](flow-route-side-streams.md) — each side stream is an independent 0–100% branch; sibling percentages are never summed.
+- [Flow Route fractionator controls](flow-route-fractionator-controls.md) — show loop and Bio/Degas context before sizing; model details are disclosures, never draft mutations.
 - [LSS configuration reset](lss-configuration-reset.md) — reset LSS-owned inputs atomically while preserving project tanks, exhibits, hydraulics, and PIM sources.

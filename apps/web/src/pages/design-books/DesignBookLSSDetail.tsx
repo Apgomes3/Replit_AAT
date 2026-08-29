@@ -263,15 +263,7 @@ function FractionatorProductCard({
   onQuantityChange: (value: string) => void;
   onRemove: () => void;
 }) {
-  const frontRef = useRef<HTMLButtonElement>(null);
-  const detailRef = useRef<HTMLDivElement>(null);
-  const setFlipped = (flipped: boolean) => {
-    if (frontRef.current) {
-      frontRef.current.hidden = flipped;
-      frontRef.current.setAttribute('aria-expanded', String(flipped));
-    }
-    if (detailRef.current) detailRef.current.hidden = !flipped;
-  };
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const productId = String(product.product_master_id);
   const detailsId = `fractionator-details-${loopNumber}-${productId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const diameter = Number(product.diameter_mm);
@@ -289,41 +281,62 @@ function FractionatorProductCard({
       aria-label={`Foam Fractionator ${product.product_code}`}
       className="min-w-0 rounded-md border border-current/20 bg-white/60 overflow-hidden"
     >
-      <>
-        <button
-          ref={frontRef}
-          type="button"
-          aria-expanded={false}
-          aria-controls={detailsId}
-          aria-label={`Show details for ${product.product_code}`}
-          onClick={() => setFlipped(true)}
-          className="flex min-h-20 w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-white focus-visible:bg-white"
-        >
-          <span className="min-w-0 truncate text-sm font-semibold">{product.product_code}</span>
-          <span className="shrink-0 text-xs font-medium">
-            {product.quantity} unit{String(product.quantity) === '1' ? '' : 's'}
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <strong className="block truncate text-sm">{product.product_code}</strong>
+            <span className="block truncate text-[10px] opacity-70">{product.product_name || 'Foam Fractionator model'}</span>
+          </div>
+          <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold">
+            {statusLabel}
           </span>
-        </button>
-        <div ref={detailRef} id={detailsId} hidden className="p-3 text-[10px]">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <strong className="block truncate text-sm">{product.product_code}</strong>
-              <span className="block text-[10px] opacity-70">{product.product_name}</span>
-            </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+          <div className="rounded border border-current/10 bg-white/50 px-2 py-1.5">
+            <span className="block opacity-70">Quantity</span>
+            <strong className="text-xs">{product.quantity} unit{String(product.quantity) === '1' ? '' : 's'}</strong>
+          </div>
+          <div className="rounded border border-current/10 bg-white/50 px-2 py-1.5">
+            <span className="block opacity-70">Diameter</span>
+            <strong className="text-xs">{diameter > 0 ? `Ø${diameter} mm` : 'Unavailable'}</strong>
+          </div>
+        </div>
+        {editable && (
+          <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-2 border-t border-current/10 pt-3">
+            <label className="text-[10px] font-medium">
+              Quantity
+              <input
+                type="number"
+                min="1"
+                step="1"
+                aria-label={`${product.product_code} quantity`}
+                value={product.quantity}
+                onChange={event => onQuantityChange(event.target.value)}
+                className="mt-1 w-full rounded border border-current/20 px-2 py-1 text-xs bg-white"
+              />
+            </label>
             <button
               type="button"
-              aria-expanded={true}
-              aria-controls={detailsId}
-              aria-label={`Show compact summary for ${product.product_code}`}
-              onClick={() => setFlipped(false)}
-              className="shrink-0 rounded border border-current/20 px-2 py-1 font-semibold hover:bg-white"
+              aria-label={`Remove ${product.product_code}`}
+              onClick={onRemove}
+              className="shrink-0 rounded border border-current/20 p-2 hover:bg-white"
             >
-              Compact view
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
+        )}
+        <button
+          type="button"
+          aria-expanded={detailsOpen}
+          aria-controls={detailsId}
+          onClick={() => setDetailsOpen(open => !open)}
+          className="mt-3 inline-flex items-center rounded border border-current/20 bg-white/70 px-2 py-1 text-[10px] font-semibold hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/40"
+        >
+          {detailsOpen ? 'Hide details' : 'Details'}
+        </button>
+        <div id={detailsId} hidden={!detailsOpen} className="pt-3 text-[10px]">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-current/10 pt-3">
             <div><span className="block opacity-70">Model diameter</span><strong>{diameter > 0 ? `Ø${diameter} mm` : 'Unavailable'}</strong></div>
-            <div><span className="block opacity-70">Quantity</span><strong>{product.quantity} unit{String(product.quantity) === '1' ? '' : 's'}</strong></div>
             <div><span className="block opacity-70">Calculated area</span><strong>{area != null ? `${area.toFixed(4)} m²` : 'Unavailable'}</strong></div>
             <div><span className="block opacity-70">Parent loop flow</span><strong>{formatFlow(loopFlow)}{parentFlowLs != null ? ` (${parentFlowLs.toFixed(3)} L/s)` : ''}</strong></div>
             <div><span className="block opacity-70">Selected process rate</span><strong>{calculation.status !== 'incomplete' ? `${calculation.rate.toFixed(2)} L/s/m²` : currentRate > 0 ? `${currentRate.toFixed(2)} L/s/m²` : '—'}</strong></div>
@@ -340,32 +353,8 @@ function FractionatorProductCard({
           {notes && (
             <p className="mt-2 opacity-80"><span className="font-semibold">Notes:</span> {notes}</p>
           )}
-          {editable && (
-            <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-2 border-t border-current/10 pt-3">
-              <label className="text-[10px] font-medium">
-                Quantity
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  aria-label={`${product.product_code} quantity`}
-                  value={product.quantity}
-                  onChange={event => onQuantityChange(event.target.value)}
-                  className="mt-1 w-full rounded border border-current/20 px-2 py-1 text-xs bg-white"
-                />
-              </label>
-              <button
-                type="button"
-                aria-label={`Remove ${product.product_code}`}
-                onClick={onRemove}
-                className="rounded border border-current/20 p-2 hover:bg-white"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
         </div>
-      </>
+      </div>
     </section>
   );
 }
@@ -2689,6 +2678,39 @@ export default function DesignBookLSSDetail() {
                 </div>
               )}
               {filt === 'Foam Fractionation' && (
+                <div
+                  aria-label={`Foam Fractionator flow context for Loop ${n}`}
+                  className="rounded-md border border-cyan-200 bg-cyan-50/50 p-3 text-[10px]"
+                >
+                  <div className="mb-2 flex items-center gap-2 font-semibold uppercase tracking-wide text-cyan-800">
+                    <Gauge className="h-3.5 w-3.5" /> Flow context
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <div>
+                      <span className="block text-cyan-900/60">Loop allocation</span>
+                      <strong className="text-cyan-950">{allocationStatus(loopPct, 'system')}</strong>
+                    </div>
+                    <div>
+                      <span className="block text-cyan-900/60">Derived loop flow</span>
+                      <strong className="font-mono text-cyan-950">{fmtFlow(loopFlow)}</strong>
+                    </div>
+                    <div>
+                      <span className="block text-cyan-900/60">Bio/Degas:</span>
+                      {linked ? (
+                        <>
+                          <strong className="block text-emerald-800">{allocationStatus(bioPct, 'loop')}</strong>
+                          <span className="font-mono text-emerald-700">
+                            {bioFlow != null ? fmtFlow(bioFlow) : 'Unavailable'} derived branch flow
+                          </span>
+                        </>
+                      ) : (
+                        <strong className="block text-stone-500">Not connected</strong>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {filt === 'Foam Fractionation' && (
                 <FractionatorSummary source={system} n={n} loopFlow={loopFlow} />
               )}
               <div className="flex items-center gap-2 text-sm flex-wrap">
@@ -2814,10 +2836,11 @@ export default function DesignBookLSSDetail() {
                   })}
                 </div>
               </div>
-              {curFilt === 'Foam Fractionation' && (
-                <FractionatorSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
-              )}
-              <div>
+              <div className="rounded-md border border-cyan-200 bg-cyan-50/50 p-3">
+                <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-cyan-800">
+                  <Gauge className="h-3.5 w-3.5" /> Flow context
+                </div>
+                <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">
                   Loop Flow Allocation (% of total system flow)
                 </label>
@@ -2864,6 +2887,10 @@ export default function DesignBookLSSDetail() {
                   <p className="text-xs text-stone-400">Not connected. Enable the link to define the Bio/Degas branch percentage.</p>
                 )}
               </div>
+              </div>
+              {curFilt === 'Foam Fractionation' && (
+                <FractionatorSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
+              )}
               <div className="border-t border-stone-100 pt-4">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>

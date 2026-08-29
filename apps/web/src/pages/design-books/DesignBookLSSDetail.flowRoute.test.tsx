@@ -1447,6 +1447,73 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     unmount();
   });
 
+  it('places loop and linked Bio/Degas context before fractionator capacity and converts both flows', async () => {
+    const user = userEvent.setup();
+    const product = {
+      id: 'ff-500',
+      product_code: 'FF-500',
+      product_name: 'Foam Fractionator 500',
+      diameter_mm: 500,
+    };
+    renderFlowRoute({
+      ...baseSystem,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      loop1_link_bio_degas: true,
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 19,
+        notes: null,
+        products: [{
+          product_master_id: 'ff-500',
+          product_code: 'FF-500',
+          product_name: 'Foam Fractionator 500',
+          diameter_mm: 500,
+          quantity: 1,
+        }],
+      }],
+    }, baseBook, [], [product]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+    const context = route.getByLabelText('Foam Fractionator flow context for Loop 1');
+    const capacity = route.getByText('Foam Fractionator capacity');
+
+    expect(context.compareDocumentPosition(capacity)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(context).getByText('40% of system')).toBeInTheDocument();
+    expect(within(context).getByText('40.0 m³/h')).toBeInTheDocument();
+    expect(within(context).getByText('25% of loop')).toBeInTheDocument();
+    expect(within(context).getByText('10.0 m³/h derived branch flow')).toBeInTheDocument();
+
+    const card = within(route.getByRole('region', { name: 'Foam Fractionator FF-500' }));
+    expect(card.getByText('FF-500')).toBeInTheDocument();
+    expect(card.getByText('1 unit')).toBeInTheDocument();
+    expect(card.getAllByText('Ø500 mm').length).toBeGreaterThan(0);
+    expect(card.getAllByText('Required flow above capacity').length).toBeGreaterThan(0);
+    expect(card.queryByRole('spinbutton', { name: 'FF-500 quantity' })).not.toBeInTheDocument();
+    expect(card.queryByRole('button', { name: 'Remove FF-500' })).not.toBeInTheDocument();
+
+    await user.click(route.getByRole('button', { name: 'L/s' }));
+    const convertedContext = within(route.getByLabelText('Foam Fractionator flow context for Loop 1'));
+    expect(convertedContext.getByText('11.1 L/s')).toBeInTheDocument();
+    expect(convertedContext.getByText('2.8 L/s derived branch flow')).toBeInTheDocument();
+  });
+
+  it('states when Bio/Degas is not connected without showing a branch flow', async () => {
+    renderFlowRoute({
+      ...baseSystem,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      loop1_link_bio_degas: false,
+      fractionator_allocations: [],
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+    const context = within(route.getByLabelText('Foam Fractionator flow context for Loop 1'));
+
+    expect(context.getByText('Not connected')).toBeInTheDocument();
+    expect(context.queryByText(/derived branch flow/)).not.toBeInTheDocument();
+  });
+
   it('synchronizes fractionator rate controls and only applies sizing when requested', async () => {
     const user = userEvent.setup();
     const product = {
@@ -1476,6 +1543,9 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
+    const flowAllocation = route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' });
+    const capacityHeading = route.getByText('Foam Fractionator capacity');
+    expect(flowAllocation.compareDocumentPosition(capacityHeading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     const slider = route.getByRole('slider', { name: 'AAT process rate slider for Loop 1' });
     const rateInput = route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' });
 
@@ -1493,7 +1563,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     await user.click(route.getByRole('button', { name: 'Apply rate + quantity' }));
     expect(route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' })).toHaveValue(20);
-    await user.click(route.getByRole('button', { name: 'Show details for FF-500' }));
+    await user.click(route.getByRole('button', { name: 'Details' }));
     expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(3);
 
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
@@ -1512,7 +1582,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     ));
   });
 
-  it('keeps selected fractionators independent while flipping with the keyboard', async () => {
+  it('keeps selected fractionators independent while disclosing details with the keyboard', async () => {
     const user = userEvent.setup();
     const products = [
       {
@@ -1546,26 +1616,31 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
-    const firstCard = route.getByRole('button', { name: 'Show details for FF-500' });
-    const secondCard = route.getByRole('button', { name: 'Show details for FF-750' });
+    const firstCard = within(route.getByRole('region', { name: 'Foam Fractionator FF-500' }));
+    const secondCard = within(route.getByRole('region', { name: 'Foam Fractionator FF-750' }));
     route.getAllByText('Model diameter').forEach(detail => expect(detail).not.toBeVisible());
 
-    firstCard.focus();
+    const firstDetails = firstCard.getByRole('button', { name: 'Details' });
+    const secondDetails = secondCard.getByRole('button', { name: 'Details' });
+    expect(firstDetails).toHaveAttribute('aria-expanded', 'false');
+    expect(secondDetails).toHaveAttribute('aria-expanded', 'false');
+    firstDetails.focus();
     await user.keyboard('{Enter}');
 
-    expect(route.getByRole('button', { name: 'Show compact summary for FF-500' })).toBeInTheDocument();
+    expect(firstCard.getByRole('button', { name: 'Hide details' })).toBeInTheDocument();
     expect(route.getAllByText('Model diameter').filter(detail => detail.closest('[hidden]') === null)).toHaveLength(1);
     expect(route.getAllByText('Calculated area').filter(detail => detail.closest('[hidden]') === null)).toHaveLength(1);
     expect(route.getAllByText('Capacity status').filter(detail => detail.closest('[hidden]') === null)).toHaveLength(1);
-    expect(secondCard).not.toHaveAttribute('aria-expanded', 'true');
-    expect(route.getByRole('button', { name: 'Show details for FF-750' })).toHaveAttribute('aria-expanded', 'false');
+    expect(firstDetails).toHaveAttribute('aria-expanded', 'true');
+    expect(secondDetails).toHaveAttribute('aria-expanded', 'false');
     expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(1);
     expect(route.getAllByText('Keep the skimmer bank accessible.').length).toBeGreaterThan(0);
     expect(apiPut).not.toHaveBeenCalled();
 
-    await user.click(route.getByRole('button', { name: 'Show compact summary for FF-500' }));
-    expect(route.getByRole('button', { name: 'Show details for FF-500' })).toBeInTheDocument();
-    expect(route.queryByRole('spinbutton', { name: 'FF-500 quantity' })).not.toBeInTheDocument();
+    await user.click(firstCard.getByRole('button', { name: 'Hide details' }));
+    expect(firstCard.getByRole('button', { name: 'Details' })).toBeInTheDocument();
+    expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(1);
+    expect(apiPut).not.toHaveBeenCalled();
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
     await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
       '/systems/system-1',
@@ -1582,7 +1657,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     ));
   });
 
-  it('keeps flipped fractionator details read-only for released Flow Routes', async () => {
+  it('keeps disclosed fractionator details read-only for released Flow Routes', async () => {
     const user = userEvent.setup();
     const product = {
       id: 'ff-500',
@@ -1616,7 +1691,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     expect(route.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-    await user.click(route.getByRole('button', { name: 'Show details for FF-500' }));
+    await user.click(route.getByRole('button', { name: 'Details' }));
 
     expect(route.getByText('Model diameter')).toBeInTheDocument();
     expect(route.queryByRole('spinbutton', { name: 'FF-500 quantity' })).not.toBeInTheDocument();
