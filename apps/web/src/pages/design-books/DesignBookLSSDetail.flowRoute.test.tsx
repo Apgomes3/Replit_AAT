@@ -1491,7 +1491,9 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(within(context).getByText('25% of loop')).toBeInTheDocument();
     expect(within(context).getByText('10.0 m³/h derived branch flow')).toBeInTheDocument();
 
-    const card = within(route.getByRole('region', { name: 'Foam Fractionator FF-500' }));
+    const cardElement = route.getByRole('region', { name: 'Foam Fractionator FF-500' });
+    const card = within(cardElement);
+    expect(cardElement.parentElement).toHaveClass('grid-cols-1');
     expect(card.getByText('FF-500')).toBeInTheDocument();
     expect(card.getByText('1 unit')).toBeInTheDocument();
     expect(card.getAllByText('Ø500 mm').length).toBeGreaterThan(0);

@@ -2753,7 +2753,7 @@ export default function DesignBookLSSDetail() {
                   </div>
                 </div>
               )}
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className={`grid gap-2 ${selectedProducts.length === 1 ? 'grid-cols-1' : 'sm:grid-cols-2'}`}>
                     {selectedProducts.map((product: any) => {
                       const productId = String(product.product_master_id);
                       return (
