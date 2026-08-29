@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../../lib/api';
@@ -21,6 +21,83 @@ const EMPTY_FORM = {
   inlet_connection: '', outlet_connection: '',
   notes: '', product_master_id: '', status: 'Active',
 };
+
+type ProductSpecifications = {
+  dimensions?: Record<string, any>;
+  hydraulic?: Record<string, any>;
+  electrical?: Record<string, any>;
+};
+
+const hasSourceValue = (value: unknown) =>
+  value !== null && value !== undefined && !(typeof value === 'string' && value.trim() === '');
+
+const firstSourceValue = (...values: unknown[]) => values.find(hasSourceValue);
+
+const formatConnection = (value: unknown) => {
+  if (!hasSourceValue(value)) return undefined;
+  const text = String(value).trim();
+  return /^\d+(?:\.\d+)?$/.test(text) ? `DN${text}` : text;
+};
+
+/**
+ * Product Master values are copied into the compact-unit catalog once. They
+ * are deliberately not a live link: LSS-specific fields have no compatible
+ * PIM source and remain outside this mapping.
+ */
+export function mapProductMasterToCompactUnit(
+  product: Record<string, any> = {},
+  specifications: ProductSpecifications = {},
+) {
+  const { dimensions = {}, hydraulic = {}, electrical = {} } = specifications;
+  const mapped: Record<string, any> = {};
+  const copy = (field: string, value: unknown) => {
+    if (hasSourceValue(value)) mapped[field] = value;
+  };
+
+  copy('unit_code', product.product_code);
+  copy('unit_name', product.product_name);
+  copy('manufacturer', product.manufacturer);
+  copy('design_flow_m3h', firstSourceValue(hydraulic.design_flow_m3h, product.design_flow_m3h));
+  copy('max_flow_m3h', firstSourceValue(hydraulic.max_flow_m3h, product.max_flow_m3h));
+  copy('power_kw', firstSourceValue(electrical.rated_power_kw, product.power_kw));
+  copy('footprint_l_mm', firstSourceValue(dimensions.length_mm, product.length_mm));
+  copy('footprint_w_mm', firstSourceValue(dimensions.width_mm, product.width_mm));
+  copy('height_mm', firstSourceValue(dimensions.height_mm, product.height_mm));
+  copy('dry_weight_kg', firstSourceValue(dimensions.weight_kg, product.weight_kg));
+  copy('inlet_connection', formatConnection(dimensions.inlet_dn_mm));
+  copy('outlet_connection', formatConnection(dimensions.outlet_dn_mm));
+
+  return mapped;
+}
+
+export function normalizeCompactUnitPayload(form: Record<string, any>) {
+  const numberOrNull = (value: unknown) =>
+    value !== '' && value !== null && value !== undefined ? Number(value) : null;
+
+  return {
+    unit_code: form.unit_code,
+    unit_name: form.unit_name,
+    manufacturer: form.manufacturer,
+    water_type: form.water_type,
+    min_tank_volume_m3: numberOrNull(form.min_tank_volume_m3),
+    max_tank_volume_m3: numberOrNull(form.max_tank_volume_m3),
+    design_flow_m3h: numberOrNull(form.design_flow_m3h),
+    max_flow_m3h: numberOrNull(form.max_flow_m3h),
+    break_tank_volume_l: numberOrNull(form.break_tank_volume_l),
+    includes_filtration: form.includes_filtration,
+    uv_power_w: numberOrNull(form.uv_power_w),
+    footprint_l_mm: numberOrNull(form.footprint_l_mm),
+    footprint_w_mm: numberOrNull(form.footprint_w_mm),
+    height_mm: numberOrNull(form.height_mm),
+    dry_weight_kg: numberOrNull(form.dry_weight_kg),
+    power_kw: numberOrNull(form.power_kw),
+    inlet_connection: form.inlet_connection,
+    outlet_connection: form.outlet_connection,
+    notes: form.notes,
+    product_master_id: form.product_master_id || null,
+    status: form.status,
+  };
+}
 
 function WaterBadge({ type }: { type?: string }) {
   if (!type) return <span className="text-stone-300 text-xs">—</span>;
@@ -83,30 +160,82 @@ function UnitModal({
   } : { ...EMPTY_FORM });
 
   const [saving, setSaving] = useState(false);
+  const [pimLoading, setPimLoading] = useState(false);
+  const [pimError, setPimError] = useState('');
+  const [pimValues, setPimValues] = useState<Record<string, any> | null>(null);
+  const pimRequest = useRef(0);
   const set = (k: string, v: string) => setForm((f: any) => ({ ...f, [k]: v }));
 
-  const n = (v: string) => v !== '' ? parseFloat(v) : null;
+  const selectedProduct = (productMasterId: string) =>
+    products.find((product: any) => String(product.id) === String(productMasterId)) ?? {};
+
+  const applyPimValues = (values: Record<string, any>, onlyEmpty: boolean) => {
+    setForm((current: any) => {
+      const next = { ...current };
+      Object.entries(values).forEach(([field, value]) => {
+        if (!onlyEmpty || !hasSourceValue(next[field])) next[field] = value;
+      });
+      return next;
+    });
+  };
+
+  const loadPimValues = async (productMasterId: string, applyValues: boolean) => {
+    if (!productMasterId) return;
+    const request = ++pimRequest.current;
+    setPimLoading(true);
+    setPimError('');
+    try {
+      const [dimensions, hydraulic, electrical] = await Promise.all([
+        api.get(`/product-masters/${productMasterId}/dimensions`),
+        api.get(`/product-masters/${productMasterId}/hydraulic`),
+        api.get(`/product-masters/${productMasterId}/electrical`),
+      ]);
+      if (request !== pimRequest.current) return;
+      const values = mapProductMasterToCompactUnit(selectedProduct(productMasterId), {
+        dimensions: dimensions.data || {},
+        hydraulic: hydraulic.data || {},
+        electrical: electrical.data || {},
+      });
+      setPimValues(values);
+      if (applyValues) applyPimValues(values, !unit);
+    } catch {
+      if (request === pimRequest.current) {
+        setPimValues(null);
+        setPimError('Product Master specifications could not be loaded. You can continue entering values manually.');
+      }
+    } finally {
+      if (request === pimRequest.current) setPimLoading(false);
+    }
+  };
+
+  const handleProductMasterChange = (productMasterId: string) => {
+    set('product_master_id', productMasterId);
+    setPimValues(null);
+    setPimError('');
+    if (productMasterId) {
+      // Editing a saved unit must never replace its overrides as a side
+      // effect of changing the link. New units get a convenient first pass.
+      void loadPimValues(productMasterId, !unit);
+    } else {
+      pimRequest.current += 1;
+    }
+  };
+
+  const handleApplyPimValues = () => {
+    if (!form.product_master_id) return;
+    if (pimValues) {
+      applyPimValues(pimValues, false);
+    } else {
+      void loadPimValues(form.product_master_id, true);
+    }
+  };
 
   const handleSave = async () => {
     if (!form.unit_code.trim() || !form.unit_name.trim())
       return toast.error('Code and name are required');
     setSaving(true);
     try {
-      const payload = {
-        ...form,
-        min_tank_volume_m3: n(form.min_tank_volume_m3),
-        max_tank_volume_m3: n(form.max_tank_volume_m3),
-        design_flow_m3h:    n(form.design_flow_m3h),
-        max_flow_m3h:       n(form.max_flow_m3h),
-        break_tank_volume_l: n(form.break_tank_volume_l),
-        uv_power_w:         n(form.uv_power_w),
-        footprint_l_mm:     n(form.footprint_l_mm),
-        footprint_w_mm:     n(form.footprint_w_mm),
-        height_mm:          n(form.height_mm),
-        dry_weight_kg:      n(form.dry_weight_kg),
-        power_kw:           n(form.power_kw),
-        product_master_id:  form.product_master_id || null,
-      };
+      const payload = normalizeCompactUnitPayload(form);
       if (unit) {
         await api.put(`/lss-compact-units/${unit.id}`, payload);
         toast.success('Unit updated');
@@ -140,33 +269,33 @@ function UnitModal({
           {/* Identity */}
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Unit Code *</label>
-              <input value={form.unit_code} onChange={e => set('unit_code', e.target.value.toUpperCase())}
+              <label htmlFor="compact-unit-code" className="block text-xs font-medium text-stone-500 mb-1">Unit Code *</label>
+              <input id="compact-unit-code" value={form.unit_code} onChange={e => set('unit_code', e.target.value.toUpperCase())}
                 className={inputCls} placeholder="e.g. LSS-C-100" />
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-stone-500 mb-1">Unit Name *</label>
-              <input value={form.unit_name} onChange={e => set('unit_name', e.target.value)}
+              <label htmlFor="compact-unit-name" className="block text-xs font-medium text-stone-500 mb-1">Unit Name *</label>
+              <input id="compact-unit-name" value={form.unit_name} onChange={e => set('unit_name', e.target.value)}
                 className={inputCls} placeholder="e.g. AquaCompact 100 Marine" />
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Manufacturer</label>
-              <input value={form.manufacturer} onChange={e => set('manufacturer', e.target.value)}
+              <label htmlFor="compact-unit-manufacturer" className="block text-xs font-medium text-stone-500 mb-1">Manufacturer</label>
+              <input id="compact-unit-manufacturer" value={form.manufacturer} onChange={e => set('manufacturer', e.target.value)}
                 className={inputCls} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Water Type</label>
-              <select value={form.water_type} onChange={e => set('water_type', e.target.value)} className={`${inputCls}`}>
+              <label htmlFor="compact-unit-water-type" className="block text-xs font-medium text-stone-500 mb-1">Water Type</label>
+              <select id="compact-unit-water-type" value={form.water_type} onChange={e => set('water_type', e.target.value)} className={`${inputCls}`}>
                 <option value="">— Any —</option>
                 {WATER_TYPES.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Status</label>
-              <select value={form.status} onChange={e => set('status', e.target.value)} className={inputCls}>
+              <label htmlFor="compact-unit-status" className="block text-xs font-medium text-stone-500 mb-1">Status</label>
+              <select id="compact-unit-status" value={form.status} onChange={e => set('status', e.target.value)} className={inputCls}>
                 {STATUSES.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
@@ -183,8 +312,8 @@ function UnitModal({
                 { k: 'max_flow_m3h',      label: 'Max Flow m³/h' },
               ].map(f => (
                 <div key={f.k}>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">{f.label}</label>
-                  <input type="number" step="0.1" min="0" value={form[f.k]}
+                  <label htmlFor={`compact-unit-${f.k}`} className="block text-xs font-medium text-stone-500 mb-1">{f.label}</label>
+                  <input id={`compact-unit-${f.k}`} type="number" step="0.1" min="0" value={form[f.k]}
                     onChange={e => set(f.k, e.target.value)} className={numCls} />
                 </div>
               ))}
@@ -196,13 +325,13 @@ function UnitModal({
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Filtration & Treatment</p>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-stone-500 mb-1">Includes Filtration</label>
-                <input value={form.includes_filtration} onChange={e => set('includes_filtration', e.target.value)}
+                <label htmlFor="compact-unit-includes-filtration" className="block text-xs font-medium text-stone-500 mb-1">Includes Filtration</label>
+                <input id="compact-unit-includes-filtration" value={form.includes_filtration} onChange={e => set('includes_filtration', e.target.value)}
                   className={inputCls} placeholder="e.g. Foam Fractionation + UV + Polishing" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">UV Power (W)</label>
-                <input type="number" min="0" value={form.uv_power_w}
+                <label htmlFor="compact-unit-uv-power" className="block text-xs font-medium text-stone-500 mb-1">UV Power (W)</label>
+                <input id="compact-unit-uv-power" type="number" min="0" value={form.uv_power_w}
                   onChange={e => set('uv_power_w', e.target.value)} className={numCls} />
               </div>
             </div>
@@ -213,18 +342,18 @@ function UnitModal({
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Break / Sump Tank</p>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Break Tank Volume (L)</label>
-                <input type="number" min="0" value={form.break_tank_volume_l}
+                <label htmlFor="compact-unit-break-tank-volume" className="block text-xs font-medium text-stone-500 mb-1">Break Tank Volume (L)</label>
+                <input id="compact-unit-break-tank-volume" type="number" min="0" value={form.break_tank_volume_l}
                   onChange={e => set('break_tank_volume_l', e.target.value)} className={numCls} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Inlet Connection</label>
-                <input value={form.inlet_connection} onChange={e => set('inlet_connection', e.target.value)}
+                <label htmlFor="compact-unit-inlet-connection" className="block text-xs font-medium text-stone-500 mb-1">Inlet Connection</label>
+                <input id="compact-unit-inlet-connection" value={form.inlet_connection} onChange={e => set('inlet_connection', e.target.value)}
                   className={inputCls} placeholder="e.g. DN50 PN16" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">Outlet Connection</label>
-                <input value={form.outlet_connection} onChange={e => set('outlet_connection', e.target.value)}
+                <label htmlFor="compact-unit-outlet-connection" className="block text-xs font-medium text-stone-500 mb-1">Outlet Connection</label>
+                <input id="compact-unit-outlet-connection" value={form.outlet_connection} onChange={e => set('outlet_connection', e.target.value)}
                   className={inputCls} placeholder="e.g. DN50 PN16" />
               </div>
             </div>
@@ -242,8 +371,8 @@ function UnitModal({
                 { k: 'power_kw',       label: 'Power kW' },
               ].map(f => (
                 <div key={f.k}>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">{f.label}</label>
-                  <input type="number" min="0" value={form[f.k]}
+                  <label htmlFor={`compact-unit-${f.k}`} className="block text-xs font-medium text-stone-500 mb-1">{f.label}</label>
+                  <input id={`compact-unit-${f.k}`} type="number" min="0" value={form[f.k]}
                     onChange={e => set(f.k, e.target.value)} className={numCls} />
                 </div>
               ))}
@@ -254,21 +383,41 @@ function UnitModal({
           <div>
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">PIM Product Link</p>
             <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Link to Product Master</label>
-              <select value={form.product_master_id} onChange={e => set('product_master_id', e.target.value)}
+              <label htmlFor="compact-unit-product-master" className="block text-xs font-medium text-stone-500 mb-1">Link to Product Master</label>
+              <select id="compact-unit-product-master" value={form.product_master_id} onChange={e => handleProductMasterChange(e.target.value)}
+                disabled={pimLoading}
                 className={inputCls}>
                 <option value="">— Not linked —</option>
                 {products.map((p: any) => (
                   <option key={p.id} value={p.id}>{p.product_code} — {p.product_name}</option>
                 ))}
               </select>
+              {form.product_master_id && (
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+                  <span role="status" className={pimError ? 'text-amber-700' : 'text-stone-500'}>
+                    {pimLoading
+                      ? 'Loading Product Master specifications…'
+                      : pimError
+                        ? pimError
+                        : pimValues
+                          ? 'Specifications loaded as starting values. Compact-unit fields remain editable.'
+                          : 'Product Master values are not applied automatically while editing.'}
+                  </span>
+                  {!pimLoading && (
+                    <button type="button" onClick={handleApplyPimValues}
+                      className="shrink-0 text-violet-700 hover:text-violet-900 font-medium">
+                      {pimValues ? 'Reapply values' : 'Apply values'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1">Notes</label>
-            <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)}
+            <label htmlFor="compact-unit-notes" className="block text-xs font-medium text-stone-500 mb-1">Notes</label>
+            <textarea id="compact-unit-notes" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)}
               className={`${inputCls} resize-none`}
               placeholder="Design constraints, application notes, special requirements…" />
           </div>
@@ -453,11 +602,11 @@ export default function LSSCompactUnitsCatalog() {
                     <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setModal(u)}
+                        <button aria-label={`Edit ${u.unit_code}`} onClick={() => setModal(u)}
                           className="text-stone-400 hover:text-violet-600 p-1 rounded hover:bg-violet-50 transition-colors">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => handleDelete(u)} disabled={deleting === u.id}
+                        <button aria-label={`Delete ${u.unit_code}`} onClick={() => handleDelete(u)} disabled={deleting === u.id}
                           className="text-stone-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-40">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
