@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS tanks (
   width_mm NUMERIC,
   height_mm NUMERIC,
   design_water_level_mm NUMERIC,
+  custom_footprint JSONB,
   primary_material VARCHAR(100),
   status VARCHAR(50) DEFAULT 'Active',
   notes TEXT,
@@ -107,6 +108,7 @@ CREATE TABLE IF NOT EXISTS tanks (
 );
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS system_id UUID REFERENCES systems(id) ON DELETE SET NULL;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS custom_footprint JSONB;
 
 CREATE TABLE IF NOT EXISTS tank_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -150,7 +150,7 @@ async function loadReleaseContext(
              WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                   AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
-             WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+             WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                   AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                   AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
@@ -394,7 +394,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                  AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
               THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0)::numeric, 4)
-            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+            WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                  AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                  AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
@@ -409,7 +409,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                  AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
               THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.design_water_level_mm, pm.design_water_level_mm) / 1000000000.0)::numeric, 4)
-            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+            WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                  AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                  AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
@@ -425,7 +425,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
               THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
-            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+            WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                  AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
               THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
@@ -1408,14 +1408,14 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
-const VERSION_SNAPSHOT_SCHEMA = 3;
+const VERSION_SNAPSHOT_SCHEMA = 4;
 const VERSION_REFERENCE_FIELDS = {
   project: ['id', 'project_code', 'project_name'],
   exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
     'design_temperature_min', 'design_temperature_max', 'design_salinity', 'area_id', 'status', 'notes'],
   tanks: ['id', 'project_id', 'tank_code', 'exhibit_id', 'system_id', 'area_id', 'quantity',
     'tank_name', 'tank_type', 'product_master_id', 'shape_type', 'gross_volume_m3',
-    'operating_volume_m3', 'surface_area_m2', 'length_mm', 'width_mm', 'height_mm', 'design_water_level_mm',
+    'operating_volume_m3', 'surface_area_m2', 'custom_footprint', 'length_mm', 'width_mm', 'height_mm', 'design_water_level_mm',
     'primary_material', 'material_id', 'wall_thickness_mm', 'inner_length_mm', 'inner_width_mm',
     'inner_height_mm', 'status', 'notes'],
   systems: ['id', 'project_id', 'system_code', 'area_id', 'exhibit_id', 'system_name', 'system_type',

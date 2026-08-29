@@ -14,7 +14,28 @@ const baseContext = () => ({
   status: 'Draft',
   notes: 'Current notes',
   exhibits: [{ id: 'exhibit-1', project_id: 'project-1', exhibit_code: 'EX-1', exhibit_name: 'Reef' }],
-  tanks: [{ id: 'tank-1', project_id: 'project-1', tank_code: 'TK-1', exhibit_id: 'exhibit-1', system_id: 'system-1' }],
+  tanks: [{
+    id: 'tank-1',
+    project_id: 'project-1',
+    tank_code: 'TK-1',
+    exhibit_id: 'exhibit-1',
+    system_id: 'system-1',
+    shape_type: 'Custom',
+    surface_area_m2: '2',
+    custom_footprint: {
+      schema_version: 1,
+      units: 'mm',
+      calibration: { model_unit: 'mm', mm_per_unit: 1 },
+      closed: true,
+      sampling: { quadratic_steps: 24, freehand_step_mm: 25 },
+      segments: [
+        { type: 'line', start: { x: 0, y: 0 }, end: { x: 2000, y: 0 } },
+        { type: 'line', start: { x: 2000, y: 0 }, end: { x: 2000, y: 1000 } },
+        { type: 'line', start: { x: 2000, y: 1000 }, end: { x: 0, y: 1000 } },
+        { type: 'line', start: { x: 0, y: 1000 }, end: { x: 0, y: 0 } },
+      ],
+    },
+  }],
   systems: [{
     id: 'system-1',
     project_id: 'project-1',
@@ -120,7 +141,7 @@ describe('Design Book version snapshots', () => {
         expect(sql).toContain('COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm');
         expect(sql).toContain('t.surface_area_m2');
         expect(sql).toContain('pm.surface_area_m2');
-        expect(sql).toContain("COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'");
+        expect(sql).toContain("COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')");
         return { rows: [{ ...tankRow }] };
       }
       if (sql.includes('FROM systems')) return { rows: [] };
@@ -172,7 +193,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(3);
+    expect(snapshot.schema_version).toBe(4);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -200,6 +221,12 @@ describe('Design Book version snapshots', () => {
       exhibit_id: 'exhibit-1',
       flow_allocation_m3h: '12.5',
       allocation_source: 'manual',
+    });
+    expect(snapshot.live_references.tanks[0].custom_footprint).toMatchObject({
+      schema_version: 1,
+      units: 'mm',
+      closed: true,
+      segments: expect.arrayContaining([expect.objectContaining({ type: 'line' })]),
     });
     expect(snapshot.live_references.systems[0]).toMatchObject({
       id: 'system-1',
@@ -237,6 +264,16 @@ describe('Design Book version snapshots', () => {
     expect(drift.unresolved_references).toContainEqual({ type: 'tank', id: 'tank-1' });
   });
 
+  it('detects project-tank footprint drift after a version is captured', () => {
+    const captured = baseContext();
+    const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(captured);
+    const current = baseContext();
+    current.tanks[0].custom_footprint.segments[0].end.x = 2500;
+    const drift = versionSnapshotTestUtils.calculateVersionDrift(snapshot, current);
+    expect(drift.collections.tanks.changed).toEqual(['tank-1']);
+    expect(drift.has_drift).toBe(true);
+  });
+
   it('takes a transaction-scoped lock before allocating a concurrent version number', async () => {
     const calls: string[] = [];
     const runner = vi.fn(async (sql: string, params?: any[]) => {
@@ -263,7 +300,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(3);
+    expect(insertParams[6]).toBe(4);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 

@@ -46,6 +46,7 @@ const fs_1 = __importDefault(require("fs"));
 const crypto_1 = __importDefault(require("crypto"));
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
 const tankCalculations_1 = require("../lib/tankCalculations");
+const customFootprint_1 = require("../lib/customFootprint");
 const uploadsDir = path_1.default.join(__dirname, '../../uploads');
 if (!fs_1.default.existsSync(uploadsDir))
     fs_1.default.mkdirSync(uploadsDir, { recursive: true });
@@ -495,7 +496,7 @@ router.get('/tanks', auth_1.authenticate, async (req, res) => {
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
             THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0)::numeric, 4)
-          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+          WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
@@ -510,7 +511,7 @@ router.get('/tanks', auth_1.authenticate, async (req, res) => {
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
             THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.design_water_level_mm, pm.design_water_level_mm) / 1000000000.0)::numeric, 4)
-          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+          WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
@@ -526,7 +527,7 @@ router.get('/tanks', auth_1.authenticate, async (req, res) => {
            WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
              THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) / 1000000.0)::numeric, 4)
-            WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+            WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                 AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                 AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
              THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)/1000000.0)::numeric, 4)
@@ -573,7 +574,7 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
             THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.height_mm, pm.height_mm) / 1000000000.0)::numeric, 4)
-          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+          WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
@@ -588,7 +589,7 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
             THEN ROUND((PI() * POWER(COALESCE(t.width_mm, pm.width_mm) / 2.0, 2) * COALESCE(t.design_water_level_mm, pm.design_water_level_mm) / 1000000000.0)::numeric, 4)
-          WHEN COALESCE(t.shape_type, pm.shape_type) IS DISTINCT FROM 'Cylindrical'
+          WHEN COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')
                AND COALESCE(t.length_mm, pm.length_mm) IS NOT NULL
                AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
                AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
@@ -621,7 +622,7 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
 });
 router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     try {
-        const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes } = req.body;
+        const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, custom_footprint } = req.body;
         const tankCode = String(tank_code ?? '').trim();
         const tankName = String(tank_name ?? '').trim();
         if (!tankCode)
@@ -672,20 +673,45 @@ router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'eng
         const w = width_mm ? parseFloat(width_mm) : null;
         const h = height_mm ? parseFloat(height_mm) : null;
         const wl = design_water_level_mm ? parseFloat(design_water_level_mm) : null;
+        let normalizedFootprint = null;
+        if (String(shape_type || '').toLowerCase() === 'custom' && custom_footprint != null) {
+            try {
+                normalizedFootprint = (0, customFootprint_1.normalizeCustomFootprint)(custom_footprint);
+                const footprintSummary = (0, customFootprint_1.summarizeCustomFootprint)(normalizedFootprint);
+                if (!footprintSummary.valid) {
+                    return res.status(400).json({ error: { code: 'INVALID_CUSTOM_FOOTPRINT', field: 'custom_footprint', message: footprintSummary.message, validation: footprintSummary } });
+                }
+            }
+            catch (error) {
+                if (error instanceof customFootprint_1.CustomFootprintValidationError) {
+                    return res.status(400).json({ error: { code: 'INVALID_CUSTOM_FOOTPRINT', field: 'custom_footprint', message: error.validation.message, validation: error.validation } });
+                }
+                throw error;
+            }
+        }
         // Auto-calculate volumes from dimensions when not explicitly provided
+        const isCustom = (shape_type || '').toLowerCase() === 'custom';
         const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
         const calcGross = (gross_volume_m3 != null && gross_volume_m3 !== '')
             ? parseFloat(gross_volume_m3)
-            : isCyl
-                ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
-                : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
+            : isCustom
+                ? null
+                : isCyl
+                    ? (w && h ? Math.round(Math.PI * (w / 2) * (w / 2) * h / 1e9 * 1e4) / 1e4 : null)
+                    : (l && w && h ? Math.round(l * w * h / 1e9 * 1e4) / 1e4 : null);
         const calcOp = (operating_volume_m3 != null && operating_volume_m3 !== '')
             ? parseFloat(operating_volume_m3)
-            : isCyl
-                ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
-                : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
-        const surfaceAreaM2 = (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, l, w);
-        const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *', [tankCode, project_id, exhibit_id || null, system_id || null, qty, tankName, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, primary_material || null, status || 'Active', notes || null]);
+            : isCustom
+                ? null
+                : isCyl
+                    ? (w && wl ? Math.round(Math.PI * (w / 2) * (w / 2) * wl / 1e9 * 1e4) / 1e4 : null)
+                    : (l && w && wl ? Math.round(l * w * wl / 1e9 * 1e4) / 1e4 : null);
+        const surfaceAreaM2 = normalizedFootprint
+            ? (0, customFootprint_1.summarizeCustomFootprint)(normalizedFootprint).area_m2
+            : isCustom
+                ? null
+                : (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, l, w);
+        const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, custom_footprint, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *', [tankCode, project_id, exhibit_id || null, system_id || null, qty, tankName, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, normalizedFootprint, primary_material || null, status || 'Active', notes || null]);
         const tank = result.rows[0];
         if (qty > 1) {
             const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -1074,7 +1100,7 @@ router.post('/tanks/:id/promote-to-pim', auth_1.authenticate, (0, auth_1.require
         client.release();
     }
 });
-router.post('/tanks/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.post('/tanks/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const orig = await (0, db_1.query)('SELECT * FROM tanks WHERE id=$1', [req.params.id]);
     if (!orig.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
@@ -1088,7 +1114,7 @@ router.post('/tanks/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)
         newCode = `${t.tank_code}-${n}`;
     }
     const qty = t.quantity ?? 1;
-    const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *', [newCode.toUpperCase(), t.project_id, t.system_id, qty, `${t.tank_name} (Copy)`, t.tank_type, t.product_master_id, t.shape_type, t.gross_volume_m3, t.operating_volume_m3, t.length_mm, t.width_mm, t.height_mm, t.design_water_level_mm, t.primary_material, t.status || 'Active', t.notes]);
+    const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, custom_footprint, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *', [newCode.toUpperCase(), t.project_id, t.system_id, qty, `${t.tank_name} (Copy)`, t.tank_type, t.product_master_id, t.shape_type, t.gross_volume_m3, t.operating_volume_m3, t.surface_area_m2, t.custom_footprint, t.length_mm, t.width_mm, t.height_mm, t.design_water_level_mm, t.primary_material, t.status || 'Active', t.notes]);
     const newTank = result.rows[0];
     if (qty > 1) {
         const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -1142,9 +1168,9 @@ router.patch('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         throw err;
     }
 });
-router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     try {
-        const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, product_master_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, surface_area_m2, } = req.body;
+        const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, product_master_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, surface_area_m2, custom_footprint, } = req.body;
         if (!String(tank_name ?? '').trim()) {
             return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_name', message: 'Tank name is required.' } });
         }
@@ -1189,6 +1215,22 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
         const t = wall_thickness_mm ? parseFloat(wall_thickness_mm) : 0;
         const isCustom = (shape_type || '').toLowerCase() === 'custom';
         const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
+        let normalizedFootprint = null;
+        if (isCustom && custom_footprint != null) {
+            try {
+                normalizedFootprint = (0, customFootprint_1.normalizeCustomFootprint)(custom_footprint);
+                const footprintSummary = (0, customFootprint_1.summarizeCustomFootprint)(normalizedFootprint);
+                if (!footprintSummary.valid) {
+                    return res.status(400).json({ error: { code: 'INVALID_CUSTOM_FOOTPRINT', field: 'custom_footprint', message: footprintSummary.message, validation: footprintSummary } });
+                }
+            }
+            catch (error) {
+                if (error instanceof customFootprint_1.CustomFootprintValidationError) {
+                    return res.status(400).json({ error: { code: 'INVALID_CUSTOM_FOOTPRINT', field: 'custom_footprint', message: error.validation.message, validation: error.validation } });
+                }
+                throw error;
+            }
+        }
         const requestedSurfaceArea = surface_area_m2 != null && surface_area_m2 !== ''
             ? parseFloat(surface_area_m2)
             : null;
@@ -1211,22 +1253,24 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
             : isCyl
                 ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
                 : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
-        const surfaceAreaM2 = isCustom && requestedSurfaceArea != null
-            ? Math.round(requestedSurfaceArea * 1e4) / 1e4
-            : (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, isCyl ? null : l, w);
+        const surfaceAreaM2 = normalizedFootprint
+            ? (0, customFootprint_1.summarizeCustomFootprint)(normalizedFootprint).area_m2
+            : isCustom
+                ? null
+                : (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, isCyl ? null : l, w);
         const qty = Math.max(1, parseInt(quantity) || 1);
         const result = await (0, db_1.query)(`UPDATE tanks SET
       tank_code=COALESCE($1, tank_code), tank_name=$2, tank_type=$3, shape_type=$4,
       length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
       gross_volume_m3=$9, operating_volume_m3=$10, surface_area_m2=$11,
-      primary_material=$12, status=$13, notes=$14, quantity=$15,
-      system_id=$16, material_id=$17, wall_thickness_mm=$18,
-      inner_length_mm=$19, inner_width_mm=$20, inner_height_mm=$21,
-      product_master_id=CASE WHEN $22 THEN $23 ELSE product_master_id END,
-      exhibit_id=CASE WHEN $24 THEN $25 ELSE exhibit_id END,
+      custom_footprint=$12, primary_material=$13, status=$14, notes=$15, quantity=$16,
+      system_id=$17, material_id=$18, wall_thickness_mm=$19,
+      inner_length_mm=$20, inner_width_mm=$21, inner_height_mm=$22,
+      product_master_id=CASE WHEN $23 THEN $24 ELSE product_master_id END,
+      exhibit_id=CASE WHEN $25 THEN $26 ELSE exhibit_id END,
       updated_at=NOW()
-    WHERE id=$26 RETURNING *`, [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
-            l, w, h, wl, calcGross, calcOp, surfaceAreaM2,
+    WHERE id=$27 RETURNING *`, [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
+            l, w, h, wl, calcGross, calcOp, surfaceAreaM2, normalizedFootprint,
             primary_material || null, status || 'Active', notes || null, qty,
             system_id || null,
             material_id || null, wall_thickness_mm ?? null,

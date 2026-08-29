@@ -13,6 +13,11 @@ import {
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import SpeciesSection from './SpeciesAllocationSection';
+import CustomFootprintEditor, {
+  FootprintPreview,
+  FootprintPrompt,
+  footprintMeasurement,
+} from '../../components/design-books/CustomFootprintEditor';
 import {
   calculateBazinWeir,
   calculateFrancisWeir,
@@ -550,11 +555,13 @@ function DimTile({ label, val, inner }: { label: string; val: string; inner?: bo
   );
 }
 
-function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData?: any | null; onRefresh: () => void }) {
+function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: any; substrateData?: any | null; onRefresh: () => void; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<any>({});
   const [overrideInner, setOverrideInner] = useState(false);
+  const [footprintPromptOpen, setFootprintPromptOpen] = useState(false);
+  const [footprintEditorOpen, setFootprintEditorOpen] = useState(false);
 
   const { data: matData } = useQuery({
     queryKey: ['materials-list'],
@@ -583,6 +590,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
       gross_volume_m3:       tank.project_gross_volume_m3 ?? (tank.product_master_id ? '' : tank.gross_volume_m3 ?? ''),
       operating_volume_m3:   tank.project_operating_volume_m3 ?? (tank.product_master_id ? '' : tank.operating_volume_m3 ?? tank.design_volume_m3 ?? ''),
       surface_area_m2:       tank.surface_area_m2 ?? '',
+       custom_footprint:      tank.custom_footprint ?? null,
       status:                tank.status || 'Active',
     });
     setOverrideInner(!!(tank.inner_length_mm || tank.inner_width_mm || tank.inner_height_mm));
@@ -590,6 +598,14 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
   };
 
   const setF = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+  const handleShapeChange = (shape: string) => {
+    setF('shape_type', shape);
+    if (shape.toLowerCase() === 'custom' && !form.custom_footprint) setFootprintPromptOpen(true);
+    if (shape.toLowerCase() !== 'custom' && form.custom_footprint) {
+      setF('custom_footprint', null);
+      toast('Custom footprint cleared because the tank shape changed.', { icon: 'i' });
+    }
+  };
 
   const effectiveEditShape = form.shape_type || tank.eff_shape || 'Rectangular';
   const isCyl  = effectiveEditShape.toLowerCase() === 'cylindrical';
@@ -638,6 +654,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
         gross_volume_m3:       isCust ? (form.gross_volume_m3 || null) : undefined,
         operating_volume_m3:   isCust ? (form.operating_volume_m3 || null) : undefined,
         surface_area_m2:       isCust ? (form.surface_area_m2 || null) : undefined,
+         custom_footprint:      isCust ? form.custom_footprint : null,
         status:                form.status,
       });
       toast.success('Tank updated');
@@ -710,6 +727,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
       Decommissioned: 'bg-stone-100 text-stone-500 border-stone-200',
     };
 
+    const savedFootprintMeasurement = isCust ? footprintMeasurement(tank.custom_footprint) : null;
     return (
       <div className="rounded-xl border border-blue-200 bg-white shadow-sm overflow-hidden">
         {/* Header */}
@@ -750,10 +768,12 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
               </p>
             )}
           </div>
-          <button onClick={startEdit}
-            className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-blue-600 border border-stone-200 hover:border-blue-300 bg-white rounded-lg px-2.5 py-1.5 transition-colors shrink-0 ml-4">
-            <Pencil className="w-3.5 h-3.5" /> Edit
-          </button>
+          {!readOnly && (
+            <button onClick={startEdit}
+              className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-blue-600 border border-stone-200 hover:border-blue-300 bg-white rounded-lg px-2.5 py-1.5 transition-colors shrink-0 ml-4">
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+          )}
         </div>
 
         <div className="p-5 space-y-4">
@@ -848,6 +868,20 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
               </div>
             </div>
           )}
+           {isCust && tank.custom_footprint && (
+             <div className="rounded-xl border border-sky-100 bg-sky-50/40 p-3">
+               <div className="mb-2 flex items-center justify-between gap-3">
+                 <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Custom Footprint</p>
+                 {savedFootprintMeasurement?.approximate && <span className="text-xs text-amber-700">Approximate sampling</span>}
+               </div>
+               <FootprintPreview document={tank.custom_footprint} />
+               {savedFootprintMeasurement && (
+                 <p className="mt-2 text-xs text-stone-600">
+                   {savedFootprintMeasurement.perimeter.toFixed(1)} mm perimeter · {savedFootprintMeasurement.area.toFixed(3)} m² water surface · {tank.custom_footprint.segments.length} segments
+                 </p>
+               )}
+             </div>
+           )}
 
           {/* System link */}
           {tank.system_code && (
@@ -864,6 +898,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
 
   // ── Edit mode ──
   return (
+    <>
     <div className="rounded-xl border border-blue-400 bg-white shadow-sm">
       <div className="flex items-center justify-between px-5 py-3 border-b border-blue-100 bg-blue-50/40">
         <span className="text-sm font-semibold text-blue-700">Edit Tank</span>
@@ -903,7 +938,7 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-stone-500 mb-1">Shape</label>
-            <select value={form.shape_type} onChange={e => setF('shape_type', e.target.value)}
+            <select value={form.shape_type} onChange={e => handleShapeChange(e.target.value)}
               className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
               {tank.product_master_id && <option value="">Use PIM default ({tank.eff_shape || 'not set'})</option>}
               {TANK_SHAPES.map(s => <option key={s}>{s}</option>)}
@@ -1094,6 +1129,25 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
             </div>
           </div>
         )}
+        {isCust && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-sky-800">Custom footprint</p>
+                <p className="mt-1 text-xs text-stone-600">
+                  {form.custom_footprint ? 'A saved model-space outline will determine the water-surface area.' : 'No footprint saved yet. You can continue with a manual custom tank and draw one later.'}
+                </p>
+              </div>
+              <button type="button" onClick={() => setFootprintEditorOpen(true)} className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100">
+                {form.custom_footprint ? 'Edit footprint' : 'Open footprint tool'}
+              </button>
+            </div>
+            {form.custom_footprint && (() => {
+              const measurement = footprintMeasurement(form.custom_footprint);
+              return measurement ? <div className="mt-3"><FootprintPreview document={form.custom_footprint} /><p className="mt-2 text-xs text-stone-600">{measurement.perimeter.toFixed(1)} mm perimeter · {measurement.area.toFixed(3)} m² · {form.custom_footprint.segments.length} segments{measurement.approximate ? ' · approximate' : ''}</p></div> : null;
+            })()}
+          </div>
+        )}
 
         {/* Status */}
         <div>
@@ -1105,6 +1159,20 @@ function TankCard({ tank, substrateData, onRefresh }: { tank: any; substrateData
         </div>
       </div>
     </div>
+    {footprintPromptOpen && (
+      <FootprintPrompt
+        onLaunch={() => { setFootprintPromptOpen(false); setFootprintEditorOpen(true); }}
+        onContinue={() => setFootprintPromptOpen(false)}
+      />
+    )}
+    {footprintEditorOpen && (
+      <CustomFootprintEditor
+        initialValue={form.custom_footprint}
+        onCancel={() => setFootprintEditorOpen(false)}
+        onAccept={value => { setF('custom_footprint', value); setFootprintEditorOpen(false); }}
+      />
+    )}
+    </>
   );
 }
 
@@ -1126,11 +1194,13 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   const [newForm, setNewForm] = useState({
     tank_code: '', tank_name: exhibit.exhibit_name || '', shape_type: 'Rectangular',
     length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '',
-    material_id: '', primary_material: '',
+    material_id: '', primary_material: '', custom_footprint: null as any,
   });
   const [newFieldErrors, setNewFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(assignedTanks.length === 0);
+  const [footprintPromptOpen, setFootprintPromptOpen] = useState(false);
+  const [footprintEditorOpen, setFootprintEditorOpen] = useState(false);
   const currentTank = assignedTanks[0] || null;
 
   const closeAddPanel = () => {
@@ -1145,7 +1215,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   }, [assignedTanks.length]);
 
   useEffect(() => {
-    if (!showAddPanel || assignedTanks.length === 0) return;
+    if (!showAddPanel || assignedTanks.length === 0 || footprintPromptOpen || footprintEditorOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -1153,7 +1223,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [showAddPanel, assignedTanks.length]);
+  }, [showAddPanel, assignedTanks.length, footprintPromptOpen, footprintEditorOpen]);
 
   const { data: matData } = useQuery({
     queryKey: ['materials-list'],
@@ -1182,7 +1252,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   });
   const pimTanks: any[] = pimTanksData?.items || [];
 
-  const setF = (k: string, v: string) => {
+  const setF = (k: string, v: any) => {
     setNewForm(f => ({ ...f, [k]: v }));
     setNewFieldErrors(errors => {
       if (!errors[k]) return errors;
@@ -1190,6 +1260,14 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
       delete next[k];
       return next;
     });
+  };
+  const handleNewShapeChange = (shape: string) => {
+    setF('shape_type', shape);
+    if (shape === 'Custom' && !newForm.custom_footprint) setFootprintPromptOpen(true);
+    if (shape !== 'Custom' && newForm.custom_footprint) {
+      setF('custom_footprint', null);
+      toast('Custom footprint cleared because the tank shape changed.', { icon: 'i' });
+    }
   };
 
   const newInputClass = (field: string, extra = '') => [
@@ -1269,6 +1347,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
         design_water_level_mm: newForm.design_water_level_mm || null,
         material_id: newForm.material_id || null,
         primary_material: newForm.primary_material || null,
+        custom_footprint: newForm.shape_type === 'Custom' ? newForm.custom_footprint : null,
         product_master_id: null,
         status: 'Active',
       };
@@ -1328,7 +1407,10 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   };
 
   const isCyl = newForm.shape_type === 'Cylindrical';
-  const newSurfaceArea = waterSurfaceAreaM2(newForm.shape_type, newForm.length_mm, newForm.width_mm);
+  const newFootprintMeasurement = footprintMeasurement(newForm.custom_footprint);
+  const newSurfaceArea = newForm.shape_type === 'Custom' && newFootprintMeasurement
+    ? newFootprintMeasurement.area
+    : waterSurfaceAreaM2(newForm.shape_type, newForm.length_mm, newForm.width_mm);
 
   if (assignedTanks.length > 0 && !showAddPanel) {
     return (
@@ -1345,6 +1427,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   }
 
   return (
+    <>
     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-stone-100 bg-stone-50/50">
         <div className="flex items-center gap-1">
@@ -1585,7 +1668,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
               </div>
               <div>
                 <label htmlFor="new-tank-shape" className="block text-xs font-medium text-stone-500 mb-1">Shape</label>
-                <select id="new-tank-shape" value={newForm.shape_type} onChange={e => setF('shape_type', e.target.value)}
+                <select id="new-tank-shape" value={newForm.shape_type} onChange={e => handleNewShapeChange(e.target.value)}
                   aria-invalid={!!newFieldErrors.shape_type}
                   aria-describedby={newFieldErrors.shape_type ? 'new-tank-shape_type-error' : undefined}
                   className={newInputClass('shape_type', 'bg-white')}>
@@ -1645,6 +1728,27 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
                 {newSurfaceArea == null ? '—' : `${newSurfaceArea.toFixed(3)} m²`}
               </span>
             </div>
+            {newForm.shape_type === 'Custom' && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-sky-800">Custom footprint</p>
+                    <p className="mt-1 text-xs text-stone-600">
+                      {newForm.custom_footprint ? 'This outline will be saved with the tank.' : 'No footprint attached. You may create the tank now and draw one later.'}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setFootprintEditorOpen(true)} className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100">
+                    {newForm.custom_footprint ? 'Edit footprint' : 'Open footprint tool'}
+                  </button>
+                </div>
+                {newForm.custom_footprint && newFootprintMeasurement && (
+                  <div className="mt-3">
+                    <FootprintPreview document={newForm.custom_footprint} />
+                    <p className="mt-2 text-xs text-stone-600">{newFootprintMeasurement.perimeter.toFixed(1)} mm perimeter · {newFootprintMeasurement.area.toFixed(3)} m² · {newForm.custom_footprint.segments.length} segments{newFootprintMeasurement.approximate ? ' · approximate' : ''}</p>
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label htmlFor="new-tank-material" className="block text-xs text-stone-500 mb-1">Material</label>
               <select
@@ -1679,6 +1783,20 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
         )}
       </div>
     </div>
+    {footprintPromptOpen && (
+      <FootprintPrompt
+        onLaunch={() => { setFootprintPromptOpen(false); setFootprintEditorOpen(true); }}
+        onContinue={() => setFootprintPromptOpen(false)}
+      />
+    )}
+    {footprintEditorOpen && (
+      <CustomFootprintEditor
+        initialValue={newForm.custom_footprint}
+        onCancel={() => setFootprintEditorOpen(false)}
+        onAccept={value => { setF('custom_footprint', value); setFootprintEditorOpen(false); }}
+      />
+    )}
+    </>
   );
 }
 
@@ -3195,6 +3313,7 @@ export default function ExhibitDetail() {
               tank={exhibitTank}
               substrateData={substrateData}
               onRefresh={refresh}
+              readOnly={readOnly}
             />
           ))}
           <SubstrateSection
