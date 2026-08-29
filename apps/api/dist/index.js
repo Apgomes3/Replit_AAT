@@ -25,6 +25,7 @@ const notifications_1 = __importDefault(require("./routes/notifications"));
 const designBooks_1 = __importDefault(require("./routes/designBooks"));
 const lssCompactUnits_1 = __importDefault(require("./routes/lssCompactUnits"));
 const speciesCatalog_1 = __importDefault(require("./routes/speciesCatalog"));
+const biologicalMedia_1 = __importDefault(require("./routes/biologicalMedia"));
 const errors_1 = require("./middleware/errors");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
@@ -53,6 +54,7 @@ app.use('/api/v1', notifications_1.default);
 app.use('/api/v1', designBooks_1.default);
 app.use('/api/v1', lssCompactUnits_1.default);
 app.use('/api/v1', speciesCatalog_1.default);
+app.use('/api/v1', biologicalMedia_1.default);
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 app.use('/', (0, http_proxy_middleware_1.createProxyMiddleware)({
     target: 'http://localhost:5000',

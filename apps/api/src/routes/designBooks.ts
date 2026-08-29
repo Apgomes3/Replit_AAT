@@ -201,12 +201,24 @@ async function loadReleaseContext(
   ));
 
   let links: any[] = [];
+  let biologicalMediaCases: any[] = [];
   if (systems.length) {
     const linksResult = await runner(
       'SELECT sel.*, e.exhibit_code FROM system_exhibit_links sel LEFT JOIN exhibits e ON e.id=sel.exhibit_id WHERE sel.system_id = ANY($1::uuid[])',
       [systems.map(system => system.id)],
     );
     links = linksResult.rows;
+    biologicalMediaCases = (await runner(
+      `SELECT c.*, mp.profile_code AS media_profile_code, mp.profile_name AS media_profile_name,
+              mp.revision AS media_profile_revision, mp.status AS media_profile_status,
+              tp.profile_code AS tan_profile_code, tp.profile_name AS tan_profile_name,
+              tp.revision AS tan_profile_revision, tp.status AS tan_profile_status
+       FROM lss_biological_media_cases c
+       LEFT JOIN lss_biological_media_profiles mp ON mp.id=c.media_profile_revision_id
+       LEFT JOIN lss_tan_generation_profiles tp ON tp.id=c.tan_generation_profile_revision_id
+       WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`,
+      [id, systems.map(system => system.id)],
+    )).rows;
   }
   const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
   const compactUnits = compactUnitIds.length
@@ -242,6 +254,7 @@ async function loadReleaseContext(
     hydraulics,
     substrate,
     review_handovers: handovers,
+    biological_media_cases: biologicalMediaCases,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculatedAt,

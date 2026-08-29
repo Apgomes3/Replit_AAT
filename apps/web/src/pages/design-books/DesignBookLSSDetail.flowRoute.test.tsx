@@ -135,6 +135,7 @@ function renderFlowRoute(
   links: any[] = [],
   fractionatorProducts: any[] = [],
   initialEntry = '/design-books/book-1/lss/system-1?tab=flow',
+  biologicalMedia: any = null,
 ) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
@@ -143,6 +144,9 @@ function renderFlowRoute(
     if (url === '/systems/system-1/fractionator-products') {
       return Promise.resolve({ data: { items: fractionatorProducts } });
     }
+    if (url === '/systems/system-1/biological-media') return Promise.resolve({ data: biologicalMedia });
+    if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: [] } });
+    if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: [] } });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -170,6 +174,9 @@ function renderBrowserFlowRoute() {
     if (url === '/systems/system-1/fractionator-products') {
       return Promise.resolve({ data: { items: [] } });
     }
+    if (url === '/systems/system-1/biological-media') return Promise.resolve({ data: null });
+    if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: [] } });
+    if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: [] } });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -227,6 +234,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(tabs.map(tab => tab.textContent)).toEqual([
       'System Overview',
       'Flow Route',
+      'Biological Media',
       'UV Selection',
       'Thermal Selection',
       'Ozone Selection',
@@ -238,6 +246,72 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(screen.getByText('Turnover Rate')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Link Exhibit/ })).toBeInTheDocument();
     expect(screen.getByText('125.0')).toBeInTheDocument();
+  });
+
+  it('shows authoritative linked volume context without presenting a sizing result', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(
+      baseSystem,
+      bookWithLinkedExhibits,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=biological-media',
+      {
+        case: null,
+        readiness_status: 'Blocked',
+        input_completeness: { complete: false, missing: ['Create the biological media draft.'] },
+        context: {
+          status: 'blocked',
+          total_operating_volume_m3: 42.125,
+          reasons: ['An approved media profile is not available.'],
+          linked_exhibits: [{
+            exhibit_id: 'exhibit-1',
+            exhibit_code: 'EX-01',
+            exhibit_name: 'Main Exhibit',
+            water_type: 'Freshwater',
+            operating_volume_m3: 42.125,
+          }],
+        },
+      },
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getByRole('tab', { name: 'Biological Media' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel', { name: 'Biological Media' })).toHaveTextContent('42.1250');
+    expect(screen.getByRole('tabpanel', { name: 'Biological Media' })).toHaveTextContent('Blocked');
+    expect(screen.getByText(/No biological-filter sizing result is calculated here/)).toBeInTheDocument();
+    expect(screen.queryByText(/media volume required/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create draft' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1/biological-media',
+      expect.objectContaining({ design_book_id: 'book-1' }),
+    ));
+  });
+
+  it('keeps Biological Media draft controls read-only in a frozen Design Book package', async () => {
+    renderFlowRoute(
+      baseSystem,
+      {
+        ...bookWithLinkedExhibits,
+        status: 'Released',
+        systems: [baseSystem],
+        system_links: [primaryLink],
+      },
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=biological-media',
+      {
+        case: { id: 'case-1', reactor_type: 'Moving bed biofilter', notes: 'Frozen basis' },
+        readiness_status: 'Incomplete',
+        input_completeness: { complete: false, missing: ['Select an approved media profile revision.'] },
+        context: { total_operating_volume_m3: 42, linked_exhibits: [] },
+      },
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getByDisplayValue('Moving bed biofilter')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
   });
 
   it('opens the selected linked exhibit from the table without changing neighboring controls', async () => {

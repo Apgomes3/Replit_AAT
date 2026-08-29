@@ -78,6 +78,9 @@ describe('DesignBookLSSDetail Escape navigation', () => {
       if (url === '/systems/system-1') return Promise.resolve({ data: system });
       if (url === '/design-books/book-1') return Promise.resolve({ data: book });
       if (url === '/systems/system-1/exhibit-links') return Promise.resolve({ data: [] });
+      if (url === '/systems/system-1/biological-media') return Promise.resolve({ data: null });
+      if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: [] } });
+      if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: [] } });
       if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
       return Promise.reject(new Error(`Unexpected GET ${url}`));
     });

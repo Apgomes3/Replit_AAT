@@ -30,11 +30,12 @@ const STATUSES   = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Rele
 const LINK_TYPES = ['Primary', 'Secondary', 'Emergency', 'Backup', 'Observation', 'Redundant'];
 const FLOW_ROUTE_VIEW_STORAGE_KEY = 'lss-flow-route-view';
 type FlowViewMode = 'card' | 'list';
-type LssTab = 'overview' | 'flow' | 'uv' | 'thermal' | 'ozone' | 'other';
+type LssTab = 'overview' | 'flow' | 'biological-media' | 'uv' | 'thermal' | 'ozone' | 'other';
 
 const LSS_TABS: Array<{ id: LssTab; label: string }> = [
   { id: 'overview', label: 'System Overview' },
   { id: 'flow', label: 'Flow Route' },
+  { id: 'biological-media', label: 'Biological Media' },
   { id: 'uv', label: 'UV Selection' },
   { id: 'thermal', label: 'Thermal Selection' },
   { id: 'ozone', label: 'Ozone Selection' },
@@ -52,6 +53,165 @@ function EquipmentEmptyState({ title, description }: { title: string; descriptio
       <h2 className="text-sm font-semibold text-stone-700">{title}</h2>
       <p className="mx-auto mt-1 max-w-md text-sm text-stone-400">{description}</p>
       <p className="mt-3 text-xs font-medium uppercase tracking-wide text-stone-300">Not configured</p>
+    </div>
+  );
+}
+
+function BiologicalMediaPanel({
+  data,
+  mediaProfiles,
+  tanProfiles,
+  readOnly,
+  form,
+  onChange,
+  onSave,
+  saving,
+  error,
+}: {
+  data: any;
+  mediaProfiles: any[];
+  tanProfiles: any[];
+  readOnly: boolean;
+  form: any;
+  onChange: (key: string, value: string) => void;
+  onSave: () => void;
+  saving: boolean;
+  error?: string | null;
+}) {
+  const readiness = data?.readiness_status || 'Incomplete';
+  const context = data?.context;
+  const missing = data?.input_completeness?.missing || [];
+  const approvedMedia = mediaProfiles.filter(profile => profile.status === 'Approved');
+  const approvedTan = tanProfiles.filter(profile => profile.status === 'Approved');
+  const selectedMediaMissing = data?.case?.media_profile_revision_id
+    && !approvedMedia.some(profile => profile.id === data.case.media_profile_revision_id);
+  const selectedTanMissing = data?.case?.tan_generation_profile_revision_id
+    && !approvedTan.some(profile => profile.id === data.case.tan_generation_profile_revision_id);
+  const statusStyles: Record<string, string> = {
+    Draft: 'border-blue-200 bg-blue-50 text-blue-800',
+    Incomplete: 'border-amber-200 bg-amber-50 text-amber-800',
+    Blocked: 'border-red-200 bg-red-50 text-red-800',
+  };
+
+  return (
+    <div id="biological-media" className="space-y-5">
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          Biological Media context could not be loaded: {error}
+        </div>
+      )}
+      <div className={`rounded-xl border px-5 py-4 ${statusStyles[readiness] || statusStyles.Incomplete}`}>
+        <div className="flex items-start gap-3">
+          <Activity className="mt-0.5 h-5 w-5 shrink-0" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold">Biological Media foundation</h2>
+              <span className="rounded-full border border-current/20 px-2 py-0.5 text-xs font-semibold">{readiness}</span>
+            </div>
+            <p className="mt-1 text-sm opacity-80">
+              This foundation prepares controlled reference inputs only. No biological-filter sizing result is calculated here.
+            </p>
+            {missing.length > 0 && (
+              <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+                {missing.map((reason: string) => <li key={reason}>{reason}</li>)}
+              </ul>
+            )}
+            {context?.reasons?.map((reason: string) => (
+              <p key={reason} className="mt-2 text-xs font-medium">{reason}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <section className="rounded-xl border border-stone-200 bg-white overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+          <div>
+            <h2 className="text-sm font-semibold text-stone-700">Current linked-exhibit water context</h2>
+            <p className="mt-0.5 text-xs text-stone-400">Read-only reference from the current exhibit calculations; it is not copied into this draft.</p>
+          </div>
+          <Droplets className="h-5 w-5 text-cyan-500" />
+        </div>
+        <div className="p-5">
+          <div className="mb-4 flex items-baseline gap-2">
+            <span className="font-mono text-2xl font-semibold text-stone-800">
+              {context?.total_operating_volume_m3 != null ? Number(context.total_operating_volume_m3).toFixed(4) : '—'}
+            </span>
+            <span className="text-sm text-stone-500">m³ total effective operating volume</span>
+          </div>
+          {(context?.linked_exhibits || []).length > 0 ? (
+            <div className="overflow-x-auto rounded-lg border border-stone-100">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-400">
+                  <tr><th className="px-3 py-2">Exhibit</th><th className="px-3 py-2">Water type</th><th className="px-3 py-2 text-right">Effective volume</th></tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {context.linked_exhibits.map((exhibit: any) => (
+                    <tr key={exhibit.exhibit_id}>
+                      <td className="px-3 py-2 font-medium text-stone-700">{exhibit.exhibit_code} — {exhibit.exhibit_name}</td>
+                      <td className="px-3 py-2 text-stone-500">{exhibit.water_type || '—'}</td>
+                      <td className="px-3 py-2 text-right font-mono text-stone-700">
+                        {exhibit.operating_volume_m3 != null ? `${Number(exhibit.operating_volume_m3).toFixed(4)} m³` : 'Unavailable'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="text-sm text-stone-400">No linked exhibits are available for this system.</p>}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-stone-200 bg-white overflow-hidden">
+        <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+          <h2 className="text-sm font-semibold text-stone-700">Biological media draft inputs</h2>
+          <p className="mt-0.5 text-xs text-stone-400">Selections are readiness references only and do not alter system hydraulics, Flow Route, or exhibit calculations.</p>
+        </div>
+        <div className="grid gap-4 p-5 md:grid-cols-3">
+          <label className="text-xs font-medium text-stone-500">
+            Reactor type
+            <input value={form.reactor_type} onChange={event => onChange('reactor_type', event.target.value)}
+              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm font-normal text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+              placeholder="e.g. Moving bed biofilter" />
+          </label>
+          <label className="text-xs font-medium text-stone-500">
+            Approved media profile revision
+            <select value={form.media_profile_revision_id} onChange={event => onChange('media_profile_revision_id', event.target.value)}
+              className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-normal text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40">
+              <option value="">— Select approved revision —</option>
+              {selectedMediaMissing && <option value={data.case.media_profile_revision_id} disabled>
+                {data.case.media_profile_code || 'Selected media profile'} r{data.case.media_profile_revision || '—'} — {data.case.media_profile_status || 'Unavailable'}
+              </option>}
+              {approvedMedia.map(profile => <option key={profile.id} value={profile.id}>{profile.profile_code} r{profile.revision} — {profile.profile_name}</option>)}
+            </select>
+            {approvedMedia.length === 0 && <span className="mt-1 block font-normal text-amber-700">No approved media profile revisions are available.</span>}
+          </label>
+          <label className="text-xs font-medium text-stone-500">
+            Approved TAN profile revision
+            <select value={form.tan_generation_profile_revision_id} onChange={event => onChange('tan_generation_profile_revision_id', event.target.value)}
+              className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-normal text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40">
+              <option value="">— Select approved revision —</option>
+              {selectedTanMissing && <option value={data.case.tan_generation_profile_revision_id} disabled>
+                {data.case.tan_profile_code || 'Selected TAN profile'} r{data.case.tan_profile_revision || '—'} — {data.case.tan_profile_status || 'Unavailable'}
+              </option>}
+              {approvedTan.map(profile => <option key={profile.id} value={profile.id}>{profile.profile_code} r{profile.revision} — {profile.profile_name}</option>)}
+            </select>
+            {approvedTan.length === 0 && <span className="mt-1 block font-normal text-amber-700">No approved TAN profile revisions are available.</span>}
+          </label>
+          <label className="text-xs font-medium text-stone-500 md:col-span-3">
+            Design basis notes
+            <textarea value={form.notes} onChange={event => onChange('notes', event.target.value)} rows={3}
+              className="mt-1 w-full resize-none rounded-lg border border-stone-200 px-3 py-2 text-sm font-normal text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+              placeholder="Engineering context or constraints for the later sizing phase…" />
+          </label>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-stone-100 bg-stone-50/40 px-5 py-3">
+          <p className="text-xs text-stone-400">{data?.case?.updated_at ? `Last saved ${new Date(data.case.updated_at).toLocaleString()}` : 'No draft saved yet.'}</p>
+          {!readOnly && <button type="button" onClick={onSave} disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            <Save className="h-3.5 w-3.5" /> {saving ? 'Saving…' : data?.case ? 'Save draft' : 'Create draft'}
+          </button>}
+        </div>
+      </section>
     </div>
   );
 }
@@ -643,6 +803,19 @@ export default function DesignBookLSSDetail() {
     queryFn: () => api.get(`/systems/${systemId}/fractionator-products`).then(r => r.data.items),
     enabled: !!systemId,
   });
+  const { data: biologicalMedia = null, isError: biologicalMediaIsError, error: biologicalMediaQueryError } = useQuery({
+    queryKey: ['biological-media', systemId, bookId],
+    queryFn: () => api.get(`/systems/${systemId}/biological-media`, { params: { design_book_id: bookId } }).then(r => r.data),
+    enabled: !!systemId && !!bookId,
+  });
+  const { data: mediaProfileData = { items: [] } } = useQuery({
+    queryKey: ['biological-media-profiles'],
+    queryFn: () => api.get('/biological-media/media-profiles').then(r => r.data),
+  });
+  const { data: tanProfileData = { items: [] } } = useQuery({
+    queryKey: ['tan-generation-profiles'],
+    queryFn: () => api.get('/biological-media/tan-profiles').then(r => r.data),
+  });
   const usesFrozenPackage = !!book && !['Draft', 'In Progress'].includes(book.status);
   const system = usesFrozenPackage
     ? (book.systems || []).find((item: any) => item.id === systemId)
@@ -680,6 +853,13 @@ export default function DesignBookLSSDetail() {
   const [showConfigReset, setShowConfigReset] = useState(false);
   const [configResetSaving, setConfigResetSaving] = useState(false);
   const [configResetError, setConfigResetError] = useState<string | null>(null);
+  const [biologicalMediaForm, setBiologicalMediaForm] = useState({
+    reactor_type: '',
+    media_profile_revision_id: '',
+    tan_generation_profile_revision_id: '',
+    notes: '',
+  });
+  const [biologicalMediaSaving, setBiologicalMediaSaving] = useState(false);
 
   // Flow Route edit state
   const [flowEditMode, setFlowEditMode] = useState(false);
@@ -690,6 +870,33 @@ export default function DesignBookLSSDetail() {
     ...(f || createFlowDraft(systemRef.current)),
     [k]: v,
   }));
+  useEffect(() => {
+    const draft = biologicalMedia?.case;
+    setBiologicalMediaForm({
+      reactor_type: draft?.reactor_type || '',
+      media_profile_revision_id: draft?.media_profile_revision_id || '',
+      tan_generation_profile_revision_id: draft?.tan_generation_profile_revision_id || '',
+      notes: draft?.notes || '',
+    });
+  }, [biologicalMedia?.case?.id, biologicalMedia?.case?.updated_at]);
+
+  const saveBiologicalMedia = async () => {
+    setBiologicalMediaSaving(true);
+    try {
+      await api.put(`/systems/${systemId}/biological-media`, {
+        design_book_id: bookId,
+        ...biologicalMediaForm,
+        media_profile_revision_id: biologicalMediaForm.media_profile_revision_id || null,
+        tan_generation_profile_revision_id: biologicalMediaForm.tan_generation_profile_revision_id || null,
+      });
+      toast.success('Biological Media draft saved');
+      qc.invalidateQueries({ queryKey: ['biological-media', systemId, bookId] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to save Biological Media draft');
+    } finally {
+      setBiologicalMediaSaving(false);
+    }
+  };
   const setFlowSideStreams = (update: (streams: any[]) => any[]) => {
     setFlowForm((draft: any) => ({
       ...(draft || createFlowDraft(systemRef.current)),
@@ -3248,6 +3455,28 @@ export default function DesignBookLSSDetail() {
           </div>
         );
       })()}
+
+      <div
+        id="lss-panel-biological-media"
+        role="tabpanel"
+        aria-labelledby="lss-tab-biological-media"
+        tabIndex={0}
+        hidden={activeTab !== 'biological-media'}
+      >
+        <BiologicalMediaPanel
+          data={biologicalMedia}
+          mediaProfiles={mediaProfileData?.items || []}
+          tanProfiles={tanProfileData?.items || []}
+          readOnly={readOnly}
+          form={biologicalMediaForm}
+          onChange={(key, value) => setBiologicalMediaForm(current => ({ ...current, [key]: value }))}
+          onSave={saveBiologicalMedia}
+          saving={biologicalMediaSaving}
+          error={biologicalMediaIsError
+            ? ((biologicalMediaQueryError as any)?.response?.data?.error?.message || 'Check the selected Design Book and system.')
+            : null}
+        />
+      </div>
 
       <div
         id="lss-panel-uv"

@@ -22,6 +22,7 @@ import notificationRoutes from './routes/notifications';
 import designBookRoutes from './routes/designBooks';
 import lssCompactUnitRoutes from './routes/lssCompactUnits';
 import speciesCatalogRoutes from './routes/speciesCatalog';
+import biologicalMediaRoutes from './routes/biologicalMedia';
 import { errorHandler, notFound } from './middleware/errors';
 
 const app = express();
@@ -53,6 +54,7 @@ app.use('/api/v1', notificationRoutes);
 app.use('/api/v1', designBookRoutes);
 app.use('/api/v1', lssCompactUnitRoutes);
 app.use('/api/v1', speciesCatalogRoutes);
+app.use('/api/v1', biologicalMediaRoutes);
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 

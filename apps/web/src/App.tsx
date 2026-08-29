@@ -36,6 +36,7 @@ import AdminSystemTypes from './pages/admin/AdminSystemTypes';
 import AdminAuditLog from './pages/admin/AdminAuditLog';
 import AdminPOStageRoles from './pages/admin/AdminPOStageRoles';
 import AdminTankCostRates from './pages/admin/AdminTankCostRates';
+import AdminBiologicalMediaProfiles from './pages/admin/AdminBiologicalMediaProfiles';
 import PurchaseOrdersList from './pages/procurement/PurchaseOrdersList';
 import PurchaseOrderDetail from './pages/procurement/PurchaseOrderDetail';
 import PIMDashboard from './pages/pim/PIMDashboard';
@@ -110,6 +111,7 @@ export default function App() {
             <Route path="admin/audit-log" element={<AdminAuditLog />} />
             <Route path="admin/po-stage-roles" element={<AdminPOStageRoles />} />
             <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
+            <Route path="admin/biological-media-profiles" element={<AdminBiologicalMediaProfiles />} />
             <Route path="purchase-orders" element={<ModuleGuard moduleKey="orders"><PurchaseOrdersList /></ModuleGuard>} />
             <Route path="purchase-orders/:id" element={<ModuleGuard moduleKey="orders"><PurchaseOrderDetail /></ModuleGuard>} />
             <Route path="design-book-engine" element={<ModuleGuard moduleKey="design_books"><DesignBookEngineDashboard /></ModuleGuard>} />

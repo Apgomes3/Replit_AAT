@@ -1209,6 +1209,130 @@ CREATE TABLE IF NOT EXISTS system_flow_fractionator_allocations (
 CREATE INDEX IF NOT EXISTS idx_system_flow_fractionators_parent
   ON system_flow_fractionator_allocations(system_id, parent_loop_number);
 
+-- BIOLOGICAL MEDIA FOUNDATION
+-- Profiles are revision records: approved values are immutable and any later
+-- change must be represented by a new revision.
+CREATE TABLE IF NOT EXISTS lss_biological_media_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_code VARCHAR(80) NOT NULL,
+  profile_name VARCHAR(255) NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  water_types TEXT[] NOT NULL DEFAULT '{}',
+  reactor_types TEXT[] NOT NULL DEFAULT '{}',
+  capacity_model VARCHAR(120),
+  capacity_model_version VARCHAR(80),
+  capacity_basis_unit VARCHAR(80),
+  operating_min_temperature_c NUMERIC,
+  operating_max_temperature_c NUMERIC,
+  operating_min_salinity_ppt NUMERIC,
+  operating_max_salinity_ppt NUMERIC,
+  media_min_depth_mm NUMERIC,
+  media_max_depth_mm NUMERIC,
+  media_void_fraction NUMERIC,
+  media_bulk_density_kg_m3 NUMERIC,
+  evidence_reference TEXT,
+  is_provisional BOOLEAN NOT NULL DEFAULT false,
+  provisional_label TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'In Review', 'Approved', 'Retired')),
+  notes TEXT,
+  supersedes_id UUID REFERENCES lss_biological_media_profiles(id),
+  created_by UUID REFERENCES users(id),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  retired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(profile_code, revision),
+  CHECK (operating_min_temperature_c IS NULL OR operating_max_temperature_c IS NULL
+    OR operating_min_temperature_c <= operating_max_temperature_c),
+  CHECK (operating_min_salinity_ppt IS NULL OR operating_max_salinity_ppt IS NULL
+    OR operating_min_salinity_ppt <= operating_max_salinity_ppt),
+  CHECK (media_min_depth_mm IS NULL OR media_max_depth_mm IS NULL
+    OR media_min_depth_mm <= media_max_depth_mm),
+  CHECK (media_void_fraction IS NULL OR (media_void_fraction >= 0 AND media_void_fraction <= 1))
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_profiles_code
+  ON lss_biological_media_profiles(profile_code, revision DESC);
+
+CREATE TABLE IF NOT EXISTS lss_tan_generation_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_code VARCHAR(80) NOT NULL,
+  profile_name VARCHAR(255) NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  coefficient NUMERIC NOT NULL,
+  coefficient_unit VARCHAR(120) NOT NULL,
+  scope_type VARCHAR(80) NOT NULL,
+  scope_unit VARCHAR(80),
+  scope_min NUMERIC,
+  scope_max NUMERIC,
+  evidence_reference TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'In Review', 'Approved', 'Retired')),
+  notes TEXT,
+  supersedes_id UUID REFERENCES lss_tan_generation_profiles(id),
+  created_by UUID REFERENCES users(id),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  retired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(profile_code, revision),
+  CHECK (coefficient > 0),
+  CHECK (scope_min IS NULL OR scope_max IS NULL OR scope_min <= scope_max)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_tan_profiles_code
+  ON lss_tan_generation_profiles(profile_code, revision DESC);
+
+CREATE TABLE IF NOT EXISTS lss_biological_media_cases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  reactor_type VARCHAR(120),
+  media_profile_revision_id UUID REFERENCES lss_biological_media_profiles(id),
+  tan_generation_profile_revision_id UUID REFERENCES lss_tan_generation_profiles(id),
+  status VARCHAR(20) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'Incomplete', 'Blocked')),
+  notes TEXT,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(system_id, design_book_id)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_cases_system
+  ON lss_biological_media_cases(system_id, design_book_id);
+
+CREATE OR REPLACE FUNCTION prevent_approved_biological_media_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF OLD.status = 'Approved' THEN
+    IF TG_OP = 'DELETE'
+       OR NEW.status NOT IN ('Approved', 'Retired')
+       OR (to_jsonb(OLD) - 'status' - 'updated_at' - 'retired_at'
+           IS DISTINCT FROM to_jsonb(NEW) - 'status' - 'updated_at' - 'retired_at') THEN
+      RAISE EXCEPTION 'Approved biological media profiles are immutable; create a new revision'
+        USING ERRCODE = '55000';
+    END IF;
+  ELSIF OLD.status = 'Retired' AND TG_OP = 'UPDATE' THEN
+    RAISE EXCEPTION 'Retired biological media profiles are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS guard_approved_lss_biological_media_profiles
+  ON lss_biological_media_profiles;
+CREATE TRIGGER guard_approved_lss_biological_media_profiles
+BEFORE UPDATE OR DELETE ON lss_biological_media_profiles
+FOR EACH ROW EXECUTE FUNCTION prevent_approved_biological_media_mutation();
+
+DROP TRIGGER IF EXISTS guard_approved_lss_tan_profiles
+  ON lss_tan_generation_profiles;
+CREATE TRIGGER guard_approved_lss_tan_profiles
+BEFORE UPDATE OR DELETE ON lss_tan_generation_profiles
+FOR EACH ROW EXECUTE FUNCTION prevent_approved_biological_media_mutation();
+
 -- PROCUREMENT FIELDS: vendor, delivery date, payment/shipping terms, priority, UOM
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS required_by_date DATE;
