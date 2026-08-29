@@ -1357,6 +1357,117 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_species (
 CREATE INDEX IF NOT EXISTS idx_lss_bio_media_species_case
   ON lss_biological_media_species(case_id, sort_order);
 
+-- Biological Media calculation runs are immutable evidence snapshots. Review
+-- metadata is deliberately kept on the run so the current draft and profile
+-- revisions can never change the result that was reviewed.
+CREATE TABLE IF NOT EXISTS lss_biological_media_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES lss_biological_media_cases(id),
+  system_id UUID NOT NULL REFERENCES systems(id),
+  design_book_id UUID NOT NULL REFERENCES design_books(id),
+  run_number INTEGER NOT NULL CHECK (run_number > 0),
+  status VARCHAR(30) NOT NULL DEFAULT 'Pending Review'
+    CHECK (status IN ('Pending Review', 'Approved', 'Rejected', 'Blocked')),
+  calculation_status VARCHAR(30) NOT NULL
+    CHECK (calculation_status IN ('VALID', 'VALID_WITH_WARNINGS', 'BLOCKED')),
+  warning_acknowledged BOOLEAN NOT NULL DEFAULT false,
+  warning_acknowledged_by UUID REFERENCES users(id),
+  warning_acknowledged_at TIMESTAMPTZ,
+  rejection_reason TEXT,
+  review_notes TEXT,
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  normalized_input_snapshot JSONB NOT NULL,
+  linked_volume_context_snapshot JSONB NOT NULL,
+  species_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+  feeding_snapshot JSONB NOT NULL,
+  media_profile_snapshot JSONB NOT NULL,
+  tan_profile_snapshot JSONB NOT NULL,
+  engine_version VARCHAR(80) NOT NULL,
+  assumptions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+  result_snapshot JSONB NOT NULL,
+  overrides_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+  author_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_by UUID REFERENCES users(id),
+  executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(case_id, run_number),
+  CHECK (jsonb_typeof(normalized_input_snapshot) = 'object'),
+  CHECK (jsonb_typeof(linked_volume_context_snapshot) = 'object'),
+  CHECK (jsonb_typeof(species_snapshot) = 'array'),
+  CHECK (jsonb_typeof(messages) = 'array'),
+  CHECK (jsonb_typeof(result_snapshot) = 'object')
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_runs_case
+  ON lss_biological_media_runs(case_id, run_number DESC);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_runs_system
+  ON lss_biological_media_runs(system_id, design_book_id, run_number DESC);
+
+CREATE TABLE IF NOT EXISTS lss_biological_media_run_audit (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id UUID NOT NULL REFERENCES lss_biological_media_runs(id),
+  action VARCHAR(40) NOT NULL,
+  actor_id UUID REFERENCES users(id),
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_run_audit_run
+  ON lss_biological_media_run_audit(run_id, created_at);
+
+CREATE OR REPLACE FUNCTION prevent_biological_media_run_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Biological Media calculation runs are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF OLD.status = 'Approved' THEN
+    RAISE EXCEPTION 'Approved Biological Media calculation runs are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF NEW.status NOT IN ('Pending Review', 'Approved', 'Rejected', 'Blocked')
+     OR (OLD.status = 'Rejected' AND NEW.status <> 'Rejected')
+     OR (OLD.status = 'Blocked' AND NEW.status <> 'Blocked')
+     OR (OLD.status = 'Pending Review' AND NEW.status NOT IN ('Pending Review', 'Approved', 'Rejected')) THEN
+    RAISE EXCEPTION 'Invalid Biological Media calculation run transition'
+      USING ERRCODE = '55000';
+  END IF;
+  IF (to_jsonb(OLD) - 'status' - 'warning_acknowledged'
+      - 'warning_acknowledged_by' - 'warning_acknowledged_at'
+      - 'rejection_reason' - 'review_notes' - 'approved_by' - 'approved_at'
+      - 'updated_at')
+     IS DISTINCT FROM
+     (to_jsonb(NEW) - 'status' - 'warning_acknowledged'
+      - 'warning_acknowledged_by' - 'warning_acknowledged_at'
+      - 'rejection_reason' - 'review_notes' - 'approved_by' - 'approved_at'
+      - 'updated_at') THEN
+    RAISE EXCEPTION 'Biological Media calculation run evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS guard_biological_media_runs ON lss_biological_media_runs;
+CREATE TRIGGER guard_biological_media_runs
+BEFORE UPDATE OR DELETE ON lss_biological_media_runs
+FOR EACH ROW EXECUTE FUNCTION prevent_biological_media_run_mutation();
+
+CREATE OR REPLACE FUNCTION prevent_biological_media_run_audit_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Biological Media run audit records are append-only'
+    USING ERRCODE = '55000';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS guard_biological_media_run_audit ON lss_biological_media_run_audit;
+CREATE TRIGGER guard_biological_media_run_audit
+BEFORE UPDATE OR DELETE ON lss_biological_media_run_audit
+FOR EACH ROW EXECUTE FUNCTION prevent_biological_media_run_audit_mutation();
+
 CREATE OR REPLACE FUNCTION prevent_approved_biological_media_mutation()
 RETURNS TRIGGER AS $$
 BEGIN

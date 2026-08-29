@@ -25,6 +25,7 @@ function readyContext(): DesignBookReleaseContext {
     }],
     systems: [{
       id: 'system-1',
+      water_type: 'Freshwater',
       system_config: 'bespoke',
       system_type: 'Life Support',
       status: 'Design',
@@ -37,7 +38,7 @@ function readyContext(): DesignBookReleaseContext {
       loop1_bio_degas_m3h: 120,
     }],
     engineering_calculations: {
-      exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' } }],
+      exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' }, results: { operating_volume_m3: 42.125 } }],
       systems: [{ status: 'valid', inputs: { system_id: 'system-1' } }],
     },
   };
@@ -166,6 +167,45 @@ describe('Design Book release policy', () => {
     });
     expect(checklist.find(check => check.key === 'flow_route_allocations')?.message).toMatch(/0%/);
     expect(checklist.find(check => check.key === 'bio_degas_allocations')?.message).toMatch(/intentional/);
+  });
+
+  it('blocks release until every Biological Media case has a current approved run', () => {
+    const context = readyContext();
+    context.system_links = [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }];
+    const inputSnapshot = { biomass: { water_volume_m3: 42.125 }, water: { water_type: 'FRESHWATER' } };
+    context.biological_media_cases = [{
+      id: 'case-1',
+      system_id: 'system-1',
+      preview_stale: false,
+      preview_input_snapshot: inputSnapshot,
+    }];
+    context.biological_media_runs = [{
+      id: 'run-1',
+      case_id: 'case-1',
+      run_number: 1,
+      status: 'Pending Review',
+      normalized_input_snapshot: inputSnapshot,
+      linked_volume_context_snapshot: {
+        total_operating_volume_m3: 42.125,
+        system_water_type: 'Freshwater',
+      },
+      overrides_snapshot: [],
+    }];
+
+    expect(buildDesignBookReleaseChecklist(context).find(check => check.key === 'biological_media_runs')).toMatchObject({
+      status: 'blocked',
+      affected_ids: ['system-1'],
+    });
+
+    context.biological_media_runs[0].status = 'Approved';
+    expect(buildDesignBookReleaseChecklist(context).find(check => check.key === 'biological_media_runs')?.status).toBe('pass');
+
+    context.biological_media_cases[0].preview_stale = true;
+    expect(buildDesignBookReleaseChecklist(context).find(check => check.key === 'biological_media_runs')?.status).toBe('blocked');
+
+    context.biological_media_cases[0].preview_stale = false;
+    context.engineering_calculations!.exhibits![0].results.operating_volume_m3 = 43;
+    expect(buildDesignBookReleaseChecklist(context).find(check => check.key === 'biological_media_runs')?.status).toBe('blocked');
   });
 
   it('never allows release while any blocker remains', () => {

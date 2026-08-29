@@ -202,6 +202,7 @@ async function loadReleaseContext(
 
   let links: any[] = [];
   let biologicalMediaCases: any[] = [];
+  let biologicalMediaRuns: any[] = [];
   if (systems.length) {
     const linksResult = await runner(
       'SELECT sel.*, e.exhibit_code FROM system_exhibit_links sel LEFT JOIN exhibits e ON e.id=sel.exhibit_id WHERE sel.system_id = ANY($1::uuid[])',
@@ -229,6 +230,16 @@ async function loadReleaseContext(
         ...item,
         species_rows: biologicalSpecies.filter(row => row.case_id === item.id),
       }));
+      biologicalMediaRuns = (await runner(
+        `SELECT r.*, u.first_name || ' ' || u.last_name AS created_by_name,
+                au.first_name || ' ' || au.last_name AS approved_by_name
+         FROM lss_biological_media_runs r
+         LEFT JOIN users u ON u.id=r.created_by
+         LEFT JOIN users au ON au.id=r.approved_by
+         WHERE r.case_id = ANY($1::uuid[])
+         ORDER BY r.case_id, r.run_number DESC`,
+        [biologicalMediaCases.map(item => item.id)],
+      )).rows;
     }
   }
   const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
@@ -266,6 +277,7 @@ async function loadReleaseContext(
     substrate,
     review_handovers: handovers,
     biological_media_cases: biologicalMediaCases,
+    biological_media_runs: biologicalMediaRuns,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculatedAt,

@@ -321,6 +321,74 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
   });
 
+  it('shows immutable run status, warning approval controls, history, comparison, and export', async () => {
+    const run = {
+      id: 'run-2',
+      run_number: 2,
+      status: 'Pending Review',
+      calculation_status: 'VALID_WITH_WARNINGS',
+      warning_acknowledged: false,
+      is_stale: false,
+      executed_at: '2026-08-29T09:00:00.000Z',
+      engine_version: 'BIOFILTER_1_0',
+      media_profile_snapshot: { profile_code: 'MEDIA-01', revision: 4 },
+      result_snapshot: { media: { installed_media_l: 1200 } },
+      messages: [{ code: 'MEDIA_W01', severity: 'WARNING', message: 'Minimum installed.' }],
+    };
+    renderFlowRoute(
+      baseSystem,
+      bookWithLinkedExhibits,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=biological-media',
+      {
+        case: {
+          id: 'case-1',
+          reactor_type: 'Moving bed biofilter',
+          biomass_method: 'VOLUME_DENSITY',
+          stocking_density_kg_m3: 10,
+          previewed_at: '2026-08-29T08:55:00.000Z',
+        },
+        preview: {
+          status: 'VALID_WITH_WARNINGS',
+          status_label: 'Valid with Warnings',
+          is_stale: false,
+          engine_version: 'BIOFILTER_1_0',
+          media: { installed_media_l: 1200 },
+          assumptions: [],
+          messages: [],
+        },
+        readiness_status: 'Valid with Warnings',
+        input_completeness: { complete: true, missing: [] },
+        context: { status: 'ready', total_operating_volume_m3: 42.125, linked_exhibits: [] },
+        latest_run: run,
+        runs: [
+          run,
+          {
+            ...run,
+            id: 'run-1',
+            run_number: 1,
+            status: 'Approved',
+            calculation_status: 'VALID',
+            approved_by_name: 'Approval Engineer',
+            media_profile_snapshot: { profile_code: 'MEDIA-01', revision: 3 },
+            result_snapshot: { media: { installed_media_l: 1000 } },
+          },
+        ],
+      },
+    );
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    expect(screen.getByText('Run 2', { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.getAllByText('MEDIA-01 r4', { exact: false })).toHaveLength(2);
+    expect(screen.getByRole('checkbox', { name: /reviewed the warnings/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve frozen run' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export immutable summary' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Run history and comparison' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compare runs' })).toBeInTheDocument();
+    expect(screen.getByText(/Approval Engineer/)).toBeInTheDocument();
+  });
+
   it('opens the selected linked exhibit from the table without changing neighboring controls', async () => {
     const user = userEvent.setup();
     const secondaryLink = {

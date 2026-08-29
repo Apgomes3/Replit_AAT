@@ -1,7 +1,13 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest';
-import { isBiologicalMediaPreviewStale, validateMediaProfile, validateTanProfile } from './biologicalMedia';
+import {
+  compareBiologicalMediaRuns,
+  isBiologicalMediaPreviewStale,
+  renderBiologicalMediaRunSummary,
+  validateMediaProfile,
+  validateTanProfile,
+} from './biologicalMedia';
 
 const completeMediaProfile = {
   profile_code: 'MEDIA-01',
@@ -102,5 +108,76 @@ describe('Biological Media preview freshness', () => {
       total_operating_volume_m3: 42.125,
       system_water_type: 'Marine',
     })).toBe(true);
+  });
+});
+
+describe('Biological Media immutable run presentation', () => {
+  const run = {
+    id: 'run-1',
+    run_number: 3,
+    status: 'Approved',
+    calculation_status: 'VALID_WITH_WARNINGS',
+    executed_at: '2026-08-29T09:00:00.000Z',
+    engine_version: 'BIOFILTER_1_0',
+    created_by_name: 'Design Engineer',
+    warning_acknowledged: true,
+    approved_by_name: 'Approval Engineer',
+    approved_at: '2026-08-29T09:30:00.000Z',
+    review_notes: 'Warnings reviewed.',
+    linked_volume_context_snapshot: {
+      total_operating_volume_m3: 42.125,
+      system_water_type: 'Freshwater',
+    },
+    media_profile_snapshot: {
+      profile_code: 'MEDIA-01',
+      revision: 4,
+      evidence_reference: 'MEDIA-EVIDENCE-R4',
+    },
+    tan_profile_snapshot: {
+      profile_code: 'TAN-01',
+      revision: 2,
+      evidence_reference: 'TAN-EVIDENCE-R2',
+    },
+    normalized_input_snapshot: { filter: { safety_factor: 1.2 } },
+    result_snapshot: {
+      biomass: { design_biomass_kg: 420 },
+      feeding: { total_feed_kg_d: 8.4, tan_load_g_n_d: 100 },
+      media: { required_media_l: 1100, installed_media_l: 1200 },
+    },
+    assumptions: ['TAN nitrogen remains the sizing mass basis.'],
+    messages: [{ code: 'MEDIA_W01', severity: 'WARNING', message: 'Minimum module installed.' }],
+    overrides_snapshot: [],
+  };
+
+  it('exports only frozen profile evidence, results, warnings, engine, and approval metadata', () => {
+    const summary = renderBiologicalMediaRunSummary(run);
+    expect(summary).toContain('MEDIA-01 r4');
+    expect(summary).toContain('MEDIA-EVIDENCE-R4');
+    expect(summary).toContain('BIOFILTER_1_0');
+    expect(summary).toContain('Installed media: 1200 L');
+    expect(summary).toContain('WARNING MEDIA_W01');
+    expect(summary).toContain('Approval Engineer');
+  });
+
+  it('compares frozen inputs, profile revisions, outputs, warnings, and approval state', () => {
+    const comparison = compareBiologicalMediaRuns(run, {
+      ...run,
+      id: 'run-2',
+      run_number: 4,
+      status: 'Pending Review',
+      media_profile_snapshot: { ...run.media_profile_snapshot, revision: 5 },
+      normalized_input_snapshot: { filter: { safety_factor: 1.4 } },
+      result_snapshot: { ...run.result_snapshot, media: { required_media_l: 1300, installed_media_l: 1400 } },
+      messages: [],
+    });
+    expect(comparison.changes.inputs).toHaveLength(1);
+    expect(comparison.changes.media_profile).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'revision', before: 4, after: 5 }),
+    ]));
+    expect(comparison.changes.results).toHaveLength(1);
+    expect(comparison.changes.warnings).toHaveLength(1);
+    expect(comparison.changes.approval).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'status', before: 'Approved', after: 'Pending Review' }),
+    ]));
   });
 });

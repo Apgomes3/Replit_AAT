@@ -9,7 +9,7 @@ import {
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
   Droplets, ArrowLeft, Route, FlaskConical, Wind,
   Layers, Package, ExternalLink, Zap, Weight, Maximize2, LockKeyhole,
-  MoreHorizontal,
+  MoreHorizontal, FileDown, GitCompare,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -223,7 +223,8 @@ const bioFormat = (value: any, decimals = 4) => value == null || !Number.isFinit
 
 function BiologicalMediaCalculatorPanel({
   data, mediaProfiles, tanProfiles, speciesCatalog, readOnly, form, onChange,
-  onSave, onPreview, saving, previewing, error,
+  onSave, onPreview, onCreateRun, onApproveRun, onRejectRun, onExportRun,
+  onCompareRuns, saving, previewing, runBusy, comparison, error,
 }: any) {
   const context = data?.context;
   const preview = data?.preview;
@@ -240,6 +241,14 @@ function BiologicalMediaCalculatorPanel({
   };
   const set = (key: string, value: any) => onChange(key, value);
   const rows = form.species_rows || [];
+  const runs = data?.runs || [];
+  const latestRun = data?.latest_run || runs[0] || null;
+  const latestRunStale = Boolean(latestRun && (latestRun.is_stale || form._stale));
+  const [warningAcknowledged, setWarningAcknowledged] = useState(false);
+  const [warningAcknowledgement, setWarningAcknowledgement] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [compareLeft, setCompareLeft] = useState('');
+  const [compareRight, setCompareRight] = useState('');
   const setRows = (next: any[]) => set('species_rows', next);
   const selectedProfile = approvedMedia.find((profile: any) => profile.id === form.media_profile_revision_id);
   const calculatedBiomass = form.biomass_method === 'VOLUME_DENSITY'
@@ -285,6 +294,79 @@ function BiologicalMediaCalculatorPanel({
         </div>
       </div>
     </div>
+
+    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+        <div>
+          <h2 className="text-sm font-semibold text-stone-700">Current calculation run</h2>
+          <p className="mt-0.5 text-xs text-stone-400">Approval authorizes this frozen evidence snapshot; it never recalculates the result.</p>
+        </div>
+        {!readOnly && preview && !stale && preview.status !== 'BLOCKED' &&
+          <button type="button" onClick={onCreateRun} disabled={runBusy}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+            <LockKeyhole className="h-3.5 w-3.5" />{runBusy === 'create' ? 'Creating run…' : 'Create frozen run'}
+          </button>}
+      </div>
+      <div className="p-5">
+        {!latestRun ? <div className="rounded-lg border border-dashed border-stone-200 px-4 py-6 text-center">
+          <p className="text-sm font-medium text-stone-600">No calculation run has been created.</p>
+          <p className="mt-1 text-xs text-stone-400">Save and calculate a current, unblocked preview before freezing a reviewable run.</p>
+        </div> : <div className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <strong className="text-sm text-stone-800">Run {latestRun.run_number}</strong>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  latestRun.status === 'Approved' ? 'bg-emerald-100 text-emerald-800'
+                    : latestRun.status === 'Rejected' ? 'bg-red-100 text-red-800'
+                      : 'bg-blue-100 text-blue-800'
+                }`}>{latestRun.status}</span>
+                <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-600">{latestRun.calculation_status?.replaceAll('_', ' ')}</span>
+                {latestRunStale && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Draft changed — run is historical</span>}
+              </div>
+              <p className="mt-1 text-xs text-stone-500">
+                {latestRun.media_profile_snapshot?.profile_code || 'Media profile'} r{latestRun.media_profile_snapshot?.revision ?? '—'}
+                {' · '}{latestRun.engine_version}{' · '}
+                {latestRun.executed_at ? new Date(latestRun.executed_at).toLocaleString() : 'Execution time unavailable'}
+              </p>
+            </div>
+            <button type="button" onClick={() => onExportRun(latestRun)} disabled={runBusy === latestRun.id}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50">
+              <FileDown className="h-3.5 w-3.5" />Export immutable summary
+            </button>
+          </div>
+          {latestRun.status === 'Pending Review' && !readOnly && <div className="rounded-xl border border-stone-200 bg-stone-50/60 p-4">
+            {latestRun.calculation_status === 'VALID_WITH_WARNINGS' && !latestRun.warning_acknowledged && <>
+              <label className="flex items-start gap-2 text-xs font-medium text-amber-800">
+                <input type="checkbox" checked={warningAcknowledged} onChange={event => setWarningAcknowledged(event.target.checked)} />
+                I reviewed the warnings frozen in this run and acknowledge them for engineering approval.
+              </label>
+              <textarea aria-label="Warning acknowledgement" rows={2} value={warningAcknowledgement}
+                onChange={event => setWarningAcknowledgement(event.target.value)}
+                className={`${bioInputClass} mt-2`} placeholder="Record the warning review and acceptance basis…" />
+            </>}
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <button type="button" disabled={Boolean(runBusy)
+                || (latestRun.calculation_status === 'VALID_WITH_WARNINGS'
+                  && !latestRun.warning_acknowledged && (!warningAcknowledged || !warningAcknowledgement.trim()))}
+                onClick={() => onApproveRun(latestRun, warningAcknowledged, warningAcknowledgement)}
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                Approve frozen run
+              </button>
+              <label className="min-w-[16rem] flex-1 text-xs text-stone-500">Rejection reason
+                <input value={rejectionReason} onChange={event => setRejectionReason(event.target.value)}
+                  className={bioInputClass} placeholder="Required to reject" />
+              </label>
+              <button type="button" disabled={Boolean(runBusy) || !rejectionReason.trim()}
+                onClick={() => onRejectRun(latestRun, rejectionReason)}
+                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50">
+                Reject run
+              </button>
+            </div>
+          </div>}
+        </div>}
+      </div>
+    </section>
 
     <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
@@ -398,6 +480,39 @@ function BiologicalMediaCalculatorPanel({
           ['Nitrate molecular mass', preview.nitrification?.nitrate_g_d, 'g NO₃/day'],
         ].map(([label, value, unit]) => <div key={label as string} className="rounded-lg border border-stone-100 p-3"><span className="text-xs text-stone-400">{label}</span><strong className="mt-1 block font-mono text-stone-800">{bioFormat(value, 5)} {unit}</strong></div>)}</div>
         <div><h3 className="text-xs font-semibold uppercase tracking-wide text-stone-400">Assumptions</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-stone-500">{(preview.assumptions || []).map((assumption: string) => <li key={assumption}>{assumption}</li>)}</ul></div>
+      </div>}
+    </section>}
+
+    {runs.length > 0 && <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-stone-700">Run history and comparison</h2>
+        <p className="mt-0.5 text-xs text-stone-400">Every row is an immutable calculation snapshot, including its original profiles, warnings, overrides, and approval evidence.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-400"><tr><th className="px-4 py-2">Run</th><th className="px-4 py-2">Executed</th><th className="px-4 py-2">Profile</th><th className="px-4 py-2">Result</th><th className="px-4 py-2">Approval</th><th className="px-4 py-2 text-right">Evidence</th></tr></thead>
+          <tbody className="divide-y divide-stone-100">{runs.map((run: any) => <tr key={run.id}>
+            <td className="px-4 py-3 font-semibold text-stone-700">Run {run.run_number}{run.is_stale ? <span className="ml-2 text-[10px] text-amber-700">Historical</span> : null}</td>
+            <td className="px-4 py-3 text-stone-500">{run.executed_at ? new Date(run.executed_at).toLocaleString() : '—'}</td>
+            <td className="px-4 py-3 text-stone-500">{run.media_profile_snapshot?.profile_code || '—'} r{run.media_profile_snapshot?.revision ?? '—'}</td>
+            <td className="px-4 py-3 font-mono text-stone-700">{bioFormat(run.result_snapshot?.media?.installed_media_l, 1)} L</td>
+            <td className="px-4 py-3 text-stone-600">{run.status}{run.approved_by_name ? ` · ${run.approved_by_name}` : ''}</td>
+            <td className="px-4 py-3 text-right"><button type="button" onClick={() => onExportRun(run)} className="font-semibold text-blue-600 hover:text-blue-800">Export</button></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {runs.length > 1 && <div className="space-y-3 border-t border-stone-100 p-5">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-medium text-stone-500">Earlier run<select className={bioInputClass} value={compareLeft} onChange={event => setCompareLeft(event.target.value)}><option value="">Select run</option>{runs.map((run: any) => <option key={run.id} value={run.id}>Run {run.run_number}</option>)}</select></label>
+          <label className="text-xs font-medium text-stone-500">Later run<select className={bioInputClass} value={compareRight} onChange={event => setCompareRight(event.target.value)}><option value="">Select run</option>{runs.map((run: any) => <option key={run.id} value={run.id}>Run {run.run_number}</option>)}</select></label>
+          <button type="button" onClick={() => onCompareRuns(compareLeft, compareRight)}
+            disabled={!compareLeft || !compareRight || compareLeft === compareRight || runBusy === 'compare'}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-semibold text-stone-700 disabled:opacity-50">
+            <GitCompare className="h-3.5 w-3.5" />Compare runs
+          </button>
+        </div>
+        {comparison && <div className="grid gap-2 md:grid-cols-4">{Object.entries(comparison.changes || {}).map(([section, changes]: any) =>
+          <div key={section} className="rounded-lg bg-stone-50 p-3"><span className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{section.replaceAll('_', ' ')}</span><strong className="mt-1 block text-sm text-stone-700">{changes.length} changed field{changes.length === 1 ? '' : 's'}</strong></div>)}</div>}
       </div>}
     </section>}
   </div>;
@@ -1114,6 +1229,8 @@ export default function DesignBookLSSDetail() {
     }
   };
   const [biologicalMediaPreviewing, setBiologicalMediaPreviewing] = useState(false);
+  const [biologicalMediaRunBusy, setBiologicalMediaRunBusy] = useState<string | null>(null);
+  const [biologicalMediaComparison, setBiologicalMediaComparison] = useState<any>(null);
   const previewBiologicalMedia = async () => {
     setBiologicalMediaPreviewing(true);
     try {
@@ -1147,6 +1264,88 @@ export default function DesignBookLSSDetail() {
       toast.error(response?.error?.message || 'Biological Media preview could not be calculated');
     } finally {
       setBiologicalMediaPreviewing(false);
+    }
+  };
+  const refreshBiologicalMedia = () =>
+    qc.invalidateQueries({ queryKey: ['biological-media', systemId, bookId] });
+  const createBiologicalMediaRun = async () => {
+    setBiologicalMediaRunBusy('create');
+    try {
+      await api.post(`/systems/${systemId}/biological-media/runs`, {
+        design_book_id: bookId,
+        previewed_at: biologicalMedia?.case?.previewed_at,
+      });
+      toast.success('Frozen Biological Media run created for review');
+      await refreshBiologicalMedia();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Biological Media run could not be created');
+    } finally {
+      setBiologicalMediaRunBusy(null);
+    }
+  };
+  const approveBiologicalMediaRun = async (run: any, acknowledgeWarnings: boolean, warningAcknowledgement: string) => {
+    setBiologicalMediaRunBusy(run.id);
+    try {
+      await api.post(`/systems/${systemId}/biological-media/runs/${run.id}/approve`, {
+        design_book_id: bookId,
+        acknowledge_warnings: acknowledgeWarnings,
+        warning_acknowledgement: warningAcknowledgement || null,
+      });
+      toast.success(`Biological Media run ${run.run_number} approved`);
+      await refreshBiologicalMedia();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Run approval failed');
+    } finally {
+      setBiologicalMediaRunBusy(null);
+    }
+  };
+  const rejectBiologicalMediaRun = async (run: any, reason: string) => {
+    setBiologicalMediaRunBusy(run.id);
+    try {
+      await api.post(`/systems/${systemId}/biological-media/runs/${run.id}/reject`, {
+        design_book_id: bookId,
+        reason,
+      });
+      toast.success(`Biological Media run ${run.run_number} rejected`);
+      await refreshBiologicalMedia();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Run rejection failed');
+    } finally {
+      setBiologicalMediaRunBusy(null);
+    }
+  };
+  const exportBiologicalMediaRun = async (run: any) => {
+    setBiologicalMediaRunBusy(run.id);
+    try {
+      const response = await api.get(`/systems/${systemId}/biological-media/runs/${run.id}/export`, {
+        params: { design_book_id: bookId },
+        responseType: 'text',
+      });
+      const href = URL.createObjectURL(new Blob([response.data], { type: 'text/plain;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = `biological-media-run-${run.run_number}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Run export failed');
+    } finally {
+      setBiologicalMediaRunBusy(null);
+    }
+  };
+  const compareBiologicalMediaRunHistory = async (leftId: string, rightId: string) => {
+    setBiologicalMediaRunBusy('compare');
+    try {
+      const response = await api.get(`/systems/${systemId}/biological-media/runs/compare`, {
+        params: { design_book_id: bookId, left_id: leftId, right_id: rightId },
+      });
+      setBiologicalMediaComparison(response.data);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Run comparison failed');
+    } finally {
+      setBiologicalMediaRunBusy(null);
     }
   };
   const setFlowSideStreams = (update: (streams: any[]) => any[]) => {
@@ -3763,8 +3962,15 @@ export default function DesignBookLSSDetail() {
           onChange={(key: string, value: any) => setBiologicalMediaForm(current => ({ ...current, [key]: value, _stale: true }))}
           onSave={saveBiologicalMedia}
           onPreview={previewBiologicalMedia}
+          onCreateRun={createBiologicalMediaRun}
+          onApproveRun={approveBiologicalMediaRun}
+          onRejectRun={rejectBiologicalMediaRun}
+          onExportRun={exportBiologicalMediaRun}
+          onCompareRuns={compareBiologicalMediaRunHistory}
           saving={biologicalMediaSaving}
           previewing={biologicalMediaPreviewing}
+          runBusy={biologicalMediaRunBusy}
+          comparison={biologicalMediaComparison}
           error={biologicalMediaIsError
             ? ((biologicalMediaQueryError as any)?.response?.data?.error?.message || 'Check the selected Design Book and system.')
             : null}
