@@ -1,0 +1,413 @@
+ank Footprint Geometry Tool
+What & Why
+Build a reusable 2D footprint geometry tool that can be embedded inside a tank-design, quoting, layout, or asset-management application. The tool lets an operator create a closed outline for a custom tank footprint using connected straight segments, curved segments, and freehand input, then returns a trustworthy perimeter and area in the host application's units.
+
+The current prototype proves the interaction model. This PRD defines the production-ready module: its user experience, geometry contract, measurement rules, persistence boundary, accessibility expectations, and acceptance criteria. The host application should treat the result as structured geometry rather than as a screenshot or an uneditable drawing.
+
+Done looks like
+An operator can create a new footprint, draw connected elements, close it, and immediately see perimeter and area.
+Straight, curved, and freehand edges remain distinguishable and editable after creation.
+The operator can drag vertices and curve handles, undo/redo changes, and see measurements recalculate without refreshing.
+Measurements use a documented coordinate system, calibration, unit conversion, and precision policy.
+The tool prevents or clearly explains invalid states such as too few points, an open outline, or a self-intersecting footprint.
+The host app can save, reload, duplicate, version, and export the footprint through a stable JSON contract.
+The host app can embed the tool without adopting its own authentication, database, tank model, or routing assumptions.
+Keyboard, pointer, and touch interactions are usable, with labels and focus states for every essential action.
+A test engineer can verify geometry behavior with deterministic fixtures for lines, curves, freehand paths, scaling, and editing.
+Product goals
+Fast capture — an operator should be able to outline a footprint in under two minutes.
+Measurement confidence — the UI should make it obvious whether values are exact for straight edges or sampled approximations for curves/freehand.
+Structured output — the host app receives editable geometry and derived measurements, not only an image.
+Composable integration — the tool works as a standalone page, modal, side panel, or embedded editor.
+Safe editing — accidental changes can be undone, and the host app can distinguish draft, valid, and saved states.
+Out of scope
+3D tank modeling, elevation profiles, volume, shell thickness, or material calculations.
+Engineering certification, structural analysis, stress calculations, or regulatory compliance.
+Automatic recognition of a tank footprint from a photograph or scanned drawing.
+Multi-user simultaneous editing or real-time collaboration.
+Full CAD constraints, dimension chains, tangent constraints, fillets, chamfers, or Boolean operations.
+Server-side persistence owned by this module.
+User accounts, permissions, billing, or host-application navigation.
+Automatic self-intersection repair. The tool may offer guidance, but the operator or host workflow must resolve invalid geometry.
+Exact analytic area/perimeter for arbitrary freehand input. Freehand and sampled curves are explicitly approximation-based unless a later engineering module replaces the measurement engine.
+Users and primary use cases
+Primary user: design or fabrication operator
+Needs to capture a non-standard tank footprint from a sketch, drawing, or physical reference and record usable dimensions quickly. May not know CAD software, so the tool must explain the next action without requiring a manual.
+
+Secondary user: estimator or project engineer
+Needs to review or adjust an existing outline, switch units, verify calibration, and copy/export measurements into a quote or design record.
+
+Host application
+Owns the tank, project, user, permissions, save/versioning, audit history, and downstream calculations. It treats the geometry tool as an editor and measurement service.
+
+Product principles
+The outline is the source of truth. Derived measurements can always be recalculated from saved geometry.
+Model-space first. Screen pixels are never the persisted engineering unit.
+Open vs. closed is explicit. Never show an area as valid for an open path.
+Approximation is visible. Curves and freehand paths display an approximation indicator and sampling metadata.
+No silent data loss. Reset, delete, load, and replacement actions require a clear confirmation when unsaved work exists.
+Host ownership is explicit. The editor emits changes; the host decides when and where to persist them.
+Core user flows
+1. Create a footprint with straight segments
+Host opens the editor with a blank or existing document.
+Operator selects Straight.
+Operator clicks/taps a start point.
+Operator clicks/taps successive endpoints; each endpoint connects to the previous endpoint.
+Operator selects Close footprint or clicks the start-point target.
+The outline closes, the area becomes valid, and the measurement summary updates.
+2. Add a curved edge
+Operator selects Curve.
+Operator chooses the curve endpoint.
+Operator chooses or drags the quadratic control handle.
+The curve is committed as one connected element.
+The curve handle remains visible when the segment is selected.
+Perimeter and area use the documented sampled curve representation.
+The production interaction may use a two-click endpoint/control workflow or click-drag, but it must be consistent and visibly explained. A curve must always have a start point, control point, and end point.
+
+3. Add a freehand edge
+Operator selects Freehand.
+Operator presses/pointers down at the current endpoint.
+Operator drags along the intended edge.
+The tool samples points at a defined minimum spacing and simplifies noise without changing the intended shape materially.
+On pointer release, the freehand segment connects to the existing path.
+The segment remains editable as a sampled point sequence or can be deleted and redrawn.
+4. Edit an existing footprint
+Operator selects Select/Edit.
+Dragging a vertex moves the connected geometry and recalculates measurements live.
+Selecting a curve exposes its control handle.
+Dragging a curve handle changes the curve while keeping its endpoints connected.
+Selecting a segment exposes delete or replace behavior if supported by the host integration.
+Undo restores the complete prior geometry state, not only the visual position.
+5. Calibrate and change units
+Operator opens scale/calibration.
+Operator enters a known relationship, such as 250 px = 1.5 m, or selects a host-provided scale.
+The editor validates positive finite values.
+Perimeter and area update using the new scale.
+Operator can choose display units independently from the persisted model unit.
+The UI shows the active calibration near the measurements so exported values are not ambiguous.
+6. Save, reload, and export
+Host passes the document to the editor.
+Editor emits a normalized change event after meaningful edits, with a revision or dirty flag.
+Host saves the JSON document with the tank/design record.
+Host reopens the document and receives the same geometry and measurements.
+Operator can export JSON for interchange and SVG for visual review.
+Export includes unit, calibration, closed state, geometry, and approximation metadata.
+Functional requirements
+P0 — required for first production integration
+Workspace and drawing
+Render a pannable or resizable 2D drawing workspace with a visible grid.
+Support pointer and touch input; do not rely on hover to complete an action.
+Provide tools for Select/Edit, Straight, Curve, and Freehand.
+Display an in-progress segment before it is committed.
+Keep all committed elements connected in sequence.
+Provide a clear start point and close action.
+Show open, drawing, and closed states distinctly.
+Support reset/new footprint with confirmation when there are unsaved edits.
+Editing and history
+Drag endpoints/vertices in Select/Edit mode.
+Drag quadratic curve control handles.
+Undo and redo geometry edits, drawing commits, closure, deletion, and calibration changes.
+Keyboard shortcuts:
+Ctrl/Cmd+Z: undo
+Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y: redo
+Escape: cancel the current segment or drawing gesture
+Delete/Backspace: delete the selected segment or vertex when valid
+History must be deterministic and must not create a new history entry for every pointer-move event during one drag.
+Measurements
+Show perimeter and area continuously for a valid closed footprint.
+Show — or an equivalent invalid state for area when the footprint is open or has fewer than three usable points.
+Show perimeter for an open path only if the product team explicitly wants that behavior; otherwise label it as preview length and do not present it as final perimeter.
+Show the number of segments/elements and whether any sampled geometry is present.
+Update values immediately after any geometry or calibration change.
+Display a clear approximation note whenever curves or freehand segments contribute to the result.
+Scale and units
+Persist calibration with the document.
+Support at least mm, cm, m, in, and ft as display units.
+Use one canonical model unit internally, recommended: millimeters or meters selected by the host application.
+Convert length linearly and area quadratically.
+Reject zero, negative, NaN, and infinite calibration values.
+Show the active unit beside both perimeter and area.
+Import/export contract
+Accept a blank document or a normalized footprint document from the host.
+Emit a normalized document after changes.
+Export JSON with no UI-only state.
+Export SVG with the footprint path, closure state, viewBox, and metadata sufficient for visual review.
+Copy measurements as text/JSON with a clipboard fallback when browser clipboard permissions are unavailable.
+Accessibility
+Every tool has an accessible name and visible active state.
+Essential controls are keyboard reachable.
+Focus state is visible against the canvas and panel.
+Color is not the only way to distinguish selected, open, invalid, or approximate states.
+Provide an accessible summary of current measurements and validation state.
+Touch targets should be large enough for tablet use.
+P1 — strongly recommended after first integration
+Zoom in/out and fit-to-content.
+Grid spacing and snap-to-grid toggle.
+Endpoint snapping to the start point and nearby endpoints.
+Optional angle/length readout while drawing.
+Segment selection and deletion without rebuilding the entire outline.
+Point-list or segment-list inspection for engineering review.
+Host-provided background image or reference drawing with adjustable opacity.
+Import from the module's JSON/SVG format.
+Duplicate footprint and preserve source provenance.
+Save-as-draft and explicit commit states.
+Validation for self-intersections, zero-length segments, duplicate points, and extremely dense freehand paths.
+Configurable curve sampling tolerance.
+Configurable grid, snap, default unit, and maximum canvas bounds.
+P2 — future engineering capabilities
+Circular arcs, cubic Bézier curves, and tangent constraints.
+Numeric dimension editing for selected edges.
+Orthogonal, parallel, perpendicular, and equal-length constraints.
+DXF or other CAD export.
+Area decomposition and holes/voids.
+Multiple closed loops in one document.
+Measurement annotations rendered on the canvas.
+Version comparison and geometry diff.
+Geometry and measurement specification
+Canonical coordinate system
+Persist geometry in model coordinates, not viewport pixels.
+Use a right-handed 2D coordinate convention with x increasing to the right and y increasing upward.
+The renderer may use screen coordinates with downward y, but conversion must happen at the rendering boundary.
+Persist all coordinates as finite numbers in the canonical model unit.
+Persist the viewport transform separately from geometry so zoom/pan never changes measurements.
+Segment types
+The minimum stable geometry union is:
+
+type Point = { x: number; y: number };
+type Segment =
+  | { type: "line"; start: Point; end: Point }
+  | { type: "quadratic"; start: Point; control: Point; end: Point }
+  | { type: "freehand"; start: Point; points: Point[]; end: Point };
+type FootprintDocument = {
+  schemaVersion: number;
+  id?: string;
+  name?: string;
+  modelUnit: "mm" | "cm" | "m" | "in" | "ft";
+  closed: boolean;
+  segments: Segment[];
+  calibration: {
+    screenPixelsPerModelUnit: number;
+    source?: "manual" | "host" | "reference";
+  };
+  approximation: {
+    hasSampledGeometry: boolean;
+    samplingToleranceModelUnits?: number;
+    samplingVersion: string;
+  };
+};
+
+The implementation may normalize shared endpoints by index or by repeated coordinates, but the external contract must make the sequence unambiguous and preserve segment order.
+
+Connectivity
+The first segment establishes the start point.
+Each segment's start must equal the previous segment's end within a documented tolerance.
+Closing the footprint adds a final connection from the last end to the first start. It may be represented as an explicit segment or as closed: true; choose one canonical representation and use it consistently.
+A closed footprint requires at least three non-collinear usable points after sampling.
+Zero-length segments should be rejected or clearly flagged before final save.
+Curves
+First production curve type: quadratic Bézier.
+
+For a quadratic segment with start P0, control P1, and end P2, sample:
+
+B(t) = (1-t)^2 P0 + 2(1-t)t P1 + t^2 P2, for 0 <= t <= 1.
+
+Sampling must be deterministic. The same document and sampling settings must return the same points and measurements.
+
+Prefer adaptive subdivision based on flatness/tolerance over a hard-coded step count. If a fixed count is used initially, persist the sampling version and document the maximum error assumption.
+
+The measurement UI must identify these values as sampled/approximate.
+
+Freehand
+Capture points in model space after converting the pointer position through the current viewport transform.
+Apply a minimum point spacing and optional simplification to reduce pointer noise.
+Preserve enough points to reproduce the visual path at the configured zoom.
+Do not simplify across a meaningful corner or reduce a path to fewer than two points.
+Use the resulting sampled polyline for perimeter and area.
+Persist sampling/simplification metadata or a version so future recalculation changes are explainable.
+Perimeter
+For a sampled outline, sum Euclidean distance between consecutive samples.
+If closed, add the distance from the last sample to the first sample when the closing connection is not already represented.
+For open geometry, label the result open path length or omit it from the final measurement summary; never call it final perimeter.
+Apply length conversion once after calculating in model units.
+Area
+Area is valid only for a closed, non-degenerate footprint.
+
+Convert all segments to one ordered sampled outline.
+
+Calculate signed area with the shoelace formula, then use the absolute value:
+
+A = 1/2 * abs(sum(x_i*y_(i+1) - x_(i+1)*y_i)).
+
+Apply area conversion using the square of the length conversion factor.
+
+Self-intersecting outlines must be flagged as invalid or require an explicit host-defined winding/fill rule. They must not silently return a misleading area.
+
+A clockwise or counter-clockwise drawing direction is valid; orientation should not change the reported positive area.
+
+Precision and formatting
+Keep full precision in the document and calculations.
+Format for display separately from persisted values.
+Default display should use a practical number of decimals based on the selected unit, with the ability for the host to configure precision.
+Export both raw numeric values and formatted display values only when needed by the host.
+Avoid locale-dependent parsing when accepting numeric calibration input.
+Measurement summary contract
+The editor should expose a derived summary similar to:
+
+type MeasurementSummary = {
+  status: "empty" | "open" | "valid" | "invalid";
+  perimeter?: number;
+  area?: number;
+  unit: string;
+  segmentCount: number;
+  sampled: boolean;
+  warnings: Array<
+    | "too_few_points"
+    | "open_path"
+    | "zero_length_segment"
+    | "self_intersection"
+    | "degenerate_area"
+    | "invalid_calibration"
+  >;
+  calculatedAt?: string;
+};
+
+The host should never need to reverse-engineer the SVG or inspect canvas pixels to obtain measurements.
+
+Integration boundary for the other application
+Host owns
+Tank/project identity and metadata.
+Authentication, roles, and permission checks.
+Draft/save/publish lifecycle.
+Persistence, audit history, and versioning.
+Whether users can edit, view-only, or approve a footprint.
+Default unit, model unit, calibration source, and any reference image.
+Downstream calculations such as volume, cost, shipping, or clearance.
+Analytics and error reporting policy.
+Geometry tool owns
+Drawing, editing, selection, snapping, closure, and history.
+Geometry validation.
+Deterministic measurement calculation.
+Export generation.
+User feedback for invalid/incomplete geometry.
+Recommended component contract
+type FootprintEditorProps = {
+  value: FootprintDocument | null;
+  readOnly?: boolean;
+  defaultUnit?: Unit;
+  referenceImage?: { src: string; opacity?: number };
+  onChange: (document: FootprintDocument, summary: MeasurementSummary) => void;
+  onValidityChange?: (summary: MeasurementSummary) => void;
+  onSaveRequest?: (document: FootprintDocument) => Promise<void> | void;
+  onCancel?: () => void;
+};
+
+The actual framework-specific API may differ, but the integration must preserve the same responsibilities and data semantics.
+
+Persistence requirements
+Store the normalized document, not only derived measurements.
+Store the schema version.
+Recalculate measurements on load rather than trusting stale persisted totals.
+Preserve the original calibration and model unit with every saved version.
+If the host caches derived measurements, store a calculation/sampling version and invalidate when either changes.
+Treat a saved footprint as immutable by version when auditability is required; edits create a new revision.
+UX states and required feedback
+Empty
+Show a short instruction such as: “Choose Straight, Curve, or Freehand to start outlining the footprint.” Show the expected unit and calibration status.
+
+Drawing
+Show the current tool name, the next expected action, a visible preview segment, and an Esc hint. Prevent accidental mode changes from losing the in-progress segment.
+
+Open
+Show Open footprint prominently. Area is unavailable. Offer Close footprint when there are enough valid points.
+
+Closed and valid
+Show perimeter, area, active units, segment count, and whether any sampled geometry contributed. Make save/export actions available.
+
+Invalid
+Show the reason, highlight the affected geometry when possible, and provide a direct correction path. Examples: self-intersection, duplicate point, zero-length edge, or invalid calibration.
+
+Unsaved changes
+Show a dirty indicator and confirm before reset, load replacement, navigation away, or destructive deletion.
+
+Acceptance criteria
+Drawing
+Given a blank document, when the operator creates three or more straight segments and closes the shape, then the canvas shows a closed outline and the measurement summary shows valid perimeter and area.
+Given an existing open path, when the operator adds a segment, then the new segment begins exactly at the previous endpoint.
+Given a selected curve, when the operator drags its control handle, then the curve changes without breaking its start/end connectivity.
+Given a freehand gesture, when the operator releases the pointer, then one freehand segment is committed and remains represented in the saved document.
+Given an in-progress gesture, when the operator presses Escape, then no partial segment is committed.
+Measurements
+Given a rectangle in canonical units, then the calculated area and perimeter match the expected values within the documented numeric tolerance.
+Given the same shape drawn clockwise and counter-clockwise, then reported area is the same positive value.
+Given a curved or freehand edge, then the result includes an approximation indicator and uses deterministic sampled geometry.
+Given an open path, then area is not presented as a final valid measurement.
+Given a scale change, then perimeter changes linearly and area changes by the square of the scale ratio.
+Given a display-unit change, then the shape does not move and the values convert consistently.
+Editing and persistence
+Given a saved document, when it is reloaded, then the geometry, closure state, calibration, units, and measurements reproduce the same result.
+Given a vertex drag, then one undo restores the previous geometry and one redo reapplies the drag.
+Given unsaved changes, when reset is selected, then the tool asks for confirmation before discarding them.
+Given read-only mode, then geometry and calibration cannot be modified while measurements and export remain available if permitted by the host.
+Validation and accessibility
+Given a self-intersecting outline, then the tool warns or marks the document invalid according to the configured host policy and does not silently publish a misleading area.
+Given invalid calibration input, then the tool rejects it with an actionable message and preserves the previous valid calibration.
+Every essential control is keyboard reachable, has an accessible name, and exposes its active/disabled state.
+QA and test plan
+Geometry fixtures
+Maintain deterministic fixtures for:
+
+100 x 50 rectangle.
+Triangle with known area.
+Clockwise and counter-clockwise versions of the same polygon.
+Open polyline.
+Quadratic curve with known sampled reference.
+Freehand path with repeated/noisy input points.
+Zero-length segment.
+Collinear points.
+Self-intersecting bow-tie.
+Unit conversion pairs and calibration ratios.
+Interaction tests
+Create, close, edit, undo, redo, reset, and reload.
+Switch tools mid-draft and cancel in-progress curves/freehand gestures.
+Drag vertices at different zoom levels.
+Touch/pointer input on a tablet-sized viewport.
+Copy results with and without clipboard permission.
+Export/re-import JSON and inspect SVG output.
+Read-only mode and unsaved-change confirmation.
+Performance targets
+Measurement refresh should feel immediate for ordinary footprints.
+A footprint with hundreds of freehand samples should remain interactive.
+The host should be able to configure or enforce a maximum sample count to prevent pathological documents.
+Large reference images should not block pointer input or measurement updates.
+Rollout plan
+Integrate the editor in an internal test route with local draft persistence.
+Validate geometry fixtures and compare measurements with independently calculated references.
+Add host save/version events and read-only rendering.
+Pilot with a small group of operators using real custom footprints.
+Review approximation tolerance, calibration workflow, and invalid-shape handling before enabling production publishing.
+Add P1 capabilities based on observed operator friction, not speculative CAD features.
+Open product decisions
+Which canonical model unit should the host standardize on: millimeters or meters?
+Should the first production version support only quadratic curves, or also circular arcs?
+Should open-path length be shown, or should all final measurements remain hidden until closure?
+What self-intersection policy is appropriate: block save, allow draft only, or support a fill-rule configuration?
+Should calibration be manually entered, selected from a host reference, or both?
+What maximum document size and freehand sample count are acceptable?
+Does the host need holes/voids in a footprint, or is one outer loop sufficient for the initial release?
+Steps
+Confirm the host integration contract — Agree on ownership of tank records, persistence, calibration source, permissions, save lifecycle, and the canonical model unit.
+Implement the normalized geometry model — Define versioned line, quadratic, and freehand segments with explicit closure, calibration, and approximation metadata.
+Build the drawing and editing workspace — Add connected drawing modes, preview states, closure, vertex/control editing, snapping, reset, and history behavior.
+Implement the measurement engine — Add deterministic curve/freehand sampling, perimeter, area, unit conversion, validation, warnings, and precision formatting.
+Expose the host-facing editor contract — Emit normalized changes and measurement summaries, support initial values and read-only mode, and keep persistence outside the tool.
+Add export and review features — Produce JSON and SVG exports with enough metadata to preserve units, calibration, closure, and approximation state.
+Verify with geometry and browser tests — Run fixture-based calculations and end-to-end interaction checks across drawing, editing, calibration, validation, save/reload, export, keyboard, and touch flows.
+Pilot with representative tank footprints — Compare outputs against independently measured references and adjust sampling, snapping, and validation policies before wider rollout.
+Critical architectural constraint: Persist structured model-space geometry and recalculate measurements from it. Do not use a screenshot, viewport pixels, or stale display values as the source of truth.
+
+Relevant files
+artifacts/tank-footprint-sketcher/src/App.tsx
+artifacts/tank-footprint-sketcher/src/pages/sketcher.tsx
+artifacts/tank-footprint-sketcher/src/lib/geometry.ts
+artifacts/tank-footprint-sketcher/src/index.css
+artifacts/tank-footprint-sketcher/package.json
