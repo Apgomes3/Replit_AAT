@@ -240,7 +240,14 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
       'Ozone Selection',
       'Other Equipment',
     ]);
-    expect(screen.getByRole('tab', { name: 'System Overview' })).toHaveAttribute('aria-selected', 'true');
+    const overviewTab = screen.getByRole('tab', { name: 'System Overview' });
+    expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+    expect(overviewTab).toHaveClass('border-b-2', 'border-blue-600', 'text-blue-600');
+    expect(screen.getByRole('tablist', { name: 'Life Support System sections' })).toHaveClass('overflow-x-auto');
+    expect(screen.getByRole('tab', { name: 'Flow Route' })).toHaveClass(
+      'border-transparent',
+      'text-slate-500',
+    );
     expect(screen.getByRole('tabpanel', { name: 'System Overview' })).toBeVisible();
     expect(screen.getByText('Design Flow')).toBeInTheDocument();
     expect(screen.getByText('Turnover Rate')).toBeInTheDocument();

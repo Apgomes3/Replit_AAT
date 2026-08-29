@@ -1846,7 +1846,7 @@ export default function DesignBookLSSDetail() {
       <div
         role="tablist"
         aria-label="Life Support System sections"
-        className="flex gap-1 overflow-x-auto rounded-xl border border-stone-200 bg-stone-50 p-1"
+        className="flex border-b border-slate-200 overflow-x-auto"
       >
         {LSS_TABS.map(tab => {
           const selected = activeTab === tab.id;
@@ -1864,10 +1864,10 @@ export default function DesignBookLSSDetail() {
               tabIndex={selected ? 0 : -1}
               onClick={() => handleTabChange(tab.id)}
               onKeyDown={event => handleTabKeyDown(event, tab.id)}
-              className={`min-w-max flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
                 selected
-                  ? 'bg-white text-blue-700 shadow-sm'
-                  : 'text-stone-500 hover:bg-white/70 hover:text-stone-700'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
               {tab.label}
