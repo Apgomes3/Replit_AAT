@@ -10,11 +10,16 @@ type ProfileKind = 'media' | 'tan';
 
 const mediaEmpty: any = {
   profile_code: '', profile_name: '', water_types: 'Freshwater', reactor_types: '',
-  capacity_model: '', capacity_model_version: '', capacity_basis_unit: '',
+  capacity_model: 'OVERALL_VTR', capacity_model_version: '', capacity_basis_unit: '',
   operating_min_temperature_c: '', operating_max_temperature_c: '',
   operating_min_salinity_ppt: '', operating_max_salinity_ppt: '',
   media_min_depth_mm: '', media_max_depth_mm: '', media_void_fraction: '',
-  media_bulk_density_kg_m3: '', evidence_reference: '', is_provisional: false,
+  media_bulk_density_kg_m3: '', overall_vtr_g_tan_n_m3_d: '', default_safety_factor: '',
+  minimum_media_m3: '', module_increment_m3: '', media_fill_fraction: '',
+  operating_min_ph: '', operating_max_ph: '', operating_min_tan_mg_n_l: '',
+  operating_max_tan_mg_n_l: '', operating_min_do_mg_l: '', operating_max_do_mg_l: '',
+  operating_min_flow_m3_h: '', operating_max_flow_m3_h: '',
+  evidence_reference: '', is_provisional: false,
   provisional_label: '', notes: '',
 };
 const tanEmpty: any = {
@@ -51,7 +56,9 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
             <input className={inputCls} value={form.reactor_types} onChange={e => set('reactor_types', e.target.value)} placeholder="Moving bed biofilter" />
           </label>
           <label className="text-xs font-medium text-stone-500">Capacity model *
-            <input className={inputCls} value={form.capacity_model} onChange={e => set('capacity_model', e.target.value)} />
+            <select className={inputCls} value={form.capacity_model} onChange={e => set('capacity_model', e.target.value)}>
+              <option value="OVERALL_VTR">Overall approved VTR</option>
+            </select>
           </label>
           <label className="text-xs font-medium text-stone-500">Model version *
             <input className={inputCls} value={form.capacity_model_version} onChange={e => set('capacity_model_version', e.target.value)} />
@@ -70,6 +77,27 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
             ['media_bulk_density_kg_m3', 'Bulk density kg/m³'],
           ].map(([key, label]) => <label key={key} className="text-xs font-medium text-stone-500">{label}
             <input type="number" className={inputCls} value={form[key]} onChange={e => set(key, e.target.value)} />
+          </label>)}
+          <div className="md:col-span-3 border-t border-stone-100 pt-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Overall VTR sizing</h3>
+            <p className="mt-1 text-xs text-stone-400">These approved values are required for a deterministic sizing preview.</p>
+          </div>
+          {[
+            ['overall_vtr_g_tan_n_m3_d', 'Overall VTR g TAN-N/m³ media/day'],
+            ['default_safety_factor', 'Default safety factor'],
+            ['minimum_media_m3', 'Minimum media volume m³'],
+            ['module_increment_m3', 'Module increment m³'],
+            ['media_fill_fraction', 'Media fill fraction (0–1)'],
+            ['operating_min_ph', 'Min pH'],
+            ['operating_max_ph', 'Max pH'],
+            ['operating_min_tan_mg_n_l', 'Min TAN mg N/L'],
+            ['operating_max_tan_mg_n_l', 'Max TAN mg N/L'],
+            ['operating_min_do_mg_l', 'Min dissolved oxygen mg/L'],
+            ['operating_max_do_mg_l', 'Max dissolved oxygen mg/L'],
+            ['operating_min_flow_m3_h', 'Min actual flow m³/h'],
+            ['operating_max_flow_m3_h', 'Max actual flow m³/h'],
+          ].map(([key, label]) => <label key={key} className="text-xs font-medium text-stone-500">{label}
+            <input type="number" step="any" min="0" className={inputCls} value={form[key]} onChange={e => set(key, e.target.value)} />
           </label>)}
           <label className="flex items-center gap-2 self-end pb-2 text-xs font-medium text-stone-600">
             <input type="checkbox" checked={form.is_provisional} onChange={e => set('is_provisional', e.target.checked)} /> Provisional engineering data
@@ -168,7 +196,10 @@ export default function AdminBiologicalMediaProfiles() {
       reactor_types: form.reactor_types.split(',').map((value: string) => value.trim()).filter(Boolean),
       ...Object.fromEntries(['operating_min_temperature_c', 'operating_max_temperature_c', 'operating_min_salinity_ppt',
         'operating_max_salinity_ppt', 'media_min_depth_mm', 'media_max_depth_mm', 'media_void_fraction',
-        'media_bulk_density_kg_m3'].map(key => [key, n(form[key])])),
+        'media_bulk_density_kg_m3', 'overall_vtr_g_tan_n_m3_d', 'default_safety_factor', 'minimum_media_m3',
+        'module_increment_m3', 'media_fill_fraction', 'operating_min_ph', 'operating_max_ph',
+        'operating_min_tan_mg_n_l', 'operating_max_tan_mg_n_l', 'operating_min_do_mg_l',
+        'operating_max_do_mg_l', 'operating_min_flow_m3_h', 'operating_max_flow_m3_h'].map(key => [key, n(form[key])])),
     };
     return { ...form, coefficient: n(form.coefficient), scope_min: n(form.scope_min), scope_max: n(form.scope_max) };
   };
@@ -216,6 +247,19 @@ export default function AdminBiologicalMediaProfiles() {
         media_max_depth_mm: profile.media_max_depth_mm ?? '',
         media_void_fraction: profile.media_void_fraction ?? '',
         media_bulk_density_kg_m3: profile.media_bulk_density_kg_m3 ?? '',
+        overall_vtr_g_tan_n_m3_d: profile.overall_vtr_g_tan_n_m3_d ?? '',
+        default_safety_factor: profile.default_safety_factor ?? '',
+        minimum_media_m3: profile.minimum_media_m3 ?? '',
+        module_increment_m3: profile.module_increment_m3 ?? '',
+        media_fill_fraction: profile.media_fill_fraction ?? '',
+        operating_min_ph: profile.operating_min_ph ?? '',
+        operating_max_ph: profile.operating_max_ph ?? '',
+        operating_min_tan_mg_n_l: profile.operating_min_tan_mg_n_l ?? '',
+        operating_max_tan_mg_n_l: profile.operating_max_tan_mg_n_l ?? '',
+        operating_min_do_mg_l: profile.operating_min_do_mg_l ?? '',
+        operating_max_do_mg_l: profile.operating_max_do_mg_l ?? '',
+        operating_min_flow_m3_h: profile.operating_min_flow_m3_h ?? '',
+        operating_max_flow_m3_h: profile.operating_max_flow_m3_h ?? '',
       });
     } else {
       setTanForm({

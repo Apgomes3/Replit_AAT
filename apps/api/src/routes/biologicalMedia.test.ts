@@ -1,14 +1,14 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest';
-import { validateMediaProfile, validateTanProfile } from './biologicalMedia';
+import { isBiologicalMediaPreviewStale, validateMediaProfile, validateTanProfile } from './biologicalMedia';
 
 const completeMediaProfile = {
   profile_code: 'MEDIA-01',
   profile_name: 'Controlled moving-bed media',
   water_types: ['Freshwater'],
   reactor_types: ['Moving bed biofilter'],
-  capacity_model: 'Evidence-based capacity curve',
+  capacity_model: 'OVERALL_VTR',
   capacity_model_version: '1',
   capacity_basis_unit: 'g TAN/m³/day',
   operating_min_temperature_c: 10,
@@ -19,6 +19,15 @@ const completeMediaProfile = {
   media_max_depth_mm: 1200,
   media_void_fraction: 0.65,
   media_bulk_density_kg_m3: 110,
+  overall_vtr_g_tan_n_m3_d: 90,
+  default_safety_factor: 1.2,
+  minimum_media_m3: 0,
+  module_increment_m3: 0.01,
+  media_fill_fraction: 0.6,
+  operating_min_ph: 6,
+  operating_max_ph: 9,
+  operating_min_tan_mg_n_l: 0,
+  operating_max_tan_mg_n_l: 2,
   evidence_reference: 'ENG-REF-001',
 };
 
@@ -64,5 +73,34 @@ describe('Biological Media controlled profile validation', () => {
       'Scope range minimum cannot exceed maximum.',
       'Evidence reference is required.',
     ]));
+  });
+});
+
+describe('Biological Media preview freshness', () => {
+  const record = {
+    preview_result: { status: 'VALID' },
+    preview_stale: false,
+    preview_input_snapshot: {
+      biomass: { water_volume_m3: 42.125 },
+      water: { water_type: 'FRESHWATER' },
+    },
+  };
+
+  it('keeps a preview current only while authoritative linked context matches', () => {
+    expect(isBiologicalMediaPreviewStale(record, {
+      total_operating_volume_m3: 42.125,
+      system_water_type: 'Freshwater',
+    })).toBe(false);
+  });
+
+  it('marks upstream linked-volume and water-type changes stale', () => {
+    expect(isBiologicalMediaPreviewStale(record, {
+      total_operating_volume_m3: 43,
+      system_water_type: 'Freshwater',
+    })).toBe(true);
+    expect(isBiologicalMediaPreviewStale(record, {
+      total_operating_volume_m3: 42.125,
+      system_water_type: 'Marine',
+    })).toBe(true);
   });
 });

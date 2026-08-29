@@ -216,6 +216,193 @@ function BiologicalMediaPanel({
   );
 }
 
+const bioInputClass = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-normal text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:bg-stone-50 disabled:text-stone-400';
+const bioNumber = (value: any) => value === '' || value == null ? null : Number(value);
+const bioFormat = (value: any, decimals = 4) => value == null || !Number.isFinite(Number(value))
+  ? '—' : Number(value).toFixed(decimals);
+
+function BiologicalMediaCalculatorPanel({
+  data, mediaProfiles, tanProfiles, speciesCatalog, readOnly, form, onChange,
+  onSave, onPreview, saving, previewing, error,
+}: any) {
+  const context = data?.context;
+  const preview = data?.preview;
+  const stale = Boolean(form._stale || preview?.is_stale);
+  const approvedMedia = mediaProfiles.filter((profile: any) => profile.status === 'Approved');
+  const approvedTan = tanProfiles.filter((profile: any) => profile.status === 'Approved');
+  const status = stale && preview ? 'Draft' : preview?.status_label || data?.readiness_status || 'Draft';
+  const statusStyles: Record<string, string> = {
+    Draft: 'border-blue-200 bg-blue-50 text-blue-800',
+    Incomplete: 'border-amber-200 bg-amber-50 text-amber-800',
+    Blocked: 'border-red-200 bg-red-50 text-red-800',
+    'Valid with Warnings': 'border-amber-200 bg-amber-50 text-amber-800',
+    Valid: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  };
+  const set = (key: string, value: any) => onChange(key, value);
+  const rows = form.species_rows || [];
+  const setRows = (next: any[]) => set('species_rows', next);
+  const selectedProfile = approvedMedia.find((profile: any) => profile.id === form.media_profile_revision_id);
+  const calculatedBiomass = form.biomass_method === 'VOLUME_DENSITY'
+    ? Number(context?.total_operating_volume_m3 || 0) * Number(form.stocking_density_kg_m3 || 0)
+    : rows.reduce((sum: number, row: any) => sum + Number(row.quantity || 0) * Number(row.design_weight_kg || 0), 0);
+
+  const updateSpecies = (index: number, key: string, value: any) => {
+    const next = rows.map((row: any, rowIndex: number) => rowIndex === index ? { ...row, [key]: value } : row);
+    setRows(next);
+  };
+  const selectCatalogSpecies = (index: number, id: string) => {
+    const catalog = speciesCatalog.find((item: any) => item.id === id);
+    if (!catalog) return updateSpecies(index, 'species_profile_id', '');
+    const next = rows.map((row: any, rowIndex: number) => rowIndex === index ? {
+      ...row,
+      species_profile_id: catalog.id,
+      common_name_snapshot: catalog.common_name || catalog.scientific_name,
+      scientific_name_snapshot: catalog.scientific_name,
+      design_weight_kg: row.design_weight_kg || catalog.reference_average_mass_kg || '',
+      entered_weight_kg: row.entered_weight_kg || catalog.reference_average_mass_kg || '',
+    } : row);
+    setRows(next);
+  };
+
+  return <div id="biological-media" className="space-y-5">
+    {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">Biological Media context could not be loaded: {error}</div>}
+    <div className={`rounded-xl border px-5 py-4 ${statusStyles[status] || statusStyles.Incomplete}`}>
+      <div className="flex items-start gap-3">
+        <Activity className="mt-0.5 h-5 w-5 shrink-0" />
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-semibold">Biological Media foundation</h2>
+            <span className="rounded-full border border-current/20 px-2 py-0.5 text-xs font-semibold">{status}</span>
+            {stale && preview && <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold">Preview stale</span>}
+          </div>
+          <p className="mt-1 text-sm opacity-80">
+            {preview
+              ? 'Deterministic concept-sizing preview only. This is not a certified calculation run or detailed hydraulic design.'
+              : 'No biological-filter sizing result is calculated here until the draft is complete and Calculate preview is selected.'}
+          </p>
+          {stale && preview && <p className="mt-2 text-xs font-medium">RUN_W01 — Inputs changed after the displayed preview. Recalculate before relying on it.</p>}
+          {(data?.input_completeness?.missing || []).map((reason: string) => <p key={reason} className="mt-1 text-xs">{reason}</p>)}
+        </div>
+      </div>
+    </div>
+
+    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-stone-700">Current linked-exhibit water context</h2>
+        <p className="mt-0.5 text-xs text-stone-400">Read-only current effective operating volume. Frozen Design Books use their captured package values.</p>
+      </div>
+      <div className="p-5">
+        <div className="mb-4 flex items-baseline gap-2">
+          <span className="font-mono text-2xl font-semibold text-stone-800">{bioFormat(context?.total_operating_volume_m3, 4)}</span>
+          <span className="text-sm text-stone-500">m³ total effective operating volume</span>
+        </div>
+        {(context?.linked_exhibits || []).length ? <div className="overflow-x-auto rounded-lg border border-stone-100">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-400"><tr><th className="px-3 py-2">Exhibit</th><th className="px-3 py-2">Water type</th><th className="px-3 py-2 text-right">Effective volume</th></tr></thead>
+            <tbody className="divide-y divide-stone-100">{context.linked_exhibits.map((exhibit: any) =>
+              <tr key={exhibit.exhibit_id}><td className="px-3 py-2 font-medium text-stone-700">{exhibit.exhibit_code} — {exhibit.exhibit_name}</td><td className="px-3 py-2 text-stone-500">{exhibit.water_type || '—'}</td><td className="px-3 py-2 text-right font-mono">{bioFormat(exhibit.operating_volume_m3, 4)} m³</td></tr>)}</tbody>
+          </table>
+        </div> : <p className="text-sm text-stone-400">No linked exhibits are available for this system.</p>}
+      </div>
+    </section>
+
+    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-stone-700">1. Biomass design basis</h2>
+        <p className="mt-0.5 text-xs text-stone-400">Choose exactly one method. Linked water volume remains read-only.</p>
+      </div>
+      <div className="space-y-4 p-5">
+        <div className="grid gap-3 md:grid-cols-2">
+          {[['VOLUME_DENSITY', 'Volume and stocking density', 'Linked volume × target stocking density'], ['SPECIES_LIST', 'Species list', 'Quantity × editable design weight for each row']].map(([value, label, description]) =>
+            <label key={value} className={`cursor-pointer rounded-xl border p-4 ${form.biomass_method === value ? 'border-blue-400 bg-blue-50' : 'border-stone-200'}`}>
+              <span className="flex items-start gap-3"><input type="radio" name="biomass-method" value={value} checked={form.biomass_method === value} disabled={readOnly} onChange={() => set('biomass_method', value)} />
+                <span><span className="block text-sm font-semibold text-stone-800">{label}</span><span className="mt-1 block text-xs text-stone-500">{description}</span></span>
+              </span>
+            </label>)}
+        </div>
+        {form.biomass_method === 'VOLUME_DENSITY' && <div className="grid gap-4 md:grid-cols-3">
+          <label className="text-xs font-medium text-stone-500">Linked water volume m³<input className={bioInputClass} disabled value={context?.total_operating_volume_m3 ?? ''} /></label>
+          <label className="text-xs font-medium text-stone-500">Stocking density kg/m³ *<input aria-label="Stocking density kg/m³" type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.stocking_density_kg_m3} onChange={e => set('stocking_density_kg_m3', e.target.value)} /></label>
+          <div className="rounded-lg bg-stone-50 p-3"><span className="text-xs text-stone-400">Design biomass</span><strong className="mt-1 block font-mono text-lg text-stone-800">{calculatedBiomass > 0 ? bioFormat(calculatedBiomass, 6) : '—'} kg</strong></div>
+        </div>}
+        {form.biomass_method === 'SPECIES_LIST' && <div className="space-y-3">
+          {rows.map((row: any, index: number) => <div key={row.id || index} className="rounded-xl border border-stone-200 p-4">
+            <div className="grid gap-3 md:grid-cols-6">
+              <label className="text-xs text-stone-500 md:col-span-2">Catalog species
+                <select className={bioInputClass} disabled={readOnly} value={row.species_profile_id || ''} onChange={e => selectCatalogSpecies(index, e.target.value)}>
+                  <option value="">Free text / unlisted</option>{speciesCatalog.map((item: any) => <option key={item.id} value={item.id}>{item.common_name || item.scientific_name}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-stone-500 md:col-span-2">Entered name snapshot *<input className={bioInputClass} disabled={readOnly} value={row.common_name_snapshot || ''} onChange={e => updateSpecies(index, 'common_name_snapshot', e.target.value)} /></label>
+              <label className="text-xs text-stone-500">Life stage<input className={bioInputClass} disabled={readOnly} value={row.life_stage || ''} onChange={e => updateSpecies(index, 'life_stage', e.target.value)} /></label>
+              {!readOnly && <button type="button" aria-label={`Remove species row ${index + 1}`} onClick={() => setRows(rows.filter((_: any, rowIndex: number) => rowIndex !== index))} className="self-end justify-self-end rounded-lg p-2 text-stone-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>}
+              <label className="text-xs text-stone-500">Quantity *<input type="number" min="1" step="1" className={bioInputClass} disabled={readOnly} value={row.quantity ?? ''} onChange={e => updateSpecies(index, 'quantity', e.target.value)} /></label>
+              <label className="text-xs text-stone-500">Design weight kg *<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={row.design_weight_kg ?? ''} onChange={e => { updateSpecies(index, 'design_weight_kg', e.target.value); }} /></label>
+              <div className="self-end rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">Row biomass <strong className="block font-mono text-stone-800">{bioFormat(Number(row.quantity || 0) * Number(row.design_weight_kg || 0), 4)} kg</strong></div>
+              <label className="text-xs text-stone-500 md:col-span-3">Notes / weight source<input className={bioInputClass} disabled={readOnly} value={row.notes || ''} onChange={e => updateSpecies(index, 'notes', e.target.value)} /></label>
+            </div>
+          </div>)}
+          {!readOnly && <button type="button" onClick={() => setRows([...rows, { common_name_snapshot: '', scientific_name_snapshot: '', life_stage: '', quantity: '', design_weight_kg: '', entered_weight_kg: '', notes: '' }])} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50"><Plus className="h-3.5 w-3.5" />Add species row</button>}
+          <div className="text-sm text-stone-600">Total design biomass <strong className="font-mono text-stone-900">{calculatedBiomass > 0 ? bioFormat(calculatedBiomass, 6) : '—'} kg</strong>{context?.total_operating_volume_m3 > 0 && calculatedBiomass > 0 ? ` · Equivalent density ${bioFormat(calculatedBiomass / context.total_operating_volume_m3, 4)} kg/m³` : ''}</div>
+        </div>}
+      </div>
+    </section>
+
+    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">2. Global feeding and TAN nitrogen</h2><p className="mt-0.5 text-xs text-stone-400">Manual feed is comparison-only and is never added to the calculated load.</p></div>
+      <div className="grid gap-4 p-5 md:grid-cols-4">
+        <label className="text-xs font-medium text-stone-500">Feed rate % biomass/day *<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.feed_rate_pct_biomass_day} onChange={e => set('feed_rate_pct_biomass_day', e.target.value)} /></label>
+        <label className="text-xs font-medium text-stone-500">Protein % *<input type="number" min="0" max="100" step="any" className={bioInputClass} disabled={readOnly} value={form.protein_pct} onChange={e => set('protein_pct', e.target.value)} /></label>
+        <label className="text-xs font-medium text-stone-500">Approved TAN profile *<select className={bioInputClass} disabled={readOnly} value={form.tan_generation_profile_revision_id} onChange={e => set('tan_generation_profile_revision_id', e.target.value)}><option value="">Select revision</option>{approvedTan.map((profile: any) => <option key={profile.id} value={profile.id}>{profile.profile_code} r{profile.revision} — {profile.profile_name}</option>)}</select></label>
+        <label className="text-xs font-medium text-stone-500">Manual daily feed kg/day<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.manual_daily_feed_kg_d} onChange={e => set('manual_daily_feed_kg_d', e.target.value)} /></label>
+      </div>
+    </section>
+
+    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">3. Water conditions and approved media</h2><p className="mt-0.5 text-xs text-stone-400">Temperature, pH, salinity and maximum TAN-N are required. Optional values enable warnings and hydraulic checks.</p></div>
+      <div className="grid gap-4 p-5 md:grid-cols-4">
+        {[['temperature_c', 'Temperature °C *'], ['ph', 'pH *'], ['salinity_ppt', 'Salinity ppt *'], ['max_tan_mg_n_l', 'Maximum TAN mg N/L *'], ['do_in_mg_l', 'Biofilter inlet DO mg/L'], ['do_out_min_mg_l', 'Minimum outlet DO mg/L'], ['alkalinity_mg_l_caco3', 'Alkalinity mg/L CaCO₃'], ['actual_flow_m3_h', 'Actual flow m³/h']].map(([key, label]) =>
+          <label key={key} className="text-xs font-medium text-stone-500">{label}<input type="number" step="any" className={bioInputClass} disabled={readOnly} value={form[key] ?? ''} onChange={e => set(key, e.target.value)} /></label>)}
+        <label className="text-xs font-medium text-stone-500">Reactor type *<input className={bioInputClass} disabled={readOnly} value={form.reactor_type} onChange={e => set('reactor_type', e.target.value)} /></label>
+        <label className="text-xs font-medium text-stone-500 md:col-span-2">Approved overall-VTR media profile *<select className={bioInputClass} disabled={readOnly} value={form.media_profile_revision_id} onChange={e => { const profile = approvedMedia.find((item: any) => item.id === e.target.value); set('media_profile_revision_id', e.target.value); if (profile?.default_safety_factor) set('safety_factor', profile.default_safety_factor); }}><option value="">Select revision</option>{approvedMedia.map((profile: any) => <option key={profile.id} value={profile.id}>{profile.profile_code} r{profile.revision} — {profile.profile_name}</option>)}</select></label>
+        <label className="text-xs font-medium text-stone-500">Safety factor<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.safety_factor || selectedProfile?.default_safety_factor || ''} onChange={e => set('safety_factor', e.target.value)} /></label>
+        <label className="text-xs font-medium text-stone-500 md:col-span-4">Design basis notes<textarea rows={2} className={bioInputClass} disabled={readOnly} value={form.notes} onChange={e => set('notes', e.target.value)} /></label>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 bg-stone-50/40 px-5 py-3">
+        <p className="text-xs text-stone-400">{data?.case?.updated_at ? `Last saved ${new Date(data.case.updated_at).toLocaleString()}` : 'No draft saved yet.'}</p>
+        {!readOnly && <div className="flex gap-2"><button type="button" onClick={onSave} disabled={saving || previewing} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? 'Saving…' : data?.case ? 'Save draft' : 'Create draft'}</button><button type="button" onClick={onPreview} disabled={saving || previewing} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"><Activity className="h-3.5 w-3.5" />{previewing ? 'Calculating…' : 'Calculate preview'}</button></div>}
+      </div>
+    </section>
+
+    {preview && <section className={`overflow-hidden rounded-xl border bg-white ${stale ? 'opacity-60' : ''}`}>
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">Sizing preview</h2><p className="mt-0.5 text-xs text-stone-400">{preview.profile ? `${preview.profile.profile_code} r${preview.profile.revision}` : 'No eligible approved profile'} · {preview.engine_version || 'BIOFILTER_1_0'}</p></div>
+      {(preview.messages || []).length > 0 && <div className="border-b border-stone-100 p-5"><ul className="space-y-2">{preview.messages.map((message: any, index: number) => <li key={`${message.code}-${index}`} className={`rounded-lg px-3 py-2 text-xs ${message.severity === 'BLOCKING' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}><strong>{message.code}</strong> — {message.message}</li>)}</ul></div>}
+      {preview.status !== 'BLOCKED' && <div className="space-y-5 p-5">
+        <div><span className="text-xs font-semibold uppercase tracking-wide text-stone-400">Recommended installed media</span><div className="font-mono text-4xl font-semibold text-stone-900">{bioFormat(preview.media?.installed_media_l, 1)} <span className="text-lg text-stone-400">L</span></div><p className="mt-1 text-sm text-stone-500">{bioFormat(preview.media?.required_media_l, 5)} L required before upward module rounding</p></div>
+        <div className="grid gap-3 md:grid-cols-4">{[
+          ['Design biomass', preview.biomass?.design_biomass_kg, 'kg'],
+          ['Daily feed', preview.feeding?.total_feed_kg_d, 'kg/day'],
+          ['TAN nitrogen load', preview.feeding?.tan_load_g_n_d, 'g N/day'],
+          ['Overall VTR', preview.capacity?.capacity_g_tan_n_m3_d, 'g N/m³/day'],
+          ['Nominal capacity', preview.media?.nominal_capacity_g_n_d, 'g N/day'],
+          ['Operating utilization', preview.media?.operating_utilization != null ? preview.media.operating_utilization * 100 : null, '%'],
+          ['Design utilization', preview.media?.design_utilization != null ? preview.media.design_utilization * 100 : null, '%'],
+          ['Operating margin', preview.media?.operating_capacity_margin_g_n_d, 'g N/day'],
+        ].map(([label, value, unit]) => <div key={label as string} className="rounded-lg bg-stone-50 p-3"><span className="text-xs text-stone-400">{label}</span><strong className="mt-1 block font-mono text-stone-800">{bioFormat(value, 4)} {unit}</strong></div>)}</div>
+        <div className="grid gap-3 md:grid-cols-4">{[
+          ['NH₃-N at maximum TAN', preview.ammonia?.nh3_n_mg_l, 'mg N/L'],
+          ['NH₃ molecular mass', preview.ammonia?.nh3_mg_l, 'mg NH₃/L'],
+          ['Nitrification oxygen', preview.nitrification?.oxygen_g_d, 'g/day'],
+          ['Alkalinity demand', preview.nitrification?.alkalinity_g_d, 'g CaCO₃/day'],
+          ['Nitrate nitrogen', preview.nitrification?.nitrate_n_g_d, 'g N/day'],
+          ['Nitrate molecular mass', preview.nitrification?.nitrate_g_d, 'g NO₃/day'],
+        ].map(([label, value, unit]) => <div key={label as string} className="rounded-lg border border-stone-100 p-3"><span className="text-xs text-stone-400">{label}</span><strong className="mt-1 block font-mono text-stone-800">{bioFormat(value, 5)} {unit}</strong></div>)}</div>
+        <div><h3 className="text-xs font-semibold uppercase tracking-wide text-stone-400">Assumptions</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-stone-500">{(preview.assumptions || []).map((assumption: string) => <li key={assumption}>{assumption}</li>)}</ul></div>
+      </div>}
+    </section>}
+  </div>;
+}
+
 function getStoredFlowViewMode(): FlowViewMode {
   try {
     const stored = window.localStorage.getItem(FLOW_ROUTE_VIEW_STORAGE_KEY);
@@ -812,6 +999,11 @@ export default function DesignBookLSSDetail() {
   const links = usesFrozenPackage
     ? (book.system_links || []).filter((item: any) => item.system_id === systemId)
     : liveLinks;
+  const { data: biologicalSpeciesData = { items: [] } } = useQuery({
+    queryKey: ['species-catalog-picker', system?.water_type],
+    queryFn: () => api.get('/species-catalog', { params: { limit: 1000, water_type: system?.water_type } }).then(r => r.data),
+    enabled: activeTab === 'biological-media' && !!system?.water_type && !usesFrozenPackage,
+  });
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['system', systemId] });
@@ -846,7 +1038,23 @@ export default function DesignBookLSSDetail() {
     reactor_type: '',
     media_profile_revision_id: '',
     tan_generation_profile_revision_id: '',
+    biomass_method: '',
+    stocking_density_kg_m3: '',
+    feed_rate_pct_biomass_day: '',
+    protein_pct: '',
+    manual_daily_feed_kg_d: '',
+    temperature_c: '',
+    ph: '',
+    salinity_ppt: '',
+    max_tan_mg_n_l: '',
+    do_in_mg_l: '',
+    do_out_min_mg_l: '',
+    alkalinity_mg_l_caco3: '',
+    actual_flow_m3_h: '',
+    safety_factor: '',
+    species_rows: [] as any[],
     notes: '',
+    _stale: false,
   });
   const [biologicalMediaSaving, setBiologicalMediaSaving] = useState(false);
 
@@ -865,16 +1073,35 @@ export default function DesignBookLSSDetail() {
       reactor_type: draft?.reactor_type || '',
       media_profile_revision_id: draft?.media_profile_revision_id || '',
       tan_generation_profile_revision_id: draft?.tan_generation_profile_revision_id || '',
+      biomass_method: draft?.biomass_method || '',
+      stocking_density_kg_m3: draft?.stocking_density_kg_m3 ?? '',
+      feed_rate_pct_biomass_day: draft?.feed_rate_pct_biomass_day ?? '',
+      protein_pct: draft?.protein_pct ?? '',
+      manual_daily_feed_kg_d: draft?.manual_daily_feed_kg_d ?? '',
+      temperature_c: draft?.temperature_c ?? '',
+      ph: draft?.ph ?? '',
+      salinity_ppt: draft?.salinity_ppt ?? '',
+      max_tan_mg_n_l: draft?.max_tan_mg_n_l ?? '',
+      do_in_mg_l: draft?.do_in_mg_l ?? '',
+      do_out_min_mg_l: draft?.do_out_min_mg_l ?? '',
+      alkalinity_mg_l_caco3: draft?.alkalinity_mg_l_caco3 ?? '',
+      actual_flow_m3_h: draft?.actual_flow_m3_h ?? '',
+      safety_factor: draft?.safety_factor ?? '',
+      species_rows: draft?.species_rows || [],
       notes: draft?.notes || '',
+      _stale: false,
     });
   }, [biologicalMedia?.case?.id, biologicalMedia?.case?.updated_at]);
 
   const saveBiologicalMedia = async () => {
     setBiologicalMediaSaving(true);
     try {
+      const { _stale, ...draft } = biologicalMediaForm;
       await api.put(`/systems/${systemId}/biological-media`, {
         design_book_id: bookId,
-        ...biologicalMediaForm,
+        ...draft,
+        water_volume_m3: biologicalMedia?.context?.total_operating_volume_m3,
+        water_type: biologicalMedia?.context?.system_water_type,
         media_profile_revision_id: biologicalMediaForm.media_profile_revision_id || null,
         tan_generation_profile_revision_id: biologicalMediaForm.tan_generation_profile_revision_id || null,
       });
@@ -884,6 +1111,42 @@ export default function DesignBookLSSDetail() {
       toast.error(err?.response?.data?.error?.message || 'Failed to save Biological Media draft');
     } finally {
       setBiologicalMediaSaving(false);
+    }
+  };
+  const [biologicalMediaPreviewing, setBiologicalMediaPreviewing] = useState(false);
+  const previewBiologicalMedia = async () => {
+    setBiologicalMediaPreviewing(true);
+    try {
+      const { _stale, ...draft } = biologicalMediaForm;
+      const payload = {
+        design_book_id: bookId,
+        ...draft,
+        water_volume_m3: biologicalMedia?.context?.total_operating_volume_m3,
+        water_type: biologicalMedia?.context?.system_water_type,
+        media_profile_revision_id: biologicalMediaForm.media_profile_revision_id || null,
+        tan_generation_profile_revision_id: biologicalMediaForm.tan_generation_profile_revision_id || null,
+      };
+      await api.put(`/systems/${systemId}/biological-media`, payload);
+      const response = await api.post(`/systems/${systemId}/biological-media/preview`, payload);
+      setBiologicalMediaForm(current => ({ ...current, _stale: false }));
+      qc.setQueryData(['biological-media', systemId, bookId], (current: any) => ({
+        ...(current || {}),
+        preview: response.data,
+        readiness_status: response.data.status_label,
+      }));
+      toast.success(response.data.status === 'BLOCKED' ? 'Preview completed with blocking items' : 'Biological Media preview calculated');
+    } catch (err: any) {
+      const response = err?.response?.data;
+      if (response?.messages) {
+        qc.setQueryData(['biological-media', systemId, bookId], (current: any) => ({
+          ...(current || {}),
+          preview: { ...response, is_preview: true, is_stale: false },
+          readiness_status: 'Blocked',
+        }));
+      }
+      toast.error(response?.error?.message || 'Biological Media preview could not be calculated');
+    } finally {
+      setBiologicalMediaPreviewing(false);
     }
   };
   const setFlowSideStreams = (update: (streams: any[]) => any[]) => {
@@ -3490,15 +3753,18 @@ export default function DesignBookLSSDetail() {
         tabIndex={0}
         hidden={activeTab !== 'biological-media'}
       >
-        <BiologicalMediaPanel
+        <BiologicalMediaCalculatorPanel
           data={biologicalMedia}
           mediaProfiles={mediaProfileData?.items || []}
           tanProfiles={tanProfileData?.items || []}
+          speciesCatalog={biologicalSpeciesData?.items || []}
           readOnly={readOnly}
           form={biologicalMediaForm}
-          onChange={(key, value) => setBiologicalMediaForm(current => ({ ...current, [key]: value }))}
+          onChange={(key: string, value: any) => setBiologicalMediaForm(current => ({ ...current, [key]: value, _stale: true }))}
           onSave={saveBiologicalMedia}
+          onPreview={previewBiologicalMedia}
           saving={biologicalMediaSaving}
+          previewing={biologicalMediaPreviewing}
           error={biologicalMediaIsError
             ? ((biologicalMediaQueryError as any)?.response?.data?.error?.message || 'Check the selected Design Book and system.')
             : null}

@@ -219,6 +219,17 @@ async function loadReleaseContext(
        WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`,
       [id, systems.map(system => system.id)],
     )).rows;
+    if (biologicalMediaCases.length) {
+      const biologicalSpecies = (await runner(
+        `SELECT * FROM lss_biological_media_species
+         WHERE case_id = ANY($1::uuid[]) ORDER BY case_id, sort_order, id`,
+        [biologicalMediaCases.map(item => item.id)],
+      )).rows;
+      biologicalMediaCases = biologicalMediaCases.map(item => ({
+        ...item,
+        species_rows: biologicalSpecies.filter(row => row.case_id === item.id),
+      }));
+    }
   }
   const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
   const compactUnits = compactUnitIds.length

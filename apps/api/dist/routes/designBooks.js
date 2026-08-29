@@ -188,6 +188,14 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
        LEFT JOIN lss_biological_media_profiles mp ON mp.id=c.media_profile_revision_id
        LEFT JOIN lss_tan_generation_profiles tp ON tp.id=c.tan_generation_profile_revision_id
        WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`, [id, systems.map(system => system.id)])).rows;
+        if (biologicalMediaCases.length) {
+            const biologicalSpecies = (await runner(`SELECT * FROM lss_biological_media_species
+         WHERE case_id = ANY($1::uuid[]) ORDER BY case_id, sort_order, id`, [biologicalMediaCases.map(item => item.id)])).rows;
+            biologicalMediaCases = biologicalMediaCases.map(item => ({
+                ...item,
+                species_rows: biologicalSpecies.filter(row => row.case_id === item.id),
+            }));
+        }
     }
     const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
     const compactUnits = compactUnitIds.length

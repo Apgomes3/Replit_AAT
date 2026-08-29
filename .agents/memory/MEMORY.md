@@ -13,3 +13,4 @@
 - [Flow Route side streams](flow-route-side-streams.md) — each side stream is an independent 0–100% branch; sibling percentages are never summed.
 - [Flow Route fractionator controls](flow-route-fractionator-controls.md) — show loop and Bio/Degas context before sizing; model details are disclosures, never draft mutations.
 - [LSS configuration reset](lss-configuration-reset.md) — reset LSS-owned inputs atomically while preserving project tanks, exhibits, hydraulics, and PIM sources.
+- [Biological Media preview basis](biological-media-preview-basis.md) — preview sizing stays on TAN-N, applies approved overall VTR and safety factor once, and never presents mutable previews as certification.

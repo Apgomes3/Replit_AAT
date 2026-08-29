@@ -2,11 +2,21 @@ import { Router, Response } from 'express';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage, requireRole } from '../middleware/auth';
 import { query } from '../db';
 import { calculateExhibitHydraulics } from '../lib/aquariumCalculations';
+import {
+  calculateBiologicalMediaPreview,
+  normalizeBiologicalMediaInput,
+} from '../lib/biologicalMediaCalculations';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
 
 const PROFILE_STATUSES = ['Draft', 'In Review', 'Approved', 'Retired'];
+const MEDIA_SIZING_FIELDS = [
+  'overall_vtr_g_tan_n_m3_d', 'default_safety_factor', 'minimum_media_m3',
+  'module_increment_m3', 'media_fill_fraction', 'operating_min_ph', 'operating_max_ph',
+  'operating_min_tan_mg_n_l', 'operating_max_tan_mg_n_l', 'operating_min_do_mg_l',
+  'operating_max_do_mg_l', 'operating_min_flow_m3_h', 'operating_max_flow_m3_h',
+];
 const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
 
 function text(value: unknown): string | null {
@@ -30,6 +40,25 @@ function rangeError(min: number | null, max: number | null, label: string): stri
   return min != null && max != null && min > max
     ? `${label} minimum cannot exceed maximum.`
     : null;
+}
+
+function previewStatusLabel(status: string) {
+  return status === 'VALID' ? 'Valid'
+    : status === 'VALID_WITH_WARNINGS' ? 'Valid with Warnings'
+      : status === 'BLOCKED' ? 'Blocked' : 'Incomplete';
+}
+
+export function isBiologicalMediaPreviewStale(record: any, context: any) {
+  if (!record?.preview_result) return false;
+  if (record.preview_stale) return true;
+  const snapshot = record.preview_input_snapshot;
+  if (!snapshot?.biomass || !snapshot?.water) return true;
+  const savedVolume = numberOrNull(snapshot.biomass.water_volume_m3);
+  const currentVolume = numberOrNull(context?.total_operating_volume_m3);
+  if (savedVolume == null || currentVolume == null || Math.abs(savedVolume - currentVolume) > 1e-9) return true;
+  const savedWaterType = String(snapshot.water.water_type || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  const currentWaterType = String(context?.system_water_type || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  return !savedWaterType || savedWaterType !== currentWaterType;
 }
 
 export function validateMediaProfile(body: any, approving = body.status === 'Approved'): string[] {
@@ -65,6 +94,34 @@ export function validateMediaProfile(body: any, approving = body.status === 'App
   }
   if (!text(body.evidence_reference)) errors.push('Evidence reference is required.');
   if (body.is_provisional && !text(body.provisional_label)) errors.push('Provisional profiles require an explicit provisional label.');
+  for (const [field, label, maximum] of [
+    ['overall_vtr_g_tan_n_m3_d', 'Overall VTR', null],
+    ['default_safety_factor', 'Default safety factor', null],
+    ['module_increment_m3', 'Module increment', null],
+    ['media_fill_fraction', 'Media fill fraction', 1],
+  ] as Array<[string, string, number | null]>) {
+    if (body[field] != null && body[field] !== '') {
+      const value = numberOrNull(body[field]);
+      if (value == null || value <= 0 || maximum != null && value > maximum) {
+        errors.push(`${label} must be greater than zero${maximum != null ? ` and no greater than ${maximum}` : ''}.`);
+      }
+    }
+  }
+  if (body.minimum_media_m3 != null && body.minimum_media_m3 !== ''
+      && (numberOrNull(body.minimum_media_m3) == null || Number(body.minimum_media_m3) < 0)) {
+    errors.push('Minimum media volume must be a non-negative number.');
+  }
+  for (const [minField, maxField, label] of [
+    ['operating_min_ph', 'operating_max_ph', 'Operating pH'],
+    ['operating_min_tan_mg_n_l', 'operating_max_tan_mg_n_l', 'Operating TAN'],
+    ['operating_min_do_mg_l', 'operating_max_do_mg_l', 'Operating dissolved oxygen'],
+    ['operating_min_flow_m3_h', 'operating_max_flow_m3_h', 'Operating flow'],
+  ]) {
+    const min = numberOrNull(body[minField]);
+    const max = numberOrNull(body[maxField]);
+    const error = rangeError(min, max, label);
+    if (error) errors.push(error);
+  }
   if (approving) {
     for (const [field, label] of [
       ['operating_min_temperature_c', 'Minimum operating temperature'],
@@ -77,6 +134,21 @@ export function validateMediaProfile(body: any, approving = body.status === 'App
       ['media_bulk_density_kg_m3', 'Media bulk density'],
     ]) {
       if (numberOrNull(body[field]) == null) errors.push(`${label} is required before approval.`);
+    }
+    if (String(body.capacity_model || '').toUpperCase().replace(/[\s-]+/g, '_') === 'OVERALL_VTR') {
+      for (const [field, label] of [
+        ['overall_vtr_g_tan_n_m3_d', 'Overall VTR'],
+        ['default_safety_factor', 'Default safety factor'],
+        ['minimum_media_m3', 'Minimum media volume'],
+        ['module_increment_m3', 'Module increment'],
+        ['media_fill_fraction', 'Media fill fraction'],
+        ['operating_min_ph', 'Minimum operating pH'],
+        ['operating_max_ph', 'Maximum operating pH'],
+        ['operating_min_tan_mg_n_l', 'Minimum operating TAN'],
+        ['operating_max_tan_mg_n_l', 'Maximum operating TAN'],
+      ]) {
+        if (numberOrNull(body[field]) == null) errors.push(`${label} is required before approval.`);
+      }
     }
   }
   return errors;
@@ -243,14 +315,17 @@ async function caseResponse(systemId: string, designBookId: string) {
     };
     const record = (snapshot.biological_media_cases || []).find((item: any) =>
       item.system_id === systemId && item.design_book_id === designBookId) || null;
+    if (record) record.species_rows = record.species_rows || record.species || [];
     const missingInputs: string[] = [];
     if (!record) missingInputs.push('Create the biological media draft.');
     if (record && !record.reactor_type) missingInputs.push('Choose a reactor type.');
     if (record && !record.media_profile_revision_id) missingInputs.push('Select an approved media profile revision.');
     if (record && !record.tan_generation_profile_revision_id) missingInputs.push('Select an approved TAN generation profile revision.');
-    const readinessStatus = !usable ? 'Blocked' : missingInputs.length ? 'Incomplete' : 'Draft';
+    const previewStale = isBiologicalMediaPreviewStale(record, context);
+    const readinessStatus = !usable ? 'Blocked' : missingInputs.length ? 'Incomplete' : previewStale ? 'Draft' : record?.status || 'Draft';
     return {
       case: record,
+      preview: record?.preview_result ? { ...record.preview_result, is_stale: previewStale } : null,
       context,
       readiness_status: readinessStatus,
       input_completeness: { complete: missingInputs.length === 0 && usable, missing: missingInputs },
@@ -272,15 +347,28 @@ async function caseResponse(systemId: string, designBookId: string) {
   ]);
   if ('error' in context) return context;
   const record = caseResult.rows[0] || null;
+  if (record) {
+    const speciesResult = await query(
+      `SELECT s.*, c.common_name AS catalog_common_name, c.scientific_name AS catalog_scientific_name,
+              c.active AS catalog_active
+       FROM lss_biological_media_species s
+       LEFT JOIN aquarium_species_catalog c ON c.id=s.species_profile_id
+       WHERE s.case_id=$1 ORDER BY s.sort_order, s.id`,
+      [record.id],
+    );
+    record.species_rows = speciesResult.rows;
+  }
   const missingInputs: string[] = [];
   if (!record) missingInputs.push('Create the biological media draft.');
   if (record && !record.reactor_type) missingInputs.push('Choose a reactor type.');
   if (record && !record.media_profile_revision_id) missingInputs.push('Select an approved media profile revision.');
   if (record && !record.tan_generation_profile_revision_id) missingInputs.push('Select an approved TAN generation profile revision.');
   const blocked = context.status === 'blocked';
-  const readinessStatus = blocked ? 'Blocked' : missingInputs.length ? 'Incomplete' : 'Draft';
+  const previewStale = isBiologicalMediaPreviewStale(record, context);
+  const readinessStatus = blocked ? 'Blocked' : missingInputs.length ? 'Incomplete' : previewStale ? 'Draft' : record?.status || 'Draft';
   return {
     case: record,
+    preview: record?.preview_result ? { ...record.preview_result, is_stale: previewStale } : null,
     context,
     readiness_status: readinessStatus,
     input_completeness: { complete: missingInputs.length === 0 && !blocked, missing: missingInputs },
@@ -336,25 +424,164 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
     }
   }
   const status = context.status === 'blocked' || !reactorType || !mediaId || !tanId ? (context.status === 'blocked' ? 'Blocked' : 'Incomplete') : 'Draft';
+  const contextVolume = Number(context.total_operating_volume_m3);
   try {
     const result = await query(
       `INSERT INTO lss_biological_media_cases
-       (system_id, design_book_id, reactor_type, media_profile_revision_id, tan_generation_profile_revision_id, status, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       (system_id, design_book_id, reactor_type, media_profile_revision_id, tan_generation_profile_revision_id, status, notes, created_by,
+        biomass_method, water_volume_m3, stocking_density_kg_m3, feed_rate_pct_biomass_day, protein_pct,
+        manual_daily_feed_kg_d, water_type, temperature_c, ph, salinity_ppt, max_tan_mg_n_l, do_in_mg_l,
+        do_out_min_mg_l, alkalinity_mg_l_caco3, actual_flow_m3_h, safety_factor, preview_stale)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
        ON CONFLICT (system_id, design_book_id) DO UPDATE SET
          reactor_type=EXCLUDED.reactor_type,
          media_profile_revision_id=EXCLUDED.media_profile_revision_id,
          tan_generation_profile_revision_id=EXCLUDED.tan_generation_profile_revision_id,
-         status=EXCLUDED.status, notes=EXCLUDED.notes, updated_at=NOW()
+          status=EXCLUDED.status, notes=EXCLUDED.notes, biomass_method=EXCLUDED.biomass_method,
+          water_volume_m3=EXCLUDED.water_volume_m3, stocking_density_kg_m3=EXCLUDED.stocking_density_kg_m3,
+          feed_rate_pct_biomass_day=EXCLUDED.feed_rate_pct_biomass_day, protein_pct=EXCLUDED.protein_pct,
+          manual_daily_feed_kg_d=EXCLUDED.manual_daily_feed_kg_d, water_type=EXCLUDED.water_type,
+          temperature_c=EXCLUDED.temperature_c, ph=EXCLUDED.ph, salinity_ppt=EXCLUDED.salinity_ppt,
+          max_tan_mg_n_l=EXCLUDED.max_tan_mg_n_l, do_in_mg_l=EXCLUDED.do_in_mg_l,
+          do_out_min_mg_l=EXCLUDED.do_out_min_mg_l, alkalinity_mg_l_caco3=EXCLUDED.alkalinity_mg_l_caco3,
+          actual_flow_m3_h=EXCLUDED.actual_flow_m3_h, safety_factor=EXCLUDED.safety_factor,
+          preview_stale=true, updated_at=NOW()
        RETURNING *`,
-      [systemId, designBookId, reactorType, mediaId, tanId, status, text(req.body.notes), req.user!.id],
+      [systemId, designBookId, reactorType, mediaId, tanId, status, text(req.body.notes), req.user!.id,
+        text(req.body.biomass_method), numberOrNull(req.body.water_volume_m3)
+          ?? (Number.isFinite(contextVolume) && contextVolume > 0 ? contextVolume : null),
+        numberOrNull(req.body.stocking_density_kg_m3), numberOrNull(req.body.feed_rate_pct_biomass_day),
+        numberOrNull(req.body.protein_pct), numberOrNull(req.body.manual_daily_feed_kg_d),
+        text(req.body.water_type) || context.system_water_type, numberOrNull(req.body.temperature_c),
+        numberOrNull(req.body.ph), numberOrNull(req.body.salinity_ppt), numberOrNull(req.body.max_tan_mg_n_l),
+        numberOrNull(req.body.do_in_mg_l), numberOrNull(req.body.do_out_min_mg_l),
+        numberOrNull(req.body.alkalinity_mg_l_caco3), numberOrNull(req.body.actual_flow_m3_h),
+        numberOrNull(req.body.safety_factor), true],
     );
+    const caseId = result.rows[0].id;
+    await query('DELETE FROM lss_biological_media_species WHERE case_id=$1', [caseId]);
+    const speciesRows = Array.isArray(req.body.species_rows) ? req.body.species_rows : [];
+    for (let index = 0; index < speciesRows.length; index += 1) {
+      const row = speciesRows[index] || {};
+      const commonName = text(row.common_name_snapshot || row.common_name || row.species_name);
+      if (!commonName) continue;
+      await query(
+        `INSERT INTO lss_biological_media_species
+         (case_id, species_profile_id, common_name_snapshot, scientific_name_snapshot, life_stage,
+          quantity, design_weight_kg, entered_weight_kg, notes, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [caseId, text(row.species_profile_id || row.catalog_species_id), commonName,
+          text(row.scientific_name_snapshot || row.scientific_name), text(row.life_stage),
+          numberOrNull(row.quantity), numberOrNull(row.design_weight_kg),
+          numberOrNull(row.entered_weight_kg ?? row.design_weight_kg), text(row.notes), index],
+      );
+    }
     res.json(await caseResponse(systemId, designBookId));
   } catch (error: any) {
     const mapped = databaseProfileError(error);
     if (mapped) return res.status(mapped.code === 'IMMUTABLE_REVISION' ? 409 : 400).json({ error: mapped });
     throw error;
   }
+});
+
+router.post('/systems/:id/biological-media/preview', requireModuleManage('design_books'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const designBookId = text(req.body.design_book_id);
+  if (!designBookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
+  const systemId = routeParam(req.params.id);
+  const editable = await query(
+    `SELECT db.status AS book_status, s.status AS system_status
+     FROM design_books db JOIN systems s ON s.project_id=db.project_id
+     WHERE db.id=$1 AND s.id=$2`,
+    [designBookId, systemId],
+  );
+  if (!editable.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System or Design Book not found.' } });
+  if (!['Draft', 'In Progress'].includes(editable.rows[0].book_status)
+      || ['For Review', 'Approved', 'Released'].includes(editable.rows[0].system_status)) {
+    return res.status(409).json({
+      error: {
+        code: 'DESIGN_BOOK_NOT_EDITABLE',
+        message: 'Biological Media previews cannot update frozen Design Books or reviewed systems.',
+      },
+    });
+  }
+  const context = await linkedVolumeContext(systemId, designBookId);
+  if ('error' in context) return res.status(context.error.code === 'NOT_FOUND' ? 404 : 409).json({ error: context.error });
+  if (context.status === 'blocked') {
+    const message = context.reasons.join(' ');
+    return res.status(409).json({
+      error: { code: 'WATER_CONTEXT_BLOCKED', message },
+      status: 'BLOCKED',
+      messages: [{ code: 'WATER_CONTEXT_BLOCKED', severity: 'BLOCKING', message }],
+    });
+  }
+  const mediaId = text(req.body.media_profile_revision_id);
+  const tanId = text(req.body.tan_generation_profile_revision_id);
+  const [mediaResult, tanResult] = await Promise.all([
+    mediaId ? query('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [mediaId]) : Promise.resolve({ rows: [] }),
+    tanId ? query('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [tanId]) : Promise.resolve({ rows: [] }),
+  ]);
+  const mediaProfile = mediaResult.rows[0] || null;
+  const tanProfile = tanResult.rows[0] || null;
+  const body = {
+    ...req.body,
+    biomass: {
+      ...(req.body.biomass || {}),
+      method: req.body.biomass_method || req.body.biomass?.method,
+      water_volume_m3: context.total_operating_volume_m3,
+      stocking_density_kg_m3: req.body.biomass?.stocking_density_kg_m3 ?? req.body.stocking_density_kg_m3,
+      species: req.body.species_rows || req.body.biomass?.species || [],
+    },
+    feeding: {
+      ...(req.body.feeding || {}),
+      mode: req.body.feeding?.mode || 'GLOBAL',
+      feed_rate_pct_biomass_day: req.body.feeding?.feed_rate_pct_biomass_day ?? req.body.feed_rate_pct_biomass_day,
+      protein_pct: req.body.feeding?.protein_pct ?? req.body.protein_pct,
+      manual_daily_feed_kg_d: req.body.feeding?.manual_daily_feed_kg_d ?? req.body.manual_daily_feed_kg_d,
+      tan_generation_profile_revision_id: tanId,
+    },
+    water: {
+      ...(req.body.water || {}),
+      water_type: context.system_water_type,
+      temperature_c: req.body.water?.temperature_c ?? req.body.temperature_c,
+      ph: req.body.water?.ph ?? req.body.ph,
+      salinity_ppt: req.body.water?.salinity_ppt ?? req.body.salinity_ppt,
+      tan_target_mg_n_l: req.body.water?.tan_target_mg_n_l ?? req.body.max_tan_mg_n_l,
+      do_in_mg_l: req.body.water?.do_in_mg_l ?? req.body.do_in_mg_l,
+      do_out_min_mg_l: req.body.water?.do_out_min_mg_l ?? req.body.do_out_min_mg_l,
+      alkalinity_mg_l_caco3: req.body.water?.alkalinity_mg_l_caco3 ?? req.body.alkalinity_mg_l_caco3,
+      system_flow_m3_h: req.body.water?.system_flow_m3_h ?? req.body.actual_flow_m3_h,
+    },
+    filter: {
+      ...(req.body.filter || {}),
+      reactor_type: req.body.reactor_type || req.body.filter?.reactor_type,
+      media_profile_revision_id: mediaId,
+      safety_factor: req.body.safety_factor,
+    },
+  };
+  const result = calculateBiologicalMediaPreview(body, { mediaProfile, tanProfile });
+  const currentCase = await query(
+    'SELECT id FROM lss_biological_media_cases WHERE system_id=$1 AND design_book_id=$2',
+    [systemId, designBookId],
+  );
+  if (currentCase.rows[0]) {
+    await query(
+      `UPDATE lss_biological_media_cases SET preview_result=$1, preview_input_snapshot=$2,
+       previewed_at=NOW(), preview_stale=false, status=$3, updated_at=NOW() WHERE id=$4`,
+      [result, normalizeBiologicalMediaInput(body), previewStatusLabel(result.status), currentCase.rows[0].id],
+    );
+  }
+  res.json({
+    ...result,
+    status_label: previewStatusLabel(result.status),
+    is_preview: true,
+    is_stale: false,
+    profile: mediaProfile ? {
+      id: mediaProfile.id,
+      profile_code: mediaProfile.profile_code,
+      profile_name: mediaProfile.profile_name,
+      revision: mediaProfile.revision,
+    } : null,
+  });
 });
 
 router.get('/biological-media/media-profiles', async (_req: AuthRequest, res: Response) => {
@@ -386,13 +613,18 @@ router.post('/admin/biological-media/media-profiles', requireModuleManage('desig
        (profile_code, profile_name, revision, water_types, reactor_types, capacity_model, capacity_model_version,
         capacity_basis_unit, operating_min_temperature_c, operating_max_temperature_c, operating_min_salinity_ppt,
         operating_max_salinity_ppt, media_min_depth_mm, media_max_depth_mm, media_void_fraction,
-        media_bulk_density_kg_m3, evidence_reference, is_provisional, provisional_label, status, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+         media_bulk_density_kg_m3, overall_vtr_g_tan_n_m3_d, default_safety_factor, minimum_media_m3,
+         module_increment_m3, media_fill_fraction, operating_min_ph, operating_max_ph,
+         operating_min_tan_mg_n_l, operating_max_tan_mg_n_l, operating_min_do_mg_l,
+         operating_max_do_mg_l, operating_min_flow_m3_h, operating_max_flow_m3_h,
+         evidence_reference, is_provisional, provisional_label, status, notes, created_by)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
        RETURNING *`,
       [code, text(req.body.profile_name), revision, arrayOfText(req.body.water_types), arrayOfText(req.body.reactor_types),
         text(req.body.capacity_model), text(req.body.capacity_model_version), text(req.body.capacity_basis_unit),
         ...['operating_min_temperature_c', 'operating_max_temperature_c', 'operating_min_salinity_ppt', 'operating_max_salinity_ppt',
           'media_min_depth_mm', 'media_max_depth_mm', 'media_void_fraction', 'media_bulk_density_kg_m3'].map(field => numberOrNull(req.body[field])),
+         ...MEDIA_SIZING_FIELDS.map(field => numberOrNull(req.body[field])),
         text(req.body.evidence_reference), !!req.body.is_provisional, text(req.body.provisional_label),
         'Draft', text(req.body.notes), req.user!.id],
     );
@@ -416,12 +648,17 @@ router.post('/admin/biological-media/media-profiles/:id/revisions', requireModul
      (profile_code, profile_name, revision, water_types, reactor_types, capacity_model, capacity_model_version,
       capacity_basis_unit, operating_min_temperature_c, operating_max_temperature_c, operating_min_salinity_ppt,
       operating_max_salinity_ppt, media_min_depth_mm, media_max_depth_mm, media_void_fraction,
-      media_bulk_density_kg_m3, evidence_reference, is_provisional, provisional_label, status, notes, supersedes_id, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'Draft',$20,$21,$22) RETURNING *`,
+       media_bulk_density_kg_m3, overall_vtr_g_tan_n_m3_d, default_safety_factor, minimum_media_m3,
+       module_increment_m3, media_fill_fraction, operating_min_ph, operating_max_ph,
+       operating_min_tan_mg_n_l, operating_max_tan_mg_n_l, operating_min_do_mg_l,
+       operating_max_do_mg_l, operating_min_flow_m3_h, operating_max_flow_m3_h,
+       evidence_reference, is_provisional, provisional_label, status, notes, supersedes_id, created_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,'Draft',$33,$34,$35) RETURNING *`,
     [body.profile_code, text(body.profile_name), revision, arrayOfText(body.water_types), arrayOfText(body.reactor_types),
       text(body.capacity_model), text(body.capacity_model_version), text(body.capacity_basis_unit),
       ...['operating_min_temperature_c', 'operating_max_temperature_c', 'operating_min_salinity_ppt', 'operating_max_salinity_ppt',
         'media_min_depth_mm', 'media_max_depth_mm', 'media_void_fraction', 'media_bulk_density_kg_m3'].map(field => numberOrNull(body[field])),
+       ...MEDIA_SIZING_FIELDS.map(field => numberOrNull(body[field])),
       text(body.evidence_reference), !!body.is_provisional, text(body.provisional_label), text(body.notes), source.id, req.user!.id],
   );
   res.status(201).json(result.rows[0]);

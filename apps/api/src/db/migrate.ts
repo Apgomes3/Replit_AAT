@@ -1230,6 +1230,19 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_profiles (
   media_max_depth_mm NUMERIC,
   media_void_fraction NUMERIC,
   media_bulk_density_kg_m3 NUMERIC,
+  overall_vtr_g_tan_n_m3_d NUMERIC,
+  default_safety_factor NUMERIC,
+  minimum_media_m3 NUMERIC,
+  module_increment_m3 NUMERIC,
+  media_fill_fraction NUMERIC,
+  operating_min_ph NUMERIC,
+  operating_max_ph NUMERIC,
+  operating_min_tan_mg_n_l NUMERIC,
+  operating_max_tan_mg_n_l NUMERIC,
+  operating_min_do_mg_l NUMERIC,
+  operating_max_do_mg_l NUMERIC,
+  operating_min_flow_m3_h NUMERIC,
+  operating_max_flow_m3_h NUMERIC,
   evidence_reference TEXT,
   is_provisional BOOLEAN NOT NULL DEFAULT false,
   provisional_label TEXT,
@@ -1291,8 +1304,28 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_cases (
   reactor_type VARCHAR(120),
   media_profile_revision_id UUID REFERENCES lss_biological_media_profiles(id),
   tan_generation_profile_revision_id UUID REFERENCES lss_tan_generation_profiles(id),
-  status VARCHAR(20) NOT NULL DEFAULT 'Draft'
-    CHECK (status IN ('Draft', 'Incomplete', 'Blocked')),
+  status VARCHAR(30) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'Incomplete', 'Blocked', 'Valid with Warnings', 'Valid')),
+  biomass_method VARCHAR(30),
+  water_volume_m3 NUMERIC,
+  stocking_density_kg_m3 NUMERIC,
+  feed_rate_pct_biomass_day NUMERIC,
+  protein_pct NUMERIC,
+  manual_daily_feed_kg_d NUMERIC,
+  water_type VARCHAR(50),
+  temperature_c NUMERIC,
+  ph NUMERIC,
+  salinity_ppt NUMERIC,
+  max_tan_mg_n_l NUMERIC,
+  do_in_mg_l NUMERIC,
+  do_out_min_mg_l NUMERIC,
+  alkalinity_mg_l_caco3 NUMERIC,
+  actual_flow_m3_h NUMERIC,
+  safety_factor NUMERIC,
+  preview_result JSONB,
+  preview_input_snapshot JSONB,
+  previewed_at TIMESTAMPTZ,
+  preview_stale BOOLEAN NOT NULL DEFAULT true,
   notes TEXT,
   created_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1301,6 +1334,26 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_cases (
 );
 CREATE INDEX IF NOT EXISTS idx_lss_bio_media_cases_system
   ON lss_biological_media_cases(system_id, design_book_id);
+
+CREATE TABLE IF NOT EXISTS lss_biological_media_species (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES lss_biological_media_cases(id) ON DELETE CASCADE,
+  species_profile_id UUID REFERENCES aquarium_species_catalog(id) ON DELETE SET NULL,
+  common_name_snapshot VARCHAR(255) NOT NULL,
+  scientific_name_snapshot VARCHAR(255),
+  life_stage VARCHAR(120),
+  quantity INTEGER,
+  design_weight_kg NUMERIC,
+  entered_weight_kg NUMERIC,
+  notes TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (quantity IS NULL OR quantity >= 0),
+  CHECK (design_weight_kg IS NULL OR design_weight_kg > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_species_case
+  ON lss_biological_media_species(case_id, sort_order);
 
 CREATE OR REPLACE FUNCTION prevent_approved_biological_media_mutation()
 RETURNS TRIGGER AS $$
@@ -1332,6 +1385,46 @@ DROP TRIGGER IF EXISTS guard_approved_lss_tan_profiles
 CREATE TRIGGER guard_approved_lss_tan_profiles
 BEFORE UPDATE OR DELETE ON lss_tan_generation_profiles
 FOR EACH ROW EXECUTE FUNCTION prevent_approved_biological_media_mutation();
+
+-- Additive Biological Media preview migration for existing databases.
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS overall_vtr_g_tan_n_m3_d NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS default_safety_factor NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS minimum_media_m3 NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS module_increment_m3 NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS media_fill_fraction NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_min_ph NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_max_ph NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_min_tan_mg_n_l NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_max_tan_mg_n_l NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_min_do_mg_l NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_max_do_mg_l NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_min_flow_m3_h NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_max_flow_m3_h NUMERIC;
+
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS biomass_method VARCHAR(30);
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS water_volume_m3 NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS stocking_density_kg_m3 NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS feed_rate_pct_biomass_day NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS protein_pct NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS manual_daily_feed_kg_d NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS water_type VARCHAR(50);
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS temperature_c NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS ph NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS salinity_ppt NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS max_tan_mg_n_l NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS do_in_mg_l NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS do_out_min_mg_l NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS alkalinity_mg_l_caco3 NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS actual_flow_m3_h NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS safety_factor NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS preview_result JSONB;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS preview_input_snapshot JSONB;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS previewed_at TIMESTAMPTZ;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS preview_stale BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE lss_biological_media_cases ALTER COLUMN status TYPE VARCHAR(30);
+ALTER TABLE lss_biological_media_cases DROP CONSTRAINT IF EXISTS lss_biological_media_cases_status_check;
+ALTER TABLE lss_biological_media_cases ADD CONSTRAINT lss_biological_media_cases_status_check
+  CHECK (status IN ('Draft', 'Incomplete', 'Blocked', 'Valid with Warnings', 'Valid'));
 
 -- PROCUREMENT FIELDS: vendor, delivery date, payment/shipping terms, priority, UOM
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255);
