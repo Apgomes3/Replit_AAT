@@ -1693,8 +1693,15 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
-    const firstCard = within(route.getByRole('region', { name: 'Foam Fractionator FF-500' }));
-    const secondCard = within(route.getByRole('region', { name: 'Foam Fractionator FF-750' }));
+    const firstCardElement = route.getByRole('region', { name: 'Foam Fractionator FF-500' });
+    const secondCardElement = route.getByRole('region', { name: 'Foam Fractionator FF-750' });
+    const firstCard = within(firstCardElement);
+    const secondCard = within(secondCardElement);
+    const cardGrid = firstCardElement.parentElement;
+    expect(cardGrid).not.toBeNull();
+    expect(cardGrid).toHaveClass('grid', 'gap-2', 'sm:grid-cols-2');
+    expect(cardGrid).not.toHaveClass('grid-cols-1', 'grid-cols-2');
+    expect(cardGrid?.children).toHaveLength(2);
     route.getAllByText('Model diameter').forEach(detail => expect(detail).not.toBeVisible());
 
     const firstDetails = firstCard.getByRole('button', { name: 'Details' });
