@@ -193,7 +193,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(4);
+    expect(snapshot.schema_version).toBe(5);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -300,7 +300,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(4);
+    expect(insertParams[6]).toBe(5);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 

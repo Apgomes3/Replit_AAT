@@ -28,6 +28,7 @@ export interface DesignBookReleaseContext {
   hydraulics?: any[];
   biological_media_cases?: any[];
   biological_media_runs?: any[];
+  thermal_calculations?: any[];
   engineering_calculations?: {
     exhibits?: any[];
     systems?: any[];
@@ -117,12 +118,15 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
   const exhibits = context.exhibits || [];
   const tanks = context.tanks || [];
   const systems = context.systems || [];
+  const lifeSupportSystems = systems.filter(system =>
+    String(system?.system_type || '').trim().toLowerCase() === 'life support');
   const species = context.species || [];
   const hydraulics = context.hydraulics || [];
   const exhibitCalculations = context.engineering_calculations?.exhibits || [];
   const systemCalculations = context.engineering_calculations?.systems || [];
   const biologicalMediaCases = context.biological_media_cases || [];
   const biologicalMediaRuns = context.biological_media_runs || [];
+  const thermalCalculations = context.thermal_calculations || [];
   const scopes = Array.isArray(context.project_scopes) ? context.project_scopes : [];
   const hasLssScope = scopeMatches(scopes, 'LSS');
   const exhibitIds = exhibits.map(exhibit => exhibit.id).filter(Boolean);
@@ -188,6 +192,11 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
     const inputMatches = canonicalJson(restoreRunSourceInput(latestRun))
       === canonicalJson(mediaCase.preview_input_snapshot || {});
     return !contextMatches || !inputMatches;
+  });
+  const thermalNotReady = lifeSupportSystems.filter(system => {
+    const thermal = thermalCalculations.find(item => item.system_id === system.id);
+    return !thermal || thermal.status !== 'Ready' || thermal.freshness !== 'fresh' ||
+      thermal.calculation?.status !== 'Ready';
   });
 
   return [
@@ -349,6 +358,21 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
           : 'No Biological Media cases are included.',
       `/design-books/${context.id}?tab=lss`,
       biologicalMediaCasesWithoutApprovedRun.map(mediaCase => mediaCase.system_id).filter(Boolean),
+    ),
+    item(
+      'thermal_calculations',
+      'Thermal calculations',
+      hasLssScope ? 'blocker' : 'warning',
+      !hasLssScope || (lifeSupportSystems.length > 0 && thermalNotReady.length === 0),
+      !hasLssScope
+        ? 'Thermal calculation is not required because LSS is outside project scope.'
+        : lifeSupportSystems.length === 0
+          ? 'Add an LSS system before calculating thermal loads.'
+          : thermalNotReady.length
+            ? `${thermalNotReady.length} LSS system${thermalNotReady.length === 1 ? ' needs' : 's need'} a current Ready thermal calculation.`
+            : 'Every Life Support system has a current Ready thermal calculation.',
+      `/design-books/${context.id}?tab=thermal`,
+      thermalNotReady.map(system => system.id),
     ),
     item(
       'calculation_freshness',

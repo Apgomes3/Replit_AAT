@@ -70,3 +70,97 @@ const completeMediaProfile = {
         ]));
     });
 });
+(0, vitest_1.describe)('Biological Media preview freshness', () => {
+    const record = {
+        preview_result: { status: 'VALID' },
+        preview_stale: false,
+        preview_input_snapshot: {
+            biomass: { water_volume_m3: 42.125 },
+            water: { water_type: 'FRESHWATER' },
+        },
+    };
+    (0, vitest_1.it)('keeps a preview current only while authoritative linked context matches', () => {
+        (0, vitest_1.expect)((0, biologicalMedia_1.isBiologicalMediaPreviewStale)(record, {
+            total_operating_volume_m3: 42.125,
+            system_water_type: 'Freshwater',
+        })).toBe(false);
+    });
+    (0, vitest_1.it)('marks upstream linked-volume and water-type changes stale', () => {
+        (0, vitest_1.expect)((0, biologicalMedia_1.isBiologicalMediaPreviewStale)(record, {
+            total_operating_volume_m3: 43,
+            system_water_type: 'Freshwater',
+        })).toBe(true);
+        (0, vitest_1.expect)((0, biologicalMedia_1.isBiologicalMediaPreviewStale)(record, {
+            total_operating_volume_m3: 42.125,
+            system_water_type: 'Marine',
+        })).toBe(true);
+    });
+});
+(0, vitest_1.describe)('Biological Media immutable run presentation', () => {
+    const run = {
+        id: 'run-1',
+        run_number: 3,
+        status: 'Approved',
+        calculation_status: 'VALID_WITH_WARNINGS',
+        executed_at: '2026-08-29T09:00:00.000Z',
+        engine_version: 'BIOFILTER_1_0',
+        created_by_name: 'Design Engineer',
+        warning_acknowledged: true,
+        approved_by_name: 'Approval Engineer',
+        approved_at: '2026-08-29T09:30:00.000Z',
+        review_notes: 'Warnings reviewed.',
+        linked_volume_context_snapshot: {
+            total_operating_volume_m3: 42.125,
+            system_water_type: 'Freshwater',
+        },
+        media_profile_snapshot: {
+            profile_code: 'MEDIA-01',
+            revision: 4,
+            evidence_reference: 'MEDIA-EVIDENCE-R4',
+        },
+        tan_profile_snapshot: {
+            profile_code: 'TAN-01',
+            revision: 2,
+            evidence_reference: 'TAN-EVIDENCE-R2',
+        },
+        normalized_input_snapshot: { filter: { safety_factor: 1.2 } },
+        result_snapshot: {
+            biomass: { design_biomass_kg: 420 },
+            feeding: { total_feed_kg_d: 8.4, tan_load_g_n_d: 100 },
+            media: { required_media_l: 1100, installed_media_l: 1200 },
+        },
+        assumptions: ['TAN nitrogen remains the sizing mass basis.'],
+        messages: [{ code: 'MEDIA_W01', severity: 'WARNING', message: 'Minimum module installed.' }],
+        overrides_snapshot: [],
+    };
+    (0, vitest_1.it)('exports only frozen profile evidence, results, warnings, engine, and approval metadata', () => {
+        const summary = (0, biologicalMedia_1.renderBiologicalMediaRunSummary)(run);
+        (0, vitest_1.expect)(summary).toContain('MEDIA-01 r4');
+        (0, vitest_1.expect)(summary).toContain('MEDIA-EVIDENCE-R4');
+        (0, vitest_1.expect)(summary).toContain('BIOFILTER_1_0');
+        (0, vitest_1.expect)(summary).toContain('Installed media: 1200 L');
+        (0, vitest_1.expect)(summary).toContain('WARNING MEDIA_W01');
+        (0, vitest_1.expect)(summary).toContain('Approval Engineer');
+    });
+    (0, vitest_1.it)('compares frozen inputs, profile revisions, outputs, warnings, and approval state', () => {
+        const comparison = (0, biologicalMedia_1.compareBiologicalMediaRuns)(run, {
+            ...run,
+            id: 'run-2',
+            run_number: 4,
+            status: 'Pending Review',
+            media_profile_snapshot: { ...run.media_profile_snapshot, revision: 5 },
+            normalized_input_snapshot: { filter: { safety_factor: 1.4 } },
+            result_snapshot: { ...run.result_snapshot, media: { required_media_l: 1300, installed_media_l: 1400 } },
+            messages: [],
+        });
+        (0, vitest_1.expect)(comparison.changes.inputs).toHaveLength(1);
+        (0, vitest_1.expect)(comparison.changes.media_profile).toEqual(vitest_1.expect.arrayContaining([
+            vitest_1.expect.objectContaining({ field: 'revision', before: 4, after: 5 }),
+        ]));
+        (0, vitest_1.expect)(comparison.changes.results).toHaveLength(1);
+        (0, vitest_1.expect)(comparison.changes.warnings).toHaveLength(1);
+        (0, vitest_1.expect)(comparison.changes.approval).toEqual(vitest_1.expect.arrayContaining([
+            vitest_1.expect.objectContaining({ field: 'status', before: 'Approved', after: 'Pending Review' }),
+        ]));
+    });
+});

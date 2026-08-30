@@ -23,12 +23,20 @@ import {
   calculateSystemEngineering,
   ALLOCATION_TOLERANCE_PCT,
 } from '../lib/aquariumCalculations';
+import {
+  buildThermalSourceContext,
+  calculateThermalCalculation,
+  THERMAL_CALCULATION_VERSION,
+} from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
 
 type DbRunner = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
+
+const isLifeSupportSystem = (system: any) =>
+  String(system?.system_type || '').trim().toLowerCase() === 'life support';
 const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
 
 async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
@@ -49,6 +57,100 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
     side_streams: rows.filter(stream => stream.system_id === system.id),
     fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
   }));
+}
+
+async function loadThermalCalculations(
+  runner: DbRunner,
+  designBookId: string,
+  systems: any[],
+  links: any[],
+  exhibits: any[],
+  tanks: any[],
+  exhibitCalculations: any[],
+) {
+  const savedRows = systems.length
+    ? (await runner(
+      'SELECT * FROM design_book_thermal_calculations WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])',
+      [designBookId, systems.map(system => system.id)],
+    )).rows
+    : [];
+  return systems.map(system => {
+    const source = buildThermalSourceContext({
+      system,
+      links: links.filter(link => link.system_id === system.id),
+      exhibits,
+      tanks,
+      exhibitCalculations,
+    });
+    const saved = savedRows.find(row => row.system_id === system.id) || null;
+    const stale = !!saved && (
+      saved.source_fingerprint !== source.fingerprint ||
+      saved.calculation_version !== THERMAL_CALCULATION_VERSION
+    );
+    const preview = calculateThermalCalculation(
+      source,
+      saved?.input_snapshot || {},
+    );
+    const calculation = saved
+      ? {
+          ...saved.result_snapshot,
+          calculation_version: saved.calculation_version,
+          calculated_at: saved.calculated_at,
+          source_fingerprint: saved.source_fingerprint,
+          status: stale ? 'Blocked' : saved.status,
+          freshness: stale ? 'stale' : saved.freshness,
+          is_stale: stale,
+          reasons: stale
+            ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
+            : (saved.result_snapshot?.reasons || []),
+        }
+      : null;
+    return {
+      system_id: system.id,
+      system,
+      source,
+      saved,
+      calculation,
+      current_preview: preview,
+      status: stale ? 'Stale' : saved?.status || 'Not configured',
+      freshness: stale ? 'stale' : saved?.freshness || 'unsaved',
+      source_fingerprint: source.fingerprint,
+    };
+  });
+}
+
+async function insertThermalSnapshotRecord(
+  runner: DbRunner,
+  designBookId: string,
+  item: any,
+) {
+  const row = item?.saved || item;
+  if (!row?.system_id || !row?.calculation_version || !row?.source_fingerprint) return;
+  await runner(
+    `INSERT INTO design_book_thermal_calculations
+       (design_book_id, system_id, calculation_version, status, freshness,
+        source_fingerprint, source_snapshot, constants, formula_inputs,
+        input_snapshot, result_snapshot, sensitivity_cases,
+        deviation_justification, calculated_by, calculated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15)`,
+    [
+      designBookId,
+      row.system_id,
+      row.calculation_version,
+      row.status || 'Blocked',
+      row.freshness === 'stale' ? 'stale' : 'fresh',
+      row.source_fingerprint,
+      JSON.stringify(row.source_snapshot || item.source || {}),
+      JSON.stringify(row.constants || item.calculation?.constants || {}),
+      JSON.stringify(row.formula_inputs || item.calculation?.formula_inputs || {}),
+      JSON.stringify(row.input_snapshot || item.calculation?.inputs || {}),
+      JSON.stringify(row.result_snapshot || item.calculation || {}),
+      JSON.stringify(row.sensitivity_cases || item.calculation?.sensitivity_cases || []),
+      row.deviation_justification || null,
+      row.calculated_by || null,
+      row.calculated_at || new Date().toISOString(),
+    ],
+  );
 }
 
 function nullableSpeciesNumber(value: unknown, label: string, allowZero = false): number | null {
@@ -265,6 +367,15 @@ async function loadReleaseContext(
       design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
     };
   });
+  const thermalCalculations = await loadThermalCalculations(
+    runner,
+    id,
+    currentSystems.filter(isLifeSupportSystem),
+    links,
+    exhibits,
+    tanks,
+    exhibitCalculations,
+  );
 
   const liveContext = {
     ...book,
@@ -278,6 +389,7 @@ async function loadReleaseContext(
     review_handovers: handovers,
     biological_media_cases: biologicalMediaCases,
     biological_media_runs: biologicalMediaRuns,
+    thermal_calculations: thermalCalculations,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculatedAt,
@@ -321,6 +433,154 @@ async function ensureBookEditable(id: string, res: Response) {
   }
   return true;
 }
+
+router.get('/design-books/:id/thermal', authenticate, async (req: AuthRequest, res: Response) => {
+  const frozen = await query(
+    'SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1',
+    [req.params.id],
+  );
+  if (!frozen.rows[0]) {
+    return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+  }
+  const book = frozen.rows[0];
+  if (book.status === 'Released' && book.release_snapshot) {
+    return res.json({ items: book.release_snapshot.thermal_calculations || [], frozen: true });
+  }
+  if (['For Review', 'Approved'].includes(book.status) && book.review_snapshot) {
+    return res.json({ items: book.review_snapshot.thermal_calculations || [], frozen: true });
+  }
+  const context = await loadReleaseContext(routeParam(req.params.id), query, false, true);
+  res.json({ items: context?.thermal_calculations || [], frozen: false });
+});
+
+async function saveThermalCalculation(req: AuthRequest, res: Response) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    const context = await loadReleaseContext(
+      routeParam(req.params.id),
+      client.query.bind(client) as DbRunner,
+      true,
+      true,
+    );
+    if (!context) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    }
+    if (!isDesignBookContentEditable(context.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: {
+          code: 'DESIGN_BOOK_NOT_EDITABLE',
+          message: 'Thermal calculations are read-only while the Design Book is under review, approved, or released.',
+        },
+      });
+    }
+    const item = (context.thermal_calculations || []).find(
+      (candidate: any) => candidate.system_id === req.params.systemId,
+    );
+    if (!item) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        error: { code: 'INVALID_SYSTEM', message: 'The selected LSS system does not belong to this Design Book project.' },
+      });
+    }
+    const inputs = req.body?.inputs && typeof req.body.inputs === 'object'
+      ? req.body.inputs
+      : req.body || {};
+    const calculation = calculateThermalCalculation(
+      item.source,
+      inputs,
+      new Date().toISOString(),
+    );
+    const saved = await client.query(
+      `INSERT INTO design_book_thermal_calculations
+         (design_book_id, system_id, calculation_version, status, freshness,
+          source_fingerprint, source_snapshot, constants, formula_inputs,
+          input_snapshot, result_snapshot, sensitivity_cases,
+          deviation_justification, calculated_by, calculated_at)
+       VALUES ($1,$2,$3,$4,'fresh',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13,$14)
+       ON CONFLICT (design_book_id, system_id)
+       DO UPDATE SET
+         calculation_version=EXCLUDED.calculation_version,
+         status=EXCLUDED.status,
+         freshness='fresh',
+         source_fingerprint=EXCLUDED.source_fingerprint,
+         source_snapshot=EXCLUDED.source_snapshot,
+         constants=EXCLUDED.constants,
+         formula_inputs=EXCLUDED.formula_inputs,
+         input_snapshot=EXCLUDED.input_snapshot,
+         result_snapshot=EXCLUDED.result_snapshot,
+         sensitivity_cases=EXCLUDED.sensitivity_cases,
+         deviation_justification=EXCLUDED.deviation_justification,
+         calculated_by=EXCLUDED.calculated_by,
+         calculated_at=EXCLUDED.calculated_at,
+         updated_at=NOW()
+       RETURNING *`,
+      [
+        req.params.id,
+        req.params.systemId,
+        calculation.calculation_version,
+        calculation.status,
+        calculation.source_fingerprint,
+        JSON.stringify(calculation.source_snapshot),
+        JSON.stringify(calculation.constants),
+        JSON.stringify(calculation.formula_inputs),
+        JSON.stringify(calculation.inputs),
+        JSON.stringify(calculation),
+        JSON.stringify(calculation.sensitivity_cases),
+        String(calculation.inputs.deviation_justification || '').trim() || null,
+        req.user!.id,
+        calculation.calculated_at,
+      ],
+    );
+    await insertAudit(
+      client.query.bind(client) as DbRunner,
+      req.user!.id,
+      'design_book',
+      routeParam(req.params.id),
+      'THERMAL_CALCULATED',
+      {
+        summary: `${item.system.system_code || item.system.system_name} thermal calculation saved`,
+        system_id: req.params.systemId,
+        calculation_version: calculation.calculation_version,
+        calculation_status: calculation.status,
+        source_fingerprint: calculation.source_fingerprint,
+        deviation_justification: String(calculation.inputs.deviation_justification || '').trim() || null,
+      },
+      req.ip,
+    );
+    await client.query('COMMIT');
+    res.json({
+      ...item,
+      saved: saved.rows[0],
+      calculation,
+      current_preview: calculation,
+      status: calculation.status,
+      freshness: 'fresh',
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+router.post(
+  '/design-books/:id/thermal/:systemId/calculate',
+  authenticate,
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  saveThermalCalculation,
+);
+router.put(
+  '/design-books/:id/thermal/:systemId',
+  authenticate,
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  saveThermalCalculation,
+);
 
 router.get('/design-books', authenticate, async (req: AuthRequest, res: Response) => {
   const q = req.query.q as string | undefined;
@@ -546,6 +806,15 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
       design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
     };
   });
+  const thermalCalculations = await loadThermalCalculations(
+    query,
+    routeParam(req.params.id),
+    currentSystems.filter(isLifeSupportSystem),
+    systemLinks,
+    exhibits,
+    tanks,
+    exhibitCalculations,
+  );
 
   const livePackage = {
     exhibits,
@@ -555,6 +824,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     species,
     hydraulics,
     substrate,
+    thermal_calculations: thermalCalculations,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculationTimestamp,
@@ -1397,6 +1667,13 @@ router.post(
           ],
         );
       }
+      for (const row of snapshot.thermal_calculations || []) {
+        await insertThermalSnapshotRecord(
+          client.query.bind(client) as DbRunner,
+          next.id,
+          row,
+        );
+      }
       await client.query('COMMIT');
       await logAudit(req.user!.id, 'design_book', next.id, 'CREATE_REVISION', {
         summary: `Revision ${revision} created from ${source.book_code} Rev ${source.revision}`,
@@ -1420,7 +1697,7 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
-const VERSION_SNAPSHOT_SCHEMA = 4;
+const VERSION_SNAPSHOT_SCHEMA = 5;
 const VERSION_REFERENCE_FIELDS = {
   project: ['id', 'project_code', 'project_name'],
   exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -1505,6 +1782,7 @@ function frozenFromSnapshot(snapshot: any) {
     species: snapshot?.species || [],
     hydraulics: snapshot?.hydraulics || [],
     substrate: snapshot?.substrate || [],
+    thermal_calculations: snapshot?.thermal_calculations || [],
     ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
   };
 }
@@ -1573,11 +1851,12 @@ function makeVersionSnapshot(context: any, capturedAt = new Date().toISOString()
       species: jsonCopy(context.species || []),
       hydraulics: jsonCopy(context.hydraulics || []),
       substrate: jsonCopy(context.substrate || []),
+      thermal_calculations: jsonCopy(context.thermal_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
     },
     live_references: liveReferencesFromContext(context),
     scope: {
-      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'review handovers'],
+      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'thermal calculations', 'review handovers'],
       live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
       restore_target: 'working_copy',
     },
@@ -1592,6 +1871,7 @@ function currentRestoreStateDigest(context: any) {
       species: jsonCopy(context.species || []),
       hydraulics: jsonCopy(context.hydraulics || []),
       substrate: jsonCopy(context.substrate || []),
+      thermal_calculations: jsonCopy(context.thermal_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
     },
     live_references: liveReferencesFromContext(context),
@@ -1614,6 +1894,7 @@ function versionPresentation(version: any, currentContext: any) {
       species: (frozen.species || []).length,
       hydraulics: (frozen.hydraulics || []).length,
       substrate_theming: (frozen.substrate || []).length,
+      thermal_calculations: (frozen.thermal_calculations || []).length,
       review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
     },
     live_references: {
@@ -1623,7 +1904,7 @@ function versionPresentation(version: any, currentContext: any) {
       system_links: (referencesFromSnapshot(snapshot).system_links || []).length,
     },
     restorable_records: [
-      'book metadata', 'species', 'hydraulics', 'substrate and theming',
+      'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations',
       ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
     ],
     preserved_records: Array.isArray(frozen.review_handovers) ? [] : ['review handovers (not captured by this older version)'],
@@ -1643,6 +1924,7 @@ function versionPresentation(version: any, currentContext: any) {
         species: (currentContext.species || []).length,
         hydraulics: (currentContext.hydraulics || []).length,
         substrate_theming: (currentContext.substrate || []).length,
+        thermal_calculations: (currentContext.thermal_calculations || []).length,
         review_handovers: (currentContext.review_handovers || []).length,
       },
       after: {
@@ -1652,6 +1934,7 @@ function versionPresentation(version: any, currentContext: any) {
         species: (frozen.species || []).length,
         hydraulics: (frozen.hydraulics || []).length,
         substrate_theming: (frozen.substrate || []).length,
+        thermal_calculations: (frozen.thermal_calculations || []).length,
         review_handovers: Array.isArray(frozen.review_handovers)
           ? frozen.review_handovers.length
           : (currentContext.review_handovers || []).length,
@@ -1907,6 +2190,14 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
         [req.params.id, s.exhibit_id, s.substrate_type ?? null, s.substrate_height_mm ?? null,
           s.substrate_volume_m3 ?? null, s.theming_type ?? null, s.theming_height_mm ?? null,
           s.theming_volume_m3 ?? null, s.theming_volume_pct ?? null, s.notes ?? null],
+      );
+    }
+    await client.query('DELETE FROM design_book_thermal_calculations WHERE design_book_id=$1', [req.params.id]);
+    for (const thermal of frozen.thermal_calculations || []) {
+      await insertThermalSnapshotRecord(
+        client.query.bind(client) as DbRunner,
+        routeParam(req.params.id),
+        thermal,
       );
     }
     if (Array.isArray(frozen.review_handovers)) {

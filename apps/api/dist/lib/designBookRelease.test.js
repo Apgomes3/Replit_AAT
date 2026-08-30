@@ -20,6 +20,7 @@ function readyContext() {
             }],
         systems: [{
                 id: 'system-1',
+                water_type: 'Freshwater',
                 system_config: 'bespoke',
                 system_type: 'Life Support',
                 status: 'Design',
@@ -32,9 +33,15 @@ function readyContext() {
                 loop1_bio_degas_m3h: 120,
             }],
         engineering_calculations: {
-            exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' } }],
+            exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' }, results: { operating_volume_m3: 42.125 } }],
             systems: [{ status: 'valid', inputs: { system_id: 'system-1' } }],
         },
+        thermal_calculations: [{
+                system_id: 'system-1',
+                status: 'Ready',
+                freshness: 'fresh',
+                calculation: { status: 'Ready' },
+            }],
     };
 }
 (0, vitest_1.describe)('Design Book release policy', () => {
@@ -99,6 +106,37 @@ function readyContext() {
         const blockerKeys = (0, designBookRelease_1.releaseBlockers)((0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)).map(check => check.key);
         (0, vitest_1.expect)(blockerKeys).toEqual(vitest_1.expect.arrayContaining(['calculations', 'calculation_freshness']));
     });
+    (0, vitest_1.it)('blocks release when a thermal result is stale or not Ready', () => {
+        const context = readyContext();
+        context.thermal_calculations[0].freshness = 'stale';
+        context.thermal_calculations[0].status = 'Stale';
+        const thermal = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(check => check.key === 'thermal_calculations');
+        (0, vitest_1.expect)(thermal?.status).toBe('blocked');
+        (0, vitest_1.expect)(thermal?.href).toBe('/design-books/book-1?tab=thermal');
+    });
+    (0, vitest_1.it)('does not require a thermal calculation for Utility systems', () => {
+        const context = readyContext();
+        context.systems.push({
+            id: 'utility-1',
+            system_code: 'CHW-01',
+            system_type: 'Utility',
+            system_config: 'Chilled Water',
+            status: 'Design',
+            design_flow_m3h: 50,
+            loop1_flow_source: 'Plant',
+            loop1_filtration: 'None',
+            loop1_flow_pct: 100,
+        });
+        context.engineering_calculations.systems.push({
+            status: 'valid',
+            inputs: { system_id: 'utility-1' },
+        });
+        const thermal = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(check => check.key === 'thermal_calculations');
+        (0, vitest_1.expect)(thermal?.status).toBe('pass');
+        (0, vitest_1.expect)(thermal?.affected_ids).toBeUndefined();
+    });
     (0, vitest_1.it)('blocks an invalid LSS system calculation', () => {
         const context = readyContext();
         context.engineering_calculations.systems = [{
@@ -147,6 +185,40 @@ function readyContext() {
         });
         (0, vitest_1.expect)(checklist.find(check => check.key === 'flow_route_allocations')?.message).toMatch(/0%/);
         (0, vitest_1.expect)(checklist.find(check => check.key === 'bio_degas_allocations')?.message).toMatch(/intentional/);
+    });
+    (0, vitest_1.it)('blocks release until every Biological Media case has a current approved run', () => {
+        const context = readyContext();
+        context.system_links = [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }];
+        const inputSnapshot = { biomass: { water_volume_m3: 42.125 }, water: { water_type: 'FRESHWATER' } };
+        context.biological_media_cases = [{
+                id: 'case-1',
+                system_id: 'system-1',
+                preview_stale: false,
+                preview_input_snapshot: inputSnapshot,
+            }];
+        context.biological_media_runs = [{
+                id: 'run-1',
+                case_id: 'case-1',
+                run_number: 1,
+                status: 'Pending Review',
+                normalized_input_snapshot: inputSnapshot,
+                linked_volume_context_snapshot: {
+                    total_operating_volume_m3: 42.125,
+                    system_water_type: 'Freshwater',
+                },
+                overrides_snapshot: [],
+            }];
+        (0, vitest_1.expect)((0, designBookRelease_1.buildDesignBookReleaseChecklist)(context).find(check => check.key === 'biological_media_runs')).toMatchObject({
+            status: 'blocked',
+            affected_ids: ['system-1'],
+        });
+        context.biological_media_runs[0].status = 'Approved';
+        (0, vitest_1.expect)((0, designBookRelease_1.buildDesignBookReleaseChecklist)(context).find(check => check.key === 'biological_media_runs')?.status).toBe('pass');
+        context.biological_media_cases[0].preview_stale = true;
+        (0, vitest_1.expect)((0, designBookRelease_1.buildDesignBookReleaseChecklist)(context).find(check => check.key === 'biological_media_runs')?.status).toBe('blocked');
+        context.biological_media_cases[0].preview_stale = false;
+        context.engineering_calculations.exhibits[0].results.operating_volume_m3 = 43;
+        (0, vitest_1.expect)((0, designBookRelease_1.buildDesignBookReleaseChecklist)(context).find(check => check.key === 'biological_media_runs')?.status).toBe('blocked');
     });
     (0, vitest_1.it)('never allows release while any blocker remains', () => {
         (0, vitest_1.expect)((0, designBookRelease_1.validateReleaseBlockers)(2)?.code).toBe('RELEASE_BLOCKED');

@@ -46,6 +46,26 @@ function listLabels(labels) {
         return labels.join(' and ');
     return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
 }
+function canonicalJson(value) {
+    if (Array.isArray(value))
+        return `[${value.map(canonicalJson).join(',')}]`;
+    if (value && typeof value === 'object') {
+        return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+function restoreRunSourceInput(run) {
+    const source = JSON.parse(JSON.stringify(run.normalized_input_snapshot || {}));
+    for (const override of run.overrides_snapshot || []) {
+        const parts = String(override.field_path || '').split('.').filter(Boolean);
+        let current = source;
+        for (const part of parts.slice(0, -1))
+            current = current?.[part];
+        if (current && parts.length)
+            current[parts[parts.length - 1]] = override.original_value;
+    }
+    return source;
+}
 /**
  * The release policy is intentionally kept pure so the API and automated
  * checks use the same blocker/warning rules.
@@ -54,10 +74,14 @@ function buildDesignBookReleaseChecklist(context) {
     const exhibits = context.exhibits || [];
     const tanks = context.tanks || [];
     const systems = context.systems || [];
+    const lifeSupportSystems = systems.filter(system => String(system?.system_type || '').trim().toLowerCase() === 'life support');
     const species = context.species || [];
     const hydraulics = context.hydraulics || [];
     const exhibitCalculations = context.engineering_calculations?.exhibits || [];
     const systemCalculations = context.engineering_calculations?.systems || [];
+    const biologicalMediaCases = context.biological_media_cases || [];
+    const biologicalMediaRuns = context.biological_media_runs || [];
+    const thermalCalculations = context.thermal_calculations || [];
     const scopes = Array.isArray(context.project_scopes) ? context.project_scopes : [];
     const hasLssScope = scopeMatches(scopes, 'LSS');
     const exhibitIds = exhibits.map(exhibit => exhibit.id).filter(Boolean);
@@ -94,6 +118,33 @@ function buildDesignBookReleaseChecklist(context) {
         .filter(({ loop }) => flowLoopIsConfigured(loop)));
     const unreviewedFlowLoops = configuredFlowLoops.filter(({ loop }) => loop.flowPct == null);
     const unreviewedBioDegasBranches = configuredFlowLoops.filter(({ loop }) => loop.linked && loop.bioDegasPct == null);
+    const biologicalMediaCasesWithoutApprovedRun = biologicalMediaCases.filter(mediaCase => {
+        const latestRun = biologicalMediaRuns
+            .filter(run => run.case_id === mediaCase.id)
+            .sort((left, right) => Number(right.run_number) - Number(left.run_number))[0];
+        if (mediaCase.preview_stale || !latestRun || latestRun.status !== 'Approved')
+            return true;
+        const system = systems.find(candidate => candidate.id === mediaCase.system_id);
+        const linkedExhibitIds = (context.system_links || [])
+            .filter(link => link.system_id === mediaCase.system_id)
+            .map(link => link.exhibit_id);
+        const linkedVolumes = linkedExhibitIds.map(exhibitId => exhibitCalculations.find(calculation => calculation.inputs?.exhibit_id === exhibitId)?.results?.operating_volume_m3);
+        const currentVolume = linkedVolumes.length && linkedVolumes.every(value => Number(value) > 0)
+            ? linkedVolumes.reduce((sum, value) => sum + Number(value), 0)
+            : null;
+        const savedContext = latestRun.linked_volume_context_snapshot || {};
+        const contextMatches = currentVolume != null
+            && Math.abs(Number(savedContext.total_operating_volume_m3) - currentVolume) <= 1e-9
+            && String(savedContext.system_water_type || '').toUpperCase() === String(system?.water_type || '').toUpperCase();
+        const inputMatches = canonicalJson(restoreRunSourceInput(latestRun))
+            === canonicalJson(mediaCase.preview_input_snapshot || {});
+        return !contextMatches || !inputMatches;
+    });
+    const thermalNotReady = lifeSupportSystems.filter(system => {
+        const thermal = thermalCalculations.find(item => item.system_id === system.id);
+        return !thermal || thermal.status !== 'Ready' || thermal.freshness !== 'fresh' ||
+            thermal.calculation?.status !== 'Ready';
+    });
     return [
         item('metadata', 'Book metadata', 'blocker', !!context.book_code?.trim() && !!context.book_title?.trim() && !!context.revision?.trim(), context.book_code && context.book_title && context.revision
             ? 'Book code, title, and revision are present.'
@@ -153,6 +204,18 @@ function buildDesignBookReleaseChecklist(context) {
             ...invalidExhibitCalculations.map(calculation => calculation.inputs?.exhibit_id),
             ...invalidSystemCalculations.map(calculation => calculation.inputs?.system_id),
         ].filter(Boolean)),
+        item('biological_media_runs', 'Biological Media calculation runs', 'blocker', biologicalMediaCasesWithoutApprovedRun.length === 0, biologicalMediaCasesWithoutApprovedRun.length
+            ? `${biologicalMediaCasesWithoutApprovedRun.length} Biological Media case${biologicalMediaCasesWithoutApprovedRun.length === 1 ? ' needs' : 's need'} a current approved frozen calculation run.`
+            : biologicalMediaCases.length
+                ? 'Every Biological Media case has a current approved frozen calculation run.'
+                : 'No Biological Media cases are included.', `/design-books/${context.id}?tab=lss`, biologicalMediaCasesWithoutApprovedRun.map(mediaCase => mediaCase.system_id).filter(Boolean)),
+        item('thermal_calculations', 'Thermal calculations', hasLssScope ? 'blocker' : 'warning', !hasLssScope || (lifeSupportSystems.length > 0 && thermalNotReady.length === 0), !hasLssScope
+            ? 'Thermal calculation is not required because LSS is outside project scope.'
+            : lifeSupportSystems.length === 0
+                ? 'Add an LSS system before calculating thermal loads.'
+                : thermalNotReady.length
+                    ? `${thermalNotReady.length} LSS system${thermalNotReady.length === 1 ? ' needs' : 's need'} a current Ready thermal calculation.`
+                    : 'Every Life Support system has a current Ready thermal calculation.', `/design-books/${context.id}?tab=thermal`, thermalNotReady.map(system => system.id)),
         item('calculation_freshness', 'Calculation freshness', 'blocker', staleCalculations.length === 0, staleCalculations.length
             ? `${staleCalculations.length} saved calculation${staleCalculations.length === 1 ? ' is' : 's are'} stale and must be recalculated.`
             : `Calculations use ${aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION}.`, `/design-books/${context.id}?tab=exhibits`),

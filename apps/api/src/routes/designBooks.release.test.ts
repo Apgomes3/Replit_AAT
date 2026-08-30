@@ -72,6 +72,7 @@ function validSnapshot() {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
     }],
     systems: [],
+    thermal_calculations: [] as any[],
     engineering_calculations: {
       exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' } }],
       systems: [],
@@ -100,6 +101,12 @@ function snapshotWithAllocations(flowPct: number | null, bioDegasPct: number | n
   snapshot.engineering_calculations.systems = [{
     status: 'valid',
     inputs: { system_id: 'system-1' },
+  }];
+  snapshot.thermal_calculations = [{
+    system_id: 'system-1',
+    status: 'Ready',
+    freshness: 'fresh',
+    calculation: { status: 'Ready' },
   }];
   return snapshot;
 }

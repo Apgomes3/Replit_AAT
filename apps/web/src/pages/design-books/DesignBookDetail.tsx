@@ -21,10 +21,12 @@ import { useAuthStore } from '../../store/authStore';
 import ActivityLog from '../../components/ui/ActivityLog';
 import ModalDialog from '../../components/ui/ModalDialog';
 
-type Tab = 'exhibits' | 'lss' | 'piping' | 'review' | 'versions';
+type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'review' | 'versions';
 
-function isDesignBookTab(value: string | null): value is Tab {
-  return value === 'exhibits' || value === 'lss' || value === 'piping' || value === 'review' || value === 'versions';
+export const DESIGN_BOOK_TAB_ORDER: Tab[] = ['exhibits', 'lss', 'thermal', 'piping', 'review', 'versions'];
+
+export function isDesignBookTab(value: string | null): value is Tab {
+  return value === 'exhibits' || value === 'lss' || value === 'thermal' || value === 'piping' || value === 'review' || value === 'versions';
 }
 
 function WaterTypeBadge({ type }: { type?: string }) {
@@ -1910,6 +1912,374 @@ function ExhibitsTab({
   );
 }
 
+function thermalNumber(value: any, decimals = 2) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
+}
+
+function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolean; onRefresh: () => void }) {
+  const items: any[] = book.thermal_calculations || [];
+  const [selected, setSelected] = useState<any>(null);
+  const [form, setForm] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+
+  const open = (item: any) => {
+    const existing = item.saved?.input_snapshot || item.calculation?.inputs || {};
+    setSelected(item);
+    setForm({
+      ambient_air_temperature_c: existing.ambient_air_temperature_c ?? '',
+      relative_humidity_pct: existing.relative_humidity_pct ?? 60,
+      surrounding_surface_temperature_c: existing.surrounding_surface_temperature_c ?? existing.ambient_air_temperature_c ?? '',
+      atmospheric_pressure_kpa: existing.atmospheric_pressure_kpa ?? 101.325,
+      water_temperature_c: existing.water_temperature_c ?? '',
+      agitation_class: existing.agitation_class ?? '',
+      agitation_correlation_class: existing.agitation_correlation_class ?? existing.agitation_class ?? '',
+      agitation_correlation_version: existing.agitation_correlation_version ?? '',
+      agitation_correlation_approved: existing.agitation_correlation_approved ?? false,
+      agitation_correlation_deviation: existing.agitation_correlation_deviation ?? false,
+      evaporation_coefficient_kg_m2_s_kpa: existing.evaporation_coefficient_kg_m2_s_kpa ?? '',
+      adjacent_lower_class: existing.adjacent_agitation_classes?.[0] ?? '',
+      adjacent_lower_coefficient: existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[0]]?.coefficient_kg_m2_s_kpa ?? '',
+      adjacent_upper_class: existing.adjacent_agitation_classes?.[1] ?? '',
+      adjacent_upper_coefficient: existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[1]]?.coefficient_kg_m2_s_kpa ?? '',
+      reviewed_u_value_w_m2_k: existing.reviewed_u_value_w_m2_k ?? '',
+      wall_material: existing.tank_wall_layers?.[0]?.material ?? '',
+      wall_thickness_mm: existing.tank_wall_layers?.[0]?.thickness_mm ?? '',
+      wall_conductivity_w_m_k: existing.tank_wall_layers?.[0]?.conductivity_w_m_k ?? '',
+      equipment_heat_gain_kw: existing.equipment_heat_gain_kw ?? 0,
+      lighting_power_kw: existing.lighting_power_kw ?? 0,
+      lighting_coupling_pct: existing.lighting_coupling_pct ?? 85,
+      water_exchange_enabled: existing.water_exchange_enabled ?? false,
+      water_exchange_flow_m3h: existing.water_exchange_flow_m3h ?? '',
+      water_exchange_inlet_temperature_c: existing.water_exchange_inlet_temperature_c ?? '',
+      capacity_margin_pct: existing.capacity_margin_pct ?? 10,
+      deviation_justification: existing.deviation_justification ?? '',
+      custom_tank_wall_areas_m2: existing.custom_tank_wall_areas_m2 ?? {},
+    });
+  };
+
+  const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
+  const numericOrNull = (value: any) => value === '' || value == null ? null : Number(value);
+  const save = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const wallLayers = form.reviewed_u_value_w_m2_k || !form.wall_material ? [] : [{
+        material: form.wall_material,
+        thickness_mm: numericOrNull(form.wall_thickness_mm),
+        conductivity_w_m_k: numericOrNull(form.wall_conductivity_w_m_k),
+      }];
+      const inputs = {
+        ambient_air_temperature_c: numericOrNull(form.ambient_air_temperature_c),
+        relative_humidity_pct: numericOrNull(form.relative_humidity_pct),
+        surrounding_surface_temperature_c: numericOrNull(form.surrounding_surface_temperature_c),
+        atmospheric_pressure_kpa: numericOrNull(form.atmospheric_pressure_kpa),
+        ...(form.water_temperature_c !== '' ? { water_temperature_c: numericOrNull(form.water_temperature_c) } : {}),
+        agitation_class: form.agitation_class,
+        agitation_correlation_class: form.agitation_class,
+        agitation_correlation_version: form.agitation_correlation_version,
+        agitation_correlation_approved: !!form.agitation_correlation_approved,
+        agitation_correlation_deviation: !!form.agitation_correlation_deviation,
+        evaporation_coefficient_kg_m2_s_kpa: numericOrNull(form.evaporation_coefficient_kg_m2_s_kpa),
+        adjacent_agitation_classes: [form.adjacent_lower_class, form.adjacent_upper_class].filter(Boolean),
+        agitation_correlations: {
+          [form.agitation_class]: {
+            class: form.agitation_class,
+            coefficient_kg_m2_s_kpa: numericOrNull(form.evaporation_coefficient_kg_m2_s_kpa),
+            version: form.agitation_correlation_version,
+            approved: !!form.agitation_correlation_approved,
+            deviation: !!form.agitation_correlation_deviation,
+          },
+          ...(form.adjacent_lower_class ? {
+            [form.adjacent_lower_class]: {
+              class: form.adjacent_lower_class,
+              coefficient_kg_m2_s_kpa: numericOrNull(form.adjacent_lower_coefficient),
+              version: form.agitation_correlation_version,
+              approved: !!form.agitation_correlation_approved,
+            },
+          } : {}),
+          ...(form.adjacent_upper_class ? {
+            [form.adjacent_upper_class]: {
+              class: form.adjacent_upper_class,
+              coefficient_kg_m2_s_kpa: numericOrNull(form.adjacent_upper_coefficient),
+              version: form.agitation_correlation_version,
+              approved: !!form.agitation_correlation_approved,
+            },
+          } : {}),
+        },
+        reviewed_u_value_w_m2_k: numericOrNull(form.reviewed_u_value_w_m2_k),
+        tank_wall_layers: wallLayers,
+        equipment_heat_gain_kw: numericOrNull(form.equipment_heat_gain_kw),
+        lighting_power_kw: numericOrNull(form.lighting_power_kw),
+        lighting_coupling_pct: numericOrNull(form.lighting_coupling_pct),
+        water_exchange_enabled: !!form.water_exchange_enabled,
+        water_exchange_flow_m3h: numericOrNull(form.water_exchange_flow_m3h),
+        water_exchange_inlet_temperature_c: numericOrNull(form.water_exchange_inlet_temperature_c),
+        capacity_margin_pct: numericOrNull(form.capacity_margin_pct),
+        deviation_justification: form.deviation_justification,
+        custom_tank_wall_areas_m2: form.custom_tank_wall_areas_m2,
+      };
+      const response = await api.put(`/design-books/${book.id}/thermal/${selected.system_id}`, { inputs });
+      toast.success(response.data.calculation?.status === 'Ready'
+        ? 'Thermal calculation saved and Ready'
+        : 'Thermal inputs saved with blockers');
+      setSelected(response.data);
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Unable to save thermal calculation');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!items.length) {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-white py-16 text-center">
+        <ThermometerSun className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+        <p className="font-semibold text-stone-700">No LSS systems to calculate</p>
+        <p className="text-sm text-stone-500 mt-1">Create and link an LSS system first.</p>
+      </div>
+    );
+  }
+
+  const detail = selected?.calculation || selected?.current_preview;
+  const fieldClass = 'w-full rounded-lg border border-stone-200 px-3 py-2 text-sm bg-white disabled:bg-stone-50 disabled:text-stone-500';
+  const labelClass = 'block text-xs font-medium text-stone-600 mb-1';
+  const Field = ({ name, label, unit, step = 'any' }: any) => (
+    <label>
+      <span className={labelClass}>{label}{unit ? ` (${unit})` : ''}</span>
+      <input aria-label={label} type="number" step={step} value={form[name] ?? ''}
+        onChange={event => update(name, event.target.value)} disabled={readOnly} className={fieldClass} />
+    </label>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        Positive contribution values add heat to water; negative values remove heat. LSS circulation is shown only as reference and is never counted as water exchange.
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+              <tr>
+                <th className="px-4 py-3">LSS system</th>
+                <th className="px-4 py-3">Linked scope</th>
+                <th className="px-4 py-3">Readiness</th>
+                <th className="px-4 py-3 text-right">Cooling</th>
+                <th className="px-4 py-3 text-right">Heating</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {items.map(item => {
+                const calculation = item.calculation;
+                const result = calculation?.results;
+                return (
+                  <tr key={item.system_id} className="align-top">
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-stone-900">{item.system?.system_name || 'Unnamed system'}</div>
+                      <EntityCode code={item.system?.system_code} />
+                    </td>
+                    <td className="px-4 py-3 text-stone-600">
+                      <div>{item.source?.linked_exhibits?.length || 0} exhibit(s)</div>
+                      <div>{item.source?.linked_tanks?.length || 0} tank(s)</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                        item.status === 'Ready' ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : item.status === 'Stale' ? 'border-amber-200 bg-amber-50 text-amber-700'
+                            : 'border-red-200 bg-red-50 text-red-700'
+                      }`}>{item.status}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">{result ? `${thermalNumber(result.margin_adjusted_cooling_kw)} kW` : '—'}</td>
+                    <td className="px-4 py-3 text-right font-mono">{result ? `${thermalNumber(result.margin_adjusted_heating_kw)} kW` : '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => open(item)} className="text-blue-600 hover:text-blue-800 font-medium">
+                        Open calculation
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selected && (
+        <div className="rounded-2xl border border-stone-200 bg-white p-5 space-y-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Thermal calculation</p>
+              <h2 className="text-lg font-bold text-stone-900">{selected.system?.system_code} · {selected.system?.system_name}</h2>
+              <p className="text-xs text-stone-500 mt-1">Calculation {detail?.calculation_version || 'not saved'} · source fingerprint {String(selected.source_fingerprint || '').slice(0, 12)}…</p>
+            </div>
+            <button onClick={() => setSelected(null)} aria-label="Close thermal calculation" className="p-1.5 rounded-lg hover:bg-stone-100"><X className="w-4 h-4" /></button>
+          </div>
+
+          <section>
+            <h3 className="font-semibold text-stone-900 mb-3">Current linked source</h3>
+            <div className="grid gap-3 md:grid-cols-4">
+              {[
+                ['Effective volume', `${thermalNumber(detail?.results?.effective_water_volume_m3, 3)} m³`],
+                ['Free surface', `${thermalNumber(detail?.results?.free_surface_area_m2)} m²`],
+                ['Exposed wall', `${thermalNumber(detail?.results?.exposed_wall_area_m2)} m²`],
+                ['LSS circulation (reference)', `${thermalNumber(selected.source?.lss_circulation_flow_m3h)} m³/h`],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl bg-stone-50 p-3">
+                  <div className="text-xs text-stone-500">{label}</div><div className="font-mono text-sm font-semibold mt-1">{value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-stone-200 p-3">
+                <p className="text-xs font-semibold text-stone-700 mb-2">Exhibits and water-temperature sources</p>
+                {(selected.source?.water_temperature_sources || []).map((source: any) => (
+                  <div key={source.exhibit_id} className="flex justify-between text-sm py-1">
+                    <span>{source.exhibit_code || source.exhibit_id}</span>
+                    <span className="font-mono">{thermalNumber(source.water_temperature_min_c, 1)}–{thermalNumber(source.water_temperature_max_c, 1)} °C</span>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-xl border border-stone-200 p-3">
+                <p className="text-xs font-semibold text-stone-700 mb-2">Tank geometry provenance</p>
+                {(selected.source?.linked_tanks || []).map((tank: any) => (
+                  <div key={tank.tank_id} className="border-b border-stone-100 last:border-0 py-1.5 text-xs">
+                    <b>{tank.tank_code || tank.tank_id}</b> · volume: {tank.volume_source}; surface: {tank.free_surface_source}; wall: {tank.exposed_wall_source}
+                    {tank.exposed_wall_area_m2 == null && (
+                      <label className="mt-2 flex items-center gap-2 text-stone-700">
+                        <span>Reviewed exposed wall area (m²)</span>
+                        <input type="number" min="0" step="any"
+                          value={form.custom_tank_wall_areas_m2?.[tank.tank_id] ?? ''}
+                          onChange={event => update('custom_tank_wall_areas_m2', {
+                            ...(form.custom_tank_wall_areas_m2 || {}),
+                            [tank.tank_id]: event.target.value === '' ? null : Number(event.target.value),
+                          })}
+                          disabled={readOnly}
+                          className="w-28 rounded border border-stone-200 px-2 py-1 disabled:bg-stone-50" />
+                      </label>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="font-semibold text-stone-900">Environment and envelope</h3>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Field name="ambient_air_temperature_c" label="Ambient air temperature" unit="°C" />
+              <Field name="relative_humidity_pct" label="Relative humidity" unit="%" />
+              <Field name="surrounding_surface_temperature_c" label="Surrounding-surface temperature" unit="°C" />
+              <Field name="atmospheric_pressure_kpa" label="Atmospheric pressure" unit="kPa" />
+              <Field name="water_temperature_c" label="Reviewed water-temperature override" unit="°C" />
+              <label><span className={labelClass}>Agitation class</span><input value={form.agitation_class || ''} onChange={e => update('agitation_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
+              <Field name="evaporation_coefficient_kg_m2_s_kpa" label="Mass-transfer coefficient" unit="kg/m²·s·kPa" />
+              <label><span className={labelClass}>Correlation version</span><input value={form.agitation_correlation_version || ''} onChange={e => update('agitation_correlation_version', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
+            </div>
+            <div className="flex flex-wrap gap-5 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_approved} onChange={e => update('agitation_correlation_approved', e.target.checked)} disabled={readOnly} /> Correlation reviewed and approved</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_deviation} onChange={e => update('agitation_correlation_deviation', e.target.checked)} disabled={readOnly} /> Deviation from standard correlation</label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <label><span className={labelClass}>Adjacent lower agitation class</span><input value={form.adjacent_lower_class || ''} onChange={e => update('adjacent_lower_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
+              <Field name="adjacent_lower_coefficient" label="Lower-class coefficient" unit="kg/m²·s·kPa" />
+              <label><span className={labelClass}>Adjacent upper agitation class</span><input value={form.adjacent_upper_class || ''} onChange={e => update('adjacent_upper_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
+              <Field name="adjacent_upper_coefficient" label="Upper-class coefficient" unit="kg/m²·s·kPa" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Field name="reviewed_u_value_w_m2_k" label="Reviewed wall U-value" unit="W/m²·K" />
+              <label><span className={labelClass}>Wall material</span><input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k} className={fieldClass} /></label>
+              <Field name="wall_thickness_mm" label="Wall layer thickness" unit="mm" />
+              <Field name="wall_conductivity_w_m_k" label="Wall conductivity" unit="W/m·K" />
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="font-semibold text-stone-900">Operational gains and capacity</h3>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Field name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW" />
+              <Field name="lighting_power_kw" label="Lighting power" unit="kW" />
+              <Field name="lighting_coupling_pct" label="Lighting-to-water coupling" unit="%" />
+              <Field name="capacity_margin_pct" label="Capacity margin" unit="%" />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={!!form.water_exchange_enabled} onChange={e => update('water_exchange_enabled', e.target.checked)} disabled={readOnly} />
+              Count an explicit operational water exchange (not LSS circulation)
+            </label>
+            {form.water_exchange_enabled && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field name="water_exchange_flow_m3h" label="Water-exchange flow" unit="m³/h" />
+                <Field name="water_exchange_inlet_temperature_c" label="Exchange inlet temperature" unit="°C" />
+              </div>
+            )}
+            <label><span className={labelClass}>Deviation or override justification</span>
+              <textarea rows={2} value={form.deviation_justification || ''} onChange={e => update('deviation_justification', e.target.value)}
+                disabled={readOnly} className={`${fieldClass} resize-none`} />
+            </label>
+          </section>
+
+          {detail?.reasons?.length > 0 && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-red-800"><AlertTriangle className="w-4 h-4" /> Action required</div>
+              <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">{detail.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
+            </div>
+          )}
+
+          {detail?.results && (
+            <>
+              <section>
+                <h3 className="font-semibold text-stone-900 mb-3">Signed contributions</h3>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {Object.entries(detail.contributions || {}).map(([key, value]) => (
+                    <div key={key} className="rounded-lg border border-stone-200 px-3 py-2">
+                      <div className="text-xs text-stone-500">{key.replace(/_/g, ' ').replace(' kw', '')}</div>
+                      <div className={`font-mono font-semibold ${Number(value) > 0 ? 'text-red-700' : Number(value) < 0 ? 'text-blue-700' : 'text-stone-700'}`}>{thermalNumber(value)} kW</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-3 md:grid-cols-4 mt-3">
+                  {[
+                    ['Net envelope', detail.results.net_envelope_kw],
+                    ['Total load', detail.results.net_total_load_kw],
+                    ['Cooling with margin', detail.results.margin_adjusted_cooling_kw],
+                    ['Heating with recovery + margin', detail.results.margin_adjusted_heating_kw],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="rounded-xl bg-stone-900 text-white px-4 py-3">
+                      <div className="text-xs text-stone-300">{label}</div><div className="font-mono text-lg font-bold">{thermalNumber(value)} kW</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <h3 className="font-semibold text-stone-900 mb-2">Sensitivity comparison</h3>
+                <div className="overflow-x-auto rounded-xl border border-stone-200">
+                  <table className="w-full text-sm"><thead className="bg-stone-50"><tr><th className="text-left px-3 py-2">Case</th><th className="text-right px-3 py-2">Cooling</th><th className="text-right px-3 py-2">Heating</th></tr></thead>
+                    <tbody className="divide-y divide-stone-100">{(detail.sensitivity_summary?.cases || []).map((item: any) => (
+                      <tr key={item.case_key} className={detail.sensitivity_summary?.recommended_case === item.case_key ? 'bg-amber-50' : ''}>
+                        <td className="px-3 py-2">{item.description}{detail.sensitivity_summary?.recommended_case === item.case_key && <span className="ml-2 text-xs font-semibold text-amber-700">Conservative sizing case</span>}</td>
+                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_cooling_kw)} kW</td>
+                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_heating_kw)} kW</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-stone-100 pt-4">
+            <button onClick={() => setSelected(null)} className="px-3 py-2 text-sm text-stone-600">Close</button>
+            {!readOnly && <Button onClick={save} disabled={saving}><Calculator className="w-4 h-4 mr-1.5" />{saving ? 'Calculating…' : 'Save & recalculate'}</Button>}
+          </div>
+          {readOnly && <p className="text-xs text-stone-500 text-right">This calculation is part of the frozen Design Book package and is read-only.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function DesignBookDetail() {
   const { id } = useParams<{ id: string }>();
@@ -2047,13 +2417,21 @@ export default function DesignBookDetail() {
     setEditMode(true);
   };
 
-  const TABS: { key: Tab; label: string; count?: number }[] = [
-    { key: 'exhibits', label: 'Exhibits', count: exhibits.length },
-    { key: 'lss', label: 'Life Support Systems', count: systems.length },
-    { key: 'piping', label: 'Piping & Fittings' },
-    { key: 'review', label: 'Review & Handover' },
-    { key: 'versions', label: 'Versions' },
-  ];
+  const tabLabels: Record<Tab, string> = {
+    exhibits: 'Exhibits',
+    lss: 'Life Support Systems',
+    thermal: 'Thermal',
+    piping: 'Piping & Fittings',
+    review: 'Review & Handover',
+    versions: 'Versions',
+  };
+  const TABS: { key: Tab; label: string; count?: number }[] = DESIGN_BOOK_TAB_ORDER.map(key => ({
+    key,
+    label: tabLabels[key],
+    ...(['exhibits', 'lss', 'thermal'].includes(key)
+      ? { count: key === 'exhibits' ? exhibits.length : key === 'thermal' ? (book.thermal_calculations || []).length : systems.length }
+      : {}),
+  }));
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -2289,6 +2667,8 @@ export default function DesignBookDetail() {
       )}
 
       {tab === 'lss' && <LSSTab book={book} onNewLSS={() => !isDesignReadOnly && setShowNewLSS(true)} readOnly={isDesignReadOnly} />}
+
+      {tab === 'thermal' && <ThermalTab book={book} readOnly={isDesignReadOnly} onRefresh={refresh} />}
 
       {tab === 'piping' && (
         <div className="bg-white rounded-2xl border border-stone-200 border-dashed py-20 text-center">

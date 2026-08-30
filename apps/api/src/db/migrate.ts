@@ -934,6 +934,45 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- DESIGN BOOK: Water-side thermal load calculations. Inputs, sources, and
+-- outputs are JSONB on purpose: each saved calculation is an immutable
+-- engineering evidence package even when the project model evolves.
+CREATE TABLE IF NOT EXISTS design_book_thermal_calculations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  calculation_version VARCHAR(80) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'Blocked'
+    CHECK (status IN ('Ready', 'Blocked', 'Warning')),
+  freshness VARCHAR(20) NOT NULL DEFAULT 'fresh'
+    CHECK (freshness IN ('fresh', 'stale')),
+  source_fingerprint VARCHAR(64) NOT NULL,
+  source_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  constants JSONB NOT NULL DEFAULT '{}'::jsonb,
+  formula_inputs JSONB NOT NULL DEFAULT '{}'::jsonb,
+  input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  sensitivity_cases JSONB NOT NULL DEFAULT '[]'::jsonb,
+  deviation_justification TEXT,
+  calculated_by UUID REFERENCES users(id),
+  calculated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id),
+  CHECK (jsonb_typeof(source_snapshot) = 'object'),
+  CHECK (jsonb_typeof(constants) = 'object'),
+  CHECK (jsonb_typeof(formula_inputs) = 'object'),
+  CHECK (jsonb_typeof(input_snapshot) = 'object'),
+  CHECK (jsonb_typeof(result_snapshot) = 'object'),
+  CHECK (jsonb_typeof(sensitivity_cases) = 'array')
+);
+CREATE INDEX IF NOT EXISTS idx_db_thermal_book ON design_book_thermal_calculations(design_book_id);
+CREATE INDEX IF NOT EXISTS idx_db_thermal_system ON design_book_thermal_calculations(system_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_thermal ON design_book_thermal_calculations;
+CREATE TRIGGER guard_released_design_book_thermal
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_calculations
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+
 DROP TRIGGER IF EXISTS guard_released_design_book_handovers ON design_book_review_handovers;
 CREATE TRIGGER guard_released_design_book_handovers
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_review_handovers

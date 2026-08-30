@@ -41,6 +41,12 @@ function readyContext(): DesignBookReleaseContext {
       exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' }, results: { operating_volume_m3: 42.125 } }],
       systems: [{ status: 'valid', inputs: { system_id: 'system-1' } }],
     },
+    thermal_calculations: [{
+      system_id: 'system-1',
+      status: 'Ready',
+      freshness: 'fresh',
+      calculation: { status: 'Ready' },
+    }],
   };
 }
 
@@ -111,6 +117,39 @@ describe('Design Book release policy', () => {
     }];
     const blockerKeys = releaseBlockers(buildDesignBookReleaseChecklist(context)).map(check => check.key);
     expect(blockerKeys).toEqual(expect.arrayContaining(['calculations', 'calculation_freshness']));
+  });
+
+  it('blocks release when a thermal result is stale or not Ready', () => {
+    const context = readyContext();
+    context.thermal_calculations![0].freshness = 'stale';
+    context.thermal_calculations![0].status = 'Stale';
+    const thermal = buildDesignBookReleaseChecklist(context)
+      .find(check => check.key === 'thermal_calculations');
+    expect(thermal?.status).toBe('blocked');
+    expect(thermal?.href).toBe('/design-books/book-1?tab=thermal');
+  });
+
+  it('does not require a thermal calculation for Utility systems', () => {
+    const context = readyContext();
+    context.systems!.push({
+      id: 'utility-1',
+      system_code: 'CHW-01',
+      system_type: 'Utility',
+      system_config: 'Chilled Water',
+      status: 'Design',
+      design_flow_m3h: 50,
+      loop1_flow_source: 'Plant',
+      loop1_filtration: 'None',
+      loop1_flow_pct: 100,
+    });
+    context.engineering_calculations!.systems!.push({
+      status: 'valid',
+      inputs: { system_id: 'utility-1' },
+    });
+    const thermal = buildDesignBookReleaseChecklist(context)
+      .find(check => check.key === 'thermal_calculations');
+    expect(thermal?.status).toBe('pass');
+    expect(thermal?.affected_ids).toBeUndefined();
   });
 
   it('blocks an invalid LSS system calculation', () => {
