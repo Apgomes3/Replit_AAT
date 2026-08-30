@@ -675,6 +675,72 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     );
   });
 
+  it('keeps every LSS tab reachable with its states intact in a narrow scrolling row', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute();
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const tablist = screen.getByRole('tablist', { name: 'Life Support System sections' });
+    Object.defineProperty(tablist, 'clientWidth', { configurable: true, value: 320 });
+    Object.defineProperty(tablist, 'scrollWidth', { configurable: true, value: 780 });
+
+    const tabLabels = [
+      'System Overview',
+      'Flow Route',
+      'Biological Media',
+      'UV Selection',
+      'Thermal Selection',
+      'Ozone Selection',
+      'Other Equipment',
+    ];
+    const getTab = (label: string) => screen.getByRole('tab', {
+      name: label === 'Flow Route' ? /^Flow Route/ : label,
+    });
+
+    expect(tablist.clientWidth).toBeLessThan(tablist.scrollWidth);
+    expect(tablist).toHaveClass('overflow-x-auto');
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(tabLabels);
+
+    const route = within(document.querySelector('#flow-route')!);
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const allocation = route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' });
+    await user.clear(allocation);
+    await user.type(allocation, '55');
+
+    const flowTab = getTab('Flow Route');
+    expect(flowTab).toHaveAttribute('aria-selected', 'true');
+    expect(flowTab).toHaveClass('border-b-2', 'border-blue-600', 'text-blue-600');
+    expect(flowTab).toHaveTextContent('*');
+    expect(within(flowTab).getByLabelText('unsaved changes')).toBeVisible();
+
+    tablist.scrollLeft = tablist.scrollWidth - tablist.clientWidth;
+    fireEvent.scroll(tablist);
+    expect(tablist.scrollLeft).toBe(460);
+    flowTab.focus();
+    expect(flowTab).toHaveFocus();
+    expect(flowTab).toHaveClass('focus-visible:ring-2', 'focus-visible:ring-blue-400/60');
+
+    await user.keyboard('{Home}');
+    let currentTab = getTab(tabLabels[0]);
+    expect(currentTab).toHaveFocus();
+
+    for (let index = 0; index < tabLabels.length; index += 1) {
+      currentTab = getTab(tabLabels[index]);
+      expect(currentTab).toHaveFocus();
+      expect(currentTab).toHaveAttribute('aria-selected', 'true');
+      expect(currentTab).toHaveAttribute('tabindex', '0');
+      expect(currentTab).toHaveClass('border-b-2', 'border-blue-600', 'text-blue-600');
+      expect(currentTab).toHaveClass('focus-visible:ring-2', 'focus-visible:ring-blue-400/60');
+
+      if (index < tabLabels.length - 1) {
+        await user.keyboard('{ArrowRight}');
+      }
+    }
+
+    expect(getTab('Flow Route')).toHaveTextContent('*');
+    expect(getTab('Flow Route')).toHaveAttribute('aria-selected', 'false');
+  });
+
   it('preserves unsaved Flow Route edits while switching tabs', async () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
