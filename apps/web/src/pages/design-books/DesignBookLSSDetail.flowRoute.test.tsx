@@ -1565,7 +1565,11 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(card.getByText('FF-500')).toBeInTheDocument();
     expect(card.getByText('1 unit')).toBeInTheDocument();
     expect(card.getAllByText('Ø500 mm').length).toBeGreaterThan(0);
-    expect(card.getAllByText('Required flow above capacity').length).toBeGreaterThan(0);
+    expect(card.getAllByText('Required flow above capacity')).toHaveLength(1);
+    expect(card.getByRole('button', { name: 'Details' })).toBeInTheDocument();
+    await user.click(card.getByRole('button', { name: 'Details' }));
+    expect(card.getByText('Capacity status')).toBeVisible();
+    expect(card.getAllByText('Required flow above capacity')).toHaveLength(1);
     expect(card.queryByRole('spinbutton', { name: 'FF-500 quantity' })).not.toBeInTheDocument();
     expect(card.queryByRole('button', { name: 'Remove FF-500' })).not.toBeInTheDocument();
 

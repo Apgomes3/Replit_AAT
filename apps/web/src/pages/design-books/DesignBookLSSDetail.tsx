@@ -589,9 +589,6 @@ function FractionatorProductCard({
             <strong className="block truncate text-sm">{product.product_code}</strong>
             <span className="block truncate text-[10px] opacity-70">{product.product_name || 'Foam Fractionator model'}</span>
           </div>
-          <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold">
-            {statusLabel}
-          </span>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
           <div className="rounded border border-current/10 bg-white/50 px-2 py-1.5">
