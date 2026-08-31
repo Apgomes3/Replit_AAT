@@ -24,13 +24,13 @@ vi.mock('../db', () => {
 
     if (sql.startsWith('select rma.access_level')) return { rows: [] };
     if (sql.startsWith('select count(*) from product_masters pm')) {
-      const rows = sql.includes("pm.standard_status is distinct from 'obsolete'")
+      const rows = sql.includes("lower(btrim(coalesce(pm.standard_status, ''))) <> 'obsolete'")
         ? state.listRows.filter(row => row.standard_status !== 'Obsolete')
         : state.listRows;
       return { rows: [{ count: String(rows.length) }] };
     }
     if (sql.startsWith('select pm.*, coalesce(ph.design_flow_m3h, pm.design_flow_m3h)')) {
-      const rows = sql.includes("pm.standard_status is distinct from 'obsolete'")
+      const rows = sql.includes("lower(btrim(coalesce(pm.standard_status, ''))) <> 'obsolete'")
         ? state.listRows.filter(row => row.standard_status !== 'Obsolete')
         : state.listRows;
       return { rows };

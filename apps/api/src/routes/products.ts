@@ -169,7 +169,12 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   const filters: string[] = [];
   const params: any[] = [];
 
-  if (req.query.include_obsolete !== 'true') filters.push(`pm.standard_status IS DISTINCT FROM 'Obsolete'`);
+  // Status values have historically been entered through more than one
+  // surface, so protect the default catalog view from casing/whitespace
+  // variations as well as the canonical "Obsolete" value.
+  if (req.query.include_obsolete !== 'true') {
+    filters.push(`LOWER(BTRIM(COALESCE(pm.standard_status, ''))) <> 'obsolete'`);
+  }
   if (req.query.family_id) { params.push(req.query.family_id); filters.push(`pm.product_family_id = $${params.length}`); }
   if (req.query.tank_family_id) { params.push(req.query.tank_family_id); filters.push(`pm.tank_family_id = $${params.length}`); }
   if (req.query.category) { params.push(req.query.category); filters.push(`pm.product_category = $${params.length}`); }

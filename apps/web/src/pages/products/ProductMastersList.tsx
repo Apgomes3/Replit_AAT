@@ -76,8 +76,13 @@ export default function ProductMastersList() {
   const familyOptions = familiesData?.items?.map((f: any) => f.product_family_code) || [];
 
   const catalogItems: ProductMaster[] = useMemo(
-    () => (data?.items ?? []).filter((p: any) => p.product_category !== 'Tank' && p.product_category !== 'Piping'),
-    [data?.items],
+    () => (data?.items ?? []).filter((p: any) => {
+      const status = String(p.standard_status ?? p.status ?? '').trim().toLowerCase();
+      return p.product_category !== 'Tank'
+        && p.product_category !== 'Piping'
+        && (showObsolete || status !== 'obsolete');
+    }),
+    [data?.items, showObsolete],
   );
   const allItems: ProductMaster[] = useMemo(
     () => selectedFamilyId
