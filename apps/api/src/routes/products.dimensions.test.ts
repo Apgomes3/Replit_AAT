@@ -34,10 +34,11 @@ vi.mock('../db', () => {
         width_mm: params[2],
         height_mm: params[3],
         diameter_mm: params[4],
-        weight_kg: params[5],
-        inlet_dn_mm: params[6],
-        outlet_dn_mm: params[7],
-        notes: params[8],
+        sand_media_per_filter_kg: params[5],
+        weight_kg: params[6],
+        inlet_dn_mm: params[7],
+        outlet_dn_mm: params[8],
+        notes: params[9],
       };
       return { rows: [{ ...state.dimensions }] };
     }
@@ -114,6 +115,7 @@ describe('PIM product dimensions diameter', () => {
       width_mm: '800',
       height_mm: '600',
       diameter_mm: null,
+      sand_media_per_filter_kg: null,
       weight_kg: '42',
       inlet_dn_mm: '50',
       outlet_dn_mm: '40',
@@ -194,12 +196,60 @@ describe('PIM product dimensions diameter', () => {
     expect(response.body.diameter_mm).toBe(0);
   });
 
+  it('saves, returns, and reloads a valid sand/media load without changing other dimensions', async () => {
+    const save = await request(app, 'PUT', `/api/v1/product-masters/${productId}/dimensions`, token, {
+      sand_media_per_filter_kg: '250.5',
+    });
+
+    expect(save.status).toBe(200);
+    expect(save.body.sand_media_per_filter_kg).toBe(250.5);
+    expect(save.body.length_mm).toBe('1200');
+    expect(save.body.weight_kg).toBe('42');
+
+    const reload = await request(app, 'GET', `/api/v1/product-masters/${productId}/dimensions`, token);
+    expect(reload.status).toBe(200);
+    expect(reload.body.sand_media_per_filter_kg).toBe(250.5);
+    expect(reload.body.outlet_dn_mm).toBe('40');
+  });
+
+  it('preserves existing fields for a sand/media-only update and clears the value with a blank', async () => {
+    state.dimensions!.sand_media_per_filter_kg = '250';
+
+    const response = await request(app, 'PUT', `/api/v1/product-masters/${productId}/dimensions`, token, {
+      sand_media_per_filter_kg: '',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.sand_media_per_filter_kg).toBeNull();
+    expect(response.body.length_mm).toBe('1200');
+    expect(response.body.weight_kg).toBe('42');
+    expect(response.body.notes).toBe('Existing dimensions');
+  });
+
+  it('accepts zero as an explicit sand/media load', async () => {
+    const response = await request(app, 'PUT', `/api/v1/product-masters/${productId}/dimensions`, token, {
+      sand_media_per_filter_kg: 0,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.sand_media_per_filter_kg).toBe(0);
+  });
+
   it.each(['-1', 'Infinity', 'not-a-number'])('rejects invalid diameter %s', async diameter_mm => {
     const response = await request(app, 'PUT', `/api/v1/product-masters/${productId}/dimensions`, token, { diameter_mm });
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INVALID_REQUEST');
     expect(response.body.error.message).toContain('diameter_mm');
+    expect(state.calls.some(call => call.sql.includes('INSERT INTO product_dimensions'))).toBe(false);
+  });
+
+  it.each(['-1', 'Infinity', 'not-a-number'])('rejects invalid sand/media load %s', async sand_media_per_filter_kg => {
+    const response = await request(app, 'PUT', `/api/v1/product-masters/${productId}/dimensions`, token, { sand_media_per_filter_kg });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_REQUEST');
+    expect(response.body.error.message).toContain('sand_media_per_filter_kg');
     expect(state.calls.some(call => call.sql.includes('INSERT INTO product_dimensions'))).toBe(false);
   });
 });

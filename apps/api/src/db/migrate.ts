@@ -701,11 +701,12 @@ CREATE TABLE IF NOT EXISTS bom_releases (
 CREATE TABLE IF NOT EXISTS product_dimensions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
-  length_mm NUMERIC, width_mm NUMERIC, height_mm NUMERIC, diameter_mm NUMERIC, weight_kg NUMERIC,
+  length_mm NUMERIC, width_mm NUMERIC, height_mm NUMERIC, diameter_mm NUMERIC, sand_media_per_filter_kg NUMERIC, weight_kg NUMERIC,
   inlet_dn_mm NUMERIC, outlet_dn_mm NUMERIC, notes TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE product_dimensions ADD COLUMN IF NOT EXISTS diameter_mm NUMERIC;
+ALTER TABLE product_dimensions ADD COLUMN IF NOT EXISTS sand_media_per_filter_kg NUMERIC;
 CREATE TABLE IF NOT EXISTS product_electrical (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,

@@ -707,7 +707,7 @@ router.put('/product-masters/:id/dimensions', authenticate, async (req: AuthRequ
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const body = req.body || {};
-  const existing = await query('SELECT length_mm, width_mm, height_mm, diameter_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes FROM product_dimensions WHERE product_master_id=$1', [pid]);
+  const existing = await query('SELECT length_mm, width_mm, height_mm, diameter_mm, sand_media_per_filter_kg, weight_kg, inlet_dn_mm, outlet_dn_mm, notes FROM product_dimensions WHERE product_master_id=$1', [pid]);
   const current = existing.rows[0] || {};
   const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
   const rawDiameter = body.diameter_mm;
@@ -715,7 +715,15 @@ router.put('/product-masters/:id/dimensions', authenticate, async (req: AuthRequ
   if (!diameterBlank && (typeof rawDiameter !== 'number' && typeof rawDiameter !== 'string' || !Number.isFinite(Number(rawDiameter)) || Number(rawDiameter) < 0)) {
     return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'diameter_mm must be a finite, non-negative measurement' } });
   }
+  const rawSandMediaPerFilter = body.sand_media_per_filter_kg;
+  const sandMediaPerFilterBlank = rawSandMediaPerFilter === null || rawSandMediaPerFilter === undefined || (typeof rawSandMediaPerFilter === 'string' && rawSandMediaPerFilter.trim() === '');
+  if (!sandMediaPerFilterBlank && (typeof rawSandMediaPerFilter !== 'number' && typeof rawSandMediaPerFilter !== 'string' || !Number.isFinite(Number(rawSandMediaPerFilter)) || Number(rawSandMediaPerFilter) < 0)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'sand_media_per_filter_kg must be a finite, non-negative measurement' } });
+  }
   const diameter_mm = has('diameter_mm') ? (diameterBlank ? null : Number(rawDiameter)) : (current.diameter_mm ?? null);
+  const sand_media_per_filter_kg = has('sand_media_per_filter_kg')
+    ? (sandMediaPerFilterBlank ? null : Number(rawSandMediaPerFilter))
+    : (current.sand_media_per_filter_kg ?? null);
   const length_mm = has('length_mm') ? nullableDimensionValue(body.length_mm) : (current.length_mm ?? null);
   const width_mm = has('width_mm') ? nullableDimensionValue(body.width_mm) : (current.width_mm ?? null);
   const height_mm = has('height_mm') ? nullableDimensionValue(body.height_mm) : (current.height_mm ?? null);
@@ -724,11 +732,11 @@ router.put('/product-masters/:id/dimensions', authenticate, async (req: AuthRequ
   const outlet_dn_mm = has('outlet_dn_mm') ? nullableDimensionValue(body.outlet_dn_mm) : (current.outlet_dn_mm ?? null);
   const notes = has('notes') ? nullableDimensionValue(body.notes) : (current.notes ?? null);
   const r = await query(`
-    INSERT INTO product_dimensions (product_master_id, length_mm, width_mm, height_mm, diameter_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
+    INSERT INTO product_dimensions (product_master_id, length_mm, width_mm, height_mm, diameter_mm, sand_media_per_filter_kg, weight_kg, inlet_dn_mm, outlet_dn_mm, notes, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW())
     ON CONFLICT (product_master_id) DO UPDATE SET
-      length_mm=$2, width_mm=$3, height_mm=$4, diameter_mm=$5, weight_kg=$6, inlet_dn_mm=$7, outlet_dn_mm=$8, notes=$9, updated_at=NOW()
-    RETURNING *`, [pid, length_mm, width_mm, height_mm, diameter_mm, weight_kg, inlet_dn_mm, outlet_dn_mm, notes]);
+      length_mm=$2, width_mm=$3, height_mm=$4, diameter_mm=$5, sand_media_per_filter_kg=$6, weight_kg=$7, inlet_dn_mm=$8, outlet_dn_mm=$9, notes=$10, updated_at=NOW()
+    RETURNING *`, [pid, length_mm, width_mm, height_mm, diameter_mm, sand_media_per_filter_kg, weight_kg, inlet_dn_mm, outlet_dn_mm, notes]);
   res.json(r.rows[0]);
 });
 
