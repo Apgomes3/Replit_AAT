@@ -58,6 +58,7 @@ const state = vitest_1.vi.hoisted(() => ({
             scope_max: null,
             evidence_reference: 'TAN-REF-TEST',
             status: 'Draft',
+            edit_version: 1,
         },
         media: {
             id: 'media-profile-1',
@@ -78,6 +79,7 @@ const state = vitest_1.vi.hoisted(() => ({
             media_bulk_density_kg_m3: 110,
             evidence_reference: 'MEDIA-REF-TEST',
             status: 'Draft',
+            edit_version: 1,
         },
     },
 }));
@@ -91,6 +93,14 @@ vitest_1.vi.mock('../db', () => {
         }
         if (sql.includes('SELECT * FROM lss_biological_media_profiles WHERE id=$1')) {
             return { rows: [{ ...state.profiles.media }] };
+        }
+        if ((sql.includes('UPDATE lss_tan_generation_profiles')
+            || sql.includes('UPDATE lss_biological_media_profiles'))
+            && sql.includes('SET profile_name=$1')) {
+            const profile = sql.includes('lss_tan_generation_profiles')
+                ? state.profiles.tan
+                : state.profiles.media;
+            return { rows: [{ ...profile, status: params.at(-2) }] };
         }
         if (sql.includes('UPDATE lss_tan_generation_profiles SET status=')
             || sql.includes('UPDATE lss_biological_media_profiles SET status=')) {
@@ -109,7 +119,10 @@ vitest_1.vi.mock('../db', () => {
         return { rows: [] };
     });
     return {
-        default: { query, connect: vitest_1.vi.fn() },
+        default: {
+            query,
+            connect: vitest_1.vi.fn(async () => ({ query, release: vitest_1.vi.fn() })),
+        },
         query,
     };
 });
@@ -204,5 +217,58 @@ function request(app, method, path, token, body = {}) {
             'Evidence reference is required.',
         ]));
         (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE lss_tan_generation_profiles'))).toBe(false);
+    });
+    (0, vitest_1.it)('updates an In Review media revision in place, returns it to Draft, and audits changed fields', async () => {
+        Object.assign(state.profiles.media, { status: 'In Review', evidence_reference: null });
+        const response = await request(app, 'PATCH', '/api/v1/admin/biological-media/media-profiles/media-profile-1', token, {
+            profile_code: 'SPOOFED-CODE',
+            revision: 99,
+            edit_version: state.profiles.media.edit_version,
+            evidence_reference: 'MEDIA-REF-CORRECTED',
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body.status).toBe('Draft');
+        const update = state.calls.find(call => call.sql.includes('UPDATE lss_biological_media_profiles') && call.sql.includes('SET profile_name=$1'));
+        (0, vitest_1.expect)(update).toBeDefined();
+        (0, vitest_1.expect)(update?.sql).not.toContain('profile_code=');
+        (0, vitest_1.expect)(update?.sql).not.toContain('revision=');
+        (0, vitest_1.expect)(update?.params.slice(-3)).toEqual(['media-profile-1', 'Draft', state.profiles.media.edit_version]);
+        const audit = state.calls.find(call => call.sql.includes('INSERT INTO audit_logs'));
+        (0, vitest_1.expect)(audit?.params[1]).toBe('media-profile-1');
+        (0, vitest_1.expect)(audit?.params[3]).toBe('admin-1');
+        (0, vitest_1.expect)(audit?.params[4]).toEqual(vitest_1.expect.objectContaining({
+            profile_kind: 'media',
+            profile_code: 'MEDIA-TEST',
+            from_status: 'In Review',
+            to_status: 'Draft',
+            changed_fields: ['evidence_reference'],
+        }));
+    });
+    (0, vitest_1.it)('updates a Draft TAN revision without creating a new revision', async () => {
+        const response = await request(app, 'PATCH', '/api/v1/admin/biological-media/tan-profiles/tan-profile-1', token, {
+            edit_version: state.profiles.tan.edit_version,
+            recommended_application: 'Corrected controlled application',
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const update = state.calls.find(call => call.sql.includes('UPDATE lss_tan_generation_profiles') && call.sql.includes('SET profile_name=$1'));
+        (0, vitest_1.expect)(update?.params.slice(-3)).toEqual(['tan-profile-1', 'Draft', state.profiles.tan.edit_version]);
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('INSERT INTO lss_tan_generation_profiles'))).toBe(false);
+    });
+    (0, vitest_1.it)('rejects in-place edits to approved profile revisions', async () => {
+        state.profiles.media.status = 'Approved';
+        const response = await request(app, 'PATCH', '/api/v1/admin/biological-media/media-profiles/media-profile-1', token, { edit_version: state.profiles.media.edit_version, evidence_reference: 'SHOULD-NOT-SAVE' });
+        (0, vitest_1.expect)(response.status).toBe(409);
+        (0, vitest_1.expect)(response.body.error.code).toBe('IMMUTABLE_REVISION');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE lss_biological_media_profiles') && call.sql.includes('SET profile_name=$1'))).toBe(false);
+    });
+    (0, vitest_1.it)('rejects stale and missing edit tokens before overwriting a newer Draft', async () => {
+        state.profiles.media.edit_version = 2;
+        const stale = await request(app, 'PATCH', '/api/v1/admin/biological-media/media-profiles/media-profile-1', token, { edit_version: 1, evidence_reference: 'STALE-CHANGE' });
+        (0, vitest_1.expect)(stale.status).toBe(409);
+        (0, vitest_1.expect)(stale.body.error.code).toBe('REVISION_CHANGED');
+        const missing = await request(app, 'PATCH', '/api/v1/admin/biological-media/media-profiles/media-profile-1', token, { evidence_reference: 'NO-TOKEN' });
+        (0, vitest_1.expect)(missing.status).toBe(400);
+        (0, vitest_1.expect)(missing.body.error.code).toBe('VALIDATION');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE lss_biological_media_profiles') && call.sql.includes('SET profile_name=$1'))).toBe(false);
     });
 });

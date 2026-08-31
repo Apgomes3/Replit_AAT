@@ -1629,6 +1629,158 @@ const PROFILE_TABLES = {
         snapshotColumn: 'max_tan_profile_snapshot',
     },
 };
+const PROFILE_EDIT_FIELDS = {
+    media: [
+        'profile_name', 'water_types', 'reactor_types', 'capacity_model', 'capacity_model_version',
+        'capacity_basis_unit', 'operating_min_temperature_c', 'operating_max_temperature_c',
+        'operating_min_salinity_ppt', 'operating_max_salinity_ppt', 'media_min_depth_mm',
+        'media_max_depth_mm', 'media_void_fraction', 'media_bulk_density_kg_m3',
+        ...MEDIA_SIZING_FIELDS, 'evidence_reference', 'is_provisional', 'provisional_label', 'notes',
+    ],
+    tan: [
+        'profile_name', 'coefficient', 'coefficient_unit', 'recommended_application', 'scope_type',
+        'scope_unit', 'scope_min', 'scope_max', 'evidence_reference', 'notes',
+    ],
+    'max-tan': ['profile_name', 'max_tan_mg_n_l', 'engineering_note'],
+};
+function normalizeProfileEdit(kind, existing, body) {
+    const merged = { ...existing };
+    for (const field of PROFILE_EDIT_FIELDS[kind]) {
+        if (Object.prototype.hasOwnProperty.call(body, field))
+            merged[field] = body[field];
+    }
+    if (kind === 'media') {
+        merged.water_types = arrayOfText(merged.water_types);
+        merged.reactor_types = arrayOfText(merged.reactor_types);
+        for (const field of [
+            'operating_min_temperature_c', 'operating_max_temperature_c', 'operating_min_salinity_ppt',
+            'operating_max_salinity_ppt', 'media_min_depth_mm', 'media_max_depth_mm',
+            'media_void_fraction', 'media_bulk_density_kg_m3', ...MEDIA_SIZING_FIELDS,
+        ])
+            merged[field] = numberOrNull(merged[field]);
+        merged.is_provisional = !!merged.is_provisional;
+        for (const field of [
+            'profile_name', 'capacity_model', 'capacity_model_version', 'capacity_basis_unit',
+            'evidence_reference', 'provisional_label', 'notes',
+        ])
+            merged[field] = text(merged[field]);
+    }
+    else if (kind === 'tan') {
+        merged.coefficient = numberOrNull(merged.coefficient);
+        merged.scope_min = numberOrNull(merged.scope_min);
+        merged.scope_max = numberOrNull(merged.scope_max);
+        for (const field of [
+            'profile_name', 'coefficient_unit', 'recommended_application', 'scope_type',
+            'scope_unit', 'evidence_reference', 'notes',
+        ])
+            merged[field] = text(merged[field]);
+    }
+    else {
+        merged.max_tan_mg_n_l = numberOrNull(merged.max_tan_mg_n_l);
+        merged.profile_name = text(merged.profile_name);
+        merged.engineering_note = text(merged.engineering_note);
+    }
+    return merged;
+}
+function profileEditValue(kind, field, value) {
+    if (kind === 'media' && (field === 'water_types' || field === 'reactor_types'))
+        return arrayOfText(value);
+    if (field === 'is_provisional')
+        return !!value;
+    if (kind === 'media' && [
+        'operating_min_temperature_c', 'operating_max_temperature_c', 'operating_min_salinity_ppt',
+        'operating_max_salinity_ppt', 'media_min_depth_mm', 'media_max_depth_mm',
+        'media_void_fraction', 'media_bulk_density_kg_m3', ...MEDIA_SIZING_FIELDS,
+    ].includes(field))
+        return numberOrNull(value);
+    if (kind === 'tan' && ['coefficient', 'scope_min', 'scope_max'].includes(field))
+        return numberOrNull(value);
+    if (kind === 'max-tan' && field === 'max_tan_mg_n_l')
+        return numberOrNull(value);
+    return text(value);
+}
+async function updateProfileRevision(kind, id, body, req, res) {
+    const definition = PROFILE_TABLES[kind];
+    const expectedEditVersion = Number(body.edit_version);
+    if (!Number.isInteger(expectedEditVersion) || expectedEditVersion < 1) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'The profile edit token is required; refresh and try again.' } });
+    }
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const selected = await client.query(`SELECT * FROM ${definition.table} WHERE id=$1 FOR UPDATE`, [id]);
+        const existing = selected.rows[0];
+        if (!existing) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: `${definition.label} profile revision not found.` } });
+        }
+        if (!['Draft', 'In Review'].includes(existing.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'IMMUTABLE_REVISION', message: 'Approved or retired revisions cannot be edited; create a new revision instead.' },
+            });
+        }
+        if (existing.edit_version !== expectedEditVersion) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'REVISION_CHANGED', message: 'The profile revision was updated by someone else; refresh and try again.' } });
+        }
+        const updated = normalizeProfileEdit(kind, existing, body);
+        const errors = kind === 'media'
+            ? validateMediaProfile(updated, false)
+            : kind === 'tan'
+                ? validateTanProfile(updated, false)
+                : validateMaxTanProfile(updated);
+        if (errors.length) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
+        }
+        const changedFields = PROFILE_EDIT_FIELDS[kind].filter(field => canonicalJson(profileEditValue(kind, field, existing[field]))
+            !== canonicalJson(profileEditValue(kind, field, updated[field])));
+        if (!changedFields.length) {
+            await client.query('COMMIT');
+            return res.json(existing);
+        }
+        // An edit to a submitted revision must be re-reviewed rather than silently
+        // leaving the old approval state attached to changed engineering evidence.
+        const nextStatus = existing.status === 'In Review' ? 'Draft' : existing.status;
+        const values = PROFILE_EDIT_FIELDS[kind].map(field => updated[field]);
+        const assignments = PROFILE_EDIT_FIELDS[kind].map((field, index) => `${field}=$${index + 1}`);
+        const idParam = values.length + 1;
+        const result = await client.query(`UPDATE ${definition.table}
+       SET ${assignments.join(', ')}, status=$${idParam + 1}::varchar,
+           edit_version=edit_version+1, updated_at=NOW()
+       WHERE id=$${idParam} AND edit_version=$${idParam + 2} AND status IN ('Draft', 'In Review')
+       RETURNING *`, [...values, id, nextStatus, expectedEditVersion]);
+        if (!result.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'REVISION_CHANGED', message: 'The profile revision changed before it could be saved; refresh and try again.' } });
+        }
+        await client.query(`INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
+       VALUES ($1,$2,$3,$4,$5,$6)`, ['biological_media_profile_revision', id, 'UPDATE', req.user.id, {
+                profile_kind: kind,
+                profile_code: existing.profile_code,
+                revision: existing.revision,
+                from_status: existing.status,
+                to_status: nextStatus,
+                changed_fields: changedFields,
+            }, req.ip || null]);
+        await client.query('COMMIT');
+        return res.json(result.rows[0]);
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        const mapped = databaseProfileError(error);
+        if (mapped)
+            return res.status(409).json({ error: mapped });
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+}
+router.patch('/admin/biological-media/media-profiles/:id', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => updateProfileRevision('media', routeParam(req.params.id), req.body, req, res));
+router.patch('/admin/biological-media/tan-profiles/:id', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => updateProfileRevision('tan', routeParam(req.params.id), req.body, req, res));
+router.patch('/admin/biological-media/max-tan-profiles/:id', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => updateProfileRevision('max-tan', routeParam(req.params.id), req.body, req, res));
 async function deleteProfileRevision(kind, id, res) {
     const definition = PROFILE_TABLES[kind];
     const existing = await profileRevision(definition.table, id);
@@ -1755,54 +1907,72 @@ router.patch('/admin/biological-media/max-tan-profiles/:id/default', (0, auth_1.
     }
 });
 async function updateProfileStatus(table, id, body, req, res) {
-    const existing = await profileRevision(table, id);
-    if (!existing)
-        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Profile revision not found.' } });
-    const requestedStatus = text(body.status);
-    if (existing.status === 'Retired' || (existing.status === 'Approved' && requestedStatus !== 'Retired')) {
-        return res.status(409).json({ error: { code: 'IMMUTABLE_REVISION', message: 'Approved or retired revisions cannot be edited; create a new revision instead.' } });
-    }
-    const nextStatus = requestedStatus;
-    if (!nextStatus || !PROFILE_STATUSES.includes(nextStatus))
-        return res.status(400).json({ error: { code: 'VALIDATION', message: `Status must be one of: ${PROFILE_STATUSES.join(', ')}.` } });
-    const merged = { ...existing, status: nextStatus };
-    const errors = table === 'lss_max_tan_profiles'
-        ? validateMaxTanProfile(merged)
-        : table === 'lss_tan_generation_profiles'
-            ? validateTanProfile(merged)
-            : validateMediaProfile(merged, nextStatus === 'Approved');
-    if (nextStatus === 'Approved' && errors.length)
-        return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
-    if (table === 'lss_max_tan_profiles' && nextStatus === 'Retired' && existing.is_default) {
-        return res.status(409).json({
-            error: { code: 'DEFAULT_PROFILE_REQUIRED', message: 'Select another approved Maximum TAN default before retiring this profile.' },
-        });
-    }
-    if (table === 'lss_biological_media_profiles' && nextStatus === 'Approved'
-        && String(existing.capacity_model || '').toUpperCase().replace(/[\s-]+/g, '_') === 'OVERALL_VTR') {
-        const tanResult = await (0, db_1.query)(`SELECT 1 FROM lss_tan_generation_profiles
-       WHERE status='Approved' AND coefficient_unit=$1 LIMIT 1`, [exports.TAN_COEFFICIENT_UNIT]);
-        if (!tanResult.rows[0]) {
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const selected = await client.query(`SELECT * FROM ${table} WHERE id=$1 FOR UPDATE`, [id]);
+        const existing = selected.rows[0];
+        if (!existing) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Profile revision not found.' } });
+        }
+        const requestedStatus = text(body.status);
+        if (existing.status === 'Retired' || (existing.status === 'Approved' && requestedStatus !== 'Retired')) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'IMMUTABLE_REVISION', message: 'Approved or retired revisions cannot be edited; create a new revision instead.' } });
+        }
+        const nextStatus = requestedStatus;
+        if (!nextStatus || !PROFILE_STATUSES.includes(nextStatus)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `Status must be one of: ${PROFILE_STATUSES.join(', ')}.` } });
+        }
+        const merged = { ...existing, status: nextStatus };
+        const errors = table === 'lss_max_tan_profiles'
+            ? validateMaxTanProfile(merged)
+            : table === 'lss_tan_generation_profiles'
+                ? validateTanProfile(merged)
+                : validateMediaProfile(merged, nextStatus === 'Approved');
+        if (nextStatus === 'Approved' && errors.length) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
+        }
+        if (table === 'lss_max_tan_profiles' && nextStatus === 'Retired' && existing.is_default) {
+            await client.query('ROLLBACK');
             return res.status(409).json({
-                error: {
-                    code: 'TAN_PROFILE_REQUIRED',
-                    message: 'Approve at least one TAN-generation profile revision before approving an overall-VTR media profile.',
-                },
+                error: { code: 'DEFAULT_PROFILE_REQUIRED', message: 'Select another approved Maximum TAN default before retiring this profile.' },
             });
         }
-    }
-    try {
-        const result = await (0, db_1.query)(`UPDATE ${table} SET status=$1::varchar, approved_by=CASE WHEN $1::varchar='Approved' THEN $2 ELSE approved_by END,
+        if (table === 'lss_biological_media_profiles' && nextStatus === 'Approved'
+            && String(existing.capacity_model || '').toUpperCase().replace(/[\s-]+/g, '_') === 'OVERALL_VTR') {
+            const tanResult = await client.query(`SELECT 1 FROM lss_tan_generation_profiles
+         WHERE status='Approved' AND coefficient_unit=$1 LIMIT 1`, [exports.TAN_COEFFICIENT_UNIT]);
+            if (!tanResult.rows[0]) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({
+                    error: {
+                        code: 'TAN_PROFILE_REQUIRED',
+                        message: 'Approve at least one TAN-generation profile revision before approving an overall-VTR media profile.',
+                    },
+                });
+            }
+        }
+        const result = await client.query(`UPDATE ${table} SET status=$1::varchar, approved_by=CASE WHEN $1::varchar='Approved' THEN $2 ELSE approved_by END,
        approved_at=CASE WHEN $1::varchar='Approved' THEN NOW() ELSE approved_at END,
-       retired_at=CASE WHEN $1::varchar='Retired' THEN NOW() ELSE retired_at END, updated_at=NOW()
+       retired_at=CASE WHEN $1::varchar='Retired' THEN NOW() ELSE retired_at END,
+       edit_version=edit_version+1, updated_at=NOW()
        WHERE id=$3 RETURNING *`, [nextStatus, req.user.id, id]);
+        await client.query('COMMIT');
         return res.json(result.rows[0]);
     }
     catch (error) {
+        await client.query('ROLLBACK');
         const mapped = databaseProfileError(error);
         if (mapped)
             return res.status(409).json({ error: mapped });
         throw error;
+    }
+    finally {
+        client.release();
     }
 }
 router.patch('/admin/biological-media/media-profiles/:id/status', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => updateProfileStatus('lss_biological_media_profiles', routeParam(req.params.id), req.body, req, res));

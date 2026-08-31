@@ -27,6 +27,7 @@ export default function ProductMastersList() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
+  const [showObsolete, setShowObsolete] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [editRow, setEditRow] = useState<ProductMaster | null>(null);
   const [editForm, setEditForm] = useState<any>(null);
@@ -39,10 +40,11 @@ export default function ProductMastersList() {
   const [newCategoryLoading, setNewCategoryLoading] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['product-masters', search],
+    queryKey: ['product-masters', search, showObsolete],
     queryFn: () => {
       const p = new URLSearchParams({ page_size: '500' });
       if (search) p.set('q', search);
+      if (showObsolete) p.set('include_obsolete', 'true');
       return api.get(`/product-masters?${p}`).then(r => r.data);
     },
   });
@@ -73,11 +75,16 @@ export default function ProductMastersList() {
   const categoryOptions: string[] = categoriesData?.items?.map((c: any) => c.name) || ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Tank', 'Electrical', 'Other'];
   const familyOptions = familiesData?.items?.map((f: any) => f.product_family_code) || [];
 
-  const allItems: ProductMaster[] = useMemo(() => {
-    const items = (data?.items ?? []).filter((p: any) => p.product_category !== 'Tank' && p.product_category !== 'Piping');
-    if (!selectedFamilyId) return items;
-    return items.filter((p: any) => p.product_family_id === selectedFamilyId);
-  }, [data?.items, selectedFamilyId]);
+  const catalogItems: ProductMaster[] = useMemo(
+    () => (data?.items ?? []).filter((p: any) => p.product_category !== 'Tank' && p.product_category !== 'Piping'),
+    [data?.items],
+  );
+  const allItems: ProductMaster[] = useMemo(
+    () => selectedFamilyId
+      ? catalogItems.filter((p: any) => p.product_family_id === selectedFamilyId)
+      : catalogItems,
+    [catalogItems, selectedFamilyId],
+  );
 
   const selectedFamily = families.find((f: any) => f.id === selectedFamilyId);
 
@@ -178,9 +185,23 @@ export default function ProductMastersList() {
       <PageHeader
         title={selectedFamily ? selectedFamily.product_family_name : 'Products'}
         crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Products' }]}
-        subtitle={selectedFamily ? selectedFamily.description || `${allItems.length} products` : `${allItems.length} products in catalog`}
+        subtitle={selectedFamily
+          ? `${selectedFamily.description ? `${selectedFamily.description} · ` : ''}${allItems.length} products`
+          : `${allItems.length} products in catalog`}
         actions={
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={showObsolete}
+              onClick={() => setShowObsolete(value => !value)}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                showObsolete
+                  ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
+                  : 'bg-white border-stone-200 text-stone-500 hover:border-blue-300 hover:text-blue-600'
+              }`}
+            >
+              {showObsolete ? 'Hide obsoleted' : 'Show obsoleted'}
+            </button>
             <button
               onClick={() => exportCsv(`products-${new Date().toISOString().slice(0, 10)}.csv`, [
                 { header: 'Code',       value: r => r.product_code ?? '' },
@@ -219,7 +240,7 @@ export default function ProductMastersList() {
             >
               <Package className="w-3.5 h-3.5 flex-shrink-0" />
               <span className="truncate">All Products</span>
-              <span className="ml-auto text-xs text-slate-400">{(data?.items ?? []).filter((p: any) => p.product_category !== 'Tank' && p.product_category !== 'Piping').length || ''}</span>
+              <span className="ml-auto text-xs text-slate-400">{catalogItems.length}</span>
             </button>
             {families.map((fam: any) => (
               <button
@@ -233,7 +254,9 @@ export default function ProductMastersList() {
               >
                 <Package className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
                 <span className="truncate">{fam.product_family_name}</span>
-                <span className="ml-auto text-xs text-slate-400">{fam.product_count}</span>
+                <span className="ml-auto text-xs text-slate-400">
+                  {catalogItems.filter((p: any) => p.product_family_id === fam.id).length}
+                </span>
               </button>
             ))}
           </div>
@@ -255,8 +278,10 @@ export default function ProductMastersList() {
              ) : !isLoading && allItems.length === 0 && !search && !selectedFamilyId ? (
                <EmptyState
                  icon={Package}
-                 title="No products found"
-                 description="Add a product to your catalog, or adjust your filters to find an existing product."
+                  title={showObsolete ? 'No products found' : 'No non-obsolete products found'}
+                  description={showObsolete
+                    ? 'Add a product to your catalog, or adjust your filters to find an existing product.'
+                    : 'Show obsoleted products, add a product to your catalog, or adjust your filters to find an existing product.'}
                  actionLabel="Add a product"
                  onAction={() => setShowNew(true)}
                />
@@ -264,7 +289,9 @@ export default function ProductMastersList() {
                <DataTable
                  columns={columns} data={allItems} loading={isLoading} tableId="products-list"
                  onRowClick={r => navigate(`/products/masters/${r.id}`)}
-                 emptyMessage="No products — adjust filters or add a product"
+                  emptyMessage={showObsolete
+                    ? 'No products — adjust filters or add a product'
+                    : 'No non-obsolete products — show obsoleted products or adjust filters'}
                  contextMenuItems={row => [
                    { label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => openEdit(row) },
                    {

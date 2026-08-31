@@ -87,7 +87,7 @@ describe('core surface accessible names', () => {
     const products = renderPage(
       <ProductMastersList />,
       [
-        [['product-masters', ''], { items: [{ id: 'product-1', product_code: 'P-200', product_name: 'Pump Assembly', product_category: 'Pumping', standard_status: 'Active', unit: 'EA' }] }],
+        [['product-masters', '', false], { items: [{ id: 'product-1', product_code: 'P-200', product_name: 'Pump Assembly', product_category: 'Pumping', standard_status: 'Active', unit: 'EA' }] }],
         [['product-families'], { items: [] }],
         [['product-categories'], { items: [] }],
         [['materials-list'], { items: [] }],

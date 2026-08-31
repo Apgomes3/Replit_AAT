@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
     action: string;
     details: Record<string, unknown> | null;
   }>,
+  listRows: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('../db', () => {
@@ -22,6 +23,18 @@ vi.mock('../db', () => {
     const sql = text.replace(/\s+/g, ' ').trim().toLowerCase();
 
     if (sql.startsWith('select rma.access_level')) return { rows: [] };
+    if (sql.startsWith('select count(*) from product_masters pm')) {
+      const rows = sql.includes("pm.standard_status is distinct from 'obsolete'")
+        ? state.listRows.filter(row => row.standard_status !== 'Obsolete')
+        : state.listRows;
+      return { rows: [{ count: String(rows.length) }] };
+    }
+    if (sql.startsWith('select pm.*, coalesce(ph.design_flow_m3h, pm.design_flow_m3h)')) {
+      const rows = sql.includes("pm.standard_status is distinct from 'obsolete'")
+        ? state.listRows.filter(row => row.standard_status !== 'Obsolete')
+        : state.listRows;
+      return { rows };
+    }
     if (sql.startsWith('select 1 from tanks')) return { rows: [] };
     if (sql.startsWith('select 1 from bom_lines')) return { rows: [] };
     if (sql.startsWith('select id from product_masters where id::text=$1 or product_code=$1')) {
@@ -167,6 +180,7 @@ describe('persisted audit summaries for product mutations', () => {
 
   beforeEach(() => {
     state.auditRows.length = 0;
+    state.listRows.length = 0;
   });
 
   afterAll(() => {
@@ -235,5 +249,29 @@ describe('persisted audit summaries for product mutations', () => {
 
     expect(response.status).toBe(200);
     expectSummary('product', 'product-1', 'UPDATE', 'Product hydraulic data updated');
+  });
+
+  it('hides obsolete products by default while allowing explicit inclusion', async () => {
+    state.listRows.push(
+      { id: 'active-1', product_code: 'P-ACTIVE', standard_status: 'Active' },
+      { id: 'obsolete-1', product_code: 'P-OBSOLETE', standard_status: 'Obsolete' },
+    );
+
+    const defaultResponse = await request(app, 'GET', '/api/v1/product-masters?page_size=50', token);
+    expect(defaultResponse.status).toBe(200);
+    expect((defaultResponse.body as any).items).toEqual([
+      { id: 'active-1', product_code: 'P-ACTIVE', standard_status: 'Active' },
+    ]);
+    expect((defaultResponse.body as any).pagination.total).toBe(1);
+
+    const includeObsoleteResponse = await request(
+      app,
+      'GET',
+      '/api/v1/product-masters?page_size=50&include_obsolete=true',
+      token,
+    );
+    expect(includeObsoleteResponse.status).toBe(200);
+    expect((includeObsoleteResponse.body as any).items).toEqual(state.listRows);
+    expect((includeObsoleteResponse.body as any).pagination.total).toBe(2);
   });
 });

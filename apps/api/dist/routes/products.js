@@ -170,6 +170,8 @@ router.get('/product-masters', auth_1.authenticate, async (req, res) => {
     const offset = (page - 1) * page_size;
     const filters = [];
     const params = [];
+    if (req.query.include_obsolete !== 'true')
+        filters.push(`pm.standard_status IS DISTINCT FROM 'Obsolete'`);
     if (req.query.family_id) {
         params.push(req.query.family_id);
         filters.push(`pm.product_family_id = $${params.length}`);
