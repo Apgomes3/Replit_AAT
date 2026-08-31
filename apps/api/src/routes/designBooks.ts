@@ -1292,15 +1292,25 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
       systems: systemCalculations,
     },
   };
-  const releasedPackage = row.status === 'Released' && row.release_snapshot
+  // Editable books must always expose the current project assembly. In
+  // particular, thermal entries are previews derived from eligible current
+  // systems and do not depend on a saved thermal row. Frozen packages remain
+  // authoritative once the book enters review or is released.
+  const responsePackage = row.status === 'Released' && row.release_snapshot
     ? row.release_snapshot
     : ['For Review', 'Approved'].includes(row.status) && row.review_snapshot
       ? row.review_snapshot
-      : livePackage;
+      : {
+          ...livePackage,
+          thermal_calculations: currentSystems
+            .filter(isLifeSupportSystem)
+            .map(system => thermalCalculations.find(item => item.system_id === system.id))
+            .filter(Boolean),
+        };
 
   res.json({
     ...row,
-    ...releasedPackage,
+    ...responsePackage,
     id: row.id,
     book_code: row.book_code,
     book_title: row.book_title,
