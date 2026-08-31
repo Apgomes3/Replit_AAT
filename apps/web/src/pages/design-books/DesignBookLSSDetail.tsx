@@ -582,7 +582,7 @@ function FractionatorProductCard({
   return (
     <section
       aria-label={`Foam Fractionator ${product.product_code}`}
-      className="min-w-0 rounded-md border border-current/20 bg-white/60 overflow-hidden"
+      className="min-w-0 max-w-full rounded-md border border-current/20 bg-white/60 overflow-hidden"
     >
       <div className="p-3">
         <div className="flex items-start justify-between gap-3">

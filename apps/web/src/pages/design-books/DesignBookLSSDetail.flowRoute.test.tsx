@@ -1645,6 +1645,53 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(convertedContext.getByText('2.8 L/s derived branch flow')).toBeInTheDocument();
   });
 
+  it('keeps long fractionator labels inside their card while preserving Details access', async () => {
+    const user = userEvent.setup();
+    const longProductCode = 'FF-SKIMMER-MODEL-750-LONG-CATALOG-CODE-2026';
+    const longProductName = 'High Capacity Foam Fractionator with Extended Biofiltration Interface';
+    const product = {
+      id: 'ff-long',
+      product_code: longProductCode,
+      product_name: longProductName,
+      diameter_mm: 750,
+    };
+    renderFlowRoute({
+      ...baseSystem,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 19,
+        notes: null,
+        products: [{
+          product_master_id: 'ff-long',
+          product_code: longProductCode,
+          product_name: longProductName,
+          diameter_mm: 750,
+          quantity: 1,
+        }],
+      }],
+    }, baseBook, [], [product]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const route = within(document.querySelector('#flow-route')!);
+    const cardElement = route.getByRole('region', { name: `Foam Fractionator ${longProductCode}` });
+    const card = within(cardElement);
+    const modelCode = card.getByText(longProductCode);
+    const modelName = card.getByText(longProductName);
+
+    expect(cardElement).toHaveClass('min-w-0', 'max-w-full', 'overflow-hidden');
+    expect(modelCode).toHaveClass('block', 'truncate');
+    expect(modelName).toHaveClass('block', 'truncate');
+    expect(modelCode.parentElement).toHaveClass('min-w-0');
+
+    const details = card.getByRole('button', { name: 'Details' });
+    expect(details).toBeVisible();
+    await user.click(details);
+    expect(card.getByRole('button', { name: 'Hide details' })).toBeVisible();
+    expect(details).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('states when Bio/Degas is not connected without showing a branch flow', async () => {
     renderFlowRoute({
       ...baseSystem,
