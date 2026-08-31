@@ -1469,9 +1469,9 @@ async function updateProfileStatus(table: string, id: string, body: any, req: Au
   }
   try {
     const result = await query(
-      `UPDATE ${table} SET status=$1, approved_by=CASE WHEN $1='Approved' THEN $2 ELSE approved_by END,
-       approved_at=CASE WHEN $1='Approved' THEN NOW() ELSE approved_at END,
-       retired_at=CASE WHEN $1='Retired' THEN NOW() ELSE retired_at END, updated_at=NOW()
+      `UPDATE ${table} SET status=$1::varchar, approved_by=CASE WHEN $1::varchar='Approved' THEN $2 ELSE approved_by END,
+       approved_at=CASE WHEN $1::varchar='Approved' THEN NOW() ELSE approved_at END,
+       retired_at=CASE WHEN $1::varchar='Retired' THEN NOW() ELSE retired_at END, updated_at=NOW()
        WHERE id=$3 RETURNING *`,
       [nextStatus, req.user!.id, id],
     );

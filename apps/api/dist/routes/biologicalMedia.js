@@ -1413,9 +1413,9 @@ async function updateProfileStatus(table, id, body, req, res) {
         }
     }
     try {
-        const result = await (0, db_1.query)(`UPDATE ${table} SET status=$1, approved_by=CASE WHEN $1='Approved' THEN $2 ELSE approved_by END,
-       approved_at=CASE WHEN $1='Approved' THEN NOW() ELSE approved_at END,
-       retired_at=CASE WHEN $1='Retired' THEN NOW() ELSE retired_at END, updated_at=NOW()
+        const result = await (0, db_1.query)(`UPDATE ${table} SET status=$1::varchar, approved_by=CASE WHEN $1::varchar='Approved' THEN $2 ELSE approved_by END,
+       approved_at=CASE WHEN $1::varchar='Approved' THEN NOW() ELSE approved_at END,
+       retired_at=CASE WHEN $1::varchar='Retired' THEN NOW() ELSE retired_at END, updated_at=NOW()
        WHERE id=$3 RETURNING *`, [nextStatus, req.user.id, id]);
         return res.json(result.rows[0]);
     }
