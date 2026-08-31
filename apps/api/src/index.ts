@@ -24,6 +24,7 @@ import lssCompactUnitRoutes from './routes/lssCompactUnits';
 import speciesCatalogRoutes from './routes/speciesCatalog';
 import biologicalMediaRoutes from './routes/biologicalMedia';
 import pumpSelectionRoutes from './routes/pumpSelections';
+import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
 import { errorHandler, notFound } from './middleware/errors';
 
 const app = express();
@@ -50,6 +51,8 @@ app.use('/api/v1/graph', graphRoutes);
 app.use('/api/v1/search', searchRoutes);
 app.use('/api/v1/import', importRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/admin/uv-engineering', uvEngineeringRoutes);
+app.use('/api/v1', uvEngineeringConsumerRoutes);
 app.use('/api/v1', purchaseOrderRoutes);
 app.use('/api/v1', notificationRoutes);
 app.use('/api/v1', designBookRoutes);

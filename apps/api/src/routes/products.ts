@@ -219,7 +219,7 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
     product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
     design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
     shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3,
-    manufacturer, model,
+     manufacturer, model, configuration, control_type,
   } = req.body;
   if (!product_code || !product_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_code and product_name required' } });
   const surfaceAreaM2 = calculateWaterSurfaceAreaM2(
@@ -232,15 +232,15 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
       (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
        design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
        shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, surface_area_m2, cost,
-       manufacturer, model)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
+        manufacturer, model, configuration, control_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
     [
       product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
       design_flow_m3h || null, design_pressure_bar || null, design_head_m || null, power_kw || null,
       primary_material_code || null, standard_status || 'Concept', notes || null,
       shape_type || null, length_mm || null, width_mm || null, height_mm || null,
       design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, surfaceAreaM2, 0,
-      manufacturer || null, model || null,
+       manufacturer || null, model || null, configuration || null, control_type || null,
     ]);
   await logAudit(req.user!.id, 'product', result.rows[0].id, 'CREATE', {
     summary: `Product ${product_code} created`,
@@ -256,6 +256,7 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
   const inUse = await query(
     `SELECT 1 FROM tanks WHERE product_master_id=$1
      UNION ALL SELECT 1 FROM product_usages WHERE product_master_id=$1
+     UNION ALL SELECT 1 FROM uv_engineering_catalogs WHERE product_master_id=$1
      LIMIT 1`, [id]);
   if (inUse.rows.length > 0) {
     return res.status(409).json({ error: { code: 'IN_USE', message: 'Cannot delete — product is linked to existing tanks, equipment, or usages. Remove those links first.' } });
@@ -274,7 +275,7 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model } = req.body;
+  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, status } = req.body;
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
   const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
   const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
@@ -286,10 +287,10 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
     const conflict = await query('SELECT id FROM product_masters WHERE product_code=$1 AND id::text!=$2', [newCode, req.params.id]);
     if (conflict.rows.length > 0) return res.status(409).json({ error: { code: 'CONFLICT', message: `Product code ${newCode} is already in use` } });
   }
-  // product_code=$29 uses COALESCE so null means "keep existing"
+  // product_code=$32 uses COALESCE so null means "keep existing"
   const result = await query(
-    `UPDATE product_masters SET product_code=COALESCE($29, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, updated_at=NOW() WHERE id=$28 RETURNING *`,
-    [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, req.params.id, newCode]);
+    `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=$6, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), updated_at=NOW() WHERE id=$31 RETURNING *`,
+    [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, configuration || null, control_type || null, status || null, req.params.id, newCode]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', {
     summary: 'Product details updated',
@@ -327,9 +328,9 @@ router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequ
   const newFamilyId = ('product_family_id' in req.body) ? (req.body.product_family_id || null) : src.product_family_id;
   const newStatus = req.body.standard_status || src.standard_status;
   const result = await query(
-    `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
-    [newCode, newFamilyId, newName, src.product_category, src.application_type, src.design_flow_m3h, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null]);
+    `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
+    [newCode, newFamilyId, newName, src.product_category, src.application_type, src.design_flow_m3h, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null, src.configuration || null, src.control_type || null]);
   res.status(201).json(result.rows[0]);
 });
 

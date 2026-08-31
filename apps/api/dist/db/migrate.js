@@ -615,6 +615,8 @@ ALTER TABLE project_equipment_items ADD COLUMN IF NOT EXISTS component_id UUID R
 
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS model VARCHAR(255);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS configuration VARCHAR(255);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS control_type VARCHAR(255);
 ALTER TABLE components ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
 ALTER TABLE components ADD COLUMN IF NOT EXISTS model VARCHAR(255);
 
@@ -1785,6 +1787,116 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 
 -- PRODUCT HYDRAULICS: optional vendor-specified Venturi flow (m³/h)
 ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS venturi_flow_m3h NUMERIC;
+
+-- UV ENGINEERING CATALOG: PIM-linked, revision-controlled engineering data.
+CREATE TABLE IF NOT EXISTS uv_engineering_catalogs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_master_id UUID NOT NULL UNIQUE REFERENCES product_masters(id) ON DELETE RESTRICT,
+  pim_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  needs_review BOOLEAN NOT NULL DEFAULT false,
+  review_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by UUID REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS uv_engineering_revisions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  catalog_id UUID NOT NULL REFERENCES uv_engineering_catalogs(id) ON DELETE RESTRICT,
+  revision_number INTEGER NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'In Review', 'Approved', 'Retired', 'Disabled')),
+  lamp_count INTEGER,
+  lamp_power_w NUMERIC,
+  effective_reactor_volume_l NUMERIC,
+  irradiance_85t_mw_cm2 NUMERIC,
+  irradiance_95t_mw_cm2 NUMERIC,
+  compatibility TEXT,
+  arrangement TEXT,
+  source_evidence TEXT,
+  approved_per_lamp_flow_exception_m3h NUMERIC,
+  notes TEXT,
+  supersedes_id UUID REFERENCES uv_engineering_revisions(id) ON DELETE RESTRICT,
+  created_by UUID REFERENCES users(id),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  retired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(catalog_id, revision_number)
+);
+CREATE INDEX IF NOT EXISTS idx_uv_engineering_revisions_catalog ON uv_engineering_revisions(catalog_id, revision_number DESC);
+
+CREATE OR REPLACE FUNCTION uv_engineering_pim_snapshot(p product_masters)
+RETURNS jsonb LANGUAGE sql STABLE AS $$
+  SELECT jsonb_build_object(
+    'product_code', p.product_code, 'product_name', p.product_name,
+    'manufacturer', p.manufacturer, 'status', p.status,
+    'category', p.product_category, 'material', p.primary_material_code,
+    'configuration', p.configuration, 'control_type', p.control_type,
+    'rated_power_kw', p.power_kw
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION provision_uv_engineering_catalog()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE catalog_uuid UUID; is_uv BOOLEAN;
+BEGIN
+  SELECT pf.product_family_code = 'PFM-UV' INTO is_uv
+  FROM product_families pf WHERE pf.id = NEW.product_family_id;
+  IF COALESCE(is_uv, false) THEN
+    INSERT INTO uv_engineering_catalogs (product_master_id, pim_snapshot)
+    VALUES (NEW.id, uv_engineering_pim_snapshot(NEW))
+    ON CONFLICT (product_master_id) DO NOTHING
+    RETURNING id INTO catalog_uuid;
+    IF catalog_uuid IS NULL THEN
+      SELECT id INTO catalog_uuid FROM uv_engineering_catalogs WHERE product_master_id=NEW.id;
+    END IF;
+    INSERT INTO uv_engineering_revisions (catalog_id, revision_number, status)
+    SELECT catalog_uuid, 1, 'Draft'
+    WHERE NOT EXISTS (SELECT 1 FROM uv_engineering_revisions WHERE catalog_id=catalog_uuid);
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_provision_uv_engineering_catalog ON product_masters;
+CREATE TRIGGER trg_provision_uv_engineering_catalog
+AFTER INSERT OR UPDATE OF product_family_id ON product_masters
+FOR EACH ROW EXECUTE FUNCTION provision_uv_engineering_catalog();
+
+CREATE OR REPLACE FUNCTION refresh_uv_engineering_pim_snapshot()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE changed BOOLEAN;
+BEGIN
+  changed := OLD.product_code IS DISTINCT FROM NEW.product_code
+    OR OLD.product_name IS DISTINCT FROM NEW.product_name
+    OR OLD.manufacturer IS DISTINCT FROM NEW.manufacturer
+    OR OLD.status IS DISTINCT FROM NEW.status
+    OR OLD.product_family_id IS DISTINCT FROM NEW.product_family_id
+    OR OLD.product_category IS DISTINCT FROM NEW.product_category
+    OR OLD.primary_material_code IS DISTINCT FROM NEW.primary_material_code
+    OR OLD.configuration IS DISTINCT FROM NEW.configuration
+    OR OLD.control_type IS DISTINCT FROM NEW.control_type
+    OR OLD.power_kw IS DISTINCT FROM NEW.power_kw;
+  IF changed THEN
+    UPDATE uv_engineering_catalogs
+    SET pim_snapshot=uv_engineering_pim_snapshot(NEW), needs_review=true,
+        review_reason='Authoritative PIM identity changed', updated_at=NOW()
+    WHERE product_master_id=NEW.id;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_refresh_uv_engineering_pim_snapshot ON product_masters;
+CREATE TRIGGER trg_refresh_uv_engineering_pim_snapshot
+AFTER UPDATE ON product_masters FOR EACH ROW EXECUTE FUNCTION refresh_uv_engineering_pim_snapshot();
+
+-- Bring existing PFM-UV products under the catalog without inventing engineering values.
+INSERT INTO uv_engineering_catalogs (product_master_id, pim_snapshot)
+SELECT pm.id, uv_engineering_pim_snapshot(pm)
+FROM product_masters pm JOIN product_families pf ON pf.id=pm.product_family_id
+WHERE pf.product_family_code='PFM-UV'
+ON CONFLICT (product_master_id) DO NOTHING;
+INSERT INTO uv_engineering_revisions (catalog_id, revision_number, status)
+SELECT c.id, 1, 'Draft' FROM uv_engineering_catalogs c
+WHERE NOT EXISTS (SELECT 1 FROM uv_engineering_revisions r WHERE r.catalog_id=c.id);
 `;
 async function migrate() {
     const client = await index_1.default.connect();
