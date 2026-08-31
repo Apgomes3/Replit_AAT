@@ -4,6 +4,11 @@ import http from 'node:http';
 import express, { Express } from 'express';
 import jwt from 'jsonwebtoken';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  PUMP_SELECTION_CALCULATION_VERSION,
+  pumpCircuits,
+  pumpSourceFingerprint,
+} from '../lib/pumpSelections';
 
 const testSecret = 'design-books-detail-test-secret';
 const bookId = '00000000-0000-4000-8000-000000000143';
@@ -13,7 +18,7 @@ const systems = [1, 2, 3].map(index => ({
   project_id: projectId,
   system_code: `LSS-0${index}`,
   system_name: `Life Support ${index}`,
-  system_type: 'Life Support',
+  system_type: index === 1 ? 'Single Exhibit LSS' : 'Life Support',
   status: 'Draft',
   design_flow_m3h: null,
   side_streams: [],
@@ -117,13 +122,14 @@ function requestDetail(app: Express): Promise<{ status: number; body: any }> {
 
 describe('Design Book detail thermal response', () => {
   let app: Express;
+  let designBookModule: typeof import('./designBooks');
 
   beforeAll(async () => {
     process.env.JWT_SECRET = testSecret;
-    const { default: designBookRoutes } = await import('./designBooks');
+    designBookModule = await import('./designBooks');
     app = express();
     app.use(express.json());
-    app.use('/api/v1', designBookRoutes);
+    app.use('/api/v1', designBookModule.default);
   });
 
   beforeEach(() => {
@@ -148,7 +154,7 @@ describe('Design Book detail thermal response', () => {
     expect(response.body.thermal_calculations).toEqual(
       expect.arrayContaining(systems.map(system => expect.objectContaining({
         system_id: system.id,
-        system: expect.objectContaining({ id: system.id, system_type: 'Life Support' }),
+        system: expect.objectContaining({ id: system.id, system_type: system.system_type }),
         saved: null,
         calculation: null,
         current_preview: expect.any(Object),
@@ -166,6 +172,111 @@ describe('Design Book detail thermal response', () => {
     expect(state.calls).toContainEqual(expect.objectContaining({
       params: [bookId, systems.map(system => system.id)],
     }));
+    expect(response.body.friction_loss_calculations.map((item: any) => item.system_id)).toEqual(
+      systems.map(system => system.id),
+    );
+  });
+
+  it('inherits a fresh circuit pump into an unsaved friction-loss package', async () => {
+    const system = {
+      id: '00000000-0000-4000-8000-000000000201',
+      system_code: 'LSS-201',
+      system_name: 'Shark LSS',
+      system_type: 'Single Exhibit LSS',
+      design_flow_m3h: 100,
+      loop1_flow_source: 'Exhibit return',
+      loop1_filtration: 'Mechanical',
+      loop1_flow_pct: 100,
+      side_streams: [],
+    };
+    const circuit = pumpCircuits(system, [])[0];
+    const selectedPump = {
+      id: '00000000-0000-4000-8000-000000000202',
+      project_equipment_item_id: '00000000-0000-4000-8000-000000000202',
+      equip_code: 'P-201',
+      product_code: 'PUMP-201',
+      product_name: 'Duty pump',
+      power_kw: 10,
+      design_flow_m3h: 120,
+      design_head_m: 15,
+    };
+    const source = {
+      circuit: {
+        circuit_key: circuit.circuit_key,
+        circuit_kind: circuit.circuit_kind,
+        circuit_name: circuit.circuit_name,
+        circuit_type: circuit.circuit_type,
+        parent_loop_number: circuit.parent_loop_number,
+        side_stream_id: circuit.side_stream_id,
+        flow_m3h: circuit.flow_m3h,
+      },
+      design_head_m: 10,
+      pump_efficiency_pct: 80,
+      motor_efficiency_pct: 90,
+    };
+    let pumpBelongsToProject = true;
+    const runner = vi.fn(async (sql: string) => {
+      if (sql.includes('SELECT sps.system_id')) {
+        return {
+          rows: pumpBelongsToProject ? [{
+            system_id: system.id,
+            circuit_key: circuit.circuit_key,
+            ...selectedPump,
+          }] : [],
+        };
+      }
+      if (sql.includes('FROM system_pump_selections')) {
+        return {
+          rows: [{
+            system_id: system.id,
+            circuit_key: circuit.circuit_key,
+            project_equipment_item_id: selectedPump.id,
+            design_head_m: 10,
+            pump_efficiency_pct: 80,
+            motor_efficiency_pct: 90,
+            source_fingerprint: pumpSourceFingerprint(source),
+            pump_snapshot: selectedPump,
+            calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+            result_snapshot: { results: { recommended_motor_kw: 5.5 } },
+          }],
+        };
+      }
+      if (sql.includes('FROM design_book_friction_loss_calculations')) return { rows: [] };
+      throw new Error(`Unexpected friction package query: ${sql}`);
+    });
+
+    const packages = await designBookModule.loadFrictionLossPackages(
+      runner,
+      bookId,
+      [system],
+    );
+
+    expect(packages[0].items[0]).toMatchObject({
+      circuit_key: 'loop:1',
+      flow_m3h: 100,
+      project_equipment_item_id: selectedPump.id,
+      selected_pump: expect.objectContaining({ id: selectedPump.id, equip_code: 'P-201' }),
+      pump_selection_ready: true,
+      pump_selection_status: 'ready',
+      pump_selection_freshness: 'fresh',
+      freshness: 'unsaved',
+    });
+
+    pumpBelongsToProject = false;
+    const crossProjectPackages = await designBookModule.loadFrictionLossPackages(
+      runner,
+      bookId,
+      [system],
+    );
+    expect(crossProjectPackages[0].items[0]).toMatchObject({
+      pump_selection_ready: false,
+      pump_selection_status: 'stale',
+      pump_selection_freshness: 'stale',
+      status: 'incomplete',
+    });
+    expect(crossProjectPackages[0].items[0].pump_selection_reasons).toContain(
+      'The selected circuit pump is no longer an active eligible pump assigned to this LSS system. Open Pump Selection and select a current pump.',
+    );
   });
 
   it.each([

@@ -2,6 +2,7 @@ import { AQUARIUM_CALCULATION_VERSION } from './aquariumCalculations';
 import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from './pumpSelections';
 import { isApprovedThermalCorrelationSnapshot } from './thermalCalculations';
 import { FRICTION_LOSS_CALCULATION_VERSION } from './frictionLossCalculations';
+import { isLifeSupportSystem } from './lssSystems';
 
 export type ReleaseSeverity = 'blocker' | 'warning';
 export type ReleaseCheckStatus = 'pass' | 'warning' | 'blocked';
@@ -123,8 +124,7 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
   const exhibits = context.exhibits || [];
   const tanks = context.tanks || [];
   const systems = context.systems || [];
-  const lifeSupportSystems = systems.filter(system =>
-    String(system?.system_type || '').trim().toLowerCase() === 'life support');
+  const lifeSupportSystems = systems.filter(isLifeSupportSystem);
   const species = context.species || [];
   const hydraulics = context.hydraulics || [];
   const exhibitCalculations = context.engineering_calculations?.exhibits || [];
@@ -235,15 +235,25 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
     const calculations = frictionLossCalculations.find((entry: any) => entry.system_id === system.id)?.items || [];
     return pumpCircuits(system, system.side_streams || []).map(circuit => {
       const calculation = calculations.find((entry: any) => entry.circuit_key === circuit.circuit_key);
+      const selection = pumpSelections.find((entry: any) => entry.system_id === system.id)?.items
+        ?.find((item: any) => item.circuit_key === circuit.circuit_key);
+      const samePump = !!selection?.project_equipment_item_id &&
+        selection.project_equipment_item_id === calculation?.project_equipment_item_id;
       const ready = calculation?.freshness === 'fresh' &&
         calculation?.status === 'ready' &&
         calculation?.selected_pump &&
+        samePump &&
+        selection?.freshness === 'fresh' &&
+        selection?.status === 'ready' &&
+        selection?.calculation_version === PUMP_SELECTION_CALCULATION_VERSION &&
         calculation?.calculation_version === FRICTION_LOSS_CALCULATION_VERSION &&
         calculation?.result?.results?.combined_head_loss_m != null;
       return ready ? null : {
         system_id: system.id,
         label: `${system.system_code || system.system_name || system.id} · ${circuit.circuit_name || circuit.circuit_key}`,
-        reason: calculation?.reasons?.[0] || 'Complete and recalculate suction and discharge friction loss.',
+        reason: !selection ? 'no current pump selection exists'
+          : !samePump ? 'friction calculation does not use the current Flow Route pump selection'
+          : calculation?.reasons?.[0] || 'Complete and recalculate suction and discharge friction loss.',
       };
     }).filter(Boolean);
   });

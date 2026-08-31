@@ -9,6 +9,21 @@ type Side = 'suction' | 'discharge';
 
 const fieldClass = 'w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:bg-stone-50 disabled:text-stone-500';
 
+const PIPE_MATERIALS = [
+  { value: 'PVC-U', roughness_mm: 0.0015 },
+  { value: 'HDPE', roughness_mm: 0.0015 },
+  { value: 'FRP-VE', roughness_mm: 0.01 },
+  { value: 'Stainless steel', roughness_mm: 0.045 },
+  { value: 'Carbon steel', roughness_mm: 0.045 },
+  { value: 'Concrete', roughness_mm: 0.3 },
+  { value: 'Glass', roughness_mm: 0.0015 },
+  { value: 'Custom / other', roughness_mm: null },
+] as const;
+
+function pipeMaterial(value: unknown) {
+  return PIPE_MATERIALS.find(material => material.value === value);
+}
+
 function numberText(value: unknown, digits = 3) {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : '—';
@@ -21,6 +36,7 @@ function statusClass(status?: string) {
 }
 
 function blankComponent(side: Side, kind: 'pipe' | 'fitting') {
+  const defaultMaterial = PIPE_MATERIALS[0];
   return {
     key: `${side}-${kind}-${Date.now()}-${Math.random()}`,
     side,
@@ -28,8 +44,8 @@ function blankComponent(side: Side, kind: 'pipe' | 'fitting') {
     project_piping_item_id: '',
     internal_diameter_mm: '',
     straight_length_m: '',
-    material: '',
-    absolute_roughness_mm: '',
+    material: kind === 'pipe' ? defaultMaterial.value : '',
+    absolute_roughness_mm: kind === 'pipe' ? defaultMaterial.roughness_mm : '',
     fitting_k_value: '',
     quantity: kind === 'fitting' ? '1' : '',
   };
@@ -50,6 +66,31 @@ function SideSchedule({
 }) {
   const update = (index: number, key: string, value: any) =>
     onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row));
+  const updateMaterial = (index: number, value: string) => {
+    const material = pipeMaterial(value);
+    onChange(rows.map((row, rowIndex) => rowIndex === index
+      ? {
+          ...row,
+          material: value,
+          absolute_roughness_mm: material?.roughness_mm ?? '',
+        }
+      : row));
+  };
+  const updateKind = (index: number, value: 'pipe' | 'fitting') => {
+    const defaultMaterial = PIPE_MATERIALS[0];
+    onChange(rows.map((row, rowIndex) => rowIndex === index
+      ? {
+          ...row,
+          component_kind: value,
+          ...(value === 'pipe' && !row.material
+            ? {
+                material: defaultMaterial.value,
+                absolute_roughness_mm: defaultMaterial.roughness_mm,
+              }
+            : {}),
+        }
+      : row));
+  };
   return (
     <section className="rounded-xl border border-stone-200 bg-stone-50/50 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -66,46 +107,73 @@ function SideSchedule({
       </div>
       <div className="mt-3 space-y-3">
         {!rows.length && <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-5 text-center text-sm text-stone-500">No {side}-side components assigned.</div>}
-        {rows.map((row, index) => {
-          const result = row.total_head_loss_m != null ? row : null;
-          return (
-            <div key={row.key || `${side}-${index}`} className="rounded-lg border border-stone-200 bg-white p-3">
-              <div className="grid gap-2 lg:grid-cols-12">
-                <label className="lg:col-span-4"><span className="mb-1 block text-xs font-medium text-stone-600">Project pipe / fitting</span>
-                  <select value={row.project_piping_item_id || ''} onChange={event => update(index, 'project_piping_item_id', event.target.value)} disabled={readOnly} className={fieldClass}>
-                    <option value="">Select assigned item</option>
-                    {candidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.piping_code} · {candidate.product_name || candidate.description || 'Piping item'}</option>)}
-                  </select>
-                </label>
-                <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium text-stone-600">Type</span>
-                  <select value={row.component_kind} onChange={event => update(index, 'component_kind', event.target.value)} disabled={readOnly} className={fieldClass}><option value="pipe">Straight pipe</option><option value="fitting">Fitting</option></select>
-                </label>
-                <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium text-stone-600">Internal Ø (mm)</span>
-                  <input type="number" min="0" step="any" value={row.internal_diameter_mm ?? ''} onChange={event => update(index, 'internal_diameter_mm', event.target.value)} disabled={readOnly} className={fieldClass} />
-                </label>
-                {row.component_kind === 'pipe' ? (
-                  <>
-                    <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium text-stone-600">Length (m)</span><input type="number" min="0" step="any" value={row.straight_length_m ?? ''} onChange={event => update(index, 'straight_length_m', event.target.value)} disabled={readOnly} className={fieldClass} /></label>
-                    <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium text-stone-600">Roughness (mm)</span><input type="number" min="0" step="any" value={row.absolute_roughness_mm ?? ''} onChange={event => update(index, 'absolute_roughness_mm', event.target.value)} disabled={readOnly} className={fieldClass} /></label>
-                    <label className="lg:col-span-4"><span className="mb-1 block text-xs font-medium text-stone-600">Material</span><input value={row.material || ''} onChange={event => update(index, 'material', event.target.value)} disabled={readOnly} className={fieldClass} placeholder="e.g. PVC-U" /></label>
-                  </>
-                ) : (
-                  <>
-                    <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium text-stone-600">K-value</span><input type="number" min="0" step="any" value={row.fitting_k_value ?? ''} onChange={event => update(index, 'fitting_k_value', event.target.value)} disabled={readOnly} className={fieldClass} /></label>
-                    <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium text-stone-600">Quantity</span><input type="number" min="0" step="1" value={row.quantity ?? ''} onChange={event => update(index, 'quantity', event.target.value)} disabled={readOnly} className={fieldClass} /></label>
-                  </>
-                )}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
-                <span>Velocity <strong className="font-mono text-stone-700">{numberText(result?.velocity_m_s)} m/s</strong></span>
-                <span>Re <strong className="font-mono text-stone-700">{numberText(result?.reynolds_number, 0)}</strong></span>
-                {row.component_kind === 'pipe' && <span>f <strong className="font-mono text-stone-700">{numberText(result?.friction_factor, 5)}</strong></span>}
-                <span>Loss <strong className="font-mono text-stone-700">{numberText(result?.total_head_loss_m)} m</strong></span>
-                {!readOnly && <button type="button" onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))} className="ml-auto text-red-600"><Trash2 className="h-4 w-4" /></button>}
-              </div>
-            </div>
-          );
-        })}
+        {!!rows.length && (
+          <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
+            <table className="w-full min-w-[980px] text-xs">
+              <thead className="bg-stone-50 text-left text-[10px] uppercase tracking-wide text-stone-500">
+                <tr>
+                  <th className="px-2.5 py-2">Project pipe / fitting</th>
+                  <th className="px-2.5 py-2">Type</th>
+                  <th className="px-2.5 py-2">Internal Ø (mm)</th>
+                  <th className="px-2.5 py-2">Length / K-value</th>
+                  <th className="px-2.5 py-2">Material / Qty</th>
+                  <th className="px-2.5 py-2">Roughness (mm)</th>
+                  <th className="px-2.5 py-2 text-right">Result</th>
+                  {!readOnly && <th className="w-8 px-2.5 py-2" />}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {rows.map((row, index) => {
+                  const result = row.total_head_loss_m != null ? row : null;
+                  const material = pipeMaterial(row.material);
+                  const isPipe = row.component_kind === 'pipe';
+                  return (
+                    <tr key={row.key || `${side}-${index}`} className="align-top">
+                      <td className="p-2">
+                        <select aria-label={`Project pipe or fitting ${index + 1}`} value={row.project_piping_item_id || ''} onChange={event => update(index, 'project_piping_item_id', event.target.value)} disabled={readOnly} className={fieldClass}>
+                          <option value="">Select assigned item</option>
+                          {candidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.piping_code} · {candidate.product_name || candidate.description || 'Piping item'}</option>)}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <select aria-label={`Component type ${index + 1}`} value={row.component_kind} onChange={event => updateKind(index, event.target.value as 'pipe' | 'fitting')} disabled={readOnly} className={fieldClass}>
+                          <option value="pipe">Straight pipe</option><option value="fitting">Fitting</option>
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <input aria-label={`Internal diameter ${index + 1}`} type="number" min="0" step="any" value={row.internal_diameter_mm ?? ''} onChange={event => update(index, 'internal_diameter_mm', event.target.value)} disabled={readOnly} className={fieldClass} />
+                      </td>
+                      <td className="p-2">
+                        {isPipe
+                          ? <input aria-label={`Length ${index + 1}`} type="number" min="0" step="any" value={row.straight_length_m ?? ''} onChange={event => update(index, 'straight_length_m', event.target.value)} disabled={readOnly} className={fieldClass} />
+                          : <input aria-label={`K-value ${index + 1}`} type="number" min="0" step="any" value={row.fitting_k_value ?? ''} onChange={event => update(index, 'fitting_k_value', event.target.value)} disabled={readOnly} className={fieldClass} />}
+                      </td>
+                      <td className="p-2">
+                        {isPipe
+                          ? <select aria-label={`Material ${index + 1}`} value={row.material || ''} onChange={event => updateMaterial(index, event.target.value)} disabled={readOnly} className={fieldClass}>
+                            {!material && row.material && <option value={row.material}>{row.material}</option>}
+                            {!row.material && <option value="">Select material</option>}
+                            {PIPE_MATERIALS.map(option => <option key={option.value} value={option.value}>{option.value}</option>)}
+                          </select>
+                          : <input aria-label={`Quantity ${index + 1}`} type="number" min="0" step="1" value={row.quantity ?? ''} onChange={event => update(index, 'quantity', event.target.value)} disabled={readOnly} className={fieldClass} />}
+                      </td>
+                      <td className="p-2">
+                        {isPipe
+                          ? <input aria-label={`Roughness ${index + 1}`} type="number" min="0" step="any" value={row.absolute_roughness_mm ?? material?.roughness_mm ?? ''} onChange={event => update(index, 'absolute_roughness_mm', event.target.value)} disabled={readOnly || material?.roughness_mm != null} className={fieldClass} />
+                          : <span className="block px-2.5 py-2 text-stone-400">—</span>}
+                      </td>
+                      <td className="whitespace-nowrap p-2 text-right text-stone-600">
+                        <div>{numberText(result?.velocity_m_s)} m/s</div>
+                        <div className="font-mono font-semibold text-stone-800">{numberText(result?.total_head_loss_m)} m</div>
+                      </td>
+                      {!readOnly && <td className="p-2 text-right"><button type="button" aria-label={`Remove ${side} component ${index + 1}`} onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))} className="text-red-600"><Trash2 className="h-4 w-4" /></button></td>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -117,7 +185,6 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
     queryFn: () => api.get(`/design-books/${bookId}/friction-loss/${systemId}`).then(response => response.data),
   });
   const [circuitKey, setCircuitKey] = useState('');
-  const [pumpId, setPumpId] = useState('');
   const [components, setComponents] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const item = data?.items?.find((entry: any) => entry.circuit_key === circuitKey);
@@ -128,19 +195,33 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
   }, [data]);
   useEffect(() => {
     if (!item) return;
-    setPumpId(item.project_equipment_item_id || '');
     setComponents((item.components || []).map((component: any, index: number) => ({
       ...component,
       key: component.id || `${item.circuit_key}-${index}`,
     })));
   }, [item?.circuit_key, item?.source_fingerprint]);
 
+  const pumpSelectionReady = item?.pump_selection_ready ?? (
+    item?.project_equipment_item_id &&
+    item?.selected_pump &&
+    (item?.pump_selection_freshness || item?.freshness) === 'fresh' &&
+    (item?.pump_selection_status || 'ready') === 'ready'
+  );
+  const pumpSelectionReasons = item?.pump_selection_reasons?.length
+    ? item.pump_selection_reasons
+    : item?.reasons?.filter((reason: string) =>
+      /pump|selection/i.test(reason));
+
   const save = async () => {
+    if (!pumpSelectionReady) {
+      toast.error('Complete Pump Selection for this Flow Route circuit before calculating friction loss.');
+      return;
+    }
     setSaving(true);
     try {
       await api.put(`/design-books/${bookId}/friction-loss/${systemId}`, {
         circuit_key: circuitKey,
-        project_equipment_item_id: pumpId,
+        project_equipment_item_id: item.project_equipment_item_id,
         components: components.map(({ key, piping_snapshot, reasons, ...component }) => component),
       });
       toast.success('Friction Loss calculated and saved');
@@ -165,19 +246,38 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
             {(data?.items || []).map((entry: any) => <option key={entry.circuit_key} value={entry.circuit_key}>{entry.circuit_name} · {numberText(entry.flow_m3h)} m³/h</option>)}
           </select>
         </label>
-        <label><span className="mb-1 block text-xs font-medium text-stone-600">Selected LSS pump</span>
-          {readOnly ? <div className={`${fieldClass} bg-stone-50`}>{item?.selected_pump ? `${item.selected_pump.equip_code} · ${item.selected_pump.product_name || item.selected_pump.description}` : 'No valid pump selected'}</div> :
-            <select value={pumpId} onChange={event => setPumpId(event.target.value)} className={fieldClass}><option value="">Select assigned pump</option>{(data?.pump_candidates || []).map((pump: any) => <option key={pump.id} value={pump.id}>{pump.equip_code} · {pump.product_code || pump.product_name}</option>)}</select>}
-        </label>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-stone-600">Inherited LSS pump</span>
+          <div className={`${fieldClass} bg-stone-50`}>
+            {item?.selected_pump
+              ? `${item.selected_pump.equip_code || 'Untagged'} · ${item.selected_pump.product_name || item.selected_pump.description || item.selected_pump.product_code || 'Assigned pump'}`
+              : 'No current pump selection'}
+          </div>
+          <p className="mt-1 text-xs text-stone-500">
+            {item?.pump_selection_status || (item?.selected_pump ? 'ready' : 'incomplete')} · read-only from Pump Selection
+          </p>
+        </div>
       </div>
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         Authoritative circuit flow: <strong>{numberText(item?.flow_m3h)} m³/h</strong>. Darcy–Weisbach is used for straight pipe and K-values for fittings.
       </div>
+      {!readOnly && !pumpSelectionReady && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+          <div className="font-semibold">Pump Selection is required before friction loss can be calculated.</div>
+          {!!pumpSelectionReasons?.length && <ul className="mt-2 list-disc space-y-1 pl-5 text-red-800">{pumpSelectionReasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>}
+          <a
+            href={`/design-books/${bookId}/lss/${systemId}?tab=pump#pump-selection`}
+            className="mt-3 inline-flex font-semibold text-blue-700 underline"
+          >
+            Open LSS Pump Selection
+          </a>
+        </div>
+      )}
       <SideSchedule side="suction" rows={components.filter(row => row.side === 'suction')} candidates={data?.piping_candidates || []} readOnly={readOnly} onChange={rows => setComponents([...rows, ...components.filter(row => row.side === 'discharge')])} />
       <SideSchedule side="discharge" rows={components.filter(row => row.side === 'discharge')} candidates={data?.piping_candidates || []} readOnly={readOnly} onChange={rows => setComponents([...components.filter(row => row.side === 'suction'), ...rows])} />
       {!!item?.reasons?.length && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-900"><AlertTriangle className="h-4 w-4" />Action required</div><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">{item.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul></div>}
       {result?.side_totals && <div className="grid gap-3 sm:grid-cols-3">{(['suction', 'discharge'] as Side[]).map(side => <div key={side} className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs capitalize text-stone-500">{side} subtotal</div><div className="font-mono text-lg font-bold">{numberText(result.side_totals[side]?.total_head_loss_m)} m</div><div className="text-xs text-stone-500">{numberText(result.side_totals[side]?.pressure_drop_kpa)} kPa</div></div>)}<div className="rounded-xl bg-stone-900 px-4 py-3 text-white"><div className="text-xs text-stone-300">Combined friction loss</div><div className="font-mono text-lg font-bold">{numberText(result.results?.combined_head_loss_m)} m</div><div className="text-xs text-stone-300">{numberText(result.results?.combined_pressure_drop_kpa)} kPa</div></div></div>}
-      <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v1'} · inputs and item identities are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
+       <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v1'} · inputs and item identities are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving || !pumpSelectionReady} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
     </div>
   );
 }

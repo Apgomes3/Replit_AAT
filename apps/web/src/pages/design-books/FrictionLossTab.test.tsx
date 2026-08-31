@@ -19,8 +19,28 @@ const circuit = {
   status: 'incomplete',
   freshness: 'unsaved',
   reasons: ['Select a pump assigned to this LSS system.'],
+  pump_selection_ready: false,
+  pump_selection_status: 'incomplete',
+  pump_selection_freshness: 'unsaved',
+  pump_selection_reasons: ['Select and calculate this circuit pump first.'],
   components: [],
   result: null,
+};
+const readyCircuit = {
+  ...circuit,
+  project_equipment_item_id: 'pump-1',
+  selected_pump: {
+    id: 'pump-1',
+    project_equipment_item_id: 'pump-1',
+    equip_code: 'P-101',
+    product_code: 'PUMP-01',
+    product_name: 'Duty pump',
+  },
+  pump_selection_ready: true,
+  pump_selection_status: 'ready',
+  pump_selection_freshness: 'fresh',
+  pump_selection_reasons: [],
+  reasons: ['Add at least one suction-side pipe or fitting.', 'Add at least one discharge-side pipe or fitting.'],
 };
 const packageItem = {
   system_id: 'system-1',
@@ -36,8 +56,13 @@ const detail = {
   ],
   frozen: false,
 };
+const readyDetail = {
+  ...detail,
+  items: [readyCircuit],
+};
 
-function renderTab(readOnly = false) {
+function renderTab(readOnly = false, detailResponse = detail) {
+  apiGet.mockResolvedValue({ data: detailResponse } as any);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
@@ -65,28 +90,36 @@ describe('FrictionLossTab', () => {
     expect(await screen.findByText('Suction side')).toBeInTheDocument();
     expect(screen.getByText('Discharge side')).toBeInTheDocument();
     expect(screen.getByText(/Authoritative circuit flow:/)).toHaveTextContent('72.000 m³/h');
+    expect(screen.getByRole('link', { name: 'Open LSS Pump Selection' })).toHaveAttribute(
+      'href',
+      '/design-books/book-1/lss/system-1?tab=pump#pump-selection',
+    );
+    expect(screen.getByRole('button', { name: 'Save & recalculate' })).toBeDisabled();
     expect(apiGet).toHaveBeenCalledWith('/design-books/book-1/friction-loss/system-1');
   });
 
-  it('persists separate suction pipe and discharge fitting schedules', async () => {
+  it('uses the inherited pump and persists compact suction and discharge table rows', async () => {
     const user = userEvent.setup();
-    renderTab();
+    renderTab(false, readyDetail);
     await user.click(screen.getByRole('button', { name: /Open system/ }));
     await screen.findByText('Suction side');
-    await user.selectOptions(screen.getByText('Selected LSS pump').parentElement!.querySelector('select')!, 'pump-1');
+    expect(screen.getByText('P-101 · Duty pump')).toBeInTheDocument();
+    expect(screen.getByText(/read-only from Pump Selection/)).toBeInTheDocument();
 
     const suction = screen.getByText('Suction side').closest('section')!;
     await user.click(within(suction).getByRole('button', { name: 'Pipe' }));
-    await user.selectOptions(within(suction).getByText('Project pipe / fitting').parentElement!.querySelector('select')!, 'pipe-1');
+    expect(within(suction).getByRole('table')).toBeInTheDocument();
+    await user.selectOptions(within(suction).getByRole('combobox', { name: 'Project pipe or fitting 1' }), 'pipe-1');
     const suctionInputs = within(suction).getAllByRole('spinbutton');
     await user.type(suctionInputs[0], '100');
     await user.type(suctionInputs[1], '12');
-    await user.type(suctionInputs[2], '0.0015');
-    await user.type(within(suction).getByPlaceholderText('e.g. PVC-U'), 'PVC-U');
+    await user.selectOptions(within(suction).getByRole('combobox', { name: 'Material 1' }), 'HDPE');
+    expect(within(suction).getByRole('spinbutton', { name: 'Roughness 1' })).toHaveValue(0.0015);
+    expect(within(suction).getByRole('spinbutton', { name: 'Roughness 1' })).toBeDisabled();
 
     const discharge = screen.getByText('Discharge side').closest('section')!;
     await user.click(within(discharge).getByRole('button', { name: 'Fitting' }));
-    await user.selectOptions(within(discharge).getByText('Project pipe / fitting').parentElement!.querySelector('select')!, 'fit-1');
+    await user.selectOptions(within(discharge).getByRole('combobox', { name: 'Project pipe or fitting 1' }), 'fit-1');
     const dischargeInputs = within(discharge).getAllByRole('spinbutton');
     await user.type(dischargeInputs[0], '100');
     await user.type(dischargeInputs[1], '0.9');
@@ -100,7 +133,13 @@ describe('FrictionLossTab', () => {
         circuit_key: 'loop:1',
         project_equipment_item_id: 'pump-1',
         components: expect.arrayContaining([
-          expect.objectContaining({ side: 'suction', component_kind: 'pipe', project_piping_item_id: 'pipe-1' }),
+          expect.objectContaining({
+            side: 'suction',
+            component_kind: 'pipe',
+            project_piping_item_id: 'pipe-1',
+            material: 'HDPE',
+            absolute_roughness_mm: 0.0015,
+          }),
           expect.objectContaining({ side: 'discharge', component_kind: 'fitting', project_piping_item_id: 'fit-1' }),
         ]),
       }),

@@ -38,15 +38,34 @@ import {
   frictionSourceFingerprint,
   frictionSourceSnapshot,
 } from '../lib/frictionLossCalculations';
+import { isLifeSupportSystem } from '../lib/lssSystems';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
 
 type DbRunner = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
 
-const isLifeSupportSystem = (system: any) =>
-  String(system?.system_type || '').trim().toLowerCase() === 'life support';
 const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
+
+export function isCurrentPumpSelectionReady(selection: any) {
+  return !!selection &&
+    !!selection.project_equipment_item_id &&
+    !!selection.selected_pump &&
+    selection.freshness === 'fresh' &&
+    selection.status === 'ready' &&
+    selection.calculation_version === PUMP_SELECTION_CALCULATION_VERSION;
+}
+
+function pumpSelectionPrerequisiteReasons(selection: any) {
+  if (!selection) {
+    return ['No pump selection is saved for this Flow Route circuit. Open Pump Selection and calculate the circuit pump first.'];
+  }
+  if (isCurrentPumpSelectionReady(selection)) return [];
+  return [
+    ...(selection.reasons || []),
+    'Complete and recalculate Pump Selection for this Flow Route circuit before calculating friction loss.',
+  ].filter((reason, index, reasons) => reasons.indexOf(reason) === index);
+}
 
 async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
   if (!systems.length) return systems;
@@ -68,7 +87,7 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
   }));
 }
 
-async function loadPumpSelections(runner: DbRunner, systems: any[]) {
+export async function loadPumpSelections(runner: DbRunner, systems: any[]) {
   if (!systems.length) return [];
   const saved = (await runner(
     'SELECT * FROM system_pump_selections WHERE system_id = ANY($1::uuid[])',
@@ -132,6 +151,32 @@ export async function loadFrictionLossPackages(
 ) {
   const lifeSupportSystems = systems.filter(isLifeSupportSystem);
   if (!lifeSupportSystems.length) return [];
+  const pumpSelectionPackages = await loadPumpSelections(runner, lifeSupportSystems);
+  const eligibleCircuitPumps = (await runner(
+    `SELECT sps.system_id, sps.circuit_key,
+            pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.description,
+            pm.id AS product_master_id, pm.product_code, pm.product_name,
+            pm.manufacturer, pm.model
+     FROM system_pump_selections sps
+     JOIN project_equipment_items pei
+       ON pei.id=sps.project_equipment_item_id AND pei.system_id=sps.system_id
+     JOIN systems current_system
+       ON current_system.id=sps.system_id AND current_system.project_id=pei.project_id
+     JOIN product_masters pm ON pm.id=pei.product_master_id
+     LEFT JOIN product_families pf ON pf.id=pm.product_family_id
+     WHERE sps.system_id = ANY($1::uuid[])
+       AND (pm.status IS NULL OR pm.status='Active')
+       AND (
+         UPPER(COALESCE(pm.product_category,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR UPPER(COALESCE(pf.category_code,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR UPPER(COALESCE(pf.product_family_code,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR ((pm.product_category IS NULL OR BTRIM(pm.product_category)='')
+             AND (pf.category_code IS NULL OR BTRIM(pf.category_code)='')
+             AND (UPPER(COALESCE(pm.application_type,'')) LIKE '%PUMP%'
+                  OR UPPER(pm.product_name) LIKE '%PUMP%'))
+       )`,
+    [lifeSupportSystems.map(system => system.id)],
+  )).rows;
   const savedRows = (await runner(
     `SELECT c.*, sps.project_equipment_item_id AS current_circuit_pump_id,
             pei.equip_code AS current_equip_code, pei.description AS current_pump_description,
@@ -163,6 +208,8 @@ export async function loadFrictionLossPackages(
     : [];
   return lifeSupportSystems.map(system => {
     const rows = savedRows.filter(row => row.system_id === system.id);
+    const pumpSelections = pumpSelectionPackages
+      .find(entry => entry.system_id === system.id)?.items || [];
     const circuitMap = new Map(pumpCircuits(system, system.side_streams || [])
       .map(circuit => [circuit.circuit_key, circuit]));
     rows.forEach(row => {
@@ -183,32 +230,52 @@ export async function loadFrictionLossPackages(
       system,
       items: [...circuitMap.values()].map(circuit => {
         const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+        const pumpSelection = pumpSelections.find(
+          selection => selection.circuit_key === circuit.circuit_key,
+        ) || null;
+        const eligiblePump = eligibleCircuitPumps.find(candidate =>
+          candidate.system_id === system.id &&
+          candidate.circuit_key === circuit.circuit_key &&
+          candidate.project_equipment_item_id === pumpSelection?.project_equipment_item_id) || null;
+        const currentPump = eligiblePump || pumpSelection?.selected_pump || null;
+        const currentPumpId = pumpSelection?.project_equipment_item_id || null;
+        const pumpReady = isCurrentPumpSelectionReady(pumpSelection) && !!eligiblePump;
+        const pumpReasons = !pumpSelection
+          ? pumpSelectionPrerequisiteReasons(pumpSelection)
+          : !eligiblePump
+            ? ['The selected circuit pump is no longer an active eligible pump assigned to this LSS system. Open Pump Selection and select a current pump.']
+            : pumpSelectionPrerequisiteReasons(pumpSelection);
+        const pumpStatus = pumpReady
+          ? pumpSelection.status
+          : pumpSelection?.status === 'incompatible' ? 'incompatible' : 'stale';
+        const pumpFreshness = pumpReady ? pumpSelection.freshness : 'stale';
         if (!row) {
-          const preview = calculateFrictionLoss({ flow_m3h: circuit.flow_m3h, components: [] });
+          const preview = calculateFrictionLoss({
+            flow_m3h: circuit.flow_m3h,
+            selected_pump: currentPump,
+            components: [],
+          });
+          const reasons = [...new Set([
+            ...pumpReasons,
+            ...preview.reasons.filter(reason => reason !== 'Select a pump assigned to this LSS system.'),
+          ])];
           return {
             ...circuit,
             status: 'incomplete',
             freshness: 'unsaved',
-            reasons: preview.reasons,
+            reasons,
             calculation_version: FRICTION_LOSS_CALCULATION_VERSION,
-            result: preview,
+            result: { ...preview, reasons },
             components: [],
-            selected_pump: null,
+            project_equipment_item_id: currentPumpId,
+            selected_pump: currentPump,
+            pump_selection: pumpSelection,
+            pump_selection_ready: pumpReady,
+            pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
+            pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
+            pump_selection_reasons: pumpReasons,
           };
         }
-        const currentPump = row.project_equipment_item_id && row.current_equip_code
-          ? {
-              id: row.project_equipment_item_id,
-              project_equipment_item_id: row.project_equipment_item_id,
-              equip_code: row.current_equip_code,
-              description: row.current_pump_description,
-              product_master_id: row.current_pump_product_master_id,
-              product_code: row.current_pump_product_code,
-              product_name: row.current_pump_product_name,
-              manufacturer: row.current_pump_manufacturer,
-              model: row.current_pump_model,
-            }
-          : null;
         const currentComponents = components.filter(component => component.calculation_id === row.id)
           .map(component => {
             const currentSnapshot = component.current_piping_code && component.current_system_id === system.id
@@ -250,14 +317,19 @@ export async function loadFrictionLossPackages(
         const stale = circuit.circuit_kind === 'orphaned' ||
           row.calculation_version !== FRICTION_LOSS_CALCULATION_VERSION ||
           row.source_fingerprint !== currentFingerprint ||
-          !currentPump ||
+          !pumpReady ||
           row.current_circuit_pump_id !== row.project_equipment_item_id ||
+          currentPumpId !== row.project_equipment_item_id ||
           currentComponents.some(component => !component.reference_valid);
         const staleReasons = [
           ...(circuit.circuit_kind === 'orphaned' ? ['This saved calculation references a Flow Route circuit that no longer exists.'] : []),
           ...(row.calculation_version !== FRICTION_LOSS_CALCULATION_VERSION ? [`Friction calculation version ${row.calculation_version} is outdated; recalculate using ${FRICTION_LOSS_CALCULATION_VERSION}.`] : []),
-          ...(!currentPump ? ['The selected pump is no longer assigned to this LSS system.'] : []),
+          ...pumpReasons,
           ...(row.current_circuit_pump_id !== row.project_equipment_item_id
+            ? ['The pump selected for this Flow Route circuit changed after the friction calculation was saved.']
+            : []),
+          ...(currentPumpId !== row.project_equipment_item_id &&
+            currentPumpId === row.current_circuit_pump_id
             ? ['The pump selected for this Flow Route circuit changed after the friction calculation was saved.']
             : []),
           ...(currentComponents.some(component => !component.reference_valid) ? ['One or more assigned pipe or fitting items are no longer available for this LSS system.'] : []),
@@ -268,8 +340,13 @@ export async function loadFrictionLossPackages(
         return {
           ...circuit,
           calculation_id: row.id,
-          project_equipment_item_id: row.project_equipment_item_id,
-          selected_pump: row.source_snapshot?.selected_pump || currentPump,
+          project_equipment_item_id: currentPumpId,
+          selected_pump: currentPump,
+          pump_selection: pumpSelection,
+          pump_selection_ready: pumpReady,
+          pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
+          pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
+          pump_selection_reasons: pumpReasons,
           components: row.result_snapshot?.components || currentComponents,
           source_fingerprint: row.source_fingerprint,
           current_source_fingerprint: currentFingerprint,

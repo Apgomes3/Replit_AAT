@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AQUARIUM_CALCULATION_VERSION } from './aquariumCalculations';
 import { PUMP_SELECTION_CALCULATION_VERSION } from './pumpSelections';
+import { FRICTION_LOSS_CALCULATION_VERSION } from './frictionLossCalculations';
 import {
   buildDesignBookReleaseChecklist,
   releaseBlockers,
@@ -84,6 +85,38 @@ describe('Design Book release policy', () => {
     const checklist = buildDesignBookReleaseChecklist(readyContext());
     expect(releaseBlockers(checklist)).toEqual([]);
     expect(checklist.every(check => check.status === 'pass')).toBe(true);
+  });
+
+  it('recognizes established LSS type names in engineering release checks', () => {
+    const context = readyContext();
+    context.systems![0].system_type = 'Single Exhibit LSS';
+
+    const checklist = buildDesignBookReleaseChecklist(context);
+
+    expect(checklist.find(check => check.key === 'thermal_calculations')?.status).toBe('pass');
+    expect(checklist.find(check => check.key === 'pump_selections')?.status).toBe('pass');
+  });
+
+  it('blocks friction evidence captured against a different circuit pump', () => {
+    const context = readyContext();
+    context.friction_loss_calculations = [{
+      system_id: 'system-1',
+      items: [{
+        circuit_key: 'loop:1',
+        project_equipment_item_id: 'pump-item-2',
+        selected_pump: { id: 'pump-item-2', project_equipment_item_id: 'pump-item-2' },
+        freshness: 'fresh',
+        status: 'ready',
+        calculation_version: FRICTION_LOSS_CALCULATION_VERSION,
+        result: { results: { combined_head_loss_m: 3.2 } },
+      }],
+    }];
+
+    const friction = buildDesignBookReleaseChecklist(context)
+      .find(check => check.key === 'friction_loss_calculations');
+
+    expect(friction?.status).toBe('blocked');
+    expect(friction?.message).toContain('does not use the current Flow Route pump selection');
   });
 
   it('blocks release when a pump duty exceeds the supported motor series', () => {
