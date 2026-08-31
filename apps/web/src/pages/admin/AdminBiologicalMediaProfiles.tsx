@@ -8,6 +8,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import toast from 'react-hot-toast';
 
 type ProfileKind = 'media' | 'tan' | 'max-tan';
+type AdminFocus = ProfileKind | 'evidence';
 
 const mediaEmpty: any = {
   profile_code: '', profile_name: '', water_types: 'Freshwater', reactor_types: '',
@@ -220,11 +221,135 @@ function ProfilesTable({ id, title, profiles, kind, onStatus, onRevise, onDefaul
   );
 }
 
+function badgeClass(tone: 'amber' | 'blue' | 'violet' | 'stone' | 'red') {
+  return {
+    amber: 'bg-amber-100 text-amber-800',
+    blue: 'bg-blue-100 text-blue-800',
+    violet: 'bg-violet-100 text-violet-800',
+    stone: 'bg-stone-100 text-stone-600',
+    red: 'bg-red-100 text-red-800',
+  }[tone];
+}
+
+function EvidenceBadge({ children, tone }: { children: React.ReactNode; tone: 'amber' | 'blue' | 'violet' | 'stone' | 'red' }) {
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${badgeClass(tone)}`}>{children}</span>;
+}
+
+function EvidenceField({ label, value }: { label: string; value: any }) {
+  return (
+    <div>
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{label}</dt>
+      <dd className="mt-1 whitespace-pre-wrap text-xs leading-5 text-stone-700">{value || 'Unknown / not supplied'}</dd>
+    </div>
+  );
+}
+
+function EvidenceTable({ items, focused }: { items: any[]; focused: boolean }) {
+  return (
+    <section id="evidence-library" tabIndex={-1} className={`scroll-mt-6 overflow-hidden rounded-xl border bg-white outline-none ${
+      focused ? 'border-blue-400 ring-2 ring-blue-100' : 'border-stone-200'
+    }`}>
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-stone-700">Review-only VTR evidence library</h2>
+        <p className="mt-1 text-xs text-stone-500">Published observations and candidate recommendations are traceable review material. They are not approved profiles and never appear in designer selectors.</p>
+      </div>
+      {items.length === 0 ? <p className="p-6 text-sm text-stone-400">No evidence records have been seeded.</p> : (
+        <div className="divide-y divide-stone-100">
+          {items.map(item => {
+            const classification = String(item.evidence_classification || '');
+            const candidate = item.record_type === 'Candidate Recommendation';
+            const benchmark = classification.toLowerCase().includes('benchmark');
+            const provisional = classification.toLowerCase().includes('provisional');
+            return (
+              <details key={item.id || `${item.evidence_code}-${item.revision}`} className="group">
+                <summary className="cursor-pointer list-none px-5 py-4 hover:bg-stone-50">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-stone-800">{item.title}</div>
+                      <div className="mt-0.5 font-mono text-xs text-stone-400">{item.evidence_code} · r{item.revision}</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <EvidenceBadge tone="amber">{item.review_status || 'Review Needed'}</EvidenceBadge>
+                        {candidate && <EvidenceBadge tone="blue">Candidate recommendation</EvidenceBadge>}
+                        {benchmark && <EvidenceBadge tone="violet">Loading benchmark</EvidenceBadge>}
+                        {provisional && <EvidenceBadge tone="violet">Provisional concept design</EvidenceBadge>}
+                        {!item.promotable && <EvidenceBadge tone="red">Excluded from promotion</EvidenceBadge>}
+                      </div>
+                    </div>
+                    <div className="max-w-sm text-right text-xs text-stone-500">
+                      <div className="font-semibold text-stone-700">{item.published_benchmark_text || item.qualification}</div>
+                      {item.recommended_value_text && <div className="mt-1 text-blue-700">Candidate value: {item.recommended_value_text} {item.recommended_value_unit || ''}</div>}
+                      <div className="mt-2 font-medium text-blue-600 group-open:hidden">Show full evidence</div>
+                      <div className="mt-2 hidden font-medium text-blue-600 group-open:block">Hide details</div>
+                    </div>
+                  </div>
+                </summary>
+                <div className="border-t border-stone-100 bg-stone-50/40 px-5 py-5">
+                  <dl className="grid gap-x-6 gap-y-4 md:grid-cols-3">
+                    <EvidenceField label="Classification" value={item.evidence_classification} />
+                    <EvidenceField label="Candidate profile code" value={item.candidate_profile_code} />
+                    <EvidenceField label="Source attribution" value={item.source_reference || item.source_citation} />
+                    <EvidenceField label="Reactor identity" value={item.reactor_identity} />
+                    <EvidenceField label="Reactor type" value={item.reactor_type} />
+                    <EvidenceField label="Media identity" value={item.media_identity} />
+                    <EvidenceField label="Water type" value={item.water_type} />
+                    <EvidenceField label="Temperature condition" value={item.temperature_condition} />
+                    <EvidenceField label="Salinity condition" value={item.salinity_condition} />
+                    <EvidenceField label="TAN condition" value={item.tan_condition} />
+                    <EvidenceField label="Media surface-area basis" value={item.media_ssa_m2_m3 ? `${item.media_ssa_m2_m3} m²/m³ — ${item.media_ssa_basis || ''}` : item.media_ssa_basis} />
+                    <EvidenceField label="Observed metric and unit" value={`${item.observed_metric || 'Unknown'}${item.observed_unit ? ` — ${item.observed_unit}` : ''}`} />
+                    <EvidenceField label="Required operating envelope" value={item.required_operating_envelope} />
+                    <EvidenceField label="Intended use" value={item.intended_use} />
+                    <EvidenceField label="Qualification" value={item.qualification} />
+                    <EvidenceField label="Limitations" value={item.limitations} />
+                    <EvidenceField label="Promotion boundary" value={item.promotion_exclusion_reason || (item.promotable ? 'Requires a separate controlled promotion workflow.' : 'Excluded from promotion.')} />
+                    <EvidenceField label="Original source wording" value={item.source_text} />
+                  </dl>
+                  {!!item.observations?.length && <div className="mt-5">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Recorded observations</h3>
+                    <div className="mt-2 overflow-x-auto rounded-lg border border-stone-200 bg-white">
+                      <table className="w-full text-xs">
+                        <thead className="bg-stone-50 text-left text-[10px] uppercase tracking-wide text-stone-400">
+                          <tr><th className="px-3 py-2">Qualifier / condition</th><th className="px-3 py-2">Metric</th><th className="px-3 py-2">Supplied value</th><th className="px-3 py-2">Unit</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {item.observations.map((observation: any) => (
+                            <tr key={observation.id || observation.observation_code}>
+                              <td className="px-3 py-2 text-stone-600">{observation.qualifier}{observation.condition_label ? ` · ${observation.condition_label}` : ''}</td>
+                              <td className="px-3 py-2 text-stone-700">{observation.metric}</td>
+                              <td className="px-3 py-2 font-mono text-stone-800">{observation.value_text || observation.value || 'Unknown'}</td>
+                              <td className="px-3 py-2 text-stone-500">{observation.unit || 'Unknown'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>}
+                  {!!item.linked_evidence?.length && <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    <strong>Linked source evidence:</strong> {item.linked_evidence.map((link: any) => `${link.linked_evidence_title} (${link.relationship})`).join('; ')}
+                  </div>}
+                  {item.curve_guidance && Object.keys(item.curve_guidance).length > 0 && <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50 px-3 py-3 text-xs text-violet-900">
+                    <strong>Review-only curve guidance</strong>
+                    <dl className="mt-2 grid gap-2 md:grid-cols-2">
+                      {Object.entries(item.curve_guidance).map(([key, value]) => (
+                        <div key={key}><dt className="font-semibold">{key.replace(/_/g, ' ')}</dt><dd>{String(value)}</dd></div>
+                      ))}
+                    </dl>
+                  </div>}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AdminBiologicalMediaProfiles() {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedFocus = searchParams.get('focus');
-  const focusedKind: ProfileKind | null = requestedFocus === 'tan' || requestedFocus === 'media' || requestedFocus === 'max-tan'
+  const focusedKind: AdminFocus | null = requestedFocus === 'tan' || requestedFocus === 'media' || requestedFocus === 'max-tan' || requestedFocus === 'evidence'
     ? requestedFocus : null;
   const [formKind, setFormKind] = useState<ProfileKind | null>(null);
   const [mediaForm, setMediaForm] = useState(mediaEmpty);
@@ -250,10 +375,15 @@ export default function AdminBiologicalMediaProfiles() {
     queryKey: ['maximum-tan-profiles', 'admin'],
     queryFn: () => api.get('/biological-media/max-tan-profiles', { params: { include_retired: true } }).then(r => r.data),
   });
+  const { data: evidenceData = { items: [] } } = useQuery({
+    queryKey: ['biological-media-evidence', 'admin'],
+    queryFn: () => api.get('/biological-media/evidence').then(r => r.data),
+  });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['biological-media-profiles'] });
     qc.invalidateQueries({ queryKey: ['tan-generation-profiles'] });
     qc.invalidateQueries({ queryKey: ['maximum-tan-profiles'] });
+    qc.invalidateQueries({ queryKey: ['biological-media-evidence'] });
   };
   const payloadFor = (kind: ProfileKind) => {
     const form = kind === 'media' ? mediaForm : kind === 'tan' ? tanForm : maxTanForm;
@@ -368,13 +498,13 @@ export default function AdminBiologicalMediaProfiles() {
   };
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <PageHeader title="Biological Media Profiles" subtitle="Controlled media and TAN reference revisions. Approval freezes engineering evidence and operating metadata."
+      <PageHeader title="Biological Media Profiles" subtitle="Controlled profiles plus a separate review-only VTR evidence library. Approval freezes engineering evidence and operating metadata."
         actions={<div className="flex flex-wrap gap-2"><Button onClick={() => setFormKind('max-tan')}><Plus className="h-3.5 w-3.5" />Maximum TAN profile</Button><Button onClick={() => setFormKind('tan')}><Plus className="h-3.5 w-3.5" />TAN-generation profile</Button><Button variant="primary" onClick={() => setFormKind('media')}><Plus className="h-3.5 w-3.5" />Media profile</Button></div>} />
       <div className="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-        <ShieldCheck className="h-5 w-5 shrink-0" /><p>Approved engineering values cannot be edited. Maximum TAN defaults are starting assumptions for future or incomplete cases only; changing the default never rewrites saved cases or immutable runs.</p>
+        <ShieldCheck className="h-5 w-5 shrink-0" /><p>Approved engineering values cannot be edited. Evidence records are unapproved review material and cannot be selected for sizing. Maximum TAN defaults are starting assumptions for future or incomplete cases only; changing the default never rewrites saved cases or immutable runs.</p>
       </div>
       <div className="flex flex-wrap gap-2" aria-label="Profile type focus">
-        {([['max-tan', 'Maximum TAN profiles'], ['tan', 'TAN-generation profiles'], ['media', 'Media profiles']] as const).map(([kind, label]) => (
+        {([['evidence', 'VTR evidence'], ['max-tan', 'Maximum TAN profiles'], ['tan', 'TAN-generation profiles'], ['media', 'Media profiles']] as const).map(([kind, label]) => (
           <button key={kind} type="button" onClick={() => setSearchParams({ focus: kind })}
             className={`rounded-lg border px-3 py-2 text-xs font-semibold ${focusedKind === kind ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-stone-200 bg-white text-stone-600'}`}>
             {label}
@@ -385,6 +515,7 @@ export default function AdminBiologicalMediaProfiles() {
       {formKind && <ProfileForm kind={formKind} form={formKind === 'media' ? mediaForm : formKind === 'tan' ? tanForm : maxTanForm}
         setForm={formKind === 'media' ? setMediaForm : formKind === 'tan' ? setTanForm : setMaxTanForm} onSave={create}
         onCancel={() => { setFormKind(null); setRevisionSource(null); }} saving={saving} revising={!!revisionSource} />}
+       {(!focusedKind || focusedKind === 'evidence') && <EvidenceTable items={evidenceData.items || []} focused={focusedKind === 'evidence'} />}
        {(!focusedKind || focusedKind === 'max-tan') && <ProfilesTable id="max-tan-profiles" title="Controlled Maximum TAN concentration profiles" profiles={maxTanData.items || []} kind="max-tan" focused={focusedKind === 'max-tan'} onStatus={changeStatus} onRevise={revise} onDefault={makeDefault} onDelete={deleteProfile} />}
        {(!focusedKind || focusedKind === 'tan') && <ProfilesTable id="tan-profiles" title="Controlled TAN generation profiles" profiles={tanData.items || []} kind="tan" focused={focusedKind === 'tan'} onStatus={changeStatus} onRevise={revise} onDelete={deleteProfile} />}
        {(!focusedKind || focusedKind === 'media') && <ProfilesTable id="media-profiles" title="Controlled media profiles" profiles={mediaData.items || []} kind="media" focused={focusedKind === 'media'} onStatus={changeStatus} onRevise={revise} onDelete={deleteProfile} />}

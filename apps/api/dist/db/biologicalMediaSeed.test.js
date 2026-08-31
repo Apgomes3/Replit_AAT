@@ -3,6 +3,113 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const biologicalMediaSeed_1 = require("./biologicalMediaSeed");
+(0, vitest_1.describe)('Biological Media review-only VTR evidence', () => {
+    (0, vitest_1.it)('preserves ten supplied observations and seven distinct candidate recommendations', () => {
+        const observations = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.filter(item => item.record_type === 'Observation');
+        const candidates = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.filter(item => item.record_type === 'Candidate Recommendation');
+        (0, vitest_1.expect)(observations).toHaveLength(10);
+        (0, vitest_1.expect)(candidates).toHaveLength(7);
+        (0, vitest_1.expect)(new Set(biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.map(item => item.evidence_code)).size).toBe(17);
+        (0, vitest_1.expect)(candidates.map(item => item.candidate_profile_code)).toEqual([
+            'FW_TF_25C',
+            'FW_MBBR_25C',
+            'BW_MBBR_LOW',
+            'BW_MBBR_MODERATE',
+            'SW_TF_CONSERVATIVE',
+            'SW_TF_COMMERCIAL',
+            'SW_MBBR_LOW_TAN',
+        ]);
+        (0, vitest_1.expect)(biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.every(item => item.promotable === false)).toBe(true);
+        (0, vitest_1.expect)(biologicalMediaSeed_1.BIOLOGICAL_MEDIA_EVIDENCE_REVIEW_STATUS).toBe('Review Needed');
+    });
+    (0, vitest_1.it)('keeps exact uncertainties, ranges, loading benchmark, and upper-performance qualifiers', () => {
+        const mb3 = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.find(item => item.evidence_code === 'OBS_BRACKISH_MBBR_MB3');
+        (0, vitest_1.expect)(mb3.observations).toEqual([
+            vitest_1.expect.objectContaining({ value: 92, uncertainty: 26, value_text: '92 ± 26', unit: biologicalMediaSeed_1.BIOLOGICAL_MEDIA_EVIDENCE_VTR_UNIT }),
+            vitest_1.expect.objectContaining({ value: 186, uncertainty: 54, value_text: '186 ± 54', unit: biologicalMediaSeed_1.BIOLOGICAL_MEDIA_EVIDENCE_VTR_UNIT }),
+        ]);
+        const redDrum = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.find(item => item.evidence_code === 'OBS_BRACKISH_RED_DRUM_MOVING_BEDS');
+        (0, vitest_1.expect)(redDrum.observations[0]).toMatchObject({ value_min: 39, value_max: 87, value_text: 'approximately 39 to 87', qualifier: 'Average values' });
+        const sand = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.find(item => item.evidence_code === 'OBS_MARINE_FLUIDIZED_SAND');
+        (0, vitest_1.expect)(sand).toMatchObject({ evidence_classification: 'Loading benchmark', promotable: false });
+        (0, vitest_1.expect)(sand.observations[0]).toMatchObject({ value: 500, unit: biologicalMediaSeed_1.BIOLOGICAL_MEDIA_EVIDENCE_LOADING_UNIT, qualifier: 'Loading benchmark' });
+        (0, vitest_1.expect)(sand.promotion_exclusion_reason).toContain('excluded from direct Overall-VTR promotion');
+        const intensive = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.find(item => item.evidence_code === 'OBS_INTENSIVE_MARINE_MOVING_BED');
+        (0, vitest_1.expect)(intensive.qualification).toContain('upper performance');
+        (0, vitest_1.expect)(intensive.limitations).toBe('Not suitable as a general design value.');
+    });
+    (0, vitest_1.it)('keeps conservative and commercial curves separate and review-only', () => {
+        const conservative = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.find(item => item.candidate_profile_code === 'SW_TF_CONSERVATIVE');
+        const commercial = biologicalMediaSeed_1.STARTER_BIOLOGICAL_MEDIA_EVIDENCE.find(item => item.candidate_profile_code === 'SW_TF_COMMERCIAL');
+        (0, vitest_1.expect)(conservative.curve_guidance).toMatchObject({
+            curve_name: 'Nijhof conservative marine curve',
+            default_selection: 'Conservative default',
+            below_threshold_note: vitest_1.expect.stringContaining('validated rate required'),
+        });
+        (0, vitest_1.expect)(commercial.curve_guidance).toMatchObject({
+            curve_name: 'Díaz commercial marine curve',
+            selection_requirement: 'Engineer selection required',
+            below_threshold_note: vitest_1.expect.stringContaining('never zero or extrapolation'),
+        });
+        (0, vitest_1.expect)(conservative.observations).toHaveLength(8);
+        (0, vitest_1.expect)(commercial.observations.at(-1)).toMatchObject({ condition_label: '≥3.20 mg/L', value: 102.4 });
+        (0, vitest_1.expect)(commercial.linked_evidence_codes).toEqual([
+            { code: 'OBS_MARINE_COMMERCIAL_TRICKLING_FILTER', relationship: 'related marine observation' },
+        ]);
+    });
+    (0, vitest_1.it)('seeds records, observations, and links idempotently without updates', async () => {
+        const sources = new Map();
+        const records = new Map();
+        const observations = new Set();
+        const links = new Set();
+        const sqlCalls = [];
+        const query = vitest_1.vi.fn(async (sql, params = []) => {
+            sqlCalls.push(sql);
+            if (sql.includes('INSERT INTO lss_biological_media_evidence_sources')) {
+                if (sources.has(params[0]))
+                    return { rowCount: 0, rows: [] };
+                const id = `source-${sources.size + 1}`;
+                sources.set(params[0], id);
+                return { rowCount: 1, rows: [{ id }] };
+            }
+            if (sql.includes('SELECT id FROM lss_biological_media_evidence_sources')) {
+                return { rowCount: 1, rows: [{ id: sources.get(params[0]) }] };
+            }
+            if (sql.includes('INSERT INTO lss_biological_media_evidence_records')) {
+                if (records.has(params[0]))
+                    return { rowCount: 0, rows: [] };
+                const id = `record-${records.size + 1}`;
+                records.set(params[0], id);
+                return { rowCount: 1, rows: [{ id }] };
+            }
+            if (sql.includes('SELECT id FROM lss_biological_media_evidence_records')) {
+                return { rowCount: 1, rows: [{ id: records.get(params[0]) }] };
+            }
+            if (sql.includes('INSERT INTO lss_biological_media_evidence_observations')) {
+                const key = `${params[0]}:${params[1]}`;
+                const inserted = !observations.has(key);
+                observations.add(key);
+                return { rowCount: inserted ? 1 : 0, rows: [] };
+            }
+            if (sql.includes('INSERT INTO lss_biological_media_evidence_links')) {
+                const key = params.join(':');
+                const inserted = !links.has(key);
+                links.add(key);
+                return { rowCount: inserted ? 1 : 0, rows: [] };
+            }
+            throw new Error(`Unexpected SQL: ${sql}`);
+        });
+        const client = { query };
+        (0, vitest_1.expect)(await (0, biologicalMediaSeed_1.seedBiologicalMediaEvidence)(client)).toBe(17);
+        (0, vitest_1.expect)(await (0, biologicalMediaSeed_1.seedBiologicalMediaEvidence)(client)).toBe(0);
+        (0, vitest_1.expect)(records.size).toBe(17);
+        (0, vitest_1.expect)(observations.size).toBeGreaterThan(17);
+        (0, vitest_1.expect)(links.size).toBe(9);
+        (0, vitest_1.expect)(sqlCalls.every(sql => !sql.includes('DO UPDATE'))).toBe(true);
+        (0, vitest_1.expect)(sqlCalls.filter(sql => sql.includes('INSERT INTO lss_biological_media_evidence_records'))
+            .every(sql => sql.includes('ON CONFLICT (evidence_code, revision) DO NOTHING'))).toBe(true);
+    });
+});
 (0, vitest_1.describe)('Biological Media Overall VTR starter profiles', () => {
     (0, vitest_1.it)('preserves the four preliminary reference values, units, and qualifications', () => {
         (0, vitest_1.expect)(biologicalMediaSeed_1.MEDIA_CAPACITY_BASIS_UNIT).toBe('g TAN-N/m³ media/day');

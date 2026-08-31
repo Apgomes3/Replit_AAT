@@ -47,6 +47,8 @@ async function seed() {
         console.log(`Biological Media TAN profiles ready (${seededTanProfiles} starter records added).`);
         const seededMediaProfiles = await (0, biologicalMediaSeed_1.seedBiologicalMediaProfiles)(client, adminId);
         console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
+        const seededMediaEvidence = await (0, biologicalMediaSeed_1.seedBiologicalMediaEvidence)(client);
+        console.log(`Biological Media evidence library ready (${seededMediaEvidence} starter records added).`);
         // Materials
         await client.query(`
       INSERT INTO materials (material_code, material_name, material_category, density, chemical_resistance, temperature_limit) VALUES

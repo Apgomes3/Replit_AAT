@@ -1527,6 +1527,97 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_profiles (
 CREATE INDEX IF NOT EXISTS idx_lss_bio_media_profiles_code
   ON lss_biological_media_profiles(profile_code, revision DESC);
 
+-- BIOLOGICAL MEDIA EVIDENCE LIBRARY
+-- Evidence is review-only source material and is deliberately separate from
+-- lss_biological_media_profiles, which is the only selectable design basis.
+CREATE TABLE IF NOT EXISTS lss_biological_media_evidence_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_key VARCHAR(120) NOT NULL UNIQUE,
+  citation TEXT NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS lss_biological_media_evidence_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  evidence_code VARCHAR(120) NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  record_type VARCHAR(40) NOT NULL DEFAULT 'Observation'
+    CHECK (record_type IN ('Observation', 'Candidate Recommendation')),
+  evidence_classification VARCHAR(80) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  source_id UUID REFERENCES lss_biological_media_evidence_sources(id),
+  source_reference TEXT,
+  candidate_profile_code VARCHAR(80),
+  reactor_type TEXT,
+  reactor_identity TEXT,
+  media_identity TEXT,
+  water_type VARCHAR(80),
+  temperature_condition TEXT,
+  salinity_condition TEXT,
+  tan_condition TEXT,
+  media_ssa_m2_m3 NUMERIC,
+  media_ssa_basis TEXT,
+  observed_metric TEXT,
+  observed_unit VARCHAR(120),
+  published_benchmark_value NUMERIC,
+  published_benchmark_text TEXT,
+  published_benchmark_unit VARCHAR(120),
+  recommended_value NUMERIC,
+  recommended_value_text TEXT,
+  recommended_value_unit VARCHAR(120),
+  curve_guidance JSONB NOT NULL DEFAULT '{}'::jsonb,
+  required_operating_envelope TEXT,
+  intended_use TEXT,
+  qualification TEXT,
+  limitations TEXT,
+  source_text TEXT,
+  review_status VARCHAR(40) NOT NULL DEFAULT 'Review Needed'
+    CHECK (review_status IN ('Review Needed', 'In Review', 'Approved', 'Rejected')),
+  is_approved BOOLEAN NOT NULL DEFAULT false,
+  promotable BOOLEAN NOT NULL DEFAULT false,
+  promotion_exclusion_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(evidence_code, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_evidence_code
+  ON lss_biological_media_evidence_records(evidence_code, revision DESC);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_evidence_status
+  ON lss_biological_media_evidence_records(review_status, record_type);
+
+CREATE TABLE IF NOT EXISTS lss_biological_media_evidence_observations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  evidence_record_id UUID NOT NULL REFERENCES lss_biological_media_evidence_records(id) ON DELETE CASCADE,
+  observation_code VARCHAR(80) NOT NULL,
+  metric TEXT NOT NULL,
+  unit VARCHAR(120),
+  value NUMERIC,
+  value_min NUMERIC,
+  value_max NUMERIC,
+  uncertainty NUMERIC,
+  value_text TEXT,
+  qualifier TEXT,
+  condition_label TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(evidence_record_id, observation_code),
+  CHECK (value_min IS NULL OR value_max IS NULL OR value_min <= value_max)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_evidence_observations_record
+  ON lss_biological_media_evidence_observations(evidence_record_id, observation_code);
+
+CREATE TABLE IF NOT EXISTS lss_biological_media_evidence_links (
+  evidence_record_id UUID NOT NULL REFERENCES lss_biological_media_evidence_records(id) ON DELETE CASCADE,
+  linked_evidence_record_id UUID NOT NULL REFERENCES lss_biological_media_evidence_records(id) ON DELETE CASCADE,
+  relationship VARCHAR(80) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (evidence_record_id, linked_evidence_record_id, relationship),
+  CHECK (evidence_record_id <> linked_evidence_record_id)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_bio_media_evidence_links_linked
+  ON lss_biological_media_evidence_links(linked_evidence_record_id);
+
 CREATE TABLE IF NOT EXISTS lss_tan_generation_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_code VARCHAR(80) NOT NULL,
@@ -1989,6 +2080,8 @@ async function migrate() {
         console.log(`Biological Media TAN profiles ready (${seededTanProfiles} starter records added).`);
         const seededMediaProfiles = await (0, biologicalMediaSeed_1.seedBiologicalMediaProfiles)(client, adminResult.rows[0]?.id ?? null);
         console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
+        const seededMediaEvidence = await (0, biologicalMediaSeed_1.seedBiologicalMediaEvidence)(client);
+        console.log(`Biological Media evidence library ready (${seededMediaEvidence} starter records added).`);
         console.log('Migrations complete.');
     }
     catch (err) {

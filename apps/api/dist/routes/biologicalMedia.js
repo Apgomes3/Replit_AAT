@@ -1471,6 +1471,54 @@ router.get('/biological-media/max-tan-profiles', async (req, res) => {
      ORDER BY is_default DESC, profile_code, revision DESC`);
     res.json({ items: result.rows, default_profile: result.rows.find((item) => item.is_default) || null });
 });
+async function loadBiologicalMediaEvidence() {
+    const records = await (0, db_1.query)(`SELECT e.*, s.source_key, s.citation AS source_citation
+     FROM lss_biological_media_evidence_records e
+     LEFT JOIN lss_biological_media_evidence_sources s ON s.id=e.source_id
+     ORDER BY e.record_type, e.evidence_code, e.revision DESC`);
+    const items = records.rows;
+    if (!items.length)
+        return [];
+    const ids = items.map((item) => item.id);
+    const [observations, links] = await Promise.all([
+        (0, db_1.query)(`SELECT * FROM lss_biological_media_evidence_observations
+       WHERE evidence_record_id = ANY($1::uuid[])
+       ORDER BY evidence_record_id, observation_code`, [ids]),
+        (0, db_1.query)(`SELECT l.evidence_record_id, l.relationship, linked.evidence_code AS linked_evidence_code,
+              linked.title AS linked_evidence_title
+       FROM lss_biological_media_evidence_links l
+       JOIN lss_biological_media_evidence_records linked ON linked.id=l.linked_evidence_record_id
+       WHERE l.evidence_record_id = ANY($1::uuid[])
+       ORDER BY l.evidence_record_id, linked.evidence_code`, [ids]),
+    ]);
+    const observationsByRecord = new Map();
+    for (const observation of observations.rows) {
+        const current = observationsByRecord.get(observation.evidence_record_id) || [];
+        current.push(observation);
+        observationsByRecord.set(observation.evidence_record_id, current);
+    }
+    const linksByRecord = new Map();
+    for (const link of links.rows) {
+        const current = linksByRecord.get(link.evidence_record_id) || [];
+        current.push(link);
+        linksByRecord.set(link.evidence_record_id, current);
+    }
+    return items.map((item) => ({
+        ...item,
+        observations: observationsByRecord.get(item.id) || [],
+        linked_evidence: linksByRecord.get(item.id) || [],
+        // These values are intentionally returned as presentation metadata only.
+        selectable: false,
+        approved: false,
+    }));
+}
+const evidenceReadHandler = async (_req, res) => {
+    res.json({ items: await loadBiologicalMediaEvidence() });
+};
+// Evidence is visible to administrators for review, but has no write/status
+// route and is never joined by the designer profile selectors.
+router.get('/biological-media/evidence', (0, auth_1.requireRole)('admin'), evidenceReadHandler);
+router.get('/admin/biological-media/evidence', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), evidenceReadHandler);
 router.post('/admin/biological-media/media-profiles', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => {
     const errors = validateMediaProfile(req.body, false);
     if (errors.length)

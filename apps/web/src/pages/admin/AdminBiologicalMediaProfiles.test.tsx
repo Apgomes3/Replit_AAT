@@ -61,6 +61,40 @@ const mediaProfiles = [
   },
 ];
 
+const evidenceRecords = [{
+  id: 'evidence-sand',
+  evidence_code: 'OBS_MARINE_FLUIDIZED_SAND',
+  revision: 1,
+  title: 'Marine fluidized sand filter',
+  record_type: 'Observation',
+  evidence_classification: 'Loading benchmark',
+  review_status: 'Review Needed',
+  promotable: false,
+  source_reference: 'Not supplied in provided table',
+  reactor_identity: 'Marine fluidized sand filter',
+  reactor_type: 'Fluidized sand filter',
+  media_identity: 'Fluidized sand',
+  water_type: 'Marine',
+  temperature_condition: '12 to 20°C',
+  salinity_condition: 'Simulated seawater',
+  tan_condition: 'TAN maintained around 0.45 to 1.26 mg/L',
+  media_ssa_basis: 'Not supplied in provided table',
+  observed_metric: 'Applied TAN load',
+  observed_unit: 'g TAN-N/m³/day',
+  intended_use: 'Retain as a loading benchmark for engineering review.',
+  qualification: 'Applied TAN load of 500 g/m³/day.',
+  limitations: 'This is a loading benchmark, not necessarily actual VTR.',
+  promotion_exclusion_reason: 'Loading benchmark is explicitly excluded from direct Overall-VTR promotion.',
+  source_text: 'This is a loading benchmark, not necessarily actual VTR',
+  observations: [{
+    observation_code: 'applied_tan_load',
+    qualifier: 'Loading benchmark',
+    metric: 'Applied TAN load',
+    value_text: '500',
+    unit: 'g TAN-N/m³/day',
+  }],
+}];
+
 function renderPage(focus = 'tan') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -78,6 +112,7 @@ describe('TAN generation profile administration', () => {
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: tanProfiles } });
       if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: mediaProfiles } });
+      if (url === '/biological-media/evidence') return Promise.resolve({ data: { items: evidenceRecords } });
       return Promise.resolve({ data: { items: [] } });
     });
   });
@@ -123,5 +158,22 @@ describe('TAN generation profile administration', () => {
     expect(screen.getByText('Preliminary engineering reference — administrator review required')).toBeVisible();
     expect(screen.getByText(/maximum-rate study result as universal design capacity/)).toBeVisible();
     expect(screen.getByText('Review required before approval')).toBeVisible();
+  });
+
+  it('shows review-only evidence and full benchmark conditions without offering profile actions', async () => {
+    const user = userEvent.setup();
+    renderPage('evidence');
+
+    const title = (await screen.findAllByText('Marine fluidized sand filter'))[0];
+    expect(screen.getByText('Review Needed')).toBeVisible();
+    expect(screen.getAllByText('Loading benchmark').length).toBeGreaterThan(0);
+    expect(screen.getByText('Excluded from promotion')).toBeVisible();
+    await user.click(title);
+    expect(screen.getByText('12 to 20°C')).toBeVisible();
+    expect(screen.getByText('TAN maintained around 0.45 to 1.26 mg/L')).toBeVisible();
+    expect(screen.getByText('This is a loading benchmark, not necessarily actual VTR.')).toBeVisible();
+    expect(screen.getByText('500')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /new revision/i })).not.toBeInTheDocument();
   });
 });
