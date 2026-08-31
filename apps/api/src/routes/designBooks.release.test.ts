@@ -5,6 +5,7 @@ import express, { Express } from 'express';
 import jwt from 'jsonwebtoken';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AQUARIUM_CALCULATION_VERSION } from '../lib/aquariumCalculations';
+import { PUMP_SELECTION_CALCULATION_VERSION } from '../lib/pumpSelections';
 
 const testSecret = 'design-books-release-test-secret';
 const bookId = 'book-release-1';
@@ -73,6 +74,7 @@ function validSnapshot() {
     }],
     systems: [],
     thermal_calculations: [] as any[],
+    pump_selections: [] as any[],
     engineering_calculations: {
       exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' } }],
       systems: [],
@@ -107,6 +109,14 @@ function snapshotWithAllocations(flowPct: number | null, bioDegasPct: number | n
     status: 'Ready',
     freshness: 'fresh',
     calculation: { status: 'Ready' },
+  }];
+  snapshot.pump_selections = [{
+    system_id: 'system-1',
+    items: [{
+      circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+      selected_pump: { id: 'pump-item-1', product_code: 'P-101' },
+      freshness: 'fresh', status: 'ready', calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+    }],
   }];
   return snapshot;
 }
@@ -292,5 +302,19 @@ describe('Design Book release API blocker enforcement', () => {
     expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
     expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
     expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+  });
+
+  it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
+    state.snapshot = snapshotWithAllocations(60, 25);
+    state.snapshot.pump_selections = [{ system_id: 'system-1', items: [{
+      circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1', selected_pump: { power_kw: 1.1 },
+      freshness: 'fresh', status: 'incompatible', calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+    }] }];
+    const response = await requestPreflight(app);
+    const pumpCheck = response.body.checklist.find((item: any) => item.key === 'pump_selections');
+    expect(pumpCheck).toMatchObject({ status: 'blocked', affected_ids: ['system-1'] });
+    expect(pumpCheck.message).toContain('LSS-01');
+    expect(pumpCheck.message).toContain('Loop 1');
+    expect(pumpCheck.message).toContain('incompatible');
   });
 });

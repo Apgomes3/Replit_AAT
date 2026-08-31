@@ -1265,6 +1265,27 @@ CREATE TABLE IF NOT EXISTS system_flow_side_streams (
 CREATE INDEX IF NOT EXISTS idx_system_flow_side_streams_parent
   ON system_flow_side_streams(system_id, parent_loop_number, sort_order, created_at);
 
+-- Circuit-keyed pump selections are intentionally independent of Flow Route
+-- rows: a route can be revised while its prior selection remains auditable.
+CREATE TABLE IF NOT EXISTS system_pump_selections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  circuit_key VARCHAR(300) NOT NULL,
+  project_equipment_item_id UUID REFERENCES project_equipment_items(id) ON DELETE SET NULL,
+  design_head_m NUMERIC NOT NULL CHECK (design_head_m > 0),
+  pump_efficiency_pct NUMERIC NOT NULL CHECK (pump_efficiency_pct > 0 AND pump_efficiency_pct <= 100),
+  motor_efficiency_pct NUMERIC NOT NULL CHECK (motor_efficiency_pct > 0 AND motor_efficiency_pct <= 100),
+  source_fingerprint VARCHAR(64) NOT NULL,
+  pump_snapshot JSONB,
+  calculation_version VARCHAR(100) NOT NULL,
+  result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(system_id, circuit_key)
+);
+CREATE INDEX IF NOT EXISTS idx_system_pump_selections_system ON system_pump_selections(system_id);
+
 CREATE TABLE IF NOT EXISTS system_flow_fractionator_allocations (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   system_id          UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,

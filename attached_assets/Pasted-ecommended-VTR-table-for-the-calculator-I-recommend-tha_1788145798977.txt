@@ -1,0 +1,85 @@
+ecommended VTR table for the calculator
+
+I recommend that Release 1 use the following approved performance profiles. All rates are:
+
+$$ \mathrm{g\ TAN\!-\!N\ removed/(m^3\ of\ media\cdot day)} $$
+
+They are based on actual media volume, not total reactor volume.
+
+Profile ID	Water and reactor	Required operating envelope	Published benchmark	Recommended calculator value
+FW_TF_25C	Freshwater trickling filter, plastic media approximately 200 m²/m³	25°C, pH 7.2, alkalinity ≥100 mg/L as CaCO₃, DO ≥4 mg/L, reference TAN 2 mg/L, mature biofilm	90	90
+FW_MBBR_25C	Freshwater MBBR	Same conditions as above, correctly mixed and aerated	350	350
+BW_MBBR_LOW	Brackish MBBR, 11–12 ppt	24–25°C, inlet TAN 0.55–0.93 mg/L, mature adapted media	82.5–92.2	80
+BW_MBBR_MODERATE	Brackish MBBR, 11–12 ppt	24–25°C, inlet TAN 0.83–1.87 mg/L, sustained loading	139.9–186.4	140
+SW_TF_CONSERVATIVE	Full marine trickling filter	Marine-adapted mature biofilm, comparable media approximately 200 m²/m³, inlet TAN 0.25–3.0 mg/L	Concentration-dependent curve	Use Nijhof curve below
+SW_TF_COMMERCIAL	Full marine commercial trickling filter, crossflow media approximately 160 m²/m³	29.8–32.2 ppt, 16.3–28°C, pH 6.51–7.57, low organic loading	Concentration-dependent curve	Use Díaz curve with engineer approval
+SW_MBBR_LOW_TAN	Full marine MBBR for aquarium-type low loading	Approximately 29–34 ppt, 17–22°C, pH around 7.5, marine-adapted media	Approximately 13–22	15, provisional concept design only
+
+The freshwater values of 90 and 350 come from the Losordo and DeLong sizing example under its stated operating conditions. They must not be treated as universal media capacities. Losordo & DeLong
+
+The brackish values are based on replicated testing of MB3, AMB and K1 media at 11–12 ppt. The published low-load means were 92.2, 86.1 and 82.5; the higher-load means were 186.4, 172.9 and 139.9 g TAN-N/m³ media/day. Pfeiffer & Wills
+
+Marine trickling-filter lookup table
+
+For a conservative default, use the Nijhof seawater relationship reproduced and compared in Díaz et al.:
+
+$$ STR=\min\left(0.28,\;0.23\sqrt{C_{\mathrm{TAN,in}}}-0.11\right) $$ $$ VTR=STR\times200 $$
+
+For the Díaz commercial profile:
+
+$$ STR=\min\left(0.64,\;0.49\sqrt{C_{\mathrm{TAN,in}}}-0.24\right) $$ $$ VTR=STR\times160 $$
+
+Here, \(C_{\mathrm{TAN,in}}\) is in mg TAN-N/L, numerically equal to g/m³.
+
+Biofilter inlet TAN-N	Conservative marine VTR, 200 m²/m³	Díaz commercial VTR, 160 m²/m³
+0.30 mg/L	3.2	4.5
+0.50 mg/L	10.5	17.0
+0.75 mg/L	17.8	29.5
+1.00 mg/L	24.0	40.0
+1.50 mg/L	34.3	57.6
+2.00 mg/L	43.1	72.5
+3.00 mg/L	56.0	97.4
+≥3.20 mg/L	56.0 maximum	102.4 maximum
+
+The calculator should default to the conservative column. The commercial Díaz curve should require engineer selection because it came from a particular full-scale system and media configuration. Díaz et al., 2012
+
+Below approximately 0.25 mg/L, these equations should return “validated rate required”, not zero and not an extrapolated answer.
+
+Full marine MBBR recommendation
+
+For low-TAN public aquarium concept sizing, I recommend a provisional value of:
+
+$$ \boxed{15\ \mathrm{g\ TAN\!-\!N/(m^3\ media\cdot day)}} $$
+
+This is based on marine MBBR commissioning rates of approximately 15–25 mg TAN-N/m²/day with media having 859 m²/m³ total surface area, equivalent to approximately 13–22 g/m³ media/day. The research also demonstrated that nitrite oxidation developed much more slowly than ammonia oxidation. Keuter et al.
+
+This value should be marked:
+
+Concept design only
+Marine-adapted mature media required
+Manufacturer data or pilot testing required for final design
+Separate nitrite-capacity verification required
+
+A freshwater biofilm must never automatically inherit a marine profile. Abrupt exposure of freshwater MBBR media to 25 ppt or more caused complete short-term inhibition in controlled testing. Kinyage et al.
+
+Calculator equation
+$$ TAN_{\mathrm{design}}= Feed\times ProteinFraction\times TANCoefficient\times SafetyFactor $$
+
+Using the Losordo convention:
+
+$$ TANCoefficient=0.096\ \mathrm{kg\ TAN\!-\!N/kg\ feed\ protein} $$
+
+Then:
+
+$$ MediaVolume= \frac{TAN_{\mathrm{design}}\times1000}{ApprovedVTR} $$
+
+I recommend keeping the safety factor separate:
+
+1.25 for a validated profile within its operating envelope
+1.50 for provisional marine profiles or limited performance data
+
+For MBBR:
+
+$$ ReactorWorkingVolume= \frac{MediaVolume}{MediaFillFraction} $$
+
+The software table should store the published benchmark, approved design rate, TAN range, temperature, pH, salinity, DO, alkalinity, reactor type, media identity, surface-area basis, maturity requirement, source and approval status. This prevents the calculator from treating VTR as a universal property of plastic media.

@@ -16,3 +16,4 @@
 - [Biological Media preview basis](biological-media-preview-basis.md) — preview sizing stays on TAN-N, applies approved overall VTR and safety factor once, and never presents mutable previews as certification.
 - [Compact-unit PIM snapshots](compact-unit-pim-snapshots.md) — Product Master specs seed editable compact-unit values once; edits and future PIM changes never overwrite saved LSS values implicitly.
 - [Custom tank footprints](custom-tank-footprints.md) — geometry is authoritative for plan measurements; manual Custom tanks never inherit rectangular area assumptions.
+- [LSS pump selection authority](lss-pump-selection-authority.md) — size circuit pumps from Design Book flow; stale, incomplete, or ineligible selections block release.

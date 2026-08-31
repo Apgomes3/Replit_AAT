@@ -20,6 +20,7 @@ import {
   FOAM_RECOMMENDED_PROCESS_RATE_LS_M2,
 } from './foamFractionatorSizing';
 import { summarizeFiltration } from './LSSCompactUnitsCatalog';
+import LSSPumpSelectionPanel from './LSSPumpSelectionPanel';
 
 const SYSTEM_TYPES = [
   'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
@@ -31,11 +32,12 @@ const STATUSES   = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Rele
 const LINK_TYPES = ['Primary', 'Secondary', 'Emergency', 'Backup', 'Observation', 'Redundant'];
 const FLOW_ROUTE_VIEW_STORAGE_KEY = 'lss-flow-route-view';
 type FlowViewMode = 'card' | 'list';
-type LssTab = 'overview' | 'flow' | 'biological-media' | 'uv' | 'thermal' | 'ozone' | 'other';
+type LssTab = 'overview' | 'flow' | 'pump' | 'biological-media' | 'uv' | 'thermal' | 'ozone' | 'other';
 
 const LSS_TABS: Array<{ id: LssTab; label: string }> = [
   { id: 'overview', label: 'System Overview' },
   { id: 'flow', label: 'Flow Route' },
+  { id: 'pump', label: 'Pump Selection' },
   { id: 'biological-media', label: 'Biological Media' },
   { id: 'uv', label: 'UV Selection' },
   { id: 'thermal', label: 'Thermal Selection' },
@@ -2131,6 +2133,7 @@ export default function DesignBookLSSDetail() {
               {[
                 ['overview', 'linked-exhibits', 'Linked Exhibits'],
                 ['flow', 'flow-route', 'Flow Route'],
+                ['pump', 'pump-selection', 'Pump Selection'],
               ].map(([tab, target, label]) => (
                 <Link
                   key={target}
@@ -4051,6 +4054,27 @@ export default function DesignBookLSSDetail() {
           </div>
         );
       })()}
+
+      <div
+        id="lss-panel-pump"
+        role="tabpanel"
+        aria-labelledby="lss-tab-pump"
+        tabIndex={0}
+        hidden={activeTab !== 'pump'}
+      >
+        <div id="pump-selection">
+          {activeTab === 'pump' && (
+            <LSSPumpSelectionPanel
+              systemId={systemId!}
+              bookId={bookId!}
+              readOnly={readOnly}
+              sourcePackage={(book?.pump_selections || []).find(
+                (item: any) => String(item.system_id) === String(systemId),
+              )}
+            />
+          )}
+        </div>
+      </div>
 
       <div
         id="lss-panel-biological-media"

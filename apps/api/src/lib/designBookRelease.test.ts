@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AQUARIUM_CALCULATION_VERSION } from './aquariumCalculations';
+import { PUMP_SELECTION_CALCULATION_VERSION } from './pumpSelections';
 import {
   buildDesignBookReleaseChecklist,
   releaseBlockers,
@@ -47,6 +48,22 @@ function readyContext(): DesignBookReleaseContext {
       freshness: 'fresh',
       calculation: { status: 'Ready' },
     }],
+    pump_selections: [{
+      system_id: 'system-1',
+      items: [{
+        circuit_key: 'loop:1',
+        project_equipment_item_id: 'pump-item-1',
+        selected_pump: {
+          id: 'pump-item-1',
+          project_equipment_item_id: 'pump-item-1',
+          product_code: 'PUMP-101',
+          product_name: 'Duty Pump',
+        },
+        status: 'ready',
+        freshness: 'fresh',
+        calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+      }],
+    }],
   };
 }
 
@@ -55,6 +72,26 @@ describe('Design Book release policy', () => {
     const checklist = buildDesignBookReleaseChecklist(readyContext());
     expect(releaseBlockers(checklist)).toEqual([]);
     expect(checklist.every(check => check.status === 'pass')).toBe(true);
+  });
+
+  it('blocks release when a pump duty exceeds the supported motor series', () => {
+    const context = readyContext();
+    const selection = context.pump_selections![0].items[0];
+    selection.status = 'incomplete';
+    selection.results = {
+      motor_input_kw: 340,
+      recommended_motor_kw: null,
+    };
+    selection.reasons = [
+      'Calculated motor input 340 kW exceeds the largest configured standard motor size of 315 kW.',
+    ];
+
+    const checklist = buildDesignBookReleaseChecklist(context);
+    expect(checklist.find(check => check.key === 'pump_selections')).toMatchObject({
+      status: 'blocked',
+      severity: 'blocker',
+    });
+    expect(releaseBlockers(checklist).map(check => check.key)).toContain('pump_selections');
   });
 
   it('accepts a valid linked-exhibit design flow without a stored legacy flow value', () => {

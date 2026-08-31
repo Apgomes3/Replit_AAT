@@ -236,6 +236,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(tabs.map(tab => tab.textContent)).toEqual([
       'System Overview',
       'Flow Route',
+      'Pump Selection',
       'Biological Media',
       'UV Selection',
       'Thermal Selection',
@@ -786,6 +787,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const tabLabels = [
       'System Overview',
       'Flow Route',
+      'Pump Selection',
       'Biological Media',
       'UV Selection',
       'Thermal Selection',

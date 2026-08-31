@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.versionSnapshotTestUtils = void 0;
+exports.loadReleaseContext = loadReleaseContext;
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const index_1 = __importStar(require("../db/index"));
@@ -47,6 +48,7 @@ const designBookWorkflow_1 = require("../lib/designBookWorkflow");
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
 const thermalCalculations_1 = require("../lib/thermalCalculations");
 const speciesAllocations_1 = require("../lib/speciesAllocations");
+const pumpSelections_1 = require("../lib/pumpSelections");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const isLifeSupportSystem = (system) => String(system?.system_type || '').trim().toLowerCase() === 'life support';
@@ -64,6 +66,61 @@ async function attachSystemSideStreams(runner, systems) {
         side_streams: rows.filter(stream => stream.system_id === system.id),
         fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
     }));
+}
+async function loadPumpSelections(runner, systems) {
+    if (!systems.length)
+        return [];
+    const saved = (await runner('SELECT * FROM system_pump_selections WHERE system_id = ANY($1::uuid[])', [systems.map(system => system.id)])).rows;
+    return systems.map(system => {
+        const rows = saved.filter(row => row.system_id === system.id);
+        const circuits = new Map((0, pumpSelections_1.pumpCircuits)(system, system.side_streams || []).map(item => [item.circuit_key, item]));
+        rows.forEach(row => {
+            if (!circuits.has(row.circuit_key))
+                circuits.set(row.circuit_key, {
+                    circuit_key: row.circuit_key, circuit_kind: 'orphaned', circuit_name: row.circuit_key,
+                    circuit_type: null, parent_loop_number: null, side_stream_id: null, flow_m3h: null,
+                });
+        });
+        return {
+            system_id: system.id,
+            items: [...circuits.values()].map(circuit => {
+                const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+                const source = {
+                    circuit: { circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind, circuit_name: circuit.circuit_name,
+                        circuit_type: circuit.circuit_type, parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id, flow_m3h: circuit.flow_m3h },
+                    design_head_m: row?.design_head_m == null ? null : Number(row.design_head_m),
+                    pump_efficiency_pct: row?.pump_efficiency_pct == null ? null : Number(row.pump_efficiency_pct),
+                    motor_efficiency_pct: row?.motor_efficiency_pct == null ? null : Number(row.motor_efficiency_pct),
+                };
+                const calculation = (0, pumpSelections_1.calculatePumpSelection)({ flow_m3h: circuit.flow_m3h, design_head_m: row?.design_head_m, pump_efficiency_pct: row?.pump_efficiency_pct, motor_efficiency_pct: row?.motor_efficiency_pct });
+                const suitability = (0, pumpSelections_1.evaluateSelectedPumpSuitability)({
+                    selectedPump: row?.pump_snapshot, circuitFlowM3h: circuit.flow_m3h,
+                    designHeadM: row?.design_head_m, calculation,
+                });
+                const orphaned = circuit.circuit_kind === 'orphaned';
+                const currentFingerprint = (0, pumpSelections_1.pumpSourceFingerprint)(source);
+                const versionStale = !!row && row.calculation_version !== pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION;
+                const stale = !!row && (row.source_fingerprint !== currentFingerprint || versionStale);
+                const reasons = orphaned
+                    ? ['This saved selection references a Flow Route circuit that no longer exists.']
+                    : [
+                        ...(row && row.source_fingerprint !== currentFingerprint ? ['Flow Route or sizing inputs changed after this pump calculation was saved. Save and calculate again.'] : []),
+                        ...(versionStale ? [`Pump sizing calculation version ${row.calculation_version} is outdated; recalculate using ${pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION}.`] : []),
+                        ...(row?.project_equipment_item_id && row?.pump_snapshot ? [] : ['Select a pump assigned to this LSS system.']),
+                        ...calculation.reasons,
+                        ...suitability.reasons,
+                    ];
+                return { ...circuit, project_equipment_item_id: row?.project_equipment_item_id || null, selected_pump: row?.pump_snapshot || null,
+                    design_head_m: row?.design_head_m ?? null, pump_efficiency_pct: row?.pump_efficiency_pct ?? null, motor_efficiency_pct: row?.motor_efficiency_pct ?? null,
+                    source_fingerprint: row?.source_fingerprint || null, current_source_fingerprint: currentFingerprint,
+                    freshness: row ? (stale ? 'stale' : 'fresh') : 'unsaved',
+                    status: orphaned ? 'stale' : suitability.status === 'incompatible' ? 'incompatible'
+                        : stale ? 'stale' : reasons.length ? 'incomplete' : calculation.status, reasons,
+                    calculation_version: row?.calculation_version || pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
+                    results: row ? (row.result_snapshot?.results || row.result_snapshot || calculation.results) : calculation.results };
+            }),
+        };
+    });
 }
 async function loadThermalCalculations(runner, designBookId, systems, links, exhibits, tanks, exhibitCalculations) {
     const savedRows = systems.length
@@ -299,6 +356,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         };
     });
     const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations);
+    const pumpSelections = await loadPumpSelections(runner, currentSystems);
     const liveContext = {
         ...book,
         exhibits,
@@ -313,6 +371,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         biological_media_cases: biologicalMediaCases,
         biological_media_runs: biologicalMediaRuns,
         thermal_calculations: thermalCalculations,
+        pump_selections: pumpSelections,
         engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
             calculated_at: calculatedAt,
@@ -652,6 +711,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         };
     });
     const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations);
+    const pumpSelections = await loadPumpSelections(index_1.query, currentSystems);
     const livePackage = {
         exhibits,
         tanks,
@@ -662,6 +722,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         hydraulics,
         substrate,
         thermal_calculations: thermalCalculations,
+        pump_selections: pumpSelections,
         engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
             calculated_at: calculationTimestamp,

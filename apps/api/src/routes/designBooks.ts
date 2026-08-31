@@ -29,6 +29,7 @@ import {
   THERMAL_CALCULATION_VERSION,
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
+import { calculatePumpSelection, evaluateSelectedPumpSuitability, pumpSourceFingerprint, PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from '../lib/pumpSelections';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -57,6 +58,63 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
     side_streams: rows.filter(stream => stream.system_id === system.id),
     fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
   }));
+}
+
+async function loadPumpSelections(runner: DbRunner, systems: any[]) {
+  if (!systems.length) return [];
+  const saved = (await runner(
+    'SELECT * FROM system_pump_selections WHERE system_id = ANY($1::uuid[])',
+    [systems.map(system => system.id)],
+  )).rows;
+  return systems.map(system => {
+    const rows = saved.filter(row => row.system_id === system.id);
+    const circuits = new Map(pumpCircuits(system, system.side_streams || []).map(item => [item.circuit_key, item]));
+    rows.forEach(row => {
+      if (!circuits.has(row.circuit_key)) circuits.set(row.circuit_key, {
+        circuit_key: row.circuit_key, circuit_kind: 'orphaned', circuit_name: row.circuit_key,
+        circuit_type: null, parent_loop_number: null, side_stream_id: null, flow_m3h: null,
+      });
+    });
+    return {
+      system_id: system.id,
+      items: [...circuits.values()].map(circuit => {
+        const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+        const source = {
+          circuit: { circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind, circuit_name: circuit.circuit_name,
+            circuit_type: circuit.circuit_type, parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id, flow_m3h: circuit.flow_m3h },
+          design_head_m: row?.design_head_m == null ? null : Number(row.design_head_m),
+          pump_efficiency_pct: row?.pump_efficiency_pct == null ? null : Number(row.pump_efficiency_pct),
+          motor_efficiency_pct: row?.motor_efficiency_pct == null ? null : Number(row.motor_efficiency_pct),
+        };
+        const calculation = calculatePumpSelection({ flow_m3h: circuit.flow_m3h, design_head_m: row?.design_head_m, pump_efficiency_pct: row?.pump_efficiency_pct, motor_efficiency_pct: row?.motor_efficiency_pct });
+        const suitability = evaluateSelectedPumpSuitability({
+          selectedPump: row?.pump_snapshot, circuitFlowM3h: circuit.flow_m3h,
+          designHeadM: row?.design_head_m, calculation,
+        });
+        const orphaned = circuit.circuit_kind === 'orphaned';
+        const currentFingerprint = pumpSourceFingerprint(source);
+        const versionStale = !!row && row.calculation_version !== PUMP_SELECTION_CALCULATION_VERSION;
+        const stale = !!row && (row.source_fingerprint !== currentFingerprint || versionStale);
+        const reasons = orphaned
+          ? ['This saved selection references a Flow Route circuit that no longer exists.']
+          : [
+              ...(row && row.source_fingerprint !== currentFingerprint ? ['Flow Route or sizing inputs changed after this pump calculation was saved. Save and calculate again.'] : []),
+              ...(versionStale ? [`Pump sizing calculation version ${row.calculation_version} is outdated; recalculate using ${PUMP_SELECTION_CALCULATION_VERSION}.`] : []),
+              ...(row?.project_equipment_item_id && row?.pump_snapshot ? [] : ['Select a pump assigned to this LSS system.']),
+              ...calculation.reasons,
+              ...suitability.reasons,
+            ];
+        return { ...circuit, project_equipment_item_id: row?.project_equipment_item_id || null, selected_pump: row?.pump_snapshot || null,
+          design_head_m: row?.design_head_m ?? null, pump_efficiency_pct: row?.pump_efficiency_pct ?? null, motor_efficiency_pct: row?.motor_efficiency_pct ?? null,
+          source_fingerprint: row?.source_fingerprint || null, current_source_fingerprint: currentFingerprint,
+          freshness: row ? (stale ? 'stale' : 'fresh') : 'unsaved',
+          status: orphaned ? 'stale' : suitability.status === 'incompatible' ? 'incompatible'
+            : stale ? 'stale' : reasons.length ? 'incomplete' : calculation.status, reasons,
+          calculation_version: row?.calculation_version || PUMP_SELECTION_CALCULATION_VERSION,
+          results: row ? (row.result_snapshot?.results || row.result_snapshot || calculation.results) : calculation.results };
+      }),
+    };
+  });
 }
 
 async function loadThermalCalculations(
@@ -206,7 +264,7 @@ async function insertAudit(
   );
 }
 
-async function loadReleaseContext(
+export async function loadReleaseContext(
   id: string,
   runner: DbRunner = query,
   lock = false,
@@ -386,6 +444,7 @@ async function loadReleaseContext(
     tanks,
     exhibitCalculations,
   );
+  const pumpSelections = await loadPumpSelections(runner, currentSystems);
 
   const liveContext = {
     ...book,
@@ -401,6 +460,7 @@ async function loadReleaseContext(
     biological_media_cases: biologicalMediaCases,
     biological_media_runs: biologicalMediaRuns,
     thermal_calculations: thermalCalculations,
+    pump_selections: pumpSelections,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculatedAt,
@@ -836,6 +896,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     tanks,
     exhibitCalculations,
   );
+  const pumpSelections = await loadPumpSelections(query, currentSystems);
 
   const livePackage = {
     exhibits,
@@ -847,6 +908,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     hydraulics,
     substrate,
     thermal_calculations: thermalCalculations,
+    pump_selections: pumpSelections,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculationTimestamp,

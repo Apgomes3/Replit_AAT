@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const aquariumCalculations_1 = require("./aquariumCalculations");
+const pumpSelections_1 = require("./pumpSelections");
 const designBookRelease_1 = require("./designBookRelease");
 function readyContext() {
     return {
@@ -42,6 +43,22 @@ function readyContext() {
                 freshness: 'fresh',
                 calculation: { status: 'Ready' },
             }],
+        pump_selections: [{
+                system_id: 'system-1',
+                items: [{
+                        circuit_key: 'loop:1',
+                        project_equipment_item_id: 'pump-item-1',
+                        selected_pump: {
+                            id: 'pump-item-1',
+                            project_equipment_item_id: 'pump-item-1',
+                            product_code: 'PUMP-101',
+                            product_name: 'Duty Pump',
+                        },
+                        status: 'ready',
+                        freshness: 'fresh',
+                        calculation_version: pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
+                    }],
+            }],
     };
 }
 (0, vitest_1.describe)('Design Book release policy', () => {
@@ -49,6 +66,24 @@ function readyContext() {
         const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(readyContext());
         (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)(checklist)).toEqual([]);
         (0, vitest_1.expect)(checklist.every(check => check.status === 'pass')).toBe(true);
+    });
+    (0, vitest_1.it)('blocks release when a pump duty exceeds the supported motor series', () => {
+        const context = readyContext();
+        const selection = context.pump_selections[0].items[0];
+        selection.status = 'incomplete';
+        selection.results = {
+            motor_input_kw: 340,
+            recommended_motor_kw: null,
+        };
+        selection.reasons = [
+            'Calculated motor input 340 kW exceeds the largest configured standard motor size of 315 kW.',
+        ];
+        const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context);
+        (0, vitest_1.expect)(checklist.find(check => check.key === 'pump_selections')).toMatchObject({
+            status: 'blocked',
+            severity: 'blocker',
+        });
+        (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)(checklist).map(check => check.key)).toContain('pump_selections');
     });
     (0, vitest_1.it)('accepts a valid linked-exhibit design flow without a stored legacy flow value', () => {
         const context = readyContext();

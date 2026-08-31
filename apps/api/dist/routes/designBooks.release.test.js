@@ -42,6 +42,7 @@ const express_1 = __importDefault(require("express"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const vitest_1 = require("vitest");
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
+const pumpSelections_1 = require("../lib/pumpSelections");
 const testSecret = 'design-books-release-test-secret';
 const bookId = 'book-release-1';
 const managerRoles = ['admin', 'hq_manager', 'pmo'];
@@ -106,6 +107,7 @@ function validSnapshot() {
             }],
         systems: [],
         thermal_calculations: [],
+        pump_selections: [],
         engineering_calculations: {
             exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' } }],
             systems: [],
@@ -139,6 +141,14 @@ function snapshotWithAllocations(flowPct, bioDegasPct) {
             status: 'Ready',
             freshness: 'fresh',
             calculation: { status: 'Ready' },
+        }];
+    snapshot.pump_selections = [{
+            system_id: 'system-1',
+            items: [{
+                    circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+                    selected_pump: { id: 'pump-item-1', product_code: 'P-101' },
+                    freshness: 'fresh', status: 'ready', calculation_version: pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
+                }],
         }];
     return snapshot;
 }
@@ -303,5 +313,18 @@ function requestPreflight(app) {
         (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('warning');
         (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
         (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+    });
+    (0, vitest_1.it)('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
+        state.snapshot = snapshotWithAllocations(60, 25);
+        state.snapshot.pump_selections = [{ system_id: 'system-1', items: [{
+                        circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1', selected_pump: { power_kw: 1.1 },
+                        freshness: 'fresh', status: 'incompatible', calculation_version: pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
+                    }] }];
+        const response = await requestPreflight(app);
+        const pumpCheck = response.body.checklist.find((item) => item.key === 'pump_selections');
+        (0, vitest_1.expect)(pumpCheck).toMatchObject({ status: 'blocked', affected_ids: ['system-1'] });
+        (0, vitest_1.expect)(pumpCheck.message).toContain('LSS-01');
+        (0, vitest_1.expect)(pumpCheck.message).toContain('Loop 1');
+        (0, vitest_1.expect)(pumpCheck.message).toContain('incompatible');
     });
 });

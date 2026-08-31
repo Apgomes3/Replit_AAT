@@ -5,6 +5,7 @@ exports.releaseBlockers = releaseBlockers;
 exports.validateReleaseConfirmation = validateReleaseConfirmation;
 exports.validateReleaseBlockers = validateReleaseBlockers;
 const aquariumCalculations_1 = require("./aquariumCalculations");
+const pumpSelections_1 = require("./pumpSelections");
 const scopeMatches = (scopes, value) => scopes.some(scope => scope.toLowerCase().replace(/[\s_-]+/g, '') === value.toLowerCase().replace(/[\s_-]+/g, ''));
 function item(key, label, severity, ok, message, href, affected_ids) {
     return {
@@ -82,6 +83,7 @@ function buildDesignBookReleaseChecklist(context) {
     const biologicalMediaCases = context.biological_media_cases || [];
     const biologicalMediaRuns = context.biological_media_runs || [];
     const thermalCalculations = context.thermal_calculations || [];
+    const pumpSelections = context.pump_selections || [];
     const scopes = Array.isArray(context.project_scopes) ? context.project_scopes : [];
     const hasLssScope = scopeMatches(scopes, 'LSS');
     const exhibitIds = exhibits.map(exhibit => exhibit.id).filter(Boolean);
@@ -144,6 +146,25 @@ function buildDesignBookReleaseChecklist(context) {
         const thermal = thermalCalculations.find(item => item.system_id === system.id);
         return !thermal || thermal.status !== 'Ready' || thermal.freshness !== 'fresh' ||
             thermal.calculation?.status !== 'Ready';
+    });
+    const pumpCircuitIssues = lifeSupportSystems.flatMap(system => {
+        const selections = pumpSelections.find((entry) => entry.system_id === system.id)?.items || [];
+        return (0, pumpSelections_1.pumpCircuits)(system, system.side_streams || []).map(circuit => {
+            const selection = selections.find((item) => item.circuit_key === circuit.circuit_key);
+            const ready = selection?.project_equipment_item_id && selection?.selected_pump &&
+                selection?.freshness === 'fresh' && selection?.status === 'ready' &&
+                selection?.calculation_version === pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION;
+            return ready ? null : {
+                system_id: system.id,
+                label: `${system.system_code || system.system_name || system.id} · ${circuit.circuit_name || circuit.circuit_key}`,
+                reason: !selection ? 'no pump selection exists'
+                    : selection.status === 'stale' || selection.freshness === 'stale' ? 'selection is stale'
+                        : selection.status === 'incompatible' ? 'selected pump is incompatible with the required duty'
+                            : !selection.project_equipment_item_id || !selection.selected_pump ? 'no eligible selected pump is recorded'
+                                : selection.calculation_version !== pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION ? 'calculation version is outdated'
+                                    : 'sizing calculation is incomplete',
+            };
+        }).filter(Boolean);
     });
     return [
         item('metadata', 'Book metadata', 'blocker', !!context.book_code?.trim() && !!context.book_title?.trim() && !!context.revision?.trim(), context.book_code && context.book_title && context.revision
@@ -216,6 +237,10 @@ function buildDesignBookReleaseChecklist(context) {
                 : thermalNotReady.length
                     ? `${thermalNotReady.length} LSS system${thermalNotReady.length === 1 ? ' needs' : 's need'} a current Ready thermal calculation.`
                     : 'Every Life Support system has a current Ready thermal calculation.', `/design-books/${context.id}?tab=thermal`, thermalNotReady.map(system => system.id)),
+        item('pump_selections', 'Pump selections', hasLssScope ? 'blocker' : 'warning', !hasLssScope || pumpCircuitIssues.length === 0, !hasLssScope ? 'Pump selections are not required because LSS is outside project scope.'
+            : pumpCircuitIssues.length
+                ? `${pumpCircuitIssues.map((issue) => `${issue.label}: ${issue.reason}`).join('; ')}.`
+                : 'Every active LSS Flow Route circuit has a fresh ready pump selection.', `/design-books/${context.id}?tab=lss`, [...new Set(pumpCircuitIssues.map((issue) => issue.system_id))]),
         item('calculation_freshness', 'Calculation freshness', 'blocker', staleCalculations.length === 0, staleCalculations.length
             ? `${staleCalculations.length} saved calculation${staleCalculations.length === 1 ? ' is' : 's are'} stale and must be recalculated.`
             : `Calculations use ${aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION}.`, `/design-books/${context.id}?tab=exhibits`),
