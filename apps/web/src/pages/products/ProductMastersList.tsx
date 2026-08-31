@@ -111,7 +111,6 @@ export default function ProductMastersList() {
       application_type: (row as any).application_type || '',
       design_flow_m3h: (row as any).design_flow_m3h != null ? String((row as any).design_flow_m3h) : '',
       design_head_m: (row as any).design_head_m != null ? String((row as any).design_head_m) : '',
-      power_kw: (row as any).power_kw != null ? String((row as any).power_kw) : '',
       primary_material_code: row.primary_material_code || '',
       standard_status: row.standard_status || 'Concept',
       notes: (row as any).notes || '',
@@ -132,7 +131,6 @@ export default function ProductMastersList() {
         application_type: editForm.application_type || null,
         design_flow_m3h: editForm.design_flow_m3h ? parseFloat(editForm.design_flow_m3h) : null,
         design_head_m: editForm.design_head_m ? parseFloat(editForm.design_head_m) : null,
-        power_kw: editForm.power_kw ? parseFloat(editForm.power_kw) : null,
         primary_material_code: editForm.primary_material_code || null,
         standard_status: editForm.standard_status,
         notes: editForm.notes || null,
@@ -339,7 +337,6 @@ export default function ProductMastersList() {
             { name: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Grundfos' },
             { name: 'model', label: 'Model', placeholder: 'e.g. CR 5-10' },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
-            { name: 'power_kw', label: 'Power (kW)', type: 'number' },
             { name: 'primary_material_code', label: 'Primary Material', options: materialOptions },
             { name: 'standard_status', label: 'Status', options: STATUSES },
           ]}
@@ -425,11 +422,6 @@ export default function ProductMastersList() {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
                 <input type="number" value={editForm.design_head_m} onChange={e => setEditForm((f: any) => ({ ...f, design_head_m: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Power (kW)</label>
-                <input type="number" value={editForm.power_kw} onChange={e => setEditForm((f: any) => ({ ...f, power_kw: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div>
