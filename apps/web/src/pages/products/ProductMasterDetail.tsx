@@ -11,7 +11,7 @@ import { VendorOption, BOMLine, Document } from '../../types';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useState, useRef } from 'react';
 import FormulaInput from '../../components/ui/FormulaInput';
-import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag, Pencil, Check } from 'lucide-react';
+import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag, Pencil, Check, Copy } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
 import ActivityLog from '../../components/ui/ActivityLog';
@@ -138,6 +138,7 @@ export default function ProductMasterDetail() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   const [showRelModal, setShowRelModal] = useState(false);
   const [relSearch, setRelSearch] = useState('');
@@ -329,6 +330,23 @@ export default function ProductMasterDetail() {
       toast.error('Failed to save changes');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    if (duplicating) return;
+    setDuplicating(true);
+    try {
+      const { data: duplicate } = await api.post(`/product-masters/${id}/duplicate`, {});
+      toast.success(`Product duplicated as ${duplicate.product_code}`);
+      queryClient.invalidateQueries({ queryKey: ['product-masters'] });
+      queryClient.invalidateQueries({ queryKey: ['product-masters-tanks'] });
+      queryClient.invalidateQueries({ queryKey: ['product-masters-piping'] });
+      navigate(`/products/masters/${duplicate.id}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || 'Duplicate failed');
+    } finally {
+      setDuplicating(false);
     }
   };
 
@@ -738,9 +756,16 @@ export default function ProductMasterDetail() {
         ]}
         actions={
           isTank ? (
-            <Button size="sm" onClick={() => navigate(`/graph?start=${product.id}&type=product`)}>
-              <Network className="w-3.5 h-3.5" />Graph
-            </Button>
+            <div className="flex gap-2">
+              {!editing && (
+                <Button size="sm" onClick={handleDuplicate} disabled={duplicating}>
+                  <Copy className="w-3.5 h-3.5" />{duplicating ? 'Duplicating…' : 'Duplicate'}
+                </Button>
+              )}
+              <Button size="sm" onClick={() => navigate(`/graph?start=${product.id}&type=product`)}>
+                <Network className="w-3.5 h-3.5" />Graph
+              </Button>
+            </div>
           ) : editing ? (
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => setEditing(false)}><X className="w-3.5 h-3.5" /> Cancel</Button>
@@ -749,6 +774,9 @@ export default function ProductMasterDetail() {
           ) : (
             <div className="flex gap-2">
               <Button size="sm" variant="secondary" onClick={startEdit}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+              <Button size="sm" onClick={handleDuplicate} disabled={duplicating}>
+                <Copy className="w-3.5 h-3.5" />{duplicating ? 'Duplicating…' : 'Duplicate'}
+              </Button>
               <Button size="sm" onClick={() => navigate(`/graph?start=${product.id}&type=product`)}>
                 <Network className="w-3.5 h-3.5" />Graph
               </Button>
