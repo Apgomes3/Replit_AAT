@@ -1971,8 +1971,8 @@ BEGIN
   IF OLD.status = 'Approved' THEN
     IF TG_OP = 'DELETE'
        OR NEW.status NOT IN ('Approved', 'Retired')
-       OR (to_jsonb(OLD) - 'status' - 'is_default' - 'updated_at' - 'retired_at'
-           IS DISTINCT FROM to_jsonb(NEW) - 'status' - 'is_default' - 'updated_at' - 'retired_at') THEN
+       OR (to_jsonb(OLD) - 'status' - 'is_default' - 'edit_version' - 'updated_at' - 'retired_at'
+           IS DISTINCT FROM to_jsonb(NEW) - 'status' - 'is_default' - 'edit_version' - 'updated_at' - 'retired_at') THEN
       RAISE EXCEPTION 'Approved biological media profiles are immutable; create a new revision'
         USING ERRCODE = '55000';
     END IF;
@@ -2021,6 +2021,9 @@ ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_min
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_max_do_mg_l NUMERIC;
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_min_flow_m3_h NUMERIC;
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS operating_max_flow_m3_h NUMERIC;
+ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS edit_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE lss_tan_generation_profiles ADD COLUMN IF NOT EXISTS edit_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE lss_max_tan_profiles ADD COLUMN IF NOT EXISTS edit_version INTEGER NOT NULL DEFAULT 1;
 
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS biomass_method VARCHAR(30);
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS water_volume_m3 NUMERIC;

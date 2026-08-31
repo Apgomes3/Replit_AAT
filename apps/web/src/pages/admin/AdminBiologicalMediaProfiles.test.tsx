@@ -129,6 +129,12 @@ function renderWithNavigation(initialEntries: any[]) {
 describe('TAN generation profile administration', () => {
   beforeEach(() => {
     vi.mocked(api.get).mockReset();
+    vi.mocked(api.post).mockReset();
+    vi.mocked(api.patch).mockReset();
+    vi.mocked(api.delete).mockReset();
+    vi.mocked(api.post).mockResolvedValue({ data: {} });
+    vi.mocked(api.patch).mockResolvedValue({ data: {} });
+    vi.mocked(api.delete).mockResolvedValue({ data: {} });
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: tanProfiles } });
       if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: mediaProfiles } });
@@ -178,6 +184,44 @@ describe('TAN generation profile administration', () => {
     expect(screen.getByText('Preliminary engineering reference — administrator review required')).toBeVisible();
     expect(screen.getByText(/maximum-rate study result as universal design capacity/)).toBeVisible();
     expect(screen.getByText('Review required before approval')).toBeVisible();
+  });
+
+  it('opens a Draft media revision for editing and saves it in place with its identity preserved', async () => {
+    const user = userEvent.setup();
+    renderPage('media');
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('heading', { name: 'Edit media profile revision' })).toBeVisible();
+    const profileCode = screen.getByLabelText('Profile code *');
+    expect(profileCode).toBeDisabled();
+    expect(profileCode).toHaveValue('FW_MB_8C_850');
+
+    await user.type(screen.getByLabelText(/Evidence reference/), 'ENG-VTR-204');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(api.patch).toHaveBeenCalledWith(
+      '/admin/biological-media/media-profiles/media-moving-cold',
+      expect.objectContaining({
+        profile_code: 'FW_MB_8C_850',
+        evidence_reference: 'ENG-VTR-204',
+        overall_vtr_g_tan_n_m3_d: 231,
+      }),
+    );
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('keeps the editor open and shows structured validation errors after a failed save', async () => {
+    vi.mocked(api.patch).mockRejectedValueOnce({
+      response: { data: { error: { message: 'Media depth is invalid.', fields: ['Media depth minimum cannot exceed maximum.'] } } },
+    });
+    const user = userEvent.setup();
+    renderPage('media');
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Media depth minimum cannot exceed maximum.');
+    expect(screen.getByRole('heading', { name: 'Edit media profile revision' })).toBeVisible();
   });
 
   it('shows review-only evidence and full benchmark conditions without offering profile actions', async () => {
