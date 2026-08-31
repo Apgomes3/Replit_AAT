@@ -43,6 +43,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const vitest_1 = require("vitest");
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
 const pumpSelections_1 = require("../lib/pumpSelections");
+const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
 const testSecret = 'design-books-release-test-secret';
 const bookId = 'book-release-1';
 const managerRoles = ['admin', 'hq_manager', 'pmo'];
@@ -108,6 +109,7 @@ function validSnapshot() {
         systems: [],
         thermal_calculations: [],
         pump_selections: [],
+        friction_loss_calculations: [],
         engineering_calculations: {
             exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' } }],
             systems: [],
@@ -160,6 +162,19 @@ function snapshotWithAllocations(flowPct, bioDegasPct) {
                     circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
                     selected_pump: { id: 'pump-item-1', product_code: 'P-101' },
                     freshness: 'fresh', status: 'ready', calculation_version: pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
+                }],
+        }];
+    snapshot.friction_loss_calculations = [{
+            system_id: 'system-1',
+            items: [{
+                    circuit_key: 'loop:1',
+                    circuit_name: 'Loop 1',
+                    project_equipment_item_id: 'pump-item-1',
+                    selected_pump: { id: 'pump-item-1', product_code: 'P-101' },
+                    freshness: 'fresh',
+                    status: 'ready',
+                    calculation_version: frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION,
+                    result: { results: { combined_head_loss_m: 3.2, combined_pressure_drop_kpa: 31.3 } },
                 }],
         }];
     return snapshot;
@@ -267,10 +282,9 @@ function requestPreflight(app) {
             }];
         const response = await requestPreflight(app);
         (0, vitest_1.expect)(response.status).toBe(200);
-        (0, vitest_1.expect)(response.body.status).toBe('Released');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+        (0, vitest_1.expect)(response.body.status).toBe('Approved');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'calculations')?.status).toBe('blocked');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
     });
     (0, vitest_1.it)('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
         state.snapshot = snapshotWithAllocations(60, 25);
@@ -280,13 +294,12 @@ function requestPreflight(app) {
                     }] }];
         const response = await requestPreflight(app);
         (0, vitest_1.expect)(response.status).toBe(200);
-        (0, vitest_1.expect)(response.body.status).toBe('Released');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+        (0, vitest_1.expect)(response.body.status).toBe('Approved');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'pump_selections')?.status).toBe('blocked');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
     });
     (0, vitest_1.it)('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
-        state.snapshot = snapshotWithAllocations(60, 25);
+        state.snapshot = snapshotWithAllocations(null, null);
         state.snapshot.pump_selections = [{ system_id: 'system-1', items: [{
                         circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1', selected_pump: { power_kw: 1.1 },
                         freshness: 'fresh', status: 'incompatible', calculation_version: pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
@@ -308,10 +321,11 @@ function requestPreflight(app) {
         state.snapshot = snapshotWithAllocations(flowPct, bioDegasPct);
         const response = await requestPreflight(app);
         (0, vitest_1.expect)(response.status).toBe(200);
-        (0, vitest_1.expect)(response.body.status).toBe('Released');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+        (0, vitest_1.expect)(response.body.status).toBe('Approved');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('pass');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('pass');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'friction_loss_calculations')?.status).toBe('pass');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
     });
     (0, vitest_1.it)('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
         state.snapshot = snapshotWithAllocations(60, 25);
@@ -321,10 +335,9 @@ function requestPreflight(app) {
                     }] }];
         const response = await requestPreflight(app);
         (0, vitest_1.expect)(response.status).toBe(200);
-        (0, vitest_1.expect)(response.body.status).toBe('Released');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+        (0, vitest_1.expect)(response.body.status).toBe('Approved');
+        (0, vitest_1.expect)(response.body.checklist.find((item) => item.key === 'pump_selections')?.status).toBe('blocked');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
     });
     (0, vitest_1.it)('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
         state.snapshot = snapshotWithAllocations(60, 25);

@@ -60,6 +60,7 @@ const lssCompactUnits_1 = __importDefault(require("./routes/lssCompactUnits"));
 const speciesCatalog_1 = __importDefault(require("./routes/speciesCatalog"));
 const biologicalMedia_1 = __importDefault(require("./routes/biologicalMedia"));
 const pumpSelections_1 = __importDefault(require("./routes/pumpSelections"));
+const frictionLoss_1 = __importDefault(require("./routes/frictionLoss"));
 const uvEngineering_1 = __importStar(require("./routes/uvEngineering"));
 const errors_1 = require("./middleware/errors");
 const app = (0, express_1.default)();
@@ -93,6 +94,7 @@ app.use('/api/v1', lssCompactUnits_1.default);
 app.use('/api/v1', speciesCatalog_1.default);
 app.use('/api/v1', biologicalMedia_1.default);
 app.use('/api/v1', pumpSelections_1.default);
+app.use('/api/v1', frictionLoss_1.default);
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 app.use('/', (0, http_proxy_middleware_1.createProxyMiddleware)({
     target: 'http://localhost:5000',

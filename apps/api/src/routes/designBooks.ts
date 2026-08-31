@@ -531,6 +531,7 @@ function correlationLibraryRow(row: any) {
     superseded_by: row.superseded_by || null,
     superseded_at: row.superseded_at || null,
     created_at: row.created_at,
+    usage_count: Number(row.usage_count || 0),
   };
 }
 
@@ -877,17 +878,211 @@ async function ensureBookEditable(id: string, res: Response) {
   return true;
 }
 
+const thermalCorrelationUsageRowsCte = `
+  WITH thermal_correlation_usage_rows AS (
+    SELECT
+      db.id AS design_book_id,
+      db.status AS design_book_status,
+      db.book_code,
+      db.book_title,
+      db.revision,
+      db.project_id,
+      p.project_code,
+      p.project_name,
+      calc.system_id::text AS system_id,
+      s.system_code,
+      s.system_name,
+      COALESCE(
+        NULLIF(calc.correlation_snapshot->>'correlation_id', ''),
+        NULLIF(calc.result_snapshot->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(calc.input_snapshot->'agitation_correlation_snapshot'->>'correlation_id', '')
+      ) AS correlation_id,
+      COALESCE(
+        NULLIF(calc.correlation_snapshot->>'captured_at', ''),
+        NULLIF(calc.result_snapshot->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(calc.input_snapshot->'agitation_correlation_snapshot'->>'captured_at', ''),
+        calc.calculated_at::text
+      ) AS captured_at
+    FROM design_books db
+    JOIN design_book_thermal_calculations calc ON calc.design_book_id=db.id
+    LEFT JOIN projects p ON p.id=db.project_id
+    LEFT JOIN systems s ON s.id=calc.system_id
+    WHERE db.status IN ('Draft', 'In Progress')
+
+    UNION ALL
+
+    SELECT
+      db.id AS design_book_id,
+      db.status AS design_book_status,
+      db.book_code,
+      db.book_title,
+      db.revision,
+      db.project_id,
+      p.project_code,
+      p.project_name,
+      item->>'system_id' AS system_id,
+      item->'system'->>'system_code' AS system_code,
+      item->'system'->>'system_name' AS system_name,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'correlation_id', '')
+      ) AS correlation_id,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        db.updated_at::text
+      ) AS captured_at
+    FROM design_books db
+    LEFT JOIN projects p ON p.id=db.project_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE
+        WHEN jsonb_typeof(db.review_snapshot->'thermal_calculations') = 'array'
+          THEN db.review_snapshot->'thermal_calculations'
+        ELSE '[]'::jsonb
+      END
+    ) AS item
+    WHERE db.status IN ('For Review', 'Approved')
+
+    UNION ALL
+
+    SELECT
+      db.id AS design_book_id,
+      db.status AS design_book_status,
+      db.book_code,
+      db.book_title,
+      db.revision,
+      db.project_id,
+      p.project_code,
+      p.project_name,
+      item->>'system_id' AS system_id,
+      item->'system'->>'system_code' AS system_code,
+      item->'system'->>'system_name' AS system_name,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'correlation_id', '')
+      ) AS correlation_id,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        db.updated_at::text
+      ) AS captured_at
+    FROM design_books db
+    LEFT JOIN projects p ON p.id=db.project_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE
+        WHEN jsonb_typeof(db.release_snapshot->'thermal_calculations') = 'array'
+          THEN db.release_snapshot->'thermal_calculations'
+        ELSE '[]'::jsonb
+      END
+    ) AS item
+    WHERE db.status='Released'
+  ),
+  thermal_correlation_usage_counts AS (
+    SELECT correlation_id, COUNT(*)::int AS usage_count
+    FROM thermal_correlation_usage_rows
+    WHERE correlation_id IS NOT NULL
+    GROUP BY correlation_id
+  )
+`;
+
+const thermalCorrelationUsagesSelect = `
+${thermalCorrelationUsageRowsCte}
+  SELECT design_book_id, design_book_status, book_code, book_title, revision,
+         project_id, project_code, project_name, system_id, system_code,
+         system_name, correlation_id, captured_at
+  FROM thermal_correlation_usage_rows
+  WHERE correlation_id=$1
+  ORDER BY
+    CASE design_book_status
+      WHEN 'Draft' THEN 1
+      WHEN 'In Progress' THEN 2
+      WHEN 'For Review' THEN 3
+      WHEN 'Approved' THEN 4
+      WHEN 'Released' THEN 5
+      ELSE 6
+    END,
+    COALESCE(project_name, ''),
+    COALESCE(book_code, ''),
+    COALESCE(system_code, ''),
+    captured_at DESC`;
+
+async function lockAndReloadThermalCorrelationUsages(runner: DbRunner, correlationId: string) {
+  const initial = await runner(thermalCorrelationUsagesSelect, [correlationId]);
+  const designBookIds = [...new Set(
+    initial.rows.map(usage => String(usage.design_book_id || '')).filter(Boolean),
+  )];
+  if (designBookIds.length) {
+    await runner(
+      `SELECT id FROM design_books
+       WHERE id = ANY($1::uuid[])
+       ORDER BY id
+       FOR SHARE`,
+      [designBookIds],
+    );
+  }
+  return (await runner(thermalCorrelationUsagesSelect, [correlationId])).rows;
+}
+
+function thermalCorrelationImpactToken(correlationId: string, usages: any[]) {
+  const secret = process.env.SESSION_SECRET || process.env.JWT_SECRET;
+  if (!secret) throw new Error('SESSION_SECRET or JWT_SECRET is required for thermal correlation impact confirmation.');
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify(
+    usages.map(usage => ({
+      design_book_id: usage.design_book_id,
+      design_book_status: usage.design_book_status,
+      project_id: usage.project_id,
+      system_id: usage.system_id,
+      captured_at: usage.captured_at,
+    })),
+  )).digest('hex');
+  const signature = crypto.createHmac('sha256', secret)
+    .update(`${correlationId}.${fingerprint}`)
+    .digest('hex');
+  return `${fingerprint}.${signature}`;
+}
+
+function thermalCorrelationImpactConfirmed(correlationId: string, usages: any[], token: unknown) {
+  const expected = thermalCorrelationImpactToken(correlationId, usages);
+  const supplied = String(token || '');
+  if (supplied.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+}
+
+function sendThermalCorrelationImpactChanged(res: Response) {
+  return res.status(409).json({
+    error: {
+      code: 'THERMAL_CORRELATION_IMPACT_CHANGED',
+      message: 'Correlation usage changed or has not been confirmed. Reopen the usage view before superseding.',
+    },
+  });
+}
+
 const thermalCorrelationLibrarySelect = `
+${thermalCorrelationUsageRowsCte}
   SELECT c.id, c.agitation_class_id AS class_id,
          c.agitation_class_code AS class_code,
          c.agitation_class_name AS class_name,
          c.agitation_class_description AS class_description,
          ac.sort_order AS class_sort_order, ac.is_active AS class_is_active,
          c.version, c.coefficient_kg_m2_s_kpa, c.source_reference, c.notes,
-         c.status, c.approved_by, c.approved_at,
-         c.superseded_by, c.superseded_at, c.created_at
-  FROM thermal_mass_transfer_correlations c
-  JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id`;
+          c.status, c.approved_by, c.approved_at,
+          c.superseded_by, c.superseded_at, c.created_at,
+          COALESCE(uc.usage_count, 0)::int AS usage_count
+   FROM thermal_mass_transfer_correlations c
+   JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id
+   LEFT JOIN thermal_correlation_usage_counts uc ON uc.correlation_id=c.id::text`;
 
 router.get('/thermal-correlations', async (_req: AuthRequest, res: Response) => {
   const [classes, result] = await Promise.all([
@@ -903,6 +1098,40 @@ router.get('/thermal-correlations', async (_req: AuthRequest, res: Response) => 
   ]);
   res.json({ classes: classes.rows, items: result.rows.map(correlationLibraryRow) });
 });
+
+router.get(
+  '/thermal-correlations/versions/:versionId/usages',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const correlationResult = await client.query(
+        `${thermalCorrelationLibrarySelect} WHERE c.id=$1`,
+        [req.params.versionId],
+      );
+      if (!correlationResult.rows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          error: { code: 'THERMAL_CORRELATION_NOT_FOUND', message: 'Thermal correlation version not found.' },
+        });
+      }
+      const usages = await client.query(thermalCorrelationUsagesSelect, [req.params.versionId]);
+      await client.query('COMMIT');
+      res.json({
+        correlation: correlationLibraryRow(correlationResult.rows[0]),
+        usages: usages.rows,
+        impact_token: thermalCorrelationImpactToken(routeParam(req.params.versionId), usages.rows),
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
 
 router.post(
   '/thermal-correlations/classes',
@@ -1012,6 +1241,26 @@ router.post(
           error: { code: 'NOT_FOUND', message: 'Active agitation class not found.' },
         });
       }
+      const currentApproved = await client.query(
+        `SELECT id FROM thermal_mass_transfer_correlations
+         WHERE agitation_class_id=$1 AND status='approved'
+         FOR UPDATE`,
+        [agitationClass.id],
+      );
+      if (currentApproved.rows[0]) {
+        const usages = await lockAndReloadThermalCorrelationUsages(
+          client.query.bind(client) as DbRunner,
+          currentApproved.rows[0].id,
+        );
+        if (!thermalCorrelationImpactConfirmed(
+          currentApproved.rows[0].id,
+          usages,
+          req.body.impact_token,
+        )) {
+          await client.query('ROLLBACK');
+          return sendThermalCorrelationImpactChanged(res);
+        }
+      }
       await client.query(
         `UPDATE thermal_mass_transfer_correlations
          SET status='superseded', superseded_by=$1, superseded_at=NOW()
@@ -1076,23 +1325,60 @@ router.post(
   requireRole('admin', 'engineer'),
   requireModuleManage('design_books'),
   async (req: AuthRequest, res: Response) => {
-    const result = await query(
-      `UPDATE thermal_mass_transfer_correlations
-       SET status='superseded', superseded_by=$1, superseded_at=NOW()
-       WHERE id=$2 AND status='approved'
-       RETURNING *`,
-      [req.user!.id, req.params.versionId],
-    );
-    if (!result.rows[0]) {
-      return res.status(404).json({
-        error: { code: 'THERMAL_CORRELATION_NOT_APPROVED', message: 'Approved correlation version not found.' },
-      });
+    const client = await pool.connect();
+    try {
+      // Read committed is intentional: after the exclusive correlation lock is
+      // acquired, the usage query must see any thermal save that committed
+      // while this transaction was waiting for that lock.
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const current = await client.query(
+        `SELECT id FROM thermal_mass_transfer_correlations
+         WHERE id=$1 AND status='approved'
+         FOR UPDATE`,
+        [req.params.versionId],
+      );
+      if (!current.rows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          error: { code: 'THERMAL_CORRELATION_NOT_APPROVED', message: 'Approved correlation version not found.' },
+        });
+      }
+      const usages = await lockAndReloadThermalCorrelationUsages(
+        client.query.bind(client) as DbRunner,
+        routeParam(req.params.versionId),
+      );
+      if (!thermalCorrelationImpactConfirmed(routeParam(req.params.versionId), usages, req.body.impact_token)) {
+        await client.query('ROLLBACK');
+        return sendThermalCorrelationImpactChanged(res);
+      }
+      const result = await client.query(
+        `UPDATE thermal_mass_transfer_correlations
+         SET status='superseded', superseded_by=$1, superseded_at=NOW()
+         WHERE id=$2 AND status='approved'
+         RETURNING *`,
+        [req.user!.id, req.params.versionId],
+      );
+      await insertAudit(
+        client.query.bind(client) as DbRunner,
+        req.user!.id,
+        'thermal_correlation',
+        result.rows[0].id,
+        'SUPERSEDE',
+        {
+          summary: `Thermal correlation ${result.rows[0].version} superseded`,
+          reason: String(req.body.reason || '').trim() || null,
+          confirmed_usage_count: usages.length,
+        },
+        req.ip,
+      );
+      await client.query('COMMIT');
+      res.json(result.rows[0]);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    await insertAudit(query, req.user!.id, 'thermal_correlation', result.rows[0].id, 'SUPERSEDE', {
-      summary: `Thermal correlation ${result.rows[0].version} superseded`,
-      reason: String(req.body.reason || '').trim() || null,
-    }, req.ip);
-    res.json(result.rows[0]);
   },
 );
 

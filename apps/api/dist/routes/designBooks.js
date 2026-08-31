@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.versionSnapshotTestUtils = exports.thermalCorrelationTestUtils = void 0;
+exports.loadFrictionLossPackages = loadFrictionLossPackages;
 exports.loadReleaseContext = loadReleaseContext;
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
@@ -49,6 +50,7 @@ const aquariumCalculations_1 = require("../lib/aquariumCalculations");
 const thermalCalculations_1 = require("../lib/thermalCalculations");
 const speciesAllocations_1 = require("../lib/speciesAllocations");
 const pumpSelections_1 = require("../lib/pumpSelections");
+const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const isLifeSupportSystem = (system) => String(system?.system_type || '').trim().toLowerCase() === 'life support';
@@ -118,6 +120,156 @@ async function loadPumpSelections(runner, systems) {
                         : stale ? 'stale' : reasons.length ? 'incomplete' : calculation.status, reasons,
                     calculation_version: row?.calculation_version || pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
                     results: row ? (row.result_snapshot?.results || row.result_snapshot || calculation.results) : calculation.results };
+            }),
+        };
+    });
+}
+async function loadFrictionLossPackages(runner, designBookId, systems) {
+    const lifeSupportSystems = systems.filter(isLifeSupportSystem);
+    if (!lifeSupportSystems.length)
+        return [];
+    const savedRows = (await runner(`SELECT c.*, sps.project_equipment_item_id AS current_circuit_pump_id,
+            pei.equip_code AS current_equip_code, pei.description AS current_pump_description,
+            pm.id AS current_pump_product_master_id,
+            pm.product_code AS current_pump_product_code, pm.product_name AS current_pump_product_name,
+            pm.manufacturer AS current_pump_manufacturer, pm.model AS current_pump_model
+     FROM design_book_friction_loss_calculations c
+     LEFT JOIN system_pump_selections sps
+       ON sps.system_id=c.system_id AND sps.circuit_key=c.circuit_key
+     LEFT JOIN project_equipment_items pei ON pei.id=c.project_equipment_item_id
+     LEFT JOIN product_masters pm ON pm.id=pei.product_master_id
+     WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`, [designBookId, lifeSupportSystems.map(system => system.id)])).rows;
+    const components = savedRows.length
+        ? (await runner(`SELECT fc.*, ppi.piping_code AS current_piping_code, ppi.description AS current_description,
+              ppi.quantity AS current_project_quantity, ppi.unit AS current_unit,
+              ppi.system_id AS current_system_id, pm.product_code AS current_product_code,
+              pm.id AS current_product_master_id, pm.product_name AS current_product_name,
+              pm.application_type AS current_application_type
+       FROM design_book_friction_loss_components fc
+       LEFT JOIN project_piping_items ppi ON ppi.id=fc.project_piping_item_id
+       LEFT JOIN product_masters pm ON pm.id=ppi.product_master_id
+       WHERE fc.calculation_id = ANY($1::uuid[])
+       ORDER BY fc.calculation_id, fc.side, fc.sort_order, fc.id`, [savedRows.map(row => row.id)])).rows
+        : [];
+    return lifeSupportSystems.map(system => {
+        const rows = savedRows.filter(row => row.system_id === system.id);
+        const circuitMap = new Map((0, pumpSelections_1.pumpCircuits)(system, system.side_streams || [])
+            .map(circuit => [circuit.circuit_key, circuit]));
+        rows.forEach(row => {
+            if (!circuitMap.has(row.circuit_key)) {
+                circuitMap.set(row.circuit_key, {
+                    circuit_key: row.circuit_key,
+                    circuit_kind: 'orphaned',
+                    circuit_name: row.source_snapshot?.circuit?.circuit_name || row.circuit_key,
+                    circuit_type: row.source_snapshot?.circuit?.circuit_type || null,
+                    parent_loop_number: null,
+                    side_stream_id: null,
+                    flow_m3h: null,
+                });
+            }
+        });
+        return {
+            system_id: system.id,
+            system,
+            items: [...circuitMap.values()].map(circuit => {
+                const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+                if (!row) {
+                    const preview = (0, frictionLossCalculations_1.calculateFrictionLoss)({ flow_m3h: circuit.flow_m3h, components: [] });
+                    return {
+                        ...circuit,
+                        status: 'incomplete',
+                        freshness: 'unsaved',
+                        reasons: preview.reasons,
+                        calculation_version: frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION,
+                        result: preview,
+                        components: [],
+                        selected_pump: null,
+                    };
+                }
+                const currentPump = row.project_equipment_item_id && row.current_equip_code
+                    ? {
+                        id: row.project_equipment_item_id,
+                        project_equipment_item_id: row.project_equipment_item_id,
+                        equip_code: row.current_equip_code,
+                        description: row.current_pump_description,
+                        product_master_id: row.current_pump_product_master_id,
+                        product_code: row.current_pump_product_code,
+                        product_name: row.current_pump_product_name,
+                        manufacturer: row.current_pump_manufacturer,
+                        model: row.current_pump_model,
+                    }
+                    : null;
+                const currentComponents = components.filter(component => component.calculation_id === row.id)
+                    .map(component => {
+                    const currentSnapshot = component.current_piping_code && component.current_system_id === system.id
+                        ? {
+                            project_piping_item_id: component.project_piping_item_id,
+                            id: component.project_piping_item_id,
+                            piping_code: component.current_piping_code,
+                            description: component.current_description,
+                            project_quantity: component.current_project_quantity,
+                            unit: component.current_unit,
+                            system_id: component.current_system_id,
+                            product_master_id: component.current_product_master_id,
+                            product_code: component.current_product_code,
+                            product_name: component.current_product_name,
+                            application_type: component.current_application_type,
+                        }
+                        : null;
+                    return {
+                        project_piping_item_id: component.project_piping_item_id,
+                        piping_snapshot: currentSnapshot || component.piping_snapshot,
+                        side: component.side,
+                        component_kind: component.component_kind,
+                        sort_order: component.sort_order,
+                        internal_diameter_mm: component.internal_diameter_mm,
+                        straight_length_m: component.straight_length_m,
+                        material: component.material,
+                        absolute_roughness_mm: component.absolute_roughness_mm,
+                        fitting_k_value: component.fitting_k_value,
+                        quantity: component.quantity,
+                        reference_valid: !!currentSnapshot,
+                    };
+                });
+                const currentSource = (0, frictionLossCalculations_1.frictionSourceSnapshot)(circuit, currentPump, currentComponents.map(({ reference_valid, ...item }) => item));
+                const currentFingerprint = (0, frictionLossCalculations_1.frictionSourceFingerprint)(currentSource);
+                const stale = circuit.circuit_kind === 'orphaned' ||
+                    row.calculation_version !== frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION ||
+                    row.source_fingerprint !== currentFingerprint ||
+                    !currentPump ||
+                    row.current_circuit_pump_id !== row.project_equipment_item_id ||
+                    currentComponents.some(component => !component.reference_valid);
+                const staleReasons = [
+                    ...(circuit.circuit_kind === 'orphaned' ? ['This saved calculation references a Flow Route circuit that no longer exists.'] : []),
+                    ...(row.calculation_version !== frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION ? [`Friction calculation version ${row.calculation_version} is outdated; recalculate using ${frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION}.`] : []),
+                    ...(!currentPump ? ['The selected pump is no longer assigned to this LSS system.'] : []),
+                    ...(row.current_circuit_pump_id !== row.project_equipment_item_id
+                        ? ['The pump selected for this Flow Route circuit changed after the friction calculation was saved.']
+                        : []),
+                    ...(currentComponents.some(component => !component.reference_valid) ? ['One or more assigned pipe or fitting items are no longer available for this LSS system.'] : []),
+                    ...(row.source_fingerprint !== currentFingerprint && circuit.circuit_kind !== 'orphaned'
+                        ? ['Flow Route flow, selected pump, or assigned hydraulic inputs changed after this calculation was saved. Recalculate before review or release.']
+                        : []),
+                ];
+                return {
+                    ...circuit,
+                    calculation_id: row.id,
+                    project_equipment_item_id: row.project_equipment_item_id,
+                    selected_pump: row.source_snapshot?.selected_pump || currentPump,
+                    components: row.result_snapshot?.components || currentComponents,
+                    source_fingerprint: row.source_fingerprint,
+                    current_source_fingerprint: currentFingerprint,
+                    calculation_version: row.calculation_version,
+                    freshness: stale ? 'stale' : 'fresh',
+                    status: stale ? 'stale' : String(row.status || '').toLowerCase(),
+                    reasons: stale ? staleReasons : (row.result_snapshot?.reasons || []),
+                    result: {
+                        ...row.result_snapshot,
+                        status: stale ? 'stale' : row.result_snapshot?.status,
+                        reasons: stale ? staleReasons : (row.result_snapshot?.reasons || []),
+                    },
+                    calculated_at: row.calculated_at,
+                };
             }),
         };
     });
@@ -203,6 +355,57 @@ async function insertThermalSnapshotRecord(runner, designBookId, item) {
         row.calculated_at || new Date().toISOString(),
     ]);
 }
+async function insertFrictionSnapshotRecord(runner, designBookId, systemId, item) {
+    if (!item?.circuit_key || !item?.project_equipment_item_id || !item?.source_fingerprint)
+        return;
+    const sourceSnapshot = item.source_snapshot || {
+        circuit: {
+            circuit_key: item.circuit_key,
+            circuit_kind: item.circuit_kind,
+            circuit_name: item.circuit_name,
+            circuit_type: item.circuit_type,
+            parent_loop_number: item.parent_loop_number,
+            side_stream_id: item.side_stream_id,
+            flow_m3h: item.flow_m3h,
+        },
+        selected_pump: item.selected_pump,
+        components: item.result?.components || item.components || [],
+    };
+    const result = await runner(`INSERT INTO design_book_friction_loss_calculations
+       (design_book_id, system_id, circuit_key, project_equipment_item_id,
+        calculation_version, status, freshness, source_fingerprint,
+        source_snapshot, input_snapshot, result_snapshot, calculated_by, calculated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13)
+     RETURNING id`, [
+        designBookId, systemId, item.circuit_key, item.project_equipment_item_id,
+        item.calculation_version || frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION,
+        String(item.status || '').toLowerCase() === 'ready' ? 'Ready' : 'Blocked',
+        item.freshness === 'stale' ? 'stale' : 'fresh', item.source_fingerprint,
+        JSON.stringify(sourceSnapshot),
+        JSON.stringify(item.result?.inputs || {
+            flow_m3h: item.flow_m3h,
+            components: item.result?.components || item.components || [],
+        }),
+        JSON.stringify(item.result || {}),
+        item.calculated_by || null, item.calculated_at || new Date().toISOString(),
+    ]);
+    const calculationId = result.rows[0]?.id;
+    if (!calculationId)
+        return;
+    for (const [index, component] of (item.result?.components || item.components || []).entries()) {
+        await runner(`INSERT INTO design_book_friction_loss_components
+         (calculation_id, project_piping_item_id, side, component_kind, sort_order,
+          piping_snapshot, internal_diameter_mm, straight_length_m, material,
+          absolute_roughness_mm, fitting_k_value, quantity)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12)`, [
+            calculationId, component.project_piping_item_id, component.side,
+            component.component_kind, component.sort_order ?? index,
+            JSON.stringify(component.piping_snapshot || {}), component.internal_diameter_mm,
+            component.straight_length_m, component.material, component.absolute_roughness_mm,
+            component.fitting_k_value, component.quantity,
+        ]);
+    }
+}
 function nullableSpeciesNumber(value, label, allowZero = false) {
     if (value == null || value === '')
         return null;
@@ -267,6 +470,7 @@ function correlationLibraryRow(row) {
         superseded_by: row.superseded_by || null,
         superseded_at: row.superseded_at || null,
         created_at: row.created_at,
+        usage_count: Number(row.usage_count || 0),
     };
 }
 async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = new Date().toISOString()) {
@@ -480,6 +684,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
     });
     const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations);
     const pumpSelections = await loadPumpSelections(runner, currentSystems);
+    const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
     const liveContext = {
         ...book,
         exhibits,
@@ -495,6 +700,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         biological_media_runs: biologicalMediaRuns,
         thermal_calculations: thermalCalculations,
         pump_selections: pumpSelections,
+        friction_loss_calculations: frictionLossCalculations,
         engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
             calculated_at: calculatedAt,
@@ -537,17 +743,200 @@ async function ensureBookEditable(id, res) {
     }
     return true;
 }
+const thermalCorrelationUsageRowsCte = `
+  WITH thermal_correlation_usage_rows AS (
+    SELECT
+      db.id AS design_book_id,
+      db.status AS design_book_status,
+      db.book_code,
+      db.book_title,
+      db.revision,
+      db.project_id,
+      p.project_code,
+      p.project_name,
+      calc.system_id::text AS system_id,
+      s.system_code,
+      s.system_name,
+      COALESCE(
+        NULLIF(calc.correlation_snapshot->>'correlation_id', ''),
+        NULLIF(calc.result_snapshot->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(calc.input_snapshot->'agitation_correlation_snapshot'->>'correlation_id', '')
+      ) AS correlation_id,
+      COALESCE(
+        NULLIF(calc.correlation_snapshot->>'captured_at', ''),
+        NULLIF(calc.result_snapshot->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(calc.input_snapshot->'agitation_correlation_snapshot'->>'captured_at', ''),
+        calc.calculated_at::text
+      ) AS captured_at
+    FROM design_books db
+    JOIN design_book_thermal_calculations calc ON calc.design_book_id=db.id
+    LEFT JOIN projects p ON p.id=db.project_id
+    LEFT JOIN systems s ON s.id=calc.system_id
+    WHERE db.status IN ('Draft', 'In Progress')
+
+    UNION ALL
+
+    SELECT
+      db.id AS design_book_id,
+      db.status AS design_book_status,
+      db.book_code,
+      db.book_title,
+      db.revision,
+      db.project_id,
+      p.project_code,
+      p.project_name,
+      item->>'system_id' AS system_id,
+      item->'system'->>'system_code' AS system_code,
+      item->'system'->>'system_name' AS system_name,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'correlation_id', '')
+      ) AS correlation_id,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        db.updated_at::text
+      ) AS captured_at
+    FROM design_books db
+    LEFT JOIN projects p ON p.id=db.project_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE
+        WHEN jsonb_typeof(db.review_snapshot->'thermal_calculations') = 'array'
+          THEN db.review_snapshot->'thermal_calculations'
+        ELSE '[]'::jsonb
+      END
+    ) AS item
+    WHERE db.status IN ('For Review', 'Approved')
+
+    UNION ALL
+
+    SELECT
+      db.id AS design_book_id,
+      db.status AS design_book_status,
+      db.book_code,
+      db.book_title,
+      db.revision,
+      db.project_id,
+      p.project_code,
+      p.project_name,
+      item->>'system_id' AS system_id,
+      item->'system'->>'system_code' AS system_code,
+      item->'system'->>'system_name' AS system_name,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'correlation_id', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'correlation_id', '')
+      ) AS correlation_id,
+      COALESCE(
+        NULLIF(item->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'calculation'->'inputs'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        NULLIF(item->'saved'->'input_snapshot'->'agitation_correlation_snapshot'->>'captured_at', ''),
+        db.updated_at::text
+      ) AS captured_at
+    FROM design_books db
+    LEFT JOIN projects p ON p.id=db.project_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE
+        WHEN jsonb_typeof(db.release_snapshot->'thermal_calculations') = 'array'
+          THEN db.release_snapshot->'thermal_calculations'
+        ELSE '[]'::jsonb
+      END
+    ) AS item
+    WHERE db.status='Released'
+  ),
+  thermal_correlation_usage_counts AS (
+    SELECT correlation_id, COUNT(*)::int AS usage_count
+    FROM thermal_correlation_usage_rows
+    WHERE correlation_id IS NOT NULL
+    GROUP BY correlation_id
+  )
+`;
+const thermalCorrelationUsagesSelect = `
+${thermalCorrelationUsageRowsCte}
+  SELECT design_book_id, design_book_status, book_code, book_title, revision,
+         project_id, project_code, project_name, system_id, system_code,
+         system_name, correlation_id, captured_at
+  FROM thermal_correlation_usage_rows
+  WHERE correlation_id=$1
+  ORDER BY
+    CASE design_book_status
+      WHEN 'Draft' THEN 1
+      WHEN 'In Progress' THEN 2
+      WHEN 'For Review' THEN 3
+      WHEN 'Approved' THEN 4
+      WHEN 'Released' THEN 5
+      ELSE 6
+    END,
+    COALESCE(project_name, ''),
+    COALESCE(book_code, ''),
+    COALESCE(system_code, ''),
+    captured_at DESC`;
+async function lockAndReloadThermalCorrelationUsages(runner, correlationId) {
+    const initial = await runner(thermalCorrelationUsagesSelect, [correlationId]);
+    const designBookIds = [...new Set(initial.rows.map(usage => String(usage.design_book_id || '')).filter(Boolean))];
+    if (designBookIds.length) {
+        await runner(`SELECT id FROM design_books
+       WHERE id = ANY($1::uuid[])
+       ORDER BY id
+       FOR SHARE`, [designBookIds]);
+    }
+    return (await runner(thermalCorrelationUsagesSelect, [correlationId])).rows;
+}
+function thermalCorrelationImpactToken(correlationId, usages) {
+    const secret = process.env.SESSION_SECRET || process.env.JWT_SECRET;
+    if (!secret)
+        throw new Error('SESSION_SECRET or JWT_SECRET is required for thermal correlation impact confirmation.');
+    const fingerprint = crypto_1.default.createHash('sha256').update(JSON.stringify(usages.map(usage => ({
+        design_book_id: usage.design_book_id,
+        design_book_status: usage.design_book_status,
+        project_id: usage.project_id,
+        system_id: usage.system_id,
+        captured_at: usage.captured_at,
+    })))).digest('hex');
+    const signature = crypto_1.default.createHmac('sha256', secret)
+        .update(`${correlationId}.${fingerprint}`)
+        .digest('hex');
+    return `${fingerprint}.${signature}`;
+}
+function thermalCorrelationImpactConfirmed(correlationId, usages, token) {
+    const expected = thermalCorrelationImpactToken(correlationId, usages);
+    const supplied = String(token || '');
+    if (supplied.length !== expected.length)
+        return false;
+    return crypto_1.default.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+}
+function sendThermalCorrelationImpactChanged(res) {
+    return res.status(409).json({
+        error: {
+            code: 'THERMAL_CORRELATION_IMPACT_CHANGED',
+            message: 'Correlation usage changed or has not been confirmed. Reopen the usage view before superseding.',
+        },
+    });
+}
 const thermalCorrelationLibrarySelect = `
+${thermalCorrelationUsageRowsCte}
   SELECT c.id, c.agitation_class_id AS class_id,
          c.agitation_class_code AS class_code,
          c.agitation_class_name AS class_name,
          c.agitation_class_description AS class_description,
          ac.sort_order AS class_sort_order, ac.is_active AS class_is_active,
          c.version, c.coefficient_kg_m2_s_kpa, c.source_reference, c.notes,
-         c.status, c.approved_by, c.approved_at,
-         c.superseded_by, c.superseded_at, c.created_at
-  FROM thermal_mass_transfer_correlations c
-  JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id`;
+          c.status, c.approved_by, c.approved_at,
+          c.superseded_by, c.superseded_at, c.created_at,
+          COALESCE(uc.usage_count, 0)::int AS usage_count
+   FROM thermal_mass_transfer_correlations c
+   JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id
+   LEFT JOIN thermal_correlation_usage_counts uc ON uc.correlation_id=c.id::text`;
 router.get('/thermal-correlations', async (_req, res) => {
     const [classes, result] = await Promise.all([
         (0, index_1.query)(`SELECT id, class_code, class_name, description, sort_order, is_active, created_at, updated_at
@@ -557,6 +946,33 @@ router.get('/thermal-correlations', async (_req, res) => {
        ORDER BY ac.sort_order, c.agitation_class_name, c.approved_at DESC, c.created_at DESC`),
     ]);
     res.json({ classes: classes.rows, items: result.rows.map(correlationLibraryRow) });
+});
+router.get('/thermal-correlations/versions/:versionId/usages', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        const correlationResult = await client.query(`${thermalCorrelationLibrarySelect} WHERE c.id=$1`, [req.params.versionId]);
+        if (!correlationResult.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                error: { code: 'THERMAL_CORRELATION_NOT_FOUND', message: 'Thermal correlation version not found.' },
+            });
+        }
+        const usages = await client.query(thermalCorrelationUsagesSelect, [req.params.versionId]);
+        await client.query('COMMIT');
+        res.json({
+            correlation: correlationLibraryRow(correlationResult.rows[0]),
+            usages: usages.rows,
+            impact_token: thermalCorrelationImpactToken(routeParam(req.params.versionId), usages.rows),
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
 });
 router.post('/thermal-correlations/classes', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     const classCode = String(req.body.class_code || '').trim();
@@ -642,6 +1058,16 @@ router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requir
                 error: { code: 'NOT_FOUND', message: 'Active agitation class not found.' },
             });
         }
+        const currentApproved = await client.query(`SELECT id FROM thermal_mass_transfer_correlations
+         WHERE agitation_class_id=$1 AND status='approved'
+         FOR UPDATE`, [agitationClass.id]);
+        if (currentApproved.rows[0]) {
+            const usages = await lockAndReloadThermalCorrelationUsages(client.query.bind(client), currentApproved.rows[0].id);
+            if (!thermalCorrelationImpactConfirmed(currentApproved.rows[0].id, usages, req.body.impact_token)) {
+                await client.query('ROLLBACK');
+                return sendThermalCorrelationImpactChanged(res);
+            }
+        }
         await client.query(`UPDATE thermal_mass_transfer_correlations
          SET status='superseded', superseded_by=$1, superseded_at=NOW()
          WHERE agitation_class_id=$2 AND status='approved'`, [req.user.id, agitationClass.id]);
@@ -685,20 +1111,45 @@ router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requir
     }
 });
 router.post('/thermal-correlations/versions/:versionId/supersede', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
-    const result = await (0, index_1.query)(`UPDATE thermal_mass_transfer_correlations
-       SET status='superseded', superseded_by=$1, superseded_at=NOW()
-       WHERE id=$2 AND status='approved'
-       RETURNING *`, [req.user.id, req.params.versionId]);
-    if (!result.rows[0]) {
-        return res.status(404).json({
-            error: { code: 'THERMAL_CORRELATION_NOT_APPROVED', message: 'Approved correlation version not found.' },
-        });
+    const client = await index_1.default.connect();
+    try {
+        // Read committed is intentional: after the exclusive correlation lock is
+        // acquired, the usage query must see any thermal save that committed
+        // while this transaction was waiting for that lock.
+        await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+        const current = await client.query(`SELECT id FROM thermal_mass_transfer_correlations
+         WHERE id=$1 AND status='approved'
+         FOR UPDATE`, [req.params.versionId]);
+        if (!current.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                error: { code: 'THERMAL_CORRELATION_NOT_APPROVED', message: 'Approved correlation version not found.' },
+            });
+        }
+        const usages = await lockAndReloadThermalCorrelationUsages(client.query.bind(client), routeParam(req.params.versionId));
+        if (!thermalCorrelationImpactConfirmed(routeParam(req.params.versionId), usages, req.body.impact_token)) {
+            await client.query('ROLLBACK');
+            return sendThermalCorrelationImpactChanged(res);
+        }
+        const result = await client.query(`UPDATE thermal_mass_transfer_correlations
+         SET status='superseded', superseded_by=$1, superseded_at=NOW()
+         WHERE id=$2 AND status='approved'
+         RETURNING *`, [req.user.id, req.params.versionId]);
+        await insertAudit(client.query.bind(client), req.user.id, 'thermal_correlation', result.rows[0].id, 'SUPERSEDE', {
+            summary: `Thermal correlation ${result.rows[0].version} superseded`,
+            reason: String(req.body.reason || '').trim() || null,
+            confirmed_usage_count: usages.length,
+        }, req.ip);
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
     }
-    await insertAudit(index_1.query, req.user.id, 'thermal_correlation', result.rows[0].id, 'SUPERSEDE', {
-        summary: `Thermal correlation ${result.rows[0].version} superseded`,
-        reason: String(req.body.reason || '').trim() || null,
-    }, req.ip);
-    res.json(result.rows[0]);
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
 });
 router.get('/design-books/:id/thermal', auth_1.authenticate, async (req, res) => {
     const frozen = await (0, index_1.query)('SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1', [req.params.id]);
@@ -1005,6 +1456,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
     });
     const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations);
     const pumpSelections = await loadPumpSelections(index_1.query, currentSystems);
+    const frictionLossCalculations = await loadFrictionLossPackages(index_1.query, routeParam(req.params.id), currentSystems);
     const livePackage = {
         exhibits,
         tanks,
@@ -1016,6 +1468,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         substrate,
         thermal_calculations: thermalCalculations,
         pump_selections: pumpSelections,
+        friction_loss_calculations: frictionLossCalculations,
         engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
             calculated_at: calculationTimestamp,
@@ -1733,6 +2186,11 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
         for (const row of snapshot.thermal_calculations || []) {
             await insertThermalSnapshotRecord(client.query.bind(client), next.id, row);
         }
+        for (const group of snapshot.friction_loss_calculations || []) {
+            for (const item of group.items || []) {
+                await insertFrictionSnapshotRecord(client.query.bind(client), next.id, group.system_id, item);
+            }
+        }
         await client.query('COMMIT');
         await (0, audit_1.logAudit)(req.user.id, 'design_book', next.id, 'CREATE_REVISION', {
             summary: `Revision ${revision} created from ${source.book_code} Rev ${source.revision}`,
@@ -1838,6 +2296,7 @@ function frozenFromSnapshot(snapshot) {
         hydraulics: snapshot?.hydraulics || [],
         substrate: snapshot?.substrate || [],
         thermal_calculations: snapshot?.thermal_calculations || [],
+        friction_loss_calculations: snapshot?.friction_loss_calculations || [],
         ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
     };
 }
@@ -1907,11 +2366,12 @@ function makeVersionSnapshot(context, capturedAt = new Date().toISOString()) {
             hydraulics: jsonCopy(context.hydraulics || []),
             substrate: jsonCopy(context.substrate || []),
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
+            friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
         },
         live_references: liveReferencesFromContext(context),
         scope: {
-            frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'thermal calculations', 'review handovers'],
+            frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'thermal calculations', 'friction loss calculations', 'review handovers'],
             live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
             restore_target: 'working_copy',
         },
@@ -1926,6 +2386,7 @@ function currentRestoreStateDigest(context) {
             hydraulics: jsonCopy(context.hydraulics || []),
             substrate: jsonCopy(context.substrate || []),
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
+            friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
         },
         live_references: liveReferencesFromContext(context),
@@ -1944,6 +2405,7 @@ function versionPresentation(version, currentContext) {
             hydraulics: (frozen.hydraulics || []).length,
             substrate_theming: (frozen.substrate || []).length,
             thermal_calculations: (frozen.thermal_calculations || []).length,
+            friction_loss_calculations: (frozen.friction_loss_calculations || []).reduce((sum, group) => sum + (group.items || []).length, 0),
             review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
         },
         live_references: {
@@ -1953,7 +2415,7 @@ function versionPresentation(version, currentContext) {
             system_links: (referencesFromSnapshot(snapshot).system_links || []).length,
         },
         restorable_records: [
-            'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations',
+            'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations', 'friction loss calculations',
             ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
         ],
         preserved_records: Array.isArray(frozen.review_handovers) ? [] : ['review handovers (not captured by this older version)'],
@@ -2188,6 +2650,12 @@ router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate
         await client.query('DELETE FROM design_book_thermal_calculations WHERE design_book_id=$1', [req.params.id]);
         for (const thermal of frozen.thermal_calculations || []) {
             await insertThermalSnapshotRecord(client.query.bind(client), routeParam(req.params.id), thermal);
+        }
+        await client.query('DELETE FROM design_book_friction_loss_calculations WHERE design_book_id=$1', [req.params.id]);
+        for (const group of frozen.friction_loss_calculations || []) {
+            for (const item of group.items || []) {
+                await insertFrictionSnapshotRecord(client.query.bind(client), routeParam(req.params.id), group.system_id, item);
+            }
         }
         if (Array.isArray(frozen.review_handovers)) {
             await client.query('DELETE FROM design_book_review_handovers WHERE design_book_id=$1', [req.params.id]);

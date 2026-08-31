@@ -1918,6 +1918,81 @@ function thermalNumber(value: any, decimals = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
 }
 
+function ThermalCorrelationUsageList({ usages }: { usages: any[] }) {
+  const statusOrder = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
+  const byStatus = usages.reduce((groups: Map<string, Map<string, any[]>>, usage) => {
+    const status = usage.design_book_status || 'Unknown status';
+    const project = usage.project_id
+      ? `${usage.project_code || 'Project'} · ${usage.project_name || 'Unnamed project'}`
+      : 'No project linked';
+    if (!groups.has(status)) groups.set(status, new Map());
+    const byProject = groups.get(status)!;
+    if (!byProject.has(project)) byProject.set(project, []);
+    byProject.get(project)!.push(usage);
+    return groups;
+  }, new Map());
+  const statuses = [...byStatus.keys()].sort((a, b) => {
+    const aIndex = statusOrder.indexOf(a);
+    const bIndex = statusOrder.indexOf(b);
+    return (aIndex < 0 ? statusOrder.length : aIndex) - (bIndex < 0 ? statusOrder.length : bIndex);
+  });
+
+  if (!usages.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-center text-sm text-stone-500">
+        No saved thermal calculations have captured this correlation version.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {statuses.map(status => (
+        <section key={status}>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">{status}</span>
+            <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-500">
+              {[...byStatus.get(status)!.values()].reduce((total, rows) => total + rows.length, 0)}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {[...byStatus.get(status)!.entries()].map(([project, rows]) => (
+              <div key={project} className="rounded-xl border border-stone-200 bg-white">
+                <div className="border-b border-stone-100 bg-stone-50/70 px-3 py-2 text-sm font-medium text-stone-700">
+                  {project}
+                </div>
+                <div className="divide-y divide-stone-100">
+                  {rows.map((usage: any, index: number) => (
+                    <div key={`${usage.design_book_id}-${usage.system_id || index}`} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
+                      <div className="min-w-0">
+                        <div className="font-medium text-stone-800">
+                          {usage.book_code || 'Unnamed Design Book'}
+                          {usage.revision ? ` · Rev ${usage.revision}` : ''}
+                        </div>
+                        <div className="truncate text-xs text-stone-500">
+                          {usage.book_title || 'Untitled Design Book'}
+                          {usage.system_code || usage.system_name
+                            ? ` · ${usage.system_code || usage.system_name}`
+                            : ''}
+                        </div>
+                      </div>
+                      {usage.captured_at && (
+                        <time className="shrink-0 text-xs text-stone-400" dateTime={usage.captured_at}>
+                          {new Date(usage.captured_at).toLocaleDateString()}
+                        </time>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function ThermalTab({
   book,
   readOnly,
@@ -1935,6 +2010,8 @@ function ThermalTab({
   const [saving, setSaving] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [librarySaving, setLibrarySaving] = useState(false);
+  const [pendingSupersede, setPendingSupersede] = useState<any>(null);
+  const [approveReplacementAfterConfirmation, setApproveReplacementAfterConfirmation] = useState(false);
   const [classForm, setClassForm] = useState({ class_code: '', class_name: '', description: '' });
   const [versionForm, setVersionForm] = useState({
     class_id: '',
@@ -1949,6 +2026,16 @@ function ThermalTab({
   });
   const correlationItems: any[] = correlationLibrary?.items || [];
   const agitationClasses: any[] = correlationLibrary?.classes || [];
+  const {
+    data: correlationUsage,
+    isFetching: usageLoading,
+    isError: usageError,
+    refetch: refetchCorrelationUsage,
+  } = useQuery({
+    queryKey: ['thermal-correlation-usages', pendingSupersede?.id],
+    queryFn: () => api.get(`/thermal-correlations/versions/${pendingSupersede.id}/usages`).then(response => response.data),
+    enabled: !!pendingSupersede?.id,
+  });
 
   const open = (item: any) => {
     const existing = item.saved?.input_snapshot || item.calculation?.inputs || {};
@@ -2024,8 +2111,7 @@ function ThermalTab({
     }
   };
 
-  const createCorrelationVersion = async () => {
-    if (!versionForm.class_id) return;
+  const saveCorrelationVersion = async () => {
     setLibrarySaving(true);
     try {
       await api.post(`/thermal-correlations/classes/${versionForm.class_id}/versions`, {
@@ -2033,6 +2119,7 @@ function ThermalTab({
         coefficient_kg_m2_s_kpa: numericOrNull(versionForm.coefficient_kg_m2_s_kpa),
         source_reference: versionForm.source_reference,
         notes: versionForm.notes,
+        impact_token: approveReplacementAfterConfirmation ? correlationUsage?.impact_token : undefined,
       });
       setVersionForm(current => ({
         ...current,
@@ -2043,24 +2130,73 @@ function ThermalTab({
       }));
       await refetchCorrelationLibrary();
       toast.success('Approved correlation version added');
+      setPendingSupersede(null);
+      setApproveReplacementAfterConfirmation(false);
     } catch (error: any) {
+      if (error?.response?.data?.error?.code === 'THERMAL_CORRELATION_IMPACT_CHANGED') {
+        const refreshedLibrary = await refetchCorrelationLibrary();
+        const refreshedCurrent = (refreshedLibrary.data?.items || []).find(
+          (item: any) => item.class_id === versionForm.class_id && item.status === 'approved',
+        );
+        if (!refreshedCurrent) {
+          closeCorrelationUsage();
+        } else if (refreshedCurrent.id !== pendingSupersede?.id) {
+          setPendingSupersede(refreshedCurrent);
+        } else {
+          await refetchCorrelationUsage();
+        }
+      }
       toast.error(error?.response?.data?.error?.message || 'Unable to add correlation version');
     } finally {
       setLibrarySaving(false);
     }
   };
 
-  const supersedeCorrelation = async (correlation: any) => {
+  const createCorrelationVersion = async () => {
+    if (!versionForm.class_id) return;
+    const currentVersion = correlationItems.find(
+      item => item.class_id === versionForm.class_id && item.status === 'approved',
+    );
+    if (currentVersion) {
+      setApproveReplacementAfterConfirmation(true);
+      setPendingSupersede(currentVersion);
+      return;
+    }
+    await saveCorrelationVersion();
+  };
+
+  const requestSupersedeCorrelation = (correlation: any) => {
+    setApproveReplacementAfterConfirmation(false);
+    setPendingSupersede(correlation);
+  };
+
+  const supersedeCorrelation = async () => {
+    if (!pendingSupersede) return;
+    if (approveReplacementAfterConfirmation) {
+      await saveCorrelationVersion();
+      return;
+    }
     setLibrarySaving(true);
     try {
-      await api.post(`/thermal-correlations/versions/${correlation.id}/supersede`, {});
+      await api.post(`/thermal-correlations/versions/${pendingSupersede.id}/supersede`, {
+        impact_token: correlationUsage?.impact_token,
+      });
       await refetchCorrelationLibrary();
-      toast.success(`${correlation.class_code} ${correlation.version} superseded`);
+      toast.success(`${pendingSupersede.class_code} ${pendingSupersede.version} superseded`);
+      setPendingSupersede(null);
+      setApproveReplacementAfterConfirmation(false);
     } catch (error: any) {
+      if (error?.response?.data?.error?.code === 'THERMAL_CORRELATION_IMPACT_CHANGED') {
+        await refetchCorrelationUsage();
+      }
       toast.error(error?.response?.data?.error?.message || 'Unable to supersede correlation');
     } finally {
       setLibrarySaving(false);
     }
+  };
+  const closeCorrelationUsage = () => {
+    setPendingSupersede(null);
+    setApproveReplacementAfterConfirmation(false);
   };
   const save = async () => {
     if (!selected) return;
@@ -2158,6 +2294,78 @@ function ThermalTab({
 
   return (
     <div className="space-y-4">
+      {pendingSupersede && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                  Correlation usage
+                </p>
+                <h2 className="mt-1 text-lg font-bold text-stone-900">
+                  {pendingSupersede.class_code} · {pendingSupersede.version}
+                </h2>
+                <p className="mt-1 text-sm text-stone-500">
+                  {correlationUsage?.correlation?.usage_count ?? pendingSupersede.usage_count ?? 0} captured thermal calculation(s)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCorrelationUsage}
+                aria-label="Close correlation usage"
+                className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {pendingSupersede.status === 'approved' && (
+              <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-900">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>
+                    {approveReplacementAfterConfirmation
+                      ? `Approving ${versionForm.version || 'the replacement version'} will supersede this current version. `
+                      : 'Superseding stops new calculations from selecting this version. '}
+                    The saved review and release snapshots listed below remain unchanged and may be reviewed voluntarily.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-stone-50/50 p-5">
+              {usageLoading ? (
+                <div className="py-12 text-center text-sm text-stone-500">Loading captured usage…</div>
+              ) : usageError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  Unable to load the captured usage. Close this dialog and try again.
+                </div>
+              ) : (
+                <ThermalCorrelationUsageList usages={correlationUsage?.usages || []} />
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-stone-200 bg-white px-5 py-4">
+              <button
+                type="button"
+                onClick={closeCorrelationUsage}
+                className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+              >
+                {pendingSupersede.status === 'approved' ? 'Cancel' : 'Close'}
+              </button>
+              {pendingSupersede.status === 'approved' && (
+                <button
+                  type="button"
+                  onClick={supersedeCorrelation}
+                  disabled={librarySaving || usageLoading || usageError}
+                  className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+                >
+                  {librarySaving
+                    ? approveReplacementAfterConfirmation ? 'Approving…' : 'Superseding…'
+                    : approveReplacementAfterConfirmation ? 'Confirm and approve version' : 'Confirm supersede'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         Positive contribution values add heat to water; negative values remove heat. LSS circulation is shown only as reference and is never counted as water exchange.
       </div>
@@ -2204,7 +2412,7 @@ function ThermalTab({
             {!!correlationItems.length && (
               <div className="overflow-x-auto rounded-xl border border-stone-200">
                 <table className="w-full text-sm">
-                  <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-3 py-2">Class</th><th className="px-3 py-2">Version</th><th className="px-3 py-2">Coefficient</th><th className="px-3 py-2">Source</th><th className="px-3 py-2">Status</th><th className="px-3 py-2"></th></tr></thead>
+                  <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-3 py-2">Class</th><th className="px-3 py-2">Version</th><th className="px-3 py-2">Coefficient</th><th className="px-3 py-2">Source</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Captured uses</th><th className="px-3 py-2"></th></tr></thead>
                   <tbody className="divide-y divide-stone-100">
                     {correlationItems.map(correlation => (
                       <tr key={correlation.id}>
@@ -2213,8 +2421,20 @@ function ThermalTab({
                         <td className="px-3 py-2 font-mono">{correlation.coefficient_kg_m2_s_kpa}</td>
                         <td className="px-3 py-2 text-stone-600">{correlation.source_reference}</td>
                         <td className="px-3 py-2 capitalize">{correlation.status}</td>
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setApproveReplacementAfterConfirmation(false);
+                              setPendingSupersede(correlation);
+                            }}
+                            className="font-medium text-blue-700 hover:text-blue-900 hover:underline"
+                          >
+                            {correlation.usage_count || 0} · View usage
+                          </button>
+                        </td>
                         <td className="px-3 py-2 text-right">
-                          {correlation.status === 'approved' && <button type="button" onClick={() => supersedeCorrelation(correlation)} disabled={librarySaving} className="text-amber-700 hover:text-amber-900 disabled:opacity-50">Supersede</button>}
+                          {correlation.status === 'approved' && <button type="button" onClick={() => requestSupersedeCorrelation(correlation)} disabled={librarySaving} className="text-amber-700 hover:text-amber-900 disabled:opacity-50">Supersede</button>}
                         </td>
                       </tr>
                     ))}

@@ -976,6 +976,9 @@ ALTER TABLE design_book_thermal_calculations
   ADD COLUMN IF NOT EXISTS correlation_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_db_thermal_book ON design_book_thermal_calculations(design_book_id);
 CREATE INDEX IF NOT EXISTS idx_db_thermal_system ON design_book_thermal_calculations(system_id);
+CREATE INDEX IF NOT EXISTS idx_db_thermal_correlation_id
+  ON design_book_thermal_calculations ((correlation_snapshot->>'correlation_id'))
+  WHERE correlation_snapshot ? 'correlation_id';
 DROP TRIGGER IF EXISTS guard_released_design_book_thermal ON design_book_thermal_calculations;
 CREATE TRIGGER guard_released_design_book_thermal
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_calculations
