@@ -65,10 +65,44 @@ const document = (segments, closed = true) => ({
         (0, vitest_1.expect)(normalized).toMatchObject({
             schema_version: 1,
             units: 'mm',
-            calibration: { model_unit: 'mm', mm_per_unit: 1 },
+            calibration: { model_unit: 'mm', mm_per_unit: 1, method: 'ratio', ratio: 1 },
             sampling: { quadratic_steps: 64, freehand_step_mm: 25 },
         });
         (0, vitest_1.expect)(normalized).not.toHaveProperty('viewport');
+    });
+    (0, vitest_1.it)('preserves a numeric drawing ratio and two-point calibration metadata', () => {
+        const ratio = (0, customFootprint_1.normalizeCustomFootprint)({
+            ...document([line(point(0, 0), point(1000, 0)), line(point(1000, 0), point(0, 1000)), line(point(0, 1000), point(0, 0))]),
+            calibration: { model_unit: 'mm', mm_per_unit: 50, method: 'ratio', ratio: 50 },
+        });
+        (0, vitest_1.expect)(ratio.calibration).toMatchObject({ mm_per_unit: 50, method: 'ratio', ratio: 50 });
+        const calibrated = (0, customFootprint_1.normalizeCustomFootprint)({
+            ...document([line(point(0, 0), point(1000, 0)), line(point(1000, 0), point(0, 1000)), line(point(0, 1000), point(0, 0))]),
+            calibration: {
+                model_unit: 'mm',
+                mm_per_unit: 2.5,
+                method: 'two_point',
+                reference_distance_units: 400,
+                known_distance_mm: 1000,
+            },
+        });
+        (0, vitest_1.expect)(calibrated.calibration).toMatchObject({
+            mm_per_unit: 2.5,
+            method: 'two_point',
+            reference_distance_units: 400,
+            known_distance_mm: 1000,
+        });
+    });
+    (0, vitest_1.it)('repairs contradictory ratio scale fields and rejects incomplete two-point metadata', () => {
+        const segments = [line(point(0, 0), point(1000, 0)), line(point(1000, 0), point(0, 1000)), line(point(0, 1000), point(0, 0))];
+        (0, vitest_1.expect)((0, customFootprint_1.normalizeCustomFootprint)({
+            ...document(segments),
+            calibration: { model_unit: 'mm', method: 'ratio', ratio: 50, mm_per_unit: 25 },
+        }).calibration).toEqual({ model_unit: 'mm', method: 'ratio', ratio: 50, mm_per_unit: 50 });
+        (0, vitest_1.expect)(() => (0, customFootprint_1.normalizeCustomFootprint)({
+            ...document(segments),
+            calibration: { model_unit: 'mm', method: 'two_point', mm_per_unit: 2.5 },
+        })).toThrow(/requires a positive reference span/);
     });
     vitest_1.it.each([
         ['OPEN', document([

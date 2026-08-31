@@ -28,10 +28,19 @@ export type QuadraticSegment = {
 export type FreehandSegment = { type: 'freehand'; points: FootprintPoint[] };
 export type FootprintSegment = LineSegment | QuadraticSegment | FreehandSegment;
 
+export type FootprintCalibration = {
+  model_unit: typeof CUSTOM_FOOTPRINT_UNITS;
+  mm_per_unit: number;
+  method?: 'ratio' | 'two_point';
+  ratio?: number;
+  reference_distance_units?: number;
+  known_distance_mm?: number;
+};
+
 export type CustomFootprintDocument = {
   schema_version: number;
   units: typeof CUSTOM_FOOTPRINT_UNITS;
-  calibration: { model_unit: typeof CUSTOM_FOOTPRINT_UNITS; mm_per_unit: 1 };
+  calibration: FootprintCalibration;
   closed: boolean;
   segments: FootprintSegment[];
   sampling: {
@@ -136,6 +145,11 @@ function invalid(code: FootprintValidationCode, message: string, segmentCount = 
   };
 }
 
+function positiveNumber(value: any, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
 export function normalizeCustomFootprint(input: any): CustomFootprintDocument {
   if (!input || typeof input !== 'object') {
     throw new CustomFootprintValidationError(invalid('INVALID_DOCUMENT', 'A footprint document is required.'));
@@ -182,10 +196,50 @@ export function normalizeCustomFootprint(input: any): CustomFootprintDocument {
   }
   const quadraticSteps = Math.max(8, Math.min(64, Math.round(Number(input.sampling?.quadratic_steps) || DEFAULT_QUADRATIC_SAMPLES)));
   const freehandStep = Math.max(1, Math.min(1000, Number(input.sampling?.freehand_step_mm) || DEFAULT_FREEHAND_STEP_MM));
+  const rawCalibration = input.calibration || {};
+  const method = rawCalibration.method === 'two_point' ? 'two_point' : 'ratio';
+  let calibration: FootprintCalibration;
+  if (method === 'two_point') {
+    const referenceDistanceUnits = positiveNumber(rawCalibration.reference_distance_units, 0);
+    const knownDistanceMm = positiveNumber(rawCalibration.known_distance_mm, 0);
+    if (!(referenceDistanceUnits > 0) || !(knownDistanceMm > 0)) {
+      throw new CustomFootprintValidationError(invalid(
+        'INVALID_DOCUMENT',
+        'Two-point calibration requires a positive reference span and known distance.',
+        rawSegments.length,
+      ));
+    }
+    const mmPerUnit = knownDistanceMm / referenceDistanceUnits;
+    if (!(mmPerUnit >= 0.000001 && mmPerUnit <= 1_000_000)) {
+      throw new CustomFootprintValidationError(invalid(
+        'INVALID_DOCUMENT',
+        'The calculated drawing scale is outside the supported range.',
+        rawSegments.length,
+      ));
+    }
+    calibration = {
+      model_unit: CUSTOM_FOOTPRINT_UNITS,
+      mm_per_unit: mmPerUnit,
+      method,
+      reference_distance_units: referenceDistanceUnits,
+      known_distance_mm: knownDistanceMm,
+    };
+  } else {
+    const ratio = Math.min(1_000_000, Math.max(
+      0.000001,
+      positiveNumber(rawCalibration.ratio, positiveNumber(rawCalibration.mm_per_unit, 1)),
+    ));
+    calibration = {
+      model_unit: CUSTOM_FOOTPRINT_UNITS,
+      mm_per_unit: ratio,
+      method,
+      ratio,
+    };
+  }
   return {
     schema_version: CUSTOM_FOOTPRINT_SCHEMA_VERSION,
     units: CUSTOM_FOOTPRINT_UNITS,
-    calibration: { model_unit: CUSTOM_FOOTPRINT_UNITS, mm_per_unit: 1 },
+    calibration,
     closed: input.closed === true,
     segments,
     sampling: { quadratic_steps: quadraticSteps, freehand_step_mm: freehandStep },

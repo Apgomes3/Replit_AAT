@@ -73,10 +73,47 @@ describe('Custom tank footprint geometry', () => {
     expect(normalized).toMatchObject({
       schema_version: 1,
       units: 'mm',
-      calibration: { model_unit: 'mm', mm_per_unit: 1 },
+      calibration: { model_unit: 'mm', mm_per_unit: 1, method: 'ratio', ratio: 1 },
       sampling: { quadratic_steps: 64, freehand_step_mm: 25 },
     });
     expect(normalized).not.toHaveProperty('viewport');
+  });
+
+  it('preserves a numeric drawing ratio and two-point calibration metadata', () => {
+    const ratio = normalizeCustomFootprint({
+      ...document([line(point(0, 0), point(1000, 0)), line(point(1000, 0), point(0, 1000)), line(point(0, 1000), point(0, 0))]),
+      calibration: { model_unit: 'mm', mm_per_unit: 50, method: 'ratio', ratio: 50 },
+    });
+    expect(ratio.calibration).toMatchObject({ mm_per_unit: 50, method: 'ratio', ratio: 50 });
+
+    const calibrated = normalizeCustomFootprint({
+      ...document([line(point(0, 0), point(1000, 0)), line(point(1000, 0), point(0, 1000)), line(point(0, 1000), point(0, 0))]),
+      calibration: {
+        model_unit: 'mm',
+        mm_per_unit: 2.5,
+        method: 'two_point',
+        reference_distance_units: 400,
+        known_distance_mm: 1000,
+      },
+    });
+    expect(calibrated.calibration).toMatchObject({
+      mm_per_unit: 2.5,
+      method: 'two_point',
+      reference_distance_units: 400,
+      known_distance_mm: 1000,
+    });
+  });
+
+  it('repairs contradictory ratio scale fields and rejects incomplete two-point metadata', () => {
+    const segments = [line(point(0, 0), point(1000, 0)), line(point(1000, 0), point(0, 1000)), line(point(0, 1000), point(0, 0))];
+    expect(normalizeCustomFootprint({
+      ...document(segments),
+      calibration: { model_unit: 'mm', method: 'ratio', ratio: 50, mm_per_unit: 25 },
+    }).calibration).toEqual({ model_unit: 'mm', method: 'ratio', ratio: 50, mm_per_unit: 50 });
+    expect(() => normalizeCustomFootprint({
+      ...document(segments),
+      calibration: { model_unit: 'mm', method: 'two_point', mm_per_unit: 2.5 },
+    })).toThrow(/requires a positive reference span/);
   });
 
   it.each([

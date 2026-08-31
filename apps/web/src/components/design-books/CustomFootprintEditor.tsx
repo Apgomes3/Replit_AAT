@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, GitBranch, MousePointer2, PenLine, Redo2, RotateCcw, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, Crosshair, GitBranch, MousePointer2, PenLine, Redo2, Ruler, RotateCcw, Undo2, X } from 'lucide-react';
 
 export type FootprintPoint = { x: number; y: number };
 export type FootprintSegment =
@@ -9,13 +9,21 @@ export type FootprintSegment =
 export type CustomFootprintDocument = {
   schema_version: 1;
   units: 'mm';
-  calibration: { model_unit: 'mm'; mm_per_unit: 1 };
+  calibration: {
+    model_unit: 'mm';
+    mm_per_unit: number;
+    method?: 'ratio' | 'two_point';
+    ratio?: number;
+    reference_distance_units?: number;
+    known_distance_mm?: number;
+  };
   closed: boolean;
   segments: FootprintSegment[];
   sampling: { quadratic_steps: number; freehand_step_mm: number };
 };
 
 const defaultSampling = { quadratic_steps: 24, freehand_step_mm: 25 };
+const maxAbsCoordinateMm = 10_000_000;
 const blankDocument = (): CustomFootprintDocument => ({
   schema_version: 1,
   units: 'mm',
@@ -104,7 +112,15 @@ function validateEditorDocument(document: CustomFootprintDocument) {
   if (document.segments.length < 3) return { valid: false, label: 'Too few segments', message: 'A footprint needs at least three connected segments.' };
   for (let index = 0; index < document.segments.length; index += 1) {
     const segment = document.segments[index];
-    const points = segment.type === 'freehand' ? segment.points : [segment.start, segment.end];
+    const points = segment.type === 'freehand'
+      ? segment.points
+      : segment.type === 'quadratic'
+        ? [segment.start, segment.control, segment.end]
+        : [segment.start, segment.end];
+    if (points.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y)
+      || Math.abs(point.x) > maxAbsCoordinateMm || Math.abs(point.y) > maxAbsCoordinateMm)) {
+      return { valid: false, label: 'Coordinate out of range', message: 'Keep every point within the supported model-space range.' };
+    }
     if (points.some((point, pointIndex) => pointIndex > 0 && distance(points[pointIndex - 1], point) < 0.01)) {
       return { valid: false, label: 'Zero-length segment', message: 'Move or remove coincident points before saving.' };
     }
@@ -152,16 +168,95 @@ function clone<T>(value: T): T {
 }
 function documentFrom(value?: any | null): CustomFootprintDocument {
   if (!value?.segments) return blankDocument();
+  const mmPerUnit = Number(value.calibration?.mm_per_unit);
+  const normalizedMmPerUnit = Number.isFinite(mmPerUnit) && mmPerUnit > 0 ? mmPerUnit : 1;
+  const method = value.calibration?.method === 'two_point' ? 'two_point' : 'ratio';
   return {
     schema_version: 1,
     units: 'mm',
-    calibration: { model_unit: 'mm', mm_per_unit: 1 },
+    calibration: {
+      model_unit: 'mm',
+      mm_per_unit: normalizedMmPerUnit,
+      method,
+      ...(method === 'ratio' ? { ratio: Number(value.calibration?.ratio) > 0 ? Number(value.calibration.ratio) : normalizedMmPerUnit } : {}),
+      ...(method === 'two_point' && Number(value.calibration?.reference_distance_units) > 0 && Number(value.calibration?.known_distance_mm) > 0
+        ? {
+            reference_distance_units: Number(value.calibration.reference_distance_units),
+            known_distance_mm: Number(value.calibration.known_distance_mm),
+          }
+        : {}),
+    },
     closed: value.closed === true,
     segments: clone(value.segments),
     sampling: {
       quadratic_steps: value.sampling?.quadratic_steps || defaultSampling.quadratic_steps,
       freehand_step_mm: value.sampling?.freehand_step_mm || defaultSampling.freehand_step_mm,
     },
+  };
+}
+function mapPoint(point: FootprintPoint, factor: number): FootprintPoint {
+  return { x: point.x * factor, y: point.y * factor };
+}
+function mapDocumentPoints(document: CustomFootprintDocument, factor: number): CustomFootprintDocument {
+  return {
+    ...document,
+    segments: document.segments.map(segment => {
+      if (segment.type === 'freehand') return { ...segment, points: segment.points.map(point => mapPoint(point, factor)) };
+      if (segment.type === 'quadratic') return {
+        ...segment,
+        start: mapPoint(segment.start, factor),
+        control: mapPoint(segment.control, factor),
+        end: mapPoint(segment.end, factor),
+      };
+      return { ...segment, start: mapPoint(segment.start, factor), end: mapPoint(segment.end, factor) };
+    }),
+  };
+}
+function segmentSamples(segment: FootprintSegment, steps = 24): FootprintPoint[] {
+  if (segment.type === 'line') return [segment.start, segment.end];
+  if (segment.type === 'freehand') return segment.points;
+  return Array.from({ length: steps + 1 }, (_, index) => {
+    const t = index / steps;
+    return lerp(lerp(segment.start, segment.control, t), lerp(segment.control, segment.end, t), t);
+  });
+}
+function segmentLength(segment: FootprintSegment, steps = 24) {
+  const points = segmentSamples(segment, steps);
+  return points.slice(1).reduce((total, point, index) => total + distance(points[index], point), 0);
+}
+function curveMetrics(segment: Extract<FootprintSegment, { type: 'quadratic' }>) {
+  const middle = lerp(segment.start, segment.end, 0.5);
+  const vector = { x: segment.control.x - middle.x, y: segment.control.y - middle.y };
+  const chord = { x: segment.end.x - segment.start.x, y: segment.end.y - segment.start.y };
+  const chordLength = Math.max(distance(segment.start, segment.end), 0.0001);
+  const tangent = { x: chord.x / chordLength, y: chord.y / chordLength };
+  const normal = { x: -tangent.y, y: tangent.x };
+  const tangentOffset = vector.x * tangent.x + vector.y * tangent.y;
+  const curvature = vector.x * normal.x + vector.y * normal.y;
+  return {
+    middle,
+    tangent,
+    normal,
+    tangentOffset,
+    curvature,
+    angle: distance(middle, segment.control) < 0.0001
+      ? 90
+      : Math.atan2(curvature, tangentOffset) * 180 / Math.PI,
+  };
+}
+function controlFromMetrics(
+  segment: Extract<FootprintSegment, { type: 'quadratic' }>,
+  curvature: number,
+  angle: number,
+) {
+  const metrics = curveMetrics(segment);
+  const radians = angle * Math.PI / 180;
+  const tangentOffset = Math.abs(curvature) < 0.0001
+    ? 0
+    : curvature / Math.tan(radians);
+  return {
+    x: metrics.middle.x + metrics.tangent.x * tangentOffset + metrics.normal.x * curvature,
+    y: metrics.middle.y + metrics.tangent.y * tangentOffset + metrics.normal.y * curvature,
   };
 }
 function viewBox(document: CustomFootprintDocument) {
@@ -209,16 +304,28 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const [document, setDocument] = useState<CustomFootprintDocument>(() => documentFrom(initialValue));
   const initialDocument = useRef(documentFrom(initialValue));
   const [mode, setMode] = useState<'select' | 'line' | 'curve' | 'freehand'>('line');
-  const [pendingStart, setPendingStart] = useState<FootprintPoint | null>(null);
+  const [pendingStart, setPendingStart] = useState<FootprintPoint | null>(() => {
+    const last = document.segments[document.segments.length - 1];
+    return document.closed || !last ? null : segmentEnd(last);
+  });
   const [activeFreehand, setActiveFreehand] = useState<FootprintPoint[] | null>(null);
   const [drag, setDrag] = useState<{ kind: 'vertex' | 'control'; segment: number } | null>(null);
   const [past, setPast] = useState<CustomFootprintDocument[]>([]);
   const [future, setFuture] = useState<CustomFootprintDocument[]>([]);
   const [resetConfirm, setResetConfirm] = useState(false);
   const [keyboardPoint, setKeyboardPoint] = useState<FootprintPoint>({ x: 300, y: 200 });
+  const [snapTarget, setSnapTarget] = useState(false);
+  const [calibrationMode, setCalibrationMode] = useState(false);
+  const [calibrationPoints, setCalibrationPoints] = useState<FootprintPoint[]>([]);
+  const [calibrationRatio, setCalibrationRatio] = useState(() => String(documentFrom(initialValue).calibration.ratio || documentFrom(initialValue).calibration.mm_per_unit));
+  const [knownDistance, setKnownDistance] = useState('');
+  const [calibrationError, setCalibrationError] = useState('');
+  const [segmentEditNotice, setSegmentEditNotice] = useState('');
   const svgRef = useRef<SVGSVGElement>(null);
   const dragOrigin = useRef<CustomFootprintDocument | null>(null);
-  const box = useMemo(() => viewBox(document), [document]);
+  const mmPerUnit = Math.max(0.000001, document.calibration.mm_per_unit || 1);
+  const displayDocument = useMemo(() => mapDocumentPoints(document, 1 / mmPerUnit), [document, mmPerUnit]);
+  const box = useMemo(() => viewBox(displayDocument), [displayDocument]);
   const measurement = useMemo(() => measure(document), [document]);
   const validation = useMemo(() => validateEditorDocument(document), [document]);
   const sampled = measurement.points;
@@ -227,6 +334,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const last = document.segments[document.segments.length - 1];
   const lastPoint = last ? (last.type === 'freehand' ? last.points[last.points.length - 1] : last.end) : null;
   const canClose = !!firstPoint && !!lastPoint && document.segments.length >= 2 && !document.closed;
+  const displayFirstPoint = firstPoint ? mapPoint(firstPoint, 1 / mmPerUnit) : null;
+  const displayLastPoint = lastPoint ? mapPoint(lastPoint, 1 / mmPerUnit) : null;
+  const snapTolerance = Math.max(18, box.width / 55);
 
   const commit = (next: CustomFootprintDocument) => {
     setPast(previous => [...previous.slice(-49), clone(document)]);
@@ -239,6 +349,46 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
       x: box.x + ((event.clientX - rect.left) / rect.width) * box.width,
       y: box.y + ((event.clientY - rect.top) / rect.height) * box.height,
     };
+  };
+  const modelPointFromDisplay = (point: FootprintPoint) => mapPoint(point, mmPerUnit);
+  const setCalibration = (
+    nextMmPerUnit: number,
+    metadata: Omit<CustomFootprintDocument['calibration'], 'model_unit' | 'mm_per_unit'>,
+  ) => {
+    if (!(nextMmPerUnit > 0) || !Number.isFinite(nextMmPerUnit)) {
+      setCalibrationError('Enter a positive real-world distance or scale ratio.');
+      return;
+    }
+    const factor = nextMmPerUnit / mmPerUnit;
+    commit({
+      ...mapDocumentPoints(document, factor),
+      calibration: { model_unit: 'mm', mm_per_unit: nextMmPerUnit, ...metadata },
+    });
+    setCalibrationError('');
+    setCalibrationPoints([]);
+    setCalibrationMode(false);
+  };
+  const applyNumericScale = () => {
+    const ratio = Number(calibrationRatio);
+    if (!(ratio > 0) || !Number.isFinite(ratio)) {
+      setCalibrationError('Scale must be a positive number, for example 50 for 1:50.');
+      return;
+    }
+    setCalibration(ratio, { method: 'ratio', ratio });
+  };
+  const applyTwoPointCalibration = () => {
+    const distanceUnits = calibrationPoints.length === 2 ? distance(calibrationPoints[0], calibrationPoints[1]) : 0;
+    const realDistance = Number(knownDistance);
+    if (!(distanceUnits > 0) || !(realDistance > 0) || !Number.isFinite(realDistance)) {
+      setCalibrationError('Select two distinct points and enter their known distance in millimetres.');
+      return;
+    }
+    setCalibration(realDistance / distanceUnits, {
+      method: 'two_point',
+      reference_distance_units: distanceUnits,
+      known_distance_mm: realDistance,
+    });
+    setCalibrationRatio(String(realDistance / distanceUnits));
   };
   const updateVertex = (nextPoint: FootprintPoint, segmentIndex: number) => {
     const segments = document.segments.map((segment, index) => {
@@ -264,6 +414,53 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     ...document,
     segments: document.segments.map((segment, index) => index === segmentIndex && segment.type === 'quadratic' ? { ...segment, control: nextPoint } : segment),
   });
+  const replaceSegmentStart = (segment: FootprintSegment, point: FootprintPoint): FootprintSegment => {
+    if (segment.type === 'freehand') return { ...segment, points: [point, ...segment.points.slice(1)] };
+    return { ...segment, start: point };
+  };
+  const replaceSegmentEnd = (segment: FootprintSegment, point: FootprintPoint): FootprintSegment => {
+    if (segment.type === 'freehand') return { ...segment, points: [...segment.points.slice(0, -1), point] };
+    return { ...segment, end: point };
+  };
+  const resizeSegment = (segmentIndex: number, targetLength: number) => {
+    const segment = document.segments[segmentIndex];
+    if (!segment || !(targetLength > 0) || !Number.isFinite(targetLength)) return null;
+    const currentLength = segmentLength(segment, document.sampling.quadratic_steps);
+    if (!(currentLength > 0.01)) return null;
+    const preserveEnd = document.closed && segmentIndex === document.segments.length - 1;
+    const anchor = preserveEnd ? segmentEnd(segment) : segmentStart(segment);
+    const factor = targetLength / currentLength;
+    const scale = (point: FootprintPoint) => ({
+      x: anchor.x + (point.x - anchor.x) * factor,
+      y: anchor.y + (point.y - anchor.y) * factor,
+    });
+    const resized: FootprintSegment = segment.type === 'freehand'
+      ? { ...segment, points: segment.points.map(scale) }
+      : segment.type === 'quadratic'
+        ? { ...segment, start: scale(segment.start), control: scale(segment.control), end: scale(segment.end) }
+        : { ...segment, start: scale(segment.start), end: scale(segment.end) };
+    const segments = document.segments.map((item, index) => index === segmentIndex ? resized : item);
+    if (preserveEnd && segmentIndex > 0) {
+      segments[segmentIndex - 1] = replaceSegmentEnd(segments[segmentIndex - 1], segmentStart(resized));
+      if (document.closed) segments[0] = replaceSegmentStart(segments[0], segmentEnd(resized));
+    } else if (segmentIndex < segments.length - 1) {
+      segments[segmentIndex + 1] = replaceSegmentStart(segments[segmentIndex + 1], segmentEnd(resized));
+    }
+    return { ...document, segments };
+  };
+  const editSegmentLength = (segmentIndex: number, value: string) => {
+    const target = Number(value);
+    const next = resizeSegment(segmentIndex, target);
+    if (!next) {
+      setSegmentEditNotice(`Segment ${segmentIndex + 1} needs a positive numeric length.`);
+      return;
+    }
+    commit(next);
+    const nextValidation = validateEditorDocument(next);
+    setSegmentEditNotice(nextValidation.valid
+      ? `Segment ${segmentIndex + 1} updated and connections preserved.`
+      : `Segment ${segmentIndex + 1} updated, but validation needs attention: ${nextValidation.message}`);
+  };
   const addPoint = (point: FootprintPoint) => {
     if (document.closed || mode === 'select') return;
     if (mode === 'freehand') setActiveFreehand(lastPoint ? [lastPoint, point] : [point]);
@@ -278,21 +475,40 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     }
   };
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    const displayPoint = pointFromEvent(event);
+    if (calibrationMode) {
+      event.preventDefault();
+      setCalibrationPoints(points => points.length >= 2 ? [displayPoint] : [...points, displayPoint]);
+      setCalibrationError('');
+      return;
+    }
     if (document.closed || mode === 'select') return;
+    if (pendingStart && displayFirstPoint && canClose && distance(displayPoint, displayFirstPoint) <= snapTolerance) {
+      event.preventDefault();
+      setSnapTarget(true);
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
-    addPoint(pointFromEvent(event));
+    addPoint(modelPointFromDisplay(displayPoint));
   };
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    const point = pointFromEvent(event);
-    if (activeFreehand) setActiveFreehand(points => points ? [...points, point] : points);
-    if (drag) setDocument(drag.kind === 'control' ? updateControl(point, drag.segment) : updateVertex(point, drag.segment));
+    const displayPoint = pointFromEvent(event);
+    if (pendingStart && displayFirstPoint && canClose) setSnapTarget(distance(displayPoint, displayFirstPoint) <= snapTolerance);
+    if (activeFreehand) setActiveFreehand(points => points ? [...points, modelPointFromDisplay(displayPoint)] : points);
+    if (drag) {
+      const point = modelPointFromDisplay(displayPoint);
+      setDocument(drag.kind === 'control' ? updateControl(point, drag.segment) : updateVertex(point, drag.segment));
+    }
   };
   const onPointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (snapTarget && !activeFreehand && !drag) close();
     if (activeFreehand) {
       if (activeFreehand.length > 1) commit({ ...document, segments: [...document.segments, { type: 'freehand', points: activeFreehand }] });
       setActiveFreehand(null);
       setPendingStart(null);
     }
+    setSnapTarget(false);
     if (drag) {
       if (dragOrigin.current) {
         setPast(previous => [...previous.slice(-49), dragOrigin.current!]);
@@ -301,7 +517,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
       dragOrigin.current = null;
       setDrag(null);
     }
-    if (svgRef.current?.hasPointerCapture(event.pointerId)) svgRef.current.releasePointerCapture(event.pointerId);
+    if (svgRef.current?.hasPointerCapture?.(event.pointerId)) svgRef.current.releasePointerCapture?.(event.pointerId);
   };
   const startDrag = (event: React.PointerEvent<SVGCircleElement>, kind: 'vertex' | 'control', segment: number) => {
     event.stopPropagation();
@@ -317,6 +533,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
       : [...document.segments, { type: 'line' as const, start: lastPoint, end: firstPoint }];
     commit({ ...document, segments, closed: true });
     setPendingStart(null);
+    setSnapTarget(false);
   };
   const reset = () => {
     if (!resetConfirm) { setResetConfirm(true); return; }
@@ -382,10 +599,11 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       if (mode === 'freehand') {
-        const from = lastPoint || keyboardPoint;
-        commit({ ...document, segments: [...document.segments, { type: 'freehand', points: [from, keyboardPoint] }] });
+        const keyboardModelPoint = modelPointFromDisplay(keyboardPoint);
+        const from = lastPoint || keyboardModelPoint;
+        commit({ ...document, segments: [...document.segments, { type: 'freehand', points: [from, keyboardModelPoint] }] });
       } else {
-        addPoint(keyboardPoint);
+        addPoint(modelPointFromDisplay(keyboardPoint));
       }
     }
   };
@@ -405,6 +623,33 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     event.preventDefault();
     const next = { x: current.x + delta[event.key].x, y: current.y + delta[event.key].y };
     commit(kind === 'control' ? updateControl(next, index) : updateVertex(next, index));
+  };
+  const editCurve = (index: number, field: 'curvature' | 'angle', value: string) => {
+    const segment = document.segments[index];
+    if (segment?.type !== 'quadratic') return;
+    const metrics = curveMetrics(segment);
+    const nextValue = Number(value);
+    if (!Number.isFinite(nextValue)) return;
+    if (field === 'angle' && (Math.abs(Math.sin(nextValue * Math.PI / 180)) < 0.1)) {
+      setSegmentEditNotice(`Curve ${index + 1} angle must stay away from 0° and 180° so its curvature is defined.`);
+      return;
+    }
+    const nextControl = controlFromMetrics(
+      segment,
+      field === 'curvature' ? nextValue : metrics.curvature,
+      field === 'angle' ? nextValue : metrics.angle,
+    );
+    if (!Number.isFinite(nextControl.x) || !Number.isFinite(nextControl.y)
+      || Math.abs(nextControl.x) > maxAbsCoordinateMm || Math.abs(nextControl.y) > maxAbsCoordinateMm) {
+      setSegmentEditNotice(`Curve ${index + 1} would place its handle outside the supported model-space range. Use a steeper angle or smaller curvature.`);
+      return;
+    }
+    const next = updateControl(nextControl, index);
+    commit(next);
+    const nextValidation = validateEditorDocument(next);
+    setSegmentEditNotice(nextValidation.valid
+      ? `Curve ${index + 1} updated and connected.`
+      : `Curve ${index + 1} updated, but validation needs attention: ${nextValidation.message}`);
   };
 
   return (
@@ -436,30 +681,75 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
               </span>
             </div>
             <div className="relative overflow-hidden rounded-xl border border-sky-200 bg-[linear-gradient( to right,rgba(14,116,144,.08)_1px,transparent_1px),linear-gradient(to bottom,rgba(14,116,144,.08)_1px,transparent_1px)] bg-[size:32px_32px]">
-              <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={onCanvasKeyDown} tabIndex={0} aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
-                <path d={pathFor(document)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={Math.max(3, box.width / 180)} strokeLinejoin="round" strokeLinecap="round" />
-                {activeFreehand && <polyline points={activeFreehand.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={Math.max(3, box.width / 180)} />}
-                {document.segments.map((segment, index) => {
-                  const start = segment.type === 'freehand' ? segment.points[0] : segment.start;
-                  const end = segment.type === 'freehand' ? segment.points[segment.points.length - 1] : segment.end;
+              <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
+                <path d={pathFor(displayDocument)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={Math.max(3, box.width / 180)} strokeLinejoin="round" strokeLinecap="round" />
+                {activeFreehand && <polyline points={activeFreehand.map(point => mapPoint(point, 1 / mmPerUnit)).map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={Math.max(3, box.width / 180)} />}
+                {displayDocument.segments.map((segment, index) => {
+                  const start = segmentStart(segment);
+                  const end = segmentEnd(segment);
                   return <g key={`${segment.type}-${index}`}>
-                    {mode === 'select' && <><circle cx={start.x} cy={start.y} r={Math.max(9, box.width / 70)} fill="#fff" stroke="#0369a1" strokeWidth="3" onPointerDown={event => startDrag(event, 'vertex', index)} /><circle cx={end.x} cy={end.y} r={Math.max(7, box.width / 85)} fill="#fff" stroke="#0e7490" strokeWidth="2" onPointerDown={event => startDrag(event, 'vertex', index + 1)} /></>}
-                    {mode === 'select' && segment.type === 'quadratic' && <><line x1={segment.start.x} y1={segment.start.y} x2={segment.control.x} y2={segment.control.y} stroke="#38bdf8" strokeDasharray="5 4" /><line x1={segment.control.x} y1={segment.control.y} x2={segment.end.x} y2={segment.end.y} stroke="#38bdf8" strokeDasharray="5 4" /><circle cx={segment.control.x} cy={segment.control.y} r={Math.max(8, box.width / 78)} fill="#fef08a" stroke="#a16207" strokeWidth="3" onPointerDown={event => startDrag(event, 'control', index)} /></>}
+                    {mode === 'select' && !calibrationMode && <>
+                      <circle cx={start.x} cy={start.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index)} />
+                      <circle cx={start.x} cy={start.y} r={Math.max(8, box.width / 72)} fill="#fff" stroke="#0369a1" strokeWidth="3" pointerEvents="none" />
+                      <circle cx={end.x} cy={end.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index + 1)} />
+                      <circle cx={end.x} cy={end.y} r={Math.max(7, box.width / 82)} fill="#fff" stroke="#0e7490" strokeWidth="2" pointerEvents="none" />
+                    </>}
+                    {mode === 'select' && !calibrationMode && segment.type === 'quadratic' && <>
+                      <line x1={segment.start.x} y1={segment.start.y} x2={segment.control.x} y2={segment.control.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
+                      <line x1={segment.control.x} y1={segment.control.y} x2={segment.end.x} y2={segment.end.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
+                      <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(16, box.width / 32)} fill="transparent" onPointerDown={event => startDrag(event, 'control', index)} aria-label={`Drag curve handle ${index + 1}`} />
+                      <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(9, box.width / 68)} fill="#fef08a" stroke="#a16207" strokeWidth="3" pointerEvents="none" />
+                    </>}
                   </g>;
                 })}
-                {pendingStart && <circle cx={pendingStart.x} cy={pendingStart.y} r={Math.max(7, box.width / 85)} fill="#fef08a" stroke="#a16207" strokeWidth="3" />}
+                {pendingStart && (() => {
+                  const point = mapPoint(pendingStart, 1 / mmPerUnit);
+                  return <circle cx={point.x} cy={point.y} r={Math.max(7, box.width / 85)} fill="#fef08a" stroke="#a16207" strokeWidth="3" />;
+                })()}
+                {displayFirstPoint && canClose && <>
+                  <circle cx={displayFirstPoint.x} cy={displayFirstPoint.y} r={snapTarget ? Math.max(22, box.width / 28) : Math.max(16, box.width / 38)} fill={snapTarget ? '#bbf7d0' : '#e0f2fe'} fillOpacity=".8" stroke={snapTarget ? '#15803d' : '#0284c7'} strokeWidth="3" strokeDasharray={snapTarget ? undefined : '5 4'} pointerEvents="none" />
+                  {snapTarget && <text x={displayFirstPoint.x} y={displayFirstPoint.y - Math.max(26, box.width / 25)} textAnchor="middle" fill="#166534" fontSize={Math.max(13, box.width / 55)} fontWeight="700" pointerEvents="none">Release to close</text>}
+                </>}
+                {calibrationPoints.map((point, index) => <g key={`calibration-${index}`} pointerEvents="none">
+                  <circle cx={point.x} cy={point.y} r={Math.max(10, box.width / 60)} fill="#fb923c" stroke="#fff" strokeWidth="3" />
+                  <text x={point.x} y={point.y - Math.max(14, box.width / 72)} textAnchor="middle" fill="#9a3412" fontSize={Math.max(12, box.width / 65)} fontWeight="700">{index + 1}</text>
+                </g>)}
                 <circle cx={keyboardPoint.x} cy={keyboardPoint.y} r={Math.max(5, box.width / 110)} fill="#f97316" stroke="#fff" strokeWidth="2" pointerEvents="none" />
               </svg>
-              {!document.segments.length && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-xs text-stone-500">Choose Straight, Curve, or Freehand, then draw connected segments here.</div>}
+              {!document.segments.length && !calibrationMode && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-xs text-stone-500">Choose Straight, Curve, or Freehand, then draw connected segments here.</div>}
+              {calibrationMode && <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-orange-50/95 px-3 py-2 text-xs font-semibold text-orange-800 shadow-sm">{calibrationPoints.length === 0 ? 'Select calibration point 1' : calibrationPoints.length === 1 ? 'Select calibration point 2' : 'Two points selected — enter the known distance'}</div>}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" onClick={close} disabled={!canClose} className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-40"><Check className="h-3.5 w-3.5" />Close outline</button>
-              {mode !== 'select' && <span className="self-center text-xs text-stone-500">{pendingStart ? 'Click the next point to add a segment.' : 'Click or drag to start the next segment.'}</span>}
-              {mode === 'select' && <span className="self-center text-xs text-stone-500">Drag blue vertices or yellow curve handles to edit.</span>}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={close} disabled={!canClose} className="inline-flex min-h-11 min-w-44 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-40" title={canClose ? 'Connect the last point exactly to the first point' : 'Draw at least two connected segments first'}><Check className="h-4 w-4" />Close outline</button>
+              <span className="self-center text-xs text-stone-500">
+                {document.closed ? 'Outline closed. Use Select and edit to refine it.' : canClose ? 'Click near the highlighted start point to snap closed, or use Close outline.' : mode === 'select' ? 'Drag blue vertices or yellow curve handles to edit.' : pendingStart ? 'Click the next point to add a segment.' : 'Click or drag to start the next segment.'}
+              </span>
             </div>
             <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Keyboard: focus the drawing surface, move the orange cursor with Arrow keys, press Enter to add, C to close, and Ctrl/Cmd+Z or Y to undo/redo.</p>
           </div>
           <aside className="space-y-3">
+            <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-sky-800"><Ruler className="h-4 w-4" />Drawing scale</div>
+              <div className="mt-2 rounded-lg bg-white px-3 py-2 text-sm font-bold text-sky-800" aria-label="Active drawing scale">Active: 1 : {Number(mmPerUnit.toFixed(6))} <span className="text-xs font-normal text-stone-500">({Number(mmPerUnit.toFixed(6))} mm per drawing unit)</span></div>
+              <label className="mt-3 block text-xs font-medium text-stone-600" htmlFor="footprint-scale-ratio">Numeric scale ratio</label>
+              <div className="mt-1 flex gap-2">
+                <span className="self-center text-sm font-semibold text-stone-500">1 :</span>
+                <input id="footprint-scale-ratio" type="number" min="0.000001" step="any" value={calibrationRatio} onChange={event => setCalibrationRatio(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-stone-200 px-2 py-1.5 text-sm" />
+                <button type="button" onClick={applyNumericScale} className="rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white">Apply</button>
+              </div>
+              <button type="button" aria-pressed={calibrationMode} onClick={() => { setCalibrationMode(value => !value); setCalibrationPoints([]); setCalibrationError(''); }} className={`mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${calibrationMode ? 'border-orange-400 bg-orange-50 text-orange-800' : 'border-stone-200 bg-white text-stone-700'}`}><Crosshair className="h-4 w-4" />{calibrationMode ? 'Stop selecting points' : 'Calibrate from two points'}</button>
+              {calibrationPoints.length === 2 && (
+                <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-2">
+                  <label className="block text-xs font-medium text-orange-900" htmlFor="known-calibration-distance">Known distance (mm)</label>
+                  <div className="mt-1 flex gap-2">
+                    <input id="known-calibration-distance" type="number" min="0.01" step="any" value={knownDistance} onChange={event => setKnownDistance(event.target.value)} className="min-w-0 flex-1 rounded-md border border-orange-200 px-2 py-1.5 text-sm" />
+                    <button type="button" onClick={applyTwoPointCalibration} className="rounded-md bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white">Calibrate</button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-orange-800">Selected span: {distance(calibrationPoints[0], calibrationPoints[1]).toFixed(2)} drawing units.</p>
+                </div>
+              )}
+              {calibrationError && <p className="mt-2 text-xs font-medium text-red-700" role="alert">{calibrationError}</p>}
+            </div>
             <div className={`rounded-xl border p-4 ${validation.valid ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
               <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Validation</div>
               <div className={`mt-1 text-sm font-bold ${validation.valid ? 'text-emerald-700' : 'text-amber-800'}`}>{validation.label}</div>
@@ -473,13 +763,22 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
             </div>
             {document.segments.length > 0 && (
               <div className="rounded-xl border border-stone-200 bg-white p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Keyboard geometry editing</div>
-                <p className="mt-1 text-xs text-stone-500">Focus a point and use Arrow keys to move it by 25 mm.</p>
-                <div className="mt-2 max-h-36 space-y-1 overflow-y-auto">
+                <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Segments & dimensions</div>
+                <p className="mt-1 text-xs text-stone-500">Edit a real-world length, or focus a point and use Arrow keys to move it by 25 mm.</p>
+                {segmentEditNotice && <div className={`mt-2 flex gap-1.5 rounded-md px-2 py-1.5 text-xs ${validation.valid ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`} role="status">{!validation.valid && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}{segmentEditNotice}</div>}
+                <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
                   {document.segments.map((segment, index) => {
                     const vertex = segmentStart(segment);
+                    const length = segmentLength(segment, document.sampling.quadratic_steps);
+                    const metrics = segment.type === 'quadratic' ? curveMetrics(segment) : null;
                     return (
-                      <div key={`edit-point-${index}`}>
+                      <div key={`edit-point-${index}`} className="rounded-lg border border-stone-200 p-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-stone-700">Segment {index + 1} · {segment.type}</span>
+                          <span className="font-mono text-xs text-stone-500">{length.toFixed(1)} mm</span>
+                        </div>
+                        <label className="mt-1.5 block text-[11px] font-medium text-stone-500" htmlFor={`segment-length-${index}`}>Real-world length (mm)</label>
+                        <input id={`segment-length-${index}`} aria-label={`Segment ${index + 1} real-world length in millimetres`} type="number" min="0.01" step="0.1" defaultValue={length.toFixed(1)} key={`${index}-${length.toFixed(3)}`} onBlur={event => editSegmentLength(index, event.target.value)} className="mt-1 w-full rounded-md border border-stone-200 px-2 py-1 font-mono text-xs focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" />
                         <button
                           type="button"
                           onKeyDown={event => nudgeGeometry(event, 'vertex', index, vertex)}
@@ -488,23 +787,20 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                         >
                           Vertex {index + 1}: {vertex.x.toFixed(1)}, {vertex.y.toFixed(1)} mm
                         </button>
-                        {segment.type === 'quadratic' && (
-                          <button
-                            type="button"
-                            onKeyDown={event => nudgeGeometry(event, 'control', index, segment.control)}
-                            className="mt-1 w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-left font-mono text-xs text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-300"
-                            aria-label={`Curve handle ${index + 1}, ${segment.control.x.toFixed(1)} millimetres x, ${segment.control.y.toFixed(1)} millimetres y`}
-                          >
-                            Curve handle {index + 1}: {segment.control.x.toFixed(1)}, {segment.control.y.toFixed(1)} mm
-                          </button>
-                        )}
+                        {segment.type === 'quadratic' && metrics && <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2">
+                          <button type="button" onKeyDown={event => nudgeGeometry(event, 'control', index, segment.control)} className="w-full rounded-md px-1 py-1 text-left font-mono text-xs text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-300" aria-label={`Curve handle ${index + 1}, ${segment.control.x.toFixed(1)} millimetres x, ${segment.control.y.toFixed(1)} millimetres y`}>Curve handle: {segment.control.x.toFixed(1)}, {segment.control.y.toFixed(1)} mm</button>
+                          <div className="mt-1.5 grid grid-cols-2 gap-2">
+                            <label className="text-[11px] text-amber-900">Curvature (mm)<input aria-label={`Curve ${index + 1} curvature in millimetres`} type="number" step="1" defaultValue={metrics.curvature.toFixed(1)} onBlur={event => editCurve(index, 'curvature', event.target.value)} className="mt-0.5 w-full rounded border border-amber-200 bg-white px-1.5 py-1 font-mono text-xs" /></label>
+                            <label className="text-[11px] text-amber-900">Handle angle (°)<input aria-label={`Curve ${index + 1} handle angle in degrees`} type="number" step="1" min="-180" max="180" defaultValue={metrics.angle.toFixed(1)} onBlur={event => editCurve(index, 'angle', event.target.value)} className="mt-0.5 w-full rounded border border-amber-200 bg-white px-1.5 py-1 font-mono text-xs" /></label>
+                          </div>
+                        </div>}
                       </div>
                     );
                   })}
                 </div>
               </div>
             )}
-            <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3 text-xs text-sky-800"><strong>Units:</strong> all saved coordinates use millimetres with a 1:1 model calibration. Screen pixels are never stored.</div>
+            <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3 text-xs text-sky-800"><strong>Canonical units:</strong> all saved coordinates remain model-space millimetres. Drawing scale metadata reopens with this footprint; screen pixels are never stored.</div>
           </aside>
         </div>
         <div className="flex justify-end gap-2 border-t border-stone-200 px-5 py-4">
