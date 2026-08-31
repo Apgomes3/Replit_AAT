@@ -34,6 +34,18 @@ const completeMediaProfile = {
     (0, vitest_1.it)('accepts a complete media revision for approval', () => {
         (0, vitest_1.expect)((0, biologicalMedia_1.validateMediaProfile)(completeMediaProfile, true)).toEqual([]);
     });
+    (0, vitest_1.it)('allows media evidence to remain incomplete while a revision is a draft', () => {
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateMediaProfile)({
+            ...completeMediaProfile,
+            evidence_reference: '',
+            status: 'Draft',
+        }, false)).toEqual([]);
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateMediaProfile)({
+            ...completeMediaProfile,
+            evidence_reference: '',
+            status: 'Approved',
+        }, true)).toContain('Evidence reference is required.');
+    });
     (0, vitest_1.it)('rejects contradictory and incomplete media revisions before approval', () => {
         const errors = (0, biologicalMedia_1.validateMediaProfile)({
             ...completeMediaProfile,
@@ -68,6 +80,30 @@ const completeMediaProfile = {
             'Scope range minimum cannot exceed maximum.',
             'Evidence reference is required.',
         ]));
+    });
+    (0, vitest_1.it)('allows incomplete evidence on a draft but requires it for approval', () => {
+        const draft = {
+            profile_code: 'TAN-02',
+            profile_name: 'Draft controlled TAN reference',
+            coefficient: 0.09216,
+            coefficient_unit: 'kg TAN-N/kg feed protein',
+            recommended_application: 'Default where no validated species data exist.',
+            scope_type: 'Pending administrator review',
+            evidence_reference: '',
+            status: 'Draft',
+        };
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateTanProfile)(draft, false)).toEqual([]);
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateTanProfile)({ ...draft, status: 'Approved' }, true)).toContain('Evidence reference is required.');
+    });
+    (0, vitest_1.it)('requires the confirmed TAN coefficient unit', () => {
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateTanProfile)({
+            profile_code: 'TAN-03',
+            profile_name: 'Wrong unit',
+            coefficient: 0.08,
+            coefficient_unit: 'g TAN/kg feed',
+            scope_type: 'Global feeding',
+            evidence_reference: 'CONTROLLED-REF',
+        })).toContain('Coefficient unit must be kg TAN-N/kg feed protein.');
     });
 });
 (0, vitest_1.describe)('Biological Media preview freshness', () => {

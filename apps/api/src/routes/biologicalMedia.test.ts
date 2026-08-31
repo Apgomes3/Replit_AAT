@@ -42,6 +42,19 @@ describe('Biological Media controlled profile validation', () => {
     expect(validateMediaProfile(completeMediaProfile, true)).toEqual([]);
   });
 
+  it('allows media evidence to remain incomplete while a revision is a draft', () => {
+    expect(validateMediaProfile({
+      ...completeMediaProfile,
+      evidence_reference: '',
+      status: 'Draft',
+    }, false)).toEqual([]);
+    expect(validateMediaProfile({
+      ...completeMediaProfile,
+      evidence_reference: '',
+      status: 'Approved',
+    }, true)).toContain('Evidence reference is required.');
+  });
+
   it('rejects contradictory and incomplete media revisions before approval', () => {
     const errors = validateMediaProfile({
       ...completeMediaProfile,
@@ -79,6 +92,33 @@ describe('Biological Media controlled profile validation', () => {
       'Scope range minimum cannot exceed maximum.',
       'Evidence reference is required.',
     ]));
+  });
+
+  it('allows incomplete evidence on a draft but requires it for approval', () => {
+    const draft = {
+      profile_code: 'TAN-02',
+      profile_name: 'Draft controlled TAN reference',
+      coefficient: 0.09216,
+      coefficient_unit: 'kg TAN-N/kg feed protein',
+      recommended_application: 'Default where no validated species data exist.',
+      scope_type: 'Pending administrator review',
+      evidence_reference: '',
+      status: 'Draft',
+    };
+
+    expect(validateTanProfile(draft, false)).toEqual([]);
+    expect(validateTanProfile({ ...draft, status: 'Approved' }, true)).toContain('Evidence reference is required.');
+  });
+
+  it('requires the confirmed TAN coefficient unit', () => {
+    expect(validateTanProfile({
+      profile_code: 'TAN-03',
+      profile_name: 'Wrong unit',
+      coefficient: 0.08,
+      coefficient_unit: 'g TAN/kg feed',
+      scope_type: 'Global feeding',
+      evidence_reference: 'CONTROLLED-REF',
+    })).toContain('Coefficient unit must be kg TAN-N/kg feed protein.');
   });
 });
 

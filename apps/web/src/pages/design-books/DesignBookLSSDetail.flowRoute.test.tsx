@@ -136,6 +136,8 @@ function renderFlowRoute(
   fractionatorProducts: any[] = [],
   initialEntry = '/design-books/book-1/lss/system-1?tab=flow',
   biologicalMedia: any = null,
+  mediaProfiles: any[] = [],
+  tanProfiles: any[] = [],
 ) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
@@ -145,8 +147,8 @@ function renderFlowRoute(
       return Promise.resolve({ data: { items: fractionatorProducts } });
     }
     if (url === '/systems/system-1/biological-media') return Promise.resolve({ data: biologicalMedia });
-    if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: [] } });
-    if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: [] } });
+    if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: mediaProfiles } });
+    if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: tanProfiles } });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -319,6 +321,103 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     expect(screen.getByDisplayValue('Moving bed biofilter')).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
+  });
+
+  it('offers admins contextual and keyboard-accessible profile management shortcuts', async () => {
+    useAuthStore.setState(state => ({
+      ...state,
+      user: state.user ? { ...state.user, role: 'admin' } : null,
+    }));
+    renderFlowRoute(
+      baseSystem,
+      bookWithLinkedExhibits,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=biological-media',
+      {
+        case: null,
+        readiness_status: 'Incomplete',
+        input_completeness: { complete: false, missing: [] },
+        context: { status: 'ready', system_water_type: 'Freshwater', total_operating_volume_m3: 42, linked_exhibits: [] },
+      },
+      [{
+        id: 'media-1',
+        profile_code: 'MEDIA-01',
+        profile_name: 'Approved MBBR media',
+        revision: 2,
+        status: 'Approved',
+        water_types: ['Freshwater'],
+        reactor_types: ['Moving bed biofilter'],
+      }],
+      [{
+        id: 'tan-1',
+        profile_code: 'TAN-01',
+        profile_name: 'Approved TAN basis',
+        revision: 1,
+        status: 'Approved',
+        coefficient_unit: 'kg TAN-N/kg feed protein',
+      }],
+    );
+
+    const tanSelect = await screen.findByRole('combobox', { name: 'Approved TAN reference' });
+    const tanLink = screen.getByRole('link', { name: 'Manage TAN profiles' });
+    expect(tanLink).toHaveAttribute('href', '/admin/biological-media-profiles?focus=tan#tan-profiles');
+
+    fireEvent.contextMenu(tanSelect);
+    expect(screen.getByRole('menuitem', { name: 'Manage TAN profiles' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage media profiles' })).toHaveAttribute(
+      'href',
+      '/admin/biological-media-profiles?focus=media#media-profiles',
+    );
+  });
+
+  it('keeps approved Universal media references selectable for any water type', async () => {
+    renderFlowRoute(
+      baseSystem,
+      bookWithLinkedExhibits,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=biological-media',
+      {
+        case: null,
+        readiness_status: 'Incomplete',
+        input_completeness: { complete: false, missing: [] },
+        context: { status: 'ready', system_water_type: 'Freshwater', total_operating_volume_m3: 42, linked_exhibits: [] },
+      },
+      [{
+        id: 'media-universal',
+        profile_code: 'MEDIA-UNIVERSAL',
+        profile_name: 'Universal approved media',
+        revision: 3,
+        status: 'Approved',
+        water_types: ['Universal'],
+        reactor_types: ['Moving bed biofilter'],
+      }],
+    );
+
+    const mediaSelect = await screen.findByRole('combobox', { name: 'Approved overall-VTR media reference' });
+    expect(within(mediaSelect).getByRole('option', { name: /MEDIA-UNIVERSAL r3/ })).toBeInTheDocument();
+  });
+
+  it('does not expose or intercept profile management shortcuts for non-admins', async () => {
+    renderFlowRoute(
+      baseSystem,
+      bookWithLinkedExhibits,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=biological-media',
+      {
+        case: null,
+        readiness_status: 'Incomplete',
+        input_completeness: { complete: false, missing: [] },
+        context: { status: 'ready', system_water_type: 'Freshwater', total_operating_volume_m3: 42, linked_exhibits: [] },
+      },
+    );
+
+    const tanSelect = await screen.findByRole('combobox', { name: 'Approved TAN reference' });
+    fireEvent.contextMenu(tanSelect);
+    expect(screen.queryByText('Manage TAN profiles')).not.toBeInTheDocument();
+    expect(screen.queryByText('Manage media profiles')).not.toBeInTheDocument();
   });
 
   it('shows immutable run status, warning approval controls, history, comparison, and export', async () => {

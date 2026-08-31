@@ -1348,6 +1348,7 @@ CREATE TABLE IF NOT EXISTS lss_tan_generation_profiles (
   revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
   coefficient NUMERIC NOT NULL,
   coefficient_unit VARCHAR(120) NOT NULL,
+  recommended_application TEXT,
   scope_type VARCHAR(80) NOT NULL,
   scope_unit VARCHAR(80),
   scope_min NUMERIC,
@@ -1571,6 +1572,9 @@ BEFORE UPDATE OR DELETE ON lss_tan_generation_profiles
 FOR EACH ROW EXECUTE FUNCTION prevent_approved_biological_media_mutation();
 
 -- Additive Biological Media preview migration for existing databases.
+ALTER TABLE lss_tan_generation_profiles
+  ADD COLUMN IF NOT EXISTS recommended_application TEXT;
+
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS overall_vtr_g_tan_n_m3_d NUMERIC;
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS default_safety_factor NUMERIC;
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS minimum_media_m3 NUMERIC;

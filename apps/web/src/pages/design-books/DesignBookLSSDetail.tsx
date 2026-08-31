@@ -218,6 +218,75 @@ function BiologicalMediaPanel({
 }
 
 const bioInputClass = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-normal text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:bg-stone-50 disabled:text-stone-400';
+
+function ManagedBiologicalProfileSelect({
+  kind, label, value, options, historical, disabled, onChange,
+}: {
+  kind: 'tan' | 'media';
+  label: string;
+  value: string;
+  options: any[];
+  historical?: { id: string; label: string } | null;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const isAdmin = useAuthStore(state => state.user?.role === 'admin');
+  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const selectedRevision = value || historical?.id || '';
+  const focusId = kind === 'tan' ? 'tan-profiles' : 'media-profiles';
+  const manageLabel = kind === 'tan' ? 'Manage TAN profiles' : 'Manage media profiles';
+  const destination = `/admin/biological-media-profiles?focus=${kind}${selectedRevision ? `&revision=${encodeURIComponent(selectedRevision)}` : ''}#${focusId}`;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', close);
+    };
+  }, [menuOpen]);
+
+  return (
+    <label className="relative block text-xs font-medium text-stone-500">
+      {label}
+      <select
+        aria-label={label.replace(' *', '')}
+        className={bioInputClass}
+        disabled={disabled}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        onContextMenu={event => {
+          if (!isAdmin) return;
+          event.preventDefault();
+          setMenuOpen(true);
+        }}
+      >
+        <option value="">Select approved revision</option>
+        {historical && !options.some(option => option.id === historical.id) && (
+          <option value={historical.id} disabled>{historical.label}</option>
+        )}
+        {options.map(profile => (
+          <option key={profile.id} value={profile.id}>{profile.profile_code} r{profile.revision} — {profile.profile_name}</option>
+        ))}
+      </select>
+      {options.length === 0 && (
+        <span className="mt-1 block font-normal text-amber-700">
+          No approved compatible {kind === 'tan' ? 'TAN' : 'overall-VTR media'} revision is available.
+        </span>
+      )}
+      {isAdmin && <Link to={destination} className="mt-1 inline-flex font-semibold text-blue-600 hover:underline">{manageLabel}</Link>}
+      {isAdmin && menuOpen && (
+        <button type="button" role="menuitem" onClick={() => navigate(destination)}
+          className="absolute left-0 top-full z-30 mt-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 shadow-lg">
+          {manageLabel}
+        </button>
+      )}
+    </label>
+  );
+}
 const bioNumber = (value: any) => value === '' || value == null ? null : Number(value);
 const bioFormat = (value: any, decimals = 4) => value == null || !Number.isFinite(Number(value))
   ? '—' : Number(value).toFixed(decimals);
@@ -230,8 +299,15 @@ function BiologicalMediaCalculatorPanel({
   const context = data?.context;
   const preview = data?.preview;
   const stale = Boolean(form._stale || preview?.is_stale);
-  const approvedMedia = mediaProfiles.filter((profile: any) => profile.status === 'Approved');
-  const approvedTan = tanProfiles.filter((profile: any) => profile.status === 'Approved');
+  const normalizedWaterType = String(context?.system_water_type || '').toLowerCase();
+  const normalizedReactorType = String(form.reactor_type || '').toLowerCase();
+  const approvedMedia = mediaProfiles.filter((profile: any) =>
+    profile.status === 'Approved'
+    && (!normalizedWaterType || (profile.water_types || []).some((value: string) =>
+      ['universal', normalizedWaterType].includes(value.toLowerCase())))
+    && (!normalizedReactorType || (profile.reactor_types || []).some((value: string) => value.toLowerCase() === normalizedReactorType)));
+  const approvedTan = tanProfiles.filter((profile: any) =>
+    profile.status === 'Approved' && profile.coefficient_unit === 'kg TAN-N/kg feed protein');
   const status = stale && preview ? 'Draft' : preview?.status_label || data?.readiness_status || 'Draft';
   const statusStyles: Record<string, string> = {
     Draft: 'border-blue-200 bg-blue-50 text-blue-800',
@@ -436,7 +512,18 @@ function BiologicalMediaCalculatorPanel({
       <div className="grid gap-4 p-5 md:grid-cols-4">
         <label className="text-xs font-medium text-stone-500">Feed rate % biomass/day *<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.feed_rate_pct_biomass_day} onChange={e => set('feed_rate_pct_biomass_day', e.target.value)} /></label>
         <label className="text-xs font-medium text-stone-500">Protein % *<input type="number" min="0" max="100" step="any" className={bioInputClass} disabled={readOnly} value={form.protein_pct} onChange={e => set('protein_pct', e.target.value)} /></label>
-        <label className="text-xs font-medium text-stone-500">Approved TAN profile *<select className={bioInputClass} disabled={readOnly} value={form.tan_generation_profile_revision_id} onChange={e => set('tan_generation_profile_revision_id', e.target.value)}><option value="">Select revision</option>{approvedTan.map((profile: any) => <option key={profile.id} value={profile.id}>{profile.profile_code} r{profile.revision} — {profile.profile_name}</option>)}</select></label>
+        <ManagedBiologicalProfileSelect
+          kind="tan"
+          label="Approved TAN reference *"
+          disabled={readOnly}
+          value={form.tan_generation_profile_revision_id}
+          options={approvedTan}
+          historical={data?.case?.tan_generation_profile_revision_id ? {
+            id: data.case.tan_generation_profile_revision_id,
+            label: `${data.case.tan_profile_code || 'Historical TAN profile'} r${data.case.tan_profile_revision || '—'} — ${data.case.tan_profile_status || 'Unavailable'}`,
+          } : null}
+          onChange={value => set('tan_generation_profile_revision_id', value)}
+        />
         <label className="text-xs font-medium text-stone-500">Manual daily feed kg/day<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.manual_daily_feed_kg_d} onChange={e => set('manual_daily_feed_kg_d', e.target.value)} /></label>
       </div>
     </section>
@@ -447,7 +534,24 @@ function BiologicalMediaCalculatorPanel({
         {[['temperature_c', 'Temperature °C *'], ['ph', 'pH *'], ['salinity_ppt', 'Salinity ppt *'], ['max_tan_mg_n_l', 'Maximum TAN mg N/L *'], ['do_in_mg_l', 'Biofilter inlet DO mg/L'], ['do_out_min_mg_l', 'Minimum outlet DO mg/L'], ['alkalinity_mg_l_caco3', 'Alkalinity mg/L CaCO₃'], ['actual_flow_m3_h', 'Actual flow m³/h']].map(([key, label]) =>
           <label key={key} className="text-xs font-medium text-stone-500">{label}<input type="number" step="any" className={bioInputClass} disabled={readOnly} value={form[key] ?? ''} onChange={e => set(key, e.target.value)} /></label>)}
         <label className="text-xs font-medium text-stone-500">Reactor type *<input className={bioInputClass} disabled={readOnly} value={form.reactor_type} onChange={e => set('reactor_type', e.target.value)} /></label>
-        <label className="text-xs font-medium text-stone-500 md:col-span-2">Approved overall-VTR media profile *<select className={bioInputClass} disabled={readOnly} value={form.media_profile_revision_id} onChange={e => { const profile = approvedMedia.find((item: any) => item.id === e.target.value); set('media_profile_revision_id', e.target.value); if (profile?.default_safety_factor) set('safety_factor', profile.default_safety_factor); }}><option value="">Select revision</option>{approvedMedia.map((profile: any) => <option key={profile.id} value={profile.id}>{profile.profile_code} r{profile.revision} — {profile.profile_name}</option>)}</select></label>
+        <div className="md:col-span-2">
+          <ManagedBiologicalProfileSelect
+            kind="media"
+            label="Approved overall-VTR media reference *"
+            disabled={readOnly}
+            value={form.media_profile_revision_id}
+            options={approvedMedia}
+            historical={data?.case?.media_profile_revision_id ? {
+              id: data.case.media_profile_revision_id,
+              label: `${data.case.media_profile_code || 'Historical media profile'} r${data.case.media_profile_revision || '—'} — ${data.case.media_profile_status || 'Unavailable'}`,
+            } : null}
+            onChange={value => {
+              const profile = approvedMedia.find((item: any) => item.id === value);
+              set('media_profile_revision_id', value);
+              if (profile?.default_safety_factor) set('safety_factor', profile.default_safety_factor);
+            }}
+          />
+        </div>
         <label className="text-xs font-medium text-stone-500">Safety factor<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.safety_factor || selectedProfile?.default_safety_factor || ''} onChange={e => set('safety_factor', e.target.value)} /></label>
         <label className="text-xs font-medium text-stone-500 md:col-span-4">Design basis notes<textarea rows={2} className={bioInputClass} disabled={readOnly} value={form.notes} onChange={e => set('notes', e.target.value)} /></label>
       </div>

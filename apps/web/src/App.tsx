@@ -66,6 +66,12 @@ function ModuleGuard({ moduleKey, children }: { moduleKey: string; children: Rea
   return <>{children}</>;
 }
 
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore(state => state.user);
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -111,7 +117,7 @@ export default function App() {
             <Route path="admin/audit-log" element={<AdminAuditLog />} />
             <Route path="admin/po-stage-roles" element={<AdminPOStageRoles />} />
             <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
-            <Route path="admin/biological-media-profiles" element={<AdminBiologicalMediaProfiles />} />
+            <Route path="admin/biological-media-profiles" element={<AdminGuard><AdminBiologicalMediaProfiles /></AdminGuard>} />
             <Route path="purchase-orders" element={<ModuleGuard moduleKey="orders"><PurchaseOrdersList /></ModuleGuard>} />
             <Route path="purchase-orders/:id" element={<ModuleGuard moduleKey="orders"><PurchaseOrderDetail /></ModuleGuard>} />
             <Route path="design-book-engine" element={<ModuleGuard moduleKey="design_books"><DesignBookEngineDashboard /></ModuleGuard>} />

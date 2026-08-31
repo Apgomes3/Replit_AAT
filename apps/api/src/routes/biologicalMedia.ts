@@ -12,6 +12,7 @@ router.use(authenticate, requireModuleAccess('design_books'));
 type DbRunner = (sql: string, params?: any[]) => Promise<{ rows: any[] }>;
 
 const PROFILE_STATUSES = ['Draft', 'In Review', 'Approved', 'Retired'];
+export const TAN_COEFFICIENT_UNIT = 'kg TAN-N/kg feed protein';
 const MEDIA_SIZING_FIELDS = [
   'overall_vtr_g_tan_n_m3_d', 'default_safety_factor', 'minimum_media_m3',
   'module_increment_m3', 'media_fill_fraction', 'operating_min_ph', 'operating_max_ph',
@@ -332,7 +333,7 @@ export function validateMediaProfile(body: any, approving = body.status === 'App
       && (numberOrNull(body.media_bulk_density_kg_m3) == null || Number(body.media_bulk_density_kg_m3) < 0)) {
     errors.push('Media bulk density must be a non-negative number.');
   }
-  if (!text(body.evidence_reference)) errors.push('Evidence reference is required.');
+  if (approving && !text(body.evidence_reference)) errors.push('Evidence reference is required.');
   if (body.is_provisional && !text(body.provisional_label)) errors.push('Provisional profiles require an explicit provisional label.');
   for (const [field, label, maximum] of [
     ['overall_vtr_g_tan_n_m3_d', 'Overall VTR', null],
@@ -394,13 +395,16 @@ export function validateMediaProfile(body: any, approving = body.status === 'App
   return errors;
 }
 
-export function validateTanProfile(body: any): string[] {
+export function validateTanProfile(body: any, approving = body.status == null ? true : body.status === 'Approved'): string[] {
   const errors: string[] = [];
   if (!text(body.profile_code)) errors.push('Profile code is required.');
   if (!text(body.profile_name)) errors.push('Profile name is required.');
   const coefficient = numberOrNull(body.coefficient);
   if (coefficient == null || coefficient <= 0) errors.push('Coefficient must be greater than zero.');
   if (!text(body.coefficient_unit)) errors.push('Coefficient unit is required.');
+  else if (text(body.coefficient_unit) !== TAN_COEFFICIENT_UNIT) {
+    errors.push(`Coefficient unit must be ${TAN_COEFFICIENT_UNIT}.`);
+  }
   if (!text(body.scope_type)) errors.push('Scope type is required.');
   const min = numberOrNull(body.scope_min);
   const max = numberOrNull(body.scope_max);
@@ -411,7 +415,7 @@ export function validateTanProfile(body: any): string[] {
     if (error) errors.push(error);
     if (min != null && min < 0 || max != null && max < 0) errors.push('Scope range cannot be negative.');
   }
-  if (!text(body.evidence_reference)) errors.push('Evidence reference is required.');
+  if (approving && !text(body.evidence_reference)) errors.push('Evidence reference is required.');
   return errors;
 }
 
@@ -438,6 +442,9 @@ async function requireApprovedProfile(table: string, id: string | null, label: s
   const profile = result.rows[0];
   if (!profile) return `${label} was not found.`;
   if (profile.status !== 'Approved') return `${label} must be an approved revision; ${profile.status.toLowerCase()} revisions cannot be used here.`;
+  if (table === 'lss_tan_generation_profiles' && profile.coefficient_unit !== TAN_COEFFICIENT_UNIT) {
+    return `${label} uses an unsupported coefficient unit; approved references must use ${TAN_COEFFICIENT_UNIT}.`;
+  }
   return null;
 }
 
@@ -1308,18 +1315,28 @@ router.get('/systems/:id/biological-media/runs/:runId/export', async (req: AuthR
 
 router.get('/biological-media/media-profiles', async (_req: AuthRequest, res: Response) => {
   const includeRetired = _req.query.include_retired === 'true';
+  const approvedOnly = _req.query.approved_only === 'true';
+  const conditions = [
+    ...(includeRetired ? [] : ["status <> 'Retired'"]),
+    ...(approvedOnly ? ["status = 'Approved'"] : []),
+  ];
   const result = await query(
     `SELECT * FROM lss_biological_media_profiles
-     ${includeRetired ? '' : "WHERE status <> 'Retired'"} ORDER BY profile_code, revision DESC`,
+     ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY profile_code, revision DESC`,
   );
   res.json({ items: result.rows });
 });
 
 router.get('/biological-media/tan-profiles', async (req: AuthRequest, res: Response) => {
   const includeRetired = req.query.include_retired === 'true';
+  const approvedOnly = req.query.approved_only === 'true';
+  const conditions = [
+    ...(includeRetired ? [] : ["status <> 'Retired'"]),
+    ...(approvedOnly ? ["status = 'Approved'"] : []),
+  ];
   const result = await query(
     `SELECT * FROM lss_tan_generation_profiles
-     ${includeRetired ? '' : "WHERE status <> 'Retired'"} ORDER BY profile_code, revision DESC`,
+     ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY profile_code, revision DESC`,
   );
   res.json({ items: result.rows });
 });
@@ -1387,19 +1404,18 @@ router.post('/admin/biological-media/media-profiles/:id/revisions', requireModul
 });
 
 router.post('/admin/biological-media/tan-profiles', requireModuleManage('design_books'), requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  const errors = validateTanProfile(req.body);
+  const errors = validateTanProfile(req.body, false);
   if (errors.length) return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
   const code = text(req.body.profile_code)!;
   const revision = await nextRevision('lss_tan_generation_profiles', code);
   const result = await query(
     `INSERT INTO lss_tan_generation_profiles
-     (profile_code, profile_name, revision, coefficient, coefficient_unit, scope_type, scope_unit, scope_min,
+     (profile_code, profile_name, revision, coefficient, coefficient_unit, recommended_application, scope_type, scope_unit, scope_min,
       scope_max, evidence_reference, status, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
     [code, text(req.body.profile_name), revision, numberOrNull(req.body.coefficient), text(req.body.coefficient_unit),
-      text(req.body.scope_type), text(req.body.scope_unit), numberOrNull(req.body.scope_min), numberOrNull(req.body.scope_max),
-      text(req.body.evidence_reference), 'Draft',
-      text(req.body.notes), req.user!.id],
+       text(req.body.recommended_application), text(req.body.scope_type), text(req.body.scope_unit), numberOrNull(req.body.scope_min), numberOrNull(req.body.scope_max),
+       text(req.body.evidence_reference), 'Draft', text(req.body.notes), req.user!.id],
   );
   res.status(201).json(result.rows[0]);
 });
@@ -1408,17 +1424,17 @@ router.post('/admin/biological-media/tan-profiles/:id/revisions', requireModuleM
   const source = await profileRevision('lss_tan_generation_profiles', routeParam(req.params.id));
   if (!source) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'TAN profile revision not found.' } });
   const body = { ...source, ...req.body, profile_code: source.profile_code };
-  const errors = validateTanProfile(body);
+  const errors = validateTanProfile(body, false);
   if (errors.length) return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
   const revision = await nextRevision('lss_tan_generation_profiles', body.profile_code);
   const result = await query(
     `INSERT INTO lss_tan_generation_profiles
-     (profile_code, profile_name, revision, coefficient, coefficient_unit, scope_type, scope_unit, scope_min,
+     (profile_code, profile_name, revision, coefficient, coefficient_unit, recommended_application, scope_type, scope_unit, scope_min,
       scope_max, evidence_reference, status, notes, supersedes_id, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Draft',$11,$12,$13) RETURNING *`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Draft',$12,$13,$14) RETURNING *`,
     [body.profile_code, text(body.profile_name), revision, numberOrNull(body.coefficient), text(body.coefficient_unit),
-      text(body.scope_type), text(body.scope_unit), numberOrNull(body.scope_min), numberOrNull(body.scope_max),
-      text(body.evidence_reference), text(body.notes), source.id, req.user!.id],
+       text(body.recommended_application), text(body.scope_type), text(body.scope_unit), numberOrNull(body.scope_min), numberOrNull(body.scope_max),
+       text(body.evidence_reference), text(body.notes), source.id, req.user!.id],
   );
   res.status(201).json(result.rows[0]);
 });
@@ -1435,6 +1451,22 @@ async function updateProfileStatus(table: string, id: string, body: any, req: Au
   const merged = { ...existing, ...body, status: nextStatus };
   const errors = table.includes('tan_') ? validateTanProfile(merged) : validateMediaProfile(merged, nextStatus === 'Approved');
   if (nextStatus === 'Approved' && errors.length) return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
+  if (table === 'lss_biological_media_profiles' && nextStatus === 'Approved'
+      && String(existing.capacity_model || '').toUpperCase().replace(/[\s-]+/g, '_') === 'OVERALL_VTR') {
+    const tanResult = await query(
+      `SELECT 1 FROM lss_tan_generation_profiles
+       WHERE status='Approved' AND coefficient_unit=$1 LIMIT 1`,
+      [TAN_COEFFICIENT_UNIT],
+    );
+    if (!tanResult.rows[0]) {
+      return res.status(409).json({
+        error: {
+          code: 'TAN_PROFILE_REQUIRED',
+          message: 'Approve at least one TAN-generation profile revision before approving an overall-VTR media profile.',
+        },
+      });
+    }
+  }
   try {
     const result = await query(
       `UPDATE ${table} SET status=$1, approved_by=CASE WHEN $1='Approved' THEN $2 ELSE approved_by END,

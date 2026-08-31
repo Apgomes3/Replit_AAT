@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Check, CopyPlus, Plus, ShieldCheck, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
@@ -23,7 +24,8 @@ const mediaEmpty: any = {
   provisional_label: '', notes: '',
 };
 const tanEmpty: any = {
-  profile_code: '', profile_name: '', coefficient: '', coefficient_unit: '',
+  profile_code: '', profile_name: '', coefficient: '', coefficient_unit: 'kg TAN-N/kg feed protein',
+  recommended_application: '',
   scope_type: '', scope_unit: '', scope_min: '', scope_max: '',
   evidence_reference: '', notes: '',
 };
@@ -110,7 +112,7 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
             <input type="number" min="0" className={inputCls} value={form.coefficient} onChange={e => set('coefficient', e.target.value)} />
           </label>
           <label className="text-xs font-medium text-stone-500">Coefficient unit *
-            <input className={inputCls} value={form.coefficient_unit} onChange={e => set('coefficient_unit', e.target.value)} />
+            <input className={inputCls} value={form.coefficient_unit} readOnly aria-readonly="true" />
           </label>
           <label className="text-xs font-medium text-stone-500">Scope type *
             <input className={inputCls} value={form.scope_type} onChange={e => set('scope_type', e.target.value)} placeholder="Global feeding" />
@@ -124,8 +126,12 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
           <label className="text-xs font-medium text-stone-500">Scope maximum
             <input type="number" min="0" className={inputCls} value={form.scope_max} onChange={e => set('scope_max', e.target.value)} />
           </label>
+          <label className="text-xs font-medium text-stone-500 md:col-span-3">Recommended application
+            <textarea rows={2} className={inputCls} value={form.recommended_application} onChange={e => set('recommended_application', e.target.value)}
+              placeholder="Describe when designers should choose this controlled reference" />
+          </label>
         </>}
-        <label className="text-xs font-medium text-stone-500 md:col-span-3">Evidence reference *
+        <label className="text-xs font-medium text-stone-500 md:col-span-3">Evidence reference <span className="font-normal">(required for approval)</span>
           <input className={inputCls} value={form.evidence_reference} onChange={e => set('evidence_reference', e.target.value)} placeholder="Controlled document, study, or engineering reference" />
         </label>
         <label className="text-xs font-medium text-stone-500 md:col-span-3">Revision notes
@@ -140,21 +146,28 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
   );
 }
 
-function ProfilesTable({ title, profiles, kind, onStatus, onRevise }: any) {
+function ProfilesTable({ id, title, profiles, kind, onStatus, onRevise, focused }: any) {
   return (
-    <section className="rounded-xl border border-stone-200 bg-white overflow-hidden">
+    <section id={id} tabIndex={-1} className={`scroll-mt-6 rounded-xl border bg-white overflow-hidden outline-none ${
+      focused ? 'border-blue-400 ring-2 ring-blue-100' : 'border-stone-200'
+    }`}>
       <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">{title}</h2></div>
       {profiles.length === 0 ? <p className="p-6 text-sm text-stone-400">No controlled revisions have been created.</p> : (
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-stone-50 text-left text-[10px] uppercase tracking-wide text-stone-400">
-            <tr><th className="px-4 py-2">Profile</th><th className="px-4 py-2">Revision</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Evidence</th><th className="px-4 py-2 text-right">Actions</th></tr>
+            <tr><th className="px-4 py-2">Profile</th><th className="px-4 py-2">Revision</th><th className="px-4 py-2">Status</th>{kind === 'tan' && <th className="px-4 py-2">Recommended application</th>}<th className="px-4 py-2">Evidence readiness</th><th className="px-4 py-2 text-right">Actions</th></tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
             {profiles.map((profile: any) => <tr key={profile.id}>
               <td className="px-4 py-3"><div className="font-medium text-stone-800">{profile.profile_name}</div><div className="font-mono text-xs text-stone-400">{profile.profile_code}</div></td>
               <td className="px-4 py-3 font-mono">r{profile.revision}</td>
               <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${profile.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : profile.status === 'Retired' ? 'bg-stone-100 text-stone-500' : 'bg-amber-100 text-amber-700'}`}>{profile.status}</span></td>
-              <td className="max-w-xs truncate px-4 py-3 text-xs text-stone-500">{profile.evidence_reference}</td>
+              {kind === 'tan' && <td className="max-w-sm px-4 py-3 text-xs text-stone-500">{profile.recommended_application || 'Not specified'}</td>}
+              <td className="max-w-xs px-4 py-3 text-xs text-stone-500">
+                {profile.evidence_reference
+                  ? profile.evidence_reference
+                  : <span className="font-medium text-amber-700">Review required before approval</span>}
+              </td>
               <td className="px-4 py-3"><div className="flex justify-end gap-2">
                 {profile.status === 'Draft' && <button onClick={() => onStatus(kind, profile, 'In Review')} className="text-xs font-semibold text-blue-600 hover:underline">Send to review</button>}
                 {['Draft', 'In Review'].includes(profile.status) && <button onClick={() => onStatus(kind, profile, 'Approved')} className="text-xs font-semibold text-emerald-700 hover:underline">Approve</button>}
@@ -171,11 +184,20 @@ function ProfilesTable({ title, profiles, kind, onStatus, onRevise }: any) {
 
 export default function AdminBiologicalMediaProfiles() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedFocus = searchParams.get('focus');
+  const focusedKind: ProfileKind | null = requestedFocus === 'tan' || requestedFocus === 'media' ? requestedFocus : null;
   const [formKind, setFormKind] = useState<ProfileKind | null>(null);
   const [mediaForm, setMediaForm] = useState(mediaEmpty);
   const [tanForm, setTanForm] = useState(tanEmpty);
   const [revisionSource, setRevisionSource] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!focusedKind) return;
+    const element = document.getElementById(`${focusedKind}-profiles`);
+    element?.scrollIntoView({ block: 'start' });
+    element?.focus({ preventScroll: true });
+  }, [focusedKind]);
   const { data: mediaData = { items: [] } } = useQuery({
     queryKey: ['biological-media-profiles', 'admin'],
     queryFn: () => api.get('/biological-media/media-profiles', { params: { include_retired: true } }).then(r => r.data),
@@ -276,13 +298,22 @@ export default function AdminBiologicalMediaProfiles() {
       <PageHeader title="Biological Media Profiles" subtitle="Controlled media and TAN reference revisions. Approval freezes engineering evidence and operating metadata."
         actions={<div className="flex gap-2"><Button onClick={() => setFormKind('tan')}><Plus className="h-3.5 w-3.5" />TAN profile</Button><Button variant="primary" onClick={() => setFormKind('media')}><Plus className="h-3.5 w-3.5" />Media profile</Button></div>} />
       <div className="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-        <ShieldCheck className="h-5 w-5 shrink-0" /><p>Approved revisions cannot be edited. Retire a revision to prevent future selection, or create a new draft revision for later changes.</p>
+        <ShieldCheck className="h-5 w-5 shrink-0" /><p>Approved revisions cannot be edited. Retire a revision to prevent future selection, or create a new draft revision for later changes. Overall-VTR media approval requires at least one approved TAN profile.</p>
+      </div>
+      <div className="flex flex-wrap gap-2" aria-label="Profile type focus">
+        {([['tan', 'TAN profiles'], ['media', 'Media profiles']] as const).map(([kind, label]) => (
+          <button key={kind} type="button" onClick={() => setSearchParams({ focus: kind })}
+            className={`rounded-lg border px-3 py-2 text-xs font-semibold ${focusedKind === kind ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-stone-200 bg-white text-stone-600'}`}>
+            {label}
+          </button>
+        ))}
+        {focusedKind && <button type="button" onClick={() => setSearchParams({})} className="px-3 py-2 text-xs font-semibold text-stone-500">Show both</button>}
       </div>
       {formKind && <ProfileForm kind={formKind} form={formKind === 'media' ? mediaForm : tanForm}
         setForm={formKind === 'media' ? setMediaForm : setTanForm} onSave={create}
         onCancel={() => { setFormKind(null); setRevisionSource(null); }} saving={saving} revising={!!revisionSource} />}
-      <ProfilesTable title="Controlled media profiles" profiles={mediaData.items || []} kind="media" onStatus={changeStatus} onRevise={revise} />
-      <ProfilesTable title="Controlled TAN generation profiles" profiles={tanData.items || []} kind="tan" onStatus={changeStatus} onRevise={revise} />
+      {(!focusedKind || focusedKind === 'tan') && <ProfilesTable id="tan-profiles" title="Controlled TAN generation profiles" profiles={tanData.items || []} kind="tan" focused={focusedKind === 'tan'} onStatus={changeStatus} onRevise={revise} />}
+      {(!focusedKind || focusedKind === 'media') && <ProfilesTable id="media-profiles" title="Controlled media profiles" profiles={mediaData.items || []} kind="media" focused={focusedKind === 'media'} onStatus={changeStatus} onRevise={revise} />}
       <div className="sr-only"><Activity />Biological media administration</div>
     </div>
   );
