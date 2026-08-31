@@ -732,6 +732,55 @@ CREATE TABLE IF NOT EXISTS product_hydraulic (
   notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS product_design_flow_reconciliations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_master_id UUID NOT NULL REFERENCES product_masters(id) ON DELETE CASCADE,
+  product_flow_m3h NUMERIC,
+  hydraulic_flow_m3h NUMERIC,
+  status VARCHAR(20) NOT NULL DEFAULT 'unresolved',
+  resolution VARCHAR(30),
+  resolved_value_m3h NUMERIC,
+  resolved_by UUID REFERENCES users(id),
+  detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_design_flow_unresolved
+  ON product_design_flow_reconciliations(product_master_id) WHERE status='unresolved';
+
+INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, updated_at)
+SELECT pm.id, pm.design_flow_m3h, NOW()
+FROM product_masters pm
+LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
+WHERE ph.id IS NULL AND pm.design_flow_m3h IS NOT NULL
+ON CONFLICT (product_master_id) DO NOTHING;
+
+UPDATE product_hydraulic ph
+SET design_flow_m3h=pm.design_flow_m3h, updated_at=NOW()
+FROM product_masters pm
+WHERE ph.product_master_id=pm.id
+  AND ph.design_flow_m3h IS NULL
+  AND pm.design_flow_m3h IS NOT NULL;
+
+UPDATE product_masters pm
+SET design_flow_m3h=ph.design_flow_m3h, updated_at=NOW()
+FROM product_hydraulic ph
+WHERE ph.product_master_id=pm.id
+  AND pm.design_flow_m3h IS NULL
+  AND ph.design_flow_m3h IS NOT NULL;
+
+INSERT INTO product_design_flow_reconciliations
+  (product_master_id, product_flow_m3h, hydraulic_flow_m3h, status)
+SELECT pm.id, pm.design_flow_m3h, ph.design_flow_m3h, 'unresolved'
+FROM product_masters pm
+JOIN product_hydraulic ph ON ph.product_master_id=pm.id
+WHERE pm.design_flow_m3h IS NOT NULL
+  AND ph.design_flow_m3h IS NOT NULL
+  AND pm.design_flow_m3h IS DISTINCT FROM ph.design_flow_m3h
+  AND NOT EXISTS (
+    SELECT 1 FROM product_design_flow_reconciliations r
+    WHERE r.product_master_id=pm.id AND r.status='unresolved'
+  );
+
 -- BOM RELEASE LINES (snapshot of items captured at release time)
 CREATE TABLE IF NOT EXISTS bom_release_lines (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

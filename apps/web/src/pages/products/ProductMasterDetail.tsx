@@ -124,6 +124,7 @@ export default function ProductMasterDetail() {
   const [editingHydraulic, setEditingHydraulic] = useState(false);
   const [hydraulicForm, setHydraulicForm] = useState<Record<string, any>>({});
   const [hydraulicSaving, setHydraulicSaving] = useState(false);
+  const [hydraulicFlowResolution, setHydraulicFlowResolution] = useState<'hydraulic' | ''>('');
 
   const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', wall_thickness_mm: '', weight_kg: '' });
   const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
@@ -138,6 +139,7 @@ export default function ProductMasterDetail() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [productFlowResolution, setProductFlowResolution] = useState<'product_master' | ''>('');
   const [duplicating, setDuplicating] = useState(false);
 
   const [showRelModal, setShowRelModal] = useState(false);
@@ -280,12 +282,13 @@ export default function ProductMasterDetail() {
   });
 
   const startEdit = () => {
+    setProductFlowResolution('');
     setEditForm({
       product_code: product.product_code || '',
       product_name: product.product_name || '',
       standard_status: product.standard_status || 'Concept',
       application_type: product.application_type || '',
-      design_flow_m3h: product.design_flow_m3h != null ? String(product.design_flow_m3h) : '',
+      design_flow_m3h: (hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) != null ? String(hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) : '',
       design_head_m: product.design_head_m != null ? String(product.design_head_m) : '',
       primary_material_code: product.primary_material_code || '',
       notes: product.notes || '',
@@ -301,6 +304,10 @@ export default function ProductMasterDetail() {
 
   const handleSave = async () => {
     if (!editForm.product_code?.trim()) { toast.error('Product code is required'); return; }
+    if (product.design_flow_sync_status === 'conflict' && productFlowResolution !== 'product_master') {
+      toast.error('Choose which stored Design Flow to keep before saving');
+      return;
+    }
     setSaving(true);
     try {
       const { data: updated } = await api.put(`/product-masters/${id}`, productPutPayload({
@@ -309,6 +316,7 @@ export default function ProductMasterDetail() {
         standard_status: editForm.standard_status,
         application_type: editForm.application_type || null,
         design_flow_m3h: editForm.design_flow_m3h ? parseFloat(editForm.design_flow_m3h) : null,
+        design_flow_conflict_resolution: productFlowResolution || undefined,
         design_head_m: editForm.design_head_m ? parseFloat(editForm.design_head_m) : null,
         primary_material_code: editForm.primary_material_code || null,
         notes: editForm.notes || null,
@@ -324,6 +332,7 @@ export default function ProductMasterDetail() {
       if (updated) queryClient.setQueryData(['product-master', id], (old: any) => ({ ...old, ...updated }));
       queryClient.invalidateQueries({ queryKey: ['product-master', id] });
       queryClient.invalidateQueries({ queryKey: ['product-masters'] });
+      queryClient.invalidateQueries({ queryKey: ['product-hydraulic', id] });
     } catch {
       toast.error('Failed to save changes');
     } finally {
@@ -454,17 +463,32 @@ export default function ProductMasterDetail() {
         return;
       }
     }
+    if (hydraulicData?.design_flow_sync_status === 'conflict' && hydraulicFlowResolution !== 'hydraulic') {
+      toast.error('Choose which stored Design Flow to keep before saving');
+      return;
+    }
     setHydraulicSaving(true);
     try {
-      await api.put(`/product-masters/${id}/hydraulic`, {
+      const { data: updatedHydraulic } = await api.put(`/product-masters/${id}/hydraulic`, {
         ...hydraulicForm,
+        design_flow_conflict_resolution: hydraulicFlowResolution || undefined,
         venturi_flow_m3h: rawVenturiFlow === null || rawVenturiFlow === undefined || String(rawVenturiFlow).trim() === ''
           ? null
           : Number(rawVenturiFlow),
       });
       toast.success('Hydraulic data saved');
       setEditingHydraulic(false);
+      if (updatedHydraulic) {
+        queryClient.setQueryData(['product-hydraulic', id], updatedHydraulic);
+        queryClient.setQueryData(['product-master', id], (old: any) => ({
+          ...old,
+          design_flow_m3h: updatedHydraulic.design_flow_m3h,
+          design_flow_sync_status: updatedHydraulic.design_flow_sync_status,
+        }));
+      }
       refetchHydraulic();
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+      queryClient.invalidateQueries({ queryKey: ['product-masters'] });
     } catch { toast.error('Failed to save hydraulic data'); }
     finally { setHydraulicSaving(false); }
   };
@@ -869,6 +893,15 @@ export default function ProductMasterDetail() {
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
                     <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                    {product.design_flow_sync_status === 'conflict' && (
+                      <label className="mt-2 flex items-start gap-2 text-xs text-amber-800">
+                        <input type="radio" checked={productFlowResolution === 'product_master'} onChange={() => {
+                          setProductFlowResolution('product_master');
+                          setEditForm((f: any) => ({ ...f, design_flow_m3h: String(product.product_design_flow_m3h) }));
+                        }} />
+                        Keep Product Master value ({product.product_design_flow_m3h} m³/h); Hydraulic currently has {product.hydraulic_design_flow_m3h} m³/h
+                      </label>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
@@ -954,7 +987,7 @@ export default function ProductMasterDetail() {
               { label: 'Manufacturer', value: (product as any).manufacturer },
               { label: 'Model', value: (product as any).model },
               ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
-              ...(!isPiping ? [{ label: 'Design Flow', value: product.design_flow_m3h ? `${product.design_flow_m3h} m³/h` : null }] : []),
+              ...(!isPiping ? [{ label: 'Design Flow', value: (hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) != null ? `${hydraulicData?.design_flow_m3h ?? product.design_flow_m3h} m³/h` : null }] : []),
               ...(!isPiping ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
               { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
               ...((product as any).cost != null ? [{ label: 'Cost Price', value: `${Number((product as any).cost).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
@@ -992,6 +1025,15 @@ export default function ProductMasterDetail() {
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
                     <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                    {product.design_flow_sync_status === 'conflict' && (
+                      <label className="mt-2 flex items-start gap-2 text-xs text-amber-800">
+                        <input type="radio" checked={productFlowResolution === 'product_master'} onChange={() => {
+                          setProductFlowResolution('product_master');
+                          setEditForm((f: any) => ({ ...f, design_flow_m3h: String(product.product_design_flow_m3h) }));
+                        }} />
+                        Keep Product Master value ({product.product_design_flow_m3h} m³/h); Hydraulic currently has {product.hydraulic_design_flow_m3h} m³/h
+                      </label>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
@@ -1270,11 +1312,20 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Network className="w-3.5 h-3.5" />Hydraulic</span>
                 {!editingHydraulic
-                  ? <button onClick={() => { setHydraulicForm({ ...hydraulicData }); setEditingHydraulic(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                  ? <button onClick={() => { setHydraulicFlowResolution(''); setHydraulicForm({ ...hydraulicData }); setEditingHydraulic(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
                   : <div className="flex gap-2"><button onClick={() => setEditingHydraulic(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveHydraulic} disabled={hydraulicSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{hydraulicSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
               {editingHydraulic ? (
                 <div className="p-3 grid grid-cols-2 gap-2">
+                  {hydraulicData?.design_flow_sync_status === 'conflict' && (
+                    <label className="col-span-2 rounded border border-amber-200 bg-amber-50 p-2 flex items-start gap-2 text-xs text-amber-800">
+                      <input type="radio" checked={hydraulicFlowResolution === 'hydraulic'} onChange={() => {
+                        setHydraulicFlowResolution('hydraulic');
+                        setHydraulicForm((f: any) => ({ ...f, design_flow_m3h: String(hydraulicData.hydraulic_design_flow_m3h) }));
+                      }} />
+                      Keep Hydraulic value ({hydraulicData.hydraulic_design_flow_m3h} m³/h); Product Master currently has {hydraulicData.product_design_flow_m3h} m³/h
+                    </label>
+                  )}
                   {[['design_flow_m3h','Design Flow (m³/h)'],['min_flow_m3h','Min Flow (m³/h)'],['max_flow_m3h','Max Flow (m³/h)'],['venturi_flow_m3h','Venturi Flow (m³/h)'],['design_head_m','Design Head (m)'],['design_pressure_bar','Design Pressure (bar)'],['max_pressure_bar','Max Pressure (bar)'],['npsh_required_m','NPSH Required (m)'],['min_temperature_c','Min Temp (°C)'],['max_temperature_c','Max Temp (°C)']].map(([k,l]) => (
                      <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" min={k === 'venturi_flow_m3h' ? 0 : undefined} step="any" value={hydraulicForm[k] ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
                   ))}

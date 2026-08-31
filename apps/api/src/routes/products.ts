@@ -1,5 +1,5 @@
-import { Router, Response } from 'express';
-import { query } from '../db';
+import { NextFunction, Router, Response } from 'express';
+import pool, { query } from '../db';
 import { logAudit } from '../db/audit';
 import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
 import multer from 'multer';
@@ -23,6 +23,68 @@ const uploadImage = multer({ storage: imageStorage, limits: { fileSize: 10 * 102
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('pim'));
+
+type DbClient = { query: typeof query; release?: () => void };
+
+const withProductTransaction = async <T>(work: (client: DbClient) => Promise<T>): Promise<T> => {
+  const connect = (pool as any).connect;
+  const client: DbClient = typeof connect === 'function'
+    ? await connect.call(pool)
+    : { query };
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release?.();
+  }
+};
+
+const normalizeDesignFlow = (value: unknown): number | null => {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized) || normalized < 0) {
+    const error: any = new Error('Design flow must be a finite, non-negative value in m³/h');
+    error.status = 400;
+    error.code = 'INVALID_DESIGN_FLOW';
+    throw error;
+  }
+  return normalized;
+};
+
+const flowsConflict = (productFlow: unknown, hydraulicFlow: unknown) =>
+  productFlow != null && hydraulicFlow != null && Number(productFlow) !== Number(hydraulicFlow);
+
+const insertAuditTx = (
+  client: DbClient,
+  actorId: string | null,
+  entityType: string,
+  entityId: string,
+  action: string,
+  details: Record<string, any>,
+) => client.query(
+  `INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details)
+   VALUES ($1,$2,$3,$4,$5)`,
+  [entityType, entityId, action, actorId, details],
+);
+
+const designFlowAuditDetails = (
+  source: 'product_master' | 'hydraulic_card' | 'reconciliation' | 'product_create' | 'product_duplicate',
+  designFlow: number | null,
+  previousProductFlow: unknown,
+  previousHydraulicFlow: unknown,
+) => ({
+  summary: 'Linked Product Master and Hydraulic design flow updated',
+  source,
+  design_flow_m3h: designFlow,
+  previous_product_design_flow_m3h: previousProductFlow ?? null,
+  previous_hydraulic_design_flow_m3h: previousHydraulicFlow ?? null,
+  resolved_conflict: flowsConflict(previousProductFlow, previousHydraulicFlow),
+});
 
 // PRODUCT FAMILIES
 router.get('/product-families', async (req: AuthRequest, res: Response) => {
@@ -117,7 +179,14 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
   const countRes = await query(`SELECT COUNT(*) FROM product_masters pm LEFT JOIN product_families pf ON pm.product_family_id=pf.id ${where}`, params);
   params.push(page_size, offset);
   const result = await query(
-    `SELECT pm.*, pf.product_family_name, tf.name AS tank_family_name,
+    `SELECT pm.*, COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
+       CASE
+         WHEN pm.design_flow_m3h IS NOT NULL AND ph.design_flow_m3h IS NOT NULL
+              AND pm.design_flow_m3h IS DISTINCT FROM ph.design_flow_m3h THEN 'conflict'
+         WHEN pm.design_flow_m3h IS NULL AND ph.design_flow_m3h IS NULL THEN 'empty'
+         ELSE 'synchronized'
+       END AS design_flow_sync_status,
+       pf.product_family_name, tf.name AS tank_family_name,
        COALESCE(
          pm.surface_area_m2,
          CASE
@@ -132,6 +201,7 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
        COALESCE(sp.project_code, pm.source_tank_snapshot->>'project_code') AS source_project_code,
        COALESCE(sp.project_name, pm.source_tank_snapshot->>'project_name') AS source_project_name
      FROM product_masters pm
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      LEFT JOIN product_families pf ON pm.product_family_id=pf.id
      LEFT JOIN tank_families tf ON pm.tank_family_id=tf.id
      LEFT JOIN tanks st ON st.id=pm.source_tank_id
@@ -144,7 +214,16 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
 
 router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query(
-    `SELECT pm.*, pf.product_family_name, m.material_name,
+    `SELECT pm.*, COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
+       CASE
+         WHEN pm.design_flow_m3h IS NOT NULL AND ph.design_flow_m3h IS NOT NULL
+              AND pm.design_flow_m3h IS DISTINCT FROM ph.design_flow_m3h THEN 'conflict'
+         WHEN pm.design_flow_m3h IS NULL AND ph.design_flow_m3h IS NULL THEN 'empty'
+         ELSE 'synchronized'
+       END AS design_flow_sync_status,
+       pm.design_flow_m3h AS product_design_flow_m3h,
+       ph.design_flow_m3h AS hydraulic_design_flow_m3h,
+       pf.product_family_name, m.material_name,
        COALESCE(
          pm.surface_area_m2,
          CASE
@@ -159,6 +238,7 @@ router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
        COALESCE(sp.project_code, pm.source_tank_snapshot->>'project_code') AS source_project_code,
        COALESCE(sp.project_name, pm.source_tank_snapshot->>'project_name') AS source_project_name
      FROM product_masters pm
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      LEFT JOIN product_families pf ON pm.product_family_id=pf.id
      LEFT JOIN materials m ON pm.primary_material_code=m.material_code
      LEFT JOIN tanks st ON st.id=pm.source_tank_id
@@ -214,7 +294,7 @@ router.post('/product-masters/bulk-import', authenticate, async (req: AuthReques
   res.json({ created: created.length, linked: linked.length, errors, created_codes: created, linked_codes: linked });
 });
 
-router.post('/product-masters', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/product-masters', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const {
     product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
     design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
@@ -227,28 +307,42 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
     length_mm ? parseFloat(length_mm) : null,
     width_mm ? parseFloat(width_mm) : null,
   );
-  const result = await query(
-    `INSERT INTO product_masters
-      (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
-       design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
-       shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, surface_area_m2, cost,
-        manufacturer, model, configuration, control_type)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
-    [
-      product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
-      design_flow_m3h || null, design_pressure_bar || null, design_head_m || null, power_kw || null,
-      primary_material_code || null, standard_status || 'Concept', notes || null,
-      shape_type || null, length_mm || null, width_mm || null, height_mm || null,
-      design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, surfaceAreaM2, 0,
-       manufacturer || null, model || null, configuration || null, control_type || null,
-    ]);
-  await logAudit(req.user!.id, 'product', result.rows[0].id, 'CREATE', {
-    summary: `Product ${product_code} created`,
-    product_code,
-    product_name,
-    standard_status: standard_status || 'Concept',
-  });
-  res.status(201).json(result.rows[0]);
+  try {
+    const linkedFlow = normalizeDesignFlow(design_flow_m3h);
+    const created = await withProductTransaction(async client => {
+      const result = await client.query(
+        `INSERT INTO product_masters
+          (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
+           design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
+           shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, surface_area_m2, cost,
+            manufacturer, model, configuration, control_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
+        [
+          product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
+          linkedFlow, design_pressure_bar || null, design_head_m || null, power_kw || null,
+          primary_material_code || null, standard_status || 'Concept', notes || null,
+          shape_type || null, length_mm || null, width_mm || null, height_mm || null,
+          design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, surfaceAreaM2, 0,
+          manufacturer || null, model || null, configuration || null, control_type || null,
+        ]);
+      await client.query(
+        'INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, updated_at) VALUES ($1,$2,NOW())',
+        [result.rows[0].id, linkedFlow],
+      );
+      await insertAuditTx(client, req.user!.id, 'product', result.rows[0].id, 'CREATE', {
+        summary: `Product ${product_code} created`,
+        product_code,
+        product_name,
+        standard_status: standard_status || 'Concept',
+      });
+      await insertAuditTx(client, req.user!.id, 'product', result.rows[0].id, 'LINKED_DESIGN_FLOW_UPDATE',
+        designFlowAuditDetails('product_create', linkedFlow, null, null));
+      return { ...result.rows[0], design_flow_m3h: linkedFlow, design_flow_sync_status: linkedFlow == null ? 'empty' : 'synchronized' };
+    });
+    res.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
@@ -274,25 +368,90 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
   res.json({ deleted: true });
 });
 
-router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, status } = req.body;
   const hasPowerKw = Object.prototype.hasOwnProperty.call(req.body, 'power_kw');
+  const hasDesignFlow = Object.prototype.hasOwnProperty.call(req.body, 'design_flow_m3h');
   const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
   const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
   const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
   const weightVal = weight_kg != null && weight_kg !== '' ? parseFloat(weight_kg) : null;
   // Normalise the incoming code — null means "don't change"
   const newCode = (product_code && String(product_code).trim()) ? String(product_code).trim().toUpperCase() : null;
-  // If a new product_code is supplied, check for uniqueness (ignore self)
-  if (newCode) {
-    const conflict = await query('SELECT id FROM product_masters WHERE product_code=$1 AND id::text!=$2', [newCode, req.params.id]);
-    if (conflict.rows.length > 0) return res.status(409).json({ error: { code: 'CONFLICT', message: `Product code ${newCode} is already in use` } });
+  let previousProductFlow: unknown;
+  let previousHydraulicFlow: unknown;
+  let linkedDesignFlow: number | null | undefined;
+  let updated: any;
+  try {
+    updated = await withProductTransaction(async client => {
+      if (newCode) {
+        const conflict = await client.query('SELECT id FROM product_masters WHERE product_code=$1 AND id::text!=$2', [newCode, req.params.id]);
+        if (conflict.rows.length > 0) {
+          const error: any = new Error(`Product code ${newCode} is already in use`);
+          error.status = 409;
+          error.code = 'CONFLICT';
+          throw error;
+        }
+      }
+      const current = await client.query(
+        `SELECT pm.design_flow_m3h AS product_design_flow_m3h,
+                ph.design_flow_m3h AS hydraulic_design_flow_m3h
+         FROM product_masters pm
+         LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
+         WHERE pm.id=$1
+         FOR UPDATE OF pm`,
+        [req.params.id],
+      );
+      previousProductFlow = current.rows[0]?.product_design_flow_m3h;
+      previousHydraulicFlow = current.rows[0]?.hydraulic_design_flow_m3h;
+      if (flowsConflict(previousProductFlow, previousHydraulicFlow) && req.body.design_flow_conflict_resolution !== 'product_master') {
+        const error: any = new Error('Conflicting populated design flows require an explicit product_master resolution');
+        error.status = 409;
+        error.code = 'DESIGN_FLOW_CONFLICT';
+        throw error;
+      }
+      linkedDesignFlow = flowsConflict(previousProductFlow, previousHydraulicFlow)
+        ? Number(previousProductFlow)
+        : hasDesignFlow
+          ? normalizeDesignFlow(design_flow_m3h)
+          : previousHydraulicFlow != null
+            ? Number(previousHydraulicFlow)
+            : previousProductFlow != null
+              ? Number(previousProductFlow)
+              : null;
+      const result = await client.query(
+        `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=CASE WHEN $33 THEN $6 ELSE power_kw END, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), updated_at=NOW() WHERE id=$31 RETURNING *`,
+        [product_name, product_category, application_type, linkedDesignFlow, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, configuration || null, control_type || null, status || null, req.params.id, newCode, hasPowerKw]);
+      if (!result.rows[0]) {
+        const error: any = new Error('Product not found');
+        error.status = 404;
+        error.code = 'NOT_FOUND';
+        throw error;
+      }
+      await client.query(
+        `INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, updated_at)
+         VALUES ($1,$2,NOW())
+         ON CONFLICT (product_master_id) DO UPDATE SET design_flow_m3h=EXCLUDED.design_flow_m3h, updated_at=NOW()`,
+        [req.params.id, linkedDesignFlow],
+      );
+      if (flowsConflict(previousProductFlow, previousHydraulicFlow)) {
+        await client.query(
+          `UPDATE product_design_flow_reconciliations
+           SET status='resolved', resolution='product_master', resolved_value_m3h=$2,
+               resolved_by=$3, resolved_at=NOW()
+           WHERE product_master_id=$1 AND status='unresolved'`,
+          [req.params.id, linkedDesignFlow, req.user!.id],
+        );
+      }
+      if (hasDesignFlow || previousProductFlow !== previousHydraulicFlow) {
+        await insertAuditTx(client, req.user!.id, 'product', String(req.params.id), 'LINKED_DESIGN_FLOW_UPDATE',
+          designFlowAuditDetails('product_master', linkedDesignFlow ?? null, previousProductFlow, previousHydraulicFlow));
+      }
+      return { ...result.rows[0], design_flow_m3h: linkedDesignFlow, design_flow_sync_status: linkedDesignFlow == null ? 'empty' : 'synchronized' };
+    });
+  } catch (error) {
+    return next(error);
   }
-  // product_code=$32 uses COALESCE so null means "keep existing"
-  const result = await query(
-    `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=CASE WHEN $33 THEN $6 ELSE power_kw END, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), updated_at=NOW() WHERE id=$31 RETURNING *`,
-    [product_name, product_category, application_type, design_flow_m3h, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, configuration || null, control_type || null, status || null, req.params.id, newCode, hasPowerKw]);
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   await logAudit(req.user!.id, 'product', String(req.params.id), 'UPDATE', {
     summary: 'Product details updated',
     product_code: product_code || undefined,
@@ -304,11 +463,17 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
     sell_price: sellVal,
     primary_material_code: primary_material_code || null,
   });
-  res.json(result.rows[0]);
+  res.json(updated);
 });
 
-router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
-  const orig = await query('SELECT * FROM product_masters WHERE id=$1', [req.params.id]);
+router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orig = await query(
+    `SELECT pm.*, ph.design_flow_m3h AS hydraulic_design_flow_m3h
+     FROM product_masters pm
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
+     WHERE pm.id=$1`,
+    [req.params.id],
+  );
   if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const src = orig.rows[0];
   let newCode: string = req.body.product_code ? req.body.product_code.trim().toUpperCase() : '';
@@ -328,11 +493,34 @@ router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequ
   const newName = req.body.product_name ? req.body.product_name.trim() : `Copy of ${src.product_name}`;
   const newFamilyId = ('product_family_id' in req.body) ? (req.body.product_family_id || null) : src.product_family_id;
   const newStatus = req.body.standard_status || src.standard_status;
-  const result = await query(
-    `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
-    [newCode, newFamilyId, newName, src.product_category, src.application_type, src.design_flow_m3h, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null, src.configuration || null, src.control_type || null]);
-  res.status(201).json(result.rows[0]);
+  try {
+    const linkedFlow = src.hydraulic_design_flow_m3h != null ? Number(src.hydraulic_design_flow_m3h) : normalizeDesignFlow(src.design_flow_m3h);
+    const created = await withProductTransaction(async client => {
+      const result = await client.query(
+        `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
+        [newCode, newFamilyId, newName, src.product_category, src.application_type, linkedFlow, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null, src.configuration || null, src.control_type || null]);
+      await client.query(
+        `INSERT INTO product_hydraulic
+           (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h,
+            design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type,
+            min_temperature_c, max_temperature_c, notes, updated_at)
+         SELECT $1,$2,min_flow_m3h,max_flow_m3h,venturi_flow_m3h,design_head_m,design_pressure_bar,
+                max_pressure_bar,npsh_required_m,fluid_type,min_temperature_c,max_temperature_c,notes,NOW()
+         FROM product_hydraulic WHERE product_master_id=$3
+         UNION ALL
+         SELECT $1,$2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NOW()
+         WHERE NOT EXISTS (SELECT 1 FROM product_hydraulic WHERE product_master_id=$3)`,
+        [result.rows[0].id, linkedFlow, req.params.id],
+      );
+      await insertAuditTx(client, req.user!.id, 'product', result.rows[0].id, 'LINKED_DESIGN_FLOW_UPDATE',
+        designFlowAuditDetails('product_duplicate', linkedFlow, src.design_flow_m3h, src.hydraulic_design_flow_m3h));
+      return { ...result.rows[0], design_flow_m3h: linkedFlow, design_flow_sync_status: linkedFlow == null ? 'empty' : 'synchronized' };
+    });
+    res.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
 });
 
 // PRODUCT VARIANTS
@@ -765,14 +953,30 @@ router.put('/product-masters/:id/electrical', authenticate, async (req: AuthRequ
 router.get('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  const r = await query('SELECT * FROM product_hydraulic WHERE product_master_id=$1', [pid]);
+  const r = await query(
+    `SELECT ph.*, pm.id AS product_master_id,
+       COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
+       CASE
+         WHEN pm.design_flow_m3h IS NOT NULL AND ph.design_flow_m3h IS NOT NULL
+              AND pm.design_flow_m3h IS DISTINCT FROM ph.design_flow_m3h THEN 'conflict'
+         WHEN pm.design_flow_m3h IS NULL AND ph.design_flow_m3h IS NULL THEN 'empty'
+         ELSE 'synchronized'
+       END AS design_flow_sync_status,
+       pm.design_flow_m3h AS product_design_flow_m3h,
+       ph.design_flow_m3h AS hydraulic_design_flow_m3h
+     FROM product_masters pm
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
+     WHERE pm.id=$1`,
+    [pid],
+  );
   res.json(r.rows[0] || {});
 });
 
-router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  const { design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes } = req.body;
+  const body = req.body || {};
+  const { design_flow_m3h, venturi_flow_m3h } = body;
   const venturiFlow = venturi_flow_m3h === null || venturi_flow_m3h === undefined ||
     (typeof venturi_flow_m3h === 'string' && venturi_flow_m3h.trim() === '')
     ? null
@@ -784,17 +988,152 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
       error: { code: 'INVALID_VENTURI_FLOW', message: 'Venturi flow must be a finite, non-negative value in m³/h' },
     });
   }
-  const r = await query(`
-    INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
-    ON CONFLICT (product_master_id) DO UPDATE SET
-      design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, venturi_flow_m3h=$5, design_head_m=$6, design_pressure_bar=$7, max_pressure_bar=$8, npsh_required_m=$9, fluid_type=$10, min_temperature_c=$11, max_temperature_c=$12, notes=$13, updated_at=NOW()
-    RETURNING *`, [pid, nullableHydraulicValue(design_flow_m3h), nullableHydraulicValue(min_flow_m3h), nullableHydraulicValue(max_flow_m3h), venturiFlow, nullableHydraulicValue(design_head_m), nullableHydraulicValue(design_pressure_bar), nullableHydraulicValue(max_pressure_bar), nullableHydraulicValue(npsh_required_m), nullableHydraulicValue(fluid_type), nullableHydraulicValue(min_temperature_c), nullableHydraulicValue(max_temperature_c), nullableHydraulicValue(notes)]);
+  const fields = ['min_flow_m3h', 'max_flow_m3h', 'design_head_m', 'design_pressure_bar', 'max_pressure_bar', 'npsh_required_m', 'fluid_type', 'min_temperature_c', 'max_temperature_c', 'notes'] as const;
+  let previousProductFlow: unknown;
+  let previousHydraulicFlow: unknown;
+  let linkedDesignFlow: number | null;
+  let saved: any;
+  try {
+    saved = await withProductTransaction(async client => {
+      const currentProduct = await client.query('SELECT design_flow_m3h FROM product_masters WHERE id=$1 FOR UPDATE', [pid]);
+      const currentHydraulic = await client.query('SELECT * FROM product_hydraulic WHERE product_master_id=$1 FOR UPDATE', [pid]);
+      const existing = currentHydraulic.rows[0] || {};
+      previousProductFlow = currentProduct.rows[0]?.design_flow_m3h;
+      previousHydraulicFlow = existing.design_flow_m3h;
+      if (flowsConflict(previousProductFlow, previousHydraulicFlow) && body.design_flow_conflict_resolution !== 'hydraulic') {
+        const error: any = new Error('Conflicting populated design flows require an explicit hydraulic resolution');
+        error.status = 409;
+        error.code = 'DESIGN_FLOW_CONFLICT';
+        throw error;
+      }
+      linkedDesignFlow = flowsConflict(previousProductFlow, previousHydraulicFlow)
+        ? Number(previousHydraulicFlow)
+        : Object.prototype.hasOwnProperty.call(body, 'design_flow_m3h')
+          ? normalizeDesignFlow(design_flow_m3h)
+          : previousHydraulicFlow != null
+            ? Number(previousHydraulicFlow)
+            : previousProductFlow != null
+              ? Number(previousProductFlow)
+              : null;
+      const merged = Object.fromEntries(fields.map(field => [
+        field,
+        Object.prototype.hasOwnProperty.call(body, field) ? nullableHydraulicValue(body[field]) : existing[field] ?? null,
+      ]));
+      const mergedVenturi = Object.prototype.hasOwnProperty.call(body, 'venturi_flow_m3h')
+        ? venturiFlow
+        : existing.venturi_flow_m3h ?? null;
+      const r = await client.query(`
+        INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        ON CONFLICT (product_master_id) DO UPDATE SET
+          design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, venturi_flow_m3h=$5, design_head_m=$6, design_pressure_bar=$7, max_pressure_bar=$8, npsh_required_m=$9, fluid_type=$10, min_temperature_c=$11, max_temperature_c=$12, notes=$13, updated_at=NOW()
+        RETURNING *`, [pid, linkedDesignFlow, merged.min_flow_m3h, merged.max_flow_m3h, mergedVenturi, merged.design_head_m, merged.design_pressure_bar, merged.max_pressure_bar, merged.npsh_required_m, merged.fluid_type, merged.min_temperature_c, merged.max_temperature_c, merged.notes]);
+      await client.query('UPDATE product_masters SET design_flow_m3h=$2, updated_at=NOW() WHERE id=$1', [pid, linkedDesignFlow]);
+      if (flowsConflict(previousProductFlow, previousHydraulicFlow)) {
+        await client.query(
+          `UPDATE product_design_flow_reconciliations
+           SET status='resolved', resolution='hydraulic', resolved_value_m3h=$2,
+               resolved_by=$3, resolved_at=NOW()
+           WHERE product_master_id=$1 AND status='unresolved'`,
+          [pid, linkedDesignFlow, req.user!.id],
+        );
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'design_flow_m3h') || previousProductFlow !== previousHydraulicFlow) {
+        await insertAuditTx(client, req.user!.id, 'product', pid, 'LINKED_DESIGN_FLOW_UPDATE',
+          designFlowAuditDetails('hydraulic_card', linkedDesignFlow, previousProductFlow, previousHydraulicFlow));
+      }
+      return { ...r.rows[0], design_flow_m3h: linkedDesignFlow, design_flow_sync_status: linkedDesignFlow == null ? 'empty' : 'synchronized' };
+    });
+  } catch (error) {
+    return next(error);
+  }
   await logAudit(req.user!.id, 'product', pid, 'UPDATE', {
     summary: 'Product hydraulic data updated',
     venturi_flow_m3h: venturiFlow,
   });
-  res.json(r.rows[0]);
+  res.json(saved);
+});
+
+router.post('/product-masters/design-flow/reconcile', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const requestedProduct = req.body?.product_id || req.body?.product_code || null;
+  const resolution = req.body?.resolution;
+  if (resolution != null && !['hydraulic', 'product_master'].includes(resolution)) {
+    return res.status(400).json({ error: { code: 'INVALID_RESOLUTION', message: 'resolution must be hydraulic or product_master' } });
+  }
+  try {
+    const outcome = await withProductTransaction(async client => {
+      const params = requestedProduct ? [requestedProduct] : [];
+      const result = await client.query(
+        `SELECT pm.id, pm.product_code, pm.design_flow_m3h AS product_design_flow_m3h,
+                ph.design_flow_m3h AS hydraulic_design_flow_m3h
+         FROM product_masters pm
+         LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
+         ${requestedProduct ? 'WHERE pm.id::text=$1 OR pm.product_code=$1' : ''}
+         ORDER BY pm.product_code
+         FOR UPDATE OF pm`,
+        params,
+      );
+      const conflicts: any[] = [];
+      const reconciled: any[] = [];
+      for (const row of result.rows) {
+        const conflict = flowsConflict(row.product_design_flow_m3h, row.hydraulic_design_flow_m3h);
+        if (conflict && !resolution) {
+          await client.query(
+            `INSERT INTO product_design_flow_reconciliations
+               (product_master_id, product_flow_m3h, hydraulic_flow_m3h, status)
+             SELECT $1,$2,$3,'unresolved'
+             WHERE NOT EXISTS (
+               SELECT 1 FROM product_design_flow_reconciliations
+               WHERE product_master_id=$1 AND status='unresolved'
+             )`,
+            [row.id, row.product_design_flow_m3h, row.hydraulic_design_flow_m3h],
+          );
+          conflicts.push(row);
+          continue;
+        }
+        const value = conflict
+          ? Number(resolution === 'hydraulic' ? row.hydraulic_design_flow_m3h : row.product_design_flow_m3h)
+          : row.hydraulic_design_flow_m3h != null
+            ? Number(row.hydraulic_design_flow_m3h)
+            : row.product_design_flow_m3h != null
+              ? Number(row.product_design_flow_m3h)
+              : null;
+        await client.query('UPDATE product_masters SET design_flow_m3h=$2, updated_at=NOW() WHERE id=$1', [row.id, value]);
+        await client.query(
+          `INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, updated_at)
+           VALUES ($1,$2,NOW())
+           ON CONFLICT (product_master_id) DO UPDATE SET design_flow_m3h=EXCLUDED.design_flow_m3h, updated_at=NOW()`,
+          [row.id, value],
+        );
+        if (conflict) {
+          await client.query(
+            `UPDATE product_design_flow_reconciliations
+             SET status='resolved', resolution=$2, resolved_value_m3h=$3,
+                 resolved_by=$4, resolved_at=NOW()
+             WHERE product_master_id=$1 AND status='unresolved'`,
+            [row.id, resolution, value, req.user!.id],
+          );
+        }
+        await insertAuditTx(client, req.user!.id, 'product', row.id, 'LINKED_DESIGN_FLOW_UPDATE',
+          designFlowAuditDetails('reconciliation', value, row.product_design_flow_m3h, row.hydraulic_design_flow_m3h));
+        reconciled.push({ product_id: row.id, product_code: row.product_code, design_flow_m3h: value, resolution: conflict ? resolution : 'backfill' });
+      }
+      return { reconciled, conflicts };
+    });
+    if (outcome.conflicts.length) {
+      return res.status(409).json({
+        error: {
+          code: 'DESIGN_FLOW_CONFLICT',
+          message: 'Conflicting populated design flows require an explicit hydraulic or product_master resolution',
+        },
+        reconciled: outcome.reconciled,
+        conflicts: outcome.conflicts,
+      });
+    }
+    res.json({ reconciled: outcome.reconciled, conflicts: [] });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // PRODUCT CLASSIFIER VALUES
