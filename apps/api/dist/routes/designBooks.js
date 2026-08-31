@@ -279,7 +279,14 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
     }
     const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
     const compactUnits = compactUnitIds.length
-        ? (await runner('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
+        ? (await runner(`SELECT lcu.*,
+          COALESCE((
+            SELECT json_agg(e ORDER BY e.sort_order, e.created_at, e.id)
+            FROM lss_compact_unit_equipment e
+            WHERE e.compact_unit_id=lcu.id
+          ), '[]'::json) AS equipment
+       FROM lss_compact_units lcu
+       WHERE lcu.id = ANY($1::uuid[])`, [compactUnitIds])).rows
         : [];
     const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, links.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculatedAt, system.side_streams || [], system.fractionator_allocations || []));
     const currentSystems = systems.map(system => {
@@ -297,6 +304,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         exhibits,
         tanks,
         systems: currentSystems,
+        compact_units: compactUnits,
         system_links: links,
         species,
         hydraulics,
@@ -624,7 +632,14 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         .map(system => system.compact_unit_id)
         .filter(Boolean);
     const compactUnits = compactUnitIds.length > 0
-        ? (await (0, index_1.query)('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
+        ? (await (0, index_1.query)(`SELECT lcu.*,
+          COALESCE((
+            SELECT json_agg(e ORDER BY e.sort_order, e.created_at, e.id)
+            FROM lss_compact_unit_equipment e
+            WHERE e.compact_unit_id=lcu.id
+          ), '[]'::json) AS equipment
+       FROM lss_compact_units lcu
+       WHERE lcu.id = ANY($1::uuid[])`, [compactUnitIds])).rows
         : [];
     const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, systemLinks.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculationTimestamp, system.side_streams || [], system.fractionator_allocations || []));
     const currentSystems = systems.map(system => {
@@ -641,6 +656,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         exhibits,
         tanks,
         systems: currentSystems,
+        compact_units: compactUnits,
         system_links: systemLinks,
         species,
         hydraulics,

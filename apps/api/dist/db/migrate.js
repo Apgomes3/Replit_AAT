@@ -1191,6 +1191,37 @@ CREATE TABLE IF NOT EXISTS lss_compact_units (
   updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- LSS COMPACT UNITS: independent BOM/BOQ snapshots copied from PIM
+ALTER TABLE lss_compact_units ADD COLUMN IF NOT EXISTS source_bom_id UUID REFERENCES standard_boms(id) ON DELETE SET NULL;
+ALTER TABLE lss_compact_units ADD COLUMN IF NOT EXISTS source_bom_code VARCHAR(50);
+ALTER TABLE lss_compact_units ADD COLUMN IF NOT EXISTS source_bom_revision VARCHAR(20);
+
+CREATE TABLE IF NOT EXISTS lss_compact_unit_equipment (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  compact_unit_id       UUID NOT NULL REFERENCES lss_compact_units(id) ON DELETE CASCADE,
+  sort_order            INTEGER NOT NULL DEFAULT 0,
+  source_bom_line_id    UUID REFERENCES bom_lines(id) ON DELETE SET NULL,
+  source_component_id   UUID REFERENCES components(id) ON DELETE SET NULL,
+  source_bom_id         UUID REFERENCES standard_boms(id) ON DELETE SET NULL,
+  component_type        VARCHAR(100),
+  component_reference_code VARCHAR(100),
+  component_name        VARCHAR(255) NOT NULL,
+  quantity              NUMERIC NOT NULL DEFAULT 1,
+  unit                  VARCHAR(50) DEFAULT 'EA',
+  is_optional           BOOLEAN NOT NULL DEFAULT false,
+  included              BOOLEAN NOT NULL DEFAULT true,
+  is_filtration         BOOLEAN NOT NULL DEFAULT false,
+  size_or_power         VARCHAR(100),
+  size_or_power_override VARCHAR(100),
+  remarks               TEXT,
+  is_custom             BOOLEAN NOT NULL DEFAULT false,
+  created_at            TIMESTAMPTZ DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (quantity >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_compact_unit_equipment_unit
+  ON lss_compact_unit_equipment(compact_unit_id, sort_order, created_at);
+
 -- SYSTEMS: config type + compact unit link
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS system_config   VARCHAR(20);
 ALTER TABLE systems ALTER COLUMN system_config DROP DEFAULT;

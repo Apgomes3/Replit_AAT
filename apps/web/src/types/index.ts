@@ -174,6 +174,26 @@ export interface BOMLine {
   sub_product_name?: string;
 }
 
+export interface CompactUnitEquipment {
+  id?: string;
+  sort_order: number;
+  source_bom_line_id?: string | null;
+  source_component_id?: string | null;
+  source_bom_id?: string | null;
+  component_type?: string | null;
+  component_reference_code?: string | null;
+  component_name: string;
+  quantity: number;
+  unit?: string | null;
+  is_optional: boolean;
+  included: boolean;
+  is_filtration: boolean;
+  size_or_power?: string | null;
+  size_or_power_override?: string | null;
+  remarks?: string | null;
+  is_custom: boolean;
+}
+
 export interface VendorOption {
   id: string;
   vendor_option_code: string;

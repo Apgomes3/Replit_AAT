@@ -346,7 +346,17 @@ async function loadReleaseContext(
   }
   const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
   const compactUnits = compactUnitIds.length
-    ? (await runner('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
+    ? (await runner(
+      `SELECT lcu.*,
+          COALESCE((
+            SELECT json_agg(e ORDER BY e.sort_order, e.created_at, e.id)
+            FROM lss_compact_unit_equipment e
+            WHERE e.compact_unit_id=lcu.id
+          ), '[]'::json) AS equipment
+       FROM lss_compact_units lcu
+       WHERE lcu.id = ANY($1::uuid[])`,
+      [compactUnitIds],
+    )).rows
     : [];
   const systemCalculations = systems.map(system => calculateSystemEngineering(
     system,
@@ -382,6 +392,7 @@ async function loadReleaseContext(
     exhibits,
     tanks,
     systems: currentSystems,
+    compact_units: compactUnits,
     system_links: links,
     species,
     hydraulics,
@@ -785,7 +796,17 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     .map(system => system.compact_unit_id)
     .filter(Boolean);
   const compactUnits = compactUnitIds.length > 0
-    ? (await query('SELECT * FROM lss_compact_units WHERE id = ANY($1::uuid[])', [compactUnitIds])).rows
+    ? (await query(
+      `SELECT lcu.*,
+          COALESCE((
+            SELECT json_agg(e ORDER BY e.sort_order, e.created_at, e.id)
+            FROM lss_compact_unit_equipment e
+            WHERE e.compact_unit_id=lcu.id
+          ), '[]'::json) AS equipment
+       FROM lss_compact_units lcu
+       WHERE lcu.id = ANY($1::uuid[])`,
+      [compactUnitIds],
+    )).rows
     : [];
   const systemCalculations = systems.map(system => calculateSystemEngineering(
     system,
@@ -820,6 +841,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     exhibits,
     tanks,
     systems: currentSystems,
+    compact_units: compactUnits,
     system_links: systemLinks,
     species,
     hydraulics,

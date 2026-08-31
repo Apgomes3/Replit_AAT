@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../../lib/api';
@@ -20,7 +20,61 @@ const EMPTY_FORM = {
   dry_weight_kg: '', power_kw: '',
   inlet_connection: '', outlet_connection: '',
   notes: '', product_master_id: '', status: 'Active',
+  source_bom_id: '', source_bom_code: '', source_bom_revision: '',
+  equipment: [] as CompactUnitEquipment[],
 };
+
+export type CompactUnitEquipment = {
+  id?: string;
+  sort_order?: number;
+  source_bom_line_id?: string | null;
+  source_component_id?: string | null;
+  source_bom_id?: string | null;
+  line_number?: number | null;
+  component_type?: string | null;
+  component_reference_code?: string | null;
+  component_name: string;
+  quantity: number | string;
+  unit?: string | null;
+  is_optional?: boolean;
+  included?: boolean;
+  is_filtration?: boolean;
+  size_or_power?: string | null;
+  size_or_power_override?: string | null;
+  remarks?: string | null;
+  is_custom?: boolean;
+};
+
+function normalizeEquipmentLine(line: any, index: number): CompactUnitEquipment {
+  return {
+    ...line,
+    sort_order: line.sort_order ?? index,
+    component_name: line.component_name || '',
+    quantity: line.quantity ?? 1,
+    unit: line.unit || 'EA',
+    is_optional: Boolean(line.is_optional),
+    included: line.included !== false,
+    is_filtration: Boolean(line.is_filtration),
+    size_or_power: line.size_or_power || null,
+    size_or_power_override: line.size_or_power_override || null,
+    is_custom: Boolean(line.is_custom),
+  };
+}
+
+export function summarizeFiltration(
+  equipment: CompactUnitEquipment[] = [],
+  legacyText = '',
+) {
+  const selected = equipment
+    .filter(line => line.is_filtration && line.included !== false)
+    .map(line => {
+      const value = line.size_or_power_override || line.size_or_power;
+      return value ? `${line.component_name} (${value})` : line.component_name;
+    })
+    .filter(Boolean);
+  if (selected.length) return selected.join(' + ');
+  return equipment.length ? '' : legacyText || '';
+}
 
 type ProductSpecifications = {
   dimensions?: Record<string, any>;
@@ -74,6 +128,9 @@ export function normalizeCompactUnitPayload(form: Record<string, any>) {
   const numberOrNull = (value: unknown) =>
     value !== '' && value !== null && value !== undefined ? Number(value) : null;
 
+  const equipment = Array.isArray(form.equipment)
+    ? form.equipment.map((line: any, index: number) => normalizeEquipmentLine(line, index))
+    : undefined;
   return {
     unit_code: form.unit_code,
     unit_name: form.unit_name,
@@ -84,7 +141,7 @@ export function normalizeCompactUnitPayload(form: Record<string, any>) {
     design_flow_m3h: numberOrNull(form.design_flow_m3h),
     max_flow_m3h: numberOrNull(form.max_flow_m3h),
     break_tank_volume_l: numberOrNull(form.break_tank_volume_l),
-    includes_filtration: form.includes_filtration,
+    includes_filtration: summarizeFiltration(equipment || [], form.includes_filtration),
     uv_power_w: numberOrNull(form.uv_power_w),
     footprint_l_mm: numberOrNull(form.footprint_l_mm),
     footprint_w_mm: numberOrNull(form.footprint_w_mm),
@@ -96,6 +153,10 @@ export function normalizeCompactUnitPayload(form: Record<string, any>) {
     notes: form.notes,
     product_master_id: form.product_master_id || null,
     status: form.status,
+    source_bom_id: form.source_bom_id || null,
+    source_bom_code: form.source_bom_code || null,
+    source_bom_revision: form.source_bom_revision || null,
+    ...(equipment === undefined ? {} : { equipment }),
   };
 }
 
@@ -157,14 +218,26 @@ function UnitModal({
     notes: unit.notes || '',
     product_master_id: unit.product_master_id || '',
     status: unit.status || 'Active',
+    source_bom_id: unit.source_bom_id || '',
+    source_bom_code: unit.source_bom_code || '',
+    source_bom_revision: unit.source_bom_revision || '',
+    equipment: Array.isArray(unit.equipment)
+      ? unit.equipment.map(normalizeEquipmentLine)
+      : [],
   } : { ...EMPTY_FORM });
 
   const [saving, setSaving] = useState(false);
   const [pimLoading, setPimLoading] = useState(false);
   const [pimError, setPimError] = useState('');
   const [pimValues, setPimValues] = useState<Record<string, any> | null>(null);
+  const [bomLoading, setBomLoading] = useState(false);
+  const [bomError, setBomError] = useState('');
+  const [bomState, setBomState] = useState<any>(null);
   const pimRequest = useRef(0);
+  const bomRequest = useRef(0);
   const set = (k: string, v: string) => setForm((f: any) => ({ ...f, [k]: v }));
+  const setEquipment = (equipment: CompactUnitEquipment[]) =>
+    setForm((f: any) => ({ ...f, equipment }));
 
   const selectedProduct = (productMasterId: string) =>
     products.find((product: any) => String(product.id) === String(productMasterId)) ?? {};
@@ -208,16 +281,73 @@ function UnitModal({
     }
   };
 
+  const loadBom = async (productMasterId: string, applyValues: boolean) => {
+    if (!productMasterId) return;
+    const request = ++bomRequest.current;
+    setBomLoading(true);
+    setBomError('');
+    try {
+      const response = await api.get(`/lss-compact-units/bom/${productMasterId}`);
+      if (request !== bomRequest.current) return;
+      const imported = response.data;
+      setBomState(imported);
+      if (applyValues && imported.available) {
+        setForm((current: any) => ({
+          ...current,
+          source_bom_id: imported.bom.id || '',
+          source_bom_code: imported.bom.bom_code || '',
+          source_bom_revision: imported.bom.revision_code || '',
+          equipment: imported.lines.map(normalizeEquipmentLine),
+        }));
+      }
+    } catch (err: any) {
+      if (request !== bomRequest.current) return;
+      setBomState(null);
+      setBomError(err?.response?.data?.error?.message || 'Product Master BOM could not be loaded. You can configure equipment manually.');
+    } finally {
+      if (request === bomRequest.current) setBomLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (unit?.product_master_id) void loadBom(unit.product_master_id, false);
+    // The saved equipment snapshot is deliberately not refreshed when the
+    // modal opens; this request only discovers whether a baseline is available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit?.id]);
+
   const handleProductMasterChange = (productMasterId: string) => {
-    set('product_master_id', productMasterId);
+    setForm((current: any) => {
+      const changesSource = Boolean(unit)
+        && String(productMasterId || '') !== String(unit.product_master_id || '');
+      if (!changesSource) return { ...current, product_master_id: productMasterId };
+      return {
+        ...current,
+        product_master_id: productMasterId,
+        source_bom_id: '',
+        source_bom_code: '',
+        source_bom_revision: '',
+        // Relinking intentionally retains the point-in-time list as manual
+        // equipment until the designer explicitly imports the new baseline.
+        equipment: (current.equipment || []).map((line: any) => ({
+          ...line,
+          source_bom_line_id: null,
+          source_component_id: null,
+          source_bom_id: null,
+          is_custom: true,
+        })),
+      };
+    });
     setPimValues(null);
     setPimError('');
     if (productMasterId) {
       // Editing a saved unit must never replace its overrides as a side
       // effect of changing the link. New units get a convenient first pass.
       void loadPimValues(productMasterId, !unit);
+      void loadBom(productMasterId, !unit);
     } else {
       pimRequest.current += 1;
+      bomRequest.current += 1;
     }
   };
 
@@ -228,6 +358,82 @@ function UnitModal({
     } else {
       void loadPimValues(form.product_master_id, true);
     }
+  };
+
+  const handleApplyBom = async () => {
+    if (!bomState?.available) return;
+    const productChanged = Boolean(unit)
+      && String(form.product_master_id || '') !== String(unit.product_master_id || '');
+    if (unit && !productChanged) {
+      if (!confirm('Reimport the latest active BOM now? Saved quantities, selections, custom equipment, and size/power overrides will be preserved where possible. Unsaved modal edits will be replaced by the saved snapshot.')) return;
+      setBomLoading(true);
+      try {
+        const response = await api.post(`/lss-compact-units/${unit.id}/reimport-bom`, { confirm: true });
+        const imported = response.data;
+        setBomState(imported);
+        setForm((current: any) => ({
+          ...current,
+          source_bom_id: imported.bom.id || '',
+          source_bom_code: imported.bom.bom_code || '',
+          source_bom_revision: imported.bom.revision_code || '',
+          equipment: (imported.equipment || []).map(normalizeEquipmentLine),
+        }));
+        toast.success('Latest BOM imported; saved overrides were preserved');
+      } catch (err: any) {
+        toast.error(err?.response?.data?.error?.message || 'BOM reimport failed; the unit was not changed');
+      } finally {
+        setBomLoading(false);
+      }
+      return;
+    }
+    if (productChanged && !confirm('Import the selected Product Master BOM as the new baseline? Existing manual equipment will be retained where it does not match the new BOM.')) return;
+    setForm((current: any) => ({
+      ...current,
+      source_bom_id: bomState.bom.id || '',
+      source_bom_code: bomState.bom.bom_code || '',
+      source_bom_revision: bomState.bom.revision_code || '',
+      equipment: (() => {
+        const imported = bomState.lines.map((line: any, index: number) => {
+        const old = (current.equipment || []).find((item: any) =>
+          (line.source_bom_line_id && item.source_bom_line_id === line.source_bom_line_id)
+          || (line.component_reference_code && item.component_reference_code === line.component_reference_code));
+        return normalizeEquipmentLine(old ? {
+          ...line,
+          included: old.included,
+          quantity: old.quantity,
+          size_or_power_override: old.size_or_power_override,
+          component_name: old.is_custom ? old.component_name : line.component_name,
+          remarks: old.remarks || line.remarks,
+          is_custom: old.is_custom,
+          } : line, index);
+        });
+        const importedSourceIds = new Set(imported.map((line: any) => line.source_bom_line_id).filter(Boolean));
+        const importedReferences = new Set(imported.map((line: any) => line.component_reference_code).filter(Boolean));
+        const custom = (current.equipment || []).filter((line: any) =>
+          line.is_custom
+          && (!line.source_bom_line_id || !importedSourceIds.has(line.source_bom_line_id))
+          && (!line.component_reference_code || !importedReferences.has(line.component_reference_code)));
+        return [...imported, ...custom].map(normalizeEquipmentLine);
+      })(),
+    }));
+    toast.success('Standard BOM loaded as an independent starting point');
+  };
+
+  const updateEquipment = (index: number, changes: Partial<CompactUnitEquipment>) => {
+    setEquipment((form.equipment || []).map((line: CompactUnitEquipment, itemIndex: number) =>
+      itemIndex === index ? { ...line, ...changes } : line));
+  };
+
+  const addEquipment = (isFiltration = false) => {
+    setEquipment([
+      ...(form.equipment || []),
+      normalizeEquipmentLine({
+        component_name: '',
+        component_type: isFiltration ? 'Filtration' : 'Other',
+        is_filtration: isFiltration,
+        is_custom: true,
+      }, (form.equipment || []).length),
+    ]);
   };
 
   const handleSave = async () => {
@@ -324,17 +530,127 @@ function UnitModal({
           <div>
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Filtration & Treatment</p>
             <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label htmlFor="compact-unit-includes-filtration" className="block text-xs font-medium text-stone-500 mb-1">Includes Filtration</label>
-                <input id="compact-unit-includes-filtration" value={form.includes_filtration} onChange={e => set('includes_filtration', e.target.value)}
-                  className={inputCls} placeholder="e.g. Foam Fractionation + UV + Polishing" />
-              </div>
               <div>
                 <label htmlFor="compact-unit-uv-power" className="block text-xs font-medium text-stone-500 mb-1">UV Power (W)</label>
                 <input id="compact-unit-uv-power" type="number" min="0" value={form.uv_power_w}
                   onChange={e => set('uv_power_w', e.target.value)} className={numCls} />
               </div>
             </div>
+          </div>
+
+          {/* BOM / equipment snapshot */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide">Equipment & BOM</p>
+                <p className="text-xs text-stone-400 mt-1">
+                  {form.source_bom_code
+                    ? `PIM baseline ${form.source_bom_code}, Rev ${form.source_bom_revision || '—'} — this copy is independent`
+                    : 'Configure a unit-specific equipment list; source Product Master data is never edited here.'}
+                </p>
+              </div>
+              <button type="button" onClick={() => addEquipment(false)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 border border-violet-200 rounded-lg px-2.5 py-1.5 hover:bg-violet-50">
+                <Plus className="w-3 h-3" /> Add equipment
+              </button>
+            </div>
+            {form.product_master_id && (
+              <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2 mb-3">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className={bomError ? 'text-amber-700' : 'text-stone-600'}>
+                    {bomLoading ? 'Loading applicable Product Master BOM…'
+                      : bomError ? bomError
+                        : bomState?.available ? `${bomState.lines.length} standard BOM item${bomState.lines.length === 1 ? '' : 's'} available`
+                          : bomState?.reason === 'empty_bom' ? 'Product Master BOM is empty. You can configure equipment manually.'
+                            : 'No applicable Product Master BOM found. You can configure equipment manually.'}
+                  </span>
+                  {!bomLoading && bomState?.available && (
+                    <button type="button" onClick={handleApplyBom}
+                      className="shrink-0 font-medium text-blue-700 hover:text-blue-900">
+                      {form.source_bom_id ? 'Reimport baseline' : 'Import standard BOM'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {(form.equipment || []).length === 0 ? (
+              <div className="rounded-lg border border-dashed border-stone-200 px-4 py-5 text-center text-xs text-stone-400">
+                No equipment configured yet. Add equipment manually or import a Product Master BOM.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {(form.equipment || []).map((line: CompactUnitEquipment, index: number) => (
+                  <div key={`${line.id || 'new'}-${index}`} className="rounded-lg border border-stone-200 bg-stone-50/50 p-3">
+                    <div className="flex items-start gap-2">
+                      <input type="checkbox" aria-label={`Include ${line.component_name || `equipment ${index + 1}`}`}
+                        checked={line.included !== false}
+                        onChange={e => updateEquipment(index, { included: e.target.checked })}
+                        className="mt-2 h-4 w-4 rounded border-stone-300 text-violet-600" />
+                      <div className="grid flex-1 grid-cols-1 sm:grid-cols-12 gap-2">
+                        <div className="sm:col-span-4">
+                          <label className="block text-[11px] font-medium text-stone-500 mb-1">Equipment</label>
+                          <input aria-label={`Equipment name ${index + 1}`} value={line.component_name}
+                            onChange={e => updateEquipment(index, { component_name: e.target.value, is_custom: true })}
+                            className={inputCls} placeholder="Equipment name" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-medium text-stone-500 mb-1">Reference</label>
+                          <input aria-label={`Equipment reference ${index + 1}`} value={line.component_reference_code || ''}
+                            onChange={e => updateEquipment(index, { component_reference_code: e.target.value, is_custom: true })}
+                            className={inputCls} placeholder="Part / tag" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-medium text-stone-500 mb-1">Quantity / unit</label>
+                          <div className="flex gap-1">
+                            <input aria-label={`Equipment quantity ${index + 1}`} type="number" min="0" step="any" value={line.quantity}
+                              onChange={e => updateEquipment(index, { quantity: e.target.value, is_custom: true })}
+                              className={`${numCls} min-w-0`} />
+                            <input aria-label={`Equipment unit ${index + 1}`} value={line.unit || ''}
+                              onChange={e => updateEquipment(index, { unit: e.target.value, is_custom: true })}
+                              className={`${inputCls} w-16 px-2`} placeholder="EA" />
+                          </div>
+                        </div>
+                        <div className="sm:col-span-3">
+                          <label className="block text-[11px] font-medium text-stone-500 mb-1">Size / power</label>
+                          <input aria-label={`Equipment size or power ${index + 1}`}
+                            value={line.size_or_power_override ?? line.size_or_power ?? ''}
+                            onChange={e => updateEquipment(index, { size_or_power_override: e.target.value, is_custom: true })}
+                            className={inputCls} placeholder={line.size_or_power ? String(line.size_or_power) : 'Not specified'} />
+                        </div>
+                        <div className="sm:col-span-1 flex items-end justify-end">
+                          <button type="button" aria-label={`Remove equipment ${index + 1}`} onClick={() => setEquipment((form.equipment || []).filter((_: any, i: number) => i !== index))}
+                            className="p-2 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 ml-6 flex items-center gap-4 text-xs">
+                      <label className="inline-flex items-center gap-1.5 text-stone-600">
+                        <input type="checkbox" aria-label={`Filtration item ${index + 1}`} checked={Boolean(line.is_filtration)}
+                          onChange={e => updateEquipment(index, { is_filtration: e.target.checked, is_custom: true })}
+                          className="h-3.5 w-3.5 rounded border-stone-300 text-violet-600" />
+                        Included filtration
+                      </label>
+                      {line.is_optional && <span className="text-amber-700">Optional PIM item</span>}
+                      {!line.size_or_power && !line.size_or_power_override && <span className="text-stone-400">No size/power specified</span>}
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={() => addEquipment(true)}
+                  className="text-xs font-medium text-violet-700 hover:text-violet-900">+ Add filtration item</button>
+              </div>
+            )}
+            {unit?.includes_filtration && !(form.equipment || []).some((line: CompactUnitEquipment) => line.is_filtration) && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <label htmlFor="compact-unit-legacy-filtration" className="block text-xs font-medium text-amber-800 mb-1">Legacy filtration description (editable)</label>
+                <input id="compact-unit-legacy-filtration" value={form.includes_filtration}
+                  onChange={e => set('includes_filtration', e.target.value)} className={inputCls}
+                  aria-describedby="compact-unit-legacy-filtration-help" />
+                <p id="compact-unit-legacy-filtration-help" className="text-[11px] text-amber-700 mt-1">This older free-text value is retained until structured filtration items are selected.</p>
+              </div>
+            )}
+            {!!(form.equipment || []).some((line: CompactUnitEquipment) => line.is_filtration && line.included !== false) && (
+              <p className="mt-3 text-xs text-stone-500"><span className="font-medium text-stone-700">Filtration summary:</span> {summarizeFiltration(form.equipment)}</p>
+            )}
           </div>
 
           {/* Break tank */}
@@ -582,7 +898,8 @@ export default function LSSCompactUnitsCatalog() {
                       {u.break_tank_volume_l != null ? parseFloat(u.break_tank_volume_l).toFixed(0) : <span className="text-stone-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-xs text-stone-500 max-w-[180px]">
-                      {u.includes_filtration || <span className="text-stone-300">—</span>}
+                      {summarizeFiltration(u.equipment || [], u.includes_filtration)
+                        || <span className="text-stone-300">—</span>}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-stone-600">
                       {u.footprint_l_mm != null && u.footprint_w_mm != null

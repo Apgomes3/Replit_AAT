@@ -19,6 +19,7 @@ import {
   FOAM_PROCESS_RATE_SLIDER_MIN,
   FOAM_RECOMMENDED_PROCESS_RATE_LS_M2,
 } from './foamFractionatorSizing';
+import { summarizeFiltration } from './LSSCompactUnitsCatalog';
 
 const SYSTEM_TYPES = [
   'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
@@ -1105,6 +1106,9 @@ export default function DesignBookLSSDetail() {
     queryFn: () => api.get('/biological-media/tan-profiles').then(r => r.data),
   });
   const usesFrozenPackage = !!book && !['Draft', 'In Progress'].includes(book.status);
+  const availableCompactUnits = usesFrozenPackage && Array.isArray(book?.compact_units)
+    ? book.compact_units
+    : compactUnits;
   const system = usesFrozenPackage
     ? (book.systems || []).find((item: any) => item.id === systemId)
     : liveSystem;
@@ -2088,7 +2092,7 @@ export default function DesignBookLSSDetail() {
       {!isConfigured && (() => {
         const cfg = pendingConfig;
         const localUnitId = pendingUnitId || system.compact_unit_id || '';
-        const selectedUnit = (compactUnits as any[]).find(u => u.id === localUnitId);
+        const selectedUnit = (availableCompactUnits as any[]).find(u => u.id === localUnitId);
 
         return (
           <div id="system-configuration" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -2152,7 +2156,7 @@ export default function DesignBookLSSDetail() {
                         className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 bg-white"
                       >
                         <option value="">— Choose a compact unit —</option>
-                        {(compactUnits as any[]).map((u: any) => (
+                        {(availableCompactUnits as any[]).map((u: any) => (
                           <option key={u.id} value={u.id}>
                             {u.unit_code} — {u.unit_name}{u.water_type ? ` (${u.water_type})` : ''}
                           </option>
@@ -2188,7 +2192,7 @@ export default function DesignBookLSSDetail() {
                           { label: 'Design Flow', value: selectedUnit.design_flow_m3h != null ? `${parseFloat(selectedUnit.design_flow_m3h).toFixed(1)} m³/h` : null },
                           { label: 'Break Tank', value: selectedUnit.break_tank_volume_l != null ? `${parseFloat(selectedUnit.break_tank_volume_l).toFixed(0)} L` : null },
                           { label: 'Power', value: selectedUnit.power_kw != null ? `${parseFloat(selectedUnit.power_kw).toFixed(1)} kW` : null },
-                          { label: 'Filtration', value: selectedUnit.includes_filtration },
+                          { label: 'Filtration', value: summarizeFiltration(selectedUnit.equipment || [], selectedUnit.includes_filtration) },
                           { label: 'UV', value: selectedUnit.uv_power_w != null ? `${selectedUnit.uv_power_w} W` : null },
                           { label: 'Footprint', value: selectedUnit.footprint_l_mm != null ? `${selectedUnit.footprint_l_mm}×${selectedUnit.footprint_w_mm} mm` : null },
                           { label: 'Dry Weight', value: selectedUnit.dry_weight_kg != null ? `${selectedUnit.dry_weight_kg} kg` : null },
@@ -2224,7 +2228,7 @@ export default function DesignBookLSSDetail() {
                     </div>
                   )}
 
-                  {!selectedUnit && (compactUnits as any[]).length === 0 && (
+                  {!selectedUnit && (availableCompactUnits as any[]).length === 0 && (
                     <div className="flex items-center gap-2 text-xs text-stone-400 bg-stone-50 border border-stone-200 rounded-lg px-4 py-3">
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />
                       No units in the catalog yet.{' '}

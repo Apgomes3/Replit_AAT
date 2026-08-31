@@ -8,6 +8,7 @@ import api from '../../lib/api';
 import LSSCompactUnitsCatalog, {
   mapProductMasterToCompactUnit,
   normalizeCompactUnitPayload,
+  summarizeFiltration,
 } from './LSSCompactUnitsCatalog';
 
 vi.mock('../../lib/api', () => ({
@@ -28,6 +29,7 @@ vi.mock('react-hot-toast', () => ({
 
 const apiGet = vi.mocked(api.get);
 const apiPost = vi.mocked(api.post);
+const apiPut = vi.mocked(api.put);
 
 const product = {
   id: 'product-1',
@@ -57,6 +59,45 @@ const electrical = {
   rated_power_kw: 4.5,
 };
 
+const standardBom = {
+  id: 'bom-1',
+  bom_code: 'BOM-CU-100',
+  revision_code: 'B',
+};
+
+const standardEquipment = [
+  {
+    source_bom_line_id: 'line-1',
+    source_bom_id: 'bom-1',
+    line_number: 1,
+    component_type: 'Filter',
+    component_reference_code: 'FLT-100',
+    component_name: 'Drum Filter',
+    quantity: 1,
+    unit: 'EA',
+    is_optional: false,
+    included: true,
+    is_filtration: true,
+    size_or_power: '100 micron',
+    is_custom: false,
+  },
+  {
+    source_bom_line_id: 'line-2',
+    source_bom_id: 'bom-1',
+    line_number: 2,
+    component_type: 'Pump',
+    component_reference_code: 'PMP-1',
+    component_name: 'Circulation Pump',
+    quantity: 2,
+    unit: 'EA',
+    is_optional: true,
+    included: true,
+    is_filtration: false,
+    size_or_power: '4 kW',
+    is_custom: false,
+  },
+];
+
 function renderCatalog(units: any[] = [], products: any[] = [product]) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/lss-compact-units') return Promise.resolve({ data: units });
@@ -64,6 +105,9 @@ function renderCatalog(units: any[] = [], products: any[] = [product]) {
     if (url.endsWith('/dimensions')) return Promise.resolve({ data: dimensions });
     if (url.endsWith('/hydraulic')) return Promise.resolve({ data: hydraulic });
     if (url.endsWith('/electrical')) return Promise.resolve({ data: electrical });
+    if (url.includes('/lss-compact-units/bom/')) {
+      return Promise.resolve({ data: { available: true, reason: null, bom: standardBom, lines: standardEquipment } });
+    }
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
 
@@ -149,12 +193,24 @@ describe('Product Master compact-unit mapping', () => {
       product_master_id: null,
     });
   });
+
+  it('does not fall back to legacy text when a structured checklist excludes all filtration', () => {
+    expect(summarizeFiltration([
+      {
+        component_name: 'Drum Filter',
+        quantity: 1,
+        included: false,
+        is_filtration: true,
+      },
+    ], 'Legacy foam filter')).toBe('');
+  });
 });
 
 describe('LSS compact-unit Product Master prefilling', () => {
   beforeEach(() => {
     apiGet.mockReset();
     apiPost.mockReset();
+    apiPut.mockReset();
     apiPost.mockResolvedValue({ data: { id: 'unit-1' } });
   });
 
@@ -240,5 +296,69 @@ describe('LSS compact-unit Product Master prefilling', () => {
     expect(unitName).not.toBeDisabled();
     await user.type(unitName, 'Manual Compact Unit');
     expect(unitName).toHaveValue('Manual Compact Unit');
+  });
+
+  it('imports a BOM snapshot, supports checklist overrides, and saves provenance', async () => {
+    const user = userEvent.setup();
+    renderCatalog();
+    await user.click(await screen.findByRole('button', { name: 'Add Unit' }));
+    await user.selectOptions(screen.getByLabelText('Link to Product Master'), product.id);
+
+    expect(await screen.findByDisplayValue('Drum Filter')).toBeVisible();
+    expect(screen.getByDisplayValue('100 micron')).toBeVisible();
+    expect(screen.getByText(/BOM-CU-100, Rev B/)).toBeVisible();
+
+    await user.clear(screen.getByLabelText('Equipment quantity 1'));
+    await user.type(screen.getByLabelText('Equipment quantity 1'), '3');
+    await user.clear(screen.getByLabelText('Equipment size or power 1'));
+    await user.type(screen.getByLabelText('Equipment size or power 1'), '80 micron');
+    await user.click(screen.getByLabelText('Include Circulation Pump'));
+    await user.click(screen.getByRole('button', { name: 'Create Unit' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith(
+      '/lss-compact-units',
+      expect.objectContaining({
+        source_bom_id: 'bom-1',
+        source_bom_code: 'BOM-CU-100',
+        source_bom_revision: 'B',
+        includes_filtration: 'Drum Filter (80 micron)',
+        equipment: expect.arrayContaining([
+          expect.objectContaining({
+            source_bom_line_id: 'line-1',
+            quantity: '3',
+            size_or_power_override: '80 micron',
+            included: true,
+          }),
+          expect.objectContaining({
+            source_bom_line_id: 'line-2',
+            included: false,
+          }),
+        ]),
+      }),
+    ));
+  });
+
+  it('keeps legacy filtration editable and shows structured summaries in the catalog', async () => {
+    const user = userEvent.setup();
+    const legacy = {
+      id: 'legacy-unit',
+      unit_code: 'LEGACY-1',
+      unit_name: 'Legacy Unit',
+      includes_filtration: 'Foam + UV',
+      status: 'Active',
+      equipment: [],
+    };
+    renderCatalog([legacy]);
+    expect(await screen.findByText('Foam + UV')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Edit LEGACY-1' }));
+    expect(screen.getByLabelText('Legacy filtration description (editable)')).toHaveValue('Foam + UV');
+    await user.clear(screen.getByLabelText('Legacy filtration description (editable)'));
+    await user.type(screen.getByLabelText('Legacy filtration description (editable)'), 'Legacy sand filter');
+    apiPut.mockResolvedValue({ data: legacy });
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/lss-compact-units/legacy-unit',
+      expect.objectContaining({ includes_filtration: 'Legacy sand filter', equipment: [] }),
+    ));
   });
 });

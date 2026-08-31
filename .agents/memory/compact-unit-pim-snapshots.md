@@ -5,6 +5,8 @@ description: Copy-on-select and override rules for Product Master-backed LSS com
 
 Product Master specifications are starting values for an independent compact-unit catalog record, not a continuously synchronized source. New units may fill empty compatible fields automatically; saved units and manual values require an explicit reapply action before compatible source values can replace them. Missing source values never clear compact-unit values.
 
-**Why:** LSS compact units can contain reviewed application-specific overrides and fields with no compatible PIM meaning. Silent refreshes would erase those decisions or invent unsupported engineering values.
+Product Master BOMs follow the same snapshot rule: copy active/effective BOM lines and provenance into ordered unit-owned equipment, preserve designer selections and overrides on explicit reimport, and freeze that equipment with Design Book review/release packages. Relinking to another Product Master retains the old list only as manual equipment until the new BOM is explicitly imported.
 
-**How to apply:** Copy only directly compatible identity, flow, electrical, dimension, weight, and connection values. Keep water type, tank-volume limits, filtration contents, UV power, and break-tank volume independent unless a future schema explicitly defines compatible sources.
+**Why:** LSS compact units can contain reviewed application-specific overrides and fields with no compatible PIM meaning. Silent refreshes or client-asserted provenance would erase decisions, misstate the approved source, or change released design evidence.
+
+**How to apply:** Copy only directly compatible values. Validate BOM provenance server-side, make reimport confirmed and atomic, keep structured filtration in the unit-owned equipment list, and preserve legacy filtration text only when no structured list exists.
