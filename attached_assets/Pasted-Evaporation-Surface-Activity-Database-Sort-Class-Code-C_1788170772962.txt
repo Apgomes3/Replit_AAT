@@ -1,0 +1,52 @@
+Evaporation Surface Activity Database
+Sort	Class Code	Class Name	Description	Activity Factor	Evaporation Coefficient	Unit	Correlation Version	Source Basis	Active
+1	CALM_COVERED	Calm or Covered	Quiet water surface with little movement. May include substantially covered surfaces. No intentional aeration.	0.50	0.000020	kg/(m²·s·kPa)	AAT_EVAP_V1.0	ASHRAE 2023 Chapter 6, AAT activity mapping	TRUE
+2	NORMAL_CIRCULATION	Normal Circulation	Typical aquarium exhibit with normal turnover, submerged returns and moderate surface movement.	0.80	0.000032	kg/(m²·s·kPa)	AAT_EVAP_V1.0	ASHRAE 2023 Chapter 6, AAT activity mapping	TRUE
+3	HIGH_AGITATION_AERATED	High Agitation or Aerated	Strong surface movement, aeration, turbulent returns, vigorous overflow or similar activity.	1.00	0.000040	kg/(m²·s·kPa)	AAT_EVAP_V1.0	ASHRAE 2023 Chapter 6, AAT activity mapping	TRUE
+4	SPLASHING_ACTIVE	Splashing or Active	Continuous splashing, waves, waterfalls, breaking jets or significant creation of additional air water interface.	1.50	0.000060	kg/(m²·s·kPa)	AAT_EVAP_V1.0	ASHRAE 2023 Chapter 6, AAT activity mapping	TRUE
+
+The coefficient comes from:
+
+$$ K_{class}=K_{base}\times F_{activity} $$
+
+using the reference base coefficient:
+
+$$ K_{base}=0.000040 \quad \mathrm{kg/(m^2\cdot s\cdot kPa)} $$
+
+So, for Normal Circulation:
+
+$$ 0.000040\times0.80 = 0.000032 $$
+
+The application can then simply calculate:
+
+$$ \boxed{ \dot m_{evap} = A\times K_{class}\times \left( P_{sat,water}-P_{air} \right) } $$
+
+where \(A\) is water surface area.
+
+What I would show in your interface
+
+Looking at your current screen, I would remove almost all of the correlation information from the project level.
+
+The engineer sees:
+
+Surface Activity Class
+
+Normal Circulation
+
+Then immediately below it:
+
+Applied evaporation coefficient
+
+0.000032 kg/(m²·s·kPa)
+
+Engineering basis
+
+AAT_EVAP_V1.0
+
+That is enough.
+
+I would remove the visible fields for Lower surface activity class, Lower class coefficient, Correlation adjustment, Upper adjacent class, and Upper class coefficient. They add complexity without helping the designer.
+
+You can still keep Activity Factor, Coefficient, Version, Source, and Active in the administrator database for traceability.
+
+One caution: I would keep Calm or Covered as your class for now because it matches the architecture you have already designed, but later we should add a simple separate Cover Percentage input. A genuinely sealed lid can reduce evaporation substantially more than merely having calm water.
