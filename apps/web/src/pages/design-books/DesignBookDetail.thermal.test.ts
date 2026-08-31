@@ -1,11 +1,30 @@
+import { render, screen } from '@testing-library/react';
+import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import {
   DESIGN_BOOK_TAB_ORDER,
   isDesignBookTab,
+  SystemConfigBadge,
   thermalEvidenceBasis,
   thermalCorrelationDefaults,
   thermalCorrelationVersionsForClass,
 } from './DesignBookDetail';
+
+describe('Design Book Life Support Systems list', () => {
+  it('labels bespoke and compact configurations explicitly', () => {
+    render(
+      createElement(
+        'div',
+        null,
+        createElement(SystemConfigBadge, { config: 'bespoke' }),
+        createElement(SystemConfigBadge, { config: 'compact' }),
+      ),
+    );
+
+    expect(screen.getByText('Bespoke')).toBeInTheDocument();
+    expect(screen.getByText('LSS Compact Unit')).toBeInTheDocument();
+  });
+});
 
 describe('Design Book Thermal navigation', () => {
   it('places Thermal immediately after Life Support Systems', () => {

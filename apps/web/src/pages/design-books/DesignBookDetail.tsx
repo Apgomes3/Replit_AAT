@@ -9,7 +9,7 @@ import {
   BookMarked, FolderOpen, ChevronRight, Pencil, Save, X,
   Droplets, ThermometerSun, FlaskConical, Layers,
   ChevronDown, ChevronUp, Waves, AlertCircle,
-  Fish, Plus, Trash2, Activity, Gauge, GitBranch, Settings2,
+  Fish, Plus, Trash2, Activity, Gauge, GitBranch,
   LinkIcon, SquarePlus, Check, CheckCircle2, RotateCcw, Calculator,
   ShieldCheck, AlertTriangle, LockKeyhole, GitFork, ExternalLink,
   Send, UserCheck, ClipboardList, CalendarDays, Users, LibraryBig
@@ -56,7 +56,7 @@ function ShapeBadge({ shape }: { shape?: string }) {
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${colors[shape] ?? 'bg-stone-100 text-stone-600'}`}>{shape}</span>;
 }
 
-function SystemConfigBadge({ config }: { config?: string }) {
+export function SystemConfigBadge({ config }: { config?: string }) {
   if (!config || config === 'bespoke') {
     return (
       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-stone-100 text-stone-600 border border-stone-200">
@@ -66,7 +66,7 @@ function SystemConfigBadge({ config }: { config?: string }) {
   }
   return (
     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-      Compact
+      LSS Compact Unit
     </span>
   );
 }
@@ -1036,16 +1036,14 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
     return sum + (Number(calculation?.results?.design_flow_m3h) || 0);
   }, 0);
   const activeSystems = systems.filter(s => s.status === 'Active' || s.status === 'Released').length;
-  const totalEquipment = systems.reduce((s, sys) => s + (parseInt(sys.equipment_count) || 0), 0);
 
   return (
     <div className="space-y-4">
       {/* Stats strip */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {[
           { label: 'Systems', value: systems.length, icon: <GitBranch className="w-4 h-4 text-blue-500" /> },
           { label: 'Total Design Flow', value: `${totalFlow.toFixed(1)} m³/h`, icon: <Gauge className="w-4 h-4 text-cyan-600" /> },
-          { label: 'Equipment Items', value: totalEquipment, icon: <Settings2 className="w-4 h-4 text-violet-500" /> },
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-stone-50 flex items-center justify-center">{c.icon}</div>
@@ -1093,7 +1091,6 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Flow m³/h</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Turnover ×/h</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Equipment</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Status</th>
                 <th className="px-4 py-2.5" />
               </tr>
@@ -1123,11 +1120,6 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-right">{fmtNum(turnover)}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    {parseInt(sys.equipment_count) > 0
-                      ? <span className="font-mono text-xs text-stone-600">{sys.equipment_count}</span>
-                      : <span className="text-stone-400 text-xs">—</span>}
-                  </td>
                   <td className="px-4 py-2.5"><StatusBadge status={sys.status} /></td>
                   <td className="px-4 py-2.5 text-right">
                     <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-blue-400 inline-block" />
