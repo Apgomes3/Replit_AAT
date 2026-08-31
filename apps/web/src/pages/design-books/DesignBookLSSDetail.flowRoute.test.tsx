@@ -1802,6 +1802,90 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(details).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('keeps two long fractionator labels bounded in the desktop grid with independent Details access', async () => {
+    const user = userEvent.setup();
+    const products = [
+      {
+        id: 'ff-long-750',
+        product_code: 'FF-SKIMMER-MODEL-750-LONG-CATALOG-CODE-2026',
+        product_name: 'High Capacity Foam Fractionator with Extended Biofiltration Interface',
+        diameter_mm: 750,
+      },
+      {
+        id: 'ff-long-900',
+        product_code: 'FF-PROTEIN-SEPARATOR-900-EXTRA-LONG-CATALOG-CODE-2026',
+        product_name: 'Industrial Protein Separator with Dual Chamber Degassing and Ozone Interface',
+        diameter_mm: 900,
+      },
+    ];
+    renderFlowRoute({
+      ...baseSystem,
+      water_type: 'Marine',
+      loop1_filtration: 'Foam Fractionation',
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 19,
+        notes: null,
+        products: products.map(product => ({
+          product_master_id: product.id,
+          product_code: product.product_code,
+          product_name: product.product_name,
+          diameter_mm: product.diameter_mm,
+          quantity: 1,
+        })),
+      }],
+    }, baseBook, [], products);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    const route = within(document.querySelector('#flow-route')!);
+    const firstCardElement = route.getByRole('region', { name: `Foam Fractionator ${products[0].product_code}` });
+    const secondCardElement = route.getByRole('region', { name: `Foam Fractionator ${products[1].product_code}` });
+    const firstCard = within(firstCardElement);
+    const secondCard = within(secondCardElement);
+    const cardGrid = firstCardElement.parentElement;
+
+    expect(cardGrid).not.toBeNull();
+    expect(cardGrid).toHaveClass('grid', 'gap-2', 'sm:grid-cols-2');
+    expect(cardGrid).not.toHaveClass('grid-cols-1', 'grid-cols-2');
+    expect(cardGrid?.children).toHaveLength(2);
+
+    [firstCardElement, secondCardElement].forEach(cardElement => {
+      expect(cardElement).toHaveClass('min-w-0', 'max-w-full', 'overflow-hidden');
+    });
+    products.forEach(product => {
+      const card = within(route.getByRole('region', { name: `Foam Fractionator ${product.product_code}` }));
+      const modelCode = card.getByText(product.product_code);
+      const modelName = card.getByText(product.product_name);
+      expect(modelCode).toHaveClass('block', 'truncate');
+      expect(modelName).toHaveClass('block', 'truncate');
+      expect(modelCode.parentElement).toHaveClass('min-w-0');
+    });
+
+    const firstDetails = firstCard.getByRole('button', { name: 'Details' });
+    const secondDetails = secondCard.getByRole('button', { name: 'Details' });
+    expect(firstDetails).toBeVisible();
+    expect(secondDetails).toBeVisible();
+    expect(firstDetails).toHaveAttribute('aria-expanded', 'false');
+    expect(secondDetails).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(firstDetails);
+    expect(firstCard.getByRole('button', { name: 'Hide details' })).toBeVisible();
+    expect(secondDetails).toBeVisible();
+    expect(firstDetails).toHaveAttribute('aria-expanded', 'true');
+    expect(secondDetails).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(secondDetails);
+    expect(firstCard.getByRole('button', { name: 'Hide details' })).toBeVisible();
+    expect(secondCard.getByRole('button', { name: 'Hide details' })).toBeVisible();
+    expect(firstDetails).toHaveAttribute('aria-expanded', 'true');
+    expect(secondDetails).toHaveAttribute('aria-expanded', 'true');
+    expect(route.getAllByText('Model diameter').filter(detail => detail.closest('[hidden]') === null)).toHaveLength(2);
+
+    await user.click(firstCard.getByRole('button', { name: 'Hide details' }));
+    expect(firstCard.getByRole('button', { name: 'Details' })).toBeVisible();
+    expect(secondCard.getByRole('button', { name: 'Hide details' })).toBeVisible();
+  });
+
   it('states when Bio/Degas is not connected without showing a branch flow', async () => {
     renderFlowRoute({
       ...baseSystem,
