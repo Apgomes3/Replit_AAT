@@ -726,6 +726,7 @@ CREATE TABLE IF NOT EXISTS product_hydraulic (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
   design_flow_m3h NUMERIC, min_flow_m3h NUMERIC, max_flow_m3h NUMERIC, venturi_flow_m3h NUMERIC,
+  friction_loss_mh2o NUMERIC,
   design_head_m NUMERIC, design_pressure_bar NUMERIC, max_pressure_bar NUMERIC,
   npsh_required_m NUMERIC, fluid_type VARCHAR(100),
   min_temperature_c NUMERIC, max_temperature_c NUMERIC,
@@ -2076,6 +2077,43 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 
 -- PRODUCT HYDRAULICS: optional vendor-specified Venturi flow (m³/h)
 ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS venturi_flow_m3h NUMERIC;
+ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS friction_loss_mh2o NUMERIC;
+
+-- PRODUCT HYDRAULICS: AAT sand-filter catalog starting basis.
+-- Record application separately so a later migration cannot restore a value an operator cleared.
+CREATE TABLE IF NOT EXISTS product_hydraulic_catalog_defaults (
+  product_master_id UUID NOT NULL REFERENCES product_masters(id) ON DELETE CASCADE,
+  default_key VARCHAR(100) NOT NULL,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (product_master_id, default_key)
+);
+
+WITH eligible AS (
+  SELECT pm.id
+  FROM product_masters pm
+  LEFT JOIN product_hydraulic_catalog_defaults applied
+    ON applied.product_master_id = pm.id
+   AND applied.default_key = 'aat_sand_filter_friction_loss_v1'
+  WHERE applied.product_master_id IS NULL
+    AND LOWER(TRIM(COALESCE(pm.manufacturer, ''))) = 'aat'
+    AND LOWER(COALESCE(pm.product_name, '') || ' ' || COALESCE(pm.model, ''))
+      ~ '(^|[^[:alnum:]_])sand[[:space:]-]*filter([^[:alnum:]_]|$)'
+), seeded AS (
+  INSERT INTO product_hydraulic (product_master_id, friction_loss_mh2o, updated_at)
+  SELECT id, 5.0, NOW()
+  FROM eligible
+  ON CONFLICT (product_master_id) DO UPDATE SET
+    friction_loss_mh2o = COALESCE(product_hydraulic.friction_loss_mh2o, EXCLUDED.friction_loss_mh2o),
+    updated_at = CASE
+      WHEN product_hydraulic.friction_loss_mh2o IS NULL THEN NOW()
+      ELSE product_hydraulic.updated_at
+    END
+  RETURNING product_master_id
+)
+INSERT INTO product_hydraulic_catalog_defaults (product_master_id, default_key)
+SELECT product_master_id, 'aat_sand_filter_friction_loss_v1'
+FROM seeded
+ON CONFLICT (product_master_id, default_key) DO NOTHING;
 
 -- UV ENGINEERING CATALOG: PIM-linked, revision-controlled engineering data.
 CREATE TABLE IF NOT EXISTS uv_engineering_catalogs (

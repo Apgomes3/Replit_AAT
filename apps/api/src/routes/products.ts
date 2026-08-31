@@ -25,6 +25,7 @@ const router = Router();
 router.use(authenticate, requireModuleAccess('pim'));
 
 type DbClient = { query: typeof query; release?: () => void };
+const AAT_SAND_FILTER_FRICTION_DEFAULT_KEY = 'aat_sand_filter_friction_loss_v1';
 
 const withProductTransaction = async <T>(work: (client: DbClient) => Promise<T>): Promise<T> => {
   const connect = (pool as any).connect;
@@ -54,6 +55,16 @@ const normalizeDesignFlow = (value: unknown): number | null => {
     throw error;
   }
   return normalized;
+};
+
+const isAatSandFilter = (product: {
+  manufacturer?: unknown;
+  product_name?: unknown;
+  model?: unknown;
+}) => {
+  const manufacturer = String(product.manufacturer ?? '').trim().toLowerCase();
+  const identity = `${String(product.product_name ?? '')} ${String(product.model ?? '')}`.toLowerCase();
+  return manufacturer === 'aat' && /(^|\W)sand[\s-]*filter(\W|$)/.test(identity);
 };
 
 const flowsConflict = (productFlow: unknown, hydraulicFlow: unknown) =>
@@ -315,6 +326,7 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
   );
   try {
     const linkedFlow = normalizeDesignFlow(design_flow_m3h);
+    const applyAatFrictionDefault = isAatSandFilter({ manufacturer, product_name, model });
     const created = await withProductTransaction(async client => {
       const result = await client.query(
         `INSERT INTO product_masters
@@ -332,9 +344,17 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
           manufacturer || null, model || null, configuration || null, control_type || null,
         ]);
       await client.query(
-        'INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, updated_at) VALUES ($1,$2,NOW())',
-        [result.rows[0].id, linkedFlow],
+        'INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, friction_loss_mh2o, updated_at) VALUES ($1,$2,$3,NOW())',
+        [result.rows[0].id, linkedFlow, applyAatFrictionDefault ? 5.0 : null],
       );
+      if (applyAatFrictionDefault) {
+        await client.query(
+          `INSERT INTO product_hydraulic_catalog_defaults (product_master_id, default_key)
+           VALUES ($1,$2)
+           ON CONFLICT (product_master_id, default_key) DO NOTHING`,
+          [result.rows[0].id, AAT_SAND_FILTER_FRICTION_DEFAULT_KEY],
+        );
+      }
       await insertAuditTx(client, req.user!.id, 'product', result.rows[0].id, 'CREATE', {
         summary: `Product ${product_code} created`,
         product_code,
@@ -501,6 +521,7 @@ router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequ
   const newStatus = req.body.standard_status || src.standard_status;
   try {
     const linkedFlow = src.hydraulic_design_flow_m3h != null ? Number(src.hydraulic_design_flow_m3h) : normalizeDesignFlow(src.design_flow_m3h);
+    const applyAatFrictionDefault = isAatSandFilter({ manufacturer: src.manufacturer, product_name: src.product_name, model: src.model });
     const created = await withProductTransaction(async client => {
       const result = await client.query(
         `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type)
@@ -509,16 +530,24 @@ router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequ
       await client.query(
         `INSERT INTO product_hydraulic
            (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h,
-            design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type,
+            friction_loss_mh2o, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type,
             min_temperature_c, max_temperature_c, notes, updated_at)
-         SELECT $1,$2,min_flow_m3h,max_flow_m3h,venturi_flow_m3h,design_head_m,design_pressure_bar,
+         SELECT $1::uuid,$2::numeric,min_flow_m3h,max_flow_m3h,venturi_flow_m3h,friction_loss_mh2o,design_head_m,design_pressure_bar,
                 max_pressure_bar,npsh_required_m,fluid_type,min_temperature_c,max_temperature_c,notes,NOW()
          FROM product_hydraulic WHERE product_master_id=$3
-         UNION ALL
-         SELECT $1,$2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NOW()
+          UNION ALL
+           SELECT $1::uuid,$2::numeric,NULL,NULL,NULL,$4::numeric,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NOW()
          WHERE NOT EXISTS (SELECT 1 FROM product_hydraulic WHERE product_master_id=$3)`,
-        [result.rows[0].id, linkedFlow, req.params.id],
+         [result.rows[0].id, linkedFlow, req.params.id, applyAatFrictionDefault ? 5.0 : null],
       );
+      if (applyAatFrictionDefault) {
+        await client.query(
+          `INSERT INTO product_hydraulic_catalog_defaults (product_master_id, default_key)
+           VALUES ($1,$2)
+           ON CONFLICT (product_master_id, default_key) DO NOTHING`,
+          [result.rows[0].id, AAT_SAND_FILTER_FRICTION_DEFAULT_KEY],
+        );
+      }
       await insertAuditTx(client, req.user!.id, 'product', result.rows[0].id, 'LINKED_DESIGN_FLOW_UPDATE',
         designFlowAuditDetails('product_duplicate', linkedFlow, src.design_flow_m3h, src.hydraulic_design_flow_m3h));
       return { ...result.rows[0], design_flow_m3h: linkedFlow, design_flow_sync_status: linkedFlow == null ? 'empty' : 'synchronized' };
@@ -982,7 +1011,7 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
   const pid = await resolveProductId(String(req.params.id));
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const body = req.body || {};
-  const { design_flow_m3h, venturi_flow_m3h } = body;
+  const { design_flow_m3h, venturi_flow_m3h, friction_loss_mh2o } = body;
   const venturiFlow = venturi_flow_m3h === null || venturi_flow_m3h === undefined ||
     (typeof venturi_flow_m3h === 'string' && venturi_flow_m3h.trim() === '')
     ? null
@@ -994,7 +1023,18 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
       error: { code: 'INVALID_VENTURI_FLOW', message: 'Venturi flow must be a finite, non-negative value in m³/h' },
     });
   }
-  const fields = ['min_flow_m3h', 'max_flow_m3h', 'design_head_m', 'design_pressure_bar', 'max_pressure_bar', 'npsh_required_m', 'fluid_type', 'min_temperature_c', 'max_temperature_c', 'notes'] as const;
+  const frictionLoss = friction_loss_mh2o === null || friction_loss_mh2o === undefined ||
+    (typeof friction_loss_mh2o === 'string' && friction_loss_mh2o.trim() === '')
+    ? null
+    : (typeof friction_loss_mh2o === 'number' || typeof friction_loss_mh2o === 'string')
+      ? Number(friction_loss_mh2o)
+      : Number.NaN;
+  if (frictionLoss !== null && (!Number.isFinite(frictionLoss) || frictionLoss < 0)) {
+    return res.status(400).json({
+      error: { code: 'INVALID_FRICTION_LOSS', message: 'Friction loss must be a finite, non-negative value in mH₂O' },
+    });
+  }
+  const fields = ['min_flow_m3h', 'max_flow_m3h', 'friction_loss_mh2o', 'design_head_m', 'design_pressure_bar', 'max_pressure_bar', 'npsh_required_m', 'fluid_type', 'min_temperature_c', 'max_temperature_c', 'notes'] as const;
   let previousProductFlow: unknown;
   let previousHydraulicFlow: unknown;
   let linkedDesignFlow: number | null;
@@ -1023,17 +1063,19 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
               : null;
       const merged = Object.fromEntries(fields.map(field => [
         field,
-        Object.prototype.hasOwnProperty.call(body, field) ? nullableHydraulicValue(body[field]) : existing[field] ?? null,
+        Object.prototype.hasOwnProperty.call(body, field)
+          ? field === 'friction_loss_mh2o' ? frictionLoss : nullableHydraulicValue(body[field])
+          : existing[field] ?? null,
       ]));
       const mergedVenturi = Object.prototype.hasOwnProperty.call(body, 'venturi_flow_m3h')
         ? venturiFlow
         : existing.venturi_flow_m3h ?? null;
       const r = await client.query(`
-        INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+        INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, friction_loss_mh2o, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
         ON CONFLICT (product_master_id) DO UPDATE SET
-          design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, venturi_flow_m3h=$5, design_head_m=$6, design_pressure_bar=$7, max_pressure_bar=$8, npsh_required_m=$9, fluid_type=$10, min_temperature_c=$11, max_temperature_c=$12, notes=$13, updated_at=NOW()
-        RETURNING *`, [pid, linkedDesignFlow, merged.min_flow_m3h, merged.max_flow_m3h, mergedVenturi, merged.design_head_m, merged.design_pressure_bar, merged.max_pressure_bar, merged.npsh_required_m, merged.fluid_type, merged.min_temperature_c, merged.max_temperature_c, merged.notes]);
+          design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, venturi_flow_m3h=$5, friction_loss_mh2o=$6, design_head_m=$7, design_pressure_bar=$8, max_pressure_bar=$9, npsh_required_m=$10, fluid_type=$11, min_temperature_c=$12, max_temperature_c=$13, notes=$14, updated_at=NOW()
+        RETURNING *`, [pid, linkedDesignFlow, merged.min_flow_m3h, merged.max_flow_m3h, mergedVenturi, merged.friction_loss_mh2o, merged.design_head_m, merged.design_pressure_bar, merged.max_pressure_bar, merged.npsh_required_m, merged.fluid_type, merged.min_temperature_c, merged.max_temperature_c, merged.notes]);
       await client.query('UPDATE product_masters SET design_flow_m3h=$2, updated_at=NOW() WHERE id=$1', [pid, linkedDesignFlow]);
       if (flowsConflict(previousProductFlow, previousHydraulicFlow)) {
         await client.query(
@@ -1056,6 +1098,7 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
   await logAudit(req.user!.id, 'product', pid, 'UPDATE', {
     summary: 'Product hydraulic data updated',
     venturi_flow_m3h: venturiFlow,
+    friction_loss_mh2o: frictionLoss,
   });
   res.json(saved);
 });

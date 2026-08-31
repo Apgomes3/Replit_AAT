@@ -22,3 +22,4 @@
 - [Maximum TAN profiles](maximum-tan-profiles.md) — keep concentration assumptions separate from TAN generation; freeze source and value, and never replace saved cases from defaults.
 - [VTR evidence boundary](vtr-evidence-boundary.md) — published observations and candidate rates stay review-only until explicitly promoted into a controlled profile.
 - [PIM design-flow authority](pim-design-flow-authority.md) — Hydraulic is the engineering-facing value; paired writes and conflict resolution must remain atomic and auditable.
+- [Product hydraulic catalog defaults](product-hydraulic-catalog-defaults.md) — apply identified vendor defaults once; later operator edits, including blanking, remain authoritative.

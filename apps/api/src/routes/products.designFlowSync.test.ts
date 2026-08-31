@@ -12,6 +12,7 @@ const initialHydraulic = () => ({
   min_flow_m3h: 8,
   max_flow_m3h: 28,
   venturi_flow_m3h: 4,
+  friction_loss_mh2o: 2.5,
   design_head_m: 11,
   design_pressure_bar: 2.5,
   max_pressure_bar: 4,
@@ -105,14 +106,15 @@ vi.mock('../db', () => {
           min_flow_m3h: params[2],
           max_flow_m3h: params[3],
           venturi_flow_m3h: params[4],
-          design_head_m: params[5],
-          design_pressure_bar: params[6],
-          max_pressure_bar: params[7],
-          npsh_required_m: params[8],
-          fluid_type: params[9],
-          min_temperature_c: params[10],
-          max_temperature_c: params[11],
-          notes: params[12],
+           friction_loss_mh2o: params[5],
+           design_head_m: params[6],
+           design_pressure_bar: params[7],
+           max_pressure_bar: params[8],
+           npsh_required_m: params[9],
+           fluid_type: params[10],
+           min_temperature_c: params[11],
+           max_temperature_c: params[12],
+           notes: params[13],
         };
       }
       return { rows: [{ ...state.hydraulic }] };
@@ -254,11 +256,39 @@ describe('linked Product Master and Hydraulic design flow', () => {
       design_flow_m3h: 32,
       min_flow_m3h: 8,
       max_flow_m3h: 28,
+       friction_loss_mh2o: 2.5,
       design_head_m: 11,
       fluid_type: 'Seawater',
       notes: 'Keep me',
     });
     expect(state.auditDetails).toContainEqual(expect.objectContaining({ source: 'hydraulic_card' }));
+  });
+
+  it('saves and clears per-product friction loss without changing other hydraulic fields', async () => {
+    const save = await request(app, 'PUT', '/api/v1/product-masters/product-1/hydraulic', token, {
+      friction_loss_mh2o: '5.0',
+    });
+    expect(save.status).toBe(200);
+    expect(state.hydraulic).toMatchObject({
+      friction_loss_mh2o: 5,
+      design_head_m: 11,
+      notes: 'Keep me',
+    });
+
+    const clear = await request(app, 'PUT', '/api/v1/product-masters/product-1/hydraulic', token, {
+      friction_loss_mh2o: '',
+    });
+    expect(clear.status).toBe(200);
+    expect(state.hydraulic?.friction_loss_mh2o).toBeNull();
+    expect(state.hydraulic?.design_head_m).toBe(11);
+    expect(state.hydraulic?.notes).toBe('Keep me');
+  });
+
+  it.each(['-1', 'Infinity', 'not-a-number'])('rejects invalid friction loss %s', async friction_loss_mh2o => {
+    const response = await request(app, 'PUT', '/api/v1/product-masters/product-1/hydraulic', token, { friction_loss_mh2o });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_FRICTION_LOSS');
+    expect(response.body.error.message).toContain('mH₂O');
   });
 
   it('returns Hydraulic as the read authority while exposing an unresolved conflict', async () => {

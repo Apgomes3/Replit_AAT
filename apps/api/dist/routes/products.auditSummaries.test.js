@@ -46,6 +46,7 @@ const actorId = 'actor-1';
 const state = vitest_1.vi.hoisted(() => ({
     auditRows: [],
     listRows: [],
+    hydraulicDefaultRows: [],
 }));
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (text, params = []) => {
@@ -53,13 +54,13 @@ vitest_1.vi.mock('../db', () => {
         if (sql.startsWith('select rma.access_level'))
             return { rows: [] };
         if (sql.startsWith('select count(*) from product_masters pm')) {
-            const rows = sql.includes("pm.standard_status is distinct from 'obsolete'")
+            const rows = sql.includes("lower(btrim(coalesce(pm.standard_status, ''))) <> 'obsolete'")
                 ? state.listRows.filter(row => row.standard_status !== 'Obsolete')
                 : state.listRows;
             return { rows: [{ count: String(rows.length) }] };
         }
         if (sql.startsWith('select pm.*, coalesce(ph.design_flow_m3h, pm.design_flow_m3h)')) {
-            const rows = sql.includes("pm.standard_status is distinct from 'obsolete'")
+            const rows = sql.includes("lower(btrim(coalesce(pm.standard_status, ''))) <> 'obsolete'")
                 ? state.listRows.filter(row => row.standard_status !== 'Obsolete')
                 : state.listRows;
             return { rows };
@@ -122,6 +123,13 @@ vitest_1.vi.mock('../db', () => {
         }
         if (sql.startsWith('delete from components')) {
             return { rows: [{ id: 'component-1', component_code: 'C-100' }] };
+        }
+        if (sql.startsWith('insert into product_hydraulic_catalog_defaults')) {
+            state.hydraulicDefaultRows.push({
+                productMasterId: String(params[0]),
+                defaultKey: String(params[1]),
+            });
+            return { rows: [] };
         }
         if (sql.startsWith('insert into product_hydraulic')) {
             return { rows: [{ product_master_id: 'product-1', venturi_flow_m3h: 12 }] };
@@ -200,6 +208,7 @@ function request(app, method, path, token, body = {}) {
     (0, vitest_1.beforeEach)(() => {
         state.auditRows.length = 0;
         state.listRows.length = 0;
+        state.hydraulicDefaultRows.length = 0;
     });
     (0, vitest_1.afterAll)(() => {
         delete process.env.JWT_SECRET;
@@ -230,6 +239,18 @@ function request(app, method, path, token, body = {}) {
         expectSummary('product', 'product-1', 'STATUS_CHANGE', 'Status changed to Obsolete');
         (0, vitest_1.expect)((await request(app, 'DELETE', '/api/v1/product-masters/product-1', token)).status).toBe(200);
         expectSummary('product', 'product-1', 'DELETE', 'Product P-100 deleted');
+    });
+    (0, vitest_1.it)('marks an AAT sand-filter starting value as applied when the product is created', async () => {
+        const response = await request(app, 'POST', '/api/v1/product-masters', token, {
+            product_code: 'AAT-SF-100',
+            product_name: 'Sand Filter 100',
+            manufacturer: 'AAT',
+        });
+        (0, vitest_1.expect)(response.status).toBe(201);
+        (0, vitest_1.expect)(state.hydraulicDefaultRows).toEqual([{
+                productMasterId: 'product-1',
+                defaultKey: 'aat_sand_filter_friction_loss_v1',
+            }]);
     });
     (0, vitest_1.it)('keeps readable summaries for component create, update, delete, and status changes', async () => {
         (0, vitest_1.expect)((await request(app, 'POST', '/api/v1/components', token, {

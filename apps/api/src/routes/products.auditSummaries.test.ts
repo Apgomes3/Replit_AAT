@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
     details: Record<string, unknown> | null;
   }>,
   listRows: [] as Array<Record<string, unknown>>,
+  hydraulicDefaultRows: [] as Array<{ productMasterId: string; defaultKey: string }>,
 }));
 
 vi.mock('../db', () => {
@@ -91,6 +92,13 @@ vi.mock('../db', () => {
     }
     if (sql.startsWith('delete from components')) {
       return { rows: [{ id: 'component-1', component_code: 'C-100' }] };
+    }
+    if (sql.startsWith('insert into product_hydraulic_catalog_defaults')) {
+      state.hydraulicDefaultRows.push({
+        productMasterId: String(params[0]),
+        defaultKey: String(params[1]),
+      });
+      return { rows: [] };
     }
     if (sql.startsWith('insert into product_hydraulic')) {
       return { rows: [{ product_master_id: 'product-1', venturi_flow_m3h: 12 }] };
@@ -181,6 +189,7 @@ describe('persisted audit summaries for product mutations', () => {
   beforeEach(() => {
     state.auditRows.length = 0;
     state.listRows.length = 0;
+    state.hydraulicDefaultRows.length = 0;
   });
 
   afterAll(() => {
@@ -217,6 +226,20 @@ describe('persisted audit summaries for product mutations', () => {
 
     expect((await request(app, 'DELETE', '/api/v1/product-masters/product-1', token)).status).toBe(200);
     expectSummary('product', 'product-1', 'DELETE', 'Product P-100 deleted');
+  });
+
+  it('marks an AAT sand-filter starting value as applied when the product is created', async () => {
+    const response = await request(app, 'POST', '/api/v1/product-masters', token, {
+      product_code: 'AAT-SF-100',
+      product_name: 'Sand Filter 100',
+      manufacturer: 'AAT',
+    });
+
+    expect(response.status).toBe(201);
+    expect(state.hydraulicDefaultRows).toEqual([{
+      productMasterId: 'product-1',
+      defaultKey: 'aat_sand_filter_friction_loss_v1',
+    }]);
   });
 
   it('keeps readable summaries for component create, update, delete, and status changes', async () => {
