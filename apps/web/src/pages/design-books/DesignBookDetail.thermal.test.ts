@@ -3,6 +3,8 @@ import {
   DESIGN_BOOK_TAB_ORDER,
   isDesignBookTab,
   thermalEvidenceBasis,
+  thermalCorrelationDefaults,
+  thermalCorrelationVersionsForClass,
 } from './DesignBookDetail';
 
 describe('Design Book Thermal navigation', () => {
@@ -54,5 +56,35 @@ describe('Design Book Thermal navigation', () => {
         wall_construction_basis: wall,
       },
     })).toEqual({ temperature, wall });
+  });
+
+  it('filters approved versions to the selected surface-activity class', () => {
+    const items = [
+      { id: 'calm-current', class_code: 'calm_covered', version: '2', status: 'approved' },
+      { id: 'calm-old', class_code: 'calm_covered', version: '1', status: 'superseded' },
+      { id: 'active-current', class_code: 'splashing_active', version: '1', status: 'approved' },
+    ];
+    expect(thermalCorrelationVersionsForClass(items, 'calm_covered', 'calm-old')
+      .map(item => item.id)).toEqual(['calm-current', 'calm-old']);
+    expect(thermalCorrelationVersionsForClass(items, 'calm_covered')
+      .map(item => item.id)).toEqual(['calm-current']);
+  });
+
+  it('maps approved database values into the guided form defaults', () => {
+    expect(thermalCorrelationDefaults({
+      coefficient_kg_m2_s_kpa: 1.2e-6,
+      lower_agitation_class_code: 'calm_covered',
+      lower_class_coefficient_kg_m2_s_kpa: 0.8e-6,
+      adjustment_value: 0.15,
+      upper_agitation_class_code: 'high_agitation_aerated',
+      upper_class_coefficient_kg_m2_s_kpa: 1.8e-6,
+    })).toEqual({
+      evaporation_coefficient_kg_m2_s_kpa: 1.2e-6,
+      adjacent_lower_class: 'calm_covered',
+      adjacent_lower_coefficient: 0.8e-6,
+      correlation_adjustment_value: 0.15,
+      adjacent_upper_class: 'high_agitation_aerated',
+      adjacent_upper_coefficient: 1.8e-6,
+    });
   });
 });

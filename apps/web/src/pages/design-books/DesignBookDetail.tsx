@@ -1931,6 +1931,27 @@ export function thermalEvidenceBasis(detail: any) {
   };
 }
 
+export function thermalCorrelationVersionsForClass(
+  items: any[],
+  classCode: string,
+  selectedCorrelationId = '',
+) {
+  return items.filter(item =>
+    item.class_code === classCode &&
+    (item.status === 'approved' || item.id === selectedCorrelationId));
+}
+
+export function thermalCorrelationDefaults(correlation: any) {
+  return {
+    evaporation_coefficient_kg_m2_s_kpa: correlation?.coefficient_kg_m2_s_kpa ?? '',
+    adjacent_lower_class: correlation?.lower_agitation_class_code ?? '',
+    adjacent_lower_coefficient: correlation?.lower_class_coefficient_kg_m2_s_kpa ?? '',
+    correlation_adjustment_value: correlation?.adjustment_value ?? '',
+    adjacent_upper_class: correlation?.upper_agitation_class_code ?? '',
+    adjacent_upper_coefficient: correlation?.upper_class_coefficient_kg_m2_s_kpa ?? '',
+  };
+}
+
 function ThermalCorrelationUsageList({ usages }: { usages: any[] }) {
   const statusOrder = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
   const byStatus = usages.reduce((groups: Map<string, Map<string, any[]>>, usage) => {
@@ -2025,11 +2046,21 @@ function ThermalTab({
   const [librarySaving, setLibrarySaving] = useState(false);
   const [pendingSupersede, setPendingSupersede] = useState<any>(null);
   const [approveReplacementAfterConfirmation, setApproveReplacementAfterConfirmation] = useState(false);
-  const [classForm, setClassForm] = useState({ class_code: '', class_name: '', description: '' });
+  const [classForm, setClassForm] = useState({
+    class_code: '', class_name: '', description: '', guidance: '',
+  });
   const [versionForm, setVersionForm] = useState({
     class_id: '',
     version: '',
     coefficient_kg_m2_s_kpa: '',
+    lower_agitation_class_code: '',
+    lower_agitation_class_name: '',
+    lower_class_coefficient_kg_m2_s_kpa: '',
+    adjustment_value: '',
+    adjustment_basis: '',
+    upper_agitation_class_code: '',
+    upper_agitation_class_name: '',
+    upper_class_coefficient_kg_m2_s_kpa: '',
     source_reference: '',
     notes: '',
   });
@@ -2054,6 +2085,10 @@ function ThermalTab({
     const existing = item.saved?.input_snapshot || item.calculation?.inputs || {};
     const correlationSnapshot = existing.agitation_correlation_snapshot ||
       item.calculation?.correlation_snapshot || item.saved?.correlation_snapshot || {};
+    const databaseDefaults = correlationSnapshot.database_defaults || {};
+    const effectiveValues = correlationSnapshot.effective_values || {};
+    const overrides = correlationSnapshot.overrides ||
+      existing.agitation_correlation_overrides || {};
     setSelected(item);
     setForm({
       ambient_air_temperature_c: existing.ambient_air_temperature_c ?? '',
@@ -2068,11 +2103,28 @@ function ThermalTab({
       agitation_correlation_version: existing.agitation_correlation_version ?? '',
       agitation_correlation_approved: existing.agitation_correlation_approved ?? false,
       agitation_correlation_deviation: existing.agitation_correlation_deviation ?? false,
-      evaporation_coefficient_kg_m2_s_kpa: existing.evaporation_coefficient_kg_m2_s_kpa ?? '',
-      adjacent_lower_class: existing.adjacent_agitation_classes?.[0] ?? '',
-      adjacent_lower_coefficient: existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[0]]?.coefficient_kg_m2_s_kpa ?? '',
-      adjacent_upper_class: existing.adjacent_agitation_classes?.[1] ?? '',
-      adjacent_upper_coefficient: existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[1]]?.coefficient_kg_m2_s_kpa ?? '',
+      evaporation_coefficient_kg_m2_s_kpa:
+        effectiveValues.coefficient_kg_m2_s_kpa ??
+        existing.evaporation_coefficient_kg_m2_s_kpa ?? '',
+      adjacent_lower_class:
+        databaseDefaults.lower_agitation_class_code ??
+        existing.lower_agitation_class ??
+        existing.adjacent_agitation_classes?.[0] ?? '',
+      adjacent_lower_coefficient:
+        effectiveValues.lower_class_coefficient_kg_m2_s_kpa ??
+        existing.lower_class_coefficient_kg_m2_s_kpa ??
+        existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[0]]?.coefficient_kg_m2_s_kpa ?? '',
+      correlation_adjustment_value:
+        effectiveValues.adjustment_value ?? existing.adjustment_value ?? '',
+      adjacent_upper_class:
+        databaseDefaults.upper_agitation_class_code ??
+        existing.upper_agitation_class ??
+        existing.adjacent_agitation_classes?.[1] ?? '',
+      adjacent_upper_coefficient:
+        effectiveValues.upper_class_coefficient_kg_m2_s_kpa ??
+        existing.upper_class_coefficient_kg_m2_s_kpa ??
+        existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[1]]?.coefficient_kg_m2_s_kpa ?? '',
+      agitation_correlation_overrides: overrides,
       reviewed_u_value_w_m2_k: existing.reviewed_u_value_w_m2_k ?? '',
       tank_construction_type: existing.tank_construction_type ??
         existing.tank_construction ??
@@ -2094,7 +2146,30 @@ function ThermalTab({
   };
 
   const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
+  const updateCorrelationOverride = (key: string, formKey: string, value: any) =>
+    setForm((current: any) => ({
+      ...current,
+      [formKey]: value,
+      agitation_correlation_overrides: {
+        ...(current.agitation_correlation_overrides || {}),
+        [key]: true,
+      },
+    }));
   const numericOrNull = (value: any) => value === '' || value == null ? null : Number(value);
+  const selectAgitationClass = (classCode: string) => {
+    setForm((current: any) => ({
+      ...current,
+      agitation_class: classCode,
+      agitation_correlation_class: classCode,
+      agitation_correlation_id: '',
+      agitation_correlation_version: '',
+      agitation_correlation_approved: false,
+      agitation_correlation_deviation: false,
+      deviation_justification: '',
+      agitation_correlation_overrides: {},
+      ...thermalCorrelationDefaults(null),
+    }));
+  };
   const selectCorrelation = (correlationId: string) => {
     const correlation = correlationItems.find(item => item.id === correlationId);
     if (!correlation) {
@@ -2108,7 +2183,8 @@ function ThermalTab({
       agitation_correlation_class: correlation.class_code,
       agitation_correlation_version: correlation.version,
       agitation_correlation_approved: correlation.status === 'approved',
-      evaporation_coefficient_kg_m2_s_kpa: correlation.coefficient_kg_m2_s_kpa,
+      ...thermalCorrelationDefaults(correlation),
+      agitation_correlation_overrides: {},
       agitation_correlation_deviation: false,
       deviation_justification: '',
     }));
@@ -2119,7 +2195,7 @@ function ThermalTab({
     try {
       const response = await api.post('/thermal-correlations/classes', classForm);
       setVersionForm(current => ({ ...current, class_id: response.data.id }));
-      setClassForm({ class_code: '', class_name: '', description: '' });
+      setClassForm({ class_code: '', class_name: '', description: '', guidance: '' });
       await refetchCorrelationLibrary();
       toast.success('Agitation class created');
     } catch (error: any) {
@@ -2135,6 +2211,16 @@ function ThermalTab({
       await api.post(`/thermal-correlations/classes/${versionForm.class_id}/versions`, {
         version: versionForm.version,
         coefficient_kg_m2_s_kpa: numericOrNull(versionForm.coefficient_kg_m2_s_kpa),
+        lower_agitation_class_code: versionForm.lower_agitation_class_code,
+        lower_agitation_class_name: versionForm.lower_agitation_class_name,
+        lower_class_coefficient_kg_m2_s_kpa:
+          numericOrNull(versionForm.lower_class_coefficient_kg_m2_s_kpa),
+        adjustment_value: numericOrNull(versionForm.adjustment_value),
+        adjustment_basis: versionForm.adjustment_basis,
+        upper_agitation_class_code: versionForm.upper_agitation_class_code,
+        upper_agitation_class_name: versionForm.upper_agitation_class_name,
+        upper_class_coefficient_kg_m2_s_kpa:
+          numericOrNull(versionForm.upper_class_coefficient_kg_m2_s_kpa),
         source_reference: versionForm.source_reference,
         notes: versionForm.notes,
         impact_token: approveReplacementAfterConfirmation ? correlationUsage?.impact_token : undefined,
@@ -2143,6 +2229,14 @@ function ThermalTab({
         ...current,
         version: '',
         coefficient_kg_m2_s_kpa: '',
+        lower_agitation_class_code: '',
+        lower_agitation_class_name: '',
+        lower_class_coefficient_kg_m2_s_kpa: '',
+        adjustment_value: '',
+        adjustment_basis: '',
+        upper_agitation_class_code: '',
+        upper_agitation_class_name: '',
+        upper_class_coefficient_kg_m2_s_kpa: '',
         source_reference: '',
         notes: '',
       }));
@@ -2240,6 +2334,12 @@ function ThermalTab({
         agitation_correlation_approved: !!form.agitation_correlation_approved,
         agitation_correlation_deviation: !!form.agitation_correlation_deviation,
         evaporation_coefficient_kg_m2_s_kpa: numericOrNull(form.evaporation_coefficient_kg_m2_s_kpa),
+        lower_agitation_class: form.adjacent_lower_class || null,
+        lower_class_coefficient_kg_m2_s_kpa: numericOrNull(form.adjacent_lower_coefficient),
+        adjustment_value: numericOrNull(form.correlation_adjustment_value),
+        upper_agitation_class: form.adjacent_upper_class || null,
+        upper_class_coefficient_kg_m2_s_kpa: numericOrNull(form.adjacent_upper_coefficient),
+        agitation_correlation_overrides: form.agitation_correlation_overrides || {},
         adjacent_agitation_classes: [form.adjacent_lower_class, form.adjacent_upper_class].filter(Boolean),
         agitation_correlations: {
           [form.agitation_class]: {
@@ -2308,6 +2408,15 @@ function ThermalTab({
   const selectedConstructionDefault = constructionDefaults.find(
     item => item.code === form.tank_construction_type,
   );
+  const selectedAgitationClass = agitationClasses.find(
+    item => item.class_code === form.agitation_class,
+  );
+  const selectableCorrelationVersions = thermalCorrelationVersionsForClass(
+    correlationItems,
+    form.agitation_class,
+    form.agitation_correlation_id,
+  );
+  const draftOverridesAllowed = !readOnly && book.status === 'Draft';
   const fieldClass = 'w-full rounded-lg border border-stone-200 px-3 py-2 text-sm bg-white disabled:bg-stone-50 disabled:text-stone-500';
   const labelClass = 'block text-xs font-medium text-stone-600 mb-1';
   const Field = ({ name, label, unit, step = 'any' }: any) => (
@@ -2416,10 +2525,11 @@ function ThermalTab({
         </div>
         {showLibrary && canManageLibrary && (
           <div className="border-t border-stone-200 p-4 space-y-5">
-            <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.5fr_auto]">
+            <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.5fr_1.5fr_auto]">
               <label><span className={labelClass}>Class code</span><input value={classForm.class_code} onChange={event => setClassForm(current => ({ ...current, class_code: event.target.value }))} className={fieldClass} /></label>
               <label><span className={labelClass}>Class name</span><input value={classForm.class_name} onChange={event => setClassForm(current => ({ ...current, class_name: event.target.value }))} className={fieldClass} /></label>
               <label><span className={labelClass}>Description</span><input value={classForm.description} onChange={event => setClassForm(current => ({ ...current, description: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Selection guidance</span><input value={classForm.guidance} onChange={event => setClassForm(current => ({ ...current, guidance: event.target.value }))} className={fieldClass} /></label>
               <button type="button" onClick={createAgitationClass} disabled={librarySaving || !classForm.class_code.trim() || !classForm.class_name.trim()} className="self-end rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Add class</button>
             </div>
             <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr_1.5fr_auto]">
@@ -2434,6 +2544,16 @@ function ThermalTab({
               <label><span className={labelClass}>Coefficient (kg/m²·s·kPa)</span><input type="number" min="0" step="any" value={versionForm.coefficient_kg_m2_s_kpa} onChange={event => setVersionForm(current => ({ ...current, coefficient_kg_m2_s_kpa: event.target.value }))} className={fieldClass} /></label>
               <label><span className={labelClass}>Approval source / reference</span><input value={versionForm.source_reference} onChange={event => setVersionForm(current => ({ ...current, source_reference: event.target.value }))} className={fieldClass} /></label>
               <button type="button" onClick={createCorrelationVersion} disabled={librarySaving || !versionForm.class_id || !versionForm.version.trim() || !versionForm.coefficient_kg_m2_s_kpa || !versionForm.source_reference.trim()} className="self-end rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve version</button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label><span className={labelClass}>Lower class code</span><input value={versionForm.lower_agitation_class_code} onChange={event => setVersionForm(current => ({ ...current, lower_agitation_class_code: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Lower class name</span><input value={versionForm.lower_agitation_class_name} onChange={event => setVersionForm(current => ({ ...current, lower_agitation_class_name: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Lower-class coefficient</span><input type="number" min="0" step="any" value={versionForm.lower_class_coefficient_kg_m2_s_kpa} onChange={event => setVersionForm(current => ({ ...current, lower_class_coefficient_kg_m2_s_kpa: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Adjustment value</span><input type="number" step="any" value={versionForm.adjustment_value} onChange={event => setVersionForm(current => ({ ...current, adjustment_value: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Adjustment basis</span><input value={versionForm.adjustment_basis} onChange={event => setVersionForm(current => ({ ...current, adjustment_basis: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Upper adjacent class code</span><input value={versionForm.upper_agitation_class_code} onChange={event => setVersionForm(current => ({ ...current, upper_agitation_class_code: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Upper adjacent class name</span><input value={versionForm.upper_agitation_class_name} onChange={event => setVersionForm(current => ({ ...current, upper_agitation_class_name: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Upper-class coefficient</span><input type="number" min="0" step="any" value={versionForm.upper_class_coefficient_kg_m2_s_kpa} onChange={event => setVersionForm(current => ({ ...current, upper_class_coefficient_kg_m2_s_kpa: event.target.value }))} className={fieldClass} /></label>
             </div>
             {!!correlationItems.length && (
               <div className="overflow-x-auto rounded-xl border border-stone-200">
@@ -2612,31 +2732,90 @@ function ThermalTab({
               </div>
               <Field name="reviewed_water_temperature_c" label="Reviewed water-temperature override (optional)" unit="°C" />
               <label className="sm:col-span-2">
-                <span className={labelClass}>Approved correlation version</span>
-                <select value={form.agitation_correlation_id || ''} onChange={event => selectCorrelation(event.target.value)} disabled={readOnly} className={fieldClass}>
-                  <option value="">Select from shared library</option>
-                  {correlationItems
-                    .filter(item => item.status === 'approved' || item.id === form.agitation_correlation_id)
-                    .map(item => <option key={item.id} value={item.id}>{item.class_code} · {item.version}{item.status !== 'approved' ? ' · superseded snapshot' : ''}</option>)}
+                <span className={labelClass}>Surface-activity class (required)</span>
+                <select aria-label="Surface-activity class" value={form.agitation_class || ''}
+                  onChange={event => selectAgitationClass(event.target.value)}
+                  disabled={readOnly} required className={fieldClass}>
+                  <option value="">Select surface activity</option>
+                  {agitationClasses.filter(item => item.is_active ||
+                    item.class_code === form.agitation_class).map(item => (
+                    <option key={item.id} value={item.class_code}>{item.class_name}</option>
+                  ))}
                 </select>
               </label>
-              <label><span className={labelClass}>Agitation class</span><input value={form.agitation_class || ''} disabled className={fieldClass} /></label>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 sm:col-span-2">
+                <span className="block text-xs font-semibold uppercase tracking-wide text-blue-800">Surface-activity guidance</span>
+                <p className="mt-1 text-sm font-medium text-blue-950">
+                  {selectedAgitationClass?.description ||
+                    'Select the category that best describes movement at the water surface.'}
+                </p>
+                <p className="mt-1 text-xs text-blue-800">
+                  {selectedAgitationClass?.guidance ||
+                    'These categories describe surface activity and air/water movement—not biological species or tank construction.'}
+                </p>
+              </div>
+              <label className="sm:col-span-2">
+                <span className={labelClass}>Approved correlation version</span>
+                <select value={form.agitation_correlation_id || ''}
+                  onChange={event => selectCorrelation(event.target.value)}
+                  disabled={readOnly || !form.agitation_class} className={fieldClass}>
+                  <option value="">
+                    {!form.agitation_class
+                      ? 'Select a surface-activity class first'
+                      : selectableCorrelationVersions.some(item => item.status === 'approved')
+                        ? 'Select an approved version'
+                        : 'No approved version available'}
+                  </option>
+                  {selectableCorrelationVersions.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.version}{item.status !== 'approved' ? ' · superseded saved evidence' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label><span className={labelClass}>Correlation version</span><input value={form.agitation_correlation_version || ''} disabled className={fieldClass} /></label>
               <label>
-                <span className={labelClass}>Mass-transfer coefficient (kg/m²·s·kPa)</span>
-                <input aria-label="Mass-transfer coefficient" type="number" step="any" value={form.evaporation_coefficient_kg_m2_s_kpa ?? ''} onChange={event => update('evaporation_coefficient_kg_m2_s_kpa', event.target.value)} disabled={readOnly || !form.agitation_correlation_id || !form.agitation_correlation_deviation} className={fieldClass} />
+                <span className={labelClass}>Mass-transfer coefficient (kg/m²·s·kPa){form.agitation_correlation_deviation && ' · Override'}</span>
+                <input aria-label="Mass-transfer coefficient" type="number" min="0" step="any"
+                  value={form.evaporation_coefficient_kg_m2_s_kpa ?? ''}
+                  onChange={event => update('evaporation_coefficient_kg_m2_s_kpa', event.target.value)}
+                  disabled={!draftOverridesAllowed || !form.agitation_correlation_id ||
+                    !form.agitation_correlation_deviation} className={fieldClass} />
               </label>
             </div>
             <div className="flex flex-wrap gap-5 text-sm">
               <span className="inline-flex items-center gap-2 text-emerald-700"><ShieldCheck className="h-4 w-4" /> Approval is governed by the shared library</span>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_deviation} onChange={e => update('agitation_correlation_deviation', e.target.checked)} disabled={readOnly || !form.agitation_correlation_id} /> Project-specific deviation from selected correlation</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_deviation} onChange={e => update('agitation_correlation_deviation', e.target.checked)} disabled={!draftOverridesAllowed || !form.agitation_correlation_id} /> Project-specific deviation from selected correlation</label>
             </div>
-            {!form.agitation_correlation_id && <p className="text-xs text-amber-700">Select an approved shared-library version before saving. Legacy manual evidence remains visible in existing snapshots but cannot be newly self-approved here.</p>}
-            <div className="grid gap-3 sm:grid-cols-4">
-              <label><span className={labelClass}>Adjacent lower agitation class</span><input value={form.adjacent_lower_class || ''} onChange={e => update('adjacent_lower_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
-              <Field name="adjacent_lower_coefficient" label="Lower-class coefficient" unit="kg/m²·s·kPa" />
-              <label><span className={labelClass}>Adjacent upper agitation class</span><input value={form.adjacent_upper_class || ''} onChange={e => update('adjacent_upper_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
-              <Field name="adjacent_upper_coefficient" label="Upper-class coefficient" unit="kg/m²·s·kPa" />
+            {!form.agitation_correlation_id && form.agitation_class && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                No approved correlation is available for this surface-activity class. Ask an engineering administrator to approve a version before this calculation can be saved.
+              </div>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label><span className={labelClass}>Lower surface-activity class</span><input value={form.adjacent_lower_class || ''} disabled className={fieldClass} /></label>
+              <label>
+                <span className={labelClass}>Lower-class coefficient (kg/m²·s·kPa){form.agitation_correlation_overrides?.lower_class_coefficient_kg_m2_s_kpa && ' · Override'}</span>
+                <input aria-label="Lower-class coefficient" type="number" min="0" step="any"
+                  value={form.adjacent_lower_coefficient ?? ''}
+                  onChange={event => updateCorrelationOverride('lower_class_coefficient_kg_m2_s_kpa', 'adjacent_lower_coefficient', event.target.value)}
+                  disabled={!draftOverridesAllowed || !form.agitation_correlation_id} className={fieldClass} />
+              </label>
+              <label>
+                <span className={labelClass}>Correlation adjustment{form.agitation_correlation_overrides?.adjustment_value && ' · Override'}</span>
+                <input aria-label="Correlation adjustment" type="number" step="any"
+                  value={form.correlation_adjustment_value ?? ''}
+                  onChange={event => updateCorrelationOverride('adjustment_value', 'correlation_adjustment_value', event.target.value)}
+                  disabled={!draftOverridesAllowed || !form.agitation_correlation_id} className={fieldClass} />
+              </label>
+              <label><span className={labelClass}>Upper adjacent class</span><input value={form.adjacent_upper_class || ''} disabled className={fieldClass} /></label>
+              <label>
+                <span className={labelClass}>Upper-class coefficient (kg/m²·s·kPa){form.agitation_correlation_overrides?.upper_class_coefficient_kg_m2_s_kpa && ' · Override'}</span>
+                <input aria-label="Upper-class coefficient" type="number" min="0" step="any"
+                  value={form.adjacent_upper_coefficient ?? ''}
+                  onChange={event => updateCorrelationOverride('upper_class_coefficient_kg_m2_s_kpa', 'adjacent_upper_coefficient', event.target.value)}
+                  disabled={!draftOverridesAllowed || !form.agitation_correlation_id} className={fieldClass} />
+              </label>
             </div>
             <div className="rounded-xl border border-stone-200 p-4 space-y-3">
               <div>

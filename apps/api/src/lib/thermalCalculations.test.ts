@@ -3,6 +3,7 @@ import {
   buildThermalSourceContext,
   calculateThermalCalculation,
   THERMAL_CONSTANTS,
+  THERMAL_AGITATION_CLASS_CATALOG,
   THERMAL_CONSTRUCTION_BASIS_VERSION,
   THERMAL_CONSTRUCTION_DEFAULTS,
 } from './thermalCalculations';
@@ -58,6 +59,17 @@ function readyInputs() {
 }
 
 describe('AAT thermal calculation', () => {
+  it('publishes the stable recommended surface-activity class catalog', () => {
+    expect(THERMAL_AGITATION_CLASS_CATALOG.map(item => item.name)).toEqual([
+      'Calm or Covered',
+      'Normal Circulation',
+      'High Agitation or Aerated',
+      'Splashing or Active',
+    ]);
+    expect(THERMAL_AGITATION_CLASS_CATALOG.every(
+      item => item.description.length > 0 && item.guidance.length > 0,
+    )).toBe(true);
+  });
   it('uses the approved signs, constants, and 1°C-in-6-hour recovery duty', () => {
     const result = calculateThermalCalculation(readySource(), readyInputs(), '2026-08-30T00:00:00.000Z');
     expect(result.status).toBe('Ready');
@@ -233,6 +245,9 @@ describe('AAT thermal calculation', () => {
       version: 'approved-2026.2',
       source_reference: 'Engineering standard ES-42',
     });
+    expect(result.formula_inputs.evaporation_correlation_basis).toEqual(
+      result.correlation_snapshot,
+    );
   });
 
   it('requires justification for a project-specific shared-correlation deviation', () => {

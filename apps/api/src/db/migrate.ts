@@ -1064,6 +1064,7 @@ CREATE TABLE IF NOT EXISTS thermal_agitation_classes (
   class_code VARCHAR(100) NOT NULL UNIQUE,
   class_name VARCHAR(255) NOT NULL,
   description TEXT,
+  guidance TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_by UUID REFERENCES users(id),
@@ -1090,6 +1091,61 @@ CREATE TABLE IF NOT EXISTS thermal_mass_transfer_correlations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(agitation_class_id, version)
 );
+ALTER TABLE thermal_agitation_classes
+  ADD COLUMN IF NOT EXISTS guidance TEXT;
+ALTER TABLE thermal_mass_transfer_correlations
+  ADD COLUMN IF NOT EXISTS lower_agitation_class_code VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS lower_agitation_class_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS lower_class_coefficient_kg_m2_s_kpa NUMERIC,
+  ADD COLUMN IF NOT EXISTS adjustment_value NUMERIC,
+  ADD COLUMN IF NOT EXISTS adjustment_basis TEXT,
+  ADD COLUMN IF NOT EXISTS upper_agitation_class_code VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS upper_agitation_class_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS upper_class_coefficient_kg_m2_s_kpa NUMERIC,
+  ADD COLUMN IF NOT EXISTS related_agitation_values JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_thermal_correlation_related
+  ON thermal_mass_transfer_correlations USING gin (related_agitation_values);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='thermal_lower_coefficient_positive'
+  ) THEN
+    ALTER TABLE thermal_mass_transfer_correlations
+      ADD CONSTRAINT thermal_lower_coefficient_positive
+      CHECK (lower_class_coefficient_kg_m2_s_kpa IS NULL OR lower_class_coefficient_kg_m2_s_kpa > 0);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='thermal_upper_coefficient_positive'
+  ) THEN
+    ALTER TABLE thermal_mass_transfer_correlations
+      ADD CONSTRAINT thermal_upper_coefficient_positive
+      CHECK (upper_class_coefficient_kg_m2_s_kpa IS NULL OR upper_class_coefficient_kg_m2_s_kpa > 0);
+  END IF;
+END $$;
+
+-- These labels are the stable, recommended surface-activity catalog. They are
+-- intentionally definitions only; coefficient data must come from an approved
+-- correlation version.
+INSERT INTO thermal_agitation_classes
+  (class_code, class_name, description, guidance, sort_order)
+VALUES
+  ('calm_covered', 'Calm or Covered',
+   'Low surface activity with a covered or otherwise quiet water surface.',
+   'Choose when the surface is covered or calm, with little water movement and no intentional aeration.',
+   10),
+  ('normal_circulation', 'Normal Circulation',
+   'Typical operating circulation with ordinary surface movement.',
+   'Choose for normal filtration circulation without sustained aeration, turbulence, or active splashing.',
+   20),
+  ('high_agitation_aerated', 'High Agitation or Aerated',
+   'Strong surface movement caused by aeration, returns, jets, or turbulence.',
+   'Choose when air or water movement is visibly energetic or aeration is continuous. This is a surface-activity class, not a species or tank-construction class.',
+   30),
+  ('splashing_active', 'Splashing or Active',
+   'Very active water surface with repeated splashing, spray, or unusually vigorous movement.',
+   'Choose for waterfalls, spray, repeated splashing, or other active surface conditions. Use a project deviation only when the selected approved basis does not represent the observed condition.',
+   40)
+ON CONFLICT (class_code) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_thermal_correlation_class
   ON thermal_mass_transfer_correlations(agitation_class_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_thermal_one_approved_correlation
@@ -1110,6 +1166,15 @@ BEGIN
      OR NEW.agitation_class_code IS DISTINCT FROM OLD.agitation_class_code
      OR NEW.agitation_class_name IS DISTINCT FROM OLD.agitation_class_name
      OR NEW.agitation_class_description IS DISTINCT FROM OLD.agitation_class_description
+   OR NEW.lower_agitation_class_code IS DISTINCT FROM OLD.lower_agitation_class_code
+   OR NEW.lower_agitation_class_name IS DISTINCT FROM OLD.lower_agitation_class_name
+   OR NEW.lower_class_coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.lower_class_coefficient_kg_m2_s_kpa
+   OR NEW.adjustment_value IS DISTINCT FROM OLD.adjustment_value
+   OR NEW.adjustment_basis IS DISTINCT FROM OLD.adjustment_basis
+   OR NEW.upper_agitation_class_code IS DISTINCT FROM OLD.upper_agitation_class_code
+   OR NEW.upper_agitation_class_name IS DISTINCT FROM OLD.upper_agitation_class_name
+   OR NEW.upper_class_coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.upper_class_coefficient_kg_m2_s_kpa
+   OR NEW.related_agitation_values IS DISTINCT FROM OLD.related_agitation_values
      OR NEW.version IS DISTINCT FROM OLD.version
      OR NEW.coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.coefficient_kg_m2_s_kpa
      OR NEW.source_reference IS DISTINCT FROM OLD.source_reference
