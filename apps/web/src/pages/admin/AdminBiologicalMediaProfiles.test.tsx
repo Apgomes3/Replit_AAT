@@ -46,11 +46,26 @@ const tanProfiles = [
   },
 ];
 
-function renderPage() {
+const mediaProfiles = [
+  {
+    id: 'media-moving-cold',
+    profile_code: 'FW_MB_8C_850',
+    profile_name: 'Cold freshwater moving bed — 850 m²/m³ media',
+    revision: 1,
+    overall_vtr_g_tan_n_m3_d: '231',
+    capacity_basis_unit: 'g TAN-N/m³ media/day',
+    provisional_label: 'Preliminary engineering reference — administrator review required',
+    notes: 'Approximate study-condition reference only; do not treat this maximum-rate study result as universal design capacity.',
+    evidence_reference: null,
+    status: 'Draft',
+  },
+];
+
+function renderPage(focus = 'tan') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/?focus=tan']}>
+      <MemoryRouter initialEntries={[`/?focus=${focus}`]}>
         <AdminBiologicalMediaProfiles />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -62,6 +77,7 @@ describe('TAN generation profile administration', () => {
     vi.mocked(api.get).mockReset();
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: tanProfiles } });
+      if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: mediaProfiles } });
       return Promise.resolve({ data: { items: [] } });
     });
   });
@@ -94,5 +110,18 @@ describe('TAN generation profile administration', () => {
         && element.textContent?.replace(/\s+/g, ' ').trim() === `${label} (optional)`,
       )).toBeVisible();
     }
+  });
+
+  it('shows Overall VTR and its preliminary use qualification in the media listing', async () => {
+    renderPage('media');
+
+    expect(await screen.findByText('Cold freshwater moving bed — 850 m²/m³ media')).toBeVisible();
+    expect(screen.getByRole('columnheader', { name: 'Overall VTR' })).toBeVisible();
+    expect(screen.getByRole('columnheader', { name: 'Qualification / use' })).toBeVisible();
+    expect(screen.getByText('231')).toBeVisible();
+    expect(screen.getByText('g TAN-N/m³ media/day')).toBeVisible();
+    expect(screen.getByText('Preliminary engineering reference — administrator review required')).toBeVisible();
+    expect(screen.getByText(/maximum-rate study result as universal design capacity/)).toBeVisible();
+    expect(screen.getByText('Review required before approval')).toBeVisible();
   });
 });

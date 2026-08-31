@@ -1,7 +1,7 @@
 import pool from './index';
 import dotenv from 'dotenv';
 import { pimAssignmentIndexMigration } from './pimAssignmentIndexMigration';
-import { seedTanGenerationProfiles } from './biologicalMediaSeed';
+import { seedBiologicalMediaProfiles, seedTanGenerationProfiles } from './biologicalMediaSeed';
 dotenv.config();
 
 const schema = `
@@ -1911,6 +1911,8 @@ async function migrate() {
     );
     const seededTanProfiles = await seedTanGenerationProfiles(client, adminResult.rows[0]?.id ?? null);
     console.log(`Biological Media TAN profiles ready (${seededTanProfiles} starter records added).`);
+    const seededMediaProfiles = await seedBiologicalMediaProfiles(client, adminResult.rows[0]?.id ?? null);
+    console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
     console.log('Migrations complete.');
   } catch (err) {
     console.error('Migration failed:', err);

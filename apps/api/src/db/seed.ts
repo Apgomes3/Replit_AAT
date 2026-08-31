@@ -2,7 +2,7 @@ import pool from './index';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { seedSpeciesCatalog } from './speciesCatalogSeed';
-import { seedTanGenerationProfiles } from './biologicalMediaSeed';
+import { seedBiologicalMediaProfiles, seedTanGenerationProfiles } from './biologicalMediaSeed';
 dotenv.config();
 
 async function seed() {
@@ -46,6 +46,8 @@ async function seed() {
     console.log(`Species catalog ready (${seededSpecies} staged starter records).`);
     const seededTanProfiles = await seedTanGenerationProfiles(client, adminId);
     console.log(`Biological Media TAN profiles ready (${seededTanProfiles} starter records added).`);
+    const seededMediaProfiles = await seedBiologicalMediaProfiles(client, adminId);
+    console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
 
     // Materials
     await client.query(`

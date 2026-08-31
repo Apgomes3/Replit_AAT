@@ -1912,6 +1912,8 @@ async function migrate() {
         const adminResult = await client.query(`SELECT id FROM users WHERE role='admin' ORDER BY created_at, id LIMIT 1`);
         const seededTanProfiles = await (0, biologicalMediaSeed_1.seedTanGenerationProfiles)(client, adminResult.rows[0]?.id ?? null);
         console.log(`Biological Media TAN profiles ready (${seededTanProfiles} starter records added).`);
+        const seededMediaProfiles = await (0, biologicalMediaSeed_1.seedBiologicalMediaProfiles)(client, adminResult.rows[0]?.id ?? null);
+        console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
         console.log('Migrations complete.');
     }
     catch (err) {
