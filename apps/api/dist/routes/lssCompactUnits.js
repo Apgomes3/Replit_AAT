@@ -85,10 +85,13 @@ function normalizedBomLine(line, bom) {
     return {
         source_bom_line_id: line.id,
         source_component_id: line.component_id || null,
+        // Existing BOM authoring treats Component as the primary source when a
+        // legacy row happens to contain both IDs.
+        source_product_id: line.component_id ? null : line.sub_product_id || null,
         source_bom_id: bom.id,
         line_number: line.line_number,
         component_type: line.component_type || null,
-        component_reference_code: line.component_reference_code || line.source_component_code || null,
+        component_reference_code: line.component_reference_code || line.source_component_code || line.sub_product_code || null,
         component_name: line.resolved_component_name || line.component_name || 'Unnamed equipment',
         quantity: line.quantity == null ? 1 : Number(line.quantity),
         unit: line.unit || line.component_unit || 'EA',
@@ -128,6 +131,9 @@ function validateEquipment(equipment) {
             return `equipment[${index}] must be an object`;
         if (!String(line.component_name || '').trim())
             return `equipment[${index}].component_name is required`;
+        if (line.source_component_id && line.source_product_id) {
+            return `equipment[${index}] cannot reference both a PIM Component and Product`;
+        }
         if (line.quantity != null && line.quantity !== '' &&
             (!Number.isFinite(Number(line.quantity)) || Number(line.quantity) < 0)) {
             return `equipment[${index}].quantity must be a non-negative number`;
@@ -141,16 +147,41 @@ function validateEquipment(equipment) {
     return null;
 }
 async function resolveProvenance(body) {
+    const directLines = (body.equipment || []).filter((line) => !line?.source_bom_line_id);
+    const componentIds = [...new Set(directLines.map((line) => line?.source_component_id).filter(Boolean))];
+    const productIds = [...new Set(directLines.map((line) => line?.source_product_id).filter(Boolean))];
+    try {
+        if (componentIds.length) {
+            const result = await (0, db_1.query)('SELECT id FROM components WHERE id = ANY($1::uuid[])', [componentIds]);
+            if (result.rows.length !== componentIds.length) {
+                return { error: 'One or more PIM Component sources do not exist.' };
+            }
+        }
+        if (productIds.length) {
+            const result = await (0, db_1.query)('SELECT id FROM product_masters WHERE id = ANY($1::uuid[])', [productIds]);
+            if (result.rows.length !== productIds.length) {
+                return { error: 'One or more PIM Product sources do not exist.' };
+            }
+        }
+    }
+    catch {
+        return { error: 'One or more PIM equipment source IDs are invalid.' };
+    }
     if (!body.source_bom_id) {
-        const hasSourceLines = Array.isArray(body.equipment)
-            && body.equipment.some((line) => line?.source_bom_line_id || line?.source_component_id || line?.source_bom_id);
-        if (hasSourceLines)
+        const hasImportedLines = Array.isArray(body.equipment)
+            && body.equipment.some((line) => line?.source_bom_line_id || line?.source_bom_id);
+        if (hasImportedLines)
             return { error: 'Source BOM provenance is required for imported equipment lines.' };
         return {
             source_bom_id: null,
             source_bom_code: null,
             source_bom_revision: null,
-            equipment: body.equipment,
+            equipment: (body.equipment || []).map((line) => ({
+                ...line,
+                source_bom_line_id: null,
+                source_bom_id: null,
+                is_custom: !(line.source_component_id || line.source_product_id),
+            })),
         };
     }
     if (!body.product_master_id)
@@ -164,7 +195,7 @@ async function resolveProvenance(body) {
     const importedLines = (body.equipment || []).filter((line) => line.source_bom_line_id);
     if (importedLines.length) {
         const ids = importedLines.map((line) => line.source_bom_line_id);
-        const lineResult = await (0, db_1.query)(`SELECT id, component_id
+        const lineResult = await (0, db_1.query)(`SELECT id, component_id, sub_product_id
        FROM bom_lines
        WHERE standard_bom_id=$1 AND id = ANY($2::uuid[])`, [bom.id, ids]);
         const validById = new Map(lineResult.rows.map(line => [String(line.id), line]));
@@ -178,15 +209,18 @@ async function resolveProvenance(body) {
             if (line.source_component_id && String(line.source_component_id) !== String(source.component_id || '')) {
                 return { error: 'Equipment source component provenance is inconsistent.' };
             }
+            if (line.source_product_id && String(line.source_product_id) !== String(source.sub_product_id || '')) {
+                return { error: 'Equipment source Product provenance is inconsistent.' };
+            }
         }
     }
     for (const line of body.equipment || []) {
-        if (!line.source_bom_line_id && (line.source_bom_id || line.source_component_id)) {
-            return { error: 'Custom equipment cannot claim BOM or component provenance without a source BOM line.' };
+        if (!line.source_bom_line_id && line.source_bom_id) {
+            return { error: 'Equipment source BOM provenance requires a source BOM line.' };
         }
     }
     const validLines = importedLines.length
-        ? (await (0, db_1.query)(`SELECT id, component_id
+        ? (await (0, db_1.query)(`SELECT id, component_id, sub_product_id
        FROM bom_lines
        WHERE standard_bom_id=$1 AND id = ANY($2::uuid[])`, [bom.id, importedLines.map((line) => line.source_bom_line_id)])).rows
         : [];
@@ -202,7 +236,11 @@ async function resolveProvenance(body) {
             return {
                 ...line,
                 source_bom_id: source ? bom.id : null,
-                source_component_id: source?.component_id || null,
+                source_component_id: source ? source.component_id || null : line.source_component_id || null,
+                source_product_id: source
+                    ? (source.component_id ? null : source.sub_product_id || null)
+                    : line.source_product_id || null,
+                is_custom: !(source || line.source_component_id || line.source_product_id),
             };
         }),
     };
@@ -211,12 +249,13 @@ async function insertEquipment(runner, compactUnitId, equipment = []) {
     for (const [index, line] of equipment.entries()) {
         await runner(`INSERT INTO lss_compact_unit_equipment
        (compact_unit_id, sort_order, source_bom_line_id, source_component_id, source_bom_id,
-        component_type, component_reference_code, component_name, quantity, unit,
+         source_product_id, component_type, component_reference_code, component_name, quantity, unit,
         is_optional, included, is_filtration, size_or_power, size_or_power_override,
         remarks, is_custom)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, [
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, [
             compactUnitId, line.sort_order ?? index, line.source_bom_line_id || null,
             line.source_component_id || null, line.source_bom_id || null,
+            line.source_product_id || null,
             line.component_type || null, line.component_reference_code || null,
             String(line.component_name).trim(), line.quantity == null || line.quantity === '' ? 1 : Number(line.quantity),
             line.unit || 'EA', Boolean(line.is_optional), line.included !== false,
@@ -315,7 +354,7 @@ router.post('/lss-compact-units', auth_1.authenticate, (0, auth_1.requireModuleM
             ]);
             await insertEquipment(client.query.bind(client), result.rows[0].id, provenance.equipment || []);
             await client.query('COMMIT');
-            res.status(201).json({ ...result.rows[0], equipment: equipment || [] });
+            res.status(201).json({ ...result.rows[0], equipment: provenance.equipment || [] });
         }
         catch (err) {
             await client.query('ROLLBACK');
@@ -380,7 +419,7 @@ router.put('/lss-compact-units/:id', auth_1.authenticate, (0, auth_1.requireModu
                 await insertEquipment(client.query.bind(client), result.rows[0].id, provenance.equipment || []);
             }
             await client.query('COMMIT');
-            res.json({ ...result.rows[0], equipment: equipment === undefined ? undefined : equipment });
+            res.json({ ...result.rows[0], equipment: equipment === undefined ? undefined : provenance.equipment || [] });
         }
         catch (err) {
             await client.query('ROLLBACK');
@@ -424,11 +463,46 @@ router.post('/lss-compact-units/:id/reimport-bom', auth_1.authenticate, (0, auth
             });
         }
         const current = (await client.query('SELECT * FROM lss_compact_unit_equipment WHERE compact_unit_id=$1 ORDER BY sort_order, created_at, id', [unit.id])).rows;
+        const countBy = (items, field) => {
+            const counts = new Map();
+            items.forEach(line => {
+                if (!line[field])
+                    return;
+                const key = String(line[field]);
+                counts.set(key, (counts.get(key) || 0) + 1);
+            });
+            return counts;
+        };
         const currentBySource = new Map(current.filter(line => line.source_bom_line_id).map(line => [String(line.source_bom_line_id), line]));
-        const currentByReference = new Map(current.filter(line => line.component_reference_code).map(line => [String(line.component_reference_code), line]));
+        const incomingComponentCounts = countBy(imported.lines, 'source_component_id');
+        const incomingProductCounts = countBy(imported.lines, 'source_product_id');
+        const incomingReferenceCounts = countBy(imported.lines, 'component_reference_code');
+        const componentCandidates = current.filter(line => line.source_bom_line_id && line.source_component_id && !line.is_custom);
+        const productCandidates = current.filter(line => line.source_bom_line_id && line.source_product_id && !line.is_custom);
+        const referenceCandidates = current.filter(line => line.source_bom_line_id && line.component_reference_code && !line.is_custom);
+        const currentComponentCounts = countBy(componentCandidates, 'source_component_id');
+        const currentProductCounts = countBy(productCandidates, 'source_product_id');
+        const currentReferenceCounts = countBy(referenceCandidates, 'component_reference_code');
+        const currentByComponent = new Map(componentCandidates.map(line => [String(line.source_component_id), line]));
+        const currentByProduct = new Map(productCandidates.map(line => [String(line.source_product_id), line]));
+        const currentByReference = new Map(referenceCandidates.map(line => [String(line.component_reference_code), line]));
+        const matchedCurrentIds = new Set();
         const merged = imported.lines.map((line) => {
             const previous = currentBySource.get(String(line.source_bom_line_id))
-                || currentByReference.get(String(line.component_reference_code || ''));
+                || (line.source_component_id
+                    && incomingComponentCounts.get(String(line.source_component_id)) === 1
+                    && currentComponentCounts.get(String(line.source_component_id)) === 1
+                    ? currentByComponent.get(String(line.source_component_id)) : null)
+                || (line.source_product_id
+                    && incomingProductCounts.get(String(line.source_product_id)) === 1
+                    && currentProductCounts.get(String(line.source_product_id)) === 1
+                    ? currentByProduct.get(String(line.source_product_id)) : null)
+                || (line.component_reference_code
+                    && incomingReferenceCounts.get(String(line.component_reference_code)) === 1
+                    && currentReferenceCounts.get(String(line.component_reference_code)) === 1
+                    ? currentByReference.get(String(line.component_reference_code)) : null);
+            if (previous?.id)
+                matchedCurrentIds.add(String(previous.id));
             return previous ? {
                 ...line,
                 included: previous.included,
@@ -436,11 +510,11 @@ router.post('/lss-compact-units/:id/reimport-bom', auth_1.authenticate, (0, auth
                 size_or_power_override: previous.size_or_power_override || null,
                 component_name: previous.is_custom ? previous.component_name : line.component_name,
                 remarks: previous.remarks || line.remarks,
-                is_custom: previous.is_custom,
+                is_custom: false,
             } : line;
         });
-        const importedReferences = new Set(merged.map(line => line.source_bom_line_id));
-        current.filter(line => line.is_custom && !importedReferences.has(line.source_bom_line_id))
+        current.filter(line => !line.source_bom_line_id
+            && !matchedCurrentIds.has(String(line.id)))
             .forEach(line => merged.push({ ...line, id: undefined, sort_order: merged.length }));
         await client.query(`UPDATE lss_compact_units
        SET source_bom_id=$1, source_bom_code=$2, source_bom_revision=$3, updated_at=NOW()

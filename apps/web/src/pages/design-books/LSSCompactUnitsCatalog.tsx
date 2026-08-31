@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../../lib/api';
 import {
   ChevronLeft, Plus, Pencil, Trash2, X, Save, Check,
-  Waves, ExternalLink, Layers, AlertCircle, Package,
+  Waves, ExternalLink, Layers, AlertCircle, Package, Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -29,6 +29,7 @@ export type CompactUnitEquipment = {
   sort_order?: number;
   source_bom_line_id?: string | null;
   source_component_id?: string | null;
+  source_product_id?: string | null;
   source_bom_id?: string | null;
   line_number?: number | null;
   component_type?: string | null;
@@ -59,6 +60,16 @@ function normalizeEquipmentLine(line: any, index: number): CompactUnitEquipment 
     size_or_power_override: line.size_or_power_override || null,
     is_custom: Boolean(line.is_custom),
   };
+}
+
+function productSizeOrPower(product: Record<string, any>) {
+  if (hasSourceValue(product.standard_size)) return String(product.standard_size);
+  const dimensions = [product.length_mm, product.width_mm, product.height_mm]
+    .filter(hasSourceValue)
+    .map(value => `${value} mm`);
+  if (dimensions.length) return dimensions.join(' × ');
+  if (hasSourceValue(product.power_kw)) return `${product.power_kw} kW`;
+  return null;
 }
 
 export function summarizeFiltration(
@@ -233,11 +244,31 @@ function UnitModal({
   const [bomLoading, setBomLoading] = useState(false);
   const [bomError, setBomError] = useState('');
   const [bomState, setBomState] = useState<any>(null);
+  const [equipmentChooser, setEquipmentChooser] = useState<'menu' | 'component' | 'product' | null>(null);
+  const [equipmentSearch, setEquipmentSearch] = useState('');
   const pimRequest = useRef(0);
   const bomRequest = useRef(0);
   const set = (k: string, v: string) => setForm((f: any) => ({ ...f, [k]: v }));
   const setEquipment = (equipment: CompactUnitEquipment[]) =>
     setForm((f: any) => ({ ...f, equipment }));
+
+  const { data: componentData, isFetching: componentsLoading } = useQuery({
+    queryKey: ['compact-unit-equipment-components', equipmentSearch],
+    queryFn: () => api.get(`/components?search=${encodeURIComponent(equipmentSearch.trim())}&page_size=20`)
+      .then(response => response.data),
+    enabled: equipmentChooser === 'component' && equipmentSearch.trim().length >= 2,
+    staleTime: 60 * 1000,
+  });
+  const componentChoices = componentData?.items ?? componentData ?? [];
+  const productChoices = useMemo(() => {
+    const search = equipmentSearch.trim().toLowerCase();
+    if (!search) return products.slice(0, 20);
+    return products.filter((product: any) =>
+      [product.product_code, product.product_name, product.product_category]
+        .filter(Boolean)
+        .some(value => String(value).toLowerCase().includes(search)),
+    ).slice(0, 20);
+  }, [equipmentSearch, products]);
 
   const selectedProduct = (productMasterId: string) =>
     products.find((product: any) => String(product.id) === String(productMasterId)) ?? {};
@@ -282,7 +313,12 @@ function UnitModal({
   };
 
   const loadBom = async (productMasterId: string, applyValues: boolean) => {
-    if (!productMasterId) return;
+    if (!productMasterId) {
+      setBomLoading(false);
+      setBomState(null);
+      setBomError('');
+      return;
+    }
     const request = ++bomRequest.current;
     setBomLoading(true);
     setBomError('');
@@ -329,17 +365,23 @@ function UnitModal({
         source_bom_revision: '',
         // Relinking intentionally retains the point-in-time list as manual
         // equipment until the designer explicitly imports the new baseline.
-        equipment: (current.equipment || []).map((line: any) => ({
-          ...line,
-          source_bom_line_id: null,
-          source_component_id: null,
-          source_bom_id: null,
-          is_custom: true,
-        })),
+        equipment: (current.equipment || []).map((line: any) => {
+          const wasBomImported = Boolean(line.source_bom_line_id || line.source_bom_id);
+          return {
+            ...line,
+            source_bom_line_id: null,
+            source_component_id: wasBomImported ? null : line.source_component_id,
+            source_product_id: wasBomImported ? null : line.source_product_id,
+            source_bom_id: null,
+            is_custom: wasBomImported ? true : line.is_custom,
+          };
+        }),
       };
     });
     setPimValues(null);
     setPimError('');
+    setBomState(null);
+    setBomError('');
     if (productMasterId) {
       // Editing a saved unit must never replace its overrides as a side
       // effect of changing the link. New units get a convenient first pass.
@@ -348,6 +390,8 @@ function UnitModal({
     } else {
       pimRequest.current += 1;
       bomRequest.current += 1;
+      setPimLoading(false);
+      setBomLoading(false);
     }
   };
 
@@ -393,27 +437,74 @@ function UnitModal({
       source_bom_code: bomState.bom.bom_code || '',
       source_bom_revision: bomState.bom.revision_code || '',
       equipment: (() => {
+        const currentLines = (current.equipment || []).map((line: any, currentIndex: number) => ({ line, currentIndex }));
+        const countBy = (items: any[], field: string, readLine = (item: any) => item) => {
+          const counts = new Map<string, number>();
+          items.forEach(item => {
+            const value = readLine(item)[field];
+            if (!value) return;
+            const key = String(value);
+            counts.set(key, (counts.get(key) || 0) + 1);
+          });
+          return counts;
+        };
+        const sourceCandidates = currentLines.filter(item => item.line.source_bom_line_id);
+        const componentCandidates = currentLines.filter(item =>
+          item.line.source_bom_line_id && item.line.source_component_id && !item.line.is_custom);
+        const productCandidates = currentLines.filter(item =>
+          item.line.source_bom_line_id && item.line.source_product_id && !item.line.is_custom);
+        const referenceCandidates = currentLines.filter(item =>
+          item.line.source_bom_line_id && item.line.component_reference_code && !item.line.is_custom);
+        type IndexedEquipment = { line: any; currentIndex: number };
+        const bySource = new Map<string, IndexedEquipment>(
+          sourceCandidates.map(item => [String(item.line.source_bom_line_id), item]),
+        );
+        const byComponent = new Map<string, IndexedEquipment>(
+          componentCandidates.map(item => [String(item.line.source_component_id), item]),
+        );
+        const byProduct = new Map<string, IndexedEquipment>(
+          productCandidates.map(item => [String(item.line.source_product_id), item]),
+        );
+        const byReference = new Map<string, IndexedEquipment>(
+          referenceCandidates.map(item => [String(item.line.component_reference_code), item]),
+        );
+        const incomingComponentCounts = countBy(bomState.lines, 'source_component_id');
+        const incomingProductCounts = countBy(bomState.lines, 'source_product_id');
+        const incomingReferenceCounts = countBy(bomState.lines, 'component_reference_code');
+        const currentComponentCounts = countBy(componentCandidates, 'source_component_id', item => item.line);
+        const currentProductCounts = countBy(productCandidates, 'source_product_id', item => item.line);
+        const currentReferenceCounts = countBy(referenceCandidates, 'component_reference_code', item => item.line);
+        const matchedCurrentIndexes = new Set<number>();
         const imported = bomState.lines.map((line: any, index: number) => {
-        const old = (current.equipment || []).find((item: any) =>
-          (line.source_bom_line_id && item.source_bom_line_id === line.source_bom_line_id)
-          || (line.component_reference_code && item.component_reference_code === line.component_reference_code));
-        return normalizeEquipmentLine(old ? {
-          ...line,
-          included: old.included,
-          quantity: old.quantity,
-          size_or_power_override: old.size_or_power_override,
-          component_name: old.is_custom ? old.component_name : line.component_name,
-          remarks: old.remarks || line.remarks,
-          is_custom: old.is_custom,
+          const oldEntry = bySource.get(String(line.source_bom_line_id || ''))
+            || (line.source_component_id
+              && incomingComponentCounts.get(String(line.source_component_id)) === 1
+              && currentComponentCounts.get(String(line.source_component_id)) === 1
+              ? byComponent.get(String(line.source_component_id)) : null)
+            || (line.source_product_id
+              && incomingProductCounts.get(String(line.source_product_id)) === 1
+              && currentProductCounts.get(String(line.source_product_id)) === 1
+              ? byProduct.get(String(line.source_product_id)) : null)
+            || (line.component_reference_code
+              && incomingReferenceCounts.get(String(line.component_reference_code)) === 1
+              && currentReferenceCounts.get(String(line.component_reference_code)) === 1
+              ? byReference.get(String(line.component_reference_code)) : null);
+          if (oldEntry) matchedCurrentIndexes.add(oldEntry.currentIndex);
+          const old = oldEntry?.line;
+          return normalizeEquipmentLine(old ? {
+            ...line,
+            included: old.included,
+            quantity: old.quantity,
+            size_or_power_override: old.size_or_power_override,
+            component_name: old.is_custom ? old.component_name : line.component_name,
+            remarks: old.remarks || line.remarks,
+            is_custom: false,
           } : line, index);
         });
-        const importedSourceIds = new Set(imported.map((line: any) => line.source_bom_line_id).filter(Boolean));
-        const importedReferences = new Set(imported.map((line: any) => line.component_reference_code).filter(Boolean));
-        const custom = (current.equipment || []).filter((line: any) =>
-          line.is_custom
-          && (!line.source_bom_line_id || !importedSourceIds.has(line.source_bom_line_id))
-          && (!line.component_reference_code || !importedReferences.has(line.component_reference_code)));
-        return [...imported, ...custom].map(normalizeEquipmentLine);
+        const retained = currentLines
+          .filter(item => !item.line.source_bom_line_id && !matchedCurrentIndexes.has(item.currentIndex))
+          .map(item => item.line);
+        return [...imported, ...retained].map(normalizeEquipmentLine);
       })(),
     }));
     toast.success('Standard BOM loaded as an independent starting point');
@@ -424,16 +515,46 @@ function UnitModal({
       itemIndex === index ? { ...line, ...changes } : line));
   };
 
-  const addEquipment = (isFiltration = false) => {
+  const addEquipmentLine = (line: Partial<CompactUnitEquipment>) => {
     setEquipment([
       ...(form.equipment || []),
-      normalizeEquipmentLine({
-        component_name: '',
-        component_type: isFiltration ? 'Filtration' : 'Other',
-        is_filtration: isFiltration,
-        is_custom: true,
-      }, (form.equipment || []).length),
+      normalizeEquipmentLine(line, (form.equipment || []).length),
     ]);
+    setEquipmentChooser(null);
+    setEquipmentSearch('');
+  };
+
+  const addCustomEquipment = (isFiltration = false) => {
+    addEquipmentLine({
+      component_name: '',
+      component_type: isFiltration ? 'Filtration' : 'Other',
+      is_filtration: isFiltration,
+      is_custom: true,
+    });
+  };
+
+  const addPimComponent = (component: any) => {
+    addEquipmentLine({
+      source_component_id: component.id,
+      component_reference_code: component.component_code || '',
+      component_name: component.component_name || '',
+      component_type: component.component_type || 'Other',
+      unit: component.unit || 'EA',
+      size_or_power: component.standard_size || null,
+      is_custom: false,
+    });
+  };
+
+  const addPimProduct = (product: any) => {
+    addEquipmentLine({
+      source_product_id: product.id,
+      component_reference_code: product.product_code || '',
+      component_name: product.product_name || '',
+      component_type: product.product_category || product.application_type || 'Product',
+      unit: product.unit || 'EA',
+      size_or_power: productSizeOrPower(product),
+      is_custom: false,
+    });
   };
 
   const handleSave = async () => {
@@ -549,11 +670,79 @@ function UnitModal({
                     : 'Configure a unit-specific equipment list; source Product Master data is never edited here.'}
                 </p>
               </div>
-              <button type="button" onClick={() => addEquipment(false)}
+              <button type="button" onClick={() => setEquipmentChooser('menu')}
                 className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 border border-violet-200 rounded-lg px-2.5 py-1.5 hover:bg-violet-50">
                 <Plus className="w-3 h-3" /> Add equipment
               </button>
             </div>
+            {equipmentChooser && (
+              <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3 mb-3" role="dialog" aria-label="Add equipment">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <p className="text-xs font-semibold text-violet-900">Choose an equipment source</p>
+                  <button type="button" aria-label="Close equipment chooser" onClick={() => {
+                    setEquipmentChooser(null);
+                    setEquipmentSearch('');
+                  }} className="p-1 text-stone-400 hover:text-stone-600 rounded">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex gap-2 mb-3">
+                  <button type="button" onClick={() => { setEquipmentChooser('component'); setEquipmentSearch(''); }}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium ${equipmentChooser === 'component' ? 'border-violet-500 bg-violet-600 text-white' : 'border-violet-200 bg-white text-violet-800 hover:bg-violet-50'}`}>
+                    PIM Component
+                  </button>
+                  <button type="button" onClick={() => { setEquipmentChooser('product'); setEquipmentSearch(''); }}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium ${equipmentChooser === 'product' ? 'border-violet-500 bg-violet-600 text-white' : 'border-violet-200 bg-white text-violet-800 hover:bg-violet-50'}`}>
+                    PIM Product
+                  </button>
+                  <button type="button" onClick={() => addCustomEquipment(false)}
+                    className="flex-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-medium text-violet-800 hover:bg-violet-50">
+                    Custom item
+                  </button>
+                </div>
+                {(equipmentChooser === 'component' || equipmentChooser === 'product') && (
+                  <div>
+                    <label htmlFor="compact-unit-equipment-search" className="sr-only">Search {equipmentChooser === 'component' ? 'PIM components' : 'PIM products'}</label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-stone-400" />
+                      <input id="compact-unit-equipment-search" value={equipmentSearch}
+                        onChange={e => setEquipmentSearch(e.target.value)}
+                        className={`${inputCls} pl-8`} placeholder={`Search ${equipmentChooser === 'component' ? 'components' : 'products'} by code or name…`} autoFocus />
+                    </div>
+                    {equipmentChooser === 'component' && equipmentSearch.trim().length < 2 && (
+                      <p className="text-[11px] text-stone-500 mt-2">Enter at least 2 characters to search the Component Library.</p>
+                    )}
+                    {equipmentChooser === 'component' && equipmentSearch.trim().length >= 2 && (
+                      <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-stone-200 bg-white divide-y divide-stone-100">
+                        {componentsLoading && <p className="px-3 py-2 text-xs text-stone-400">Searching components…</p>}
+                        {!componentsLoading && componentChoices.length === 0 && <p className="px-3 py-2 text-xs text-stone-400">No components found.</p>}
+                        {!componentsLoading && componentChoices.map((component: any) => (
+                          <button type="button" key={component.id} onClick={() => addPimComponent(component)}
+                            className="w-full text-left px-3 py-2 hover:bg-violet-50 flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-violet-700">{component.component_code}</span>
+                            <span className="text-xs text-stone-700 truncate">{component.component_name}</span>
+                            {component.component_type && <span className="ml-auto text-[11px] text-stone-400">{component.component_type}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {equipmentChooser === 'product' && (
+                      <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-stone-200 bg-white divide-y divide-stone-100">
+                        {productChoices.length === 0 && <p className="px-3 py-2 text-xs text-stone-400">No products found.</p>}
+                        {productChoices.map((product: any) => (
+                          <button type="button" key={product.id} onClick={() => addPimProduct(product)}
+                            className="w-full text-left px-3 py-2 hover:bg-violet-50 flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-violet-700">{product.product_code}</span>
+                            <span className="text-xs text-stone-700 truncate">{product.product_name}</span>
+                            {product.product_category && <span className="ml-auto text-[11px] text-stone-400">{product.product_category}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {form.product_master_id && (
               <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2 mb-3">
                 <div className="flex items-center justify-between gap-3 text-xs">
@@ -562,7 +751,8 @@ function UnitModal({
                       : bomError ? bomError
                         : bomState?.available ? `${bomState.lines.length} standard BOM item${bomState.lines.length === 1 ? '' : 's'} available`
                           : bomState?.reason === 'empty_bom' ? 'Product Master BOM is empty. You can configure equipment manually.'
-                            : 'No applicable Product Master BOM found. You can configure equipment manually.'}
+                            : bomState?.reason === 'missing_bom' ? 'No applicable Product Master BOM found. You can configure equipment manually.'
+                              : 'Product Master BOM status is unavailable. You can configure equipment manually.'}
                   </span>
                   {!bomLoading && bomState?.available && (
                     <button type="button" onClick={handleApplyBom}
@@ -571,6 +761,11 @@ function UnitModal({
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+            {!form.product_master_id && (
+              <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 mb-3 text-xs text-stone-600">
+                No BOM associated yet. Link a Product Master to discover an applicable standard BOM.
               </div>
             )}
             {(form.equipment || []).length === 0 ? (
@@ -587,34 +782,40 @@ function UnitModal({
                         onChange={e => updateEquipment(index, { included: e.target.checked })}
                         className="mt-2 h-4 w-4 rounded border-stone-300 text-violet-600" />
                       <div className="grid flex-1 grid-cols-1 sm:grid-cols-12 gap-2">
-                        <div className="sm:col-span-4">
+                        <div className="sm:col-span-3">
                           <label className="block text-[11px] font-medium text-stone-500 mb-1">Equipment</label>
                           <input aria-label={`Equipment name ${index + 1}`} value={line.component_name}
-                            onChange={e => updateEquipment(index, { component_name: e.target.value, is_custom: true })}
+                           onChange={e => updateEquipment(index, { component_name: e.target.value })}
                             className={inputCls} placeholder="Equipment name" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-medium text-stone-500 mb-1">Type</label>
+                          <input aria-label={`Equipment type ${index + 1}`} value={line.component_type || ''}
+                            onChange={e => updateEquipment(index, { component_type: e.target.value })}
+                            className={inputCls} placeholder="Pump, filter…" />
                         </div>
                         <div className="sm:col-span-2">
                           <label className="block text-[11px] font-medium text-stone-500 mb-1">Reference</label>
                           <input aria-label={`Equipment reference ${index + 1}`} value={line.component_reference_code || ''}
-                            onChange={e => updateEquipment(index, { component_reference_code: e.target.value, is_custom: true })}
+                             onChange={e => updateEquipment(index, { component_reference_code: e.target.value })}
                             className={inputCls} placeholder="Part / tag" />
                         </div>
                         <div className="sm:col-span-2">
                           <label className="block text-[11px] font-medium text-stone-500 mb-1">Quantity / unit</label>
                           <div className="flex gap-1">
                             <input aria-label={`Equipment quantity ${index + 1}`} type="number" min="0" step="any" value={line.quantity}
-                              onChange={e => updateEquipment(index, { quantity: e.target.value, is_custom: true })}
+                               onChange={e => updateEquipment(index, { quantity: e.target.value })}
                               className={`${numCls} min-w-0`} />
                             <input aria-label={`Equipment unit ${index + 1}`} value={line.unit || ''}
-                              onChange={e => updateEquipment(index, { unit: e.target.value, is_custom: true })}
+                               onChange={e => updateEquipment(index, { unit: e.target.value })}
                               className={`${inputCls} w-16 px-2`} placeholder="EA" />
                           </div>
                         </div>
-                        <div className="sm:col-span-3">
+                        <div className="sm:col-span-2">
                           <label className="block text-[11px] font-medium text-stone-500 mb-1">Size / power</label>
                           <input aria-label={`Equipment size or power ${index + 1}`}
                             value={line.size_or_power_override ?? line.size_or_power ?? ''}
-                            onChange={e => updateEquipment(index, { size_or_power_override: e.target.value, is_custom: true })}
+                             onChange={e => updateEquipment(index, { size_or_power_override: e.target.value })}
                             className={inputCls} placeholder={line.size_or_power ? String(line.size_or_power) : 'Not specified'} />
                         </div>
                         <div className="sm:col-span-1 flex items-end justify-end">
@@ -624,9 +825,15 @@ function UnitModal({
                       </div>
                     </div>
                     <div className="mt-2 ml-6 flex items-center gap-4 text-xs">
+                      <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
+                        {line.source_bom_line_id ? 'Standard BOM'
+                          : line.source_component_id ? 'PIM Component'
+                            : line.source_product_id ? 'PIM Product'
+                              : 'Custom item'}
+                      </span>
                       <label className="inline-flex items-center gap-1.5 text-stone-600">
                         <input type="checkbox" aria-label={`Filtration item ${index + 1}`} checked={Boolean(line.is_filtration)}
-                          onChange={e => updateEquipment(index, { is_filtration: e.target.checked, is_custom: true })}
+                           onChange={e => updateEquipment(index, { is_filtration: e.target.checked })}
                           className="h-3.5 w-3.5 rounded border-stone-300 text-violet-600" />
                         Included filtration
                       </label>
@@ -635,7 +842,7 @@ function UnitModal({
                     </div>
                   </div>
                 ))}
-                <button type="button" onClick={() => addEquipment(true)}
+                 <button type="button" onClick={() => addCustomEquipment(true)}
                   className="text-xs font-medium text-violet-700 hover:text-violet-900">+ Add filtration item</button>
               </div>
             )}

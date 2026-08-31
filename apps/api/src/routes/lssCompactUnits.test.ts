@@ -9,6 +9,9 @@ const testSecret = 'edp-secret-change-in-production';
 const state = vi.hoisted(() => ({
   bomRows: [] as any[],
   lineRows: [] as any[],
+  componentRows: [] as any[],
+  productRows: [] as any[],
+  clientQueries: [] as Array<{ sql: string; params?: any[] }>,
 }));
 
 vi.mock('../db', () => ({
@@ -17,13 +20,20 @@ vi.mock('../db', () => ({
     if (sql.includes('SELECT rma.access_level')) return { rows: [{ access_level: 'manage' }] };
     if (sql.includes('FROM standard_boms sb')) return { rows: state.bomRows };
     if (sql.includes('FROM bom_lines bl')) return { rows: state.lineRows };
+    if (sql.includes('FROM standard_boms')) return { rows: state.bomRows };
+    if (sql.includes('FROM bom_lines')) return { rows: state.lineRows };
+    if (sql.includes('SELECT id FROM components')) return { rows: state.componentRows };
+    if (sql.includes('SELECT id FROM product_masters')) return { rows: state.productRows };
     return { rows: [] };
   }),
 }));
 
 let app: Express;
+let connectMock: ReturnType<typeof vi.fn>;
 
 beforeAll(async () => {
+  const db = await import('../db');
+  connectMock = vi.mocked(db.default.connect);
   const { default: routes } = await import('./lssCompactUnits');
   app = express();
   app.use(express.json());
@@ -33,6 +43,10 @@ beforeAll(async () => {
 beforeEach(() => {
   state.bomRows = [];
   state.lineRows = [];
+  state.componentRows = [];
+  state.productRows = [];
+  state.clientQueries = [];
+  connectMock.mockReset();
 });
 
 function request(method: string, path: string, payload?: any) {
@@ -107,6 +121,75 @@ describe('LSS compact-unit BOM API', () => {
     });
   });
 
+  it('uses Component provenance when a legacy BOM line contains both source IDs', async () => {
+    state.bomRows = [{ id: 'bom-1', bom_code: 'BOM-CU-1', revision_code: 'A' }];
+    state.lineRows = [{
+      id: 'line-1',
+      component_id: 'component-1',
+      sub_product_id: 'product-1',
+      source_component_code: 'COMP-1',
+      sub_product_code: 'PROD-1',
+      resolved_component_name: 'Legacy mixed source',
+      quantity: 1,
+    }];
+
+    const response = await request('GET', '/api/v1/lss-compact-units/bom/product-1');
+    expect(response.status).toBe(200);
+    expect(response.body.lines[0]).toMatchObject({
+      source_component_id: 'component-1',
+      source_product_id: null,
+      component_reference_code: 'COMP-1',
+    });
+  });
+
+  it('persists Component-only provenance from a legacy dual-source BOM line', async () => {
+    state.bomRows = [{
+      id: 'bom-1',
+      bom_code: 'BOM-CU-1',
+      revision_code: 'A',
+      product_master_id: 'product-1',
+    }];
+    state.lineRows = [{
+      id: 'line-1',
+      component_id: 'component-1',
+      sub_product_id: 'product-2',
+    }];
+    const client = {
+      query: vi.fn(async (sql: string, params?: any[]) => {
+        state.clientQueries.push({ sql, params });
+        if (sql.includes('INSERT INTO lss_compact_units')) return { rows: [{ id: 'unit-1', unit_code: 'CU-1' }] };
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    connectMock.mockResolvedValue(client as any);
+
+    const response = await request('POST', '/api/v1/lss-compact-units', {
+      unit_code: 'CU-1',
+      unit_name: 'Compact One',
+      product_master_id: 'product-1',
+      source_bom_id: 'bom-1',
+      equipment: [{
+        source_bom_line_id: 'line-1',
+        source_component_id: 'component-1',
+        source_product_id: null,
+        component_name: 'Legacy mixed source',
+        quantity: 1,
+      }],
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.equipment[0]).toMatchObject({
+      source_component_id: 'component-1',
+      source_product_id: null,
+      is_custom: false,
+    });
+    const equipmentInsert = state.clientQueries.find(entry =>
+      entry.sql.includes('INSERT INTO lss_compact_unit_equipment'));
+    expect(equipmentInsert?.params?.[3]).toBe('component-1');
+    expect(equipmentInsert?.params?.[5]).toBeNull();
+  });
+
   it('distinguishes missing and empty BOMs without blocking manual configuration', async () => {
     expect((await request('GET', '/api/v1/lss-compact-units/bom/product-1')).body)
       .toMatchObject({ available: false, reason: 'missing_bom', lines: [] });
@@ -128,9 +211,184 @@ describe('LSS compact-unit BOM API', () => {
     });
   });
 
+  it('persists Component, Product, and custom provenance as independent snapshots', async () => {
+    state.componentRows = [{ id: 'component-1' }];
+    state.productRows = [{ id: 'product-1' }];
+    const client = {
+      query: vi.fn(async (sql: string, params?: any[]) => {
+        state.clientQueries.push({ sql, params });
+        if (sql.includes('INSERT INTO lss_compact_units')) return { rows: [{ id: 'unit-1', unit_code: 'CU-1' }] };
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    connectMock.mockResolvedValue(client as any);
+
+    const response = await request('POST', '/api/v1/lss-compact-units', {
+      unit_code: 'CU-1',
+      unit_name: 'Compact One',
+      equipment: [
+        {
+          source_component_id: 'component-1',
+          component_name: 'Catalog Pump',
+          quantity: 1,
+          is_custom: false,
+        },
+        {
+          source_product_id: 'product-1',
+          component_name: 'Catalog Product',
+          quantity: 1,
+          is_custom: false,
+        },
+        {
+          component_name: 'Custom Manifold',
+          quantity: 1,
+          is_custom: true,
+        },
+      ],
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.equipment).toEqual([
+      expect.objectContaining({ source_component_id: 'component-1', is_custom: false }),
+      expect.objectContaining({ source_product_id: 'product-1', is_custom: false }),
+      expect.objectContaining({ component_name: 'Custom Manifold', is_custom: true }),
+    ]);
+    const equipmentInserts = state.clientQueries.filter(entry =>
+      entry.sql.includes('INSERT INTO lss_compact_unit_equipment'));
+    expect(equipmentInserts).toHaveLength(3);
+    expect(equipmentInserts[0].params?.[3]).toBe('component-1');
+    expect(equipmentInserts[1].params?.[5]).toBe('product-1');
+    expect(equipmentInserts[2].params?.[3]).toBeNull();
+    expect(equipmentInserts[2].params?.[5]).toBeNull();
+  });
+
+  it('rejects ambiguous PIM equipment provenance', async () => {
+    const response = await request('POST', '/api/v1/lss-compact-units', {
+      unit_code: 'CU-1',
+      unit_name: 'Compact One',
+      equipment: [{
+        source_component_id: 'component-1',
+        source_product_id: 'product-1',
+        component_name: 'Ambiguous source',
+      }],
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toContain('cannot reference both');
+  });
+
+  it('rejects missing direct PIM sources before persistence', async () => {
+    const response = await request('POST', '/api/v1/lss-compact-units', {
+      unit_code: 'CU-1',
+      unit_name: 'Compact One',
+      equipment: [{
+        source_component_id: 'missing-component',
+        component_name: 'Missing source',
+      }],
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: 'INVALID_PROVENANCE',
+      message: 'One or more PIM Component sources do not exist.',
+    });
+  });
+
   it('requires explicit confirmation before a reimport can change a snapshot', async () => {
     const response = await request('POST', '/api/v1/lss-compact-units/unit-1/reimport-bom', { confirm: false });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('CONFIRMATION_REQUIRED');
+  });
+
+  it('keeps direct Component and Product snapshots separate during BOM reimport', async () => {
+    const currentEquipment = [
+      {
+        id: 'direct-component',
+        source_bom_line_id: null,
+        source_component_id: 'component-1',
+        source_product_id: null,
+        component_reference_code: 'COMP-1',
+        component_name: 'Direct component snapshot',
+        quantity: 1,
+        included: true,
+        is_custom: false,
+      },
+      {
+        id: 'direct-product',
+        source_bom_line_id: null,
+        source_component_id: null,
+        source_product_id: 'product-2',
+        component_reference_code: 'PROD-2',
+        component_name: 'Direct product snapshot',
+        quantity: 1,
+        included: true,
+        is_custom: false,
+      },
+    ];
+    const client = {
+      query: vi.fn(async (sql: string, params?: any[]) => {
+        state.clientQueries.push({ sql, params });
+        if (sql.includes('SELECT * FROM lss_compact_units')) {
+          return { rows: [{ id: 'unit-1', product_master_id: 'product-1' }] };
+        }
+        if (sql.includes('FROM standard_boms sb')) {
+          return { rows: [{ id: 'bom-1', bom_code: 'BOM-1', revision_code: 'B' }] };
+        }
+        if (sql.includes('FROM bom_lines bl')) {
+          return {
+            rows: [
+              {
+                id: 'bom-line-component',
+                component_id: 'component-1',
+                source_component_code: 'COMP-1',
+                resolved_component_name: 'BOM component',
+                quantity: 1,
+              },
+              {
+                id: 'bom-line-product',
+                sub_product_id: 'product-2',
+                sub_product_code: 'PROD-2',
+                resolved_component_name: 'BOM product',
+                quantity: 1,
+              },
+            ],
+          };
+        }
+        if (sql.includes('SELECT * FROM lss_compact_unit_equipment')) {
+          return { rows: currentEquipment };
+        }
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    connectMock.mockResolvedValue(client as any);
+
+    const response = await request('POST', '/api/v1/lss-compact-units/unit-1/reimport-bom', { confirm: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.equipment).toHaveLength(4);
+    expect(response.body.equipment).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_bom_line_id: 'bom-line-component',
+        source_component_id: 'component-1',
+        component_name: 'BOM component',
+      }),
+      expect.objectContaining({
+        source_bom_line_id: 'bom-line-product',
+        source_product_id: 'product-2',
+        component_name: 'BOM product',
+      }),
+      expect.objectContaining({
+        source_bom_line_id: null,
+        source_component_id: 'component-1',
+        component_name: 'Direct component snapshot',
+      }),
+      expect.objectContaining({
+        source_bom_line_id: null,
+        source_product_id: 'product-2',
+        component_name: 'Direct product snapshot',
+      }),
+    ]));
+    expect(state.clientQueries.filter(entry =>
+      entry.sql.includes('INSERT INTO lss_compact_unit_equipment'))).toHaveLength(4);
   });
 });

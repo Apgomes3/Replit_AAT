@@ -98,15 +98,40 @@ const standardEquipment = [
   },
 ];
 
-function renderCatalog(units: any[] = [], products: any[] = [product]) {
+const component = {
+  id: 'component-1',
+  component_code: 'PMP-COMP-1',
+  component_name: 'Catalog Pump',
+  component_type: 'Pump',
+  standard_size: 'DN80',
+  unit: 'EA',
+};
+
+function renderCatalog(
+  units: any[] = [],
+  products: any[] = [product],
+  options: {
+    bom?: any;
+    bomError?: string;
+    components?: any[];
+  } = {},
+) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/lss-compact-units') return Promise.resolve({ data: units });
     if (url === '/product-masters?page_size=500') return Promise.resolve({ data: { items: products } });
+    if (url.startsWith('/components?search=')) {
+      return Promise.resolve({ data: { items: options.components ?? [component] } });
+    }
     if (url.endsWith('/dimensions')) return Promise.resolve({ data: dimensions });
     if (url.endsWith('/hydraulic')) return Promise.resolve({ data: hydraulic });
     if (url.endsWith('/electrical')) return Promise.resolve({ data: electrical });
     if (url.includes('/lss-compact-units/bom/')) {
-      return Promise.resolve({ data: { available: true, reason: null, bom: standardBom, lines: standardEquipment } });
+      if (options.bomError) {
+        return Promise.reject({ response: { data: { error: { message: options.bomError } } } });
+      }
+      return Promise.resolve({
+        data: options.bom ?? { available: true, reason: null, bom: standardBom, lines: standardEquipment },
+      });
     }
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
@@ -245,6 +270,213 @@ describe('LSS compact-unit Product Master prefilling', () => {
         uv_power_w: null,
       }),
     ));
+  });
+
+  it('settles immediately on no BOM association when no Product Master is linked', async () => {
+    const user = userEvent.setup();
+    renderCatalog();
+
+    await user.click(await screen.findByRole('button', { name: 'Add Unit' }));
+
+    expect(screen.getByText(/No BOM associated yet/)).toBeVisible();
+    expect(screen.queryByText('Loading applicable Product Master BOM…')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['empty_bom', 'Product Master BOM is empty'],
+    ['missing_bom', 'No applicable Product Master BOM found'],
+  ])('shows the settled %s state', async (reason, message) => {
+    const user = userEvent.setup();
+    renderCatalog([], [product], {
+      bom: { available: false, reason, bom: reason === 'empty_bom' ? standardBom : null, lines: [] },
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Add Unit' }));
+    await user.selectOptions(screen.getByLabelText('Link to Product Master'), product.id);
+
+    expect(await screen.findByText(new RegExp(message))).toBeVisible();
+    expect(screen.queryByText('Loading applicable Product Master BOM…')).not.toBeInTheDocument();
+  });
+
+  it('shows a settled failed BOM state while keeping manual equipment available', async () => {
+    const user = userEvent.setup();
+    renderCatalog([], [product], { bomError: 'BOM service is unavailable. Configure equipment manually.' });
+
+    await user.click(await screen.findByRole('button', { name: 'Add Unit' }));
+    await user.selectOptions(screen.getByLabelText('Link to Product Master'), product.id);
+
+    expect(await screen.findByText('BOM service is unavailable. Configure equipment manually.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Add equipment' })).toBeEnabled();
+  });
+
+  it('adds Component, Product, and custom snapshots with independent source metadata', async () => {
+    const user = userEvent.setup();
+    renderCatalog([], [product], { components: [component] });
+    await user.click(await screen.findByRole('button', { name: 'Add Unit' }));
+    await user.type(screen.getByLabelText('Unit Code *'), 'CU-SOURCES');
+    await user.type(screen.getByLabelText('Unit Name *'), 'Source snapshots');
+
+    await user.click(screen.getByRole('button', { name: 'Add equipment' }));
+    await user.click(screen.getByRole('button', { name: 'PIM Component' }));
+    await user.type(screen.getByLabelText('Search PIM components'), 'pump');
+    await user.click(await screen.findByRole('button', { name: /PMP-COMP-1 Catalog Pump Pump/ }));
+    expect(screen.getByLabelText('Equipment reference 1')).toHaveValue('PMP-COMP-1');
+    expect(screen.getByLabelText('Equipment type 1')).toHaveValue('Pump');
+    expect(screen.getByLabelText('Equipment size or power 1')).toHaveValue('DN80');
+    expect(screen.getByText('PIM Component')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Add equipment' }));
+    await user.click(screen.getByRole('button', { name: 'PIM Product' }));
+    await user.type(screen.getByLabelText('Search PIM products'), 'Compact 100');
+    await user.click(screen.getByRole('button', { name: /PIM-CU-100 Product Master Compact 100/ }));
+    expect(screen.getByLabelText('Equipment reference 2')).toHaveValue('PIM-CU-100');
+    expect(screen.getByLabelText('Equipment size or power 2')).toHaveValue('1900 mm');
+    expect(screen.getByText('PIM Product')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Add equipment' }));
+    await user.click(screen.getByRole('button', { name: 'Custom item' }));
+    await user.type(screen.getByLabelText('Equipment name 3'), 'Site-built manifold');
+    await user.clear(screen.getByLabelText('Equipment type 3'));
+    await user.type(screen.getByLabelText('Equipment type 3'), 'Manifold');
+    await user.type(screen.getByLabelText('Equipment reference 3'), 'CUSTOM-1');
+
+    await user.click(screen.getByRole('button', { name: 'Create Unit' }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith(
+      '/lss-compact-units',
+      expect.objectContaining({
+        equipment: expect.arrayContaining([
+          expect.objectContaining({
+            source_component_id: 'component-1',
+            component_name: 'Catalog Pump',
+            component_type: 'Pump',
+            unit: 'EA',
+            size_or_power: 'DN80',
+            is_custom: false,
+          }),
+          expect.objectContaining({
+            source_product_id: 'product-1',
+            component_name: 'Product Master Compact 100',
+            component_type: 'Product',
+            unit: 'EA',
+            size_or_power: '1900 mm',
+            is_custom: false,
+          }),
+          expect.objectContaining({
+            component_name: 'Site-built manifold',
+            component_type: 'Manifold',
+            component_reference_code: 'CUSTOM-1',
+            is_custom: true,
+          }),
+        ]),
+      }),
+    ));
+  });
+
+  it('keeps direct PIM snapshots separate when applying a BOM with the same sources', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const secondProduct = {
+      ...product,
+      id: 'product-2',
+      product_code: 'PIM-CU-200',
+      product_name: 'Product Master Compact 200',
+    };
+    const existing = {
+      id: 'unit-existing',
+      unit_code: 'CU-DIRECT',
+      unit_name: 'Direct selections',
+      product_master_id: product.id,
+      status: 'Active',
+      equipment: [
+        {
+          source_component_id: 'component-1',
+          component_reference_code: 'COMP-1',
+          component_name: 'Direct component snapshot',
+          quantity: 1,
+          unit: 'EA',
+          included: true,
+          is_custom: false,
+        },
+        {
+          source_product_id: 'product-1',
+          component_reference_code: 'PROD-1',
+          component_name: 'Direct product snapshot',
+          quantity: 1,
+          unit: 'EA',
+          included: true,
+          is_custom: false,
+        },
+      ],
+    };
+    const collidingBom = {
+      available: true,
+      reason: null,
+      bom: standardBom,
+      lines: [
+        {
+          source_bom_line_id: 'bom-line-component',
+          source_bom_id: 'bom-1',
+          source_component_id: 'component-1',
+          component_reference_code: 'COMP-1',
+          component_name: 'BOM component',
+          quantity: 1,
+          unit: 'EA',
+          included: true,
+          is_custom: false,
+        },
+        {
+          source_bom_line_id: 'bom-line-product',
+          source_bom_id: 'bom-1',
+          source_product_id: 'product-1',
+          component_reference_code: 'PROD-1',
+          component_name: 'BOM product',
+          quantity: 1,
+          unit: 'EA',
+          included: true,
+          is_custom: false,
+        },
+      ],
+    };
+    apiPut.mockResolvedValue({ data: existing });
+    renderCatalog([existing], [product, secondProduct], { bom: collidingBom });
+
+    await user.click(await screen.findByRole('button', { name: 'Edit CU-DIRECT' }));
+    await user.selectOptions(screen.getByLabelText('Link to Product Master'), secondProduct.id);
+    await user.click(await screen.findByRole('button', { name: 'Import standard BOM' }));
+
+    expect(screen.getAllByText('Standard BOM')).toHaveLength(2);
+    expect(screen.getByText('PIM Component')).toBeVisible();
+    expect(screen.getByText('PIM Product')).toBeVisible();
+    expect(screen.getByDisplayValue('Direct component snapshot')).toBeVisible();
+    expect(screen.getByDisplayValue('Direct product snapshot')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/lss-compact-units/unit-existing',
+      expect.objectContaining({
+        equipment: expect.arrayContaining([
+          expect.objectContaining({
+            source_bom_line_id: 'bom-line-component',
+            source_component_id: 'component-1',
+          }),
+          expect.objectContaining({
+            source_bom_line_id: 'bom-line-product',
+            source_product_id: 'product-1',
+          }),
+          expect.objectContaining({
+            source_bom_line_id: null,
+            source_component_id: 'component-1',
+            component_name: 'Direct component snapshot',
+          }),
+          expect.objectContaining({
+            source_bom_line_id: null,
+            source_product_id: 'product-1',
+            component_name: 'Direct product snapshot',
+          }),
+        ]),
+      }),
+    ));
+    confirmSpy.mockRestore();
   });
 
   it('preserves saved overrides when an edit form opens or its link changes', async () => {

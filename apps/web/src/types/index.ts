@@ -179,6 +179,7 @@ export interface CompactUnitEquipment {
   sort_order: number;
   source_bom_line_id?: string | null;
   source_component_id?: string | null;
+  source_product_id?: string | null;
   source_bom_id?: string | null;
   component_type?: string | null;
   component_reference_code?: string | null;

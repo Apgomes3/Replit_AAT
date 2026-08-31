@@ -1285,6 +1285,7 @@ CREATE TABLE IF NOT EXISTS lss_compact_unit_equipment (
   sort_order            INTEGER NOT NULL DEFAULT 0,
   source_bom_line_id    UUID REFERENCES bom_lines(id) ON DELETE SET NULL,
   source_component_id   UUID REFERENCES components(id) ON DELETE SET NULL,
+  source_product_id     UUID REFERENCES product_masters(id) ON DELETE SET NULL,
   source_bom_id         UUID REFERENCES standard_boms(id) ON DELETE SET NULL,
   component_type        VARCHAR(100),
   component_reference_code VARCHAR(100),
@@ -1302,6 +1303,8 @@ CREATE TABLE IF NOT EXISTS lss_compact_unit_equipment (
   updated_at            TIMESTAMPTZ DEFAULT NOW(),
   CHECK (quantity >= 0)
 );
+ALTER TABLE lss_compact_unit_equipment
+  ADD COLUMN IF NOT EXISTS source_product_id UUID REFERENCES product_masters(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_lss_compact_unit_equipment_unit
   ON lss_compact_unit_equipment(compact_unit_id, sort_order, created_at);
 
