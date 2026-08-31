@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Check, CopyPlus, Plus, ShieldCheck, X } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
@@ -244,6 +244,21 @@ function EvidenceField({ label, value }: { label: string; value: any }) {
   );
 }
 
+const PROFILE_ADMIN_FALLBACK = '/admin/users';
+
+function safeReturnPath(value: unknown, currentPath: string): string | null {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return null;
+  try {
+    const destination = new URL(value, window.location.origin);
+    if (destination.origin !== window.location.origin || `${destination.pathname}${destination.search}${destination.hash}` === currentPath) {
+      return null;
+    }
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 function EvidenceTable({ items, focused }: { items: any[]; focused: boolean }) {
   return (
     <section id="evidence-library" tabIndex={-1} className={`scroll-mt-6 overflow-hidden rounded-xl border bg-white outline-none ${
@@ -347,7 +362,13 @@ function EvidenceTable({ items, focused }: { items: any[]; focused: boolean }) {
 
 export default function AdminBiologicalMediaProfiles() {
   const qc = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const currentPath = `${location.pathname}${location.search}${location.hash}`;
+  const returnToRef = useRef<string | null>(
+    safeReturnPath((location.state as { returnTo?: unknown } | null)?.returnTo, currentPath),
+  );
   const requestedFocus = searchParams.get('focus');
   const focusedKind: AdminFocus | null = requestedFocus === 'tan' || requestedFocus === 'media' || requestedFocus === 'max-tan' || requestedFocus === 'evidence'
     ? requestedFocus : null;
@@ -496,9 +517,11 @@ export default function AdminBiologicalMediaProfiles() {
       toast.error(error?.response?.data?.error?.message || 'Profile revision could not be deleted');
     }
   };
+  const goBack = () => navigate(returnToRef.current || PROFILE_ADMIN_FALLBACK, { replace: true });
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <PageHeader title="Biological Media Profiles" subtitle="Controlled profiles plus a separate review-only VTR evidence library. Approval freezes engineering evidence and operating metadata."
+        onBack={goBack}
         actions={<div className="flex flex-wrap gap-2"><Button onClick={() => setFormKind('max-tan')}><Plus className="h-3.5 w-3.5" />Maximum TAN profile</Button><Button onClick={() => setFormKind('tan')}><Plus className="h-3.5 w-3.5" />TAN-generation profile</Button><Button variant="primary" onClick={() => setFormKind('media')}><Plus className="h-3.5 w-3.5" />Media profile</Button></div>} />
       <div className="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
         <ShieldCheck className="h-5 w-5 shrink-0" /><p>Approved engineering values cannot be edited. Evidence records are unapproved review material and cannot be selected for sizing. Maximum TAN defaults are starting assumptions for future or incomplete cases only; changing the default never rewrites saved cases or immutable runs.</p>

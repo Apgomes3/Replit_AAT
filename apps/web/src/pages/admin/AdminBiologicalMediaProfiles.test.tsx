@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import api from '../../lib/api';
 import AdminBiologicalMediaProfiles from './AdminBiologicalMediaProfiles';
@@ -106,6 +106,26 @@ function renderPage(focus = 'tan') {
   );
 }
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div>Returned to {location.pathname}{location.search}{location.hash}</div>;
+}
+
+function renderWithNavigation(initialEntries: any[]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={initialEntries}>
+        <Routes>
+          <Route path="/admin/biological-media-profiles" element={<AdminBiologicalMediaProfiles />} />
+          <Route path="/admin/users" element={<LocationProbe />} />
+          <Route path="/design-books/:bookId/lss/:systemId" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe('TAN generation profile administration', () => {
   beforeEach(() => {
     vi.mocked(api.get).mockReset();
@@ -175,5 +195,35 @@ describe('TAN generation profile administration', () => {
     expect(screen.getByText('500')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /new revision/i })).not.toBeInTheDocument();
+  });
+
+  it.each(['media', 'tan'])('returns to the originating Design Book location for the %s profile view', async focus => {
+    renderWithNavigation([
+      {
+        pathname: `/design-books/book-7/lss/system-3`,
+        search: '?tab=biological-media&system=selected',
+        hash: '#biological-media',
+      },
+      {
+        pathname: '/admin/biological-media-profiles',
+        search: `?focus=${focus}`,
+        hash: `#${focus}-profiles`,
+        state: {
+          returnTo: '/design-books/book-7/lss/system-3?tab=biological-media&system=selected#biological-media',
+        },
+      },
+    ]);
+
+    expect(await screen.findByRole('button', { name: 'Back' })).toBeVisible();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByText('Returned to /design-books/book-7/lss/system-3?tab=biological-media&system=selected#biological-media')).toBeVisible();
+  });
+
+  it.each(['media', 'tan'])('uses the Platform Admin fallback for a direct %s profile visit', async focus => {
+    renderWithNavigation([`/admin/biological-media-profiles?focus=${focus}#${focus}-profiles`]);
+
+    expect(await screen.findByRole('button', { name: 'Back' })).toBeVisible();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByText('Returned to /admin/users')).toBeVisible();
   });
 });

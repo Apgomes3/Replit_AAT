@@ -14,15 +14,20 @@ interface PageHeaderProps {
   breadcrumb?: ReactNode;
   crumbs?: CrumbItem[];
   back?: string;
+  onBack?: () => void;
 }
 
-export default function PageHeader({ code, title, status, subtitle, actions, breadcrumb, crumbs, back }: PageHeaderProps) {
+export default function PageHeader({ code, title, status, subtitle, actions, breadcrumb, crumbs, back, onBack }: PageHeaderProps) {
   return (
     <div className="bg-white border-b border-stone-200 px-6 py-4">
-      {(crumbs || breadcrumb || back) && (
+      {(crumbs || breadcrumb || back || onBack) && (
         <div className="mb-3">
           {crumbs ? (
             <Breadcrumb items={crumbs} />
+          ) : onBack ? (
+            <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-xs text-stone-400 hover:text-blue-600 transition-colors duration-150">
+              <ArrowLeft className="w-3 h-3" /> Back
+            </button>
           ) : back ? (
             <Link to={back} className="inline-flex items-center gap-1 text-xs text-stone-400 hover:text-blue-600 transition-colors duration-150">
               <ArrowLeft className="w-3 h-3" /> Back

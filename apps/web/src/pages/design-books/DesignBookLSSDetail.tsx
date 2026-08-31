@@ -233,12 +233,14 @@ function ManagedBiologicalProfileSelect({
   onChange: (value: string) => void;
 }) {
   const isAdmin = useAuthStore(state => state.user?.role === 'admin');
+  const location = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const selectedRevision = value || historical?.id || '';
   const focusId = kind === 'tan' ? 'tan-profiles' : 'media-profiles';
   const manageLabel = kind === 'tan' ? 'Manage TAN profiles' : 'Manage media profiles';
   const destination = `/admin/biological-media-profiles?focus=${kind}${selectedRevision ? `&revision=${encodeURIComponent(selectedRevision)}` : ''}#${focusId}`;
+  const returnTo = `${location.pathname}${location.search}${location.hash}`;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -279,9 +281,9 @@ function ManagedBiologicalProfileSelect({
           No approved compatible {kind === 'tan' ? 'TAN' : 'overall-VTR media'} revision is available.
         </span>
       )}
-      {isAdmin && <Link to={destination} className="mt-1 inline-flex font-semibold text-blue-600 hover:underline">{manageLabel}</Link>}
+      {isAdmin && <Link to={destination} state={{ returnTo }} className="mt-1 inline-flex font-semibold text-blue-600 hover:underline">{manageLabel}</Link>}
       {isAdmin && menuOpen && (
-        <button type="button" role="menuitem" onClick={() => navigate(destination)}
+        <button type="button" role="menuitem" onClick={() => navigate(destination, { state: { returnTo } })}
           className="absolute left-0 top-full z-30 mt-1 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 shadow-lg">
           {manageLabel}
         </button>
