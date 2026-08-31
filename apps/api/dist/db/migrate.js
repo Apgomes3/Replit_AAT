@@ -1068,6 +1068,7 @@ CREATE TABLE IF NOT EXISTS thermal_agitation_classes (
   class_code VARCHAR(100) NOT NULL UNIQUE,
   class_name VARCHAR(255) NOT NULL,
   description TEXT,
+  guidance TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_by UUID REFERENCES users(id),
@@ -1094,6 +1095,61 @@ CREATE TABLE IF NOT EXISTS thermal_mass_transfer_correlations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(agitation_class_id, version)
 );
+ALTER TABLE thermal_agitation_classes
+  ADD COLUMN IF NOT EXISTS guidance TEXT;
+ALTER TABLE thermal_mass_transfer_correlations
+  ADD COLUMN IF NOT EXISTS lower_agitation_class_code VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS lower_agitation_class_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS lower_class_coefficient_kg_m2_s_kpa NUMERIC,
+  ADD COLUMN IF NOT EXISTS adjustment_value NUMERIC,
+  ADD COLUMN IF NOT EXISTS adjustment_basis TEXT,
+  ADD COLUMN IF NOT EXISTS upper_agitation_class_code VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS upper_agitation_class_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS upper_class_coefficient_kg_m2_s_kpa NUMERIC,
+  ADD COLUMN IF NOT EXISTS related_agitation_values JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_thermal_correlation_related
+  ON thermal_mass_transfer_correlations USING gin (related_agitation_values);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='thermal_lower_coefficient_positive'
+  ) THEN
+    ALTER TABLE thermal_mass_transfer_correlations
+      ADD CONSTRAINT thermal_lower_coefficient_positive
+      CHECK (lower_class_coefficient_kg_m2_s_kpa IS NULL OR lower_class_coefficient_kg_m2_s_kpa > 0);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='thermal_upper_coefficient_positive'
+  ) THEN
+    ALTER TABLE thermal_mass_transfer_correlations
+      ADD CONSTRAINT thermal_upper_coefficient_positive
+      CHECK (upper_class_coefficient_kg_m2_s_kpa IS NULL OR upper_class_coefficient_kg_m2_s_kpa > 0);
+  END IF;
+END $$;
+
+-- These labels are the stable, recommended surface-activity catalog. They are
+-- intentionally definitions only; coefficient data must come from an approved
+-- correlation version.
+INSERT INTO thermal_agitation_classes
+  (class_code, class_name, description, guidance, sort_order)
+VALUES
+  ('calm_covered', 'Calm or Covered',
+   'Low surface activity with a covered or otherwise quiet water surface.',
+   'Choose when the surface is covered or calm, with little water movement and no intentional aeration.',
+   10),
+  ('normal_circulation', 'Normal Circulation',
+   'Typical operating circulation with ordinary surface movement.',
+   'Choose for normal filtration circulation without sustained aeration, turbulence, or active splashing.',
+   20),
+  ('high_agitation_aerated', 'High Agitation or Aerated',
+   'Strong surface movement caused by aeration, returns, jets, or turbulence.',
+   'Choose when air or water movement is visibly energetic or aeration is continuous. This is a surface-activity class, not a species or tank-construction class.',
+   30),
+  ('splashing_active', 'Splashing or Active',
+   'Very active water surface with repeated splashing, spray, or unusually vigorous movement.',
+   'Choose for waterfalls, spray, repeated splashing, or other active surface conditions. Use a project deviation only when the selected approved basis does not represent the observed condition.',
+   40)
+ON CONFLICT (class_code) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_thermal_correlation_class
   ON thermal_mass_transfer_correlations(agitation_class_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_thermal_one_approved_correlation
@@ -1114,6 +1170,15 @@ BEGIN
      OR NEW.agitation_class_code IS DISTINCT FROM OLD.agitation_class_code
      OR NEW.agitation_class_name IS DISTINCT FROM OLD.agitation_class_name
      OR NEW.agitation_class_description IS DISTINCT FROM OLD.agitation_class_description
+   OR NEW.lower_agitation_class_code IS DISTINCT FROM OLD.lower_agitation_class_code
+   OR NEW.lower_agitation_class_name IS DISTINCT FROM OLD.lower_agitation_class_name
+   OR NEW.lower_class_coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.lower_class_coefficient_kg_m2_s_kpa
+   OR NEW.adjustment_value IS DISTINCT FROM OLD.adjustment_value
+   OR NEW.adjustment_basis IS DISTINCT FROM OLD.adjustment_basis
+   OR NEW.upper_agitation_class_code IS DISTINCT FROM OLD.upper_agitation_class_code
+   OR NEW.upper_agitation_class_name IS DISTINCT FROM OLD.upper_agitation_class_name
+   OR NEW.upper_class_coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.upper_class_coefficient_kg_m2_s_kpa
+   OR NEW.related_agitation_values IS DISTINCT FROM OLD.related_agitation_values
      OR NEW.version IS DISTINCT FROM OLD.version
      OR NEW.coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.coefficient_kg_m2_s_kpa
      OR NEW.source_reference IS DISTINCT FROM OLD.source_reference
@@ -1997,6 +2062,55 @@ CREATE TABLE IF NOT EXISTS uv_engineering_revisions (
   UNIQUE(catalog_id, revision_number)
 );
 CREATE INDEX IF NOT EXISTS idx_uv_engineering_revisions_catalog ON uv_engineering_revisions(catalog_id, revision_number DESC);
+ALTER TABLE uv_engineering_revisions DROP CONSTRAINT IF EXISTS uv_engineering_positive_values;
+ALTER TABLE uv_engineering_revisions ADD CONSTRAINT uv_engineering_positive_values CHECK (
+  (lamp_count IS NULL OR lamp_count > 0)
+  AND (lamp_power_w IS NULL OR lamp_power_w > 0)
+  AND (effective_reactor_volume_l IS NULL OR effective_reactor_volume_l > 0)
+  AND (irradiance_85t_mw_cm2 IS NULL OR irradiance_85t_mw_cm2 > 0)
+  AND (irradiance_95t_mw_cm2 IS NULL OR irradiance_95t_mw_cm2 > 0)
+  AND (approved_per_lamp_flow_exception_m3h IS NULL OR approved_per_lamp_flow_exception_m3h > 0)
+) NOT VALID;
+
+CREATE OR REPLACE FUNCTION protect_uv_engineering_revision_values()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND OLD.status IN ('Approved', 'Retired', 'Disabled') THEN
+    RAISE EXCEPTION 'Approved, retired, and disabled UV engineering revisions cannot be deleted';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  IF OLD.status IN ('Retired', 'Disabled') THEN
+    RAISE EXCEPTION 'Retired and disabled UV engineering revisions are immutable';
+  END IF;
+  IF OLD.status = 'Approved' THEN
+    IF NEW.status NOT IN ('Approved', 'Retired', 'Disabled') THEN
+      RAISE EXCEPTION 'Approved UV engineering revisions cannot return to an editable status';
+    END IF;
+    IF ROW(NEW.id, NEW.catalog_id, NEW.revision_number, NEW.lamp_count,
+      NEW.lamp_power_w, NEW.effective_reactor_volume_l,
+      NEW.irradiance_85t_mw_cm2, NEW.irradiance_95t_mw_cm2, NEW.compatibility,
+      NEW.arrangement, NEW.source_evidence, NEW.approved_per_lamp_flow_exception_m3h, NEW.notes,
+      NEW.supersedes_id, NEW.created_by, NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.id, OLD.catalog_id, OLD.revision_number, OLD.lamp_count,
+      OLD.lamp_power_w, OLD.effective_reactor_volume_l,
+      OLD.irradiance_85t_mw_cm2, OLD.irradiance_95t_mw_cm2, OLD.compatibility,
+      OLD.arrangement, OLD.source_evidence, OLD.approved_per_lamp_flow_exception_m3h, OLD.notes,
+      OLD.supersedes_id, OLD.created_by, OLD.created_at)
+    THEN
+      RAISE EXCEPTION 'Approved UV engineering identity, lineage, and values are immutable';
+    END IF;
+    NEW.approved_by := OLD.approved_by;
+    NEW.approved_at := OLD.approved_at;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_protect_uv_engineering_revision_values ON uv_engineering_revisions;
+CREATE TRIGGER trg_protect_uv_engineering_revision_values
+BEFORE UPDATE OR DELETE ON uv_engineering_revisions
+FOR EACH ROW EXECUTE FUNCTION protect_uv_engineering_revision_values();
 
 CREATE OR REPLACE FUNCTION uv_engineering_pim_snapshot(p product_masters)
 RETURNS jsonb LANGUAGE sql STABLE AS $$

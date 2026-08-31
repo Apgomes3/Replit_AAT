@@ -461,10 +461,22 @@ function correlationLibraryRow(row) {
         class_code: row.class_code,
         class_name: row.class_name,
         class_description: row.class_description,
+        class_guidance: row.class_guidance || null,
         class_sort_order: row.class_sort_order,
         class_is_active: row.class_is_active,
         version: row.version,
         coefficient_kg_m2_s_kpa: Number(row.coefficient_kg_m2_s_kpa),
+        lower_agitation_class_code: row.lower_agitation_class_code || null,
+        lower_agitation_class_name: row.lower_agitation_class_name || null,
+        lower_class_coefficient_kg_m2_s_kpa: row.lower_class_coefficient_kg_m2_s_kpa == null
+            ? null : Number(row.lower_class_coefficient_kg_m2_s_kpa),
+        adjustment_value: row.adjustment_value == null ? null : Number(row.adjustment_value),
+        adjustment_basis: row.adjustment_basis || null,
+        upper_agitation_class_code: row.upper_agitation_class_code || null,
+        upper_agitation_class_name: row.upper_agitation_class_name || null,
+        upper_class_coefficient_kg_m2_s_kpa: row.upper_class_coefficient_kg_m2_s_kpa == null
+            ? null : Number(row.upper_class_coefficient_kg_m2_s_kpa),
+        related_agitation_values: row.related_agitation_values || {},
         source_reference: row.source_reference || null,
         notes: row.notes || null,
         status: row.status,
@@ -476,7 +488,7 @@ function correlationLibraryRow(row) {
         usage_count: Number(row.usage_count || 0),
     };
 }
-async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = new Date().toISOString()) {
+async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = new Date().toISOString(), editableStatus = 'Draft') {
     const correlationId = String(rawInputs.agitation_correlation_id || '').trim();
     if (!correlationId) {
         const error = new Error('Select an approved shared-library evaporation correlation before saving.');
@@ -486,6 +498,10 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
     }
     const result = await runner(`SELECT c.id, c.agitation_class_id AS class_id, c.version,
             c.coefficient_kg_m2_s_kpa, c.source_reference, c.notes,
+            c.lower_agitation_class_code, c.lower_agitation_class_name,
+            c.lower_class_coefficient_kg_m2_s_kpa, c.adjustment_value, c.adjustment_basis,
+            c.upper_agitation_class_code, c.upper_agitation_class_name,
+            c.upper_class_coefficient_kg_m2_s_kpa, c.related_agitation_values,
             c.status, c.approved_by, c.approved_at,
             c.agitation_class_code AS class_code,
             c.agitation_class_name AS class_name,
@@ -509,7 +525,23 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
     }
     const deviation = rawInputs.agitation_correlation_deviation === true;
     const justification = String(rawInputs.deviation_justification || '').trim();
-    if (deviation && !justification) {
+    const requestedOverrides = rawInputs.agitation_correlation_overrides &&
+        typeof rawInputs.agitation_correlation_overrides === 'object'
+        ? rawInputs.agitation_correlation_overrides : {};
+    const overrideKeys = [
+        'coefficient_kg_m2_s_kpa',
+        'lower_class_coefficient_kg_m2_s_kpa',
+        'adjustment_value',
+        'upper_class_coefficient_kg_m2_s_kpa',
+    ];
+    const hasOverride = deviation || overrideKeys.some(key => requestedOverrides[key] === true);
+    if (hasOverride && editableStatus !== 'Draft') {
+        const error = new Error('Correlation default overrides are only allowed while the Design Book is in Draft.');
+        error.status = 409;
+        error.code = 'THERMAL_CORRELATION_OVERRIDE_DRAFT_ONLY';
+        throw error;
+    }
+    if (hasOverride && !justification) {
         const error = new Error('A project-specific correlation deviation requires a justification.');
         error.status = 400;
         error.code = 'THERMAL_CORRELATION_DEVIATION_JUSTIFICATION_REQUIRED';
@@ -525,6 +557,70 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
         error.code = 'THERMAL_CORRELATION_DEVIATION_COEFFICIENT_REQUIRED';
         throw error;
     }
+    const optionalPositive = (value, label) => {
+        if (value === null || value === undefined || value === '')
+            return null;
+        const parsed = positiveCorrelationCoefficient(value);
+        if (parsed == null) {
+            const error = new Error(`${label} must be a positive finite value.`);
+            error.status = 400;
+            error.code = 'THERMAL_CORRELATION_OVERRIDE_INVALID';
+            throw error;
+        }
+        return parsed;
+    };
+    const optionalFinite = (value, label) => {
+        if (value === null || value === undefined || value === '')
+            return null;
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) {
+            const error = new Error(`${label} must be a finite value.`);
+            error.status = 400;
+            error.code = 'THERMAL_CORRELATION_OVERRIDE_INVALID';
+            throw error;
+        }
+        return parsed;
+    };
+    const defaults = {
+        lower_agitation_class_code: row.lower_agitation_class_code || null,
+        lower_agitation_class_name: row.lower_agitation_class_name || null,
+        lower_class_coefficient_kg_m2_s_kpa: optionalPositive(row.lower_class_coefficient_kg_m2_s_kpa, 'Lower-class coefficient'),
+        adjustment_value: optionalFinite(row.adjustment_value, 'Adjustment value'),
+        adjustment_basis: row.adjustment_basis || null,
+        upper_agitation_class_code: row.upper_agitation_class_code || null,
+        upper_agitation_class_name: row.upper_agitation_class_name || null,
+        upper_class_coefficient_kg_m2_s_kpa: optionalPositive(row.upper_class_coefficient_kg_m2_s_kpa, 'Upper-class coefficient'),
+        related_agitation_values: row.related_agitation_values || {},
+    };
+    const effectiveValues = {
+        coefficient_kg_m2_s_kpa: effectiveCoefficient,
+        lower_class_coefficient_kg_m2_s_kpa: requestedOverrides.lower_class_coefficient_kg_m2_s_kpa === true
+            ? optionalPositive(rawInputs.lower_class_coefficient_kg_m2_s_kpa, 'Lower-class coefficient')
+            : defaults.lower_class_coefficient_kg_m2_s_kpa,
+        adjustment_value: requestedOverrides.adjustment_value === true
+            ? optionalFinite(rawInputs.adjustment_value, 'Adjustment value')
+            : defaults.adjustment_value,
+        upper_class_coefficient_kg_m2_s_kpa: requestedOverrides.upper_class_coefficient_kg_m2_s_kpa === true
+            ? optionalPositive(rawInputs.upper_class_coefficient_kg_m2_s_kpa, 'Upper-class coefficient')
+            : defaults.upper_class_coefficient_kg_m2_s_kpa,
+    };
+    if ((requestedOverrides.lower_class_coefficient_kg_m2_s_kpa === true &&
+        effectiveValues.lower_class_coefficient_kg_m2_s_kpa == null) ||
+        (requestedOverrides.adjustment_value === true &&
+            effectiveValues.adjustment_value == null) ||
+        (requestedOverrides.upper_class_coefficient_kg_m2_s_kpa === true &&
+            effectiveValues.upper_class_coefficient_kg_m2_s_kpa == null)) {
+        const error = new Error('Every marked correlation override requires a valid value.');
+        error.status = 400;
+        error.code = 'THERMAL_CORRELATION_OVERRIDE_INVALID';
+        throw error;
+    }
+    const overrides = {
+        coefficient_kg_m2_s_kpa: deviation,
+        lower_class_coefficient_kg_m2_s_kpa: requestedOverrides.lower_class_coefficient_kg_m2_s_kpa === true,
+        adjustment_value: requestedOverrides.adjustment_value === true,
+        upper_class_coefficient_kg_m2_s_kpa: requestedOverrides.upper_class_coefficient_kg_m2_s_kpa === true,
+    };
     const snapshot = {
         source: deviation ? 'project_deviation' : 'shared_library',
         correlation_id: row.id,
@@ -540,10 +636,57 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
         deviation_justification: deviation ? justification : null,
         source_reference: row.source_reference || null,
         notes: row.notes || null,
+        database_defaults: {
+            coefficient_kg_m2_s_kpa: libraryCoefficient,
+            ...defaults,
+        },
+        effective_values: effectiveValues,
+        overrides,
+        coefficient_basis: deviation
+            ? 'Project-specific Draft override of the approved shared-library coefficient'
+            : 'Approved shared-library coefficient',
         approved_by: row.approved_by,
         approved_at: row.approved_at,
         captured_at: capturedAt,
     };
+    const adjacentAgitationClasses = [
+        defaults.lower_agitation_class_code,
+        defaults.upper_agitation_class_code,
+    ].filter(Boolean);
+    const agitationCorrelations = {
+        [row.class_code]: {
+            class: row.class_code,
+            coefficient_kg_m2_s_kpa: effectiveCoefficient,
+            version: row.version,
+            approved: true,
+            deviation,
+            deviation_justification: deviation ? justification : null,
+        },
+    };
+    if (defaults.lower_agitation_class_code &&
+        effectiveValues.lower_class_coefficient_kg_m2_s_kpa != null) {
+        agitationCorrelations[defaults.lower_agitation_class_code] = {
+            class: defaults.lower_agitation_class_code,
+            coefficient_kg_m2_s_kpa: effectiveValues.lower_class_coefficient_kg_m2_s_kpa,
+            version: row.version,
+            approved: true,
+            deviation: overrides.lower_class_coefficient_kg_m2_s_kpa,
+            deviation_justification: overrides.lower_class_coefficient_kg_m2_s_kpa
+                ? justification : null,
+        };
+    }
+    if (defaults.upper_agitation_class_code &&
+        effectiveValues.upper_class_coefficient_kg_m2_s_kpa != null) {
+        agitationCorrelations[defaults.upper_agitation_class_code] = {
+            class: defaults.upper_agitation_class_code,
+            coefficient_kg_m2_s_kpa: effectiveValues.upper_class_coefficient_kg_m2_s_kpa,
+            version: row.version,
+            approved: true,
+            deviation: overrides.upper_class_coefficient_kg_m2_s_kpa,
+            deviation_justification: overrides.upper_class_coefficient_kg_m2_s_kpa
+                ? justification : null,
+        };
+    }
     return {
         ...rawInputs,
         agitation_class: row.class_code,
@@ -552,6 +695,14 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
         agitation_correlation_approved: true,
         agitation_correlation_deviation: deviation,
         evaporation_coefficient_kg_m2_s_kpa: effectiveCoefficient,
+        lower_agitation_class: defaults.lower_agitation_class_code,
+        lower_class_coefficient_kg_m2_s_kpa: effectiveValues.lower_class_coefficient_kg_m2_s_kpa,
+        adjustment_value: effectiveValues.adjustment_value,
+        upper_agitation_class: defaults.upper_agitation_class_code,
+        upper_class_coefficient_kg_m2_s_kpa: effectiveValues.upper_class_coefficient_kg_m2_s_kpa,
+        agitation_correlation_overrides: overrides,
+        adjacent_agitation_classes: adjacentAgitationClasses,
+        agitation_correlations: agitationCorrelations,
         deviation_justification: deviation ? justification : '',
         agitation_correlation_snapshot: snapshot,
     };
@@ -933,8 +1084,14 @@ ${thermalCorrelationUsageRowsCte}
          c.agitation_class_code AS class_code,
          c.agitation_class_name AS class_name,
          c.agitation_class_description AS class_description,
+         ac.guidance AS class_guidance,
          ac.sort_order AS class_sort_order, ac.is_active AS class_is_active,
-         c.version, c.coefficient_kg_m2_s_kpa, c.source_reference, c.notes,
+         c.version, c.coefficient_kg_m2_s_kpa,
+         c.lower_agitation_class_code, c.lower_agitation_class_name,
+         c.lower_class_coefficient_kg_m2_s_kpa, c.adjustment_value, c.adjustment_basis,
+         c.upper_agitation_class_code, c.upper_agitation_class_name,
+         c.upper_class_coefficient_kg_m2_s_kpa, c.related_agitation_values,
+         c.source_reference, c.notes,
           c.status, c.approved_by, c.approved_at,
           c.superseded_by, c.superseded_at, c.created_at,
           COALESCE(uc.usage_count, 0)::int AS usage_count
@@ -943,9 +1100,17 @@ ${thermalCorrelationUsageRowsCte}
    LEFT JOIN thermal_correlation_usage_counts uc ON uc.correlation_id=c.id::text`;
 router.get('/thermal-correlations', async (_req, res) => {
     const [classes, result] = await Promise.all([
-        (0, index_1.query)(`SELECT id, class_code, class_name, description, sort_order, is_active, created_at, updated_at
+        (0, index_1.query)(`SELECT id, class_code, class_name, description, guidance, sort_order, is_active, created_at, updated_at
        FROM thermal_agitation_classes
-       ORDER BY sort_order, class_name`),
+       ORDER BY
+         CASE class_code
+           WHEN 'calm_covered' THEN 1
+           WHEN 'normal_circulation' THEN 2
+           WHEN 'high_agitation_aerated' THEN 3
+           WHEN 'splashing_active' THEN 4
+           ELSE 5
+         END,
+         sort_order, class_name`),
         (0, index_1.query)(`${thermalCorrelationLibrarySelect}
        ORDER BY ac.sort_order, c.agitation_class_name, c.approved_at DESC, c.created_at DESC`),
     ]);
@@ -988,12 +1153,13 @@ router.post('/thermal-correlations/classes', (0, auth_1.requireRole)('admin', 'e
     }
     try {
         const result = await (0, index_1.query)(`INSERT INTO thermal_agitation_classes
-           (class_code, class_name, description, sort_order, created_by)
-         VALUES ($1,$2,$3,$4,$5)
+           (class_code, class_name, description, guidance, sort_order, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING *`, [
             classCode,
             className,
             String(req.body.description || '').trim() || null,
+            String(req.body.guidance || '').trim() || null,
             Number.isInteger(Number(req.body.sort_order)) ? Number(req.body.sort_order) : 0,
             req.user.id,
         ]);
@@ -1020,13 +1186,14 @@ router.put('/thermal-correlations/classes/:classId', (0, auth_1.requireRole)('ad
         });
     }
     const result = await (0, index_1.query)(`UPDATE thermal_agitation_classes
-       SET class_code=$1, class_name=$2, description=$3, sort_order=$4,
-           is_active=$5, updated_at=NOW()
-       WHERE id=$6
+       SET class_code=$1, class_name=$2, description=$3, guidance=$4, sort_order=$5,
+           is_active=$6, updated_at=NOW()
+       WHERE id=$7
        RETURNING *`, [
         classCode,
         className,
         String(req.body.description || '').trim() || null,
+        String(req.body.guidance || '').trim() || null,
         Number.isInteger(Number(req.body.sort_order)) ? Number(req.body.sort_order) : 0,
         req.body.is_active !== false,
         req.params.classId,
@@ -1042,8 +1209,18 @@ router.put('/thermal-correlations/classes/:classId', (0, auth_1.requireRole)('ad
 router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     const version = String(req.body.version || '').trim();
     const coefficient = positiveCorrelationCoefficient(req.body.coefficient_kg_m2_s_kpa);
+    const optionalPositiveInput = (value) => value == null || value === '' ? null : positiveCorrelationCoefficient(value);
+    const lowerCoefficient = optionalPositiveInput(req.body.lower_class_coefficient_kg_m2_s_kpa);
+    const upperCoefficient = optionalPositiveInput(req.body.upper_class_coefficient_kg_m2_s_kpa);
+    const adjustment = req.body.adjustment_value == null || req.body.adjustment_value === ''
+        ? null : Number(req.body.adjustment_value);
     const sourceReference = String(req.body.source_reference || '').trim();
-    if (!version || coefficient == null || !sourceReference) {
+    if (!version || coefficient == null || !sourceReference ||
+        (req.body.lower_class_coefficient_kg_m2_s_kpa != null &&
+            req.body.lower_class_coefficient_kg_m2_s_kpa !== '' && lowerCoefficient == null) ||
+        (req.body.upper_class_coefficient_kg_m2_s_kpa != null &&
+            req.body.upper_class_coefficient_kg_m2_s_kpa !== '' && upperCoefficient == null) ||
+        (adjustment != null && !Number.isFinite(adjustment))) {
         return res.status(400).json({
             error: {
                 code: 'THERMAL_CORRELATION_REQUIRED',
@@ -1078,8 +1255,12 @@ router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requir
         const inserted = await client.query(`INSERT INTO thermal_mass_transfer_correlations
            (agitation_class_id, agitation_class_code, agitation_class_name,
             agitation_class_description, version, coefficient_kg_m2_s_kpa,
+            lower_agitation_class_code, lower_agitation_class_name,
+            lower_class_coefficient_kg_m2_s_kpa, adjustment_value, adjustment_basis,
+            upper_agitation_class_code, upper_agitation_class_name,
+            upper_class_coefficient_kg_m2_s_kpa, related_agitation_values,
             source_reference, notes, approved_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17)
          RETURNING *`, [
             agitationClass.id,
             agitationClass.class_code,
@@ -1087,6 +1268,17 @@ router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requir
             agitationClass.description,
             version,
             coefficient,
+            String(req.body.lower_agitation_class_code || '').trim() || null,
+            String(req.body.lower_agitation_class_name || '').trim() || null,
+            lowerCoefficient,
+            adjustment,
+            String(req.body.adjustment_basis || '').trim() || null,
+            String(req.body.upper_agitation_class_code || '').trim() || null,
+            String(req.body.upper_agitation_class_name || '').trim() || null,
+            upperCoefficient,
+            JSON.stringify(req.body.related_agitation_values &&
+                typeof req.body.related_agitation_values === 'object'
+                ? req.body.related_agitation_values : {}),
             sourceReference,
             String(req.body.notes || '').trim() || null,
             req.user.id,
@@ -1199,7 +1391,7 @@ async function saveThermalCalculation(req, res) {
             ? req.body.inputs
             : req.body || {};
         const calculatedAt = new Date().toISOString();
-        const inputs = await resolveThermalCorrelationInputs(client.query.bind(client), requestedInputs, calculatedAt);
+        const inputs = await resolveThermalCorrelationInputs(client.query.bind(client), requestedInputs, calculatedAt, context.status);
         const calculation = (0, thermalCalculations_1.calculateThermalCalculation)(item.source, inputs, calculatedAt);
         const saved = await client.query(`INSERT INTO design_book_thermal_calculations
          (design_book_id, system_id, calculation_version, status, freshness,

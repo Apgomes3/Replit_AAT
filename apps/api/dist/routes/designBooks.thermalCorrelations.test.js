@@ -10,6 +10,15 @@ const approvedRow = {
     class_description: 'Continuous moderate surface movement',
     version: '2026.2',
     coefficient_kg_m2_s_kpa: '0.0000012',
+    lower_agitation_class_code: 'calm_covered',
+    lower_agitation_class_name: 'Calm or Covered',
+    lower_class_coefficient_kg_m2_s_kpa: '0.0000008',
+    adjustment_value: '0.15',
+    adjustment_basis: 'Approved engineering adjustment',
+    upper_agitation_class_code: 'high_agitation_aerated',
+    upper_agitation_class_name: 'High Agitation or Aerated',
+    upper_class_coefficient_kg_m2_s_kpa: '0.0000018',
+    related_agitation_values: { air_velocity_m_s: 0.2 },
     source_reference: 'Engineering standard ES-42',
     notes: 'Approved range',
     status: 'approved',
@@ -56,6 +65,71 @@ const approvedRow = {
             },
         });
         (0, vitest_1.expect)(runner.mock.calls[0][0]).toContain('FOR SHARE');
+    });
+    (0, vitest_1.it)('freezes database defaults separately from valid Draft overrides', async () => {
+        const runner = vitest_1.vi.fn(async () => ({ rows: [approvedRow] }));
+        const inputs = await designBooks_1.thermalCorrelationTestUtils.resolveThermalCorrelationInputs(runner, {
+            agitation_correlation_id: 'correlation-1',
+            lower_class_coefficient_kg_m2_s_kpa: 0.0000009,
+            adjustment_value: 0.2,
+            deviation_justification: 'Reviewed project conditions require these adjacent values.',
+            agitation_correlation_overrides: {
+                lower_class_coefficient_kg_m2_s_kpa: true,
+                adjustment_value: true,
+            },
+        });
+        (0, vitest_1.expect)(inputs.agitation_correlation_snapshot).toMatchObject({
+            database_defaults: {
+                coefficient_kg_m2_s_kpa: 0.0000012,
+                lower_class_coefficient_kg_m2_s_kpa: 0.0000008,
+                adjustment_value: 0.15,
+            },
+            effective_values: {
+                coefficient_kg_m2_s_kpa: 0.0000012,
+                lower_class_coefficient_kg_m2_s_kpa: 0.0000009,
+                adjustment_value: 0.2,
+            },
+            overrides: {
+                coefficient_kg_m2_s_kpa: false,
+                lower_class_coefficient_kg_m2_s_kpa: true,
+                adjustment_value: true,
+            },
+        });
+    });
+    (0, vitest_1.it)('rejects correlation overrides outside Draft', async () => {
+        const runner = vitest_1.vi.fn(async () => ({ rows: [approvedRow] }));
+        await (0, vitest_1.expect)(designBooks_1.thermalCorrelationTestUtils.resolveThermalCorrelationInputs(runner, {
+            agitation_correlation_id: 'correlation-1',
+            adjustment_value: 0.2,
+            agitation_correlation_overrides: { adjustment_value: true },
+        }, '2026-08-31T00:00:00.000Z', 'In Progress')).rejects.toMatchObject({
+            code: 'THERMAL_CORRELATION_OVERRIDE_DRAFT_ONLY',
+            status: 409,
+        });
+    });
+    (0, vitest_1.it)('rebuilds legacy adjacent maps from locked database evidence', async () => {
+        const runner = vitest_1.vi.fn(async () => ({ rows: [approvedRow] }));
+        const inputs = await designBooks_1.thermalCorrelationTestUtils.resolveThermalCorrelationInputs(runner, {
+            agitation_correlation_id: 'correlation-1',
+            agitation_correlations: {
+                calm_covered: {
+                    coefficient_kg_m2_s_kpa: 999,
+                    version: 'forged',
+                    approved: true,
+                },
+            },
+            adjacent_agitation_classes: ['forged'],
+        }, '2026-08-31T00:00:00.000Z', 'In Progress');
+        (0, vitest_1.expect)(inputs.adjacent_agitation_classes).toEqual([
+            'calm_covered',
+            'high_agitation_aerated',
+        ]);
+        (0, vitest_1.expect)(inputs.agitation_correlations.calm_covered).toMatchObject({
+            coefficient_kg_m2_s_kpa: 0.0000008,
+            version: '2026.2',
+            approved: true,
+        });
+        (0, vitest_1.expect)(inputs.agitation_correlations).not.toHaveProperty('forged');
     });
     (0, vitest_1.it)('rejects superseded versions and unjustified deviations', async () => {
         const supersededRunner = vitest_1.vi.fn(async () => ({

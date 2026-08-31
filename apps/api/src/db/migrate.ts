@@ -2058,6 +2058,55 @@ CREATE TABLE IF NOT EXISTS uv_engineering_revisions (
   UNIQUE(catalog_id, revision_number)
 );
 CREATE INDEX IF NOT EXISTS idx_uv_engineering_revisions_catalog ON uv_engineering_revisions(catalog_id, revision_number DESC);
+ALTER TABLE uv_engineering_revisions DROP CONSTRAINT IF EXISTS uv_engineering_positive_values;
+ALTER TABLE uv_engineering_revisions ADD CONSTRAINT uv_engineering_positive_values CHECK (
+  (lamp_count IS NULL OR lamp_count > 0)
+  AND (lamp_power_w IS NULL OR lamp_power_w > 0)
+  AND (effective_reactor_volume_l IS NULL OR effective_reactor_volume_l > 0)
+  AND (irradiance_85t_mw_cm2 IS NULL OR irradiance_85t_mw_cm2 > 0)
+  AND (irradiance_95t_mw_cm2 IS NULL OR irradiance_95t_mw_cm2 > 0)
+  AND (approved_per_lamp_flow_exception_m3h IS NULL OR approved_per_lamp_flow_exception_m3h > 0)
+) NOT VALID;
+
+CREATE OR REPLACE FUNCTION protect_uv_engineering_revision_values()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND OLD.status IN ('Approved', 'Retired', 'Disabled') THEN
+    RAISE EXCEPTION 'Approved, retired, and disabled UV engineering revisions cannot be deleted';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  IF OLD.status IN ('Retired', 'Disabled') THEN
+    RAISE EXCEPTION 'Retired and disabled UV engineering revisions are immutable';
+  END IF;
+  IF OLD.status = 'Approved' THEN
+    IF NEW.status NOT IN ('Approved', 'Retired', 'Disabled') THEN
+      RAISE EXCEPTION 'Approved UV engineering revisions cannot return to an editable status';
+    END IF;
+    IF ROW(NEW.id, NEW.catalog_id, NEW.revision_number, NEW.lamp_count,
+      NEW.lamp_power_w, NEW.effective_reactor_volume_l,
+      NEW.irradiance_85t_mw_cm2, NEW.irradiance_95t_mw_cm2, NEW.compatibility,
+      NEW.arrangement, NEW.source_evidence, NEW.approved_per_lamp_flow_exception_m3h, NEW.notes,
+      NEW.supersedes_id, NEW.created_by, NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.id, OLD.catalog_id, OLD.revision_number, OLD.lamp_count,
+      OLD.lamp_power_w, OLD.effective_reactor_volume_l,
+      OLD.irradiance_85t_mw_cm2, OLD.irradiance_95t_mw_cm2, OLD.compatibility,
+      OLD.arrangement, OLD.source_evidence, OLD.approved_per_lamp_flow_exception_m3h, OLD.notes,
+      OLD.supersedes_id, OLD.created_by, OLD.created_at)
+    THEN
+      RAISE EXCEPTION 'Approved UV engineering identity, lineage, and values are immutable';
+    END IF;
+    NEW.approved_by := OLD.approved_by;
+    NEW.approved_at := OLD.approved_at;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_protect_uv_engineering_revision_values ON uv_engineering_revisions;
+CREATE TRIGGER trg_protect_uv_engineering_revision_values
+BEFORE UPDATE OR DELETE ON uv_engineering_revisions
+FOR EACH ROW EXECUTE FUNCTION protect_uv_engineering_revision_values();
 
 CREATE OR REPLACE FUNCTION uv_engineering_pim_snapshot(p product_masters)
 RETURNS jsonb LANGUAGE sql STABLE AS $$

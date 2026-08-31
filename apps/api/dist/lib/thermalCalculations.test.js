@@ -51,6 +51,15 @@ function readyInputs() {
     };
 }
 (0, vitest_1.describe)('AAT thermal calculation', () => {
+    (0, vitest_1.it)('publishes the stable recommended surface-activity class catalog', () => {
+        (0, vitest_1.expect)(thermalCalculations_1.THERMAL_AGITATION_CLASS_CATALOG.map(item => item.name)).toEqual([
+            'Calm or Covered',
+            'Normal Circulation',
+            'High Agitation or Aerated',
+            'Splashing or Active',
+        ]);
+        (0, vitest_1.expect)(thermalCalculations_1.THERMAL_AGITATION_CLASS_CATALOG.every(item => item.description.length > 0 && item.guidance.length > 0)).toBe(true);
+    });
     (0, vitest_1.it)('uses the approved signs, constants, and 1°C-in-6-hour recovery duty', () => {
         const result = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), readyInputs(), '2026-08-30T00:00:00.000Z');
         (0, vitest_1.expect)(result.status).toBe('Ready');
@@ -204,6 +213,7 @@ function readyInputs() {
             version: 'approved-2026.2',
             source_reference: 'Engineering standard ES-42',
         });
+        (0, vitest_1.expect)(result.formula_inputs.evaporation_correlation_basis).toEqual(result.correlation_snapshot);
     });
     (0, vitest_1.it)('requires justification for a project-specific shared-correlation deviation', () => {
         const snapshot = {

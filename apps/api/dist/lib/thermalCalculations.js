@@ -14,7 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.THERMAL_ROUNDING = exports.THERMAL_CONSTANTS = exports.THERMAL_CONSTRUCTION_DEFAULTS = exports.THERMAL_CONSTRUCTION_BASIS_VERSION = exports.THERMAL_CALCULATION_VERSION = void 0;
+exports.THERMAL_AGITATION_CLASS_CATALOG = exports.THERMAL_ROUNDING = exports.THERMAL_CONSTANTS = exports.THERMAL_CONSTRUCTION_DEFAULTS = exports.THERMAL_CONSTRUCTION_BASIS_VERSION = exports.THERMAL_CALCULATION_VERSION = void 0;
 exports.isApprovedThermalCorrelationSnapshot = isApprovedThermalCorrelationSnapshot;
 exports.thermalFingerprint = thermalFingerprint;
 exports.saturationVapourPressureKpa = saturationVapourPressureKpa;
@@ -23,7 +23,7 @@ exports.buildThermalSourceContext = buildThermalSourceContext;
 exports.calculateThermalCalculation = calculateThermalCalculation;
 exports.thermalDisplayValue = thermalDisplayValue;
 const crypto_1 = __importDefault(require("crypto"));
-exports.THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v2';
+exports.THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v3';
 exports.THERMAL_CONSTRUCTION_BASIS_VERSION = 'aat-thermal-construction-v1';
 /**
  * Default wall U-values are governed engineering assumptions, not material
@@ -88,6 +88,36 @@ exports.THERMAL_ROUNDING = {
     duty_kw: 2,
     percentage: 1,
 };
+exports.THERMAL_AGITATION_CLASS_CATALOG = [
+    {
+        code: 'calm_covered',
+        name: 'Calm or Covered',
+        description: 'Low surface activity with a covered or otherwise quiet water surface.',
+        guidance: 'Choose when the surface is covered or calm, with little water movement and no intentional aeration.',
+        sort_order: 10,
+    },
+    {
+        code: 'normal_circulation',
+        name: 'Normal Circulation',
+        description: 'Typical operating circulation with ordinary surface movement.',
+        guidance: 'Choose for normal filtration circulation without sustained aeration, turbulence, or active splashing.',
+        sort_order: 20,
+    },
+    {
+        code: 'high_agitation_aerated',
+        name: 'High Agitation or Aerated',
+        description: 'Strong surface movement caused by aeration, returns, jets, or turbulence.',
+        guidance: 'Choose when air or water movement is visibly energetic or aeration is continuous.',
+        sort_order: 30,
+    },
+    {
+        code: 'splashing_active',
+        name: 'Splashing or Active',
+        description: 'Very active water surface with repeated splashing, spray, or unusually vigorous movement.',
+        guidance: 'Choose for waterfalls, spray, repeated splashing, or other active surface conditions.',
+        sort_order: 40,
+    },
+];
 function isApprovedThermalCorrelationSnapshot(snapshot) {
     const sourceIsGoverned = snapshot?.source === 'shared_library' ||
         snapshot?.source === 'project_deviation';
@@ -659,6 +689,14 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
             equipment_heat_gain_kw: common.equipment,
             capacity_margin_pct: common.margin,
             water_exchange_enabled: !!inputs.water_exchange_enabled,
+            evaporation_correlation_basis: inputs.agitation_correlation_snapshot || {
+                source: 'legacy_manual',
+                agitation_class: common.agitation,
+                version: correlation?.version || null,
+                effective_values: {
+                    coefficient_kg_m2_s_kpa: evaporationCoefficient,
+                },
+            },
             water_temperature_basis: waterTemperatureBasis,
             wall_construction_basis: wallConstructionBasis,
         },

@@ -11,15 +11,13 @@ const inputClass = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3
 const emptyForm = {
   lamp_count: '',
   lamp_power_w: '',
-  effective_reactor_volume_m3: '',
-  irradiance_85_mw_cm2: '',
-  irradiance_95_mw_cm2: '',
+  effective_reactor_volume_l: '',
+  irradiance_85t_mw_cm2: '',
+  irradiance_95t_mw_cm2: '',
   compatibility: '',
   arrangement: '',
   source_evidence: '',
-  per_lamp_flow_m3h: '',
-  per_lamp_flow_exception_approved: false,
-  per_lamp_flow_exception_reason: '',
+  approved_per_lamp_flow_exception_m3h: '',
   notes: '',
 };
 
@@ -45,11 +43,10 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
       ...(revision || {}),
       lamp_count: revision?.lamp_count ?? '',
       lamp_power_w: revision?.lamp_power_w ?? '',
-      effective_reactor_volume_m3: revision?.effective_reactor_volume_m3 ?? '',
-      irradiance_85_mw_cm2: revision?.irradiance_85_mw_cm2 ?? '',
-      irradiance_95_mw_cm2: revision?.irradiance_95_mw_cm2 ?? '',
-      per_lamp_flow_m3h: revision?.per_lamp_flow_m3h ?? '',
-      per_lamp_flow_exception_approved: Boolean(revision?.per_lamp_flow_exception_approved),
+      effective_reactor_volume_l: revision?.effective_reactor_volume_l ?? '',
+      irradiance_85t_mw_cm2: revision?.irradiance_85t_mw_cm2 ?? '',
+      irradiance_95t_mw_cm2: revision?.irradiance_95t_mw_cm2 ?? '',
+      approved_per_lamp_flow_exception_m3h: revision?.approved_per_lamp_flow_exception_m3h ?? '',
     });
   }, [revision?.id]);
 
@@ -59,12 +56,13 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
     try {
       const payload = {
         ...form,
+        ...(revising ? { source_revision_id: revision.id } : {}),
         lamp_count: numeric(form.lamp_count),
         lamp_power_w: numeric(form.lamp_power_w),
-        effective_reactor_volume_m3: numeric(form.effective_reactor_volume_m3),
-        irradiance_85_mw_cm2: numeric(form.irradiance_85_mw_cm2),
-        irradiance_95_mw_cm2: numeric(form.irradiance_95_mw_cm2),
-        per_lamp_flow_m3h: numeric(form.per_lamp_flow_m3h),
+        effective_reactor_volume_l: numeric(form.effective_reactor_volume_l),
+        irradiance_85t_mw_cm2: numeric(form.irradiance_85t_mw_cm2),
+        irradiance_95t_mw_cm2: numeric(form.irradiance_95t_mw_cm2),
+        approved_per_lamp_flow_exception_m3h: numeric(form.approved_per_lamp_flow_exception_m3h),
       };
       if (!revision?.id || revising) {
         await api.post(`/admin/uv-engineering/${product.id}/revisions`, payload);
@@ -101,8 +99,8 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
           ['Material', product.primary_material_code || 'Not set'],
           ['Configuration', product.configuration || product.application_type || 'Not set'],
           ['Control type', product.control_type || 'Not set'],
-          ['Rated power', product.power_kw != null ? `${product.power_kw} kW` : 'Not set'],
-          ['PIM status', product.standard_status || product.status || 'Not set'],
+          ['Rated power', product.rated_power_kw != null ? `${product.rated_power_kw} kW` : 'Not set'],
+          ['PIM status', product.pim_status || 'Not set'],
         ].map(([label, value]) => (
           <div key={label}><div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{label}</div><div className="mt-1 text-sm font-medium text-stone-700">{value}</div></div>
         ))}
@@ -111,10 +109,10 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
         {[
           ['lamp_count', 'Lamp count *', '1'],
           ['lamp_power_w', 'Lamp power per lamp (W) *', '0.1'],
-          ['effective_reactor_volume_m3', 'Effective reactor volume (m³) *', '0.001'],
-          ['irradiance_85_mw_cm2', 'Irradiance at 85%T (mW/cm²) *', '0.001'],
-          ['irradiance_95_mw_cm2', 'Irradiance at 95%T (mW/cm²) *', '0.001'],
-          ['per_lamp_flow_m3h', 'Approved flow per lamp (m³/h)', '0.001'],
+          ['effective_reactor_volume_l', 'Effective reactor volume (L) *', '0.001'],
+          ['irradiance_85t_mw_cm2', 'Irradiance at 85%T (mW/cm²) *', '0.001'],
+          ['irradiance_95t_mw_cm2', 'Irradiance at 95%T (mW/cm²) *', '0.001'],
+          ['approved_per_lamp_flow_exception_m3h', 'Approved flow per lamp exception (m³/h)', '0.001'],
         ].map(([key, label, step]) => (
           <label key={key} className="text-xs font-medium text-stone-500">{label}
             <input type="number" min="0" step={step} className={inputClass} value={form[key]} onChange={event => set(key, event.target.value)} />
@@ -129,15 +127,7 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
         <label className="text-xs font-medium text-stone-500 md:col-span-3">Controlled source evidence *
           <input className={inputClass} value={form.source_evidence} onChange={event => set('source_evidence', event.target.value)} placeholder="Manufacturer datasheet, test report or controlled engineering document" />
         </label>
-        <label className="flex items-center gap-2 text-xs font-medium text-stone-600 md:col-span-3">
-          <input type="checkbox" checked={form.per_lamp_flow_exception_approved} onChange={event => set('per_lamp_flow_exception_approved', event.target.checked)} />
-          Approved per-lamp flow exception
-        </label>
-        {(form.per_lamp_flow_m3h !== '' || form.per_lamp_flow_exception_approved) && (
-          <label className="text-xs font-medium text-stone-500 md:col-span-3">Flow exception basis
-            <textarea rows={2} className={inputClass} value={form.per_lamp_flow_exception_reason} onChange={event => set('per_lamp_flow_exception_reason', event.target.value)} />
-          </label>
-        )}
+        <p className="text-xs text-stone-400 md:col-span-3">Leave the per-lamp flow exception blank unless it has an approved engineering basis.</p>
         <label className="text-xs font-medium text-stone-500 md:col-span-3">Revision notes
           <textarea rows={2} className={inputClass} value={form.notes} onChange={event => set('notes', event.target.value)} />
         </label>
@@ -161,14 +151,14 @@ export default function AdminUVEngineering() {
   });
   const products = data.items || [];
   const selected = useMemo(() => products.find((product: any) => product.id === selectedId) || null, [products, selectedId]);
-  const currentRevision = selected?.current_revision || selected?.latest_revision || selected?.revisions?.[0] || null;
+  const currentRevision = selected?.latest_revision || selected?.current_revision || selected?.revisions?.[0] || null;
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['uv-engineering'] });
 
   const reconcile = async () => {
     setReconciling(true);
     try {
       const response = await api.post('/admin/uv-engineering/reconcile');
-      toast.success(`${response.data?.created ?? 0} UV record(s) created; ${response.data?.refreshed ?? 0} refreshed`);
+      toast.success(`${response.data?.catalogs_created ?? 0} UV record(s) created; ${response.data?.drafts_created ?? 0} draft(s) created`);
       refresh();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'UV catalog reconciliation failed');
@@ -215,8 +205,8 @@ export default function AdminUVEngineering() {
                     <td className="px-4 py-3"><button className="text-left" onClick={() => setSelectedId(product.id)}>
                       <div className="font-medium text-stone-800">{product.product_name}</div><div className="font-mono text-xs text-stone-400">{product.product_code}</div>
                     </button></td>
-                    <td className="px-4 py-3 text-xs text-stone-500"><div>{product.manufacturer || 'Manufacturer not set'}</div><div>{product.primary_material_code || 'Material not set'} · {product.power_kw != null ? `${product.power_kw} kW` : 'Power not set'}</div></td>
-                    <td className="px-4 py-3">{revision ? <><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(revision.status)}`}>{revision.status}</span><div className="mt-1 font-mono text-xs text-stone-400">r{revision.revision}</div></> : <span className="text-xs text-amber-700">No revision</span>}</td>
+                     <td className="px-4 py-3 text-xs text-stone-500"><div>{product.manufacturer || 'Manufacturer not set'}</div><div>{product.primary_material_code || 'Material not set'} · {product.rated_power_kw != null ? `${product.rated_power_kw} kW` : 'Power not set'}</div></td>
+                     <td className="px-4 py-3">{revision ? <><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(revision.status)}`}>{revision.status}</span><div className="mt-1 font-mono text-xs text-stone-400">r{revision.revision_number}</div></> : <span className="text-xs text-amber-700">No revision</span>}</td>
                     <td className="px-4 py-3 text-xs"><span className={product.needs_review || product.sync_status === 'Needs Review' ? 'font-semibold text-amber-700' : 'text-emerald-700'}>{product.sync_status || (product.needs_review ? 'Needs Review' : 'Current')}</span></td>
                     <td className="px-4 py-3 text-xs">{product.calculation_enabled || product.selectable ? <span className="font-semibold text-emerald-700">Calculation enabled</span> : <span className="font-semibold text-amber-700">{product.completeness_message || 'Incomplete or unavailable'}</span>}</td>
                     <td className="px-4 py-3"><div className="flex justify-end gap-2">
