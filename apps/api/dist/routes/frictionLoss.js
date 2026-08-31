@@ -39,6 +39,7 @@ const auth_1 = require("../middleware/auth");
 const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
 const pumpSelections_1 = require("../lib/pumpSelections");
 const designBooks_1 = require("./designBooks");
+const lssSystems_1 = require("../lib/lssSystems");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const routeParam = (value) => Array.isArray(value) ? value[0] : value;
@@ -130,7 +131,7 @@ router.put('/design-books/:bookId/friction-loss/:systemId', (0, auth_1.requireRo
             return res.status(409).json({ error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Friction Loss is read-only while the Design Book is under review, approved, or released.' } });
         }
         const system = context.systems?.find((entry) => entry.id === routeParam(req.params.systemId));
-        if (!system || String(system.system_type || '').toLowerCase() !== 'life support') {
+        if (!system || !(0, lssSystems_1.isLifeSupportSystem)(system)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: { code: 'INVALID_SYSTEM', message: 'Select a Life Support system from this Design Book project.' } });
         }
@@ -141,22 +142,13 @@ router.put('/design-books/:bookId/friction-loss/:systemId', (0, auth_1.requireRo
             return res.status(400).json({ error: { code: 'INVALID_CIRCUIT', message: 'Circuit is not active in the saved Flow Route.' } });
         }
         const pumps = await pumpCandidates(runner, context.project_id, system.id);
-        const selectedPump = pumps.find((entry) => entry.project_equipment_item_id === req.body.project_equipment_item_id);
-        if (!selectedPump) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: { code: 'INELIGIBLE_PUMP', message: 'Selected equipment is not an eligible pump assigned to this system and project.' } });
-        }
-        const pumpSelection = (await runner('SELECT * FROM system_pump_selections WHERE system_id=$1 AND circuit_key=$2', [system.id, circuit.circuit_key])).rows[0];
-        const currentPumpFingerprint = pumpSelection ? (0, pumpSelections_1.pumpSourceFingerprint)({
-            circuit,
-            design_head_m: pumpSelection.design_head_m == null ? null : Number(pumpSelection.design_head_m),
-            pump_efficiency_pct: pumpSelection.pump_efficiency_pct == null ? null : Number(pumpSelection.pump_efficiency_pct),
-            motor_efficiency_pct: pumpSelection.motor_efficiency_pct == null ? null : Number(pumpSelection.motor_efficiency_pct),
-        }) : null;
-        if (!pumpSelection ||
-            pumpSelection.project_equipment_item_id !== selectedPump.project_equipment_item_id ||
-            pumpSelection.calculation_version !== pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION ||
-            pumpSelection.source_fingerprint !== currentPumpFingerprint) {
+        const pumpSelectionPackage = (await (0, designBooks_1.loadPumpSelections)(runner, [system]))[0];
+        const pumpSelection = pumpSelectionPackage?.items?.find((entry) => entry.circuit_key === circuit.circuit_key);
+        const selectedPump = pumps.find((entry) => entry.project_equipment_item_id === pumpSelection?.project_equipment_item_id);
+        if (!(0, designBooks_1.isCurrentPumpSelectionReady)(pumpSelection) ||
+            !selectedPump ||
+            (req.body.project_equipment_item_id &&
+                req.body.project_equipment_item_id !== pumpSelection.project_equipment_item_id)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: { code: 'PUMP_SELECTION_NOT_READY', message: 'Select and recalculate the pump for this exact Flow Route circuit before calculating friction loss.' } });
         }

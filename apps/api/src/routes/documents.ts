@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
-import { authenticate, requireRole, requireModuleAccess, AuthRequest } from '../middleware/auth';
+import { authenticate, requireRole, requireModuleAccess, requireModuleManage, AuthRequest } from '../middleware/auth';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -79,9 +79,14 @@ router.get('/documents/:id', authenticate, async (req: AuthRequest, res: Respons
 });
 
 // PRODUCT LINK
-router.put('/documents/:id/product', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/documents/:id/product', authenticate, requireModuleManage('documents'), async (req: AuthRequest, res: Response) => {
   const { product_id } = req.body;
   if (!product_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_id required' } });
+  const existing = await query('SELECT generated_source FROM documents WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  if (existing.rows[0].generated_source === 'pim_tds') {
+    return res.status(409).json({ error: { code: 'GENERATED_LINK_IMMUTABLE', message: 'A generated TDS must remain linked to its source PIM product' } });
+  }
   const result = await query(
     `UPDATE documents SET product_id=$1, updated_at=NOW() WHERE id=$2
      RETURNING id, product_id`,
@@ -91,12 +96,17 @@ router.put('/documents/:id/product', authenticate, async (req: AuthRequest, res:
   res.json(pm.rows[0] ?? {});
 });
 
-router.delete('/documents/:id/product', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/documents/:id/product', authenticate, requireModuleManage('documents'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT generated_source FROM documents WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  if (existing.rows[0].generated_source === 'pim_tds') {
+    return res.status(409).json({ error: { code: 'GENERATED_LINK_IMMUTABLE', message: 'A generated TDS must remain linked to its source PIM product' } });
+  }
   await query('UPDATE documents SET product_id=NULL, updated_at=NOW() WHERE id=$1', [req.params.id]);
   res.status(204).end();
 });
 
-router.post('/documents', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/documents', authenticate, requireModuleManage('documents'), async (req: AuthRequest, res: Response) => {
   const { document_code, document_title, document_type, discipline, project_id, system_id, equipment_id, product_id, component_id, owner, notes } = req.body;
   if (!document_code || !document_title) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'document_code and document_title required' } });
   const result = await query(
@@ -111,18 +121,29 @@ router.post('/documents', authenticate, async (req: AuthRequest, res: Response) 
   res.status(201).json(result.rows[0]);
 });
 
-router.put('/documents/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/documents/:id', authenticate, requireModuleManage('documents'), async (req: AuthRequest, res: Response) => {
   const { document_title, document_type, discipline, status, owner, notes } = req.body;
+  const existing = await query('SELECT generated_source, document_type, status FROM documents WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  const isGeneratedTds = existing.rows[0].generated_source === 'pim_tds';
   const result = await query(
     'UPDATE documents SET document_title=$1, document_type=$2, discipline=$3, status=$4, owner=$5, notes=$6, updated_at=NOW() WHERE id=$7 RETURNING *',
-    [document_title, document_type, discipline, status, owner, notes, req.params.id]
+    [
+      document_title,
+      isGeneratedTds ? 'Technical Data Sheet' : document_type,
+      discipline,
+      isGeneratedTds ? existing.rows[0].status : status,
+      owner,
+      notes,
+      req.params.id,
+    ]
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
   res.json(result.rows[0]);
 });
 
 // PROJECT LINKS
-router.post('/documents/:id/projects', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/documents/:id/projects', authenticate, requireModuleManage('documents'), async (req: AuthRequest, res: Response) => {
   const { project_id } = req.body;
   if (!project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'project_id required' } });
   await query('INSERT INTO document_project_links (document_id, project_id, linked_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
@@ -133,18 +154,38 @@ router.post('/documents/:id/projects', authenticate, async (req: AuthRequest, re
   res.json(links.rows);
 });
 
-router.delete('/documents/:id/projects/:projectId', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/documents/:id/projects/:projectId', authenticate, requireModuleManage('documents'), async (req: AuthRequest, res: Response) => {
   await query('DELETE FROM document_project_links WHERE document_id=$1 AND project_id=$2', [req.params.id, req.params.projectId]);
   res.status(204).end();
 });
 
 // REVISIONS
-router.post('/documents/:id/revisions', authenticate, upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/documents/:id/revisions', authenticate, requireModuleManage('documents'), upload.single('file'), async (req: AuthRequest, res: Response) => {
   const { revision_code, revision_purpose } = req.body;
   const file = req.file;
 
   const doc = await query('SELECT * FROM documents WHERE id=$1', [req.params.id]);
   if (!doc.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  const latestRevision = await query(
+    'SELECT * FROM document_revisions WHERE document_id=$1 ORDER BY created_at DESC LIMIT 1',
+    [req.params.id],
+  );
+  if (latestRevision.rows[0] && ['Draft', 'Internal Review', 'Review Commented', 'Resubmitted'].includes(latestRevision.rows[0].status)) {
+    return res.status(409).json({
+      error: {
+        code: 'EDITABLE_REVISION_EXISTS',
+        message: `Revision ${latestRevision.rows[0].revision_code} is still editable and must complete review before another revision is issued`,
+      },
+    });
+  }
+  const nextCode = revision_code || 'A';
+  const duplicateRevision = await query(
+    'SELECT id FROM document_revisions WHERE document_id=$1 AND UPPER(revision_code)=UPPER($2)',
+    [req.params.id, nextCode],
+  );
+  if (duplicateRevision.rows[0]) {
+    return res.status(409).json({ error: { code: 'REVISION_EXISTS', message: `Revision ${nextCode} already exists` } });
+  }
 
   let file_path = null, file_name = null, file_size = null, mime_type = null, checksum = null;
   if (file) {
@@ -157,17 +198,74 @@ router.post('/documents/:id/revisions', authenticate, upload.single('file'), asy
   }
 
   const result = await query(
-    'INSERT INTO document_revisions (document_id, revision_code, revision_purpose, status, issued_by, file_path, file_name, file_size, mime_type, checksum, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
-    [req.params.id, revision_code || 'A', revision_purpose, 'Draft', req.user!.id, file_path, file_name, file_size, mime_type, checksum, req.user!.id]);
+    `INSERT INTO document_revisions
+       (document_id, revision_code, revision_purpose, status, issued_by,
+        file_path, file_name, file_size, mime_type, checksum, created_by,
+        content, source_snapshot, generated_at, generated_source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+     RETURNING *`,
+    [
+      req.params.id, nextCode, revision_purpose, 'Draft', req.user!.id,
+      file_path, file_name, file_size, mime_type, checksum, req.user!.id,
+      doc.rows[0].generated_source === 'pim_tds' ? (latestRevision.rows[0]?.content ?? null) : null,
+      doc.rows[0].generated_source === 'pim_tds' ? (latestRevision.rows[0]?.source_snapshot ?? null) : null,
+      doc.rows[0].generated_source === 'pim_tds' ? (latestRevision.rows[0]?.generated_at ?? null) : null,
+      doc.rows[0].generated_source === 'pim_tds' ? 'pim_tds' : null,
+    ]);
 
-  await query('UPDATE documents SET current_revision=$1, updated_at=NOW() WHERE id=$2', [revision_code || 'A', req.params.id]);
+  await query('UPDATE documents SET current_revision=$1, status=$2, updated_at=NOW() WHERE id=$3', [nextCode, 'Draft', req.params.id]);
   res.status(201).json(result.rows[0]);
+});
+
+// Generated revision content is document-owned. Editing it never writes back
+// to Product Master, while the captured source_snapshot remains unchanged.
+router.put('/documents/:id/revisions/:revId/content', authenticate, requireModuleManage('documents'), async (req: AuthRequest, res: Response) => {
+  const { content } = req.body || {};
+  if (!content || typeof content !== 'object' || Array.isArray(content)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'content must be a JSON object' } });
+  }
+  const current = await query(
+    `SELECT dr.id, dr.status, d.generated_source
+     FROM document_revisions dr
+     JOIN documents d ON d.id=dr.document_id
+     WHERE dr.id=$1 AND dr.document_id=$2`,
+    [req.params.revId, req.params.id],
+  );
+  if (!current.rows[0]) {
+    return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document revision not found' } });
+  }
+  if (current.rows[0].generated_source !== 'pim_tds') {
+    return res.status(400).json({ error: { code: 'NOT_GENERATED_TDS', message: 'Only generated TDS revisions have editable structured content' } });
+  }
+  const editableStatuses = ['Draft', 'Internal Review', 'Review Commented', 'Resubmitted'];
+  if (!editableStatuses.includes(current.rows[0].status)) {
+    return res.status(409).json({
+      error: {
+        code: 'REVISION_FROZEN',
+        message: `Revision is ${current.rows[0].status} and cannot be edited. Generate a new draft revision from the product instead.`,
+      },
+    });
+  }
+  const updated = await query(
+    `UPDATE document_revisions SET content=$1
+     WHERE id=$2 AND document_id=$3 RETURNING *`,
+    [content, req.params.revId, req.params.id],
+  );
+  res.json(updated.rows[0]);
 });
 
 // DELETE REVISION (admin only)
 router.delete('/documents/revisions/:revId', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  const rev = await query('SELECT * FROM document_revisions WHERE id=$1', [req.params.revId]);
+  const rev = await query(
+    `SELECT dr.*, d.generated_source
+     FROM document_revisions dr JOIN documents d ON d.id=dr.document_id
+     WHERE dr.id=$1`,
+    [req.params.revId],
+  );
   if (!rev.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Revision not found' } });
+  if (rev.rows[0].generated_source === 'pim_tds' && ['Approved', 'Released', 'As-Built', 'Superseded', 'Obsolete'].includes(rev.rows[0].status)) {
+    return res.status(409).json({ error: { code: 'REVISION_FROZEN', message: `Generated TDS revision is ${rev.rows[0].status} and cannot be deleted` } });
+  }
   const docId = rev.rows[0].document_id;
   if (rev.rows[0].file_path) {
     const filePath = path.join(__dirname, '../../', rev.rows[0].file_path);
@@ -184,6 +282,22 @@ router.delete('/documents/revisions/:revId', authenticate, requireRole('admin'),
 router.delete('/documents/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const doc = await query('SELECT * FROM documents WHERE id=$1', [req.params.id]);
   if (!doc.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+  if (doc.rows[0].generated_source === 'pim_tds') {
+    const frozen = await query(
+      `SELECT id, revision_code, status FROM document_revisions
+       WHERE document_id=$1 AND status IN ('Approved','Released','As-Built','Superseded','Obsolete')
+       LIMIT 1`,
+      [req.params.id],
+    );
+    if (frozen.rows[0]) {
+      return res.status(409).json({
+        error: {
+          code: 'GENERATED_TDS_EVIDENCE',
+          message: `Generated TDS has frozen revision ${frozen.rows[0].revision_code} and cannot be deleted`,
+        },
+      });
+    }
+  }
   const revisions = await query('SELECT file_path FROM document_revisions WHERE document_id=$1', [req.params.id]);
   for (const rev of revisions.rows) {
     if (rev.file_path) {
@@ -199,8 +313,25 @@ router.delete('/documents/:id', authenticate, requireRole('admin'), async (req: 
 });
 
 // APPROVALS
-router.post('/documents/:id/approvals', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/documents/:id/approvals', authenticate, requireModuleManage('documents'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { revision_id, action, comment, role } = req.body;
+  const allowedActions = ['Approved', 'Released', 'Rejected', 'Review Commented'];
+  if (!revision_id || !allowedActions.includes(action)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'A current revision and valid review action are required' } });
+  }
+  if (action === 'Rejected' && !String(comment || '').trim()) {
+    return res.status(400).json({ error: { code: 'REJECTION_REASON_REQUIRED', message: 'A rejection reason is required' } });
+  }
+  const latestRevision = await query(
+    'SELECT id, status FROM document_revisions WHERE document_id=$1 ORDER BY created_at DESC LIMIT 1',
+    [req.params.id],
+  );
+  if (!latestRevision.rows[0] || latestRevision.rows[0].id !== revision_id) {
+    return res.status(409).json({ error: { code: 'REVISION_NOT_CURRENT', message: 'Only the current document revision can be reviewed' } });
+  }
+  if (['Approved', 'Released', 'As-Built', 'Superseded', 'Obsolete'].includes(latestRevision.rows[0].status)) {
+    return res.status(409).json({ error: { code: 'REVISION_FROZEN', message: `Revision is ${latestRevision.rows[0].status} and cannot be reviewed again` } });
+  }
   const result = await query('INSERT INTO approvals (document_id, revision_id, approver_id, role, action, comment) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
     [req.params.id, revision_id, req.user!.id, role, action, comment]);
 

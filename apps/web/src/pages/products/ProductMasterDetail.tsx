@@ -16,6 +16,8 @@ import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
 import ActivityLog from '../../components/ui/ActivityLog';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../../hooks/useConfirm';
+import { useAuthStore } from '../../store/authStore';
 
 type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects' | 'activity';
 
@@ -97,6 +99,13 @@ export default function ProductMasterDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { confirm, dialog } = useConfirm();
+  const { user } = useAuthStore();
+  const canGenerateTds = (user?.role === 'admin' || user?.role === 'engineer')
+    && user?.moduleAccess?.pim !== 'view'
+    && user?.moduleAccess?.pim !== 'hidden'
+    && user?.moduleAccess?.documents !== 'view'
+    && user?.moduleAccess?.documents !== 'hidden';
   const [tab, setTab] = useState<Tab>('bom');
 
   const [showDocModal, setShowDocModal] = useState(false);
@@ -141,6 +150,7 @@ export default function ProductMasterDetail() {
   const [saving, setSaving] = useState(false);
   const [productFlowResolution, setProductFlowResolution] = useState<'product_master' | ''>('');
   const [duplicating, setDuplicating] = useState(false);
+  const [generatingTds, setGeneratingTds] = useState(false);
 
   const [showRelModal, setShowRelModal] = useState(false);
   const [relSearch, setRelSearch] = useState('');
@@ -354,6 +364,35 @@ export default function ProductMasterDetail() {
       toast.error(e?.response?.data?.error?.message || 'Duplicate failed');
     } finally {
       setDuplicating(false);
+    }
+  };
+
+  const handleGenerateTds = async () => {
+    if (generatingTds) return;
+    const generatedTds = (product.documents || []).find((document: any) => document.generated_source === 'pim_tds');
+    const ok = await confirm({
+      title: generatedTds ? 'Regenerate Technical Data Sheet' : 'Generate Technical Data Sheet',
+      message: generatedTds
+        ? 'Refresh the editable TDS draft with the product’s current PIM data? Approved and released revisions will remain unchanged.'
+        : 'Create a draft Technical Data Sheet from all currently available PIM product data?',
+      confirmLabel: generatedTds ? 'Regenerate TDS' : 'Generate TDS',
+    });
+    if (!ok) return;
+    setGeneratingTds(true);
+    try {
+      const { data } = await api.post(`/product-masters/${id}/generate-tds`);
+      const action = data.generation?.action;
+      toast.success(action === 'created' ? 'Technical Data Sheet generated' : 'Technical Data Sheet draft updated');
+      if (data.generation?.warnings?.length) {
+        toast(data.generation.warnings[0], { duration: 6000 });
+      }
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+      navigate(`/documents/${data.document.id}`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Could not generate the Technical Data Sheet');
+    } finally {
+      setGeneratingTds(false);
     }
   };
 
@@ -790,6 +829,11 @@ export default function ProductMasterDetail() {
         actions={
           isTank ? (
             <div className="flex gap-2">
+              {!editing && canGenerateTds && (
+                <Button size="sm" variant="primary" onClick={handleGenerateTds} disabled={generatingTds}>
+                  <FileSearch className="w-3.5 h-3.5" />{generatingTds ? 'Generating…' : 'Generate TDS'}
+                </Button>
+              )}
               {!editing && (
                 <Button size="sm" onClick={handleDuplicate} disabled={duplicating}>
                   <Copy className="w-3.5 h-3.5" />{duplicating ? 'Duplicating…' : 'Duplicate'}
@@ -806,6 +850,11 @@ export default function ProductMasterDetail() {
             </div>
           ) : (
             <div className="flex gap-2">
+              {canGenerateTds && (
+                <Button size="sm" variant="primary" onClick={handleGenerateTds} disabled={generatingTds}>
+                  <FileSearch className="w-3.5 h-3.5" />{generatingTds ? 'Generating…' : 'Generate TDS'}
+                </Button>
+              )}
               <Button size="sm" variant="secondary" onClick={startEdit}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
               <Button size="sm" onClick={handleDuplicate} disabled={duplicating}>
                 <Copy className="w-3.5 h-3.5" />{duplicating ? 'Duplicating…' : 'Duplicate'}
@@ -1972,6 +2021,7 @@ export default function ProductMasterDetail() {
           onClose={() => setShowFamilyPicker(false)}
         />
       )}
+      {dialog}
     </div>
   );
 }

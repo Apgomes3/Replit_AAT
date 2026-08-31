@@ -10,7 +10,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import ActivityLog from '../../components/ui/ActivityLog';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus, Package, PackageX } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus, Package, PackageX, Pencil, Save, Database } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useConfirm } from '../../hooks/useConfirm';
 
@@ -37,6 +37,9 @@ export default function DocumentDetail() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
+  const canManageDocuments = (user?.role === 'admin' || user?.role === 'engineer')
+    && user?.moduleAccess?.documents !== 'view'
+    && user?.moduleAccess?.documents !== 'hidden';
   const { confirm, dialog } = useConfirm();
   const [showIssue, setShowIssue] = useState(false);
   const [showApproval, setShowApproval] = useState(false);
@@ -56,6 +59,10 @@ export default function DocumentDetail() {
   const [addProductId, setAddProductId] = useState('');
   const [productLinkSaving, setProductLinkSaving] = useState(false);
   const [productSearch, setProductSearch] = useState('');
+  const [editingGeneratedContent, setEditingGeneratedContent] = useState(false);
+  const [generatedContentDraft, setGeneratedContentDraft] = useState('');
+  const [generatedContentSaving, setGeneratedContentSaving] = useState(false);
+  const [showSourceSnapshot, setShowSourceSnapshot] = useState(false);
 
   useEffect(() => {
     const close = () => setRevCtxMenu(null);
@@ -69,6 +76,13 @@ export default function DocumentDetail() {
     queryFn: () => api.get(`/documents/${id}`).then(r => r.data),
   });
   useRecordTitle(document?.document_title);
+
+  useEffect(() => {
+    const latestRevision = document?.revisions?.[0];
+    setGeneratedContentDraft(latestRevision?.content ? JSON.stringify(latestRevision.content, null, 2) : '');
+    setEditingGeneratedContent(false);
+    setShowSourceSnapshot(false);
+  }, [document?.id, document?.revisions?.[0]?.id, document?.revisions?.[0]?.generated_at]);
 
   const { data: history } = useQuery({
     queryKey: ['lifecycle', 'document', id],
@@ -197,6 +211,34 @@ export default function DocumentDetail() {
     refetch();
   };
 
+  const handleSaveGeneratedContent = async () => {
+    const latestRevision = document.revisions?.[0];
+    if (!latestRevision || generatedContentSaving) return;
+    let content: Record<string, unknown>;
+    try {
+      content = JSON.parse(generatedContentDraft);
+      if (!content || typeof content !== 'object' || Array.isArray(content)) throw new Error('invalid');
+    } catch {
+      toast.error('TDS content must be a valid JSON object');
+      return;
+    }
+    setGeneratedContentSaving(true);
+    try {
+      await api.put(`/documents/${id}/revisions/${latestRevision.id}/content`, { content });
+      toast.success('Draft TDS content saved');
+      setEditingGeneratedContent(false);
+      refetch();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Could not save TDS content');
+    } finally {
+      setGeneratedContentSaving(false);
+    }
+  };
+
+  const latestGeneratedRevision = document.generated_source === 'pim_tds' ? document.revisions?.[0] : null;
+  const generatedContentEditable = canManageDocuments && !!latestGeneratedRevision &&
+    ['Draft', 'Internal Review', 'Review Commented', 'Resubmitted'].includes(latestGeneratedRevision.status);
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader
@@ -205,18 +247,22 @@ export default function DocumentDetail() {
         crumbs={[{ label: 'Documents', href: '/documents' }, { label: document.document_code }]}
         actions={
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => {
-              const latestRev = document.revisions?.[0];
-              if (latestRev && latestRev.status === 'Draft') {
-                toast.error(`Rev ${latestRev.revision_code} is pending review — approve or reject it first`);
-                return;
-              }
-              const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string);
-              setIssueRev(nextRevLetter(existing));
-              setShowIssue(true);
-            }}><Upload className="w-3.5 h-3.5" />Issue Revision</Button>
-            <Button size="sm" onClick={() => { setApprovalAction('Rejected'); setApprovalComment(''); setShowApproval(true); }}><XCircle className="w-3.5 h-3.5" />Reject</Button>
-            <Button size="sm" variant="primary" onClick={() => { setApprovalAction('Approved'); setApprovalComment(''); setShowApproval(true); }}><CheckCircle className="w-3.5 h-3.5" />Approve / Release</Button>
+            {canManageDocuments && (
+              <>
+                <Button size="sm" onClick={() => {
+                  const latestRev = document.revisions?.[0];
+                  if (latestRev && ['Draft', 'Internal Review', 'Review Commented', 'Resubmitted'].includes(latestRev.status)) {
+                    toast.error(`Rev ${latestRev.revision_code} is pending review — approve or reject it first`);
+                    return;
+                  }
+                  const existing = (document.revisions ?? []).map((r: any) => r.revision_code as string);
+                  setIssueRev(nextRevLetter(existing));
+                  setShowIssue(true);
+                }}><Upload className="w-3.5 h-3.5" />Issue Revision</Button>
+                <Button size="sm" onClick={() => { setApprovalAction('Rejected'); setApprovalComment(''); setShowApproval(true); }}><XCircle className="w-3.5 h-3.5" />Reject</Button>
+                <Button size="sm" variant="primary" onClick={() => { setApprovalAction('Approved'); setApprovalComment(''); setShowApproval(true); }}><CheckCircle className="w-3.5 h-3.5" />Approve / Release</Button>
+              </>
+            )}
             {isAdmin && <Button size="sm" variant="danger" onClick={handleDeleteDocument}><Trash2 className="w-3.5 h-3.5" />Delete</Button>}
           </div>
         }
@@ -232,15 +278,89 @@ export default function DocumentDetail() {
               { label: 'Owner', value: document.owner },
             ]} />
 
+            {latestGeneratedRevision && (
+              <div className="bg-white border border-blue-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-3 border-b border-blue-100 bg-blue-50 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                      <Database className="w-4 h-4" />Generated PIM Technical Data Sheet
+                    </div>
+                    <p className="text-xs text-blue-700 mt-0.5">
+                      Source captured {latestGeneratedRevision.generated_at
+                        ? new Date(latestGeneratedRevision.generated_at).toLocaleString()
+                        : 'when this revision was generated'}
+                      {' '}· Rev {latestGeneratedRevision.revision_code}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => setShowSourceSnapshot(value => !value)}>
+                      {showSourceSnapshot ? 'Hide Source' : 'View Source'}
+                    </Button>
+                    {generatedContentEditable && !editingGeneratedContent && (
+                      <Button size="sm" variant="primary" onClick={() => setEditingGeneratedContent(true)}>
+                        <Pencil className="w-3.5 h-3.5" />Edit Draft
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="p-4 space-y-4">
+                  <p className="text-xs text-slate-500">
+                    Changes here belong only to this document revision and do not overwrite Product Master values.
+                  </p>
+                  {editingGeneratedContent ? (
+                    <div>
+                      <textarea
+                        value={generatedContentDraft}
+                        onChange={event => setGeneratedContentDraft(event.target.value)}
+                        rows={22}
+                        spellCheck={false}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs focus:outline-none focus:border-blue-600"
+                      />
+                      <div className="flex justify-end gap-2 mt-3">
+                        <Button size="sm" onClick={() => {
+                          setEditingGeneratedContent(false);
+                          setGeneratedContentDraft(JSON.stringify(latestGeneratedRevision.content, null, 2));
+                        }}>Cancel</Button>
+                        <Button size="sm" variant="primary" onClick={handleSaveGeneratedContent} disabled={generatedContentSaving}>
+                          <Save className="w-3.5 h-3.5" />{generatedContentSaving ? 'Saving…' : 'Save Draft'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : latestGeneratedRevision.content ? (
+                    <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 overflow-auto max-h-[32rem] whitespace-pre-wrap">
+                      {JSON.stringify(latestGeneratedRevision.content, null, 2)}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-slate-400">This revision has no structured generated content.</p>
+                  )}
+                  {!generatedContentEditable && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                      This revision is {latestGeneratedRevision.status} and is frozen. Regenerate from the linked Product Master to create a new editable draft.
+                    </p>
+                  )}
+                  {showSourceSnapshot && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Captured PIM Source Snapshot</div>
+                      <pre className="bg-slate-950 text-slate-100 rounded-lg p-3 text-xs overflow-auto max-h-[32rem] whitespace-pre-wrap">
+                        {JSON.stringify(latestGeneratedRevision.source_snapshot || {}, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white border border-slate-200 rounded-lg">
               <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-700">Project Links</span>
-                <button
-                  onClick={() => setShowProjectLinks(v => !v)}
-                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" />Add
-                </button>
+                {canManageDocuments && (
+                  <button
+                    onClick={() => setShowProjectLinks(v => !v)}
+                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />Add
+                  </button>
+                )}
               </div>
               <div className="px-4 py-3 space-y-2">
                 {(document.projects ?? []).length === 0 && !showProjectLinks && (
@@ -253,9 +373,11 @@ export default function DocumentDetail() {
                       <EntityCode code={p.project_code} />
                       <span className="text-slate-500">{p.project_name}</span>
                     </Link>
-                    <button onClick={() => handleRemoveProjectLink(p.id)} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50">
-                      <FolderX className="w-3.5 h-3.5" />
-                    </button>
+                    {canManageDocuments && (
+                      <button onClick={() => handleRemoveProjectLink(p.id)} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50">
+                        <FolderX className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
                 {showProjectLinks && (
@@ -285,7 +407,7 @@ export default function DocumentDetail() {
                 <span className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
                   <Package className="w-3.5 h-3.5 text-slate-400" />Product Link
                 </span>
-                {document.product_id ? (
+                {!canManageDocuments || document.generated_source === 'pim_tds' ? null : document.product_id ? (
                   <button
                     onClick={() => { setShowProductPicker(v => !v); setProductSearch(''); setAddProductId(''); }}
                     className="text-xs text-blue-600 hover:underline flex items-center gap-1"
@@ -309,9 +431,11 @@ export default function DocumentDetail() {
                       <EntityCode code={document.product_code} />
                       <span className="text-slate-500">{document.product_name}</span>
                     </Link>
-                    <button onClick={handleRemoveProductLink} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50">
-                      <PackageX className="w-3.5 h-3.5" />
-                    </button>
+                    {document.generated_source !== 'pim_tds' && canManageDocuments && (
+                      <button onClick={handleRemoveProductLink} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50">
+                        <PackageX className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 ) : (
                   !showProductPicker && <p className="text-sm text-slate-400">Not linked to any product</p>

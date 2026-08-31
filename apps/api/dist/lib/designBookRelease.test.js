@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const aquariumCalculations_1 = require("./aquariumCalculations");
 const pumpSelections_1 = require("./pumpSelections");
+const frictionLossCalculations_1 = require("./frictionLossCalculations");
 const designBookRelease_1 = require("./designBookRelease");
 function readyContext() {
     return {
@@ -78,6 +79,32 @@ function readyContext() {
         const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(readyContext());
         (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)(checklist)).toEqual([]);
         (0, vitest_1.expect)(checklist.every(check => check.status === 'pass')).toBe(true);
+    });
+    (0, vitest_1.it)('recognizes established LSS type names in engineering release checks', () => {
+        const context = readyContext();
+        context.systems[0].system_type = 'Single Exhibit LSS';
+        const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context);
+        (0, vitest_1.expect)(checklist.find(check => check.key === 'thermal_calculations')?.status).toBe('pass');
+        (0, vitest_1.expect)(checklist.find(check => check.key === 'pump_selections')?.status).toBe('pass');
+    });
+    (0, vitest_1.it)('blocks friction evidence captured against a different circuit pump', () => {
+        const context = readyContext();
+        context.friction_loss_calculations = [{
+                system_id: 'system-1',
+                items: [{
+                        circuit_key: 'loop:1',
+                        project_equipment_item_id: 'pump-item-2',
+                        selected_pump: { id: 'pump-item-2', project_equipment_item_id: 'pump-item-2' },
+                        freshness: 'fresh',
+                        status: 'ready',
+                        calculation_version: frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION,
+                        result: { results: { combined_head_loss_m: 3.2 } },
+                    }],
+            }];
+        const friction = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(check => check.key === 'friction_loss_calculations');
+        (0, vitest_1.expect)(friction?.status).toBe('blocked');
+        (0, vitest_1.expect)(friction?.message).toContain('does not use the current Flow Route pump selection');
     });
     (0, vitest_1.it)('blocks release when a pump duty exceeds the supported motor series', () => {
         const context = readyContext();

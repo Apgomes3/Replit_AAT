@@ -1,7 +1,7 @@
 import { NextFunction, Router, Response } from 'express';
 import pool, { query } from '../db';
 import { logAudit } from '../db/audit';
-import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
+import { authenticate, requireModuleAccess, requireModuleManage, requireRole, AuthRequest } from '../middleware/auth';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -96,6 +96,208 @@ const designFlowAuditDetails = (
   previous_hydraulic_design_flow_m3h: previousHydraulicFlow ?? null,
   resolved_conflict: flowsConflict(previousProductFlow, previousHydraulicFlow),
 });
+
+const revisionOrdinal = (code: string) => {
+  if (!/^[A-Z]+$/.test(code)) return 0;
+  return [...code].reduce(
+    (total, character) => (total * 26) + character.charCodeAt(0) - 64,
+    0,
+  );
+};
+
+const revisionCodeFromOrdinal = (ordinal: number) => {
+  let remaining = ordinal;
+  let code = '';
+  while (remaining > 0) {
+    remaining -= 1;
+    code = String.fromCharCode(65 + (remaining % 26)) + code;
+    remaining = Math.floor(remaining / 26);
+  }
+  return code || 'A';
+};
+
+const nextRevisionCode = (existing: string[]) => {
+  const maximum = existing.reduce(
+    (highest, code) => Math.max(highest, revisionOrdinal(code.trim().toUpperCase())),
+    0,
+  );
+  return revisionCodeFromOrdinal(maximum + 1);
+};
+
+const isEditableDocumentRevision = (status: unknown) =>
+  ['Draft', 'Internal Review', 'Review Commented', 'Resubmitted', 'Rejected'].includes(String(status));
+
+const readPimTdsSource = async (client: DbClient, productId: string) => {
+  const productResult = await client.query(
+    `SELECT pm.*, pf.product_family_code, pf.product_family_name,
+            m.material_name, m.material_category, m.density, m.chemical_resistance, m.temperature_limit
+     FROM product_masters pm
+     LEFT JOIN product_families pf ON pf.id=pm.product_family_id
+     LEFT JOIN materials m ON m.material_code=pm.primary_material_code
+     WHERE pm.id::text=$1 OR pm.product_code=$1
+     FOR UPDATE OF pm`,
+    [productId],
+  );
+  const product = productResult.rows[0];
+  if (!product) {
+    const error: any = new Error('Product not found');
+    error.status = 404;
+    error.code = 'NOT_FOUND';
+    throw error;
+  }
+  const canonicalId = product.id;
+
+  const [variants, boms, vendors, dimensions, electrical, hydraulic, classifiers, projects, relationships, linkedDocuments] =
+    await Promise.all([
+      client.query('SELECT * FROM product_variants WHERE product_master_id=$1 ORDER BY variant_code', [canonicalId]),
+      client.query(
+        `SELECT sb.*,
+                COALESCE(json_agg(json_build_object(
+                  'id', bl.id, 'line_number', bl.line_number, 'component_type', bl.component_type,
+                  'component_reference_code', bl.component_reference_code, 'component_name', bl.component_name,
+                  'quantity', bl.quantity, 'unit', bl.unit, 'is_optional', bl.is_optional, 'remarks', bl.remarks,
+                  'sub_product_id', bl.sub_product_id, 'sub_product_code', sub_pm.product_code,
+                  'sub_product_name', sub_pm.product_name, 'component_code', c.component_code
+                ) ORDER BY bl.line_number) FILTER (WHERE bl.id IS NOT NULL), '[]'::json) AS lines
+         FROM standard_boms sb
+         LEFT JOIN bom_lines bl ON bl.standard_bom_id=sb.id
+         LEFT JOIN components c ON c.id=bl.component_id
+         LEFT JOIN product_masters sub_pm ON sub_pm.id=bl.sub_product_id
+         WHERE sb.product_master_id=$1
+         GROUP BY sb.id
+         ORDER BY sb.effective_from DESC`,
+        [canonicalId],
+      ),
+      client.query('SELECT * FROM vendor_options WHERE product_master_id=$1 ORDER BY vendor_option_code', [canonicalId]),
+      client.query('SELECT * FROM product_dimensions WHERE product_master_id=$1', [canonicalId]),
+      client.query('SELECT * FROM product_electrical WHERE product_master_id=$1', [canonicalId]),
+      client.query('SELECT * FROM product_hydraulic WHERE product_master_id=$1', [canonicalId]),
+      client.query(
+        `SELECT fc.id, fc.label, fc.unit, fc.field_type, fc.sort_order, pcv.value_text
+         FROM family_classifiers fc
+         LEFT JOIN product_classifier_values pcv
+           ON pcv.classifier_id=fc.id AND pcv.product_id=$1
+         WHERE fc.family_id=$2
+         ORDER BY fc.sort_order, fc.created_at`,
+        [canonicalId, product.product_family_id],
+      ),
+      client.query(
+        `SELECT DISTINCT p.id, p.project_code, p.project_name, p.project_status
+         FROM product_usages pu JOIN projects p ON p.id=pu.project_id
+         WHERE pu.product_master_id=$1 ORDER BY p.project_code`,
+        [canonicalId],
+      ),
+      client.query(
+        `SELECT er.* FROM entity_relationships er
+         WHERE (er.source_id=$1 AND er.source_type IN ('product', 'product_master'))
+            OR (er.target_id=$1 AND er.target_type IN ('product', 'product_master'))
+         ORDER BY er.created_at`,
+        [canonicalId],
+      ),
+      client.query(
+        `SELECT id, document_code, document_title, document_type, current_revision, status
+         FROM documents WHERE product_id=$1 ORDER BY document_type, document_code`,
+        [canonicalId],
+      ),
+    ]);
+
+  const capturedAt = new Date().toISOString();
+  const specificationRows = {
+    dimensions: dimensions.rows[0] ?? null,
+    electrical: electrical.rows[0] ?? null,
+    hydraulic: hydraulic.rows[0] ?? null,
+  };
+  const sourceSnapshot = {
+    schema_version: 1,
+    source: 'PIM Product Master',
+    source_product_id: canonicalId,
+    source_product_code: product.product_code,
+    generated_at: capturedAt,
+    product,
+    specifications: specificationRows,
+    classifier_values: classifiers.rows,
+    variants: variants.rows,
+    boms: boms.rows,
+    vendors: vendors.rows,
+    linked_context: {
+      projects: projects.rows,
+      relationships: relationships.rows,
+      documents: linkedDocuments.rows,
+    },
+  };
+
+  const knownValues: Record<string, unknown> = {
+    product_code: product.product_code,
+    product_name: product.product_name,
+    product_category: product.product_category,
+    application_type: product.application_type,
+    manufacturer: product.manufacturer,
+    model: product.model,
+    design_flow_m3h: product.design_flow_m3h,
+    design_pressure_bar: product.design_pressure_bar,
+    design_head_m: product.design_head_m,
+    power_kw: product.power_kw,
+    primary_material_code: product.primary_material_code,
+    image_url: product.image_url,
+    notes: product.notes,
+    dimensions: specificationRows.dimensions,
+    electrical: specificationRows.electrical,
+    hydraulic: specificationRows.hydraulic,
+    bill_of_materials: boms.rows,
+    vendors: vendors.rows,
+    linked_projects: projects.rows,
+  };
+  const unavailableFields = Object.entries(knownValues)
+    .filter(([, value]) => value == null || (Array.isArray(value) && value.length === 0))
+    .map(([field]) => field);
+
+  const content = {
+    template: 'PIM Technical Data Sheet',
+    title: `${product.product_code} — ${product.product_name}`,
+    source_product_id: canonicalId,
+    generated_at: capturedAt,
+    sections: {
+      identity: {
+        product_code: product.product_code,
+        product_name: product.product_name,
+        manufacturer: product.manufacturer ?? null,
+        model: product.model ?? null,
+        image_url: product.image_url ?? null,
+      },
+      classification: {
+        product_category: product.product_category ?? null,
+        application_type: product.application_type ?? null,
+        product_family: product.product_family_name ?? null,
+        standard_status: product.standard_status ?? null,
+        classifier_values: classifiers.rows,
+      },
+      engineering_values: {
+        design_flow_m3h: product.design_flow_m3h ?? null,
+        design_pressure_bar: product.design_pressure_bar ?? null,
+        design_head_m: product.design_head_m ?? null,
+        power_kw: product.power_kw ?? null,
+      },
+      materials: {
+        primary_material_code: product.primary_material_code ?? null,
+        material_name: product.material_name ?? null,
+        material_category: product.material_category ?? null,
+        density: product.density ?? null,
+        chemical_resistance: product.chemical_resistance ?? null,
+        temperature_limit: product.temperature_limit ?? null,
+      },
+      dimensions: specificationRows.dimensions,
+      electrical: specificationRows.electrical,
+      hydraulic: specificationRows.hydraulic,
+      bill_of_materials: boms.rows,
+      vendors: vendors.rows,
+      linked_context: sourceSnapshot.linked_context,
+      notes: product.notes ?? null,
+    },
+    unavailable_fields: unavailableFields,
+  };
+
+  return { canonicalId, product, capturedAt, sourceSnapshot, content };
+};
 
 // PRODUCT FAMILIES
 router.get('/product-families', async (req: AuthRequest, res: Response) => {
@@ -271,6 +473,169 @@ router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
   const documents = await query(`SELECT d.*, u.first_name || ' ' || u.last_name as created_by_name FROM documents d LEFT JOIN users u ON d.created_by=u.id WHERE d.product_id=$1 ORDER BY d.document_type, d.document_code`, [result.rows[0].id]);
   res.json({ ...result.rows[0], variants: variants.rows, boms: boms.rows, vendors: vendors.rows, projects: projectUsage.rows, documents: documents.rows });
 });
+
+// Generated TDS documents use the normal document lifecycle. Each revision
+// carries its own source snapshot so frozen review evidence is never rewritten.
+router.post(
+  '/product-masters/:id/generate-tds',
+  authenticate,
+  requireRole('admin', 'engineer'),
+  requireModuleManage('pim'),
+  requireModuleManage('documents'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const connect = (pool as any)?.connect;
+  const client: DbClient = typeof connect === 'function'
+    ? await connect.call(pool)
+    : { query };
+  try {
+    await client.query('BEGIN');
+    const { canonicalId, product, capturedAt, sourceSnapshot, content } =
+      await readPimTdsSource(client, String(req.params.id));
+    const existingDocument = await client.query(
+      `SELECT * FROM documents
+       WHERE product_id=$1 AND generated_source='pim_tds'
+       FOR UPDATE`,
+      [canonicalId],
+    );
+    let document: any;
+    let revision: any;
+    let action: 'created' | 'updated' | 'revision_created';
+
+    if (!existingDocument.rows[0]) {
+      const baseDocumentCode = `${product.product_code}-TDS`;
+      const usedCodesResult = await client.query(
+        'SELECT document_code FROM documents WHERE document_code LIKE $1',
+        [`${baseDocumentCode}%`],
+      );
+      const usedCodes = new Set(usedCodesResult.rows.map(row => row.document_code));
+      let documentCode = baseDocumentCode;
+      if (usedCodes.has(documentCode)) {
+        documentCode = `${baseDocumentCode}-PIM`;
+        let suffix = 2;
+        while (usedCodes.has(documentCode)) {
+          documentCode = `${baseDocumentCode}-PIM-${suffix}`;
+          suffix += 1;
+        }
+      }
+      const documentResult = await client.query(
+        `INSERT INTO documents
+           (document_code, document_title, document_type, discipline, product_id,
+            current_revision, status, owner, notes, generated_source, created_by)
+         VALUES ($1,$2,'Technical Data Sheet',$3,$4,'A','Draft',$5,$6,'pim_tds',$7)
+         RETURNING *`,
+        [
+          documentCode,
+          `${product.product_name} Technical Data Sheet`,
+          product.product_category || 'General',
+          canonicalId,
+          product.manufacturer || 'PIM Product Master',
+          'Generated from the current Product Master data',
+          req.user!.id,
+        ],
+      );
+      document = documentResult.rows[0];
+      const revisionResult = await client.query(
+        `INSERT INTO document_revisions
+           (document_id, revision_code, revision_purpose, status, issued_by,
+            content, source_snapshot, generated_at, created_by, generated_source)
+         VALUES ($1,'A','Generated from PIM Product Master','Draft',$2,$3,$4,$5,$2,'pim_tds')
+         RETURNING *`,
+        [document.id, req.user!.id, content, sourceSnapshot, capturedAt],
+      );
+      revision = revisionResult.rows[0];
+      action = 'created';
+      await client.query(
+        `INSERT INTO lifecycle_transitions (entity_type, entity_id, to_state, actor_id, comment)
+         VALUES ('document',$1,'Draft',$2,$3)`,
+        [document.id, req.user!.id, 'Generated TDS from Product Master'],
+      );
+    } else {
+      document = existingDocument.rows[0];
+      const previousDocumentStatus = document.status;
+      const revisionsResult = await client.query(
+        `SELECT * FROM document_revisions
+         WHERE document_id=$1 ORDER BY created_at DESC`,
+        [document.id],
+      );
+      const revisions = revisionsResult.rows;
+      const latest = revisions[0];
+      if (latest && isEditableDocumentRevision(latest.status)) {
+        const revisionResult = await client.query(
+          `UPDATE document_revisions
+           SET revision_purpose='Regenerated from current PIM Product Master',
+               status='Draft', content=$1, source_snapshot=$2, generated_at=$3
+           WHERE id=$4
+           RETURNING *`,
+          [content, sourceSnapshot, capturedAt, latest.id],
+        );
+        revision = revisionResult.rows[0];
+        action = 'updated';
+      } else {
+        const revisionCode = nextRevisionCode(revisions.map(row => row.revision_code));
+        const revisionResult = await client.query(
+          `INSERT INTO document_revisions
+             (document_id, revision_code, revision_purpose, status, issued_by,
+               content, source_snapshot, generated_at, created_by, generated_source)
+           VALUES ($1,$2,'Generated from updated PIM Product Master','Draft',$3,$4,$5,$6,$3,'pim_tds')
+           RETURNING *`,
+          [document.id, revisionCode, req.user!.id, content, sourceSnapshot, capturedAt],
+        );
+        revision = revisionResult.rows[0];
+        action = 'revision_created';
+      }
+      const updatedDocument = await client.query(
+        `UPDATE documents SET current_revision=$1, status='Draft', updated_at=NOW()
+         WHERE id=$2 RETURNING *`,
+        [revision.revision_code, document.id],
+      );
+      document = updatedDocument.rows[0] || { ...document, current_revision: revision.revision_code, status: 'Draft' };
+      await client.query(
+        `INSERT INTO lifecycle_transitions (entity_type, entity_id, from_state, to_state, actor_id, comment)
+         VALUES ('document',$1,$2,'Draft',$3,$4)`,
+        [document.id, previousDocumentStatus, req.user!.id, 'TDS regenerated from Product Master'],
+      );
+    }
+
+    await client.query(
+      `INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details)
+       VALUES ('document',$1,'GENERATE_TDS',$2,$3)`,
+      [document.id, req.user!.id, {
+        summary: `${action === 'created' ? 'Generated' : 'Regenerated'} TDS from Product Master`,
+        source_product_id: canonicalId,
+        source_product_code: product.product_code,
+        revision_code: revision.revision_code,
+        generation_action: action,
+      }],
+    );
+    await client.query('COMMIT');
+    const unavailableFields = Array.isArray((content as any).unavailable_fields)
+      ? (content as any).unavailable_fields
+      : [];
+    res.status(action === 'created' ? 201 : 200).json({
+      document,
+      revision,
+      generation: {
+        action,
+        generated_at: capturedAt,
+        source_product_id: canonicalId,
+        warnings: unavailableFields.length >= 8
+          ? [`Product data is sparse; ${unavailableFields.length} TDS fields are marked unavailable.`]
+          : [],
+      },
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if ((error as any)?.code === '23505') {
+      (error as any).status = 409;
+      (error as any).code = 'TDS_CONFLICT';
+      (error as any).message = 'A document conflict prevented TDS generation. Refresh the product and try again.';
+    }
+    next(error);
+  } finally {
+    client.release?.();
+  }
+  },
+);
 
 router.post('/product-masters/bulk-import', authenticate, async (req: AuthRequest, res: Response) => {
   const { rows } = req.body as { rows: Array<{ product_code: string; product_name: string; application_type?: string; primary_material_code?: string; family_code?: string; standard_status?: string; dn_size?: string; pressure_rating?: string; notes?: string }> };

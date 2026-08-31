@@ -177,7 +177,16 @@ export default function DocumentsList() {
 
   const columns: Column<Document>[] = [
     { key: 'document_code', header: 'Code', render: r => <EntityCode code={r.document_code} /> },
-    { key: 'document_title', header: 'Title', render: r => <span className="font-medium">{r.document_title}</span> },
+    { key: 'document_title', header: 'Title', render: r => (
+      <div className="flex items-center gap-2">
+        <span className="font-medium">{r.document_title}</span>
+        {(r as any).generated_source === 'pim_tds' && (
+          <span className="text-[10px] uppercase tracking-wide font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+            Generated PIM TDS
+          </span>
+        )}
+      </div>
+    ) },
     { key: 'document_type', header: 'Type' },
     { key: 'discipline', header: 'Discipline' },
     { key: 'project_codes' as any, header: 'Projects', render: r => {

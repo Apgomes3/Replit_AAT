@@ -37,6 +37,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.versionSnapshotTestUtils = exports.thermalCorrelationTestUtils = exports.thermalCalculationTestUtils = void 0;
+exports.isCurrentPumpSelectionReady = isCurrentPumpSelectionReady;
+exports.loadPumpSelections = loadPumpSelections;
 exports.loadFrictionLossPackages = loadFrictionLossPackages;
 exports.loadReleaseContext = loadReleaseContext;
 const express_1 = require("express");
@@ -51,10 +53,29 @@ const thermalCalculations_1 = require("../lib/thermalCalculations");
 const speciesAllocations_1 = require("../lib/speciesAllocations");
 const pumpSelections_1 = require("../lib/pumpSelections");
 const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
+const lssSystems_1 = require("../lib/lssSystems");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
-const isLifeSupportSystem = (system) => String(system?.system_type || '').trim().toLowerCase() === 'life support';
 const routeParam = (value) => Array.isArray(value) ? value[0] : value;
+function isCurrentPumpSelectionReady(selection) {
+    return !!selection &&
+        !!selection.project_equipment_item_id &&
+        !!selection.selected_pump &&
+        selection.freshness === 'fresh' &&
+        selection.status === 'ready' &&
+        selection.calculation_version === pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION;
+}
+function pumpSelectionPrerequisiteReasons(selection) {
+    if (!selection) {
+        return ['No pump selection is saved for this Flow Route circuit. Open Pump Selection and calculate the circuit pump first.'];
+    }
+    if (isCurrentPumpSelectionReady(selection))
+        return [];
+    return [
+        ...(selection.reasons || []),
+        'Complete and recalculate Pump Selection for this Flow Route circuit before calculating friction loss.',
+    ].filter((reason, index, reasons) => reasons.indexOf(reason) === index);
+}
 async function attachSystemSideStreams(runner, systems) {
     if (!systems.length)
         return systems;
@@ -125,9 +146,32 @@ async function loadPumpSelections(runner, systems) {
     });
 }
 async function loadFrictionLossPackages(runner, designBookId, systems) {
-    const lifeSupportSystems = systems.filter(isLifeSupportSystem);
+    const lifeSupportSystems = systems.filter(lssSystems_1.isLifeSupportSystem);
     if (!lifeSupportSystems.length)
         return [];
+    const pumpSelectionPackages = await loadPumpSelections(runner, lifeSupportSystems);
+    const eligibleCircuitPumps = (await runner(`SELECT sps.system_id, sps.circuit_key,
+            pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.description,
+            pm.id AS product_master_id, pm.product_code, pm.product_name,
+            pm.manufacturer, pm.model
+     FROM system_pump_selections sps
+     JOIN project_equipment_items pei
+       ON pei.id=sps.project_equipment_item_id AND pei.system_id=sps.system_id
+     JOIN systems current_system
+       ON current_system.id=sps.system_id AND current_system.project_id=pei.project_id
+     JOIN product_masters pm ON pm.id=pei.product_master_id
+     LEFT JOIN product_families pf ON pf.id=pm.product_family_id
+     WHERE sps.system_id = ANY($1::uuid[])
+       AND (pm.status IS NULL OR pm.status='Active')
+       AND (
+         UPPER(COALESCE(pm.product_category,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR UPPER(COALESCE(pf.category_code,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR UPPER(COALESCE(pf.product_family_code,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR ((pm.product_category IS NULL OR BTRIM(pm.product_category)='')
+             AND (pf.category_code IS NULL OR BTRIM(pf.category_code)='')
+             AND (UPPER(COALESCE(pm.application_type,'')) LIKE '%PUMP%'
+                  OR UPPER(pm.product_name) LIKE '%PUMP%'))
+       )`, [lifeSupportSystems.map(system => system.id)])).rows;
     const savedRows = (await runner(`SELECT c.*, sps.project_equipment_item_id AS current_circuit_pump_id,
             pei.equip_code AS current_equip_code, pei.description AS current_pump_description,
             pm.id AS current_pump_product_master_id,
@@ -153,6 +197,8 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
         : [];
     return lifeSupportSystems.map(system => {
         const rows = savedRows.filter(row => row.system_id === system.id);
+        const pumpSelections = pumpSelectionPackages
+            .find(entry => entry.system_id === system.id)?.items || [];
         const circuitMap = new Map((0, pumpSelections_1.pumpCircuits)(system, system.side_streams || [])
             .map(circuit => [circuit.circuit_key, circuit]));
         rows.forEach(row => {
@@ -173,32 +219,49 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
             system,
             items: [...circuitMap.values()].map(circuit => {
                 const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+                const pumpSelection = pumpSelections.find(selection => selection.circuit_key === circuit.circuit_key) || null;
+                const eligiblePump = eligibleCircuitPumps.find(candidate => candidate.system_id === system.id &&
+                    candidate.circuit_key === circuit.circuit_key &&
+                    candidate.project_equipment_item_id === pumpSelection?.project_equipment_item_id) || null;
+                const currentPump = eligiblePump || pumpSelection?.selected_pump || null;
+                const currentPumpId = pumpSelection?.project_equipment_item_id || null;
+                const pumpReady = isCurrentPumpSelectionReady(pumpSelection) && !!eligiblePump;
+                const pumpReasons = !pumpSelection
+                    ? pumpSelectionPrerequisiteReasons(pumpSelection)
+                    : !eligiblePump
+                        ? ['The selected circuit pump is no longer an active eligible pump assigned to this LSS system. Open Pump Selection and select a current pump.']
+                        : pumpSelectionPrerequisiteReasons(pumpSelection);
+                const pumpStatus = pumpReady
+                    ? pumpSelection.status
+                    : pumpSelection?.status === 'incompatible' ? 'incompatible' : 'stale';
+                const pumpFreshness = pumpReady ? pumpSelection.freshness : 'stale';
                 if (!row) {
-                    const preview = (0, frictionLossCalculations_1.calculateFrictionLoss)({ flow_m3h: circuit.flow_m3h, components: [] });
+                    const preview = (0, frictionLossCalculations_1.calculateFrictionLoss)({
+                        flow_m3h: circuit.flow_m3h,
+                        selected_pump: currentPump,
+                        components: [],
+                    });
+                    const reasons = [...new Set([
+                            ...pumpReasons,
+                            ...preview.reasons.filter(reason => reason !== 'Select a pump assigned to this LSS system.'),
+                        ])];
                     return {
                         ...circuit,
                         status: 'incomplete',
                         freshness: 'unsaved',
-                        reasons: preview.reasons,
+                        reasons,
                         calculation_version: frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION,
-                        result: preview,
+                        result: { ...preview, reasons },
                         components: [],
-                        selected_pump: null,
+                        project_equipment_item_id: currentPumpId,
+                        selected_pump: currentPump,
+                        pump_selection: pumpSelection,
+                        pump_selection_ready: pumpReady,
+                        pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
+                        pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
+                        pump_selection_reasons: pumpReasons,
                     };
                 }
-                const currentPump = row.project_equipment_item_id && row.current_equip_code
-                    ? {
-                        id: row.project_equipment_item_id,
-                        project_equipment_item_id: row.project_equipment_item_id,
-                        equip_code: row.current_equip_code,
-                        description: row.current_pump_description,
-                        product_master_id: row.current_pump_product_master_id,
-                        product_code: row.current_pump_product_code,
-                        product_name: row.current_pump_product_name,
-                        manufacturer: row.current_pump_manufacturer,
-                        model: row.current_pump_model,
-                    }
-                    : null;
                 const currentComponents = components.filter(component => component.calculation_id === row.id)
                     .map(component => {
                     const currentSnapshot = component.current_piping_code && component.current_system_id === system.id
@@ -236,14 +299,19 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
                 const stale = circuit.circuit_kind === 'orphaned' ||
                     row.calculation_version !== frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION ||
                     row.source_fingerprint !== currentFingerprint ||
-                    !currentPump ||
+                    !pumpReady ||
                     row.current_circuit_pump_id !== row.project_equipment_item_id ||
+                    currentPumpId !== row.project_equipment_item_id ||
                     currentComponents.some(component => !component.reference_valid);
                 const staleReasons = [
                     ...(circuit.circuit_kind === 'orphaned' ? ['This saved calculation references a Flow Route circuit that no longer exists.'] : []),
                     ...(row.calculation_version !== frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION ? [`Friction calculation version ${row.calculation_version} is outdated; recalculate using ${frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION}.`] : []),
-                    ...(!currentPump ? ['The selected pump is no longer assigned to this LSS system.'] : []),
+                    ...pumpReasons,
                     ...(row.current_circuit_pump_id !== row.project_equipment_item_id
+                        ? ['The pump selected for this Flow Route circuit changed after the friction calculation was saved.']
+                        : []),
+                    ...(currentPumpId !== row.project_equipment_item_id &&
+                        currentPumpId === row.current_circuit_pump_id
                         ? ['The pump selected for this Flow Route circuit changed after the friction calculation was saved.']
                         : []),
                     ...(currentComponents.some(component => !component.reference_valid) ? ['One or more assigned pipe or fitting items are no longer available for this LSS system.'] : []),
@@ -254,8 +322,13 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
                 return {
                     ...circuit,
                     calculation_id: row.id,
-                    project_equipment_item_id: row.project_equipment_item_id,
-                    selected_pump: row.source_snapshot?.selected_pump || currentPump,
+                    project_equipment_item_id: currentPumpId,
+                    selected_pump: currentPump,
+                    pump_selection: pumpSelection,
+                    pump_selection_ready: pumpReady,
+                    pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
+                    pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
+                    pump_selection_reasons: pumpReasons,
                     components: row.result_snapshot?.components || currentComponents,
                     source_fingerprint: row.source_fingerprint,
                     current_source_fingerprint: currentFingerprint,
@@ -836,7 +909,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
             design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
         };
     });
-    const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations);
+    const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(lssSystems_1.isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations);
     const pumpSelections = await loadPumpSelections(runner, currentSystems);
     const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
     const liveContext = {
@@ -1652,7 +1725,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
             design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
         };
     });
-    const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations);
+    const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(lssSystems_1.isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations);
     const pumpSelections = await loadPumpSelections(index_1.query, currentSystems);
     const frictionLossCalculations = await loadFrictionLossPackages(index_1.query, routeParam(req.params.id), currentSystems);
     const livePackage = {
@@ -1693,7 +1766,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
             : {
                 ...livePackage,
                 thermal_calculations: currentSystems
-                    .filter(isLifeSupportSystem)
+                    .filter(lssSystems_1.isLifeSupportSystem)
                     .map(system => thermalCalculations.find(item => item.system_id === system.id))
                     .filter(Boolean),
             };

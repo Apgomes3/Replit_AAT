@@ -404,6 +404,29 @@ CREATE TABLE IF NOT EXISTS document_revisions (
   created_by UUID REFERENCES users(id)
 );
 
+-- Generated document provenance and editable review content.  The source
+-- snapshot belongs to the revision so approved/released evidence never
+-- changes when a product is regenerated.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS generated_source VARCHAR(50);
+ALTER TABLE document_revisions ADD COLUMN IF NOT EXISTS content JSONB;
+ALTER TABLE document_revisions ADD COLUMN IF NOT EXISTS source_snapshot JSONB;
+ALTER TABLE document_revisions ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ;
+ALTER TABLE document_revisions ADD COLUMN IF NOT EXISTS generated_source VARCHAR(50);
+UPDATE document_revisions dr
+SET generated_source=d.generated_source
+FROM documents d
+WHERE d.id=dr.document_id
+  AND d.generated_source IS NOT NULL
+  AND dr.generated_source IS DISTINCT FROM d.generated_source;
+DROP INDEX IF EXISTS idx_generated_pim_tds_product;
+CREATE UNIQUE INDEX idx_generated_pim_tds_product
+  ON documents(product_id)
+  WHERE generated_source='pim_tds' AND product_id IS NOT NULL;
+DROP INDEX IF EXISTS idx_document_revision_code_unique;
+CREATE UNIQUE INDEX idx_document_revision_code_unique
+  ON document_revisions(document_id, UPPER(revision_code))
+  WHERE generated_source='pim_tds';
+
 CREATE TABLE IF NOT EXISTS approvals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id UUID REFERENCES documents(id),

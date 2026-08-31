@@ -284,6 +284,10 @@ export interface Document {
   current_revision: string;
   status: string;
   owner?: string;
+  product_id?: string;
+  product_code?: string;
+  product_name?: string;
+  generated_source?: 'pim_tds' | string;
   revisions?: DocumentRevision[];
   approvals?: Approval[];
 }
@@ -300,6 +304,10 @@ export interface DocumentRevision {
   file_path?: string;
   file_name?: string;
   file_size?: number;
+  content?: Record<string, unknown>;
+  source_snapshot?: Record<string, unknown>;
+  generated_at?: string;
+  generated_source?: 'pim_tds' | string;
   created_at: string;
 }
 
