@@ -105,6 +105,8 @@ function normalizeBiologicalMediaInput(input) {
             ph: finite(first(water.ph, water.pH, input?.ph)),
             salinity_ppt: finite(first(water.salinity_ppt, input?.salinity_ppt)),
             tan_target_mg_n_l: finite(first(water.tan_target_mg_n_l, water.max_tan_mg_n_l, input?.tan_target_mg_n_l, input?.max_tan_mg_n_l)),
+            max_tan_source: upper(first(water.max_tan_source, input?.max_tan_source)),
+            max_tan_profile_revision_id: first(water.max_tan_profile_revision_id, input?.max_tan_profile_revision_id) || null,
             do_in_mg_l: finite(first(water.do_in_mg_l, input?.do_in_mg_l)),
             do_out_min_mg_l: finite(first(water.do_out_min_mg_l, input?.do_out_min_mg_l)),
             alkalinity_mg_l_caco3: finite(first(water.alkalinity_mg_l_caco3, input?.alkalinity_mg_l_caco3)),

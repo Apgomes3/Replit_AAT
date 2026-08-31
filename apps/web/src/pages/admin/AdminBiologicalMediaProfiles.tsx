@@ -7,7 +7,7 @@ import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
 import toast from 'react-hot-toast';
 
-type ProfileKind = 'media' | 'tan';
+type ProfileKind = 'media' | 'tan' | 'max-tan';
 
 const mediaEmpty: any = {
   profile_code: '', profile_name: '', water_types: 'Freshwater', reactor_types: '',
@@ -29,6 +29,9 @@ const tanEmpty: any = {
   scope_type: '', scope_unit: '', scope_min: '', scope_max: '',
   evidence_reference: '', notes: '',
 };
+const maxTanEmpty: any = {
+  profile_code: '', profile_name: '', max_tan_mg_n_l: '', engineering_note: '',
+};
 const inputCls = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40';
 
 function n(value: string) {
@@ -40,7 +43,7 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
   return (
     <section className="rounded-xl border border-blue-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3">
-        <h2 className="text-sm font-semibold text-stone-800">{revising ? 'Revise' : 'New'} {kind === 'media' ? 'media' : 'TAN generation'} profile revision</h2>
+        <h2 className="text-sm font-semibold text-stone-800">{revising ? 'Revise' : 'New'} {kind === 'media' ? 'media' : kind === 'tan' ? 'TAN generation' : 'Maximum TAN'} profile revision</h2>
         <button type="button" aria-label="Close profile form" onClick={onCancel} className="text-stone-400 hover:text-stone-700"><X className="h-4 w-4" /></button>
       </div>
       <div className="grid gap-4 p-5 md:grid-cols-3">
@@ -107,7 +110,7 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
           {form.is_provisional && <label className="text-xs font-medium text-stone-500 md:col-span-3">Explicit provisional label *
             <input className={inputCls} value={form.provisional_label} onChange={e => set('provisional_label', e.target.value)} placeholder="State why this data is provisional" />
           </label>}
-        </> : <>
+        </> : kind === 'tan' ? <>
           <label className="text-xs font-medium text-stone-500">Coefficient *
             <input type="number" min="0" className={inputCls} value={form.coefficient} onChange={e => set('coefficient', e.target.value)} />
           </label>
@@ -130,10 +133,18 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
             <textarea rows={2} className={inputCls} value={form.recommended_application} onChange={e => set('recommended_application', e.target.value)}
               placeholder="Describe when designers should choose this controlled reference" />
           </label>
+        </> : <>
+          <label className="text-xs font-medium text-stone-500">Maximum TAN mg N/L *
+            <input type="number" min="0" step="any" className={inputCls} value={form.max_tan_mg_n_l} onChange={e => set('max_tan_mg_n_l', e.target.value)} />
+          </label>
+          <label className="text-xs font-medium text-stone-500 md:col-span-3">Description / engineering note
+            <textarea rows={3} className={inputCls} value={form.engineering_note} onChange={e => set('engineering_note', e.target.value)}
+              placeholder="State the intended design basis, scope, and limitations." />
+          </label>
         </>}
-        <label className="text-xs font-medium text-stone-500 md:col-span-3">Evidence reference <span className="font-normal">(required for approval)</span>
+        {kind !== 'max-tan' && <label className="text-xs font-medium text-stone-500 md:col-span-3">Evidence reference <span className="font-normal">(required for approval)</span>
           <input className={inputCls} value={form.evidence_reference} onChange={e => set('evidence_reference', e.target.value)} placeholder="Controlled document, study, or engineering reference" />
-        </label>
+        </label>}
         <label className="text-xs font-medium text-stone-500 md:col-span-3">Revision notes
           <textarea rows={2} className={inputCls} value={form.notes} onChange={e => set('notes', e.target.value)} />
         </label>
@@ -146,7 +157,7 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising }
   );
 }
 
-function ProfilesTable({ id, title, profiles, kind, onStatus, onRevise, focused }: any) {
+function ProfilesTable({ id, title, profiles, kind, onStatus, onRevise, onDefault, focused }: any) {
   return (
     <section id={id} tabIndex={-1} className={`scroll-mt-6 rounded-xl border bg-white overflow-hidden outline-none ${
       focused ? 'border-blue-400 ring-2 ring-blue-100' : 'border-stone-200'
@@ -155,7 +166,7 @@ function ProfilesTable({ id, title, profiles, kind, onStatus, onRevise, focused 
       {profiles.length === 0 ? <p className="p-6 text-sm text-stone-400">No controlled revisions have been created.</p> : (
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-stone-50 text-left text-[10px] uppercase tracking-wide text-stone-400">
-            <tr><th className="px-4 py-2">Profile</th><th className="px-4 py-2">Revision</th><th className="px-4 py-2">Status</th>{kind === 'tan' && <th className="px-4 py-2">Recommended application</th>}<th className="px-4 py-2">Evidence readiness</th><th className="px-4 py-2 text-right">Actions</th></tr>
+            <tr><th className="px-4 py-2">Profile</th><th className="px-4 py-2">Revision</th><th className="px-4 py-2">Status</th>{kind === 'tan' && <th className="px-4 py-2">Recommended application</th>}{kind === 'max-tan' && <th className="px-4 py-2">Maximum TAN</th>}<th className="px-4 py-2">Engineering basis</th><th className="px-4 py-2 text-right">Actions</th></tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
             {profiles.map((profile: any) => <tr key={profile.id}>
@@ -163,15 +174,19 @@ function ProfilesTable({ id, title, profiles, kind, onStatus, onRevise, focused 
               <td className="px-4 py-3 font-mono">r{profile.revision}</td>
               <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${profile.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : profile.status === 'Retired' ? 'bg-stone-100 text-stone-500' : 'bg-amber-100 text-amber-700'}`}>{profile.status}</span></td>
               {kind === 'tan' && <td className="max-w-sm px-4 py-3 text-xs text-stone-500">{profile.recommended_application || 'Not specified'}</td>}
+              {kind === 'max-tan' && <td className="px-4 py-3 font-mono text-xs">{profile.max_tan_mg_n_l} mg N/L{profile.is_default && <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 font-sans font-semibold text-blue-700">Default</span>}</td>}
               <td className="max-w-xs px-4 py-3 text-xs text-stone-500">
-                {profile.evidence_reference
-                  ? profile.evidence_reference
-                  : <span className="font-medium text-amber-700">Review required before approval</span>}
+                {kind === 'max-tan'
+                  ? (profile.engineering_note || 'No note recorded')
+                  : profile.evidence_reference
+                    ? profile.evidence_reference
+                    : <span className="font-medium text-amber-700">Review required before approval</span>}
               </td>
               <td className="px-4 py-3"><div className="flex justify-end gap-2">
                 {profile.status === 'Draft' && <button onClick={() => onStatus(kind, profile, 'In Review')} className="text-xs font-semibold text-blue-600 hover:underline">Send to review</button>}
                 {['Draft', 'In Review'].includes(profile.status) && <button onClick={() => onStatus(kind, profile, 'Approved')} className="text-xs font-semibold text-emerald-700 hover:underline">Approve</button>}
                 {profile.status === 'Approved' && <button onClick={() => onStatus(kind, profile, 'Retired')} className="text-xs font-semibold text-stone-500 hover:underline">Retire</button>}
+                {kind === 'max-tan' && profile.status === 'Approved' && !profile.is_default && <button onClick={() => onDefault(profile)} className="text-xs font-semibold text-blue-700 hover:underline">Make default</button>}
                 <button onClick={() => onRevise(kind, profile)} className="inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:underline"><CopyPlus className="h-3 w-3" />New revision</button>
               </div></td>
             </tr>)}
@@ -186,10 +201,12 @@ export default function AdminBiologicalMediaProfiles() {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedFocus = searchParams.get('focus');
-  const focusedKind: ProfileKind | null = requestedFocus === 'tan' || requestedFocus === 'media' ? requestedFocus : null;
+  const focusedKind: ProfileKind | null = requestedFocus === 'tan' || requestedFocus === 'media' || requestedFocus === 'max-tan'
+    ? requestedFocus : null;
   const [formKind, setFormKind] = useState<ProfileKind | null>(null);
   const [mediaForm, setMediaForm] = useState(mediaEmpty);
   const [tanForm, setTanForm] = useState(tanEmpty);
+  const [maxTanForm, setMaxTanForm] = useState(maxTanEmpty);
   const [revisionSource, setRevisionSource] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -206,12 +223,17 @@ export default function AdminBiologicalMediaProfiles() {
     queryKey: ['tan-generation-profiles', 'admin'],
     queryFn: () => api.get('/biological-media/tan-profiles', { params: { include_retired: true } }).then(r => r.data),
   });
+  const { data: maxTanData = { items: [] } } = useQuery({
+    queryKey: ['maximum-tan-profiles', 'admin'],
+    queryFn: () => api.get('/biological-media/max-tan-profiles', { params: { include_retired: true } }).then(r => r.data),
+  });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['biological-media-profiles'] });
     qc.invalidateQueries({ queryKey: ['tan-generation-profiles'] });
+    qc.invalidateQueries({ queryKey: ['maximum-tan-profiles'] });
   };
   const payloadFor = (kind: ProfileKind) => {
-    const form = kind === 'media' ? mediaForm : tanForm;
+    const form = kind === 'media' ? mediaForm : kind === 'tan' ? tanForm : maxTanForm;
     if (kind === 'media') return {
       ...form,
       water_types: form.water_types.split(',').map((value: string) => value.trim()).filter(Boolean),
@@ -223,19 +245,21 @@ export default function AdminBiologicalMediaProfiles() {
         'operating_min_tan_mg_n_l', 'operating_max_tan_mg_n_l', 'operating_min_do_mg_l',
         'operating_max_do_mg_l', 'operating_min_flow_m3_h', 'operating_max_flow_m3_h'].map(key => [key, n(form[key])])),
     };
-    return { ...form, coefficient: n(form.coefficient), scope_min: n(form.scope_min), scope_max: n(form.scope_max) };
+    if (kind === 'tan') return { ...form, coefficient: n(form.coefficient), scope_min: n(form.scope_min), scope_max: n(form.scope_max) };
+    return { ...form, max_tan_mg_n_l: n(form.max_tan_mg_n_l) };
   };
   const create = async () => {
     if (!formKind) return;
     setSaving(true);
     try {
-      const path = `/admin/biological-media/${formKind === 'media' ? 'media-profiles' : 'tan-profiles'}`;
+      const path = `/admin/biological-media/${formKind === 'media' ? 'media-profiles' : formKind === 'tan' ? 'tan-profiles' : 'max-tan-profiles'}`;
       await api.post(revisionSource ? `${path}/${revisionSource.id}/revisions` : path, payloadFor(formKind));
       toast.success('Draft profile revision created');
       setFormKind(null);
       setRevisionSource(null);
       setMediaForm(mediaEmpty);
       setTanForm(tanEmpty);
+      setMaxTanForm(maxTanEmpty);
       refresh();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Profile revision could not be created');
@@ -245,7 +269,7 @@ export default function AdminBiologicalMediaProfiles() {
   };
   const changeStatus = async (kind: ProfileKind, profile: any, status: string) => {
     try {
-      await api.patch(`/admin/biological-media/${kind === 'media' ? 'media-profiles' : 'tan-profiles'}/${profile.id}/status`, { status });
+      await api.patch(`/admin/biological-media/${kind === 'media' ? 'media-profiles' : kind === 'tan' ? 'tan-profiles' : 'max-tan-profiles'}/${profile.id}/status`, { status });
       toast.success(`Revision marked ${status}`);
       refresh();
     } catch (error: any) {
@@ -283,7 +307,7 @@ export default function AdminBiologicalMediaProfiles() {
         operating_min_flow_m3_h: profile.operating_min_flow_m3_h ?? '',
         operating_max_flow_m3_h: profile.operating_max_flow_m3_h ?? '',
       });
-    } else {
+    } else if (kind === 'tan') {
       setTanForm({
         ...tanEmpty,
         ...profile,
@@ -291,17 +315,32 @@ export default function AdminBiologicalMediaProfiles() {
         scope_min: profile.scope_min ?? '',
         scope_max: profile.scope_max ?? '',
       });
+    } else {
+      setMaxTanForm({
+        ...maxTanEmpty,
+        ...profile,
+        max_tan_mg_n_l: profile.max_tan_mg_n_l ?? '',
+      });
+    }
+  };
+  const makeDefault = async (profile: any) => {
+    try {
+      await api.patch(`/admin/biological-media/max-tan-profiles/${profile.id}/default`);
+      toast.success('Default changed for future or incomplete cases only');
+      refresh();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Default profile could not be changed');
     }
   };
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <PageHeader title="Biological Media Profiles" subtitle="Controlled media and TAN reference revisions. Approval freezes engineering evidence and operating metadata."
-        actions={<div className="flex gap-2"><Button onClick={() => setFormKind('tan')}><Plus className="h-3.5 w-3.5" />TAN profile</Button><Button variant="primary" onClick={() => setFormKind('media')}><Plus className="h-3.5 w-3.5" />Media profile</Button></div>} />
+        actions={<div className="flex flex-wrap gap-2"><Button onClick={() => setFormKind('max-tan')}><Plus className="h-3.5 w-3.5" />Maximum TAN profile</Button><Button onClick={() => setFormKind('tan')}><Plus className="h-3.5 w-3.5" />TAN-generation profile</Button><Button variant="primary" onClick={() => setFormKind('media')}><Plus className="h-3.5 w-3.5" />Media profile</Button></div>} />
       <div className="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-        <ShieldCheck className="h-5 w-5 shrink-0" /><p>Approved revisions cannot be edited. Retire a revision to prevent future selection, or create a new draft revision for later changes. Overall-VTR media approval requires at least one approved TAN profile.</p>
+        <ShieldCheck className="h-5 w-5 shrink-0" /><p>Approved engineering values cannot be edited. Maximum TAN defaults are starting assumptions for future or incomplete cases only; changing the default never rewrites saved cases or immutable runs.</p>
       </div>
       <div className="flex flex-wrap gap-2" aria-label="Profile type focus">
-        {([['tan', 'TAN profiles'], ['media', 'Media profiles']] as const).map(([kind, label]) => (
+        {([['max-tan', 'Maximum TAN profiles'], ['tan', 'TAN-generation profiles'], ['media', 'Media profiles']] as const).map(([kind, label]) => (
           <button key={kind} type="button" onClick={() => setSearchParams({ focus: kind })}
             className={`rounded-lg border px-3 py-2 text-xs font-semibold ${focusedKind === kind ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-stone-200 bg-white text-stone-600'}`}>
             {label}
@@ -309,9 +348,10 @@ export default function AdminBiologicalMediaProfiles() {
         ))}
         {focusedKind && <button type="button" onClick={() => setSearchParams({})} className="px-3 py-2 text-xs font-semibold text-stone-500">Show both</button>}
       </div>
-      {formKind && <ProfileForm kind={formKind} form={formKind === 'media' ? mediaForm : tanForm}
-        setForm={formKind === 'media' ? setMediaForm : setTanForm} onSave={create}
+      {formKind && <ProfileForm kind={formKind} form={formKind === 'media' ? mediaForm : formKind === 'tan' ? tanForm : maxTanForm}
+        setForm={formKind === 'media' ? setMediaForm : formKind === 'tan' ? setTanForm : setMaxTanForm} onSave={create}
         onCancel={() => { setFormKind(null); setRevisionSource(null); }} saving={saving} revising={!!revisionSource} />}
+      {(!focusedKind || focusedKind === 'max-tan') && <ProfilesTable id="max-tan-profiles" title="Controlled Maximum TAN concentration profiles" profiles={maxTanData.items || []} kind="max-tan" focused={focusedKind === 'max-tan'} onStatus={changeStatus} onRevise={revise} onDefault={makeDefault} />}
       {(!focusedKind || focusedKind === 'tan') && <ProfilesTable id="tan-profiles" title="Controlled TAN generation profiles" profiles={tanData.items || []} kind="tan" focused={focusedKind === 'tan'} onStatus={changeStatus} onRevise={revise} />}
       {(!focusedKind || focusedKind === 'media') && <ProfilesTable id="media-profiles" title="Controlled media profiles" profiles={mediaData.items || []} kind="media" focused={focusedKind === 'media'} onStatus={changeStatus} onRevise={revise} />}
       <div className="sr-only"><Activity />Biological media administration</div>

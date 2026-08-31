@@ -1476,6 +1476,41 @@ CREATE TABLE IF NOT EXISTS lss_tan_generation_profiles (
 CREATE INDEX IF NOT EXISTS idx_lss_tan_profiles_code
   ON lss_tan_generation_profiles(profile_code, revision DESC);
 
+CREATE TABLE IF NOT EXISTS lss_max_tan_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_code VARCHAR(80) NOT NULL,
+  profile_name VARCHAR(255) NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  max_tan_mg_n_l NUMERIC NOT NULL CHECK (max_tan_mg_n_l >= 0),
+  engineering_note TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'In Review', 'Approved', 'Retired')),
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  supersedes_id UUID REFERENCES lss_max_tan_profiles(id),
+  created_by UUID REFERENCES users(id),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  retired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(profile_code, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_lss_max_tan_profiles_code
+  ON lss_max_tan_profiles(profile_code, revision DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lss_max_tan_single_default
+  ON lss_max_tan_profiles(is_default) WHERE is_default = true;
+
+INSERT INTO lss_max_tan_profiles
+  (profile_code, profile_name, revision, max_tan_mg_n_l, engineering_note,
+   status, is_default, approved_at)
+SELECT
+  'PUBLIC_AQUARIUM', 'Public Aquarium', 1, 0.1,
+  'Initial design starting assumption for public-aquarium Biological Media cases. Confirm suitability for the species, life stage, water chemistry, and exposure basis.',
+  'Approved', true, NOW()
+WHERE NOT EXISTS (
+  SELECT 1 FROM lss_max_tan_profiles WHERE profile_code='PUBLIC_AQUARIUM' AND revision=1
+);
+
 CREATE TABLE IF NOT EXISTS lss_biological_media_cases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
@@ -1496,6 +1531,8 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_cases (
   ph NUMERIC,
   salinity_ppt NUMERIC,
   max_tan_mg_n_l NUMERIC,
+  max_tan_source VARCHAR(20) CHECK (max_tan_source IN ('CONTROLLED', 'CUSTOM')),
+  max_tan_profile_revision_id UUID REFERENCES lss_max_tan_profiles(id),
   do_in_mg_l NUMERIC,
   do_out_min_mg_l NUMERIC,
   alkalinity_mg_l_caco3 NUMERIC,
@@ -1560,6 +1597,7 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_runs (
   feeding_snapshot JSONB NOT NULL,
   media_profile_snapshot JSONB NOT NULL,
   tan_profile_snapshot JSONB NOT NULL,
+  max_tan_profile_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
   engine_version VARCHAR(80) NOT NULL,
   assumptions JSONB NOT NULL DEFAULT '[]'::jsonb,
   messages JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -1651,8 +1689,8 @@ BEGIN
   IF OLD.status = 'Approved' THEN
     IF TG_OP = 'DELETE'
        OR NEW.status NOT IN ('Approved', 'Retired')
-       OR (to_jsonb(OLD) - 'status' - 'updated_at' - 'retired_at'
-           IS DISTINCT FROM to_jsonb(NEW) - 'status' - 'updated_at' - 'retired_at') THEN
+       OR (to_jsonb(OLD) - 'status' - 'is_default' - 'updated_at' - 'retired_at'
+           IS DISTINCT FROM to_jsonb(NEW) - 'status' - 'is_default' - 'updated_at' - 'retired_at') THEN
       RAISE EXCEPTION 'Approved biological media profiles are immutable; create a new revision'
         USING ERRCODE = '55000';
     END IF;
@@ -1674,6 +1712,12 @@ DROP TRIGGER IF EXISTS guard_approved_lss_tan_profiles
   ON lss_tan_generation_profiles;
 CREATE TRIGGER guard_approved_lss_tan_profiles
 BEFORE UPDATE OR DELETE ON lss_tan_generation_profiles
+FOR EACH ROW EXECUTE FUNCTION prevent_approved_biological_media_mutation();
+
+DROP TRIGGER IF EXISTS guard_approved_lss_max_tan_profiles
+  ON lss_max_tan_profiles;
+CREATE TRIGGER guard_approved_lss_max_tan_profiles
+BEFORE UPDATE OR DELETE ON lss_max_tan_profiles
 FOR EACH ROW EXECUTE FUNCTION prevent_approved_biological_media_mutation();
 
 -- Additive Biological Media preview migration for existing databases.
@@ -1705,6 +1749,14 @@ ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS temperature_c NU
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS ph NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS salinity_ppt NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS max_tan_mg_n_l NUMERIC;
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS max_tan_source VARCHAR(20);
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS max_tan_profile_revision_id UUID REFERENCES lss_max_tan_profiles(id);
+UPDATE lss_biological_media_cases
+SET max_tan_source='CUSTOM'
+WHERE max_tan_mg_n_l IS NOT NULL AND max_tan_source IS NULL;
+ALTER TABLE lss_biological_media_cases DROP CONSTRAINT IF EXISTS lss_biological_media_cases_max_tan_source_check;
+ALTER TABLE lss_biological_media_cases ADD CONSTRAINT lss_biological_media_cases_max_tan_source_check
+  CHECK (max_tan_source IN ('CONTROLLED', 'CUSTOM'));
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS do_in_mg_l NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS do_out_min_mg_l NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS alkalinity_mg_l_caco3 NUMERIC;
@@ -1714,6 +1766,7 @@ ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS preview_result J
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS preview_input_snapshot JSONB;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS previewed_at TIMESTAMPTZ;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS preview_stale BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE lss_biological_media_runs ADD COLUMN IF NOT EXISTS max_tan_profile_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE lss_biological_media_cases ALTER COLUMN status TYPE VARCHAR(30);
 ALTER TABLE lss_biological_media_cases DROP CONSTRAINT IF EXISTS lss_biological_media_cases_status_check;
 ALTER TABLE lss_biological_media_cases ADD CONSTRAINT lss_biological_media_cases_status_check

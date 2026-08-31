@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import {
   compareBiologicalMediaRuns,
   isBiologicalMediaPreviewStale,
+  maximumTanRunError,
   renderBiologicalMediaRunSummary,
+  validateMaxTanProfile,
   validateMediaProfile,
   validateTanProfile,
 } from './biologicalMedia';
@@ -120,6 +122,57 @@ describe('Biological Media controlled profile validation', () => {
       evidence_reference: 'CONTROLLED-REF',
     })).toContain('Coefficient unit must be kg TAN-N/kg feed protein.');
   });
+
+  it('accepts zero and positive Maximum TAN profiles but rejects missing, negative, and non-finite values', () => {
+    expect(validateMaxTanProfile({
+      profile_code: 'ZERO_LIMIT',
+      profile_name: 'Zero limit',
+      max_tan_mg_n_l: 0,
+    })).toEqual([]);
+    expect(validateMaxTanProfile({
+      profile_code: 'PUBLIC_AQUARIUM',
+      profile_name: 'Public Aquarium',
+      max_tan_mg_n_l: 0.1,
+    })).toEqual([]);
+    expect(validateMaxTanProfile({
+      profile_code: '',
+      profile_name: '',
+      max_tan_mg_n_l: -0.1,
+    })).toEqual(expect.arrayContaining([
+      'Profile code is required.',
+      'Profile name is required.',
+      'Maximum TAN must be a finite, non-negative mg N/L value.',
+    ]));
+    expect(validateMaxTanProfile({
+      profile_code: 'BAD',
+      profile_name: 'Bad value',
+      max_tan_mg_n_l: 'Infinity',
+    })).toContain('Maximum TAN must be a finite, non-negative mg N/L value.');
+  });
+
+  it('allows valid Custom run values and blocks retired controlled profiles from new runs', () => {
+    expect(maximumTanRunError({
+      max_tan_source: 'CUSTOM',
+      max_tan_mg_n_l: 0.25,
+      max_tan_profile_revision_id: null,
+    })).toBeNull();
+    expect(maximumTanRunError({
+      max_tan_source: 'CONTROLLED',
+      max_tan_mg_n_l: 0.1,
+      max_tan_profile_revision_id: 'profile-1',
+    }, {
+      id: 'profile-1',
+      status: 'Approved',
+    })).toBeNull();
+    expect(maximumTanRunError({
+      max_tan_source: 'CONTROLLED',
+      max_tan_mg_n_l: 0.1,
+      max_tan_profile_revision_id: 'profile-1',
+    }, {
+      id: 'profile-1',
+      status: 'Retired',
+    })).toMatch(/no longer approved/i);
+  });
 });
 
 describe('Biological Media preview freshness', () => {
@@ -178,6 +231,13 @@ describe('Biological Media immutable run presentation', () => {
       revision: 2,
       evidence_reference: 'TAN-EVIDENCE-R2',
     },
+    max_tan_profile_snapshot: {
+      source: 'CONTROLLED',
+      profile_code: 'PUBLIC_AQUARIUM',
+      profile_name: 'Public Aquarium',
+      revision: 1,
+      max_tan_mg_n_l: 0.1,
+    },
     normalized_input_snapshot: { filter: { safety_factor: 1.2 } },
     result_snapshot: {
       biomass: { design_biomass_kg: 420 },
@@ -197,6 +257,8 @@ describe('Biological Media immutable run presentation', () => {
     expect(summary).toContain('Installed media: 1200 L');
     expect(summary).toContain('WARNING MEDIA_W01');
     expect(summary).toContain('Approval Engineer');
+    expect(summary).toContain('PUBLIC_AQUARIUM r1');
+    expect(summary).toContain('Maximum TAN concentration: 0.1 mg N/L');
   });
 
   it('compares frozen inputs, profile revisions, outputs, warnings, and approval state', () => {
@@ -206,6 +268,13 @@ describe('Biological Media immutable run presentation', () => {
       run_number: 4,
       status: 'Pending Review',
       media_profile_snapshot: { ...run.media_profile_snapshot, revision: 5 },
+      max_tan_profile_snapshot: {
+        source: 'CUSTOM',
+        profile_code: null,
+        profile_name: 'Custom',
+        revision: null,
+        max_tan_mg_n_l: 0.25,
+      },
       normalized_input_snapshot: { filter: { safety_factor: 1.4 } },
       result_snapshot: { ...run.result_snapshot, media: { required_media_l: 1300, installed_media_l: 1400 } },
       messages: [],
@@ -213,6 +282,10 @@ describe('Biological Media immutable run presentation', () => {
     expect(comparison.changes.inputs).toHaveLength(1);
     expect(comparison.changes.media_profile).toEqual(expect.arrayContaining([
       expect.objectContaining({ field: 'revision', before: 4, after: 5 }),
+    ]));
+    expect(comparison.changes.max_tan_profile).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'source', before: 'CONTROLLED', after: 'CUSTOM' }),
+      expect.objectContaining({ field: 'max_tan_mg_n_l', before: 0.1, after: 0.25 }),
     ]));
     expect(comparison.changes.results).toHaveLength(1);
     expect(comparison.changes.warnings).toHaveLength(1);

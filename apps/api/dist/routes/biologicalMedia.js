@@ -39,6 +39,8 @@ exports.renderBiologicalMediaRunSummary = renderBiologicalMediaRunSummary;
 exports.isBiologicalMediaPreviewStale = isBiologicalMediaPreviewStale;
 exports.validateMediaProfile = validateMediaProfile;
 exports.validateTanProfile = validateTanProfile;
+exports.validateMaxTanProfile = validateMaxTanProfile;
+exports.maximumTanRunError = maximumTanRunError;
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const db_1 = __importStar(require("../db"));
@@ -114,6 +116,8 @@ function biologicalMediaInputFromCase(record, context) {
             ph: record?.ph,
             salinity_ppt: record?.salinity_ppt,
             tan_target_mg_n_l: record?.max_tan_mg_n_l,
+            max_tan_source: record?.max_tan_source,
+            max_tan_profile_revision_id: record?.max_tan_profile_revision_id,
             do_in_mg_l: record?.do_in_mg_l,
             do_out_min_mg_l: record?.do_out_min_mg_l,
             alkalinity_mg_l_caco3: record?.alkalinity_mg_l_caco3,
@@ -163,16 +167,21 @@ function runPresentation(run, currentInput, context) {
         is_stale: runIsStale(run, currentInput, context),
         profile_revision: run.media_profile_snapshot?.revision ?? null,
         tan_profile_revision: run.tan_profile_snapshot?.revision ?? null,
+        max_tan_profile_revision: run.max_tan_profile_snapshot?.revision ?? null,
     };
 }
 async function loadBiologicalMediaCase(systemId, designBookId, runner = db_1.query) {
     const result = await runner(`SELECT c.*, mp.profile_code AS media_profile_code, mp.profile_name AS media_profile_name,
             mp.revision AS media_profile_revision, mp.status AS media_profile_status,
             tp.profile_code AS tan_profile_code, tp.profile_name AS tan_profile_name,
-            tp.revision AS tan_profile_revision, tp.status AS tan_profile_status
+            tp.revision AS tan_profile_revision, tp.status AS tan_profile_status,
+            mt.profile_code AS max_tan_profile_code, mt.profile_name AS max_tan_profile_name,
+            mt.revision AS max_tan_profile_revision, mt.status AS max_tan_profile_status,
+            mt.engineering_note AS max_tan_profile_engineering_note
      FROM lss_biological_media_cases c
      LEFT JOIN lss_biological_media_profiles mp ON mp.id=c.media_profile_revision_id
      LEFT JOIN lss_tan_generation_profiles tp ON tp.id=c.tan_generation_profile_revision_id
+     LEFT JOIN lss_max_tan_profiles mt ON mt.id=c.max_tan_profile_revision_id
      WHERE c.system_id=$1 AND c.design_book_id=$2`, [systemId, designBookId]);
     const record = result.rows[0] || null;
     if (record) {
@@ -228,6 +237,7 @@ function compareBiologicalMediaRuns(left, right) {
             linked_context: changedSnapshotValues(left.linked_volume_context_snapshot, right.linked_volume_context_snapshot),
             media_profile: changedSnapshotValues(left.media_profile_snapshot, right.media_profile_snapshot),
             tan_profile: changedSnapshotValues(left.tan_profile_snapshot, right.tan_profile_snapshot),
+            max_tan_profile: changedSnapshotValues(left.max_tan_profile_snapshot, right.max_tan_profile_snapshot),
             results: changedSnapshotValues(left.result_snapshot, right.result_snapshot),
             assumptions: canonicalJson(left.assumptions) === canonicalJson(right.assumptions) ? [] : [{
                     field: 'assumptions', before: left.assumptions, after: right.assumptions,
@@ -275,6 +285,11 @@ function renderBiologicalMediaRunSummary(run) {
         `Media evidence: ${run.media_profile_snapshot?.evidence_reference || '—'}`,
         `TAN profile: ${run.tan_profile_snapshot?.profile_code || '—'} r${run.tan_profile_snapshot?.revision ?? '—'}`,
         `TAN evidence: ${run.tan_profile_snapshot?.evidence_reference || '—'}`,
+        `Maximum TAN source: ${run.max_tan_profile_snapshot?.source === 'CUSTOM'
+            ? 'Custom project value'
+            : `${run.max_tan_profile_snapshot?.profile_code || '—'} r${run.max_tan_profile_snapshot?.revision ?? '—'}`}`,
+        `Maximum TAN concentration: ${run.max_tan_profile_snapshot?.max_tan_mg_n_l
+            ?? run.normalized_input_snapshot?.water?.tan_target_mg_n_l ?? '—'} mg N/L`,
         '',
         'Result values',
         `Design biomass: ${result.biomass?.design_biomass_kg ?? '—'} kg`,
@@ -460,6 +475,17 @@ function validateTanProfile(body, approving = body.status == null ? true : body.
         errors.push('Evidence reference is required.');
     return errors;
 }
+function validateMaxTanProfile(body) {
+    const errors = [];
+    if (!text(body.profile_code))
+        errors.push('Profile code is required.');
+    if (!text(body.profile_name))
+        errors.push('Profile name is required.');
+    const value = numberOrNull(body.max_tan_mg_n_l);
+    if (value == null || value < 0)
+        errors.push('Maximum TAN must be a finite, non-negative mg N/L value.');
+    return errors;
+}
 function databaseProfileError(error) {
     if (error?.code === '23505')
         return { code: 'DUPLICATE_REVISION', message: 'That profile code and revision already exists.' };
@@ -473,8 +499,8 @@ async function nextRevision(table, code) {
     const result = await (0, db_1.query)(`SELECT COALESCE(MAX(revision), 0) + 1 AS revision FROM ${table} WHERE profile_code=$1`, [code]);
     return Number(result.rows[0].revision);
 }
-async function profileRevision(table, id) {
-    const result = await (0, db_1.query)(`SELECT * FROM ${table} WHERE id=$1`, [id]);
+async function profileRevision(table, id, runner = db_1.query) {
+    const result = await runner(`SELECT * FROM ${table} WHERE id=$1`, [id]);
     return result.rows[0] || null;
 }
 async function requireApprovedProfile(table, id, label) {
@@ -490,6 +516,100 @@ async function requireApprovedProfile(table, id, label) {
         return `${label} uses an unsupported coefficient unit; approved references must use ${exports.TAN_COEFFICIENT_UNIT}.`;
     }
     return null;
+}
+async function defaultMaxTanProfile(runner = db_1.query) {
+    const result = await runner(`SELECT * FROM lss_max_tan_profiles
+     WHERE status='Approved' AND is_default=true
+     ORDER BY revision DESC LIMIT 1`);
+    return result.rows[0] || null;
+}
+async function resolveMaxTanSelection(body, existing = null, runner = db_1.query, allowHistorical = false) {
+    const sourceProvided = Object.prototype.hasOwnProperty.call(body, 'max_tan_source');
+    const profileProvided = Object.prototype.hasOwnProperty.call(body, 'max_tan_profile_revision_id');
+    const valueProvided = Object.prototype.hasOwnProperty.call(body, 'max_tan_mg_n_l');
+    let source = text(body.max_tan_source)?.toUpperCase() || null;
+    let profileId = text(body.max_tan_profile_revision_id);
+    let requestedValue = numberOrNull(body.max_tan_mg_n_l);
+    if (!sourceProvided && !profileProvided && !valueProvided && existing?.max_tan_source) {
+        const profile = existing.max_tan_profile_revision_id
+            ? await profileRevision('lss_max_tan_profiles', existing.max_tan_profile_revision_id, runner)
+            : null;
+        if (existing.max_tan_source === 'CONTROLLED' && (!profile || profile.status !== 'Approved') && !allowHistorical) {
+            return { error: 'The saved Maximum TAN profile is no longer active. Select an approved profile or Custom before continuing.' };
+        }
+        return {
+            source: existing.max_tan_source,
+            profile,
+            value: numberOrNull(existing.max_tan_mg_n_l),
+        };
+    }
+    if (!source && profileId)
+        source = 'CONTROLLED';
+    if (!source && valueProvided)
+        source = 'CUSTOM';
+    if (!source) {
+        const profile = await defaultMaxTanProfile(runner);
+        if (!profile)
+            return { error: 'No approved default Maximum TAN profile is available.' };
+        return { source: 'CONTROLLED', profile, value: Number(profile.max_tan_mg_n_l) };
+    }
+    if (source === 'CUSTOM') {
+        if (requestedValue == null || requestedValue < 0) {
+            return { error: 'Custom Maximum TAN must be a finite, non-negative mg N/L value.' };
+        }
+        return { source, profile: null, value: requestedValue };
+    }
+    if (source !== 'CONTROLLED')
+        return { error: 'Maximum TAN source must be CONTROLLED or CUSTOM.' };
+    if (!profileId && existing?.max_tan_source === 'CONTROLLED')
+        profileId = existing.max_tan_profile_revision_id;
+    const profile = profileId
+        ? await profileRevision('lss_max_tan_profiles', profileId, runner)
+        : await defaultMaxTanProfile(runner);
+    const isSavedSelection = Boolean(existing?.max_tan_source === 'CONTROLLED'
+        && existing?.max_tan_profile_revision_id === profileId
+        && numberOrNull(existing?.max_tan_mg_n_l) != null);
+    if (!profile || profile.status !== 'Approved' && !(allowHistorical && isSavedSelection)) {
+        return { error: 'The selected Maximum TAN profile must be an approved revision.' };
+    }
+    return {
+        source,
+        profile,
+        value: isSavedSelection ? Number(existing.max_tan_mg_n_l) : Number(profile.max_tan_mg_n_l),
+    };
+}
+function maximumTanRunError(record, profile = null) {
+    if (record?.max_tan_source === 'CUSTOM') {
+        const value = numberOrNull(record.max_tan_mg_n_l);
+        return value == null || value < 0
+            ? 'Custom Maximum TAN must be a finite, non-negative mg N/L value.'
+            : null;
+    }
+    if (record?.max_tan_source !== 'CONTROLLED' || !record?.max_tan_profile_revision_id) {
+        return 'Select an approved Maximum TAN profile or a valid Custom value before creating a run.';
+    }
+    if (!profile || profile.id !== record.max_tan_profile_revision_id || profile.status !== 'Approved') {
+        return 'The selected Maximum TAN profile is no longer approved. Select an active profile or Custom and calculate a new preview.';
+    }
+    return null;
+}
+function maxTanSnapshot(record, profile = null) {
+    if (record.max_tan_source === 'CUSTOM') {
+        return {
+            source: 'CUSTOM',
+            profile_code: null,
+            profile_name: 'Custom',
+            revision: null,
+            max_tan_mg_n_l: Number(record.max_tan_mg_n_l),
+            approved_controlled_profile: false,
+        };
+    }
+    return {
+        ...jsonCopy(profile || {}),
+        source: 'CONTROLLED',
+        max_tan_mg_n_l: Number(record.max_tan_mg_n_l),
+        approved_controlled_profile: profile?.status === 'Approved',
+    };
 }
 async function linkedVolumeContext(systemId, designBookId, runner = db_1.query) {
     const book = await runner('SELECT id, project_id FROM design_books WHERE id=$1', [designBookId]);
@@ -617,16 +737,21 @@ async function caseResponse(systemId, designBookId) {
             latest_run: runs[0] || null,
         };
     }
-    const [caseResult, context] = await Promise.all([
+    const [caseResult, context, maximumTanDefault] = await Promise.all([
         (0, db_1.query)(`SELECT c.*, mp.profile_code AS media_profile_code, mp.profile_name AS media_profile_name,
               mp.revision AS media_profile_revision, mp.status AS media_profile_status,
               tp.profile_code AS tan_profile_code, tp.profile_name AS tan_profile_name,
-              tp.revision AS tan_profile_revision, tp.status AS tan_profile_status
+              tp.revision AS tan_profile_revision, tp.status AS tan_profile_status,
+              mt.profile_code AS max_tan_profile_code, mt.profile_name AS max_tan_profile_name,
+              mt.revision AS max_tan_profile_revision, mt.status AS max_tan_profile_status,
+              mt.engineering_note AS max_tan_profile_engineering_note
        FROM lss_biological_media_cases c
        LEFT JOIN lss_biological_media_profiles mp ON mp.id=c.media_profile_revision_id
        LEFT JOIN lss_tan_generation_profiles tp ON tp.id=c.tan_generation_profile_revision_id
+       LEFT JOIN lss_max_tan_profiles mt ON mt.id=c.max_tan_profile_revision_id
        WHERE c.system_id=$1 AND c.design_book_id=$2`, [systemId, designBookId]),
         linkedVolumeContext(systemId, designBookId),
+        defaultMaxTanProfile(),
     ]);
     if ('error' in context)
         return context;
@@ -662,6 +787,7 @@ async function caseResponse(systemId, designBookId) {
         input_completeness: { complete: missingInputs.length === 0 && !blocked, missing: missingInputs },
         runs,
         latest_run: latestRun,
+        maximum_tan_default: maximumTanDefault,
     };
 }
 router.get('/systems/:id/biological-media', async (req, res) => {
@@ -696,6 +822,11 @@ router.put('/systems/:id/biological-media', (0, auth_1.requireModuleManage)('des
     if (mediaError || tanError)
         return res.status(409).json({ error: { code: 'PROFILE_NOT_APPROVED', message: mediaError || tanError } });
     const systemId = routeParam(req.params.id);
+    const currentCaseResult = await (0, db_1.query)('SELECT * FROM lss_biological_media_cases WHERE system_id=$1 AND design_book_id=$2', [systemId, designBookId]);
+    const maximumTan = await resolveMaxTanSelection(req.body, currentCaseResult.rows[0] || null, db_1.query, true);
+    if ('error' in maximumTan) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: maximumTan.error } });
+    }
     const context = await linkedVolumeContext(systemId, designBookId);
     if ('error' in context)
         return res.status(context.error.code === 'NOT_FOUND' ? 404 : 409).json({ error: context.error });
@@ -721,9 +852,10 @@ router.put('/systems/:id/biological-media', (0, auth_1.requireModuleManage)('des
         const result = await (0, db_1.query)(`INSERT INTO lss_biological_media_cases
        (system_id, design_book_id, reactor_type, media_profile_revision_id, tan_generation_profile_revision_id, status, notes, created_by,
         biomass_method, water_volume_m3, stocking_density_kg_m3, feed_rate_pct_biomass_day, protein_pct,
-        manual_daily_feed_kg_d, water_type, temperature_c, ph, salinity_ppt, max_tan_mg_n_l, do_in_mg_l,
-        do_out_min_mg_l, alkalinity_mg_l_caco3, actual_flow_m3_h, safety_factor, preview_stale)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+         manual_daily_feed_kg_d, water_type, temperature_c, ph, salinity_ppt, max_tan_mg_n_l,
+         max_tan_source, max_tan_profile_revision_id, do_in_mg_l,
+         do_out_min_mg_l, alkalinity_mg_l_caco3, actual_flow_m3_h, safety_factor, preview_stale)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
        ON CONFLICT (system_id, design_book_id) DO UPDATE SET
          reactor_type=EXCLUDED.reactor_type,
          media_profile_revision_id=EXCLUDED.media_profile_revision_id,
@@ -733,7 +865,8 @@ router.put('/systems/:id/biological-media', (0, auth_1.requireModuleManage)('des
           feed_rate_pct_biomass_day=EXCLUDED.feed_rate_pct_biomass_day, protein_pct=EXCLUDED.protein_pct,
           manual_daily_feed_kg_d=EXCLUDED.manual_daily_feed_kg_d, water_type=EXCLUDED.water_type,
           temperature_c=EXCLUDED.temperature_c, ph=EXCLUDED.ph, salinity_ppt=EXCLUDED.salinity_ppt,
-          max_tan_mg_n_l=EXCLUDED.max_tan_mg_n_l, do_in_mg_l=EXCLUDED.do_in_mg_l,
+           max_tan_mg_n_l=EXCLUDED.max_tan_mg_n_l, max_tan_source=EXCLUDED.max_tan_source,
+           max_tan_profile_revision_id=EXCLUDED.max_tan_profile_revision_id, do_in_mg_l=EXCLUDED.do_in_mg_l,
           do_out_min_mg_l=EXCLUDED.do_out_min_mg_l, alkalinity_mg_l_caco3=EXCLUDED.alkalinity_mg_l_caco3,
           actual_flow_m3_h=EXCLUDED.actual_flow_m3_h, safety_factor=EXCLUDED.safety_factor,
           preview_stale=true, updated_at=NOW()
@@ -743,7 +876,8 @@ router.put('/systems/:id/biological-media', (0, auth_1.requireModuleManage)('des
             numberOrNull(req.body.stocking_density_kg_m3), numberOrNull(req.body.feed_rate_pct_biomass_day),
             numberOrNull(req.body.protein_pct), numberOrNull(req.body.manual_daily_feed_kg_d),
             text(req.body.water_type) || context.system_water_type, numberOrNull(req.body.temperature_c),
-            numberOrNull(req.body.ph), numberOrNull(req.body.salinity_ppt), numberOrNull(req.body.max_tan_mg_n_l),
+            numberOrNull(req.body.ph), numberOrNull(req.body.salinity_ppt), maximumTan.value,
+            maximumTan.source, maximumTan.profile?.id || null,
             numberOrNull(req.body.do_in_mg_l), numberOrNull(req.body.do_out_min_mg_l),
             numberOrNull(req.body.alkalinity_mg_l_caco3), numberOrNull(req.body.actual_flow_m3_h),
             numberOrNull(req.body.safety_factor), true]);
@@ -804,6 +938,11 @@ router.post('/systems/:id/biological-media/preview', (0, auth_1.requireModuleMan
     }
     const mediaId = text(req.body.media_profile_revision_id);
     const tanId = text(req.body.tan_generation_profile_revision_id);
+    const currentCase = await (0, db_1.query)('SELECT * FROM lss_biological_media_cases WHERE system_id=$1 AND design_book_id=$2', [systemId, designBookId]);
+    const maximumTan = await resolveMaxTanSelection(req.body, currentCase.rows[0] || null);
+    if ('error' in maximumTan) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: maximumTan.error } });
+    }
     const [mediaResult, tanResult] = await Promise.all([
         mediaId ? (0, db_1.query)('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [mediaId]) : Promise.resolve({ rows: [] }),
         tanId ? (0, db_1.query)('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [tanId]) : Promise.resolve({ rows: [] }),
@@ -833,7 +972,9 @@ router.post('/systems/:id/biological-media/preview', (0, auth_1.requireModuleMan
             temperature_c: req.body.water?.temperature_c ?? req.body.temperature_c,
             ph: req.body.water?.ph ?? req.body.ph,
             salinity_ppt: req.body.water?.salinity_ppt ?? req.body.salinity_ppt,
-            tan_target_mg_n_l: req.body.water?.tan_target_mg_n_l ?? req.body.max_tan_mg_n_l,
+            tan_target_mg_n_l: maximumTan.value,
+            max_tan_source: maximumTan.source,
+            max_tan_profile_revision_id: maximumTan.profile?.id || null,
             do_in_mg_l: req.body.water?.do_in_mg_l ?? req.body.do_in_mg_l,
             do_out_min_mg_l: req.body.water?.do_out_min_mg_l ?? req.body.do_out_min_mg_l,
             alkalinity_mg_l_caco3: req.body.water?.alkalinity_mg_l_caco3 ?? req.body.alkalinity_mg_l_caco3,
@@ -847,7 +988,6 @@ router.post('/systems/:id/biological-media/preview', (0, auth_1.requireModuleMan
         },
     };
     const result = (0, biologicalMediaCalculations_1.calculateBiologicalMediaPreview)(body, { mediaProfile, tanProfile });
-    const currentCase = await (0, db_1.query)('SELECT id FROM lss_biological_media_cases WHERE system_id=$1 AND design_book_id=$2', [systemId, designBookId]);
     if (currentCase.rows[0]) {
         await (0, db_1.query)(`UPDATE lss_biological_media_cases SET preview_result=$1, preview_input_snapshot=$2,
        previewed_at=NOW(), preview_stale=false, status=$3, updated_at=NOW() WHERE id=$4`, [result, (0, biologicalMediaCalculations_1.normalizeBiologicalMediaInput)(body), previewStatusLabel(result.status), currentCase.rows[0].id]);
@@ -863,6 +1003,10 @@ router.post('/systems/:id/biological-media/preview', (0, auth_1.requireModuleMan
             profile_name: mediaProfile.profile_name,
             revision: mediaProfile.revision,
         } : null,
+        maximum_tan_profile: maxTanSnapshot({
+            max_tan_source: maximumTan.source,
+            max_tan_mg_n_l: maximumTan.value,
+        }, maximumTan.profile),
     });
 });
 const ENGINEERING_OVERRIDE_FIELDS = new Set([
@@ -980,16 +1124,24 @@ router.post('/systems/:id/biological-media/runs', (0, auth_1.requireModuleManage
             error: { code: 'RUN_PREVIEW_STALE', message: 'The draft or linked context changed after the preview. Calculate a new preview before creating a run.' },
         });
     }
-    const [mediaResult, tanResult] = await Promise.all([
+    const [mediaResult, tanResult, maximumTanProfileResult] = await Promise.all([
         (0, db_1.query)('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [record.media_profile_revision_id]),
         (0, db_1.query)('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [record.tan_generation_profile_revision_id]),
+        record.max_tan_profile_revision_id
+            ? (0, db_1.query)('SELECT * FROM lss_max_tan_profiles WHERE id=$1', [record.max_tan_profile_revision_id])
+            : Promise.resolve({ rows: [] }),
     ]);
     const mediaProfile = mediaResult.rows[0] || null;
     const tanProfile = tanResult.rows[0] || null;
+    const maximumTanProfile = maximumTanProfileResult.rows[0] || null;
     if (!mediaProfile || mediaProfile.status !== 'Approved' || !tanProfile || tanProfile.status !== 'Approved') {
         return res.status(409).json({
             error: { code: 'PROFILE_NOT_APPROVED', message: 'Both controlled profile revisions must still be approved when the run is executed.' },
         });
+    }
+    const maximumTanError = maximumTanRunError(record, maximumTanProfile);
+    if (maximumTanError) {
+        return res.status(409).json({ error: { code: 'MAX_TAN_PROFILE_NOT_ACTIVE', message: maximumTanError } });
     }
     const runInput = jsonCopy(baseInput);
     const requestedOverrides = Array.isArray(req.body.overrides) ? req.body.overrides : [];
@@ -1042,15 +1194,19 @@ router.post('/systems/:id/biological-media/runs', (0, auth_1.requireModuleManage
         await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
         await client.query('SELECT id FROM lss_biological_media_cases WHERE id=$1 FOR UPDATE', [record.id]);
         const runner = client.query.bind(client);
-        const [lockedEditable, lockedContext, lockedRecord, lockedMediaResult, lockedTanResult] = await Promise.all([
+        const [lockedEditable, lockedContext, lockedRecord, lockedMediaResult, lockedTanResult, lockedMaximumTanResult] = await Promise.all([
             editableRunContext(systemId, designBookId, runner),
             linkedVolumeContext(systemId, designBookId, runner),
             loadBiologicalMediaCase(systemId, designBookId, runner),
             runner('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [record.media_profile_revision_id]),
             runner('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [record.tan_generation_profile_revision_id]),
+            record.max_tan_profile_revision_id
+                ? runner('SELECT * FROM lss_max_tan_profiles WHERE id=$1', [record.max_tan_profile_revision_id])
+                : Promise.resolve({ rows: [] }),
         ]);
         const lockedMediaProfile = lockedMediaResult.rows[0];
         const lockedTanProfile = lockedTanResult.rows[0];
+        const lockedMaximumTanProfile = lockedMaximumTanResult.rows[0] || null;
         const lockedInput = lockedRecord && !('error' in lockedContext)
             ? biologicalMediaInputFromCase(lockedRecord, lockedContext)
             : null;
@@ -1060,7 +1216,8 @@ router.post('/systems/:id/biological-media/runs', (0, auth_1.requireModuleManage
             || isBiologicalMediaPreviewStale(lockedRecord, lockedContext)
             || lockedMediaProfile?.status !== 'Approved' || lockedTanProfile?.status !== 'Approved'
             || canonicalJson(lockedMediaProfile) !== canonicalJson(mediaProfile)
-            || canonicalJson(lockedTanProfile) !== canonicalJson(tanProfile)) {
+            || canonicalJson(lockedTanProfile) !== canonicalJson(tanProfile)
+            || canonicalJson(lockedMaximumTanProfile) !== canonicalJson(maximumTanProfile)) {
             const staleError = new Error('The draft or linked context changed while the run was being created.');
             staleError.httpStatus = 409;
             staleError.apiCode = 'RUN_PREVIEW_STALE';
@@ -1072,16 +1229,17 @@ router.post('/systems/:id/biological-media/runs', (0, auth_1.requireModuleManage
          (case_id, system_id, design_book_id, run_number, status, calculation_status,
           warning_acknowledged, warning_acknowledged_by, warning_acknowledged_at,
           normalized_input_snapshot, linked_volume_context_snapshot, species_snapshot,
-          feeding_snapshot, media_profile_snapshot, tan_profile_snapshot, engine_version,
+           feeding_snapshot, media_profile_snapshot, tan_profile_snapshot, max_tan_profile_snapshot, engine_version,
           assumptions, messages, result_snapshot, overrides_snapshot, author_snapshot,
           created_by, executed_at)
-         VALUES ($1,$2,$3,$4,'Pending Review',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NOW())
+          VALUES ($1,$2,$3,$4,'Pending Review',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW())
          RETURNING *`, [
             record.id, systemId, designBookId, runNumber, result.status,
             warningAcknowledged, warningAcknowledged ? req.user.id : null,
             warningAcknowledged ? new Date().toISOString() : null,
             normalizedRunInput, jsonCopy(context), normalizedRunInput.biomass.species,
-            result.feeding, jsonCopy(mediaProfile), jsonCopy(tanProfile), result.engine_version,
+            result.feeding, jsonCopy(mediaProfile), jsonCopy(tanProfile),
+            maxTanSnapshot(record, maximumTanProfile), result.engine_version,
             result.assumptions, result.messages, result, overrides, authorSnapshot, req.user.id,
         ]);
         await client.query(`INSERT INTO lss_biological_media_run_audit (run_id, action, actor_id, details)
@@ -1294,6 +1452,18 @@ router.get('/biological-media/tan-profiles', async (req, res) => {
      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY profile_code, revision DESC`);
     res.json({ items: result.rows });
 });
+router.get('/biological-media/max-tan-profiles', async (req, res) => {
+    const includeRetired = req.query.include_retired === 'true';
+    const approvedOnly = req.query.approved_only === 'true';
+    const conditions = [
+        ...(includeRetired ? [] : ["status <> 'Retired'"]),
+        ...(approvedOnly ? ["status = 'Approved'"] : []),
+    ];
+    const result = await (0, db_1.query)(`SELECT * FROM lss_max_tan_profiles
+     ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+     ORDER BY is_default DESC, profile_code, revision DESC`);
+    res.json({ items: result.rows, default_profile: result.rows.find((item) => item.is_default) || null });
+});
 router.post('/admin/biological-media/media-profiles', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => {
     const errors = validateMediaProfile(req.body, false);
     if (errors.length)
@@ -1384,6 +1554,68 @@ router.post('/admin/biological-media/tan-profiles/:id/revisions', (0, auth_1.req
         text(body.evidence_reference), text(body.notes), source.id, req.user.id]);
     res.status(201).json(result.rows[0]);
 });
+router.post('/admin/biological-media/max-tan-profiles', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const errors = validateMaxTanProfile(req.body);
+    if (errors.length)
+        return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
+    const code = text(req.body.profile_code);
+    const revision = await nextRevision('lss_max_tan_profiles', code);
+    try {
+        const result = await (0, db_1.query)(`INSERT INTO lss_max_tan_profiles
+       (profile_code, profile_name, revision, max_tan_mg_n_l, engineering_note, status, is_default, created_by)
+       VALUES ($1,$2,$3,$4,$5,'Draft',false,$6) RETURNING *`, [code, text(req.body.profile_name), revision, numberOrNull(req.body.max_tan_mg_n_l),
+            text(req.body.engineering_note), req.user.id]);
+        res.status(201).json(result.rows[0]);
+    }
+    catch (error) {
+        const mapped = databaseProfileError(error);
+        if (mapped)
+            return res.status(400).json({ error: mapped });
+        throw error;
+    }
+});
+router.post('/admin/biological-media/max-tan-profiles/:id/revisions', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const source = await profileRevision('lss_max_tan_profiles', routeParam(req.params.id));
+    if (!source)
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Maximum TAN profile revision not found.' } });
+    const body = { ...source, ...req.body, profile_code: source.profile_code };
+    const errors = validateMaxTanProfile(body);
+    if (errors.length)
+        return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
+    const revision = await nextRevision('lss_max_tan_profiles', body.profile_code);
+    const result = await (0, db_1.query)(`INSERT INTO lss_max_tan_profiles
+     (profile_code, profile_name, revision, max_tan_mg_n_l, engineering_note,
+      status, is_default, supersedes_id, created_by)
+     VALUES ($1,$2,$3,$4,$5,'Draft',false,$6,$7) RETURNING *`, [body.profile_code, text(body.profile_name), revision, numberOrNull(body.max_tan_mg_n_l),
+        text(body.engineering_note), source.id, req.user.id]);
+    res.status(201).json(result.rows[0]);
+});
+router.patch('/admin/biological-media/max-tan-profiles/:id/default', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const selected = await client.query('SELECT * FROM lss_max_tan_profiles WHERE id=$1 FOR UPDATE', [routeParam(req.params.id)]);
+        if (!selected.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Maximum TAN profile revision not found.' } });
+        }
+        if (selected.rows[0].status !== 'Approved') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'PROFILE_NOT_APPROVED', message: 'Only an approved Maximum TAN profile can be the default.' } });
+        }
+        await client.query('UPDATE lss_max_tan_profiles SET is_default=false, updated_at=NOW() WHERE is_default=true AND id<>$1', [selected.rows[0].id]);
+        const result = await client.query('UPDATE lss_max_tan_profiles SET is_default=true, updated_at=NOW() WHERE id=$1 RETURNING *', [selected.rows[0].id]);
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
 async function updateProfileStatus(table, id, body, req, res) {
     const existing = await profileRevision(table, id);
     if (!existing)
@@ -1396,9 +1628,18 @@ async function updateProfileStatus(table, id, body, req, res) {
     if (!nextStatus || !PROFILE_STATUSES.includes(nextStatus))
         return res.status(400).json({ error: { code: 'VALIDATION', message: `Status must be one of: ${PROFILE_STATUSES.join(', ')}.` } });
     const merged = { ...existing, ...body, status: nextStatus };
-    const errors = table.includes('tan_') ? validateTanProfile(merged) : validateMediaProfile(merged, nextStatus === 'Approved');
+    const errors = table === 'lss_max_tan_profiles'
+        ? validateMaxTanProfile(merged)
+        : table === 'lss_tan_generation_profiles'
+            ? validateTanProfile(merged)
+            : validateMediaProfile(merged, nextStatus === 'Approved');
     if (nextStatus === 'Approved' && errors.length)
         return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
+    if (table === 'lss_max_tan_profiles' && nextStatus === 'Retired' && existing.is_default) {
+        return res.status(409).json({
+            error: { code: 'DEFAULT_PROFILE_REQUIRED', message: 'Select another approved Maximum TAN default before retiring this profile.' },
+        });
+    }
     if (table === 'lss_biological_media_profiles' && nextStatus === 'Approved'
         && String(existing.capacity_model || '').toUpperCase().replace(/[\s-]+/g, '_') === 'OVERALL_VTR') {
         const tanResult = await (0, db_1.query)(`SELECT 1 FROM lss_tan_generation_profiles
@@ -1428,4 +1669,5 @@ async function updateProfileStatus(table, id, body, req, res) {
 }
 router.patch('/admin/biological-media/media-profiles/:id/status', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => updateProfileStatus('lss_biological_media_profiles', routeParam(req.params.id), req.body, req, res));
 router.patch('/admin/biological-media/tan-profiles/:id/status', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => updateProfileStatus('lss_tan_generation_profiles', routeParam(req.params.id), req.body, req, res));
+router.patch('/admin/biological-media/max-tan-profiles/:id/status', (0, auth_1.requireModuleManage)('design_books'), (0, auth_1.requireRole)('admin'), async (req, res) => updateProfileStatus('lss_max_tan_profiles', routeParam(req.params.id), req.body, req, res));
 exports.default = router;

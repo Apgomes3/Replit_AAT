@@ -508,10 +508,14 @@ export async function loadReleaseContext(
       `SELECT c.*, mp.profile_code AS media_profile_code, mp.profile_name AS media_profile_name,
               mp.revision AS media_profile_revision, mp.status AS media_profile_status,
               tp.profile_code AS tan_profile_code, tp.profile_name AS tan_profile_name,
-              tp.revision AS tan_profile_revision, tp.status AS tan_profile_status
+               tp.revision AS tan_profile_revision, tp.status AS tan_profile_status,
+               mt.profile_code AS max_tan_profile_code, mt.profile_name AS max_tan_profile_name,
+               mt.revision AS max_tan_profile_revision, mt.status AS max_tan_profile_status,
+               mt.engineering_note AS max_tan_profile_engineering_note
        FROM lss_biological_media_cases c
        LEFT JOIN lss_biological_media_profiles mp ON mp.id=c.media_profile_revision_id
        LEFT JOIN lss_tan_generation_profiles tp ON tp.id=c.tan_generation_profile_revision_id
+        LEFT JOIN lss_max_tan_profiles mt ON mt.id=c.max_tan_profile_revision_id
        WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`,
       [id, systems.map(system => system.id)],
     )).rows;

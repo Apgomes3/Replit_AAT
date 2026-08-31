@@ -5,9 +5,8 @@ exports.releaseBlockers = releaseBlockers;
 exports.validateReleaseConfirmation = validateReleaseConfirmation;
 exports.validateReleaseBlockers = validateReleaseBlockers;
 const aquariumCalculations_1 = require("./aquariumCalculations");
-
-const thermalCalculations_1 = require("./thermalCalculations");
 const pumpSelections_1 = require("./pumpSelections");
+const thermalCalculations_1 = require("./thermalCalculations");
 const scopeMatches = (scopes, value) => scopes.some(scope => scope.toLowerCase().replace(/[\s_-]+/g, '') === value.toLowerCase().replace(/[\s_-]+/g, ''));
 function item(key, label, severity, ok, message, href, affected_ids) {
     return {

@@ -1,324 +1,106 @@
-"use strict"
-;
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) 
-{
-
-    if (k2 === undefined) k2 = k
-;
-
-    var desc = Object.getOwnPropertyDescriptor(m, k)
-;
-
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) 
-{
-
-      desc = 
-{
- enumerable: true, get: function() 
-{
- return m[k]
-;
- 
-}
- 
-}
-;
-
-    
-}
-
-    Object.defineProperty(o, k2, desc)
-;
-
-}
-) : (function(o, m, k, k2) 
-{
-
-    if (k2 === undefined) k2 = k
-;
-
-    o[k2] = m[k]
-;
-
-}
-))
-;
-
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) 
-{
-
-    Object.defineProperty(o, "default", 
-{
- enumerable: true, value: v 
-}
-)
-;
-
-}
-) : function(o, v) 
-{
-
-    o["default"] = v
-;
-
-}
-)
-;
-
-var __importStar = (this && this.__importStar) || (function () 
-{
-
-    var ownKeys = function(o) 
-{
-
-        ownKeys = Object.getOwnPropertyNames || function (o) 
-{
-
-            var ar = []
-;
-
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k
-;
-
-            return ar
-;
-
-        
-}
-;
-
-        return ownKeys(o)
-;
-
-    
-}
-;
-
-    return function (mod) 
-{
-
-        if (mod && mod.__esModule) return mod
-;
-
-        var result = 
-{
-}
-;
-
-        if (mod != null) for (var k = ownKeys(mod), i = 0
-;
- i < k.length
-;
- i++) if (k[i] !== "default") __createBinding(result, mod, k[i])
-;
-
-        __setModuleDefault(result, mod)
-;
-
-        return result
-;
-
-    
-}
-;
-
-}
-)()
-;
-
-var __importDefault = (this && this.__importDefault) || function (mod) 
-{
-
-    return (mod && mod.__esModule) ? mod : 
-{
- "default": mod 
-}
-;
-
-}
-;
-
-Object.defineProperty(exports, "__esModule", 
-{
- value: true 
-}
-)
-;
-
-exports.versionSnapshotTestUtils = exports.thermalCorrelationTestUtils = void 0
-;
-
-exports.loadReleaseContext = loadReleaseContext
-;
-
-const express_1 = require("express")
-;
-
-const auth_1 = require("../middleware/auth")
-;
-
-const index_1 = __importStar(require("../db/index"))
-;
-
-const crypto_1 = __importDefault(require("crypto"))
-;
-
-const audit_1 = require("../db/audit")
-;
-
-const designBookRelease_1 = require("../lib/designBookRelease")
-;
-
-const designBookWorkflow_1 = require("../lib/designBookWorkflow")
-;
-
-const aquariumCalculations_1 = require("../lib/aquariumCalculations")
-;
-
-const thermalCalculations_1 = require("../lib/thermalCalculations")
-;
-
-const speciesAllocations_1 = require("../lib/speciesAllocations")
-;
-
-const pumpSelections_1 = require("../lib/pumpSelections")
-;
-
-const router = (0, express_1.Router)()
-;
-
-router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'))
-;
-
-const isLifeSupportSystem = (system) => String(system?.system_type || '').trim().toLowerCase() === 'life support'
-;
-
-const routeParam = (value) => Array.isArray(value) ? value[0] : value
-;
-
-async function attachSystemSideStreams(runner, systems) 
-{
-
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.versionSnapshotTestUtils = exports.thermalCorrelationTestUtils = void 0;
+exports.loadReleaseContext = loadReleaseContext;
+const express_1 = require("express");
+const auth_1 = require("../middleware/auth");
+const index_1 = __importStar(require("../db/index"));
+const crypto_1 = __importDefault(require("crypto"));
+const audit_1 = require("../db/audit");
+const designBookRelease_1 = require("../lib/designBookRelease");
+const designBookWorkflow_1 = require("../lib/designBookWorkflow");
+const aquariumCalculations_1 = require("../lib/aquariumCalculations");
+const thermalCalculations_1 = require("../lib/thermalCalculations");
+const speciesAllocations_1 = require("../lib/speciesAllocations");
+const pumpSelections_1 = require("../lib/pumpSelections");
+const router = (0, express_1.Router)();
+router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
+const isLifeSupportSystem = (system) => String(system?.system_type || '').trim().toLowerCase() === 'life support';
+const routeParam = (value) => Array.isArray(value) ? value[0] : value;
+async function attachSystemSideStreams(runner, systems) {
     if (!systems.length)
-        return systems
-;
-
+        return systems;
     const rows = (await runner(`SELECT * FROM system_flow_side_streams
      WHERE system_id = ANY($1::uuid[])
-     ORDER BY parent_loop_number, sort_order, created_at, id`, [systems.map(system => system.id)])).rows
-;
-
+     ORDER BY parent_loop_number, sort_order, created_at, id`, [systems.map(system => system.id)])).rows;
     const fractionators = (await runner(`SELECT * FROM system_flow_fractionator_allocations
-     WHERE system_id = ANY($1::uuid[]) ORDER BY parent_loop_number`, [systems.map(system => system.id)])).rows
-;
-
-    return systems.map(system => (
-{
-
+     WHERE system_id = ANY($1::uuid[]) ORDER BY parent_loop_number`, [systems.map(system => system.id)])).rows;
+    return systems.map(system => ({
         ...system,
         side_streams: rows.filter(stream => stream.system_id === system.id),
         fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
-    
+    }));
 }
-))
-;
-
-}
-
-async function loadPumpSelections(runner, systems) 
-{
-
+async function loadPumpSelections(runner, systems) {
     if (!systems.length)
-        return []
-;
-
-    const saved = (await runner('SELECT * FROM system_pump_selections WHERE system_id = ANY($1::uuid[])', [systems.map(system => system.id)])).rows
-;
-
-    return systems.map(system => 
-{
-
-        const rows = saved.filter(row => row.system_id === system.id)
-;
-
-        const circuits = new Map((0, pumpSelections_1.pumpCircuits)(system, system.side_streams || []).map(item => [item.circuit_key, item]))
-;
-
-        rows.forEach(row => 
-{
-
+        return [];
+    const saved = (await runner('SELECT * FROM system_pump_selections WHERE system_id = ANY($1::uuid[])', [systems.map(system => system.id)])).rows;
+    return systems.map(system => {
+        const rows = saved.filter(row => row.system_id === system.id);
+        const circuits = new Map((0, pumpSelections_1.pumpCircuits)(system, system.side_streams || []).map(item => [item.circuit_key, item]));
+        rows.forEach(row => {
             if (!circuits.has(row.circuit_key))
-                circuits.set(row.circuit_key, 
-{
-
+                circuits.set(row.circuit_key, {
                     circuit_key: row.circuit_key, circuit_kind: 'orphaned', circuit_name: row.circuit_key,
                     circuit_type: null, parent_loop_number: null, side_stream_id: null, flow_m3h: null,
-                
-}
-)
-;
-
-        
-}
-)
-;
-
-        return 
-{
-
+                });
+        });
+        return {
             system_id: system.id,
-            items: [...circuits.values()].map(circuit => 
-{
-
-                const row = rows.find(value => value.circuit_key === circuit.circuit_key)
-;
-
-                const source = 
-{
-
-                    circuit: 
-{
- circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind, circuit_name: circuit.circuit_name,
-                        circuit_type: circuit.circuit_type, parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id, flow_m3h: circuit.flow_m3h 
-}
-,
+            items: [...circuits.values()].map(circuit => {
+                const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+                const source = {
+                    circuit: { circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind, circuit_name: circuit.circuit_name,
+                        circuit_type: circuit.circuit_type, parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id, flow_m3h: circuit.flow_m3h },
                     design_head_m: row?.design_head_m == null ? null : Number(row.design_head_m),
                     pump_efficiency_pct: row?.pump_efficiency_pct == null ? null : Number(row.pump_efficiency_pct),
                     motor_efficiency_pct: row?.motor_efficiency_pct == null ? null : Number(row.motor_efficiency_pct),
-                
-}
-;
-
-                const calculation = (0, pumpSelections_1.calculatePumpSelection)(
-{
- flow_m3h: circuit.flow_m3h, design_head_m: row?.design_head_m, pump_efficiency_pct: row?.pump_efficiency_pct, motor_efficiency_pct: row?.motor_efficiency_pct 
-}
-)
-;
-
-                const suitability = (0, pumpSelections_1.evaluateSelectedPumpSuitability)(
-{
-
+                };
+                const calculation = (0, pumpSelections_1.calculatePumpSelection)({ flow_m3h: circuit.flow_m3h, design_head_m: row?.design_head_m, pump_efficiency_pct: row?.pump_efficiency_pct, motor_efficiency_pct: row?.motor_efficiency_pct });
+                const suitability = (0, pumpSelections_1.evaluateSelectedPumpSuitability)({
                     selectedPump: row?.pump_snapshot, circuitFlowM3h: circuit.flow_m3h,
                     designHeadM: row?.design_head_m, calculation,
-                
-}
-)
-;
-
-                const orphaned = circuit.circuit_kind === 'orphaned'
-;
-
-                const currentFingerprint = (0, pumpSelections_1.pumpSourceFingerprint)(source)
-;
-
-                const versionStale = !!row && row.calculation_version !== pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION
-;
-
-                const stale = !!row && (row.source_fingerprint !== currentFingerprint || versionStale)
-;
-
+                });
+                const orphaned = circuit.circuit_kind === 'orphaned';
+                const currentFingerprint = (0, pumpSelections_1.pumpSourceFingerprint)(source);
+                const versionStale = !!row && row.calculation_version !== pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION;
+                const stale = !!row && (row.source_fingerprint !== currentFingerprint || versionStale);
                 const reasons = orphaned
                     ? ['This saved selection references a Flow Route circuit that no longer exists.']
                     : [
@@ -327,87 +109,43 @@ async function loadPumpSelections(runner, systems)
                         ...(row?.project_equipment_item_id && row?.pump_snapshot ? [] : ['Select a pump assigned to this LSS system.']),
                         ...calculation.reasons,
                         ...suitability.reasons,
-                    ]
-;
-
-                return 
-{
- ...circuit, project_equipment_item_id: row?.project_equipment_item_id || null, selected_pump: row?.pump_snapshot || null,
+                    ];
+                return { ...circuit, project_equipment_item_id: row?.project_equipment_item_id || null, selected_pump: row?.pump_snapshot || null,
                     design_head_m: row?.design_head_m ?? null, pump_efficiency_pct: row?.pump_efficiency_pct ?? null, motor_efficiency_pct: row?.motor_efficiency_pct ?? null,
                     source_fingerprint: row?.source_fingerprint || null, current_source_fingerprint: currentFingerprint,
                     freshness: row ? (stale ? 'stale' : 'fresh') : 'unsaved',
                     status: orphaned ? 'stale' : suitability.status === 'incompatible' ? 'incompatible'
                         : stale ? 'stale' : reasons.length ? 'incomplete' : calculation.status, reasons,
                     calculation_version: row?.calculation_version || pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION,
-                    results: row ? (row.result_snapshot?.results || row.result_snapshot || calculation.results) : calculation.results 
+                    results: row ? (row.result_snapshot?.results || row.result_snapshot || calculation.results) : calculation.results };
+            }),
+        };
+    });
 }
-;
-
-            
-}
-),
-        
-}
-;
-
-    
-}
-)
-;
-
-}
-
-async function loadThermalCalculations(runner, designBookId, systems, links, exhibits, tanks, exhibitCalculations) 
-{
-
+async function loadThermalCalculations(runner, designBookId, systems, links, exhibits, tanks, exhibitCalculations) {
     const savedRows = systems.length
         ? (await runner('SELECT * FROM design_book_thermal_calculations WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])', [designBookId, systems.map(system => system.id)])).rows
-        : []
-;
-
-    return systems.map(system => 
-{
-
-        const source = (0, thermalCalculations_1.buildThermalSourceContext)(
-{
-
+        : [];
+    return systems.map(system => {
+        const source = (0, thermalCalculations_1.buildThermalSourceContext)({
             system,
             links: links.filter(link => link.system_id === system.id),
             exhibits,
             tanks,
             exhibitCalculations,
-        
-}
-)
-;
-
-        const saved = savedRows.find(row => row.system_id === system.id) || null
-;
-
+        });
+        const saved = savedRows.find(row => row.system_id === system.id) || null;
         const correlationSnapshot = saved?.correlation_snapshot ||
             saved?.result_snapshot?.correlation_snapshot ||
             saved?.input_snapshot?.agitation_correlation_snapshot ||
-            null
-;
-
+            null;
         const correlationEvidenceMissing = !!saved &&
-            !(0, thermalCalculations_1.isApprovedThermalCorrelationSnapshot)(correlationSnapshot)
-;
-
+            !(0, thermalCalculations_1.isApprovedThermalCorrelationSnapshot)(correlationSnapshot);
         const stale = !!saved && (saved.source_fingerprint !== source.fingerprint ||
-            saved.calculation_version !== thermalCalculations_1.THERMAL_CALCULATION_VERSION)
-;
-
-        const preview = (0, thermalCalculations_1.calculateThermalCalculation)(source, saved?.input_snapshot || 
-{
-}
-)
-;
-
+            saved.calculation_version !== thermalCalculations_1.THERMAL_CALCULATION_VERSION);
+        const preview = (0, thermalCalculations_1.calculateThermalCalculation)(source, saved?.input_snapshot || {});
         const calculation = saved
-            ? 
-{
-
+            ? {
                 ...saved.result_snapshot,
                 calculation_version: saved.calculation_version,
                 calculated_at: saved.calculated_at,
@@ -421,15 +159,9 @@ async function loadThermalCalculations(runner, designBookId, systems, links, exh
                         ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
                         : (saved.result_snapshot?.reasons || []),
                 correlation_snapshot: correlationSnapshot,
-            
-}
-
-            : null
-;
-
-        return 
-{
-
+            }
+            : null;
+        return {
             system_id: system.id,
             system,
             source,
@@ -439,27 +171,13 @@ async function loadThermalCalculations(runner, designBookId, systems, links, exh
             status: stale ? 'Stale' : correlationEvidenceMissing ? 'Blocked' : saved?.status || 'Not configured',
             freshness: stale ? 'stale' : saved?.freshness || 'unsaved',
             source_fingerprint: source.fingerprint,
-        
+        };
+    });
 }
-;
-
-    
-}
-)
-;
-
-}
-
-async function insertThermalSnapshotRecord(runner, designBookId, item) 
-{
-
-    const row = item?.saved || item
-;
-
+async function insertThermalSnapshotRecord(runner, designBookId, item) {
+    const row = item?.saved || item;
     if (!row?.system_id || !row?.calculation_version || !row?.source_fingerprint)
-        return
-;
-
+        return;
     await runner(`INSERT INTO design_book_thermal_calculations
        (design_book_id, system_id, calculation_version, status, freshness,
         source_fingerprint, source_snapshot, constants, formula_inputs,
@@ -472,104 +190,44 @@ async function insertThermalSnapshotRecord(runner, designBookId, item)
         row.status || 'Blocked',
         row.freshness === 'stale' ? 'stale' : 'fresh',
         row.source_fingerprint,
-        JSON.stringify(row.source_snapshot || item.source || 
-{
-}
-),
-        JSON.stringify(row.constants || item.calculation?.constants || 
-{
-}
-),
-        JSON.stringify(row.formula_inputs || item.calculation?.formula_inputs || 
-{
-}
-),
-        JSON.stringify(row.input_snapshot || item.calculation?.inputs || 
-{
-}
-),
-        JSON.stringify(row.result_snapshot || item.calculation || 
-{
-}
-),
+        JSON.stringify(row.source_snapshot || item.source || {}),
+        JSON.stringify(row.constants || item.calculation?.constants || {}),
+        JSON.stringify(row.formula_inputs || item.calculation?.formula_inputs || {}),
+        JSON.stringify(row.input_snapshot || item.calculation?.inputs || {}),
+        JSON.stringify(row.result_snapshot || item.calculation || {}),
         JSON.stringify(row.sensitivity_cases || item.calculation?.sensitivity_cases || []),
         JSON.stringify(row.correlation_snapshot || item.calculation?.correlation_snapshot ||
-            row.input_snapshot?.agitation_correlation_snapshot || 
-{
-}
-),
+            row.input_snapshot?.agitation_correlation_snapshot || {}),
         row.deviation_justification || null,
         row.calculated_by || null,
         row.calculated_at || new Date().toISOString(),
-    ])
-;
-
+    ]);
 }
-
-function nullableSpeciesNumber(value, label, allowZero = false) 
-{
-
+function nullableSpeciesNumber(value, label, allowZero = false) {
     if (value == null || value === '')
-        return null
-;
-
-    const parsed = Number(value)
-;
-
-    if (!Number.isFinite(parsed) || (allowZero ? parsed < 0 : parsed <= 0)) 
-{
-
-        throw new Error(`${label} must be ${allowZero ? 'a non-negative' : 'a positive'} number.`)
-;
-
-    
+        return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || (allowZero ? parsed < 0 : parsed <= 0)) {
+        throw new Error(`${label} must be ${allowZero ? 'a non-negative' : 'a positive'} number.`);
+    }
+    return parsed;
 }
-
-    return parsed
-;
-
-}
-
-function nullableSpeciesQuantity(value) 
-{
-
+function nullableSpeciesQuantity(value) {
     if (value == null || value === '')
-        return null
-;
-
-    const parsed = Number(value)
-;
-
+        return null;
+    const parsed = Number(value);
     if (!Number.isInteger(parsed) || parsed < 0)
-        throw new Error('Quantity must be a non-negative whole number.')
-;
-
-    return parsed
-;
-
+        throw new Error('Quantity must be a non-negative whole number.');
+    return parsed;
 }
-
-async function loadCatalogSpecies(id) 
-{
-
+async function loadCatalogSpecies(id) {
     if (!id)
-        return null
-;
-
-    const result = await (0, index_1.query)('SELECT * FROM aquarium_species_catalog WHERE id=$1', [id])
-;
-
-    return result.rows[0] || null
-;
-
+        return null;
+    const result = await (0, index_1.query)('SELECT * FROM aquarium_species_catalog WHERE id=$1', [id]);
+    return result.rows[0] || null;
 }
-
-function speciesValueSources(row) 
-{
-
-    return 
-{
-
+function speciesValueSources(row) {
+    return {
         ...row,
         avg_size_source: row.avg_size_override_cm != null
             ? 'override'
@@ -580,38 +238,18 @@ function speciesValueSources(row)
         biomass_source: row.catalog_species_id
             ? row.biomass_override_kg != null ? 'override' : row.biomass_kg != null ? 'calculated' : null
             : row.biomass_kg != null ? 'manual' : null,
-    
+    };
 }
-;
-
-}
-
-async function insertAudit(runner, actorId, entityType, entityId, action, details, ipAddress) 
-{
-
+async function insertAudit(runner, actorId, entityType, entityId, action, details, ipAddress) {
     await runner(`INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
-     VALUES ($1,$2,$3,$4,$5,$6)`, [entityType, entityId, action, actorId, details, ipAddress || null])
-;
-
+     VALUES ($1,$2,$3,$4,$5,$6)`, [entityType, entityId, action, actorId, details, ipAddress || null]);
 }
-
-function positiveCorrelationCoefficient(value) 
-{
-
-    const parsed = Number(value)
-;
-
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-;
-
+function positiveCorrelationCoefficient(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
-
-function correlationLibraryRow(row) 
-{
-
-    return 
-{
-
+function correlationLibraryRow(row) {
+    return {
         id: row.id,
         class_id: row.class_id,
         class_code: row.class_code,
@@ -629,36 +267,16 @@ function correlationLibraryRow(row)
         superseded_by: row.superseded_by || null,
         superseded_at: row.superseded_at || null,
         created_at: row.created_at,
-    
+    };
 }
-;
-
-}
-
-async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = new Date().toISOString()) 
-{
-
-    const correlationId = String(rawInputs.agitation_correlation_id || '').trim()
-;
-
-    if (!correlationId) 
-{
-
-        const error = new Error('Select an approved shared-library evaporation correlation before saving.')
-;
-
-        error.status = 400
-;
-
-        error.code = 'THERMAL_CORRELATION_REQUIRED'
-;
-
-        throw error
-;
-
-    
-}
-
+async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = new Date().toISOString()) {
+    const correlationId = String(rawInputs.agitation_correlation_id || '').trim();
+    if (!correlationId) {
+        const error = new Error('Select an approved shared-library evaporation correlation before saving.');
+        error.status = 400;
+        error.code = 'THERMAL_CORRELATION_REQUIRED';
+        throw error;
+    }
     const result = await runner(`SELECT c.id, c.agitation_class_id AS class_id, c.version,
             c.coefficient_kg_m2_s_kpa, c.source_reference, c.notes,
             c.status, c.approved_by, c.approved_at,
@@ -668,101 +286,39 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
      FROM thermal_mass_transfer_correlations c
      JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id
      WHERE c.id=$1
-     FOR SHARE`, [correlationId])
-;
-
-    const row = result.rows[0]
-;
-
-    if (!row) 
-{
-
-        const error = new Error('The selected evaporation correlation does not exist.')
-;
-
-        error.status = 400
-;
-
-        error.code = 'THERMAL_CORRELATION_NOT_FOUND'
-;
-
-        throw error
-;
-
-    
-}
-
-    if (row.status !== 'approved') 
-{
-
-        const error = new Error('The selected evaporation correlation has been superseded. Select the current approved version.')
-;
-
-        error.status = 409
-;
-
-        error.code = 'THERMAL_CORRELATION_SUPERSEDED'
-;
-
-        throw error
-;
-
-    
-}
-
-    const deviation = rawInputs.agitation_correlation_deviation === true
-;
-
-    const justification = String(rawInputs.deviation_justification || '').trim()
-;
-
-    if (deviation && !justification) 
-{
-
-        const error = new Error('A project-specific correlation deviation requires a justification.')
-;
-
-        error.status = 400
-;
-
-        error.code = 'THERMAL_CORRELATION_DEVIATION_JUSTIFICATION_REQUIRED'
-;
-
-        throw error
-;
-
-    
-}
-
-    const libraryCoefficient = positiveCorrelationCoefficient(row.coefficient_kg_m2_s_kpa)
-;
-
+     FOR SHARE`, [correlationId]);
+    const row = result.rows[0];
+    if (!row) {
+        const error = new Error('The selected evaporation correlation does not exist.');
+        error.status = 400;
+        error.code = 'THERMAL_CORRELATION_NOT_FOUND';
+        throw error;
+    }
+    if (row.status !== 'approved') {
+        const error = new Error('The selected evaporation correlation has been superseded. Select the current approved version.');
+        error.status = 409;
+        error.code = 'THERMAL_CORRELATION_SUPERSEDED';
+        throw error;
+    }
+    const deviation = rawInputs.agitation_correlation_deviation === true;
+    const justification = String(rawInputs.deviation_justification || '').trim();
+    if (deviation && !justification) {
+        const error = new Error('A project-specific correlation deviation requires a justification.');
+        error.status = 400;
+        error.code = 'THERMAL_CORRELATION_DEVIATION_JUSTIFICATION_REQUIRED';
+        throw error;
+    }
+    const libraryCoefficient = positiveCorrelationCoefficient(row.coefficient_kg_m2_s_kpa);
     const effectiveCoefficient = deviation
         ? positiveCorrelationCoefficient(rawInputs.evaporation_coefficient_kg_m2_s_kpa)
-        : libraryCoefficient
-;
-
-    if (effectiveCoefficient == null) 
-{
-
-        const error = new Error('A project-specific correlation deviation requires a positive mass-transfer coefficient.')
-;
-
-        error.status = 400
-;
-
-        error.code = 'THERMAL_CORRELATION_DEVIATION_COEFFICIENT_REQUIRED'
-;
-
-        throw error
-;
-
-    
-}
-
-    const snapshot = 
-{
-
+        : libraryCoefficient;
+    if (effectiveCoefficient == null) {
+        const error = new Error('A project-specific correlation deviation requires a positive mass-transfer coefficient.');
+        error.status = 400;
+        error.code = 'THERMAL_CORRELATION_DEVIATION_COEFFICIENT_REQUIRED';
+        throw error;
+    }
+    const snapshot = {
         source: deviation ? 'project_deviation' : 'shared_library',
         correlation_id: row.id,
         class_id: row.class_id,
@@ -780,13 +336,8 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
         approved_by: row.approved_by,
         approved_at: row.approved_at,
         captured_at: capturedAt,
-    
-}
-;
-
-    return 
-{
-
+    };
+    return {
         ...rawInputs,
         agitation_class: row.class_code,
         agitation_correlation_class: row.class_code,
@@ -796,50 +347,24 @@ async function resolveThermalCorrelationInputs(runner, rawInputs, capturedAt = n
         evaporation_coefficient_kg_m2_s_kpa: effectiveCoefficient,
         deviation_justification: deviation ? justification : '',
         agitation_correlation_snapshot: snapshot,
-    
+    };
 }
-;
-
-}
-
-exports.thermalCorrelationTestUtils = 
-{
-
+exports.thermalCorrelationTestUtils = {
     resolveThermalCorrelationInputs,
-}
-;
-
-async function loadReleaseContext(id, runner = index_1.query, lock = false, liveOnly = false) 
-{
-
+};
+async function loadReleaseContext(id, runner = index_1.query, lock = false, liveOnly = false) {
     const bookResult = await runner(`SELECT db.*, p.project_scopes, p.project_code, p.project_name
      FROM design_books db
      LEFT JOIN projects p ON db.project_id = p.id
-     WHERE db.id = $1${lock ? ' FOR UPDATE OF db' : ''}`, [id])
-;
-
-    const book = bookResult.rows[0]
-;
-
+     WHERE db.id = $1${lock ? ' FOR UPDATE OF db' : ''}`, [id]);
+    const book = bookResult.rows[0];
     if (!book)
-        return null
-;
-
-    let exhibits = []
-;
-
-    let tanks = []
-;
-
-    let systems = []
-;
-
-    if (book.project_id) 
-{
-
-        const exhibitResult = await runner('SELECT * FROM exhibits WHERE project_id=$1 ORDER BY exhibit_code', [book.project_id])
-;
-
+        return null;
+    let exhibits = [];
+    let tanks = [];
+    let systems = [];
+    if (book.project_id) {
+        const exhibitResult = await runner('SELECT * FROM exhibits WHERE project_id=$1 ORDER BY exhibit_code', [book.project_id]);
         const tankResult = await runner(`SELECT t.*,
          t.gross_volume_m3 AS project_gross_volume_m3,
          t.operating_volume_m3 AS project_operating_volume_m3,
@@ -875,122 +400,64 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
        LEFT JOIN product_masters pm ON pm.id=t.product_master_id
        LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
        WHERE t.project_id=$1
-       ORDER BY t.tank_code`, [book.project_id])
-;
-
-        const systemResult = await runner('SELECT * FROM systems WHERE project_id=$1 ORDER BY system_code', [book.project_id])
-;
-
-        exhibits = exhibitResult.rows
-;
-
-        tanks = tankResult.rows
-;
-
-        systems = await attachSystemSideStreams(runner, systemResult.rows)
-;
-
-    
-}
-
+       ORDER BY t.tank_code`, [book.project_id]);
+        const systemResult = await runner('SELECT * FROM systems WHERE project_id=$1 ORDER BY system_code', [book.project_id]);
+        exhibits = exhibitResult.rows;
+        tanks = tankResult.rows;
+        systems = await attachSystemSideStreams(runner, systemResult.rows);
+    }
     const speciesResult = await runner(`SELECT s.*, c.family AS catalog_family, c.water_type AS catalog_water_type,
             c.active AS catalog_active
      FROM design_book_exhibit_species s
      LEFT JOIN aquarium_species_catalog c ON c.id=s.catalog_species_id
-     WHERE s.design_book_id=$1 ORDER BY s.exhibit_id, s.sort_order`, [id])
-;
-
-    const hydraulicsResult = await runner('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [id])
-;
-
-    const substrateResult = await runner('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1', [id])
-;
-
-    const species = speciesResult.rows.map(speciesValueSources)
-;
-
-    const hydraulics = hydraulicsResult.rows
-;
-
-    const substrate = substrateResult.rows
-;
-
+     WHERE s.design_book_id=$1 ORDER BY s.exhibit_id, s.sort_order`, [id]);
+    const hydraulicsResult = await runner('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [id]);
+    const substrateResult = await runner('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1', [id]);
+    const species = speciesResult.rows.map(speciesValueSources);
+    const hydraulics = hydraulicsResult.rows;
+    const substrate = substrateResult.rows;
     const handovers = (await runner(`SELECT h.*, u.first_name || ' ' || u.last_name AS created_by_name
      FROM design_book_review_handovers h
      LEFT JOIN users u ON u.id=h.created_by
      WHERE h.design_book_id=$1
-     ORDER BY h.meeting_date DESC, h.created_at DESC`, [id])).rows
-;
-
-    const calculatedAt = new Date().toISOString()
-;
-
-    const exhibitCalculations = exhibits.map(exhibit => (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, tanks.filter(tank => tank.exhibit_id === exhibit.id), hydraulics.find(record => record.exhibit_id === exhibit.id), substrate.find(record => record.exhibit_id === exhibit.id), calculatedAt))
-;
-
-    let links = []
-;
-
-    let biologicalMediaCases = []
-;
-
-    let biologicalMediaRuns = []
-;
-
-    if (systems.length) 
-{
-
-        const linksResult = await runner('SELECT sel.*, e.exhibit_code FROM system_exhibit_links sel LEFT JOIN exhibits e ON e.id=sel.exhibit_id WHERE sel.system_id = ANY($1::uuid[])', [systems.map(system => system.id)])
-;
-
-        links = linksResult.rows
-;
-
+     ORDER BY h.meeting_date DESC, h.created_at DESC`, [id])).rows;
+    const calculatedAt = new Date().toISOString();
+    const exhibitCalculations = exhibits.map(exhibit => (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, tanks.filter(tank => tank.exhibit_id === exhibit.id), hydraulics.find(record => record.exhibit_id === exhibit.id), substrate.find(record => record.exhibit_id === exhibit.id), calculatedAt));
+    let links = [];
+    let biologicalMediaCases = [];
+    let biologicalMediaRuns = [];
+    if (systems.length) {
+        const linksResult = await runner('SELECT sel.*, e.exhibit_code FROM system_exhibit_links sel LEFT JOIN exhibits e ON e.id=sel.exhibit_id WHERE sel.system_id = ANY($1::uuid[])', [systems.map(system => system.id)]);
+        links = linksResult.rows;
         biologicalMediaCases = (await runner(`SELECT c.*, mp.profile_code AS media_profile_code, mp.profile_name AS media_profile_name,
               mp.revision AS media_profile_revision, mp.status AS media_profile_status,
               tp.profile_code AS tan_profile_code, tp.profile_name AS tan_profile_name,
-              tp.revision AS tan_profile_revision, tp.status AS tan_profile_status
+               tp.revision AS tan_profile_revision, tp.status AS tan_profile_status,
+               mt.profile_code AS max_tan_profile_code, mt.profile_name AS max_tan_profile_name,
+               mt.revision AS max_tan_profile_revision, mt.status AS max_tan_profile_status,
+               mt.engineering_note AS max_tan_profile_engineering_note
        FROM lss_biological_media_cases c
        LEFT JOIN lss_biological_media_profiles mp ON mp.id=c.media_profile_revision_id
        LEFT JOIN lss_tan_generation_profiles tp ON tp.id=c.tan_generation_profile_revision_id
-       WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`, [id, systems.map(system => system.id)])).rows
-;
-
-        if (biologicalMediaCases.length) 
-{
-
+        LEFT JOIN lss_max_tan_profiles mt ON mt.id=c.max_tan_profile_revision_id
+       WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`, [id, systems.map(system => system.id)])).rows;
+        if (biologicalMediaCases.length) {
             const biologicalSpecies = (await runner(`SELECT * FROM lss_biological_media_species
-         WHERE case_id = ANY($1::uuid[]) ORDER BY case_id, sort_order, id`, [biologicalMediaCases.map(item => item.id)])).rows
-;
-
-            biologicalMediaCases = biologicalMediaCases.map(item => (
-{
-
+         WHERE case_id = ANY($1::uuid[]) ORDER BY case_id, sort_order, id`, [biologicalMediaCases.map(item => item.id)])).rows;
+            biologicalMediaCases = biologicalMediaCases.map(item => ({
                 ...item,
                 species_rows: biologicalSpecies.filter(row => row.case_id === item.id),
-            
-}
-))
-;
-
+            }));
             biologicalMediaRuns = (await runner(`SELECT r.*, u.first_name || ' ' || u.last_name AS created_by_name,
                 au.first_name || ' ' || au.last_name AS approved_by_name
          FROM lss_biological_media_runs r
          LEFT JOIN users u ON u.id=r.created_by
          LEFT JOIN users au ON au.id=r.approved_by
          WHERE r.case_id = ANY($1::uuid[])
-         ORDER BY r.case_id, r.run_number DESC`, [biologicalMediaCases.map(item => item.id)])).rows
-;
-
-        
-}
-
-    
-}
-
-    const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean)
-;
-
+         ORDER BY r.case_id, r.run_number DESC`, [biologicalMediaCases.map(item => item.id)])).rows;
+        }
+    }
+    const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
     const compactUnits = compactUnitIds.length
         ? (await runner(`SELECT lcu.*,
           COALESCE((
@@ -1000,43 +467,20 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
           ), '[]'::json) AS equipment
        FROM lss_compact_units lcu
        WHERE lcu.id = ANY($1::uuid[])`, [compactUnitIds])).rows
-        : []
-;
-
-    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, links.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculatedAt, system.side_streams || [], system.fractionator_allocations || []))
-;
-
-    const currentSystems = systems.map(system => 
-{
-
-        const calculation = systemCalculations.find(item => item.inputs.system_id === system.id)
-;
-
-        return 
-{
-
+        : [];
+    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, links.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculatedAt, system.side_streams || [], system.fractionator_allocations || []));
+    const currentSystems = systems.map(system => {
+        const calculation = systemCalculations.find(item => item.inputs.system_id === system.id);
+        return {
             ...system,
             stored_design_flow_m3h: system.design_flow_m3h,
             design_flow_m3h: calculation?.results.design_flow_m3h ?? null,
             design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
-        
-}
-;
-
-    
-}
-)
-;
-
-    const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations)
-;
-
-    const pumpSelections = await loadPumpSelections(runner, currentSystems)
-;
-
-    const liveContext = 
-{
-
+        };
+    });
+    const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations);
+    const pumpSelections = await loadPumpSelections(runner, currentSystems);
+    const liveContext = {
         ...book,
         exhibits,
         tanks,
@@ -1051,26 +495,15 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         biological_media_runs: biologicalMediaRuns,
         thermal_calculations: thermalCalculations,
         pump_selections: pumpSelections,
-        engineering_calculations: 
-{
-
+        engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
             calculated_at: calculatedAt,
             exhibits: exhibitCalculations,
             systems: systemCalculations,
-        
-}
-,
-    
-}
-;
-
-    if (!liveOnly && ['For Review', 'Approved'].includes(book.status) && book.review_snapshot) 
-{
-
-        return 
-{
-
+        },
+    };
+    if (!liveOnly && ['For Review', 'Approved'].includes(book.status) && book.review_snapshot) {
+        return {
             ...book.review_snapshot,
             id: book.id,
             book_code: book.book_code,
@@ -1083,74 +516,27 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
             approved_at: book.approved_at,
             approval_notes: book.approval_notes,
             review_snapshot: book.review_snapshot,
-        
+        };
+    }
+    return liveContext;
 }
-;
-
-    
-}
-
-    return liveContext
-;
-
-}
-
-async function ensureBookEditable(id, res) 
-{
-
-    const result = await (0, index_1.query)('SELECT status FROM design_books WHERE id=$1', [id])
-;
-
-    if (!result.rows[0]) 
-{
-
-        res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-        return false
-;
-
-    
-}
-
-    if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(result.rows[0].status)) 
-{
-
-        res.status(409).json(
-{
-
-            error: 
-{
-
+async function ensureBookEditable(id, res) {
+    const result = await (0, index_1.query)('SELECT status FROM design_books WHERE id=$1', [id]);
+    if (!result.rows[0]) {
+        res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+        return false;
+    }
+    if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(result.rows[0].status)) {
+        res.status(409).json({
+            error: {
                 code: 'DESIGN_BOOK_NOT_EDITABLE',
                 message: 'Design Books are read-only while under review, approved, or released. Create a new revision or return to design before editing.',
-            
+            },
+        });
+        return false;
+    }
+    return true;
 }
-,
-        
-}
-)
-;
-
-        return false
-;
-
-    
-}
-
-    return true
-;
-
-}
-
 const thermalCorrelationLibrarySelect = `
   SELECT c.id, c.agitation_class_id AS class_id,
          c.agitation_class_code AS class_code,
@@ -1161,63 +547,26 @@ const thermalCorrelationLibrarySelect = `
          c.status, c.approved_by, c.approved_at,
          c.superseded_by, c.superseded_at, c.created_at
   FROM thermal_mass_transfer_correlations c
-  JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id`
-;
-
-router.get('/thermal-correlations', async (_req, res) => 
-{
-
+  JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id`;
+router.get('/thermal-correlations', async (_req, res) => {
     const [classes, result] = await Promise.all([
         (0, index_1.query)(`SELECT id, class_code, class_name, description, sort_order, is_active, created_at, updated_at
        FROM thermal_agitation_classes
        ORDER BY sort_order, class_name`),
         (0, index_1.query)(`${thermalCorrelationLibrarySelect}
        ORDER BY ac.sort_order, c.agitation_class_name, c.approved_at DESC, c.created_at DESC`),
-    ])
-;
-
-    res.json(
-{
- classes: classes.rows, items: result.rows.map(correlationLibraryRow) 
-}
-)
-;
-
-}
-)
-;
-
-router.post('/thermal-correlations/classes', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => 
-{
-
-    const classCode = String(req.body.class_code || '').trim()
-;
-
-    const className = String(req.body.class_name || '').trim()
-;
-
-    if (!classCode || !className) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'THERMAL_CLASS_REQUIRED', message: 'Class code and class name are required.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
-    try 
-{
-
+    ]);
+    res.json({ classes: classes.rows, items: result.rows.map(correlationLibraryRow) });
+});
+router.post('/thermal-correlations/classes', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
+    const classCode = String(req.body.class_code || '').trim();
+    const className = String(req.body.class_name || '').trim();
+    if (!classCode || !className) {
+        return res.status(400).json({
+            error: { code: 'THERMAL_CLASS_REQUIRED', message: 'Class code and class name are required.' },
+        });
+    }
+    try {
         const result = await (0, index_1.query)(`INSERT INTO thermal_agitation_classes
            (class_code, class_name, description, sort_order, created_by)
          VALUES ($1,$2,$3,$4,$5)
@@ -1227,84 +576,29 @@ router.post('/thermal-correlations/classes', (0, auth_1.requireRole)('admin', 'e
             String(req.body.description || '').trim() || null,
             Number.isInteger(Number(req.body.sort_order)) ? Number(req.body.sort_order) : 0,
             req.user.id,
-        ])
-;
-
-        await insertAudit(index_1.query, req.user.id, 'thermal_agitation_class', result.rows[0].id, 'CREATE', 
-{
-
+        ]);
+        await insertAudit(index_1.query, req.user.id, 'thermal_agitation_class', result.rows[0].id, 'CREATE', {
             summary: `Thermal agitation class ${classCode} created`,
-        
-}
-, req.ip)
-;
-
-        res.status(201).json(result.rows[0])
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        if (error?.code === '23505') 
-{
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'THERMAL_CLASS_EXISTS', message: 'That agitation class code already exists.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        throw error
-;
-
-    
-}
-
-}
-)
-;
-
-router.put('/thermal-correlations/classes/:classId', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => 
-{
-
-    const classCode = String(req.body.class_code || '').trim()
-;
-
-    const className = String(req.body.class_name || '').trim()
-;
-
-    if (!classCode || !className) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'THERMAL_CLASS_REQUIRED', message: 'Class code and class name are required.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
+        }, req.ip);
+        res.status(201).json(result.rows[0]);
+    }
+    catch (error) {
+        if (error?.code === '23505') {
+            return res.status(409).json({
+                error: { code: 'THERMAL_CLASS_EXISTS', message: 'That agitation class code already exists.' },
+            });
+        }
+        throw error;
+    }
+});
+router.put('/thermal-correlations/classes/:classId', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
+    const classCode = String(req.body.class_code || '').trim();
+    const className = String(req.body.class_name || '').trim();
+    if (!classCode || !className) {
+        return res.status(400).json({
+            error: { code: 'THERMAL_CLASS_REQUIRED', message: 'Class code and class name are required.' },
+        });
+    }
     const result = await (0, index_1.query)(`UPDATE thermal_agitation_classes
        SET class_code=$1, class_name=$2, description=$3, sort_order=$4,
            is_active=$5, updated_at=NOW()
@@ -1316,118 +610,41 @@ router.put('/thermal-correlations/classes/:classId', (0, auth_1.requireRole)('ad
         Number.isInteger(Number(req.body.sort_order)) ? Number(req.body.sort_order) : 0,
         req.body.is_active !== false,
         req.params.classId,
-    ])
-;
-
-    if (!result.rows[0]) 
-{
-
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Agitation class not found.' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    await insertAudit(index_1.query, req.user.id, 'thermal_agitation_class', result.rows[0].id, 'UPDATE', 
-{
-
+    ]);
+    if (!result.rows[0]) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Agitation class not found.' } });
+    }
+    await insertAudit(index_1.query, req.user.id, 'thermal_agitation_class', result.rows[0].id, 'UPDATE', {
         summary: `Thermal agitation class ${classCode} updated; existing correlation versions remain unchanged`,
-    
-}
-, req.ip)
-;
-
-    res.json(result.rows[0])
-;
-
-}
-)
-;
-
-router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => 
-{
-
-    const version = String(req.body.version || '').trim()
-;
-
-    const coefficient = positiveCorrelationCoefficient(req.body.coefficient_kg_m2_s_kpa)
-;
-
-    const sourceReference = String(req.body.source_reference || '').trim()
-;
-
-    if (!version || coefficient == null || !sourceReference) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
-
+    }, req.ip);
+    res.json(result.rows[0]);
+});
+router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
+    const version = String(req.body.version || '').trim();
+    const coefficient = positiveCorrelationCoefficient(req.body.coefficient_kg_m2_s_kpa);
+    const sourceReference = String(req.body.source_reference || '').trim();
+    if (!version || coefficient == null || !sourceReference) {
+        return res.status(400).json({
+            error: {
                 code: 'THERMAL_CORRELATION_REQUIRED',
                 message: 'Version, positive mass-transfer coefficient, and source reference are required.',
-            
-}
-,
-        
-}
-)
-;
-
-    
-}
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN')
-;
-
-        const classResult = await client.query('SELECT * FROM thermal_agitation_classes WHERE id=$1 AND is_active=true FOR UPDATE', [req.params.classId])
-;
-
-        const agitationClass = classResult.rows[0]
-;
-
-        if (!agitationClass) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
-
-                error: 
-{
- code: 'NOT_FOUND', message: 'Active agitation class not found.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
+            },
+        });
+    }
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const classResult = await client.query('SELECT * FROM thermal_agitation_classes WHERE id=$1 AND is_active=true FOR UPDATE', [req.params.classId]);
+        const agitationClass = classResult.rows[0];
+        if (!agitationClass) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                error: { code: 'NOT_FOUND', message: 'Active agitation class not found.' },
+            });
+        }
         await client.query(`UPDATE thermal_mass_transfer_correlations
          SET status='superseded', superseded_by=$1, superseded_at=NOW()
-         WHERE agitation_class_id=$2 AND status='approved'`, [req.user.id, agitationClass.id])
-;
-
+         WHERE agitation_class_id=$2 AND status='approved'`, [req.user.id, agitationClass.id]);
         const inserted = await client.query(`INSERT INTO thermal_mass_transfer_correlations
            (agitation_class_id, agitation_class_code, agitation_class_name,
             agitation_class_description, version, coefficient_kg_m2_s_kpa,
@@ -1443,289 +660,92 @@ router.post('/thermal-correlations/classes/:classId/versions', (0, auth_1.requir
             sourceReference,
             String(req.body.notes || '').trim() || null,
             req.user.id,
-        ])
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'thermal_correlation', inserted.rows[0].id, 'APPROVE_VERSION', 
-{
-
+        ]);
+        await insertAudit(client.query.bind(client), req.user.id, 'thermal_correlation', inserted.rows[0].id, 'APPROVE_VERSION', {
             summary: `${agitationClass.class_code} correlation ${version} approved`,
             agitation_class_id: agitationClass.id,
             coefficient_kg_m2_s_kpa: coefficient,
             source_reference: sourceReference,
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        const response = await (0, index_1.query)(`${thermalCorrelationLibrarySelect} WHERE c.id=$1`, [inserted.rows[0].id])
-;
-
-        res.status(201).json(correlationLibraryRow(response.rows[0]))
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        if (error?.code === '23505') 
-{
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'THERMAL_CORRELATION_VERSION_EXISTS', message: 'That version already exists for this agitation class.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
-router.post('/thermal-correlations/versions/:versionId/supersede', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => 
-{
-
+        }, req.ip);
+        await client.query('COMMIT');
+        const response = await (0, index_1.query)(`${thermalCorrelationLibrarySelect} WHERE c.id=$1`, [inserted.rows[0].id]);
+        res.status(201).json(correlationLibraryRow(response.rows[0]));
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        if (error?.code === '23505') {
+            return res.status(409).json({
+                error: { code: 'THERMAL_CORRELATION_VERSION_EXISTS', message: 'That version already exists for this agitation class.' },
+            });
+        }
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+router.post('/thermal-correlations/versions/:versionId/supersede', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     const result = await (0, index_1.query)(`UPDATE thermal_mass_transfer_correlations
        SET status='superseded', superseded_by=$1, superseded_at=NOW()
        WHERE id=$2 AND status='approved'
-       RETURNING *`, [req.user.id, req.params.versionId])
-;
-
-    if (!result.rows[0]) 
-{
-
-        return res.status(404).json(
-{
-
-            error: 
-{
- code: 'THERMAL_CORRELATION_NOT_APPROVED', message: 'Approved correlation version not found.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
-    await insertAudit(index_1.query, req.user.id, 'thermal_correlation', result.rows[0].id, 'SUPERSEDE', 
-{
-
+       RETURNING *`, [req.user.id, req.params.versionId]);
+    if (!result.rows[0]) {
+        return res.status(404).json({
+            error: { code: 'THERMAL_CORRELATION_NOT_APPROVED', message: 'Approved correlation version not found.' },
+        });
+    }
+    await insertAudit(index_1.query, req.user.id, 'thermal_correlation', result.rows[0].id, 'SUPERSEDE', {
         summary: `Thermal correlation ${result.rows[0].version} superseded`,
         reason: String(req.body.reason || '').trim() || null,
-    
-}
-, req.ip)
-;
-
-    res.json(result.rows[0])
-;
-
-}
-)
-;
-
-router.get('/design-books/:id/thermal', auth_1.authenticate, async (req, res) => 
-{
-
-    const frozen = await (0, index_1.query)('SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1', [req.params.id])
-;
-
-    if (!frozen.rows[0]) 
-{
-
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    const book = frozen.rows[0]
-;
-
-    if (book.status === 'Released' && book.release_snapshot) 
-{
-
-        return res.json(
-{
- items: book.release_snapshot.thermal_calculations || [], frozen: true 
-}
-)
-;
-
-    
-}
-
-    if (['For Review', 'Approved'].includes(book.status) && book.review_snapshot) 
-{
-
-        return res.json(
-{
- items: book.review_snapshot.thermal_calculations || [], frozen: true 
-}
-)
-;
-
-    
-}
-
-    const context = await loadReleaseContext(routeParam(req.params.id), index_1.query, false, true)
-;
-
-    res.json(
-{
- items: context?.thermal_calculations || [], frozen: false 
-}
-)
-;
-
-}
-)
-;
-
-async function saveThermalCalculation(req, res) 
-{
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
-;
-
-        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true, true)
-;
-
-        if (!context) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
-
+    }, req.ip);
+    res.json(result.rows[0]);
+});
+router.get('/design-books/:id/thermal', auth_1.authenticate, async (req, res) => {
+    const frozen = await (0, index_1.query)('SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1', [req.params.id]);
+    if (!frozen.rows[0]) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    }
+    const book = frozen.rows[0];
+    if (book.status === 'Released' && book.release_snapshot) {
+        return res.json({ items: book.release_snapshot.thermal_calculations || [], frozen: true });
+    }
+    if (['For Review', 'Approved'].includes(book.status) && book.review_snapshot) {
+        return res.json({ items: book.review_snapshot.thermal_calculations || [], frozen: true });
+    }
+    const context = await loadReleaseContext(routeParam(req.params.id), index_1.query, false, true);
+    res.json({ items: context?.thermal_calculations || [], frozen: false });
+});
+async function saveThermalCalculation(req, res) {
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true, true);
+        if (!context) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+        }
+        if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: {
                     code: 'DESIGN_BOOK_NOT_EDITABLE',
                     message: 'Thermal calculations are read-only while the Design Book is under review, approved, or released.',
-                
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        const item = (context.thermal_calculations || []).find((candidate) => candidate.system_id === req.params.systemId)
-;
-
-        if (!item) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
-
-                error: 
-{
- code: 'INVALID_SYSTEM', message: 'The selected LSS system does not belong to this Design Book project.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
+                },
+            });
+        }
+        const item = (context.thermal_calculations || []).find((candidate) => candidate.system_id === req.params.systemId);
+        if (!item) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                error: { code: 'INVALID_SYSTEM', message: 'The selected LSS system does not belong to this Design Book project.' },
+            });
+        }
         const requestedInputs = req.body?.inputs && typeof req.body.inputs === 'object'
             ? req.body.inputs
-            : req.body || 
-{
-}
-;
-
-        const calculatedAt = new Date().toISOString()
-;
-
-        const inputs = await resolveThermalCorrelationInputs(client.query.bind(client), requestedInputs, calculatedAt)
-;
-
-        const calculation = (0, thermalCalculations_1.calculateThermalCalculation)(item.source, inputs, calculatedAt)
-;
-
+            : req.body || {};
+        const calculatedAt = new Date().toISOString();
+        const inputs = await resolveThermalCorrelationInputs(client.query.bind(client), requestedInputs, calculatedAt);
+        const calculation = (0, thermalCalculations_1.calculateThermalCalculation)(item.source, inputs, calculatedAt);
         const saved = await client.query(`INSERT INTO design_book_thermal_calculations
          (design_book_id, system_id, calculation_version, status, freshness,
           source_fingerprint, source_snapshot, constants, formula_inputs,
@@ -1761,19 +781,12 @@ async function saveThermalCalculation(req, res)
             JSON.stringify(calculation.inputs),
             JSON.stringify(calculation),
             JSON.stringify(calculation.sensitivity_cases),
-            JSON.stringify(calculation.correlation_snapshot || 
-{
-}
-),
+            JSON.stringify(calculation.correlation_snapshot || {}),
             String(calculation.inputs.deviation_justification || '').trim() || null,
             req.user.id,
             calculation.calculated_at,
-        ])
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'THERMAL_CALCULATED', 
-{
-
+        ]);
+        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'THERMAL_CALCULATED', {
             summary: `${item.system.system_code || item.system.system_name} thermal calculation saved`,
             system_id: req.params.systemId,
             calculation_version: calculation.calculation_version,
@@ -1783,125 +796,51 @@ async function saveThermalCalculation(req, res)
             correlation_version: calculation.correlation_snapshot?.version || null,
             correlation_deviation: calculation.correlation_snapshot?.deviation || false,
             deviation_justification: String(calculation.inputs.deviation_justification || '').trim() || null,
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        res.json(
-{
-
+        }, req.ip);
+        await client.query('COMMIT');
+        res.json({
             ...item,
             saved: saved.rows[0],
             calculation,
             current_preview: calculation,
             status: calculation.status,
             freshness: 'fresh',
-        
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
 }
-)
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-
-router.post('/design-books/:id/thermal/:systemId/calculate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), saveThermalCalculation)
-;
-
-router.put('/design-books/:id/thermal/:systemId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), saveThermalCalculation)
-;
-
-router.get('/design-books', auth_1.authenticate, async (req, res) => 
-{
-
-    const q = req.query.q
-;
-
-    const projectId = req.query.project_id
-;
-
-    const params = []
-;
-
-    const filters = []
-;
-
-    if (q) 
-{
-
-        params.push(`%${q}%`)
-;
-
-        filters.push(`(db.book_code ILIKE $${params.length} OR db.book_title ILIKE $${params.length} OR p.project_name ILIKE $${params.length})`)
-;
-
-    
-}
-
-    if (projectId) 
-{
-
-        params.push(projectId)
-;
-
-        filters.push(`db.project_id = $${params.length}`)
-;
-
-    
-}
-
-    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
-;
-
+router.post('/design-books/:id/thermal/:systemId/calculate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), saveThermalCalculation);
+router.put('/design-books/:id/thermal/:systemId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), saveThermalCalculation);
+router.get('/design-books', auth_1.authenticate, async (req, res) => {
+    const q = req.query.q;
+    const projectId = req.query.project_id;
+    const params = [];
+    const filters = [];
+    if (q) {
+        params.push(`%${q}%`);
+        filters.push(`(db.book_code ILIKE $${params.length} OR db.book_title ILIKE $${params.length} OR p.project_name ILIKE $${params.length})`);
+    }
+    if (projectId) {
+        params.push(projectId);
+        filters.push(`db.project_id = $${params.length}`);
+    }
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const result = await (0, index_1.query)(`SELECT db.*, p.project_code, p.project_name, p.client_name,
        u.first_name || ' ' || u.last_name as created_by_name
      FROM design_books db
      LEFT JOIN projects p ON db.project_id = p.id
      LEFT JOIN users u ON db.created_by = u.id
      ${where}
-     ORDER BY db.created_at DESC`, params)
-;
-
-    res.json(
-{
- items: result.rows 
-}
-)
-;
-
-}
-)
-;
-
-router.get('/design-books/:id', auth_1.authenticate, async (req, res) => 
-{
-
+     ORDER BY db.created_at DESC`, params);
+    res.json({ items: result.rows });
+});
+router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
     const book = await (0, index_1.query)(`SELECT db.*, p.project_code, p.project_name, p.client_name, p.site_name, p.country, p.project_scopes,
        u.first_name || ' ' || u.last_name as created_by_name,
        ru.first_name || ' ' || ru.last_name as released_by_name,
@@ -1913,49 +852,21 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) =>
      LEFT JOIN users ru ON db.released_by = ru.id
      LEFT JOIN users su ON db.review_submitted_by = su.id
      LEFT JOIN users au ON db.approved_by = au.id
-     WHERE db.id = $1`, [req.params.id])
-;
-
+     WHERE db.id = $1`, [req.params.id]);
     if (!book.rows[0])
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-    const row = book.rows[0]
-;
-
-    let exhibits = []
-;
-
-    let tanks = []
-;
-
-    let systems = []
-;
-
-    let species = []
-;
-
-    if (row.project_id) 
-{
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    const row = book.rows[0];
+    let exhibits = [];
+    let tanks = [];
+    let systems = [];
+    let species = [];
+    if (row.project_id) {
         const exResult = await (0, index_1.query)(`SELECT e.*, a.area_name, a.area_code
        FROM exhibits e
        LEFT JOIN areas a ON e.area_id = a.id
        WHERE e.project_id = $1
-       ORDER BY a.area_code, e.exhibit_code`, [row.project_id])
-;
-
-        exhibits = exResult.rows
-;
-
+       ORDER BY a.area_code, e.exhibit_code`, [row.project_id]);
+        exhibits = exResult.rows;
         const tkResult = await (0, index_1.query)(`SELECT t.*,
         t.gross_volume_m3 as project_gross_volume_m3,
         t.operating_volume_m3 as project_operating_volume_m3,
@@ -2029,12 +940,8 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) =>
        LEFT JOIN product_masters promoted_pm ON promoted_pm.source_tank_id = t.id
        LEFT JOIN materials mat ON t.material_id = mat.id
        WHERE t.project_id = $1
-       ORDER BY e.exhibit_code NULLS LAST, t.sort_order, t.tank_code`, [row.project_id])
-;
-
-        tanks = tkResult.rows
-;
-
+       ORDER BY e.exhibit_code NULLS LAST, t.sort_order, t.tank_code`, [row.project_id]);
+        tanks = tkResult.rows;
         const sysResult = await (0, index_1.query)(`SELECT s.*,
          e.exhibit_code, e.exhibit_name,
          a.area_code, a.area_name,
@@ -2043,83 +950,39 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) =>
        LEFT JOIN exhibits e ON s.exhibit_id = e.id
        LEFT JOIN areas a ON s.area_id = a.id
        WHERE s.project_id = $1
-       ORDER BY a.area_code NULLS LAST, e.exhibit_code NULLS LAST, s.system_code`, [row.project_id])
-;
-
-        systems = await attachSystemSideStreams(index_1.query, sysResult.rows)
-;
-
-    
-}
-
+       ORDER BY a.area_code NULLS LAST, e.exhibit_code NULLS LAST, s.system_code`, [row.project_id]);
+        systems = await attachSystemSideStreams(index_1.query, sysResult.rows);
+    }
     const speciesResult = await (0, index_1.query)(`SELECT s.*, c.family AS catalog_family, c.water_type AS catalog_water_type,
             c.active AS catalog_active
      FROM design_book_exhibit_species s
      LEFT JOIN aquarium_species_catalog c ON c.id=s.catalog_species_id
-     WHERE s.design_book_id = $1 ORDER BY s.exhibit_id, s.sort_order, s.species_name`, [req.params.id])
-;
-
-    species = speciesResult.rows.map(speciesValueSources)
-;
-
-    const hydraulicsResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id = $1`, [req.params.id])
-;
-
-    const hydraulics = hydraulicsResult.rows
-;
-
-    const substrateResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_substrate WHERE design_book_id = $1`, [req.params.id])
-;
-
-    const substrate = substrateResult.rows
-;
-
+     WHERE s.design_book_id = $1 ORDER BY s.exhibit_id, s.sort_order, s.species_name`, [req.params.id]);
+    species = speciesResult.rows.map(speciesValueSources);
+    const hydraulicsResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id = $1`, [req.params.id]);
+    const hydraulics = hydraulicsResult.rows;
+    const substrateResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_substrate WHERE design_book_id = $1`, [req.params.id]);
+    const substrate = substrateResult.rows;
     // All design-book hydraulic and LSS values are calculated here from the
     // current project inputs.  Consumers receive the inputs and policy along
     // with the values, so they do not need to reproduce engineering formulas.
-    const calculationTimestamp = new Date().toISOString()
-;
-
-    const exhibitCalculations = exhibits.map(exhibit => 
-{
-
-        const hydraulic = hydraulics.find(h => h.exhibit_id === exhibit.id)
-;
-
-        const substrateRecord = substrate.find(s => s.exhibit_id === exhibit.id)
-;
-
-        return (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, tanks.filter(tank => tank.exhibit_id === exhibit.id), hydraulic, substrateRecord, calculationTimestamp)
-;
-
-    
-}
-)
-;
-
-    let systemLinks = []
-;
-
-    if (systems.length > 0) 
-{
-
+    const calculationTimestamp = new Date().toISOString();
+    const exhibitCalculations = exhibits.map(exhibit => {
+        const hydraulic = hydraulics.find(h => h.exhibit_id === exhibit.id);
+        const substrateRecord = substrate.find(s => s.exhibit_id === exhibit.id);
+        return (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, tanks.filter(tank => tank.exhibit_id === exhibit.id), hydraulic, substrateRecord, calculationTimestamp);
+    });
+    let systemLinks = [];
+    if (systems.length > 0) {
         const linkResult = await (0, index_1.query)(`SELECT sel.*, e.exhibit_code
        FROM system_exhibit_links sel
        LEFT JOIN exhibits e ON e.id = sel.exhibit_id
-       WHERE sel.system_id = ANY($1::uuid[])`, [systems.map(system => system.id)])
-;
-
-        systemLinks = linkResult.rows
-;
-
-    
-}
-
+       WHERE sel.system_id = ANY($1::uuid[])`, [systems.map(system => system.id)]);
+        systemLinks = linkResult.rows;
+    }
     const compactUnitIds = systems
         .map(system => system.compact_unit_id)
-        .filter(Boolean)
-;
-
+        .filter(Boolean);
     const compactUnits = compactUnitIds.length > 0
         ? (await (0, index_1.query)(`SELECT lcu.*,
           COALESCE((
@@ -2129,43 +992,20 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) =>
           ), '[]'::json) AS equipment
        FROM lss_compact_units lcu
        WHERE lcu.id = ANY($1::uuid[])`, [compactUnitIds])).rows
-        : []
-;
-
-    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, systemLinks.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculationTimestamp, system.side_streams || [], system.fractionator_allocations || []))
-;
-
-    const currentSystems = systems.map(system => 
-{
-
-        const calculation = systemCalculations.find(item => item.inputs.system_id === system.id)
-;
-
-        return 
-{
-
+        : [];
+    const systemCalculations = systems.map(system => (0, aquariumCalculations_1.calculateSystemEngineering)(system, systemLinks.filter(link => link.system_id === system.id), exhibitCalculations, compactUnits.find(unit => unit.id === system.compact_unit_id) || null, calculationTimestamp, system.side_streams || [], system.fractionator_allocations || []));
+    const currentSystems = systems.map(system => {
+        const calculation = systemCalculations.find(item => item.inputs.system_id === system.id);
+        return {
             ...system,
             stored_design_flow_m3h: system.design_flow_m3h,
             design_flow_m3h: calculation?.results.design_flow_m3h ?? null,
             design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
-        
-}
-;
-
-    
-}
-)
-;
-
-    const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations)
-;
-
-    const pumpSelections = await loadPumpSelections(index_1.query, currentSystems)
-;
-
-    const livePackage = 
-{
-
+        };
+    });
+    const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations);
+    const pumpSelections = await loadPumpSelections(index_1.query, currentSystems);
+    const livePackage = {
         exhibits,
         tanks,
         systems: currentSystems,
@@ -2176,41 +1016,26 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) =>
         substrate,
         thermal_calculations: thermalCalculations,
         pump_selections: pumpSelections,
-        engineering_calculations: 
-{
-
+        engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
             calculated_at: calculationTimestamp,
-            policy: 
-{
-
+            policy: {
                 turnover_unit: 'cycles_per_hour',
                 flow_unit: 'm3_per_hour',
                 allocation_tolerance_pct: 0.01,
                 volume_definition: 'operating water volume less substrate and theming displacement',
                 rounding: 'volumes to 4 decimals m³; flows to 3 decimals m³/h',
-            
-}
-,
+            },
             exhibits: exhibitCalculations,
             systems: systemCalculations,
-        
-}
-,
-    
-}
-;
-
+        },
+    };
     const releasedPackage = row.status === 'Released' && row.release_snapshot
         ? row.release_snapshot
         : ['For Review', 'Approved'].includes(row.status) && row.review_snapshot
             ? row.review_snapshot
-            : livePackage
-;
-
-    res.json(
-{
-
+            : livePackage;
+    res.json({
         ...row,
         ...releasedPackage,
         id: row.id,
@@ -2222,296 +1047,87 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) =>
         release_notes: row.release_notes,
         released_by_name: row.released_by_name,
         released_at: row.released_at,
-    
-}
-)
-;
-
-}
-)
-;
-
-router.get('/design-books/:id/release-preflight', auth_1.authenticate, async (req, res) => 
-{
-
-    const context = await loadReleaseContext(routeParam(req.params.id))
-;
-
+    });
+});
+router.get('/design-books/:id/release-preflight', auth_1.authenticate, async (req, res) => {
+    const context = await loadReleaseContext(routeParam(req.params.id));
     if (!context)
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-    const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
-;
-
-    res.json(
-{
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context);
+    res.json({
         design_book_id: req.params.id,
         status: context.status,
         revision: context.revision,
         checklist,
         blockers: (0, designBookRelease_1.releaseBlockers)(checklist),
-    
-}
-)
-;
-
-}
-)
-;
-
-router.post('/design-books', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
-    const 
-{
- book_code, book_title, project_id, description, revision, status, notes 
-}
- = req.body
-;
-
+    });
+});
+router.post('/design-books', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    const { book_code, book_title, project_id, description, revision, status, notes } = req.body;
     if (!book_code || !book_title)
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'book_code and book_title are required' 
-}
- 
-}
-)
-;
-
-    if (status && status !== 'Draft') 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'WORKFLOW_ACTION_REQUIRED', message: 'New Design Books must start as Draft.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'book_code and book_title are required' } });
+    if (status && status !== 'Draft') {
+        return res.status(400).json({
+            error: { code: 'WORKFLOW_ACTION_REQUIRED', message: 'New Design Books must start as Draft.' },
+        });
+    }
     const result = await (0, index_1.query)(`INSERT INTO design_books (book_code, book_title, project_id, description, revision, status, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [book_code, book_title, project_id || null, description || null, revision || 'A', 'Draft', notes || null, req.user.id])
-;
-
-    res.status(201).json(result.rows[0])
-;
-
-}
-)
-;
-
-router.put('/design-books/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
-    const 
-{
- book_title, project_id, description, revision, status, notes 
-}
- = req.body
-;
-
-    const existing = await (0, index_1.query)('SELECT status FROM design_books WHERE id=$1', [req.params.id])
-;
-
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [book_code, book_title, project_id || null, description || null, revision || 'A', 'Draft', notes || null, req.user.id]);
+    res.status(201).json(result.rows[0]);
+});
+router.put('/design-books/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    const { book_title, project_id, description, revision, status, notes } = req.body;
+    const existing = await (0, index_1.query)('SELECT status FROM design_books WHERE id=$1', [req.params.id]);
     if (!existing.rows[0])
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-    if (status && status !== existing.rows[0].status) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'WORKFLOW_ACTION_REQUIRED', message: 'Use the Design Book review, approval, or release action to change workflow status.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    if (status && status !== existing.rows[0].status) {
+        return res.status(400).json({
+            error: { code: 'WORKFLOW_ACTION_REQUIRED', message: 'Use the Design Book review, approval, or release action to change workflow status.' },
+        });
+    }
     if (!await ensureBookEditable(routeParam(req.params.id), res))
-        return
-;
-
+        return;
     const result = await (0, index_1.query)(`UPDATE design_books SET book_title=$1, project_id=$2, description=$3, revision=$4, status=$5, notes=$6, updated_at=NOW()
-     WHERE id=$7 AND status <> 'Released' RETURNING *`, [book_title, project_id || null, description || null, revision || 'A', existing.rows[0].status, notes || null, req.params.id])
-;
-
+     WHERE id=$7 AND status <> 'Released' RETURNING *`, [book_title, project_id || null, description || null, revision || 'A', existing.rows[0].status, notes || null, req.params.id]);
     if (!result.rows[0])
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-    res.json(result.rows[0])
-;
-
-}
-)
-;
-
-router.delete('/design-books/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    res.json(result.rows[0]);
+});
+router.delete('/design-books/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
-        return
-;
-
+        return;
     const result = await (0, index_1.query)(`DELETE FROM design_books
      WHERE id=$1 AND status <> 'Released'
-     RETURNING id`, [req.params.id])
-;
-
+     RETURNING id`, [req.params.id]);
     if (!result.rows[0])
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-    res.json(
-{
- deleted: true 
-}
-)
-;
-
-}
-)
-;
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    res.json({ deleted: true });
+});
 // Species CRUD
-router.post('/design-books/:id/species', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => 
-{
-
+router.post('/design-books/:id/species', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
-        return
-;
-
-    const catalogId = req.body.catalog_species_id || req.body.catalog_id || null
-;
-
-    const catalog = await loadCatalogSpecies(catalogId)
-;
-
+        return;
+    const catalogId = req.body.catalog_species_id || req.body.catalog_id || null;
+    const catalog = await loadCatalogSpecies(catalogId);
     if (catalogId && !catalog)
-        return res.status(400).json(
-{
- error: 
-{
- code: 'INVALID_CATALOG_SPECIES', message: 'Selected catalog species does not exist.' 
-}
- 
-}
-)
-;
-
+        return res.status(400).json({ error: { code: 'INVALID_CATALOG_SPECIES', message: 'Selected catalog species does not exist.' } });
     if (catalog && !catalog.active)
-        return res.status(409).json(
-{
- error: 
-{
- code: 'INACTIVE_CATALOG_SPECIES', message: 'Inactive catalog species cannot be added to a new allocation.' 
-}
- 
-}
-)
-;
-
-    const speciesName = String(catalog?.scientific_name || req.body.species_name || '').trim()
-;
-
-    const exhibitId = String(req.body.exhibit_id || '').trim()
-;
-
+        return res.status(409).json({ error: { code: 'INACTIVE_CATALOG_SPECIES', message: 'Inactive catalog species cannot be added to a new allocation.' } });
+    const speciesName = String(catalog?.scientific_name || req.body.species_name || '').trim();
+    const exhibitId = String(req.body.exhibit_id || '').trim();
     if (!exhibitId || !speciesName)
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'exhibit_id and a catalog or custom scientific name are required.' 
-}
- 
-}
-)
-;
-
-    try 
-{
-
-        const quantity = nullableSpeciesQuantity(req.body.quantity)
-;
-
-        const avgSizeOverride = catalog ? nullableSpeciesNumber(req.body.avg_size_override_cm, 'Average size override') : null
-;
-
-        const massOverride = catalog ? nullableSpeciesNumber(req.body.reference_mass_override_kg, 'Reference mass override') : null
-;
-
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id and a catalog or custom scientific name are required.' } });
+    try {
+        const quantity = nullableSpeciesQuantity(req.body.quantity);
+        const avgSizeOverride = catalog ? nullableSpeciesNumber(req.body.avg_size_override_cm, 'Average size override') : null;
+        const massOverride = catalog ? nullableSpeciesNumber(req.body.reference_mass_override_kg, 'Reference mass override') : null;
         const biomassOverride = catalog
             ? nullableSpeciesNumber(req.body.biomass_override_kg ?? req.body.biomass_kg, 'Biomass override', true)
-            : null
-;
-
-        const manualAverageSize = catalog ? null : nullableSpeciesNumber(req.body.avg_size_cm, 'Average size')
-;
-
-        const manualReferenceMass = catalog ? null : nullableSpeciesNumber(req.body.reference_average_mass_kg, 'Reference average mass')
-;
-
-        const manualBiomass = catalog ? null : nullableSpeciesNumber(req.body.biomass_kg, 'Biomass', true)
-;
-
-        const calculated = (0, speciesAllocations_1.calculateSpeciesAllocation)(
-{
-
+            : null;
+        const manualAverageSize = catalog ? null : nullableSpeciesNumber(req.body.avg_size_cm, 'Average size');
+        const manualReferenceMass = catalog ? null : nullableSpeciesNumber(req.body.reference_average_mass_kg, 'Reference average mass');
+        const manualBiomass = catalog ? null : nullableSpeciesNumber(req.body.biomass_kg, 'Biomass', true);
+        const calculated = (0, speciesAllocations_1.calculateSpeciesAllocation)({
             quantity,
             catalogLinked: !!catalog,
             catalogAverageSizeCm: catalog ? nullableSpeciesNumber(catalog.average_size_cm, 'Catalog average size') : null,
@@ -2522,11 +1138,7 @@ router.post('/design-books/:id/species', auth_1.authenticate, (0, auth_1.require
             averageSizeOverrideCm: avgSizeOverride,
             referenceMassOverrideKg: massOverride,
             biomassOverrideKg: biomassOverride,
-        
-}
-)
-;
-
+        });
         const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_species
          (design_book_id, exhibit_id, catalog_species_id, species_name, common_name, quantity,
           avg_size_cm, reference_average_mass_kg, biomass_kg, avg_size_override_cm,
@@ -2538,180 +1150,65 @@ router.post('/design-books/:id/species', auth_1.authenticate, (0, auth_1.require
        RETURNING *`, [req.params.id, exhibitId, catalogId, speciesName, catalog?.common_name || req.body.common_name || null,
             quantity, calculated.average_size_cm, calculated.reference_average_mass_kg, calculated.biomass_kg,
             avgSizeOverride, massOverride, biomassOverride,
-            req.body.notes || null, Number(req.body.sort_order) || 0])
-;
-
-        if (!result.rows[0]) 
-{
-
-            return res.status(400).json(
-{
- error: 
-{
- code: 'INVALID_EXHIBIT', message: 'Exhibit must belong to the Design Book project.' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        res.status(201).json(speciesValueSources(result.rows[0]))
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: error.message 
-}
- 
-}
-)
-;
-
-    
-}
-
-}
-)
-;
-
-router.put('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => 
-{
-
+            req.body.notes || null, Number(req.body.sort_order) || 0]);
+        if (!result.rows[0]) {
+            return res.status(400).json({ error: { code: 'INVALID_EXHIBIT', message: 'Exhibit must belong to the Design Book project.' } });
+        }
+        res.status(201).json(speciesValueSources(result.rows[0]));
+    }
+    catch (error) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
+});
+router.put('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
-        return
-;
-
+        return;
     const existingResult = await (0, index_1.query)(`SELECT s.*
      FROM design_book_exhibit_species s
      JOIN design_books db ON db.id=s.design_book_id
      JOIN exhibits e ON e.id=s.exhibit_id AND e.project_id=db.project_id
-     WHERE s.id=$1 AND s.design_book_id=$2`, [req.params.speciesId, req.params.id])
-;
-
-    const existing = existingResult.rows[0]
-;
-
+     WHERE s.id=$1 AND s.design_book_id=$2`, [req.params.speciesId, req.params.id]);
+    const existing = existingResult.rows[0];
     if (!existing)
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Species entry not found' 
-}
- 
-}
-)
-;
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species entry not found' } });
     const catalogId = req.body.catalog_species_id !== undefined || req.body.catalog_id !== undefined
         ? req.body.catalog_species_id || req.body.catalog_id || null
-        : existing.catalog_species_id
-;
-
-    const catalog = await loadCatalogSpecies(catalogId)
-;
-
+        : existing.catalog_species_id;
+    const catalog = await loadCatalogSpecies(catalogId);
     if (catalogId && !catalog)
-        return res.status(400).json(
-{
- error: 
-{
- code: 'INVALID_CATALOG_SPECIES', message: 'Selected catalog species does not exist.' 
-}
- 
-}
-)
-;
-
-    const catalogChanged = String(catalogId || '') !== String(existing.catalog_species_id || '')
-;
-
-    if (catalog && !catalog.active && catalogChanged) 
-{
-
-        return res.status(409).json(
-{
- error: 
-{
- code: 'INACTIVE_CATALOG_SPECIES', message: 'Inactive catalog species cannot be selected for a new allocation.' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    try 
-{
-
-        const quantity = nullableSpeciesQuantity(Object.prototype.hasOwnProperty.call(req.body, 'quantity') ? req.body.quantity : existing.quantity)
-;
-
-        const hasAvgOverride = Object.prototype.hasOwnProperty.call(req.body, 'avg_size_override_cm')
-;
-
-        const hasMassOverride = Object.prototype.hasOwnProperty.call(req.body, 'reference_mass_override_kg')
-;
-
+        return res.status(400).json({ error: { code: 'INVALID_CATALOG_SPECIES', message: 'Selected catalog species does not exist.' } });
+    const catalogChanged = String(catalogId || '') !== String(existing.catalog_species_id || '');
+    if (catalog && !catalog.active && catalogChanged) {
+        return res.status(409).json({ error: { code: 'INACTIVE_CATALOG_SPECIES', message: 'Inactive catalog species cannot be selected for a new allocation.' } });
+    }
+    try {
+        const quantity = nullableSpeciesQuantity(Object.prototype.hasOwnProperty.call(req.body, 'quantity') ? req.body.quantity : existing.quantity);
+        const hasAvgOverride = Object.prototype.hasOwnProperty.call(req.body, 'avg_size_override_cm');
+        const hasMassOverride = Object.prototype.hasOwnProperty.call(req.body, 'reference_mass_override_kg');
         const hasBiomassOverride = Object.prototype.hasOwnProperty.call(req.body, 'biomass_override_kg')
-            || Object.prototype.hasOwnProperty.call(req.body, 'biomass_kg')
-;
-
+            || Object.prototype.hasOwnProperty.call(req.body, 'biomass_kg');
         const avgSizeOverride = catalog
             ? nullableSpeciesNumber(hasAvgOverride ? req.body.avg_size_override_cm : existing.avg_size_override_cm, 'Average size override')
-            : null
-;
-
+            : null;
         const massOverride = catalog
             ? nullableSpeciesNumber(hasMassOverride ? req.body.reference_mass_override_kg : existing.reference_mass_override_kg, 'Reference mass override')
-            : null
-;
-
+            : null;
         const biomassOverride = catalog
             ? nullableSpeciesNumber(hasBiomassOverride ? req.body.biomass_override_kg ?? req.body.biomass_kg : existing.biomass_override_kg, 'Biomass override', true)
-            : null
-;
-
-        const refreshCatalog = catalogChanged || req.body.refresh_catalog === true
-;
-
+            : null;
+        const refreshCatalog = catalogChanged || req.body.refresh_catalog === true;
         const averageCatalogBaseline = refreshCatalog || (hasAvgOverride && avgSizeOverride == null && existing.avg_size_override_cm != null)
             ? catalog?.average_size_cm
-            : existing.avg_size_cm
-;
-
+            : existing.avg_size_cm;
         const massCatalogBaseline = refreshCatalog || (hasMassOverride && massOverride == null && existing.reference_mass_override_kg != null)
             ? catalog?.reference_average_mass_kg
-            : existing.reference_average_mass_kg
-;
-
-        const manualAverageSize = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'avg_size_cm') ? req.body.avg_size_cm : existing.avg_size_cm, 'Average size')
-;
-
+            : existing.reference_average_mass_kg;
+        const manualAverageSize = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'avg_size_cm') ? req.body.avg_size_cm : existing.avg_size_cm, 'Average size');
         const manualReferenceMass = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'reference_average_mass_kg')
             ? req.body.reference_average_mass_kg
-            : existing.reference_average_mass_kg, 'Reference average mass')
-;
-
-        const manualBiomass = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'biomass_kg') ? req.body.biomass_kg : existing.biomass_kg, 'Biomass', true)
-;
-
-        const calculated = (0, speciesAllocations_1.calculateSpeciesAllocation)(
-{
-
+            : existing.reference_average_mass_kg, 'Reference average mass');
+        const manualBiomass = catalog ? null : nullableSpeciesNumber(Object.prototype.hasOwnProperty.call(req.body, 'biomass_kg') ? req.body.biomass_kg : existing.biomass_kg, 'Biomass', true);
+        const calculated = (0, speciesAllocations_1.calculateSpeciesAllocation)({
             quantity,
             catalogLinked: !!catalog,
             catalogAverageSizeCm: catalog ? nullableSpeciesNumber(averageCatalogBaseline, 'Catalog average size') : null,
@@ -2722,31 +1219,13 @@ router.put('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth
             averageSizeOverrideCm: avgSizeOverride,
             referenceMassOverrideKg: massOverride,
             biomassOverrideKg: biomassOverride,
-        
-}
-)
-;
-
-        const speciesName = String(catalog && refreshCatalog ? catalog.scientific_name : req.body.species_name || existing.species_name).trim()
-;
-
+        });
+        const speciesName = String(catalog && refreshCatalog ? catalog.scientific_name : req.body.species_name || existing.species_name).trim();
         const commonName = catalog && refreshCatalog
             ? catalog.common_name
-            : req.body.common_name !== undefined ? req.body.common_name || null : existing.common_name
-;
-
+            : req.body.common_name !== undefined ? req.body.common_name || null : existing.common_name;
         if (!speciesName)
-            return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Scientific name is required.' 
-}
- 
-}
-)
-;
-
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'Scientific name is required.' } });
         const result = await (0, index_1.query)(`UPDATE design_book_exhibit_species
        SET catalog_species_id=$1, species_name=$2, common_name=$3, quantity=$4,
            avg_size_cm=$5, reference_average_mass_kg=$6, biomass_kg=$7,
@@ -2756,151 +1235,50 @@ router.put('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth
             calculated.average_size_cm, calculated.reference_average_mass_kg, calculated.biomass_kg,
             avgSizeOverride, massOverride, biomassOverride,
             req.body.notes !== undefined ? req.body.notes || null : existing.notes,
-            req.params.speciesId, req.params.id])
-;
-
-        res.json(speciesValueSources(result.rows[0]))
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: error.message 
-}
- 
-}
-)
-;
-
-    
-}
-
-}
-)
-;
-
-router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
+            req.params.speciesId, req.params.id]);
+        res.json(speciesValueSources(result.rows[0]));
+    }
+    catch (error) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
+});
+router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
-        return
-;
-
-    const 
-{
- substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes 
-}
- = req.body
-;
-
+        return;
+    const { substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes } = req.body;
     for (const [label, value] of [
         ['Substrate height', substrate_height_mm],
         ['Substrate volume', substrate_volume_m3],
         ['Theming height', theming_height_mm],
         ['Theming volume', theming_volume_m3],
         ['Theming percentage', theming_volume_pct],
-    ]) 
-{
-
-        if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) 
-{
-
-            return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: `${label} must be a non-negative number.` 
-}
- 
-}
-)
-;
-
-        
-}
-
-    
-}
-
-    if (theming_volume_pct != null && Number(theming_volume_pct) > 100) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Theming percentage cannot exceed 100%.' 
-}
- 
-}
-)
-;
-
-    
-}
-
+    ]) {
+        if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a non-negative number.` } });
+        }
+    }
+    if (theming_volume_pct != null && Number(theming_volume_pct) > 100) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Theming percentage cannot exceed 100%.' } });
+    }
     const tankVolumeResult = await (0, index_1.query)(`SELECT SUM(COALESCE(t.operating_volume_m3, pm.operating_volume_m3, 0) * COALESCE(t.quantity, 1)) AS volume_m3
      FROM tanks t
      LEFT JOIN product_masters pm ON pm.id=t.product_master_id
-     WHERE t.exhibit_id=$1`, [req.params.exhibitId])
-;
-
-    const grossOperatingVolume = Number(tankVolumeResult.rows[0]?.volume_m3)
-;
-
-    if (theming_volume_pct != null && !(grossOperatingVolume > 0)) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'VALIDATION', message: 'A known tank operating volume is required to use percentage-based theming displacement.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
+     WHERE t.exhibit_id=$1`, [req.params.exhibitId]);
+    const grossOperatingVolume = Number(tankVolumeResult.rows[0]?.volume_m3);
+    if (theming_volume_pct != null && !(grossOperatingVolume > 0)) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'A known tank operating volume is required to use percentage-based theming displacement.' },
+        });
+    }
     const resolvedThemingVolume = theming_volume_pct != null
         ? Math.round(grossOperatingVolume * Number(theming_volume_pct) / 100 * 1e6) / 1e6
-        : (theming_volume_m3 ?? null)
-;
-
-    const displacement = Number(substrate_volume_m3 || 0) + Number(resolvedThemingVolume || 0)
-;
-
-    if (grossOperatingVolume > 0 && displacement >= grossOperatingVolume) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'VALIDATION', message: 'Substrate and theming displacement must be less than operating volume.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
+        : (theming_volume_m3 ?? null);
+    const displacement = Number(substrate_volume_m3 || 0) + Number(resolvedThemingVolume || 0);
+    if (grossOperatingVolume > 0 && displacement >= grossOperatingVolume) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'Substrate and theming displacement must be less than operating volume.' },
+        });
+    }
     const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_substrate
        (design_book_id, exhibit_id, substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -2918,248 +1296,65 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticat
      RETURNING *`, [req.params.id, req.params.exhibitId,
         substrate_type || null, substrate_height_mm ?? null, substrate_volume_m3 ?? null,
         theming_type || null, theming_height_mm ?? null, resolvedThemingVolume,
-        theming_volume_pct ?? null, notes || null])
-;
-
-    res.json(result.rows[0])
-;
-
-}
-)
-;
-
-router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
+        theming_volume_pct ?? null, notes || null]);
+    res.json(result.rows[0]);
+});
+router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
-        return
-;
-
-    const 
-{
- target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes, weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions, weir_discharge_condition, weir_downstream_head_mm, 
-}
- = req.body
-;
-
-    const hasField = (field) => Object.prototype.hasOwnProperty.call(req.body, field)
-;
-
-    const hasWeirHead = hasField('weir_head_mm')
-;
-
-    const hasWeirLength = hasField('weir_length_mm')
-;
-
-    const hasWeirMethod = hasField('weir_formula_method')
-;
-
-    const hasWeirGeometry = hasField('weir_geometry')
-;
-
-    const hasWeirContractions = hasField('weir_end_contractions')
-;
-
-    const hasWeirDischarge = hasField('weir_discharge_condition')
-;
-
-    const hasWeirDownstreamHead = hasField('weir_downstream_head_mm')
-;
-
-    if (weir_formula_method != null && !['francis_184', 'bazin_1888'].includes(weir_formula_method)) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Unsupported weir formula method' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    if (weir_geometry != null && weir_geometry !== 'sharp_rectangular') 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Only sharp-crested rectangular weirs are supported' 
-}
- 
-}
-)
-;
-
-    
-}
-
+        return;
+    const { target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes, weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions, weir_discharge_condition, weir_downstream_head_mm, } = req.body;
+    const hasField = (field) => Object.prototype.hasOwnProperty.call(req.body, field);
+    const hasWeirHead = hasField('weir_head_mm');
+    const hasWeirLength = hasField('weir_length_mm');
+    const hasWeirMethod = hasField('weir_formula_method');
+    const hasWeirGeometry = hasField('weir_geometry');
+    const hasWeirContractions = hasField('weir_end_contractions');
+    const hasWeirDischarge = hasField('weir_discharge_condition');
+    const hasWeirDownstreamHead = hasField('weir_downstream_head_mm');
+    if (weir_formula_method != null && !['francis_184', 'bazin_1888'].includes(weir_formula_method)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Unsupported weir formula method' } });
+    }
+    if (weir_geometry != null && weir_geometry !== 'sharp_rectangular') {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Only sharp-crested rectangular weirs are supported' } });
+    }
     if (weir_end_contractions != null &&
-        (!Number.isInteger(Number(weir_end_contractions)) || Number(weir_end_contractions) < 0 || Number(weir_end_contractions) > 2)) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Weir end contractions must be 0, 1, or 2' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    if (weir_discharge_condition != null && !['free', 'submerged'].includes(weir_discharge_condition)) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Unsupported weir discharge condition' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    if (weir_head_mm != null && (!Number.isFinite(Number(weir_head_mm)) || Number(weir_head_mm) < 0)) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Weir head must be a non-negative number' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    if (weir_length_mm != null && (!Number.isFinite(Number(weir_length_mm)) || Number(weir_length_mm) < 0)) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Weir length must be a non-negative number' 
-}
- 
-}
-)
-;
-
-    
-}
-
+        (!Number.isInteger(Number(weir_end_contractions)) || Number(weir_end_contractions) < 0 || Number(weir_end_contractions) > 2)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Weir end contractions must be 0, 1, or 2' } });
+    }
+    if (weir_discharge_condition != null && !['free', 'submerged'].includes(weir_discharge_condition)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Unsupported weir discharge condition' } });
+    }
+    if (weir_head_mm != null && (!Number.isFinite(Number(weir_head_mm)) || Number(weir_head_mm) < 0)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Weir head must be a non-negative number' } });
+    }
+    if (weir_length_mm != null && (!Number.isFinite(Number(weir_length_mm)) || Number(weir_length_mm) < 0)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Weir length must be a non-negative number' } });
+    }
     if (weir_downstream_head_mm != null &&
-        (!Number.isFinite(Number(weir_downstream_head_mm)) || Number(weir_downstream_head_mm) < 0)) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Downstream head must be a non-negative number' 
-}
- 
-}
-)
-;
-
-    
-}
-
+        (!Number.isFinite(Number(weir_downstream_head_mm)) || Number(weir_downstream_head_mm) < 0)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Downstream head must be a non-negative number' } });
+    }
     const numericFields = [
         ['target turnover rate', target_turnover_rate],
         ['surface skim percentage', surface_skim_pct],
         ['bottom drain percentage', bottom_drain_pct],
-    ]
-;
-
-    for (const [label, value] of numericFields) 
-{
-
-        if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) 
-{
-
-            return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: `${label} must be a non-negative number` 
-}
- 
-}
-)
-;
-
-        
-}
-
-    
-}
-
-    if (target_turnover_rate != null && Number(target_turnover_rate) === 0) 
-{
-
-        return res.status(400).json(
-{
- error: 
-{
- code: 'VALIDATION', message: 'Target turnover rate must be greater than zero' 
-}
- 
-}
-)
-;
-
-    
-}
-
-    const savedSurfacePct = surface_skim_pct ?? 30
-;
-
-    const savedBottomPct = bottom_drain_pct ?? 70
-;
-
+    ];
+    for (const [label, value] of numericFields) {
+        if (value != null && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a non-negative number` } });
+        }
+    }
+    if (target_turnover_rate != null && Number(target_turnover_rate) === 0) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Target turnover rate must be greater than zero' } });
+    }
+    const savedSurfacePct = surface_skim_pct ?? 30;
+    const savedBottomPct = bottom_drain_pct ?? 70;
     if (Number(savedSurfacePct) > 100 || Number(savedBottomPct) > 100 ||
-        Math.abs(Number(savedSurfacePct) + Number(savedBottomPct) - 100) > aquariumCalculations_1.ALLOCATION_TOLERANCE_PCT) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'VALIDATION', message: `Surface and bottom allocations must total 100% ± ${aquariumCalculations_1.ALLOCATION_TOLERANCE_PCT}%.` 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
+        Math.abs(Number(savedSurfacePct) + Number(savedBottomPct) - 100) > aquariumCalculations_1.ALLOCATION_TOLERANCE_PCT) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: `Surface and bottom allocations must total 100% ± ${aquariumCalculations_1.ALLOCATION_TOLERANCE_PCT}%.` },
+        });
+    }
     const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_hydraulics
        (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
         weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
@@ -3191,9 +1386,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
         weir_discharge_condition ?? null, weir_downstream_head_mm ?? null,
         hasWeirHead, hasWeirLength, hasWeirMethod, hasWeirGeometry, hasWeirContractions,
         hasWeirDischarge, hasWeirDownstreamHead,
-        JSON.stringify(
-{
-
+        JSON.stringify({
             target_turnover_rate: target_turnover_rate ?? null,
             surface_skim_pct: savedSurfacePct,
             bottom_drain_pct: savedBottomPct,
@@ -3201,160 +1394,49 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
             flow_unit: 'm3_per_hour',
             weir_head_unit: 'mm',
             weir_length_unit: 'mm',
-        
-}
-)])
-;
-
-    res.json(result.rows[0])
-;
-
-}
-)
-;
-
-router.delete('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => 
-{
-
+        })]);
+    res.json(result.rows[0]);
+});
+router.delete('/design-books/:id/species/:speciesId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
-        return
-;
-
-    const result = await (0, index_1.query)('DELETE FROM design_book_exhibit_species WHERE id=$1 AND design_book_id=$2 RETURNING id', [req.params.speciesId, req.params.id])
-;
-
+        return;
+    const result = await (0, index_1.query)('DELETE FROM design_book_exhibit_species WHERE id=$1 AND design_book_id=$2 RETURNING id', [req.params.speciesId, req.params.id]);
     if (!result.rows[0])
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Species entry not found' 
-}
- 
-}
-)
-;
-
-    res.json(
-{
- deleted: true 
-}
-)
-;
-
-}
-)
-;
-
-router.get('/design-books/:id/review-handovers', auth_1.authenticate, async (req, res) => 
-{
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Species entry not found' } });
+    res.json({ deleted: true });
+});
+router.get('/design-books/:id/review-handovers', auth_1.authenticate, async (req, res) => {
     const result = await (0, index_1.query)(`SELECT h.*, u.first_name || ' ' || u.last_name AS created_by_name
      FROM design_book_review_handovers h
      LEFT JOIN users u ON u.id=h.created_by
      WHERE h.design_book_id=$1
-     ORDER BY h.meeting_date DESC, h.created_at DESC`, [req.params.id])
-;
-
-    res.json(
-{
- items: result.rows 
-}
-)
-;
-
-}
-)
-;
-
-router.post('/design-books/:id/review-handovers', auth_1.authenticate, (0, auth_1.requireRole)(...Array.from(new Set([...designBookWorkflow_1.DESIGN_BOOK_DESIGNER_ROLES, ...designBookWorkflow_1.DESIGN_BOOK_MANAGER_ROLES]))), async (req, res) => 
-{
-
-    const 
-{
- meeting_date, title, attendees, purpose, discussion_summary, decisions, action_items, open_items, acceptance_notes, 
-}
- = req.body
-;
-
+     ORDER BY h.meeting_date DESC, h.created_at DESC`, [req.params.id]);
+    res.json({ items: result.rows });
+});
+router.post('/design-books/:id/review-handovers', auth_1.authenticate, (0, auth_1.requireRole)(...Array.from(new Set([...designBookWorkflow_1.DESIGN_BOOK_DESIGNER_ROLES, ...designBookWorkflow_1.DESIGN_BOOK_MANAGER_ROLES]))), async (req, res) => {
+    const { meeting_date, title, attendees, purpose, discussion_summary, decisions, action_items, open_items, acceptance_notes, } = req.body;
     const attendeeList = Array.isArray(attendees)
         ? attendees.map((value) => String(value).trim()).filter(Boolean)
-        : String(attendees || '').split(/[\n,]/).map(value => value.trim()).filter(Boolean)
-;
-
-    if (!meeting_date || !title?.trim()) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'VALIDATION', message: 'Meeting date and report title are required.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
-;
-
-        const bookResult = await client.query('SELECT status, review_snapshot FROM design_books WHERE id=$1 FOR UPDATE', [req.params.id])
-;
-
-        if (!bookResult.rows[0]) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        if (bookResult.rows[0].status !== 'For Review') 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'INVALID_HANDOVER_STATE', message: 'Handover reports can only be recorded while a Design Book is For Review.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
+        : String(attendees || '').split(/[\n,]/).map(value => value.trim()).filter(Boolean);
+    if (!meeting_date || !title?.trim()) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'Meeting date and report title are required.' },
+        });
+    }
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+        const bookResult = await client.query('SELECT status, review_snapshot FROM design_books WHERE id=$1 FOR UPDATE', [req.params.id]);
+        if (!bookResult.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+        }
+        if (bookResult.rows[0].status !== 'For Review') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'INVALID_HANDOVER_STATE', message: 'Handover reports can only be recorded while a Design Book is For Review.' },
+            });
+        }
         const result = await client.query(`INSERT INTO design_book_review_handovers
            (design_book_id, meeting_date, title, attendees, purpose, discussion_summary,
             decisions, action_items, open_items, acceptance_notes, created_by)
@@ -3363,466 +1445,160 @@ router.post('/design-books/:id/review-handovers', auth_1.authenticate, (0, auth_
             req.params.id, meeting_date, title.trim(), attendeeList, purpose || null,
             discussion_summary || null, decisions || null, action_items || null,
             open_items || null, acceptance_notes || null, req.user.id,
-        ])
-;
-
-        const reviewSnapshot = bookResult.rows[0].review_snapshot || 
-{
-}
-;
-
+        ]);
+        const reviewSnapshot = bookResult.rows[0].review_snapshot || {};
         const handovers = Array.isArray(reviewSnapshot.review_handovers)
             ? reviewSnapshot.review_handovers
-            : []
-;
-
-        await client.query('UPDATE design_books SET review_snapshot=$1::jsonb, updated_at=NOW() WHERE id=$2', [JSON.stringify(
-{
- ...reviewSnapshot, review_handovers: [...handovers, result.rows[0]] 
-}
-), req.params.id])
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'REVIEW_HANDOVER', 
-{
-
+            : [];
+        await client.query('UPDATE design_books SET review_snapshot=$1::jsonb, updated_at=NOW() WHERE id=$2', [JSON.stringify({ ...reviewSnapshot, review_handovers: [...handovers, result.rows[0]] }), req.params.id]);
+        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'REVIEW_HANDOVER', {
             summary: `Review handover report recorded for ${meeting_date}`,
             handover_id: result.rows[0].id,
             title: title.trim(),
             meeting_date,
             attendees: attendeeList,
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        res.status(201).json(result.rows[0])
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
-router.post('/design-books/:id/submit-review', auth_1.authenticate, (0, auth_1.requireRole)(...designBookWorkflow_1.DESIGN_BOOK_DESIGNER_ROLES), async (req, res) => 
-{
-
-    const comment = String(req.body.comment || '').trim()
-;
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
-;
-
-        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true)
-;
-
-        if (!context || !(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'INVALID_TRANSITION', message: 'Only Draft or In Progress Design Books can be submitted for review.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        const previousStatus = context.status
-;
-
-        const 
-{
- release_snapshot: _releaseSnapshot, review_snapshot: _reviewSnapshot, ...reviewPackage 
-}
- = context
-;
-
-        const submittedAt = new Date().toISOString()
-;
-
-        const snapshot = 
-{
-
+        }, req.ip);
+        await client.query('COMMIT');
+        res.status(201).json(result.rows[0]);
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+router.post('/design-books/:id/submit-review', auth_1.authenticate, (0, auth_1.requireRole)(...designBookWorkflow_1.DESIGN_BOOK_DESIGNER_ROLES), async (req, res) => {
+    const comment = String(req.body.comment || '').trim();
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true);
+        if (!context || !(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'INVALID_TRANSITION', message: 'Only Draft or In Progress Design Books can be submitted for review.' },
+            });
+        }
+        const previousStatus = context.status;
+        const { release_snapshot: _releaseSnapshot, review_snapshot: _reviewSnapshot, ...reviewPackage } = context;
+        const submittedAt = new Date().toISOString();
+        const snapshot = {
             ...reviewPackage,
             status: 'For Review',
             review_submitted_by: req.user.id,
             review_submitted_at: submittedAt,
-        
-}
-;
-
+        };
         const result = await client.query(`UPDATE design_books
          SET status='For Review', review_submitted_by=$1, review_submitted_at=NOW(),
              review_snapshot=$2::jsonb, updated_at=NOW()
          WHERE id=$3 AND status IN ('Draft', 'In Progress')
-         RETURNING *`, [req.user.id, JSON.stringify(snapshot), req.params.id])
-;
-
+         RETURNING *`, [req.user.id, JSON.stringify(snapshot), req.params.id]);
         if (!result.rows[0])
-            throw new Error('Design Book status changed during review submission')
-;
-
+            throw new Error('Design Book status changed during review submission');
         await client.query(`INSERT INTO lifecycle_transitions
            (entity_type, entity_id, from_state, to_state, actor_id, comment)
-         VALUES ('design_book',$1,$2,'For Review',$3,$4)`, [req.params.id, previousStatus, req.user.id, comment || null])
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'SUBMIT_REVIEW', 
-{
-
-            summary: `Design Book submitted for review${comment ? `: $
-{
-comment
-}
-` : ''}`,
+         VALUES ('design_book',$1,$2,'For Review',$3,$4)`, [req.params.id, previousStatus, req.user.id, comment || null]);
+        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'SUBMIT_REVIEW', {
+            summary: `Design Book submitted for review${comment ? `: ${comment}` : ''}`,
             comment,
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        res.json(result.rows[0])
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
-router.post('/design-books/:id/approve', auth_1.authenticate, (0, auth_1.requireRole)(...designBookWorkflow_1.DESIGN_BOOK_MANAGER_ROLES), async (req, res) => 
-{
-
-    const approvalNotes = String(req.body.approval_notes || '').trim()
-;
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN')
-;
-
+        }, req.ip);
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+router.post('/design-books/:id/approve', auth_1.authenticate, (0, auth_1.requireRole)(...designBookWorkflow_1.DESIGN_BOOK_MANAGER_ROLES), async (req, res) => {
+    const approvalNotes = String(req.body.approval_notes || '').trim();
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN');
         const result = await client.query(`UPDATE design_books
          SET status='Approved', approved_by=$1, approved_at=NOW(), approval_notes=$2, updated_at=NOW()
          WHERE id=$3 AND status='For Review'
-         RETURNING *`, [req.user.id, approvalNotes || null, req.params.id])
-;
-
-        if (!result.rows[0]) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'INVALID_TRANSITION', message: 'Only Design Books that are For Review can be approved.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
+         RETURNING *`, [req.user.id, approvalNotes || null, req.params.id]);
+        if (!result.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'INVALID_TRANSITION', message: 'Only Design Books that are For Review can be approved.' },
+            });
+        }
         await client.query(`INSERT INTO lifecycle_transitions
            (entity_type, entity_id, from_state, to_state, actor_id, comment)
-         VALUES ('design_book',$1,'For Review','Approved',$2,$3)`, [req.params.id, req.user.id, approvalNotes || null])
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'APPROVE', 
-{
-
-            summary: `Design Book approved${approvalNotes ? `: $
-{
-approvalNotes
-}
-` : ''}`,
+         VALUES ('design_book',$1,'For Review','Approved',$2,$3)`, [req.params.id, req.user.id, approvalNotes || null]);
+        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'APPROVE', {
+            summary: `Design Book approved${approvalNotes ? `: ${approvalNotes}` : ''}`,
             approval_notes: approvalNotes,
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        res.json(result.rows[0])
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
-router.post('/design-books/:id/release', auth_1.authenticate, (0, auth_1.requireRole)(...designBookWorkflow_1.DESIGN_BOOK_MANAGER_ROLES), async (req, res) => 
-{
-
-    const 
-{
- revision, included_scope, release_notes 
-}
- = req.body
-;
-
+        }, req.ip);
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+router.post('/design-books/:id/release', auth_1.authenticate, (0, auth_1.requireRole)(...designBookWorkflow_1.DESIGN_BOOK_MANAGER_ROLES), async (req, res) => {
+    const { revision, included_scope, release_notes } = req.body;
     const scope = Array.isArray(included_scope)
         ? included_scope.map((value) => String(value).trim()).filter(Boolean)
-        : []
-;
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
-;
-
-        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true)
-;
-
-        if (!context) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        if (context.status === 'Released') 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'ALREADY_RELEASED', message: 'This Design Book revision is already released.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        if (context.status !== 'Approved') 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'APPROVAL_REQUIRED', message: 'The Design Book must be approved by a manager before release.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        const projectScope = Array.isArray(context.project_scopes) ? context.project_scopes : []
-;
-
-        const confirmationError = (0, designBookRelease_1.validateReleaseConfirmation)(
-{
-
+        : [];
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true);
+        if (!context) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+        }
+        if (context.status === 'Released') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'ALREADY_RELEASED', message: 'This Design Book revision is already released.' },
+            });
+        }
+        if (context.status !== 'Approved') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'APPROVAL_REQUIRED', message: 'The Design Book must be approved by a manager before release.' },
+            });
+        }
+        const projectScope = Array.isArray(context.project_scopes) ? context.project_scopes : [];
+        const confirmationError = (0, designBookRelease_1.validateReleaseConfirmation)({
             currentRevision: String(context.revision || '').trim(),
             confirmedRevision: String(revision || '').trim(),
             includedScope: scope,
             projectScope,
             releaseNotes: String(release_notes || '').trim(),
-        
-}
-)
-;
-
-        if (confirmationError) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(confirmationError.status).json(
-{
- error: confirmationError 
-}
-)
-;
-
-        
-}
-
-        const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(
-{
- ...context, project_scopes: scope 
-}
-)
-;
-
-        const blockers = (0, designBookRelease_1.releaseBlockers)(checklist)
-;
-
-        const blockerError = (0, designBookRelease_1.validateReleaseBlockers)(blockers.length)
-;
-
-        if (blockerError) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(blockerError.status).json(
-{
-
+        });
+        if (confirmationError) {
+            await client.query('ROLLBACK');
+            return res.status(confirmationError.status).json({ error: confirmationError });
+        }
+        const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)({ ...context, project_scopes: scope });
+        const blockers = (0, designBookRelease_1.releaseBlockers)(checklist);
+        const blockerError = (0, designBookRelease_1.validateReleaseBlockers)(blockers.length);
+        if (blockerError) {
+            await client.query('ROLLBACK');
+            return res.status(blockerError.status).json({
                 error: blockerError,
                 checklist,
                 blockers,
-            
-}
-)
-;
-
-        
-}
-
-        const 
-{
- release_snapshot: _existingSnapshot, release_scope: _existingScope, release_notes: _existingNotes, released_by: _existingReleaser, released_at: _existingReleasedAt, ...packageSnapshot 
-}
- = context
-;
-
-        const releasedAt = new Date().toISOString()
-;
-
-        const snapshot = 
-{
-
+            });
+        }
+        const { release_snapshot: _existingSnapshot, release_scope: _existingScope, release_notes: _existingNotes, released_by: _existingReleaser, released_at: _existingReleasedAt, ...packageSnapshot } = context;
+        const releasedAt = new Date().toISOString();
+        const snapshot = {
             ...packageSnapshot,
             status: 'Released',
             released_revision: revision.trim(),
@@ -3831,202 +1607,74 @@ router.post('/design-books/:id/release', auth_1.authenticate, (0, auth_1.require
             released_by: req.user.id,
             released_at: releasedAt,
             release_checklist: checklist,
-        
-}
-;
-
+        };
         const updated = await client.query(`UPDATE design_books
          SET status='Released', revision=$1, release_scope=$2::text[], release_notes=$3,
              released_by=$4, released_at=NOW(), release_snapshot=$5::jsonb, updated_at=NOW()
          WHERE id=$6 AND status <> 'Released'
-         RETURNING *`, [revision.trim(), scope, release_notes.trim(), req.user.id, JSON.stringify(snapshot), req.params.id])
-;
-
-        if (!updated.rows[0]) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'ALREADY_RELEASED', message: 'This Design Book revision is already released.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        const releasedVersionSnapshot = withSnapshotIntegrity(
-{
-
-            ...makeVersionSnapshot(
-{
-
+         RETURNING *`, [revision.trim(), scope, release_notes.trim(), req.user.id, JSON.stringify(snapshot), req.params.id]);
+        if (!updated.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'ALREADY_RELEASED', message: 'This Design Book revision is already released.' },
+            });
+        }
+        const releasedVersionSnapshot = withSnapshotIntegrity({
+            ...makeVersionSnapshot({
                 ...context,
                 status: 'Released',
                 revision: revision.trim(),
-            
-}
-),
-            release: 
-{
-
+            }),
+            release: {
                 included_scope: scope,
                 release_notes: release_notes.trim(),
                 released_by: req.user.id,
                 released_at: releasedAt,
                 release_checklist: checklist,
-            
-}
-,
-        
-}
-)
-;
-
-        await insertVersion(client.query.bind(client), routeParam(req.params.id), `Released Rev ${revision.trim()}`, release_notes.trim(), releasedVersionSnapshot, req.user.id)
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'RELEASE', 
-{
-
+            },
+        });
+        await insertVersion(client.query.bind(client), routeParam(req.params.id), `Released Rev ${revision.trim()}`, release_notes.trim(), releasedVersionSnapshot, req.user.id);
+        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'RELEASE', {
             summary: `Design Book ${context.book_code} Rev ${revision.trim()} released`,
             revision: revision.trim(),
             included_scope: scope,
             release_notes: release_notes.trim(),
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        res.json(
-{
-
+        }, req.ip);
+        await client.query('COMMIT');
+        res.json({
             ...updated.rows[0],
             checklist,
-        
-}
-)
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
-router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
-    const sourceResult = await (0, index_1.query)('SELECT * FROM design_books WHERE id=$1', [req.params.id])
-;
-
-    const source = sourceResult.rows[0]
-;
-
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    const sourceResult = await (0, index_1.query)('SELECT * FROM design_books WHERE id=$1', [req.params.id]);
+    const source = sourceResult.rows[0];
     if (!source)
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-    if (source.status !== 'Released') 
-{
-
-        return res.status(409).json(
-{
-
-            error: 
-{
- code: 'NOT_RELEASED', message: 'Create a version snapshot for draft work; new revisions branch from released Design Books.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
-    const revision = String(req.body.revision || '').trim()
-;
-
-    const bookCode = String(req.body.book_code || '').trim()
-;
-
-    if (!revision || !bookCode) 
-{
-
-        return res.status(400).json(
-{
-
-            error: 
-{
- code: 'VALIDATION', message: 'A new revision and unique Design Book code are required.' 
-}
-,
-        
-}
-)
-;
-
-    
-}
-
-    const snapshot = source.release_snapshot || 
-{
-}
-;
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN')
-;
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    if (source.status !== 'Released') {
+        return res.status(409).json({
+            error: { code: 'NOT_RELEASED', message: 'Create a version snapshot for draft work; new revisions branch from released Design Books.' },
+        });
+    }
+    const revision = String(req.body.revision || '').trim();
+    const bookCode = String(req.body.book_code || '').trim();
+    if (!revision || !bookCode) {
+        return res.status(400).json({
+            error: { code: 'VALIDATION', message: 'A new revision and unique Design Book code are required.' },
+        });
+    }
+    const snapshot = source.release_snapshot || {};
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN');
         const created = await client.query(`INSERT INTO design_books
            (book_code, book_title, project_id, description, revision, status, notes, created_by)
          VALUES ($1,$2,$3,$4,$5,'Draft',$6,$7)
@@ -4038,15 +1686,9 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
             revision,
             req.body.notes || `Continues released ${source.book_code} Rev ${source.revision}`,
             req.user.id,
-        ])
-;
-
-        const next = created.rows[0]
-;
-
-        for (const row of snapshot.species || []) 
-{
-
+        ]);
+        const next = created.rows[0];
+        for (const row of snapshot.species || []) {
             await client.query(`INSERT INTO design_book_exhibit_species
              (design_book_id, exhibit_id, catalog_species_id, species_name, common_name, quantity,
               avg_size_cm, reference_average_mass_kg, biomass_kg, avg_size_override_cm,
@@ -4054,15 +1696,9 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [next.id, row.exhibit_id, row.catalog_species_id, row.species_name, row.common_name,
                 row.quantity, row.avg_size_cm, row.reference_average_mass_kg, row.biomass_kg,
                 row.avg_size_override_cm, row.reference_mass_override_kg, row.biomass_override_kg,
-                row.notes, row.sort_order || 0])
-;
-
-        
-}
-
-        for (const row of snapshot.hydraulics || []) 
-{
-
+                row.notes, row.sort_order || 0]);
+        }
+        for (const row of snapshot.hydraulics || []) {
             await client.query(`INSERT INTO design_book_exhibit_hydraulics
              (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
               weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
@@ -4073,107 +1709,44 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
                 row.weir_head_mm, row.weir_length_mm, row.weir_formula_method, row.weir_geometry, row.weir_end_contractions,
                 row.weir_discharge_condition, row.weir_downstream_head_mm, row.calculation_version, row.last_calculated_at,
                 row.calculation_inputs, row.override_reason,
-            ])
-;
-
-        
-}
-
-        for (const row of snapshot.substrate || []) 
-{
-
+            ]);
+        }
+        for (const row of snapshot.substrate || []) {
             await client.query(`INSERT INTO design_book_exhibit_substrate
              (design_book_id, exhibit_id, substrate_type, substrate_height_mm, substrate_volume_m3,
               theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [
                 next.id, row.exhibit_id, row.substrate_type, row.substrate_height_mm, row.substrate_volume_m3,
                 row.theming_type, row.theming_height_mm, row.theming_volume_m3, row.theming_volume_pct, row.notes,
-            ])
-;
-
-        
-}
-
-        for (const row of snapshot.thermal_calculations || []) 
-{
-
-            await insertThermalSnapshotRecord(client.query.bind(client), next.id, row)
-;
-
-        
-}
-
-        await client.query('COMMIT')
-;
-
-        await (0, audit_1.logAudit)(req.user.id, 'design_book', next.id, 'CREATE_REVISION', 
-{
-
+            ]);
+        }
+        for (const row of snapshot.thermal_calculations || []) {
+            await insertThermalSnapshotRecord(client.query.bind(client), next.id, row);
+        }
+        await client.query('COMMIT');
+        await (0, audit_1.logAudit)(req.user.id, 'design_book', next.id, 'CREATE_REVISION', {
             summary: `Revision ${revision} created from ${source.book_code} Rev ${source.revision}`,
             source_design_book_id: source.id,
             source_revision: source.revision,
-        
-}
-, req.ip)
-;
-
-        res.status(201).json(next)
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        if (error.code === '23505') 
-{
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'CONFLICT', message: `Design Book code "${bookCode}" already exists.` 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
+        }, req.ip);
+        res.status(201).json(next);
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        if (error.code === '23505') {
+            return res.status(409).json({
+                error: { code: 'CONFLICT', message: `Design Book code "${bookCode}" already exists.` },
+            });
+        }
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
 // ─── Versions ────────────────────────────────────────────────────────────────
-const VERSION_SNAPSHOT_SCHEMA = 5
-;
-
-const VERSION_REFERENCE_FIELDS = 
-{
-
+const VERSION_SNAPSHOT_SCHEMA = 5;
+const VERSION_REFERENCE_FIELDS = {
     project: ['id', 'project_code', 'project_name'],
     exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
         'design_temperature_min', 'design_temperature_max', 'design_salinity', 'area_id', 'status', 'notes'],
@@ -4193,135 +1766,48 @@ const VERSION_REFERENCE_FIELDS =
         'side_streams'],
     system_links: ['id', 'system_id', 'exhibit_id', 'link_type', 'flow_allocation_m3h', 'notes',
         'sort_order', 'allocation_source', 'allocation_updated_at'],
+};
+function jsonCopy(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
 }
-;
-
-function jsonCopy(value) 
-{
-
-    return value == null ? value : JSON.parse(JSON.stringify(value))
-;
-
+function pickFields(row, fields) {
+    return fields.reduce((result, field) => {
+        result[field] = row?.[field] ?? null;
+        return result;
+    }, {});
 }
-
-function pickFields(row, fields) 
-{
-
-    return fields.reduce((result, field) => 
-{
-
-        result[field] = row?.[field] ?? null
-;
-
-        return result
-;
-
-    
-}
-, 
-{
-}
-)
-;
-
-}
-
-function canonicalJson(value) 
-{
-
+function canonicalJson(value) {
     if (Array.isArray(value))
-        return `[${value.map(canonicalJson).join(',')}]`
-;
-
-    if (value && typeof value === 'object') 
-{
-
-        return `{${Object.keys(value).sort().map(key => `$
-{
-JSON.stringify(key)
+        return `[${value.map(canonicalJson).join(',')}]`;
+    if (value && typeof value === 'object') {
+        return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
 }
-:$
-{
-canonicalJson(value[key])
-}
-`).join(',')}}`
-;
-
-    
-}
-
-    return JSON.stringify(value)
-;
-
-}
-
-function withSnapshotIntegrity(snapshot) 
-{
-
-    const unsigned = 
-{
- ...snapshot 
-}
-;
-
-    delete unsigned.integrity
-;
-
-    return 
-{
-
+function withSnapshotIntegrity(snapshot) {
+    const unsigned = { ...snapshot };
+    delete unsigned.integrity;
+    return {
         ...unsigned,
-        integrity: 
-{
-
+        integrity: {
             algorithm: 'sha256',
             digest: crypto_1.default.createHash('sha256').update(canonicalJson(unsigned)).digest('hex'),
-        
+        },
+    };
 }
-,
-    
-}
-;
-
-}
-
-function snapshotIntegrityStatus(snapshot, persistedChecksum, requirePersisted = false) 
-{
-
+function snapshotIntegrityStatus(snapshot, persistedChecksum, requirePersisted = false) {
     if (!snapshot?.integrity?.digest)
-        return 'legacy_unverified'
-;
-
+        return 'legacy_unverified';
     if (requirePersisted && !persistedChecksum)
-        return 'invalid'
-;
-
-    const unsigned = 
-{
- ...snapshot 
+        return 'invalid';
+    const unsigned = { ...snapshot };
+    const expected = snapshot.integrity.digest;
+    delete unsigned.integrity;
+    const actual = crypto_1.default.createHash('sha256').update(canonicalJson(unsigned)).digest('hex');
+    return expected === actual && (!persistedChecksum || persistedChecksum === actual) ? 'verified' : 'invalid';
 }
-;
-
-    const expected = snapshot.integrity.digest
-;
-
-    delete unsigned.integrity
-;
-
-    const actual = crypto_1.default.createHash('sha256').update(canonicalJson(unsigned)).digest('hex')
-;
-
-    return expected === actual && (!persistedChecksum || persistedChecksum === actual) ? 'verified' : 'invalid'
-;
-
-}
-
-function liveReferencesFromContext(context) 
-{
-
-    return 
-{
-
+function liveReferencesFromContext(context) {
+    return {
         project: context.project_id
             ? pickFields(context, VERSION_REFERENCE_FIELDS.project)
             : null,
@@ -4329,53 +1815,26 @@ function liveReferencesFromContext(context)
         tanks: (context.tanks || []).map((row) => pickFields(row, VERSION_REFERENCE_FIELDS.tanks)),
         systems: (context.systems || []).map((row) => pickFields(row, VERSION_REFERENCE_FIELDS.systems)),
         system_links: (context.system_links || []).map((row) => pickFields(row, VERSION_REFERENCE_FIELDS.system_links)),
-    
+    };
 }
-;
-
-}
-
-function frozenFromSnapshot(snapshot) 
-{
-
+function frozenFromSnapshot(snapshot) {
     if (snapshot?.frozen)
-        return snapshot.frozen
-;
-
+        return snapshot.frozen;
     // Keep snapshots made before schema 2 restorable while they are replaced by
     // verified snapshots on the next save.
-    return 
-{
-
+    return {
         design_book: pickFields(snapshot, ['book_code', 'book_title', 'project_id', 'description', 'revision', 'status', 'notes']),
         species: snapshot?.species || [],
         hydraulics: snapshot?.hydraulics || [],
         substrate: snapshot?.substrate || [],
         thermal_calculations: snapshot?.thermal_calculations || [],
-        ...(Array.isArray(snapshot?.review_handovers) ? 
-{
- review_handovers: snapshot.review_handovers 
+        ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
+    };
 }
- : 
-{
-}
-),
-    
-}
-;
-
-}
-
-function referencesFromSnapshot(snapshot) 
-{
-
+function referencesFromSnapshot(snapshot) {
     if (snapshot?.live_references)
-        return snapshot.live_references
-;
-
-    return 
-{
-
+        return snapshot.live_references;
+    return {
         project: snapshot?.project_id
             ? pickFields(snapshot, VERSION_REFERENCE_FIELDS.project)
             : null,
@@ -4383,255 +1842,121 @@ function referencesFromSnapshot(snapshot)
         tanks: (snapshot?.tanks || []).map((row) => pickFields(row, VERSION_REFERENCE_FIELDS.tanks)),
         systems: (snapshot?.systems || []).map((row) => pickFields(row, VERSION_REFERENCE_FIELDS.systems)),
         system_links: (snapshot?.system_links || []).map((row) => pickFields(row, VERSION_REFERENCE_FIELDS.system_links)),
-    
+    };
 }
-;
-
-}
-
-function compareReferenceCollection(captured = [], current = []) 
-{
-
-    const capturedById = new Map(captured.filter(row => row?.id).map(row => [row.id, jsonCopy(row)]))
-;
-
-    const currentById = new Map(current.filter(row => row?.id).map(row => [row.id, jsonCopy(row)]))
-;
-
-    const added = current.filter(row => row?.id && !capturedById.has(row.id)).map(row => row.id)
-;
-
-    const removed = captured.filter(row => row?.id && !currentById.has(row.id)).map(row => row.id)
-;
-
+function compareReferenceCollection(captured = [], current = []) {
+    const capturedById = new Map(captured.filter(row => row?.id).map(row => [row.id, jsonCopy(row)]));
+    const currentById = new Map(current.filter(row => row?.id).map(row => [row.id, jsonCopy(row)]));
+    const added = current.filter(row => row?.id && !capturedById.has(row.id)).map(row => row.id);
+    const removed = captured.filter(row => row?.id && !currentById.has(row.id)).map(row => row.id);
     const changed = captured
         .filter(row => row?.id && currentById.has(row.id))
         .filter(row => canonicalJson(capturedById.get(row.id)) !== canonicalJson(currentById.get(row.id)))
-        .map(row => row.id)
-;
-
-    return 
-{
- added, removed, changed, has_drift: added.length > 0 || removed.length > 0 || changed.length > 0 
+        .map(row => row.id);
+    return { added, removed, changed, has_drift: added.length > 0 || removed.length > 0 || changed.length > 0 };
 }
-;
-
-}
-
-function calculateVersionDrift(snapshot, currentContext) 
-{
-
-    const captured = referencesFromSnapshot(snapshot)
-;
-
-    const current = liveReferencesFromContext(currentContext)
-;
-
-    const collections = 
-{
-}
-;
-
-    for (const key of ['exhibits', 'tanks', 'systems', 'system_links']) 
-{
-
-        collections[key] = compareReferenceCollection(captured[key], current[key])
-;
-
-    
-}
-
-    const projectChanged = canonicalJson(captured.project) !== canonicalJson(current.project)
-;
-
-    const unresolved = []
-;
-
-    for (const key of ['exhibits', 'tanks', 'systems']) 
-{
-
+function calculateVersionDrift(snapshot, currentContext) {
+    const captured = referencesFromSnapshot(snapshot);
+    const current = liveReferencesFromContext(currentContext);
+    const collections = {};
+    for (const key of ['exhibits', 'tanks', 'systems', 'system_links']) {
+        collections[key] = compareReferenceCollection(captured[key], current[key]);
+    }
+    const projectChanged = canonicalJson(captured.project) !== canonicalJson(current.project);
+    const unresolved = [];
+    for (const key of ['exhibits', 'tanks', 'systems']) {
         for (const id of collections[key].removed)
-            unresolved.push(
-{
- type: key.slice(0, -1), id 
-}
-)
-;
-
-    
-}
-
+            unresolved.push({ type: key.slice(0, -1), id });
+    }
     for (const id of collections.system_links.removed)
-        unresolved.push(
-{
- type: 'system_link', id 
-}
-)
-;
-
+        unresolved.push({ type: 'system_link', id });
     if (captured.project?.id && !current.project)
-        unresolved.unshift(
-{
- type: 'project', id: captured.project.id 
-}
-)
-;
-
-    return 
-{
-
+        unresolved.unshift({ type: 'project', id: captured.project.id });
+    return {
         has_drift: projectChanged || Object.values(collections).some((value) => value.has_drift),
         project_changed: projectChanged,
         collections,
         unresolved_references: unresolved,
-    
+    };
 }
-;
-
-}
-
-function makeVersionSnapshot(context, capturedAt = new Date().toISOString()) 
-{
-
-    const snapshot = 
-{
-
+function makeVersionSnapshot(context, capturedAt = new Date().toISOString()) {
+    const snapshot = {
         schema_version: VERSION_SNAPSHOT_SCHEMA,
         captured_at: capturedAt,
-        source: 
-{
-
+        source: {
             design_book_id: context.id,
             project_id: context.project_id || null,
             book_code: context.book_code,
             revision: context.revision,
             project_code: context.project_code || null,
             project_name: context.project_name || null,
-        
-}
-,
-        frozen: 
-{
-
+        },
+        frozen: {
             design_book: pickFields(context, ['book_code', 'book_title', 'project_id', 'description', 'revision', 'status', 'notes']),
             species: jsonCopy(context.species || []),
             hydraulics: jsonCopy(context.hydraulics || []),
             substrate: jsonCopy(context.substrate || []),
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
-        
-}
-,
+        },
         live_references: liveReferencesFromContext(context),
-        scope: 
-{
-
+        scope: {
             frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'thermal calculations', 'review handovers'],
             live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
             restore_target: 'working_copy',
-        
+        },
+    };
+    return withSnapshotIntegrity(snapshot);
 }
-,
-    
-}
-;
-
-    return withSnapshotIntegrity(snapshot)
-;
-
-}
-
-function currentRestoreStateDigest(context) 
-{
-
-    return crypto_1.default.createHash('sha256').update(canonicalJson(
-{
-
-        frozen: 
-{
-
+function currentRestoreStateDigest(context) {
+    return crypto_1.default.createHash('sha256').update(canonicalJson({
+        frozen: {
             design_book: pickFields(context, ['book_code', 'book_title', 'project_id', 'description', 'revision', 'status', 'notes']),
             species: jsonCopy(context.species || []),
             hydraulics: jsonCopy(context.hydraulics || []),
             substrate: jsonCopy(context.substrate || []),
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
-        
-}
-,
+        },
         live_references: liveReferencesFromContext(context),
-    
+    })).digest('hex');
 }
-)).digest('hex')
-;
-
-}
-
-function versionPresentation(version, currentContext) 
-{
-
-    const snapshot = version.snapshot || 
-{
-}
-;
-
-    const frozen = frozenFromSnapshot(snapshot)
-;
-
-    const drift = calculateVersionDrift(snapshot, currentContext)
-;
-
-    const summary = 
-{
-
+function versionPresentation(version, currentContext) {
+    const snapshot = version.snapshot || {};
+    const frozen = frozenFromSnapshot(snapshot);
+    const drift = calculateVersionDrift(snapshot, currentContext);
+    const summary = {
         schema_version: snapshot.schema_version || 1,
         integrity: snapshotIntegrityStatus(snapshot, version.snapshot_checksum, Number(version.snapshot_schema_version || snapshot.schema_version || 1) >= VERSION_SNAPSHOT_SCHEMA),
         captured_at: snapshot.captured_at || snapshot.snapshotted_at || version.created_at,
-        frozen_records: 
-{
-
+        frozen_records: {
             species: (frozen.species || []).length,
             hydraulics: (frozen.hydraulics || []).length,
             substrate_theming: (frozen.substrate || []).length,
             thermal_calculations: (frozen.thermal_calculations || []).length,
             review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
-        
-}
-,
-        live_references: 
-{
-
+        },
+        live_references: {
             exhibits: (referencesFromSnapshot(snapshot).exhibits || []).length,
             tanks: (referencesFromSnapshot(snapshot).tanks || []).length,
             systems: (referencesFromSnapshot(snapshot).systems || []).length,
             system_links: (referencesFromSnapshot(snapshot).system_links || []).length,
-        
-}
-,
+        },
         restorable_records: [
             'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations',
             ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
         ],
         preserved_records: Array.isArray(frozen.review_handovers) ? [] : ['review handovers (not captured by this older version)'],
         live_reference_records: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
-    
-}
-;
-
-    return 
-{
-
+    };
+    return {
         ...version,
         snapshot,
         _snap: snapshot,
         summary,
         drift,
-        restore_preview: 
-{
-
-            before: 
-{
-
+        restore_preview: {
+            before: {
                 book_title: currentContext.book_title,
                 revision: currentContext.revision,
                 status: currentContext.status,
@@ -4640,12 +1965,8 @@ function versionPresentation(version, currentContext)
                 substrate_theming: (currentContext.substrate || []).length,
                 thermal_calculations: (currentContext.thermal_calculations || []).length,
                 review_handovers: (currentContext.review_handovers || []).length,
-            
-}
-,
-            after: 
-{
-
+            },
+            after: {
                 book_title: frozen.design_book?.book_title,
                 revision: frozen.design_book?.revision,
                 status: frozen.design_book?.status,
@@ -4657,30 +1978,16 @@ function versionPresentation(version, currentContext)
                     ? frozen.review_handovers.length
                     : (currentContext.review_handovers || []).length,
                 review_handovers_preserved: !Array.isArray(frozen.review_handovers),
-            
-}
-,
+            },
             token: currentRestoreStateDigest(currentContext),
             generated_at: new Date().toISOString(),
-        
+        },
+    };
 }
-,
-    
-}
-;
-
-}
-
-async function insertVersion(runner, bookId, versionLabel, notes, snapshot, createdBy, isRecoveryCheckpoint = false) 
-{
-
-    await runner('SELECT pg_advisory_xact_lock(hashtext($1))', [bookId])
-;
-
+async function insertVersion(runner, bookId, versionLabel, notes, snapshot, createdBy, isRecoveryCheckpoint = false) {
+    await runner('SELECT pg_advisory_xact_lock(hashtext($1))', [bookId]);
     const numberResult = await runner(`SELECT COALESCE(MAX(version_number), 0) + 1 AS next
-     FROM design_book_versions WHERE design_book_id = $1`, [bookId])
-;
-
+     FROM design_book_versions WHERE design_book_id = $1`, [bookId]);
     const inserted = await runner(`INSERT INTO design_book_versions
        (design_book_id, version_number, version_label, notes, snapshot, created_by,
         snapshot_schema_version, snapshot_checksum, is_recovery_checkpoint)
@@ -4695,17 +2002,10 @@ async function insertVersion(runner, bookId, versionLabel, notes, snapshot, crea
         snapshot.schema_version || 1,
         snapshot.integrity?.digest || null,
         isRecoveryCheckpoint,
-    ])
-;
-
-    return inserted.rows[0]
-;
-
+    ]);
+    return inserted.rows[0];
 }
-
-exports.versionSnapshotTestUtils = 
-{
-
+exports.versionSnapshotTestUtils = {
     makeVersionSnapshot,
     snapshotIntegrityStatus,
     frozenFromSnapshot,
@@ -4713,435 +2013,136 @@ exports.versionSnapshotTestUtils =
     currentRestoreStateDigest,
     insertVersion,
     loadReleaseContext,
-}
-;
-
-router.get('/design-books/:id/versions', auth_1.authenticate, async (req, res) => 
-{
-
-    const currentContext = await loadReleaseContext(routeParam(req.params.id), index_1.query, false, true)
-;
-
+};
+router.get('/design-books/:id/versions', auth_1.authenticate, async (req, res) => {
+    const currentContext = await loadReleaseContext(routeParam(req.params.id), index_1.query, false, true);
     if (!currentContext)
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
     const result = await (0, index_1.query)(`SELECT v.id, v.version_number, v.version_label, v.notes, v.snapshot, v.created_at,
             v.is_recovery_checkpoint, v.snapshot_schema_version, v.snapshot_checksum,
             u.first_name || ' ' || u.last_name AS created_by_name
      FROM design_book_versions v
      LEFT JOIN users u ON v.created_by = u.id
      WHERE v.design_book_id = $1
-     ORDER BY v.version_number DESC`, [req.params.id])
-;
-
-    res.json(
-{
- items: result.rows.map(version => versionPresentation(version, currentContext)) 
-}
-)
-;
-
-}
-)
-;
-
-router.get('/design-books/:id/versions/:versionId/preview', auth_1.authenticate, async (req, res) => 
-{
-
-    const currentContext = await loadReleaseContext(routeParam(req.params.id), index_1.query, false, true)
-;
-
+     ORDER BY v.version_number DESC`, [req.params.id]);
+    res.json({ items: result.rows.map(version => versionPresentation(version, currentContext)) });
+});
+router.get('/design-books/:id/versions/:versionId/preview', auth_1.authenticate, async (req, res) => {
+    const currentContext = await loadReleaseContext(routeParam(req.params.id), index_1.query, false, true);
     if (!currentContext)
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
     const result = await (0, index_1.query)(`SELECT v.*, u.first_name || ' ' || u.last_name AS created_by_name
      FROM design_book_versions v
      LEFT JOIN users u ON v.created_by = u.id
-     WHERE v.id=$1 AND v.design_book_id=$2`, [req.params.versionId, req.params.id])
-;
-
+     WHERE v.id=$1 AND v.design_book_id=$2`, [req.params.versionId, req.params.id]);
     if (!result.rows[0])
-        return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Version not found' 
-}
- 
-}
-)
-;
-
-    res.json(versionPresentation(result.rows[0], currentContext))
-;
-
-}
-)
-;
-
-router.post('/design-books/:id/versions', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
-;
-
-        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true, true)
-;
-
-        if (!context) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Only Draft or In Progress Design Books can be versioned.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        const snapshot = makeVersionSnapshot(context)
-;
-
-        const version = await insertVersion(client.query.bind(client), routeParam(req.params.id), String(req.body.version_label || '').trim() || null, String(req.body.notes || '').trim() || null, snapshot, req.user.id)
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'VERSION_CREATED', 
-{
-
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } });
+    res.json(versionPresentation(result.rows[0], currentContext));
+});
+router.post('/design-books/:id/versions', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true, true);
+        if (!context) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+        }
+        if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Only Draft or In Progress Design Books can be versioned.' },
+            });
+        }
+        const snapshot = makeVersionSnapshot(context);
+        const version = await insertVersion(client.query.bind(client), routeParam(req.params.id), String(req.body.version_label || '').trim() || null, String(req.body.notes || '').trim() || null, snapshot, req.user.id);
+        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'VERSION_CREATED', {
             summary: `Design Book version ${version.version_number} created`,
             version_id: version.id,
             version_number: version.version_number,
             schema_version: snapshot.schema_version,
             snapshot_checksum: snapshot.integrity.digest,
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        res.status(201).json(
-{
- ...version, summary: versionPresentation(
-{
- ...version, snapshot 
-}
-, context).summary 
-}
-)
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        if (error?.code === '23505') 
-{
-
-            return res.status(409).json(
-{
- error: 
-{
- code: 'VERSION_CONFLICT', message: 'Another version was saved at the same time. Please retry.' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
-router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => 
-{
-
-    const client = await index_1.default.connect()
-;
-
-    try 
-{
-
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
-;
-
-        const versionResult = await client.query('SELECT * FROM design_book_versions WHERE id=$1 AND design_book_id=$2', [req.params.versionId, req.params.id])
-;
-
-        if (!versionResult.rows[0]) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Version not found' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        const version = versionResult.rows[0]
-;
-
-        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true, true)
-;
-
-        if (!context) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(404).json(
-{
- error: 
-{
- code: 'NOT_FOUND', message: 'Design book not found' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
- code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Only Draft or In Progress Design Books can be restored.' 
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        const currentStateToken = currentRestoreStateDigest(context)
-;
-
-        if (!req.body.preview_token || req.body.preview_token !== currentStateToken) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
-
+        }, req.ip);
+        await client.query('COMMIT');
+        res.status(201).json({ ...version, summary: versionPresentation({ ...version, snapshot }, context).summary });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        if (error?.code === '23505') {
+            return res.status(409).json({ error: { code: 'VERSION_CONFLICT', message: 'Another version was saved at the same time. Please retry.' } });
+        }
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+    const client = await index_1.default.connect();
+    try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+        const versionResult = await client.query('SELECT * FROM design_book_versions WHERE id=$1 AND design_book_id=$2', [req.params.versionId, req.params.id]);
+        if (!versionResult.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } });
+        }
+        const version = versionResult.rows[0];
+        const context = await loadReleaseContext(routeParam(req.params.id), client.query.bind(client), true, true);
+        if (!context) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+        }
+        if (!(0, designBookWorkflow_1.isDesignBookContentEditable)(context.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Only Draft or In Progress Design Books can be restored.' },
+            });
+        }
+        const currentStateToken = currentRestoreStateDigest(context);
+        if (!req.body.preview_token || req.body.preview_token !== currentStateToken) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: {
                     code: 'RESTORE_PREVIEW_STALE',
                     message: 'The working copy changed after the restore preview. Review the refreshed before-and-after comparison.',
-                
-}
-,
-            
-}
-)
-;
-
-        
-}
-
-        const integrity = snapshotIntegrityStatus(version.snapshot, version.snapshot_checksum, Number(version.snapshot_schema_version || version.snapshot?.schema_version || 1) >= VERSION_SNAPSHOT_SCHEMA)
-;
-
-        if (integrity === 'invalid') 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
- error: 
-{
- code: 'INVALID_SNAPSHOT', message: 'This version failed its integrity check and cannot be restored.' 
-}
- 
-}
-)
-;
-
-        
-}
-
-        const drift = calculateVersionDrift(version.snapshot, context)
-;
-
-        if (drift.unresolved_references.length) 
-{
-
-            await client.query('ROLLBACK')
-;
-
-            return res.status(409).json(
-{
-
-                error: 
-{
-
+                },
+            });
+        }
+        const integrity = snapshotIntegrityStatus(version.snapshot, version.snapshot_checksum, Number(version.snapshot_schema_version || version.snapshot?.schema_version || 1) >= VERSION_SNAPSHOT_SCHEMA);
+        if (integrity === 'invalid') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'INVALID_SNAPSHOT', message: 'This version failed its integrity check and cannot be restored.' } });
+        }
+        const drift = calculateVersionDrift(version.snapshot, context);
+        if (drift.unresolved_references.length) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: {
                     code: 'UNRESOLVED_REFERENCES',
                     message: 'This version refers to project records that no longer exist. Nothing was changed.',
                     references: drift.unresolved_references,
-                
-}
-,
+                },
                 drift,
-            
-}
-)
-;
-
-        
-}
-
-        const currentSnapshot = makeVersionSnapshot(context)
-;
-
-        const recoverySnapshot = withSnapshotIntegrity(
-{
-
+            });
+        }
+        const currentSnapshot = makeVersionSnapshot(context);
+        const recoverySnapshot = withSnapshotIntegrity({
             ...currentSnapshot,
-            recovery: 
-{
-
+            recovery: {
                 source_version_id: version.id,
                 source_version_number: version.version_number,
                 created_at: new Date().toISOString(),
-            
-}
-,
-        
-}
-)
-;
-
-        const checkpoint = await insertVersion(client.query.bind(client), routeParam(req.params.id), `Recovery before restoring v${version.version_number}`, `Automatic recovery checkpoint created before restoring version ${version.version_number}.`, recoverySnapshot, req.user.id, true)
-;
-
-        const frozen = frozenFromSnapshot(version.snapshot)
-;
-
-        const book = frozen.design_book || 
-{
-}
-;
-
-        const restoredStatus = (0, designBookWorkflow_1.isDesignBookContentEditable)(book.status) ? book.status : context.status
-;
-
+            },
+        });
+        const checkpoint = await insertVersion(client.query.bind(client), routeParam(req.params.id), `Recovery before restoring v${version.version_number}`, `Automatic recovery checkpoint created before restoring version ${version.version_number}.`, recoverySnapshot, req.user.id, true);
+        const frozen = frozenFromSnapshot(version.snapshot);
+        const book = frozen.design_book || {};
+        const restoredStatus = (0, designBookWorkflow_1.isDesignBookContentEditable)(book.status) ? book.status : context.status;
         await client.query(`UPDATE design_books
        SET book_title=$1, revision=$2, status=$3, description=$4, notes=$5, updated_at=NOW()
-       WHERE id=$6`, [book.book_title, book.revision, restoredStatus, book.description, book.notes, req.params.id])
-;
-
-        await client.query('DELETE FROM design_book_exhibit_species WHERE design_book_id=$1', [req.params.id])
-;
-
-        for (const sp of frozen.species || []) 
-{
-
+       WHERE id=$6`, [book.book_title, book.revision, restoredStatus, book.description, book.notes, req.params.id]);
+        await client.query('DELETE FROM design_book_exhibit_species WHERE design_book_id=$1', [req.params.id]);
+        for (const sp of frozen.species || []) {
             await client.query(`INSERT INTO design_book_exhibit_species
            (design_book_id, exhibit_id, catalog_species_id, species_name, common_name, quantity,
             avg_size_cm, reference_average_mass_kg, biomass_kg, avg_size_override_cm,
@@ -5149,18 +2150,10 @@ router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [req.params.id, sp.exhibit_id, sp.catalog_species_id ?? null, sp.species_name, sp.common_name,
                 sp.quantity ?? null, sp.avg_size_cm ?? null, sp.reference_average_mass_kg ?? null,
                 sp.biomass_kg ?? null, sp.avg_size_override_cm ?? null, sp.reference_mass_override_kg ?? null,
-                sp.biomass_override_kg ?? null, sp.notes ?? null, sp.sort_order ?? 0])
-;
-
-        
-}
-
-        await client.query('DELETE FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [req.params.id])
-;
-
-        for (const h of frozen.hydraulics || []) 
-{
-
+                sp.biomass_override_kg ?? null, sp.notes ?? null, sp.sort_order ?? 0]);
+        }
+        await client.query('DELETE FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [req.params.id]);
+        for (const h of frozen.hydraulics || []) {
             await client.query(`INSERT INTO design_book_exhibit_hydraulics
            (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
             weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
@@ -5171,125 +2164,57 @@ router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate
                 h.weir_formula_method ?? null, h.weir_geometry ?? null, h.weir_end_contractions ?? null,
                 h.weir_discharge_condition ?? null, h.weir_downstream_head_mm ?? null, h.calculation_version ?? null,
                 h.last_calculated_at ?? null, h.calculation_inputs ? JSON.stringify(h.calculation_inputs) : null,
-                h.override_reason ?? null])
-;
-
-        
-}
-
-        await client.query('DELETE FROM design_book_exhibit_substrate WHERE design_book_id=$1', [req.params.id])
-;
-
-        for (const s of frozen.substrate || []) 
-{
-
+                h.override_reason ?? null]);
+        }
+        await client.query('DELETE FROM design_book_exhibit_substrate WHERE design_book_id=$1', [req.params.id]);
+        for (const s of frozen.substrate || []) {
             await client.query(`INSERT INTO design_book_exhibit_substrate
            (design_book_id, exhibit_id, substrate_type, substrate_height_mm, substrate_volume_m3,
             theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [req.params.id, s.exhibit_id, s.substrate_type ?? null, s.substrate_height_mm ?? null,
                 s.substrate_volume_m3 ?? null, s.theming_type ?? null, s.theming_height_mm ?? null,
-                s.theming_volume_m3 ?? null, s.theming_volume_pct ?? null, s.notes ?? null])
-;
-
-        
-}
-
-        await client.query('DELETE FROM design_book_thermal_calculations WHERE design_book_id=$1', [req.params.id])
-;
-
-        for (const thermal of frozen.thermal_calculations || []) 
-{
-
-            await insertThermalSnapshotRecord(client.query.bind(client), routeParam(req.params.id), thermal)
-;
-
-        
-}
-
-        if (Array.isArray(frozen.review_handovers)) 
-{
-
-            await client.query('DELETE FROM design_book_review_handovers WHERE design_book_id=$1', [req.params.id])
-;
-
-            for (const handover of frozen.review_handovers) 
-{
-
+                s.theming_volume_m3 ?? null, s.theming_volume_pct ?? null, s.notes ?? null]);
+        }
+        await client.query('DELETE FROM design_book_thermal_calculations WHERE design_book_id=$1', [req.params.id]);
+        for (const thermal of frozen.thermal_calculations || []) {
+            await insertThermalSnapshotRecord(client.query.bind(client), routeParam(req.params.id), thermal);
+        }
+        if (Array.isArray(frozen.review_handovers)) {
+            await client.query('DELETE FROM design_book_review_handovers WHERE design_book_id=$1', [req.params.id]);
+            for (const handover of frozen.review_handovers) {
                 await client.query(`INSERT INTO design_book_review_handovers
              (design_book_id, meeting_date, title, attendees, purpose, discussion_summary,
               decisions, action_items, open_items, acceptance_notes, created_by, created_at)
            VALUES ($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10,$11,COALESCE($12,NOW()))`, [req.params.id, handover.meeting_date, handover.title, handover.attendees || [],
                     handover.purpose ?? null, handover.discussion_summary ?? null, handover.decisions ?? null,
                     handover.action_items ?? null, handover.open_items ?? null, handover.acceptance_notes ?? null,
-                    handover.created_by ?? null, handover.created_at ?? null])
-;
-
-            
-}
-
-        
-}
-
+                    handover.created_by ?? null, handover.created_at ?? null]);
+            }
+        }
         await client.query(`INSERT INTO design_book_version_restores
          (design_book_id, source_version_id, recovery_checkpoint_id, actor_id, drift, restored_at)
-       VALUES ($1,$2,$3,$4,$5::jsonb,NOW())`, [req.params.id, version.id, checkpoint.id, req.user.id, JSON.stringify(drift)])
-;
-
-        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'VERSION_RESTORED', 
-{
-
+       VALUES ($1,$2,$3,$4,$5::jsonb,NOW())`, [req.params.id, version.id, checkpoint.id, req.user.id, JSON.stringify(drift)]);
+        await insertAudit(client.query.bind(client), req.user.id, 'design_book', routeParam(req.params.id), 'VERSION_RESTORED', {
             summary: `Design Book restored from version ${version.version_number}`,
             source_version_id: version.id,
             source_version_number: version.version_number,
             recovery_checkpoint_id: checkpoint.id,
             drift,
-        
-}
-, req.ip)
-;
-
-        await client.query('COMMIT')
-;
-
-        res.json(
-{
-
+        }, req.ip);
+        await client.query('COMMIT');
+        res.json({
             restored: true,
             version_number: version.version_number,
             recovery_checkpoint_id: checkpoint.id,
             drift,
-        
-}
-)
-;
-
-    
-}
-
-    catch (error) 
-{
-
-        await client.query('ROLLBACK')
-;
-
-        throw error
-;
-
-    
-}
-
-    finally 
-{
-
-        client.release()
-;
-
-    
-}
-
-}
-)
-;
-
-exports.default = router
-;
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+exports.default = router;

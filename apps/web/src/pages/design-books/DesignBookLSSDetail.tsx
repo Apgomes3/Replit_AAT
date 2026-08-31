@@ -293,8 +293,8 @@ const bioNumber = (value: any) => value === '' || value == null ? null : Number(
 const bioFormat = (value: any, decimals = 4) => value == null || !Number.isFinite(Number(value))
   ? '—' : Number(value).toFixed(decimals);
 
-function BiologicalMediaCalculatorPanel({
-  data, mediaProfiles, tanProfiles, speciesCatalog, readOnly, form, onChange,
+export function BiologicalMediaCalculatorPanel({
+  data, mediaProfiles, tanProfiles, maxTanProfiles, speciesCatalog, readOnly, form, onChange,
   onSave, onPreview, onCreateRun, onApproveRun, onRejectRun, onExportRun,
   onCompareRuns, saving, previewing, runBusy, comparison, error,
 }: any) {
@@ -310,6 +310,7 @@ function BiologicalMediaCalculatorPanel({
     && (!normalizedReactorType || (profile.reactor_types || []).some((value: string) => value.toLowerCase() === normalizedReactorType)));
   const approvedTan = tanProfiles.filter((profile: any) =>
     profile.status === 'Approved' && profile.coefficient_unit === 'kg TAN-N/kg feed protein');
+  const approvedMaxTan = maxTanProfiles.filter((profile: any) => profile.status === 'Approved');
   const status = stale && preview ? 'Draft' : preview?.status_label || data?.readiness_status || 'Draft';
   const statusStyles: Record<string, string> = {
     Draft: 'border-blue-200 bg-blue-50 text-blue-800',
@@ -330,6 +331,8 @@ function BiologicalMediaCalculatorPanel({
   const [compareRight, setCompareRight] = useState('');
   const setRows = (next: any[]) => set('species_rows', next);
   const selectedProfile = approvedMedia.find((profile: any) => profile.id === form.media_profile_revision_id);
+  const selectedMaxTanProfile = approvedMaxTan.find((profile: any) => profile.id === form.max_tan_profile_revision_id)
+    || (data?.case?.max_tan_profile_revision_id === form.max_tan_profile_revision_id ? data.case : null);
   const calculatedBiomass = form.biomass_method === 'VOLUME_DENSITY'
     ? Number(context?.total_operating_volume_m3 || 0) * Number(form.stocking_density_kg_m3 || 0)
     : rows.reduce((sum: number, row: any) => sum + Number(row.quantity || 0) * Number(row.design_weight_kg || 0), 0);
@@ -531,10 +534,46 @@ function BiologicalMediaCalculatorPanel({
     </section>
 
     <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">3. Water conditions and approved media</h2><p className="mt-0.5 text-xs text-stone-400">Temperature, pH, salinity and maximum TAN-N are required. Optional values enable warnings and hydraulic checks.</p></div>
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">3. Water conditions, Maximum TAN, and approved media</h2><p className="mt-0.5 text-xs text-stone-400">The Maximum TAN concentration profile is separate from the TAN-generation profile above. It supplies the concentration used for ammonia and optional hydraulic checks.</p></div>
       <div className="grid gap-4 p-5 md:grid-cols-4">
-        {[['temperature_c', 'Temperature °C *'], ['ph', 'pH *'], ['salinity_ppt', 'Salinity ppt *'], ['max_tan_mg_n_l', 'Maximum TAN mg N/L *'], ['do_in_mg_l', 'Biofilter inlet DO mg/L'], ['do_out_min_mg_l', 'Minimum outlet DO mg/L'], ['alkalinity_mg_l_caco3', 'Alkalinity mg/L CaCO₃'], ['actual_flow_m3_h', 'Actual flow m³/h']].map(([key, label]) =>
+        {[['temperature_c', 'Temperature °C *'], ['ph', 'pH *'], ['salinity_ppt', 'Salinity ppt *'], ['do_in_mg_l', 'Biofilter inlet DO mg/L'], ['do_out_min_mg_l', 'Minimum outlet DO mg/L'], ['alkalinity_mg_l_caco3', 'Alkalinity mg/L CaCO₃'], ['actual_flow_m3_h', 'Actual flow m³/h']].map(([key, label]) =>
           <label key={key} className="text-xs font-medium text-stone-500">{label}<input type="number" step="any" className={bioInputClass} disabled={readOnly} value={form[key] ?? ''} onChange={e => set(key, e.target.value)} /></label>)}
+        <label className="text-xs font-medium text-stone-500 md:col-span-2">Maximum TAN concentration profile *
+          <select aria-label="Maximum TAN concentration profile" className={bioInputClass} disabled={readOnly}
+            value={form.max_tan_source === 'CUSTOM' ? 'CUSTOM' : form.max_tan_profile_revision_id || ''}
+            onChange={e => {
+              if (e.target.value === 'CUSTOM') {
+                set('max_tan_source', 'CUSTOM');
+                set('max_tan_profile_revision_id', '');
+                set('max_tan_mg_n_l', '');
+                return;
+              }
+              const profile = approvedMaxTan.find((item: any) => item.id === e.target.value);
+              set('max_tan_source', 'CONTROLLED');
+              set('max_tan_profile_revision_id', e.target.value);
+              if (profile) set('max_tan_mg_n_l', profile.max_tan_mg_n_l);
+            }}>
+            <option value="">Select controlled profile</option>
+            {form.max_tan_source === 'CONTROLLED' && form.max_tan_profile_revision_id
+              && !approvedMaxTan.some((item: any) => item.id === form.max_tan_profile_revision_id)
+              && <option value={form.max_tan_profile_revision_id}>{data?.case?.max_tan_profile_name || 'Historical Maximum TAN profile'} r{data?.case?.max_tan_profile_revision || '—'} — {data?.case?.max_tan_profile_status || 'Unavailable'}</option>}
+            {approvedMaxTan.map((profile: any) => <option key={profile.id} value={profile.id}>
+              {profile.profile_name} — {profile.max_tan_mg_n_l} mg N/L{profile.is_default ? ' (default)' : ''}
+            </option>)}
+            <option value="CUSTOM">Custom project value</option>
+          </select>
+        </label>
+        {form.max_tan_source === 'CUSTOM'
+          ? <label className="text-xs font-medium text-stone-500">Custom Maximum TAN mg N/L *
+            <input aria-label="Custom Maximum TAN mg N/L" type="number" min="0" step="any" className={bioInputClass}
+              disabled={readOnly} value={form.max_tan_mg_n_l ?? ''} onChange={e => set('max_tan_mg_n_l', e.target.value)} />
+          </label>
+          : <div className="rounded-lg bg-blue-50 p-3 text-xs text-blue-800">
+            <span className="font-semibold">Controlled value</span>
+            <strong className="mt-1 block font-mono text-lg">{selectedMaxTanProfile?.max_tan_mg_n_l ?? form.max_tan_mg_n_l ?? '—'} mg N/L</strong>
+            <span>{selectedMaxTanProfile?.engineering_note || selectedMaxTanProfile?.max_tan_profile_engineering_note || 'Saved controlled profile revision.'}</span>
+          </div>}
+        <p className="self-center text-xs text-amber-700 md:col-span-4">This profile or default is a design starting assumption, not a universal safety guarantee. Confirm suitability for the species, life stage, pH, temperature, salinity, and exposure duration.</p>
         <label className="text-xs font-medium text-stone-500">Reactor type *<input className={bioInputClass} disabled={readOnly} value={form.reactor_type} onChange={e => set('reactor_type', e.target.value)} /></label>
         <div className="md:col-span-2">
           <ManagedBiologicalProfileSelect
@@ -1211,6 +1250,10 @@ export default function DesignBookLSSDetail() {
     queryKey: ['tan-generation-profiles'],
     queryFn: () => api.get('/biological-media/tan-profiles').then(r => r.data),
   });
+  const { data: maxTanProfileData = { items: [] } } = useQuery({
+    queryKey: ['maximum-tan-profiles'],
+    queryFn: () => api.get('/biological-media/max-tan-profiles', { params: { approved_only: true } }).then(r => r.data),
+  });
   const usesFrozenPackage = !!book && !['Draft', 'In Progress'].includes(book.status);
   const availableCompactUnits = usesFrozenPackage && Array.isArray(book?.compact_units)
     ? book.compact_units
@@ -1260,6 +1303,8 @@ export default function DesignBookLSSDetail() {
     reactor_type: '',
     media_profile_revision_id: '',
     tan_generation_profile_revision_id: '',
+    max_tan_source: '',
+    max_tan_profile_revision_id: '',
     biomass_method: '',
     stocking_density_kg_m3: '',
     feed_rate_pct_biomass_day: '',
@@ -1295,6 +1340,8 @@ export default function DesignBookLSSDetail() {
       reactor_type: draft?.reactor_type || '',
       media_profile_revision_id: draft?.media_profile_revision_id || '',
       tan_generation_profile_revision_id: draft?.tan_generation_profile_revision_id || '',
+      max_tan_source: draft?.max_tan_source || (!draft && biologicalMedia?.maximum_tan_default ? 'CONTROLLED' : ''),
+      max_tan_profile_revision_id: draft?.max_tan_profile_revision_id || biologicalMedia?.maximum_tan_default?.id || '',
       biomass_method: draft?.biomass_method || '',
       stocking_density_kg_m3: draft?.stocking_density_kg_m3 ?? '',
       feed_rate_pct_biomass_day: draft?.feed_rate_pct_biomass_day ?? '',
@@ -1303,7 +1350,7 @@ export default function DesignBookLSSDetail() {
       temperature_c: draft?.temperature_c ?? '',
       ph: draft?.ph ?? '',
       salinity_ppt: draft?.salinity_ppt ?? '',
-      max_tan_mg_n_l: draft?.max_tan_mg_n_l ?? '',
+      max_tan_mg_n_l: draft?.max_tan_mg_n_l ?? biologicalMedia?.maximum_tan_default?.max_tan_mg_n_l ?? '',
       do_in_mg_l: draft?.do_in_mg_l ?? '',
       do_out_min_mg_l: draft?.do_out_min_mg_l ?? '',
       alkalinity_mg_l_caco3: draft?.alkalinity_mg_l_caco3 ?? '',
@@ -1313,7 +1360,7 @@ export default function DesignBookLSSDetail() {
       notes: draft?.notes || '',
       _stale: false,
     });
-  }, [biologicalMedia?.case?.id, biologicalMedia?.case?.updated_at]);
+  }, [biologicalMedia?.case?.id, biologicalMedia?.case?.updated_at, biologicalMedia?.maximum_tan_default?.id]);
 
   const saveBiologicalMedia = async () => {
     setBiologicalMediaSaving(true);
@@ -4087,6 +4134,7 @@ export default function DesignBookLSSDetail() {
           data={biologicalMedia}
           mediaProfiles={mediaProfileData?.items || []}
           tanProfiles={tanProfileData?.items || []}
+          maxTanProfiles={maxTanProfileData?.items || []}
           speciesCatalog={biologicalSpeciesData?.items || []}
           readOnly={readOnly}
           form={biologicalMediaForm}

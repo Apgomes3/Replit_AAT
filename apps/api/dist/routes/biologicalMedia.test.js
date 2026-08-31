@@ -105,6 +105,55 @@ const completeMediaProfile = {
             evidence_reference: 'CONTROLLED-REF',
         })).toContain('Coefficient unit must be kg TAN-N/kg feed protein.');
     });
+    (0, vitest_1.it)('accepts zero and positive Maximum TAN profiles but rejects missing, negative, and non-finite values', () => {
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateMaxTanProfile)({
+            profile_code: 'ZERO_LIMIT',
+            profile_name: 'Zero limit',
+            max_tan_mg_n_l: 0,
+        })).toEqual([]);
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateMaxTanProfile)({
+            profile_code: 'PUBLIC_AQUARIUM',
+            profile_name: 'Public Aquarium',
+            max_tan_mg_n_l: 0.1,
+        })).toEqual([]);
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateMaxTanProfile)({
+            profile_code: '',
+            profile_name: '',
+            max_tan_mg_n_l: -0.1,
+        })).toEqual(vitest_1.expect.arrayContaining([
+            'Profile code is required.',
+            'Profile name is required.',
+            'Maximum TAN must be a finite, non-negative mg N/L value.',
+        ]));
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateMaxTanProfile)({
+            profile_code: 'BAD',
+            profile_name: 'Bad value',
+            max_tan_mg_n_l: 'Infinity',
+        })).toContain('Maximum TAN must be a finite, non-negative mg N/L value.');
+    });
+    (0, vitest_1.it)('allows valid Custom run values and blocks retired controlled profiles from new runs', () => {
+        (0, vitest_1.expect)((0, biologicalMedia_1.maximumTanRunError)({
+            max_tan_source: 'CUSTOM',
+            max_tan_mg_n_l: 0.25,
+            max_tan_profile_revision_id: null,
+        })).toBeNull();
+        (0, vitest_1.expect)((0, biologicalMedia_1.maximumTanRunError)({
+            max_tan_source: 'CONTROLLED',
+            max_tan_mg_n_l: 0.1,
+            max_tan_profile_revision_id: 'profile-1',
+        }, {
+            id: 'profile-1',
+            status: 'Approved',
+        })).toBeNull();
+        (0, vitest_1.expect)((0, biologicalMedia_1.maximumTanRunError)({
+            max_tan_source: 'CONTROLLED',
+            max_tan_mg_n_l: 0.1,
+            max_tan_profile_revision_id: 'profile-1',
+        }, {
+            id: 'profile-1',
+            status: 'Retired',
+        })).toMatch(/no longer approved/i);
+    });
 });
 (0, vitest_1.describe)('Biological Media preview freshness', () => {
     const record = {
@@ -159,6 +208,13 @@ const completeMediaProfile = {
             revision: 2,
             evidence_reference: 'TAN-EVIDENCE-R2',
         },
+        max_tan_profile_snapshot: {
+            source: 'CONTROLLED',
+            profile_code: 'PUBLIC_AQUARIUM',
+            profile_name: 'Public Aquarium',
+            revision: 1,
+            max_tan_mg_n_l: 0.1,
+        },
         normalized_input_snapshot: { filter: { safety_factor: 1.2 } },
         result_snapshot: {
             biomass: { design_biomass_kg: 420 },
@@ -177,6 +233,8 @@ const completeMediaProfile = {
         (0, vitest_1.expect)(summary).toContain('Installed media: 1200 L');
         (0, vitest_1.expect)(summary).toContain('WARNING MEDIA_W01');
         (0, vitest_1.expect)(summary).toContain('Approval Engineer');
+        (0, vitest_1.expect)(summary).toContain('PUBLIC_AQUARIUM r1');
+        (0, vitest_1.expect)(summary).toContain('Maximum TAN concentration: 0.1 mg N/L');
     });
     (0, vitest_1.it)('compares frozen inputs, profile revisions, outputs, warnings, and approval state', () => {
         const comparison = (0, biologicalMedia_1.compareBiologicalMediaRuns)(run, {
@@ -185,6 +243,13 @@ const completeMediaProfile = {
             run_number: 4,
             status: 'Pending Review',
             media_profile_snapshot: { ...run.media_profile_snapshot, revision: 5 },
+            max_tan_profile_snapshot: {
+                source: 'CUSTOM',
+                profile_code: null,
+                profile_name: 'Custom',
+                revision: null,
+                max_tan_mg_n_l: 0.25,
+            },
             normalized_input_snapshot: { filter: { safety_factor: 1.4 } },
             result_snapshot: { ...run.result_snapshot, media: { required_media_l: 1300, installed_media_l: 1400 } },
             messages: [],
@@ -192,6 +257,10 @@ const completeMediaProfile = {
         (0, vitest_1.expect)(comparison.changes.inputs).toHaveLength(1);
         (0, vitest_1.expect)(comparison.changes.media_profile).toEqual(vitest_1.expect.arrayContaining([
             vitest_1.expect.objectContaining({ field: 'revision', before: 4, after: 5 }),
+        ]));
+        (0, vitest_1.expect)(comparison.changes.max_tan_profile).toEqual(vitest_1.expect.arrayContaining([
+            vitest_1.expect.objectContaining({ field: 'source', before: 'CONTROLLED', after: 'CUSTOM' }),
+            vitest_1.expect.objectContaining({ field: 'max_tan_mg_n_l', before: 0.1, after: 0.25 }),
         ]));
         (0, vitest_1.expect)(comparison.changes.results).toHaveLength(1);
         (0, vitest_1.expect)(comparison.changes.warnings).toHaveLength(1);
