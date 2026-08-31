@@ -795,10 +795,18 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const getTab = (label: string) => screen.getByRole('tab', {
       name: label === 'Flow Route' ? /^Flow Route/ : label,
     });
+    const scrollIntoView = vi.fn();
+    tabLabels.forEach(label => {
+      Object.defineProperty(getTab(label), 'scrollIntoView', {
+        configurable: true,
+        value: scrollIntoView,
+      });
+    });
 
     expect(tablist.clientWidth).toBeLessThan(tablist.scrollWidth);
     expect(tablist).toHaveClass('overflow-x-auto');
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(tabLabels);
+    expect(getTab('System Overview')).toHaveClass('px-2', 'text-xs', 'sm:px-4', 'sm:text-sm');
 
     const route = within(document.querySelector('#flow-route')!);
     await user.click(route.getByRole('button', { name: 'Edit' }));
@@ -833,6 +841,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
       if (index < tabLabels.length - 1) {
         await user.keyboard('{ArrowRight}');
+        expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'nearest' });
       }
     }
 

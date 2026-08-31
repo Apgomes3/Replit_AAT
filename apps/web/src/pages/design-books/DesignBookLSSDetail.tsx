@@ -1575,7 +1575,9 @@ export default function DesignBookLSSDetail() {
     event.preventDefault();
     const nextTab = LSS_TABS[nextIndex].id;
     handleTabChange(nextTab);
-    tabRefs.current[nextTab]?.focus();
+    const nextTabElement = tabRefs.current[nextTab];
+    nextTabElement?.focus();
+    nextTabElement?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   };
 
   useEffect(() => {
@@ -2168,7 +2170,7 @@ export default function DesignBookLSSDetail() {
               tabIndex={selected ? 0 : -1}
               onClick={() => handleTabChange(tab.id)}
               onKeyDown={event => handleTabKeyDown(event, tab.id)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${
+              className={`px-2 py-3 text-xs font-medium border-b-2 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 sm:px-4 sm:text-sm ${
                 selected
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
