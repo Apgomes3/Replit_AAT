@@ -1918,6 +1918,19 @@ function thermalNumber(value: any, decimals = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
 }
 
+export function thermalEvidenceBasis(detail: any) {
+  return {
+    temperature: detail?.water_temperature_basis ||
+      detail?.formula_inputs?.water_temperature_basis ||
+      detail?.inputs?.water_temperature_basis ||
+      null,
+    wall: detail?.wall_construction_basis ||
+      detail?.formula_inputs?.wall_construction_basis ||
+      detail?.inputs?.wall_construction_basis ||
+      null,
+  };
+}
+
 function ThermalCorrelationUsageList({ usages }: { usages: any[] }) {
   const statusOrder = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
   const byStatus = usages.reduce((groups: Map<string, Map<string, any[]>>, usage) => {
@@ -2047,7 +2060,8 @@ function ThermalTab({
       relative_humidity_pct: existing.relative_humidity_pct ?? 60,
       surrounding_surface_temperature_c: existing.surrounding_surface_temperature_c ?? existing.ambient_air_temperature_c ?? '',
       atmospheric_pressure_kpa: existing.atmospheric_pressure_kpa ?? 101.325,
-      water_temperature_c: existing.water_temperature_c ?? '',
+      reviewed_water_temperature_c:
+        existing.reviewed_water_temperature_c ?? existing.water_temperature_c ?? '',
       agitation_class: existing.agitation_class ?? '',
       agitation_correlation_class: existing.agitation_correlation_class ?? existing.agitation_class ?? '',
       agitation_correlation_id: existing.agitation_correlation_id ?? correlationSnapshot.correlation_id ?? '',
@@ -2060,6 +2074,10 @@ function ThermalTab({
       adjacent_upper_class: existing.adjacent_agitation_classes?.[1] ?? '',
       adjacent_upper_coefficient: existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[1]]?.coefficient_kg_m2_s_kpa ?? '',
       reviewed_u_value_w_m2_k: existing.reviewed_u_value_w_m2_k ?? '',
+      tank_construction_type: existing.tank_construction_type ??
+        existing.tank_construction ??
+        item.calculation?.wall_construction_basis?.construction_type ??
+        '',
       wall_material: existing.tank_wall_layers?.[0]?.material ?? '',
       wall_thickness_mm: existing.tank_wall_layers?.[0]?.thickness_mm ?? '',
       wall_conductivity_w_m_k: existing.tank_wall_layers?.[0]?.conductivity_w_m_k ?? '',
@@ -2212,7 +2230,9 @@ function ThermalTab({
         relative_humidity_pct: numericOrNull(form.relative_humidity_pct),
         surrounding_surface_temperature_c: numericOrNull(form.surrounding_surface_temperature_c),
         atmospheric_pressure_kpa: numericOrNull(form.atmospheric_pressure_kpa),
-        ...(form.water_temperature_c !== '' ? { water_temperature_c: numericOrNull(form.water_temperature_c) } : {}),
+        ...(form.reviewed_water_temperature_c !== ''
+          ? { reviewed_water_temperature_c: numericOrNull(form.reviewed_water_temperature_c) }
+          : {}),
         agitation_correlation_id: form.agitation_correlation_id || undefined,
         agitation_class: form.agitation_class,
         agitation_correlation_class: form.agitation_class,
@@ -2247,6 +2267,7 @@ function ThermalTab({
           } : {}),
         },
         reviewed_u_value_w_m2_k: numericOrNull(form.reviewed_u_value_w_m2_k),
+        tank_construction_type: form.tank_construction_type || null,
         tank_wall_layers: wallLayers,
         equipment_heat_gain_kw: numericOrNull(form.equipment_heat_gain_kw),
         lighting_power_kw: numericOrNull(form.lighting_power_kw),
@@ -2282,6 +2303,11 @@ function ThermalTab({
   }
 
   const detail = selected?.calculation || selected?.current_preview;
+  const evidenceBasis = thermalEvidenceBasis(detail);
+  const constructionDefaults: any[] = book.thermal_construction_defaults || [];
+  const selectedConstructionDefault = constructionDefaults.find(
+    item => item.code === form.tank_construction_type,
+  );
   const fieldClass = 'w-full rounded-lg border border-stone-200 px-3 py-2 text-sm bg-white disabled:bg-stone-50 disabled:text-stone-500';
   const labelClass = 'block text-xs font-medium text-stone-600 mb-1';
   const Field = ({ name, label, unit, step = 'any' }: any) => (
@@ -2523,11 +2549,26 @@ function ThermalTab({
               <div className="rounded-xl border border-stone-200 p-3">
                 <p className="text-xs font-semibold text-stone-700 mb-2">Exhibits and water-temperature sources</p>
                 {(selected.source?.water_temperature_sources || []).map((source: any) => (
-                  <div key={source.exhibit_id} className="flex justify-between text-sm py-1">
+                  <div key={source.exhibit_id} className="flex justify-between gap-3 text-sm py-1">
                     <span>{source.exhibit_code || source.exhibit_id}</span>
-                    <span className="font-mono">{thermalNumber(source.water_temperature_min_c, 1)}–{thermalNumber(source.water_temperature_max_c, 1)} °C</span>
+                    <span className="text-right">
+                      <span className="font-mono">{thermalNumber(source.water_temperature_min_c, 1)}–{thermalNumber(source.water_temperature_max_c, 1)} °C</span>
+                      {source.water_temperature_range_status &&
+                        <span className={`ml-2 text-xs ${source.water_temperature_range_status === 'valid' ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {source.water_temperature_range_status}
+                        </span>}
+                    </span>
                   </div>
                 ))}
+                {evidenceBasis.temperature && (
+                  <div className="mt-2 border-t border-stone-100 pt-2 text-sm">
+                    <div className="flex justify-between gap-3 font-medium">
+                      <span>{evidenceBasis.temperature.reviewed_override_used ? 'Reviewed calculation temperature' : 'Arithmetic average'}</span>
+                      <span className="font-mono">{thermalNumber(evidenceBasis.temperature.calculated_temperature_c, 1)} °C</span>
+                    </div>
+                    <p className="mt-1 text-xs text-stone-500">{evidenceBasis.temperature.source}</p>
+                  </div>
+                )}
               </div>
               <div className="rounded-xl border border-stone-200 p-3">
                 <p className="text-xs font-semibold text-stone-700 mb-2">Tank geometry provenance</p>
@@ -2560,7 +2601,16 @@ function ThermalTab({
               <Field name="relative_humidity_pct" label="Relative humidity" unit="%" />
               <Field name="surrounding_surface_temperature_c" label="Surrounding-surface temperature" unit="°C" />
               <Field name="atmospheric_pressure_kpa" label="Atmospheric pressure" unit="kPa" />
-              <Field name="water_temperature_c" label="Reviewed water-temperature override" unit="°C" />
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                <span className="block text-xs font-medium text-blue-800">Derived water temperature</span>
+                <div className="mt-1 font-mono text-sm font-semibold text-blue-950">
+                  {thermalNumber(evidenceBasis.temperature?.average_c, 1)} °C
+                </div>
+                <p className="mt-1 text-xs text-blue-700">
+                  Arithmetic average of the linked exhibit minimum and maximum.
+                </p>
+              </div>
+              <Field name="reviewed_water_temperature_c" label="Reviewed water-temperature override (optional)" unit="°C" />
               <label className="sm:col-span-2">
                 <span className={labelClass}>Approved correlation version</span>
                 <select value={form.agitation_correlation_id || ''} onChange={event => selectCorrelation(event.target.value)} disabled={readOnly} className={fieldClass}>
@@ -2588,11 +2638,69 @@ function ThermalTab({
               <label><span className={labelClass}>Adjacent upper agitation class</span><input value={form.adjacent_upper_class || ''} onChange={e => update('adjacent_upper_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
               <Field name="adjacent_upper_coefficient" label="Upper-class coefficient" unit="kg/m²·s·kPa" />
             </div>
-            <div className="grid gap-3 sm:grid-cols-4">
-              <Field name="reviewed_u_value_w_m2_k" label="Reviewed wall U-value" unit="W/m²·K" />
-              <label><span className={labelClass}>Wall material</span><input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k} className={fieldClass} /></label>
-              <Field name="wall_thickness_mm" label="Wall layer thickness" unit="mm" />
-              <Field name="wall_conductivity_w_m_k" label="Wall conductivity" unit="W/m·K" />
+            <div className="rounded-xl border border-stone-200 p-4 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold text-stone-900">Tank wall construction and U-value</h4>
+                <p className="mt-1 text-xs text-stone-500">
+                  Construction defaults are engineering assumptions. Use a reviewed custom U-value or explicit wall layer when the standard assumption does not apply.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label>
+                  <span className={labelClass}>Tank construction type</span>
+                  <select
+                    aria-label="Tank construction type"
+                    value={form.tank_construction_type || ''}
+                    onChange={event => update('tank_construction_type', event.target.value)}
+                    disabled={readOnly}
+                    className={fieldClass}
+                  >
+                    <option value="">Custom / explicit wall layers</option>
+                    {constructionDefaults.map(item => (
+                      <option key={item.code} value={item.code}>{item.label}</option>
+                    ))}
+                    {!constructionDefaults.some(item => item.code === form.tank_construction_type) &&
+                      form.tank_construction_type && (
+                        <option value={form.tank_construction_type}>{evidenceBasis.wall?.construction_label || form.tank_construction_type}</option>
+                      )}
+                  </select>
+                </label>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 sm:col-span-1 lg:col-span-2">
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-amber-800">
+                    Engineering assumption
+                  </span>
+                  <div className="mt-1 text-sm font-medium text-amber-950">
+                    {selectedConstructionDefault
+                      ? `${selectedConstructionDefault.label}: ${thermalNumber(selectedConstructionDefault.u_value_w_m2_k, 2)} ${selectedConstructionDefault.units}`
+                      : evidenceBasis.wall?.construction_label
+                        ? `${evidenceBasis.wall.construction_label}: ${thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} ${evidenceBasis.wall.units}`
+                        : 'Select a standard construction or use a reviewed custom basis.'}
+                  </div>
+                  <p className="mt-1 text-xs text-amber-800">
+                    {selectedConstructionDefault?.assumption_label ||
+                      evidenceBasis.wall?.assumption_label ||
+                      'No default assumption selected.'}
+                    {(selectedConstructionDefault?.basis_version || evidenceBasis.wall?.basis_version) &&
+                      ` · ${selectedConstructionDefault?.basis_version || evidenceBasis.wall?.basis_version}`}
+                  </p>
+                </div>
+                <Field name="reviewed_u_value_w_m2_k" label="Reviewed custom wall U-value (optional)" unit="W/m²·K" />
+                <label><span className={labelClass}>Wall material</span><input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k || !!form.tank_construction_type} className={fieldClass} /></label>
+                <label>
+                  <span className={labelClass}>Wall layer thickness (mm)</span>
+                  <input aria-label="Wall layer thickness" type="number" step="any" value={form.wall_thickness_mm ?? ''} onChange={e => update('wall_thickness_mm', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k || !!form.tank_construction_type} className={fieldClass} />
+                </label>
+                <label>
+                  <span className={labelClass}>Wall conductivity (W/m·K)</span>
+                  <input aria-label="Wall conductivity" type="number" step="any" value={form.wall_conductivity_w_m_k ?? ''} onChange={e => update('wall_conductivity_w_m_k', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k || !!form.tank_construction_type} className={fieldClass} />
+                </label>
+              </div>
+              {evidenceBasis.wall && (
+                <div className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
+                  Saved calculation basis: <b>{evidenceBasis.wall.source}</b> · {thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} {evidenceBasis.wall.units}
+                  {evidenceBasis.wall.reviewed ? ' · reviewed engineering value' : ' · governed default assumption'}
+                </div>
+              )}
             </div>
           </section>
 

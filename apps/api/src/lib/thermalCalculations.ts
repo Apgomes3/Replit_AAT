@@ -12,7 +12,51 @@
 
 import crypto from 'crypto';
 
-export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v1';
+export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v2';
+export const THERMAL_CONSTRUCTION_BASIS_VERSION = 'aat-thermal-construction-v1';
+/**
+ * Default wall U-values are governed engineering assumptions, not material
+ * conductivity calculations. Keep the basis version and source reference in
+ * every result so a saved calculation remains auditable if this table changes.
+ */
+export const THERMAL_CONSTRUCTION_DEFAULTS = [
+  {
+    code: 'acrylic',
+    label: 'Acrylic',
+    u_value_w_m2_k: 5.7,
+    units: 'W/m²·K',
+    assumption_label: 'Engineering assumption — standard acrylic tank wall',
+    basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
+    source_reference: 'AAT thermal construction assumption basis v1',
+  },
+  {
+    code: 'concrete',
+    label: 'Concrete',
+    u_value_w_m2_k: 1.5,
+    units: 'W/m²·K',
+    assumption_label: 'Engineering assumption — standard concrete tank wall',
+    basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
+    source_reference: 'AAT thermal construction assumption basis v1',
+  },
+  {
+    code: 'frp',
+    label: 'FRP',
+    u_value_w_m2_k: 2.5,
+    units: 'W/m²·K',
+    assumption_label: 'Engineering assumption — standard FRP tank wall',
+    basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
+    source_reference: 'AAT thermal construction assumption basis v1',
+  },
+  {
+    code: 'steel',
+    label: 'Steel',
+    u_value_w_m2_k: 5.8,
+    units: 'W/m²·K',
+    assumption_label: 'Engineering assumption — standard steel tank wall',
+    basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
+    source_reference: 'AAT thermal construction assumption basis v1',
+  },
+] as const;
 export const THERMAL_CONSTANTS = {
   convection_coefficient_w_m2_k: 18,
   emissivity: 0.97,
@@ -201,6 +245,13 @@ export function buildThermalSourceContext(args: {
     exhibit_code: exhibit.exhibit_code || null,
     water_temperature_min_c: finite(exhibit.design_temperature_min),
     water_temperature_max_c: finite(exhibit.design_temperature_max),
+    water_temperature_range_status:
+      finite(exhibit.design_temperature_min) == null || finite(exhibit.design_temperature_max) == null
+        ? (exhibit.design_temperature_min == null || exhibit.design_temperature_min === '' ||
+          exhibit.design_temperature_max == null || exhibit.design_temperature_max === ''
+          ? 'incomplete' : 'invalid')
+        : finite(exhibit.design_temperature_min)! > finite(exhibit.design_temperature_max)!
+          ? 'invalid' : 'valid',
     water_type: exhibit.water_type || null,
   }));
   const circulationFlows = linkedExhibitIds.map(exhibitId => {
@@ -238,35 +289,115 @@ export function buildThermalSourceContext(args: {
 }
 
 function resolveWaterTemperature(source: any, inputs: any, reasons: string[]) {
-  const override = finite(inputs.water_temperature_c);
-  if (override != null) return { value: override, source: 'system reviewed water-temperature override' };
+  const overrideValues = [
+    inputs.reviewed_water_temperature_c,
+    inputs.water_temperature_c,
+  ].filter(value => value !== null && value !== undefined && value !== '');
+  const reviewedOverride = finite(inputs.reviewed_water_temperature_c);
+  const legacyOverride = finite(inputs.water_temperature_c);
+  const overrideIsInvalid = overrideValues.length > 0 &&
+    reviewedOverride == null && legacyOverride == null;
+  if (overrideIsInvalid) {
+    reasons.push('Reviewed water-temperature override must be a finite value.');
+  }
+  let overrideIsConflicting = false;
+  if (reviewedOverride != null && legacyOverride != null &&
+      Math.abs(reviewedOverride - legacyOverride) > 1e-9) {
+    reasons.push('Reviewed water-temperature overrides conflict; provide one reviewed value.');
+    overrideIsConflicting = true;
+  }
+  const override = reviewedOverride ?? legacyOverride;
   const records = source.water_temperature_sources || [];
   if (!records.length) {
-    reasons.push('No linked exhibit provides a water design temperature.');
-    return { value: null, source: 'missing' };
+    reasons.push('No linked exhibit provides a water design-temperature range.');
+    return { value: null, source: 'missing', reviewed_override_used: false };
+  }
+  if (records.some((item: any) => item.water_temperature_range_status === 'invalid' ||
+      (item.water_temperature_min_c != null && item.water_temperature_max_c != null &&
+        item.water_temperature_min_c > item.water_temperature_max_c))) {
+    reasons.push('Every linked exhibit must provide a valid water design-temperature range with minimum no greater than maximum.');
+    return { value: null, source: 'invalid linked exhibit temperature range', reviewed_override_used: false };
   }
   if (records.some((item: any) => item.water_temperature_min_c == null || item.water_temperature_max_c == null)) {
     reasons.push('Every linked exhibit must provide both minimum and maximum water design temperature.');
-    return { value: null, source: 'incomplete linked exhibit temperatures' };
+    return { value: null, source: 'incomplete linked exhibit temperatures', reviewed_override_used: false };
   }
   const first = records[0];
   const same = records.every((item: any) =>
     Math.abs(item.water_temperature_min_c - first.water_temperature_min_c) < 1e-9 &&
     Math.abs(item.water_temperature_max_c - first.water_temperature_max_c) < 1e-9);
   if (!same) {
-    reasons.push('Linked exhibits have conflicting water design temperatures; resolve the source or enter a reviewed system override.');
-    return { value: null, source: 'conflicting linked exhibit temperatures' };
+    reasons.push('Linked exhibits have conflicting water design temperatures; resolve the linked source range before calculating.');
+    return { value: null, source: 'conflicting linked exhibit temperatures', reviewed_override_used: false };
   }
-  if (Math.abs(first.water_temperature_max_c - first.water_temperature_min_c) > 1e-9) {
-    reasons.push('Linked exhibit water design temperature is a range; a single reviewed system water temperature is required.');
-    return { value: null, source: 'linked exhibit temperature range' };
+  const average = (first.water_temperature_min_c + first.water_temperature_max_c) / 2;
+  if (overrideIsInvalid || overrideIsConflicting) {
+    return {
+      value: null,
+      source: overrideIsConflicting
+        ? 'conflicting reviewed water-temperature overrides'
+        : 'invalid reviewed water-temperature override',
+      minimum_c: first.water_temperature_min_c,
+      maximum_c: first.water_temperature_max_c,
+      average_c: average,
+      reviewed_override_used: false,
+    };
   }
-  return { value: first.water_temperature_min_c, source: 'linked exhibit design temperature' };
+  if (override != null) {
+    return {
+      value: override,
+      source: 'system reviewed water-temperature override',
+      minimum_c: first.water_temperature_min_c,
+      maximum_c: first.water_temperature_max_c,
+      average_c: average,
+      reviewed_override_used: true,
+    };
+  }
+  return {
+    value: average,
+    source: 'linked exhibit design-temperature range average',
+    minimum_c: first.water_temperature_min_c,
+    maximum_c: first.water_temperature_max_c,
+    average_c: average,
+    reviewed_override_used: false,
+  };
 }
 
 function resolveWallUValue(inputs: any, reasons: string[]) {
-  const reviewed = positive(inputs.reviewed_u_value_w_m2_k);
-  if (reviewed != null) return { value: reviewed, source: 'reviewed U-value' };
+  const rawConstruction = String(
+    inputs.tank_construction_type ?? inputs.tank_construction ?? '',
+  ).trim().toLowerCase();
+  const construction = THERMAL_CONSTRUCTION_DEFAULTS.find(item => item.code === rawConstruction);
+  if (rawConstruction && !construction) {
+    reasons.push('Tank construction must be Acrylic, Concrete, FRP, or Steel.');
+  }
+  const reviewedRaw = inputs.reviewed_u_value_w_m2_k;
+  const reviewed = positive(reviewedRaw);
+  if (reviewedRaw !== null && reviewedRaw !== undefined && reviewedRaw !== '' && reviewed == null) {
+    reasons.push('Reviewed wall U-value must be a positive finite value.');
+  }
+  if (reviewed != null) {
+    return {
+      value: reviewed,
+      source: 'reviewed custom U-value',
+      construction: construction || null,
+      reviewed: true,
+      assumption_label: 'Reviewed engineering value — custom wall U-value',
+      basis_version: null,
+      source_reference: null,
+    };
+  }
+  if (construction) {
+    return {
+      value: construction.u_value_w_m2_k,
+      source: 'assumed tank construction U-value',
+      construction,
+      reviewed: false,
+      assumption_label: construction.assumption_label,
+      basis_version: construction.basis_version,
+      source_reference: construction.source_reference,
+    };
+  }
   const layers = Array.isArray(inputs.tank_wall_layers) ? inputs.tank_wall_layers : [];
   const validLayers = layers.map((layer: any) => ({
     material: String(layer?.material || '').trim(),
@@ -274,7 +405,7 @@ function resolveWallUValue(inputs: any, reasons: string[]) {
     conductivity_w_m_k: positive(layer?.conductivity_w_m_k),
   }));
   if (!validLayers.length) {
-    reasons.push('Enter tank wall layers or a reviewed U-value before calculating.');
+    if (!rawConstruction) reasons.push('Select a tank construction, enter wall layers, or provide a reviewed U-value before calculating.');
     return { value: null, source: 'missing wall construction' };
   }
   if (validLayers.some(layer => !layer.material || layer.thickness_m == null || layer.conductivity_w_m_k == null)) {
@@ -284,7 +415,16 @@ function resolveWallUValue(inputs: any, reasons: string[]) {
   const resistance = 1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
     validLayers.reduce((sum: number, layer: any) => sum + layer.thickness_m / layer.conductivity_w_m_k, 0) +
     1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k;
-  return { value: 1 / resistance, source: 'film coefficients plus wall-layer resistance', layers: validLayers };
+  return {
+    value: 1 / resistance,
+    source: 'film coefficients plus wall-layer resistance',
+    construction: construction || null,
+    reviewed: true,
+    assumption_label: 'Reviewed engineering value — explicit wall-layer construction',
+    basis_version: null,
+    source_reference: null,
+    layers: validLayers,
+  };
 }
 
 function correlationFor(inputs: any, agitationClass = inputs.agitation_class) {
@@ -442,7 +582,7 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
     ? null : THERMAL_CONSTANTS.emissivity * THERMAL_CONSTANTS.stefan_boltzmann_w_m2_k4 *
       freeSurface * (Math.pow(celsiusToKelvin(surfaceTemperature), 4) -
         Math.pow(celsiusToKelvin(waterTemperature), 4)) / 1000;
-  const wall = waterTemperature == null || common.ambient == null || uValue == null
+  const wallConduction = waterTemperature == null || common.ambient == null || uValue == null
     ? null : uValue * wallArea * (common.ambient - waterTemperature) / 1000;
   const evaporation = evaporationCoefficient == null || deltaVapourPressure == null
     ? null : -evaporationCoefficient * freeSurface * Math.max(0, deltaVapourPressure) *
@@ -459,7 +599,7 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
   const contributions = {
     convection_kw: convection,
     radiation_kw: radiation,
-    wall_conduction_kw: wall,
+    wall_conduction_kw: wallConduction,
     evaporation_kw: evaporation,
     equipment_kw: common.equipment,
     lighting_kw: lighting,
@@ -468,24 +608,53 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
   const envelope = sumNumber(Object.values({
     convection,
     radiation,
-    wall,
+    wall: wallConduction,
     evaporation,
   }));
   const total = envelope + common.equipment + lighting + exchange;
   const recovery = volume > 0 ? THERMAL_CONSTANTS.recovery_heating_kw_per_m3 * volume : null;
   if (recovery == null) reasons.push('Recovery heating requires a positive effective water volume.');
   const marginFactor = 1 + common.margin / 100;
+  const waterTemperatureBasis = {
+    source: common.water.source,
+    minimum_c: common.water.minimum_c ?? null,
+    maximum_c: common.water.maximum_c ?? null,
+    average_c: common.water.average_c ?? null,
+    calculated_temperature_c: waterTemperature,
+    reviewed_override_used: common.water.reviewed_override_used === true,
+  };
+  const wallConstructionBasis = {
+    construction_type: common.wall.construction?.code || null,
+    construction_label: common.wall.construction?.label || null,
+    u_value_w_m2_k: uValue,
+    units: 'W/m²·K',
+    source: common.wall.source,
+    reviewed: common.wall.reviewed === true,
+    assumption_label: common.wall.assumption_label || null,
+    basis_version: common.wall.basis_version || null,
+    source_reference: common.wall.source_reference || null,
+    layers: common.wall.layers || null,
+  };
   return {
     status: reasons.length ? 'Blocked' as ThermalStatus : 'Ready' as ThermalStatus,
     reasons,
+    water_temperature_basis: waterTemperatureBasis,
+    wall_construction_basis: wallConstructionBasis,
     contributions,
     results: {
       effective_water_volume_m3: volume,
       free_surface_area_m2: freeSurface,
       exposed_wall_area_m2: wallArea,
       wall_u_value_w_m2_k: uValue,
+      wall_construction_type: wallConstructionBasis.construction_type,
+      wall_construction_source: wallConstructionBasis.source,
+      wall_construction_basis_version: wallConstructionBasis.basis_version,
       water_temperature_c: waterTemperature,
       water_temperature_source: common.water.source,
+      water_temperature_min_c: waterTemperatureBasis.minimum_c,
+      water_temperature_max_c: waterTemperatureBasis.maximum_c,
+      water_temperature_average_c: waterTemperatureBasis.average_c,
+      water_temperature_reviewed_override: waterTemperatureBasis.reviewed_override_used,
       circulation_flow_m3h: finite(source.lss_circulation_flow_m3h),
       circulation_flow_is_reference_only: true,
       operational_water_exchange_flow_m3h: exchangeFlow || 0,
@@ -512,6 +681,8 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
       equipment_heat_gain_kw: common.equipment,
       capacity_margin_pct: common.margin,
       water_exchange_enabled: !!inputs.water_exchange_enabled,
+      water_temperature_basis: waterTemperatureBasis,
+      wall_construction_basis: wallConstructionBasis,
     },
   };
 }
@@ -542,6 +713,8 @@ export function calculateThermalCalculation(source: any, inputs: any = {}, calcu
     normalizedInputs.surrounding_surface_temperature_c = normalizedInputs.ambient_air_temperature_c ?? null;
   }
   const base = calculateCase(source, normalizedInputs);
+  normalizedInputs.water_temperature_basis = base.water_temperature_basis;
+  normalizedInputs.wall_construction_basis = base.wall_construction_basis;
   const sensitivityCases: any[] = [];
   for (const factor of [-0.1, 0.1]) {
     const result = calculateCase(source, normalizedInputs, { surface: 1 + factor, evaporation: 1, correlation: null });
@@ -599,6 +772,8 @@ export function calculateThermalCalculation(source: any, inputs: any = {}, calcu
     sign_convention: 'Positive kW enters the water; negative kW removes heat from the water.',
     rounding: 'Internal calculations use full-precision SI values. Display temperatures use 1°C, areas 0.01 m², volumes 0.001 m³, flows 0.01 m³/h, duties 0.01 kW, and percentages 0.1%.',
     reasons: base.reasons,
+    water_temperature_basis: base.water_temperature_basis,
+    wall_construction_basis: base.wall_construction_basis,
     formula_inputs: base.formula_inputs,
     contributions: base.contributions,
     results: base.results,

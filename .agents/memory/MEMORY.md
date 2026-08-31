@@ -18,5 +18,6 @@
 - [Custom tank footprints](custom-tank-footprints.md) — geometry is authoritative for plan measurements; manual Custom tanks never inherit rectangular area assumptions.
 - [LSS pump selection authority](lss-pump-selection-authority.md) — size circuit pumps from Design Book flow; stale, incomplete, or ineligible selections block release.
 - [Thermal correlation snapshots](thermal-correlation-snapshots.md) — Ready thermal work requires a governed library snapshot; deviations retain the approved basis and justification.
+- [Thermal assumption evidence](thermal-assumption-evidence.md) — freeze linked-range midpoint and versioned wall U-value basis; reviewed overrides never erase source evidence.
 - [Maximum TAN profiles](maximum-tan-profiles.md) — keep concentration assumptions separate from TAN generation; freeze source and value, and never replace saved cases from defaults.
 - [VTR evidence boundary](vtr-evidence-boundary.md) — published observations and candidate rates stay review-only until explicitly promoted into a controlled profile.

@@ -28,6 +28,7 @@ import {
   calculateThermalCalculation,
   isApprovedThermalCorrelationSnapshot,
   THERMAL_CALCULATION_VERSION,
+  THERMAL_CONSTRUCTION_DEFAULTS,
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
 import { calculatePumpSelection, evaluateSelectedPumpSuitability, pumpSourceFingerprint, PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from '../lib/pumpSelections';
@@ -392,6 +393,10 @@ async function insertThermalSnapshotRecord(
     ],
   );
 }
+
+export const thermalCalculationTestUtils = {
+  insertThermalSnapshotRecord,
+};
 
 async function insertFrictionSnapshotRecord(
   runner: DbRunner,
@@ -832,6 +837,7 @@ export async function loadReleaseContext(
     biological_media_cases: biologicalMediaCases,
     biological_media_runs: biologicalMediaRuns,
     thermal_calculations: thermalCalculations,
+    thermal_construction_defaults: THERMAL_CONSTRUCTION_DEFAULTS,
     pump_selections: pumpSelections,
     friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {
@@ -1505,6 +1511,8 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
         correlation_id: calculation.correlation_snapshot?.correlation_id || null,
         correlation_version: calculation.correlation_snapshot?.version || null,
         correlation_deviation: calculation.correlation_snapshot?.deviation || false,
+        water_temperature_basis: calculation.water_temperature_basis,
+        wall_construction_basis: calculation.wall_construction_basis,
         deviation_justification: String(calculation.inputs.deviation_justification || '').trim() || null,
       },
       req.ip,
@@ -1801,6 +1809,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     hydraulics,
     substrate,
     thermal_calculations: thermalCalculations,
+    thermal_construction_defaults: THERMAL_CONSTRUCTION_DEFAULTS,
     pump_selections: pumpSelections,
     friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {

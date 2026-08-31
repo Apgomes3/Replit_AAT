@@ -178,6 +178,12 @@ function requestDetail(app) {
             freshness: 'unsaved',
             source_fingerprint: vitest_1.expect.any(String),
         }))));
+        (0, vitest_1.expect)(response.body.thermal_construction_defaults).toEqual([
+            vitest_1.expect.objectContaining({ code: 'acrylic', label: 'Acrylic', units: 'W/m²·K' }),
+            vitest_1.expect.objectContaining({ code: 'concrete', label: 'Concrete', units: 'W/m²·K' }),
+            vitest_1.expect.objectContaining({ code: 'frp', label: 'FRP', units: 'W/m²·K' }),
+            vitest_1.expect.objectContaining({ code: 'steel', label: 'Steel', units: 'W/m²·K' }),
+        ]);
         (0, vitest_1.expect)(state.calls).toContainEqual(vitest_1.expect.objectContaining({
             params: [bookId, systems.map(system => system.id)],
         }));
@@ -191,7 +197,22 @@ function requestDetail(app) {
                 system_id: 'frozen-system',
                 freshness: 'fresh',
                 status: 'Ready',
-                calculation: { status: 'Ready', frozen: true },
+                calculation: {
+                    status: 'Ready',
+                    frozen: true,
+                    water_temperature_basis: {
+                        minimum_c: 24,
+                        maximum_c: 26,
+                        average_c: 25,
+                        calculated_temperature_c: 25,
+                        reviewed_override_used: false,
+                    },
+                    wall_construction_basis: {
+                        construction_type: 'frp',
+                        u_value_w_m2_k: 2.5,
+                        basis_version: 'aat-thermal-construction-v1',
+                    },
+                },
             }];
         state.status = status;
         state[snapshotKey] = { thermal_calculations: frozenThermal };

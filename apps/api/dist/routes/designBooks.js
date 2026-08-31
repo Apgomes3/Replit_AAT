@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.versionSnapshotTestUtils = exports.thermalCorrelationTestUtils = void 0;
+exports.versionSnapshotTestUtils = exports.thermalCorrelationTestUtils = exports.thermalCalculationTestUtils = void 0;
 exports.loadFrictionLossPackages = loadFrictionLossPackages;
 exports.loadReleaseContext = loadReleaseContext;
 const express_1 = require("express");
@@ -355,6 +355,9 @@ async function insertThermalSnapshotRecord(runner, designBookId, item) {
         row.calculated_at || new Date().toISOString(),
     ]);
 }
+exports.thermalCalculationTestUtils = {
+    insertThermalSnapshotRecord,
+};
 async function insertFrictionSnapshotRecord(runner, designBookId, systemId, item) {
     if (!item?.circuit_key || !item?.project_equipment_item_id || !item?.source_fingerprint)
         return;
@@ -699,6 +702,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         biological_media_cases: biologicalMediaCases,
         biological_media_runs: biologicalMediaRuns,
         thermal_calculations: thermalCalculations,
+        thermal_construction_defaults: thermalCalculations_1.THERMAL_CONSTRUCTION_DEFAULTS,
         pump_selections: pumpSelections,
         friction_loss_calculations: frictionLossCalculations,
         engineering_calculations: {
@@ -1246,6 +1250,8 @@ async function saveThermalCalculation(req, res) {
             correlation_id: calculation.correlation_snapshot?.correlation_id || null,
             correlation_version: calculation.correlation_snapshot?.version || null,
             correlation_deviation: calculation.correlation_snapshot?.deviation || false,
+            water_temperature_basis: calculation.water_temperature_basis,
+            wall_construction_basis: calculation.wall_construction_basis,
             deviation_justification: String(calculation.inputs.deviation_justification || '').trim() || null,
         }, req.ip);
         await client.query('COMMIT');
@@ -1467,6 +1473,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         hydraulics,
         substrate,
         thermal_calculations: thermalCalculations,
+        thermal_construction_defaults: thermalCalculations_1.THERMAL_CONSTRUCTION_DEFAULTS,
         pump_selections: pumpSelections,
         friction_loss_calculations: frictionLossCalculations,
         engineering_calculations: {

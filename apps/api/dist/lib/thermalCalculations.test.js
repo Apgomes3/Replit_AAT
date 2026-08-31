@@ -9,8 +9,8 @@ function readySource() {
         exhibits: [{
                 id: 'exhibit-1',
                 exhibit_code: 'EX-1',
-                design_temperature_min: 25,
-                design_temperature_max: 25,
+                design_temperature_min: 24,
+                design_temperature_max: 26,
             }],
         tanks: [{
                 id: 'tank-1',
@@ -63,6 +63,114 @@ function readyInputs() {
         (0, vitest_1.expect)(result.results.recovery_heating_kw).toBeCloseTo(14 * 0.194, 12);
         (0, vitest_1.expect)(result.results.circulation_flow_is_reference_only).toBe(true);
         (0, vitest_1.expect)(result.results.operational_water_exchange_flow_m3h).toBe(0);
+        (0, vitest_1.expect)(result.results.water_temperature_c).toBe(25);
+        (0, vitest_1.expect)(result.water_temperature_basis).toEqual({
+            source: 'linked exhibit design-temperature range average',
+            minimum_c: 24,
+            maximum_c: 26,
+            average_c: 25,
+            calculated_temperature_c: 25,
+            reviewed_override_used: false,
+        });
+        (0, vitest_1.expect)(result.inputs.water_temperature_basis).toEqual(result.water_temperature_basis);
+    });
+    vitest_1.it.each(thermalCalculations_1.THERMAL_CONSTRUCTION_DEFAULTS)('applies and freezes the governed $label construction default', construction => {
+        const inputs = readyInputs();
+        delete inputs.reviewed_u_value_w_m2_k;
+        const result = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), {
+            ...inputs,
+            tank_construction_type: construction.code,
+        });
+        (0, vitest_1.expect)(result.status).toBe('Ready');
+        (0, vitest_1.expect)(result.results.wall_u_value_w_m2_k).toBe(construction.u_value_w_m2_k);
+        (0, vitest_1.expect)(result.wall_construction_basis).toMatchObject({
+            construction_type: construction.code,
+            construction_label: construction.label,
+            u_value_w_m2_k: construction.u_value_w_m2_k,
+            units: 'W/m²·K',
+            source: 'assumed tank construction U-value',
+            reviewed: false,
+            assumption_label: construction.assumption_label,
+            basis_version: thermalCalculations_1.THERMAL_CONSTRUCTION_BASIS_VERSION,
+            source_reference: construction.source_reference,
+        });
+        (0, vitest_1.expect)(result.inputs.wall_construction_basis).toEqual(result.wall_construction_basis);
+    });
+    (0, vitest_1.it)('retains a reviewed custom U-value over the selected construction assumption', () => {
+        const result = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), {
+            ...readyInputs(),
+            tank_construction_type: 'acrylic',
+            reviewed_u_value_w_m2_k: 2.75,
+        });
+        (0, vitest_1.expect)(result.status).toBe('Ready');
+        (0, vitest_1.expect)(result.wall_construction_basis).toMatchObject({
+            construction_type: 'acrylic',
+            construction_label: 'Acrylic',
+            u_value_w_m2_k: 2.75,
+            source: 'reviewed custom U-value',
+            reviewed: true,
+            basis_version: null,
+        });
+    });
+    (0, vitest_1.it)('retains reviewed explicit wall layers when no default construction applies', () => {
+        const inputs = readyInputs();
+        delete inputs.reviewed_u_value_w_m2_k;
+        const result = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), {
+            ...inputs,
+            tank_wall_layers: [{
+                    material: 'Insulated panel',
+                    thickness_mm: 50,
+                    conductivity_w_m_k: 0.04,
+                }],
+        });
+        (0, vitest_1.expect)(result.status).toBe('Ready');
+        (0, vitest_1.expect)(result.wall_construction_basis).toMatchObject({
+            construction_type: null,
+            source: 'film coefficients plus wall-layer resistance',
+            reviewed: true,
+            layers: [{
+                    material: 'Insulated panel',
+                    thickness_m: 0.05,
+                    conductivity_w_m_k: 0.04,
+                }],
+        });
+    });
+    (0, vitest_1.it)('uses and distinguishes a reviewed water-temperature override', () => {
+        const result = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), {
+            ...readyInputs(),
+            reviewed_water_temperature_c: 27,
+        });
+        (0, vitest_1.expect)(result.status).toBe('Ready');
+        (0, vitest_1.expect)(result.water_temperature_basis).toMatchObject({
+            source: 'system reviewed water-temperature override',
+            minimum_c: 24,
+            maximum_c: 26,
+            average_c: 25,
+            calculated_temperature_c: 27,
+            reviewed_override_used: true,
+        });
+    });
+    (0, vitest_1.it)('blocks reversed and incomplete linked-exhibit temperature ranges', () => {
+        const reversed = readySource();
+        reversed.water_temperature_sources[0].water_temperature_min_c = 27;
+        reversed.water_temperature_sources[0].water_temperature_max_c = 24;
+        reversed.water_temperature_sources[0].water_temperature_range_status = 'invalid';
+        const invalidResult = (0, thermalCalculations_1.calculateThermalCalculation)(reversed, readyInputs());
+        (0, vitest_1.expect)(invalidResult.status).toBe('Blocked');
+        (0, vitest_1.expect)(invalidResult.reasons.join(' ')).toMatch(/valid water design-temperature range/i);
+        const incomplete = readySource();
+        incomplete.water_temperature_sources[0].water_temperature_max_c = null;
+        incomplete.water_temperature_sources[0].water_temperature_range_status = 'incomplete';
+        const incompleteResult = (0, thermalCalculations_1.calculateThermalCalculation)(incomplete, readyInputs());
+        (0, vitest_1.expect)(incompleteResult.status).toBe('Blocked');
+        (0, vitest_1.expect)(incompleteResult.reasons.join(' ')).toMatch(/both minimum and maximum/i);
+    });
+    (0, vitest_1.it)('blocks a missing linked-exhibit temperature range', () => {
+        const missing = readySource();
+        missing.water_temperature_sources = [];
+        const result = (0, thermalCalculations_1.calculateThermalCalculation)(missing, readyInputs());
+        (0, vitest_1.expect)(result.status).toBe('Blocked');
+        (0, vitest_1.expect)(result.reasons.join(' ')).toMatch(/no linked exhibit provides a water design-temperature range/i);
     });
     (0, vitest_1.it)('blocks rather than inventing a missing evaporation correlation', () => {
         const inputs = readyInputs();
@@ -135,6 +243,7 @@ function readyInputs() {
             exhibit_code: 'EX-2',
             water_temperature_min_c: 24,
             water_temperature_max_c: 24,
+            water_temperature_range_status: 'valid',
             water_type: null,
         });
         const result = (0, thermalCalculations_1.calculateThermalCalculation)(source, readyInputs());
