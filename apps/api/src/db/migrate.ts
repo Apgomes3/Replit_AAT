@@ -953,6 +953,7 @@ CREATE TABLE IF NOT EXISTS design_book_thermal_calculations (
   formula_inputs JSONB NOT NULL DEFAULT '{}'::jsonb,
   input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
   result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  correlation_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
   sensitivity_cases JSONB NOT NULL DEFAULT '[]'::jsonb,
   deviation_justification TEXT,
   calculated_by UUID REFERENCES users(id),
@@ -965,14 +966,93 @@ CREATE TABLE IF NOT EXISTS design_book_thermal_calculations (
   CHECK (jsonb_typeof(formula_inputs) = 'object'),
   CHECK (jsonb_typeof(input_snapshot) = 'object'),
   CHECK (jsonb_typeof(result_snapshot) = 'object'),
+  CHECK (jsonb_typeof(correlation_snapshot) = 'object'),
   CHECK (jsonb_typeof(sensitivity_cases) = 'array')
 );
+ALTER TABLE design_book_thermal_calculations
+  ADD COLUMN IF NOT EXISTS correlation_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_db_thermal_book ON design_book_thermal_calculations(design_book_id);
 CREATE INDEX IF NOT EXISTS idx_db_thermal_system ON design_book_thermal_calculations(system_id);
 DROP TRIGGER IF EXISTS guard_released_design_book_thermal ON design_book_thermal_calculations;
 CREATE TRIGGER guard_released_design_book_thermal
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_calculations
 FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+
+-- THERMAL CORRELATION LIBRARY: engineering-administered, versioned evidence.
+-- Correlation versions are never edited in place. Superseding a version only
+-- changes its catalogue status; calculations keep their own JSON snapshot.
+CREATE TABLE IF NOT EXISTS thermal_agitation_classes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_code VARCHAR(100) NOT NULL UNIQUE,
+  class_name VARCHAR(255) NOT NULL,
+  description TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS thermal_mass_transfer_correlations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agitation_class_id UUID NOT NULL REFERENCES thermal_agitation_classes(id) ON DELETE RESTRICT,
+  agitation_class_code VARCHAR(100) NOT NULL,
+  agitation_class_name VARCHAR(255) NOT NULL,
+  agitation_class_description TEXT,
+  version VARCHAR(100) NOT NULL,
+  coefficient_kg_m2_s_kpa NUMERIC NOT NULL CHECK (coefficient_kg_m2_s_kpa > 0),
+  source_reference TEXT,
+  notes TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'approved'
+    CHECK (status IN ('approved', 'superseded')),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  superseded_by UUID REFERENCES users(id),
+  superseded_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(agitation_class_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_thermal_correlation_class
+  ON thermal_mass_transfer_correlations(agitation_class_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_thermal_one_approved_correlation
+  ON thermal_mass_transfer_correlations(agitation_class_id)
+  WHERE status = 'approved';
+
+CREATE OR REPLACE FUNCTION protect_thermal_correlation_version()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Thermal correlation versions cannot be deleted'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF OLD.status <> 'approved' OR NEW.status <> 'superseded'
+     OR NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.agitation_class_id IS DISTINCT FROM OLD.agitation_class_id
+     OR NEW.agitation_class_code IS DISTINCT FROM OLD.agitation_class_code
+     OR NEW.agitation_class_name IS DISTINCT FROM OLD.agitation_class_name
+     OR NEW.agitation_class_description IS DISTINCT FROM OLD.agitation_class_description
+     OR NEW.version IS DISTINCT FROM OLD.version
+     OR NEW.coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.coefficient_kg_m2_s_kpa
+     OR NEW.source_reference IS DISTINCT FROM OLD.source_reference
+     OR NEW.notes IS DISTINCT FROM OLD.notes
+     OR NEW.approved_by IS DISTINCT FROM OLD.approved_by
+     OR NEW.approved_at IS DISTINCT FROM OLD.approved_at
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR NEW.superseded_by IS NULL
+     OR NEW.superseded_at IS NULL THEN
+    RAISE EXCEPTION 'Thermal correlation evidence is immutable; only approved versions may be superseded'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS guard_thermal_correlation_version
+  ON thermal_mass_transfer_correlations;
+CREATE TRIGGER guard_thermal_correlation_version
+BEFORE UPDATE OR DELETE ON thermal_mass_transfer_correlations
+FOR EACH ROW EXECUTE FUNCTION protect_thermal_correlation_version();
 
 DROP TRIGGER IF EXISTS guard_released_design_book_handovers ON design_book_review_handovers;
 CREATE TRIGGER guard_released_design_book_handovers

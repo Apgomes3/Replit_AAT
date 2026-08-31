@@ -5,6 +5,8 @@ exports.releaseBlockers = releaseBlockers;
 exports.validateReleaseConfirmation = validateReleaseConfirmation;
 exports.validateReleaseBlockers = validateReleaseBlockers;
 const aquariumCalculations_1 = require("./aquariumCalculations");
+
+const thermalCalculations_1 = require("./thermalCalculations");
 const pumpSelections_1 = require("./pumpSelections");
 const scopeMatches = (scopes, value) => scopes.some(scope => scope.toLowerCase().replace(/[\s_-]+/g, '') === value.toLowerCase().replace(/[\s_-]+/g, ''));
 function item(key, label, severity, ok, message, href, affected_ids) {
@@ -144,8 +146,14 @@ function buildDesignBookReleaseChecklist(context) {
     });
     const thermalNotReady = lifeSupportSystems.filter(system => {
         const thermal = thermalCalculations.find(item => item.system_id === system.id);
+        const correlationSnapshot = thermal?.correlation_snapshot ||
+            thermal?.calculation?.correlation_snapshot ||
+            thermal?.saved?.correlation_snapshot ||
+            thermal?.calculation?.inputs?.agitation_correlation_snapshot ||
+            thermal?.saved?.input_snapshot?.agitation_correlation_snapshot;
         return !thermal || thermal.status !== 'Ready' || thermal.freshness !== 'fresh' ||
-            thermal.calculation?.status !== 'Ready';
+            thermal.calculation?.status !== 'Ready' ||
+            !(0, thermalCalculations_1.isApprovedThermalCorrelationSnapshot)(correlationSnapshot);
     });
     const pumpCircuitIssues = lifeSupportSystems.flatMap(system => {
         const selections = pumpSelections.find((entry) => entry.system_id === system.id)?.items || [];

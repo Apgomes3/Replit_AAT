@@ -81,6 +81,67 @@ describe('AAT thermal calculation', () => {
     expect(result.reasons.join(' ')).toMatch(/manual does not supply one automatically/i);
   });
 
+  it('uses an immutable shared-library snapshot without consulting mutable catalogue data', () => {
+    const result = calculateThermalCalculation(readySource(), {
+      ...readyInputs(),
+      agitation_class: 'Moderate',
+      agitation_correlation_snapshot: {
+        source: 'shared_library',
+        correlation_id: 'correlation-1',
+        agitation_class: 'Moderate',
+        version: 'approved-2026.2',
+        coefficient_kg_m2_s_kpa: 0.0000012,
+        effective_coefficient_kg_m2_s_kpa: 0.0000012,
+        approved: true,
+        deviation: false,
+        source_reference: 'Engineering standard ES-42',
+        captured_at: '2026-08-31T00:00:00.000Z',
+      },
+      evaporation_coefficient_kg_m2_s_kpa: 999,
+    });
+
+    expect(result.status).toBe('Ready');
+    expect(result.formula_inputs.evaporation_coefficient_kg_m2_s_kpa).toBe(0.0000012);
+    expect(result.correlation_snapshot).toMatchObject({
+      correlation_id: 'correlation-1',
+      version: 'approved-2026.2',
+      source_reference: 'Engineering standard ES-42',
+    });
+  });
+
+  it('requires justification for a project-specific shared-correlation deviation', () => {
+    const snapshot = {
+      source: 'project_deviation',
+      correlation_id: 'correlation-1',
+      agitation_class: 'Moderate',
+      version: 'approved-2026.2',
+      coefficient_kg_m2_s_kpa: 0.0000012,
+      effective_coefficient_kg_m2_s_kpa: 0.0000015,
+      approved: true,
+      deviation: true,
+    };
+    const blocked = calculateThermalCalculation(readySource(), {
+      ...readyInputs(),
+      agitation_correlation_snapshot: snapshot,
+      agitation_correlation_deviation: true,
+      deviation_justification: '',
+    });
+    expect(blocked.status).toBe('Blocked');
+    expect(blocked.reasons.join(' ')).toMatch(/deviation justification/i);
+
+    const ready = calculateThermalCalculation(readySource(), {
+      ...readyInputs(),
+      agitation_correlation_snapshot: {
+        ...snapshot,
+        deviation_justification: 'Project-specific splash regime confirmed by engineering review.',
+      },
+      agitation_correlation_deviation: true,
+      deviation_justification: 'Project-specific splash regime confirmed by engineering review.',
+    });
+    expect(ready.status).toBe('Ready');
+    expect(ready.formula_inputs.evaporation_coefficient_kg_m2_s_kpa).toBe(0.0000015);
+  });
+
   it('blocks conflicting linked-exhibit temperatures', () => {
     const source = readySource();
     source.water_temperature_sources.push({

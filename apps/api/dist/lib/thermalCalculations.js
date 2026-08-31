@@ -15,6 +15,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.THERMAL_ROUNDING = exports.THERMAL_CONSTANTS = exports.THERMAL_CALCULATION_VERSION = void 0;
+exports.isApprovedThermalCorrelationSnapshot = isApprovedThermalCorrelationSnapshot;
 exports.thermalFingerprint = thermalFingerprint;
 exports.saturationVapourPressureKpa = saturationVapourPressureKpa;
 exports.humidityRatio = humidityRatio;
@@ -43,6 +44,22 @@ exports.THERMAL_ROUNDING = {
     duty_kw: 2,
     percentage: 1,
 };
+function isApprovedThermalCorrelationSnapshot(snapshot) {
+    const sourceIsGoverned = snapshot?.source === 'shared_library' ||
+        snapshot?.source === 'project_deviation';
+    const coefficient = Number(snapshot?.coefficient_kg_m2_s_kpa);
+    const effectiveCoefficient = Number(snapshot?.effective_coefficient_kg_m2_s_kpa);
+    const deviationIsJustified = snapshot?.deviation !== true ||
+        !!String(snapshot?.deviation_justification || '').trim();
+    return sourceIsGoverned &&
+        !!String(snapshot?.correlation_id || '').trim() &&
+        !!String(snapshot?.agitation_class || '').trim() &&
+        !!String(snapshot?.version || '').trim() &&
+        snapshot?.approved === true &&
+        Number.isFinite(coefficient) && coefficient > 0 &&
+        Number.isFinite(effectiveCoefficient) && effectiveCoefficient > 0 &&
+        deviationIsJustified;
+}
 const finite = (value) => {
     if (value === null || value === undefined || value === '')
         return null;
@@ -237,6 +254,20 @@ function resolveWallUValue(inputs, reasons) {
     return { value: 1 / resistance, source: 'film coefficients plus wall-layer resistance', layers: validLayers };
 }
 function correlationFor(inputs, agitationClass = inputs.agitation_class) {
+    const snapshot = inputs.agitation_correlation_snapshot;
+    if (snapshot && snapshot.agitation_class === agitationClass) {
+        return {
+            class: snapshot.agitation_class,
+            coefficient_kg_m2_s_kpa: snapshot.effective_coefficient_kg_m2_s_kpa ??
+                snapshot.coefficient_kg_m2_s_kpa,
+            version: snapshot.version,
+            approved: snapshot.approved === true,
+            deviation: snapshot.deviation === true,
+            deviation_justification: snapshot.deviation_justification || inputs.deviation_justification,
+            source: snapshot.source,
+            correlation_id: snapshot.correlation_id,
+        };
+    }
     const configured = inputs.agitation_correlations || inputs.agitation_correlation;
     if (configured && configured[agitationClass])
         return configured[agitationClass];
@@ -262,7 +293,8 @@ function correlationProblems(correlation, inputs) {
         problems.push('requires an explicit version');
     if (correlation?.approved !== true)
         problems.push('requires explicit approval');
-    if (correlation?.deviation && !String(inputs.deviation_justification || '').trim()) {
+    if (correlation?.deviation &&
+        !String(correlation.deviation_justification || inputs.deviation_justification || '').trim()) {
         problems.push('requires a deviation justification');
     }
     return problems;
@@ -542,6 +574,7 @@ function calculateThermalCalculation(source, inputs = {}, calculatedAt = new Dat
         source_fingerprint: source.fingerprint || thermalFingerprint(source),
         source_snapshot: source,
         inputs: normalizedInputs,
+        correlation_snapshot: normalizedInputs.agitation_correlation_snapshot || null,
         constants: exports.THERMAL_CONSTANTS,
         formula: 'Qpositive-to-water = convection + radiation + wall conduction + evaporation + equipment + lighting + water exchange; recovery heating = 0.194 kW/m³ × effective water volume for 1°C in 6 hours.',
         sign_convention: 'Positive kW enters the water; negative kW removes heat from the water.',

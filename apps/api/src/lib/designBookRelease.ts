@@ -1,5 +1,6 @@
 import { AQUARIUM_CALCULATION_VERSION } from './aquariumCalculations';
 import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from './pumpSelections';
+import { isApprovedThermalCorrelationSnapshot } from './thermalCalculations';
 
 export type ReleaseSeverity = 'blocker' | 'warning';
 export type ReleaseCheckStatus = 'pass' | 'warning' | 'blocked';
@@ -198,8 +199,14 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
   });
   const thermalNotReady = lifeSupportSystems.filter(system => {
     const thermal = thermalCalculations.find(item => item.system_id === system.id);
+    const correlationSnapshot = thermal?.correlation_snapshot ||
+      thermal?.calculation?.correlation_snapshot ||
+      thermal?.saved?.correlation_snapshot ||
+      thermal?.calculation?.inputs?.agitation_correlation_snapshot ||
+      thermal?.saved?.input_snapshot?.agitation_correlation_snapshot;
     return !thermal || thermal.status !== 'Ready' || thermal.freshness !== 'fresh' ||
-      thermal.calculation?.status !== 'Ready';
+      thermal.calculation?.status !== 'Ready' ||
+      !isApprovedThermalCorrelationSnapshot(correlationSnapshot);
   });
   const pumpCircuitIssues = lifeSupportSystems.flatMap(system => {
     const selections = pumpSelections.find((entry: any) => entry.system_id === system.id)?.items || [];

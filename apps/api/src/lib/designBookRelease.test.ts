@@ -46,7 +46,19 @@ function readyContext(): DesignBookReleaseContext {
       system_id: 'system-1',
       status: 'Ready',
       freshness: 'fresh',
-      calculation: { status: 'Ready' },
+      calculation: {
+        status: 'Ready',
+        correlation_snapshot: {
+          source: 'shared_library',
+          correlation_id: 'correlation-1',
+          agitation_class: 'Moderate',
+          version: '2026.1',
+          coefficient_kg_m2_s_kpa: 0.000001,
+          effective_coefficient_kg_m2_s_kpa: 0.000001,
+          approved: true,
+          deviation: false,
+        },
+      },
     }],
     pump_selections: [{
       system_id: 'system-1',
@@ -164,6 +176,23 @@ describe('Design Book release policy', () => {
       .find(check => check.key === 'thermal_calculations');
     expect(thermal?.status).toBe('blocked');
     expect(thermal?.href).toBe('/design-books/book-1?tab=thermal');
+  });
+
+  it('blocks release when thermal approval evidence is not an authoritative library snapshot', () => {
+    const context = readyContext();
+    context.thermal_calculations![0].calculation.correlation_snapshot = {
+      source: 'legacy_manual',
+      agitation_class: 'Moderate',
+      version: 'typed-by-user',
+      coefficient_kg_m2_s_kpa: 0.000001,
+      effective_coefficient_kg_m2_s_kpa: 0.000001,
+      approved: true,
+      deviation: false,
+    };
+    const thermal = buildDesignBookReleaseChecklist(context)
+      .find(check => check.key === 'thermal_calculations');
+    expect(thermal?.status).toBe('blocked');
+    expect(thermal?.affected_ids).toEqual(['system-1']);
   });
 
   it('does not require a thermal calculation for Utility systems', () => {

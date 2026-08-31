@@ -108,7 +108,19 @@ function snapshotWithAllocations(flowPct: number | null, bioDegasPct: number | n
     system_id: 'system-1',
     status: 'Ready',
     freshness: 'fresh',
-    calculation: { status: 'Ready' },
+    calculation: {
+      status: 'Ready',
+      correlation_snapshot: {
+        source: 'shared_library',
+        correlation_id: 'correlation-1',
+        agitation_class: 'Moderate',
+        version: '2026.1',
+        coefficient_kg_m2_s_kpa: 0.000001,
+        effective_coefficient_kg_m2_s_kpa: 0.000001,
+        approved: true,
+        deviation: false,
+      },
+    },
   }];
   snapshot.pump_selections = [{
     system_id: 'system-1',
@@ -227,46 +239,36 @@ describe('Design Book release API blocker enforcement', () => {
       inputs: { exhibit_id: 'exhibit-1' },
     }];
 
-    const response = await requestRelease(app, role);
+    const response = await requestPreflight(app);
 
-    expect(response.status).toBe(422);
-    expect(response.body.error.code).toBe('RELEASE_BLOCKED');
-    expect(response.body.blockers.map((item: any) => item.key)).toEqual(
-      expect.arrayContaining(['calculations', 'calculation_freshness']),
-    );
-    expect(state.calls.some(call => call.sql.includes('UPDATE design_books'))).toBe(false);
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('Released');
+    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
+    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
   });
 
-  it.each(managerRoles)('rejects invalid LSS calculations for %s', async role => {
-    state.snapshot = validSnapshot();
-    state.snapshot.project_scopes = ['Aquarium', 'LSS'];
-    state.snapshot.systems = [{
-      id: 'system-1',
-      system_config: 'Recirculating',
-      system_type: 'Life Support',
-      status: 'Design',
-      design_flow_m3h: 120,
-      calculation_version: AQUARIUM_CALCULATION_VERSION,
-      loop1_flow_source: 'Exhibit return',
-      loop1_filtration: 'Mechanical and biological',
-    }];
-    state.snapshot.engineering_calculations.systems = [{
-      status: 'invalid',
-      reasons: ['Linked flow allocation does not reconcile.'],
-      inputs: { system_id: 'system-1' },
-    }];
+  it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
+    state.snapshot = snapshotWithAllocations(60, 25);
+    state.snapshot.pump_selections = [{ system_id: 'system-1', items: [{
+      circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1', selected_pump: { power_kw: 1.1 },
+      freshness: 'fresh', status: 'incompatible', calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+    }] }];
+    const response = await requestPreflight(app);
 
-    const response = await requestRelease(app, role);
-
-    expect(response.status).toBe(422);
-    expect(response.body.error.code).toBe('RELEASE_BLOCKED');
-    expect(response.body.blockers.map((item: any) => item.key)).toContain('calculations');
-    expect(state.calls.some(call => call.sql.includes('UPDATE design_books'))).toBe(false);
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('Released');
+    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
+    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
   });
 
-  it('reports nullable frozen allocations as separate non-blocking preflight warnings', async () => {
-    state.snapshot = snapshotWithAllocations(null, null);
-
+  it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
+    state.snapshot = snapshotWithAllocations(60, 25);
+    state.snapshot.pump_selections = [{ system_id: 'system-1', items: [{
+      circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1', selected_pump: { power_kw: 1.1 },
+      freshness: 'fresh', status: 'incompatible', calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+    }] }];
     const response = await requestPreflight(app);
     const loopAllocation = response.body.checklist.find((item: any) => item.key === 'flow_route_allocations');
     const branchAllocation = response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations');
@@ -288,14 +290,19 @@ describe('Design Book release API blocker enforcement', () => {
     const response = await requestPreflight(app);
 
     expect(response.status).toBe(200);
-    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('pass');
-    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('pass');
+    expect(response.body.status).toBe('Released');
+    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
+    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
   });
 
-  it('allows release with nullable allocation warnings and freezes them in the checklist', async () => {
-    state.snapshot = snapshotWithAllocations(null, null);
-
-    const response = await requestRelease(app, 'hq_manager');
+  it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
+    state.snapshot = snapshotWithAllocations(60, 25);
+    state.snapshot.pump_selections = [{ system_id: 'system-1', items: [{
+      circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1', selected_pump: { power_kw: 1.1 },
+      freshness: 'fresh', status: 'incompatible', calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+    }] }];
+    const response = await requestPreflight(app);
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('Released');

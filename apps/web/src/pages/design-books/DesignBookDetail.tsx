@@ -1917,14 +1917,42 @@ function thermalNumber(value: any, decimals = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
 }
 
-function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolean; onRefresh: () => void }) {
+function ThermalTab({
+  book,
+  readOnly,
+  canManageLibrary,
+  onRefresh,
+}: {
+  book: any;
+  readOnly: boolean;
+  canManageLibrary: boolean;
+  onRefresh: () => void;
+}) {
   const items: any[] = book.thermal_calculations || [];
   const [selected, setSelected] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [librarySaving, setLibrarySaving] = useState(false);
+  const [classForm, setClassForm] = useState({ class_code: '', class_name: '', description: '' });
+  const [versionForm, setVersionForm] = useState({
+    class_id: '',
+    version: '',
+    coefficient_kg_m2_s_kpa: '',
+    source_reference: '',
+    notes: '',
+  });
+  const { data: correlationLibrary, refetch: refetchCorrelationLibrary } = useQuery({
+    queryKey: ['thermal-correlation-library'],
+    queryFn: () => api.get('/thermal-correlations').then(response => response.data),
+  });
+  const correlationItems: any[] = correlationLibrary?.items || [];
+  const agitationClasses: any[] = correlationLibrary?.classes || [];
 
   const open = (item: any) => {
     const existing = item.saved?.input_snapshot || item.calculation?.inputs || {};
+    const correlationSnapshot = existing.agitation_correlation_snapshot ||
+      item.calculation?.correlation_snapshot || item.saved?.correlation_snapshot || {};
     setSelected(item);
     setForm({
       ambient_air_temperature_c: existing.ambient_air_temperature_c ?? '',
@@ -1934,6 +1962,7 @@ function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolea
       water_temperature_c: existing.water_temperature_c ?? '',
       agitation_class: existing.agitation_class ?? '',
       agitation_correlation_class: existing.agitation_correlation_class ?? existing.agitation_class ?? '',
+      agitation_correlation_id: existing.agitation_correlation_id ?? correlationSnapshot.correlation_id ?? '',
       agitation_correlation_version: existing.agitation_correlation_version ?? '',
       agitation_correlation_approved: existing.agitation_correlation_approved ?? false,
       agitation_correlation_deviation: existing.agitation_correlation_deviation ?? false,
@@ -1960,6 +1989,78 @@ function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolea
 
   const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
   const numericOrNull = (value: any) => value === '' || value == null ? null : Number(value);
+  const selectCorrelation = (correlationId: string) => {
+    const correlation = correlationItems.find(item => item.id === correlationId);
+    if (!correlation) {
+      setForm((current: any) => ({ ...current, agitation_correlation_id: '' }));
+      return;
+    }
+    setForm((current: any) => ({
+      ...current,
+      agitation_correlation_id: correlation.id,
+      agitation_class: correlation.class_code,
+      agitation_correlation_class: correlation.class_code,
+      agitation_correlation_version: correlation.version,
+      agitation_correlation_approved: correlation.status === 'approved',
+      evaporation_coefficient_kg_m2_s_kpa: correlation.coefficient_kg_m2_s_kpa,
+      agitation_correlation_deviation: false,
+      deviation_justification: '',
+    }));
+  };
+
+  const createAgitationClass = async () => {
+    setLibrarySaving(true);
+    try {
+      const response = await api.post('/thermal-correlations/classes', classForm);
+      setVersionForm(current => ({ ...current, class_id: response.data.id }));
+      setClassForm({ class_code: '', class_name: '', description: '' });
+      await refetchCorrelationLibrary();
+      toast.success('Agitation class created');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Unable to create agitation class');
+    } finally {
+      setLibrarySaving(false);
+    }
+  };
+
+  const createCorrelationVersion = async () => {
+    if (!versionForm.class_id) return;
+    setLibrarySaving(true);
+    try {
+      await api.post(`/thermal-correlations/classes/${versionForm.class_id}/versions`, {
+        version: versionForm.version,
+        coefficient_kg_m2_s_kpa: numericOrNull(versionForm.coefficient_kg_m2_s_kpa),
+        source_reference: versionForm.source_reference,
+        notes: versionForm.notes,
+      });
+      setVersionForm(current => ({
+        ...current,
+        version: '',
+        coefficient_kg_m2_s_kpa: '',
+        source_reference: '',
+        notes: '',
+      }));
+      await refetchCorrelationLibrary();
+      toast.success('Approved correlation version added');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Unable to add correlation version');
+    } finally {
+      setLibrarySaving(false);
+    }
+  };
+
+  const supersedeCorrelation = async (correlation: any) => {
+    setLibrarySaving(true);
+    try {
+      await api.post(`/thermal-correlations/versions/${correlation.id}/supersede`, {});
+      await refetchCorrelationLibrary();
+      toast.success(`${correlation.class_code} ${correlation.version} superseded`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Unable to supersede correlation');
+    } finally {
+      setLibrarySaving(false);
+    }
+  };
   const save = async () => {
     if (!selected) return;
     setSaving(true);
@@ -1975,6 +2076,7 @@ function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolea
         surrounding_surface_temperature_c: numericOrNull(form.surrounding_surface_temperature_c),
         atmospheric_pressure_kpa: numericOrNull(form.atmospheric_pressure_kpa),
         ...(form.water_temperature_c !== '' ? { water_temperature_c: numericOrNull(form.water_temperature_c) } : {}),
+        agitation_correlation_id: form.agitation_correlation_id || undefined,
         agitation_class: form.agitation_class,
         agitation_correlation_class: form.agitation_class,
         agitation_correlation_version: form.agitation_correlation_version,
@@ -2057,6 +2159,70 @@ function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolea
     <div className="space-y-4">
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         Positive contribution values add heat to water; negative values remove heat. LSS circulation is shown only as reference and is never counted as water exchange.
+      </div>
+      <div className="rounded-xl border border-stone-200 bg-white">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div>
+            <div className="font-semibold text-stone-900">Approved evaporation correlation library</div>
+            <div className="text-xs text-stone-500">
+              {correlationItems.filter(item => item.status === 'approved').length} current approved version(s).
+              Saved calculations retain an exact snapshot when a version is superseded.
+            </div>
+          </div>
+          {canManageLibrary && (
+            <button
+              type="button"
+              onClick={() => setShowLibrary(value => !value)}
+              className="rounded-lg border border-stone-200 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            >
+              {showLibrary ? 'Close library' : 'Manage library'}
+            </button>
+          )}
+        </div>
+        {showLibrary && canManageLibrary && (
+          <div className="border-t border-stone-200 p-4 space-y-5">
+            <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.5fr_auto]">
+              <label><span className={labelClass}>Class code</span><input value={classForm.class_code} onChange={event => setClassForm(current => ({ ...current, class_code: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Class name</span><input value={classForm.class_name} onChange={event => setClassForm(current => ({ ...current, class_name: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Description</span><input value={classForm.description} onChange={event => setClassForm(current => ({ ...current, description: event.target.value }))} className={fieldClass} /></label>
+              <button type="button" onClick={createAgitationClass} disabled={librarySaving || !classForm.class_code.trim() || !classForm.class_name.trim()} className="self-end rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Add class</button>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr_1.5fr_auto]">
+              <label>
+                <span className={labelClass}>Agitation class</span>
+                <select value={versionForm.class_id} onChange={event => setVersionForm(current => ({ ...current, class_id: event.target.value }))} className={fieldClass}>
+                  <option value="">Select class</option>
+                  {agitationClasses.filter(item => item.is_active).map(item => <option key={item.id} value={item.id}>{item.class_code} · {item.class_name}</option>)}
+                </select>
+              </label>
+              <label><span className={labelClass}>New version</span><input value={versionForm.version} onChange={event => setVersionForm(current => ({ ...current, version: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Coefficient (kg/m²·s·kPa)</span><input type="number" min="0" step="any" value={versionForm.coefficient_kg_m2_s_kpa} onChange={event => setVersionForm(current => ({ ...current, coefficient_kg_m2_s_kpa: event.target.value }))} className={fieldClass} /></label>
+              <label><span className={labelClass}>Approval source / reference</span><input value={versionForm.source_reference} onChange={event => setVersionForm(current => ({ ...current, source_reference: event.target.value }))} className={fieldClass} /></label>
+              <button type="button" onClick={createCorrelationVersion} disabled={librarySaving || !versionForm.class_id || !versionForm.version.trim() || !versionForm.coefficient_kg_m2_s_kpa || !versionForm.source_reference.trim()} className="self-end rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve version</button>
+            </div>
+            {!!correlationItems.length && (
+              <div className="overflow-x-auto rounded-xl border border-stone-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-3 py-2">Class</th><th className="px-3 py-2">Version</th><th className="px-3 py-2">Coefficient</th><th className="px-3 py-2">Source</th><th className="px-3 py-2">Status</th><th className="px-3 py-2"></th></tr></thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {correlationItems.map(correlation => (
+                      <tr key={correlation.id}>
+                        <td className="px-3 py-2 font-medium">{correlation.class_code}</td>
+                        <td className="px-3 py-2 font-mono">{correlation.version}</td>
+                        <td className="px-3 py-2 font-mono">{correlation.coefficient_kg_m2_s_kpa}</td>
+                        <td className="px-3 py-2 text-stone-600">{correlation.source_reference}</td>
+                        <td className="px-3 py-2 capitalize">{correlation.status}</td>
+                        <td className="px-3 py-2 text-right">
+                          {correlation.status === 'approved' && <button type="button" onClick={() => supersedeCorrelation(correlation)} disabled={librarySaving} className="text-amber-700 hover:text-amber-900 disabled:opacity-50">Supersede</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
         <div className="overflow-x-auto">
@@ -2174,14 +2340,27 @@ function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolea
               <Field name="surrounding_surface_temperature_c" label="Surrounding-surface temperature" unit="°C" />
               <Field name="atmospheric_pressure_kpa" label="Atmospheric pressure" unit="kPa" />
               <Field name="water_temperature_c" label="Reviewed water-temperature override" unit="°C" />
-              <label><span className={labelClass}>Agitation class</span><input value={form.agitation_class || ''} onChange={e => update('agitation_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
-              <Field name="evaporation_coefficient_kg_m2_s_kpa" label="Mass-transfer coefficient" unit="kg/m²·s·kPa" />
-              <label><span className={labelClass}>Correlation version</span><input value={form.agitation_correlation_version || ''} onChange={e => update('agitation_correlation_version', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
+              <label className="sm:col-span-2">
+                <span className={labelClass}>Approved correlation version</span>
+                <select value={form.agitation_correlation_id || ''} onChange={event => selectCorrelation(event.target.value)} disabled={readOnly} className={fieldClass}>
+                  <option value="">Select from shared library</option>
+                  {correlationItems
+                    .filter(item => item.status === 'approved' || item.id === form.agitation_correlation_id)
+                    .map(item => <option key={item.id} value={item.id}>{item.class_code} · {item.version}{item.status !== 'approved' ? ' · superseded snapshot' : ''}</option>)}
+                </select>
+              </label>
+              <label><span className={labelClass}>Agitation class</span><input value={form.agitation_class || ''} disabled className={fieldClass} /></label>
+              <label><span className={labelClass}>Correlation version</span><input value={form.agitation_correlation_version || ''} disabled className={fieldClass} /></label>
+              <label>
+                <span className={labelClass}>Mass-transfer coefficient (kg/m²·s·kPa)</span>
+                <input aria-label="Mass-transfer coefficient" type="number" step="any" value={form.evaporation_coefficient_kg_m2_s_kpa ?? ''} onChange={event => update('evaporation_coefficient_kg_m2_s_kpa', event.target.value)} disabled={readOnly || !form.agitation_correlation_id || !form.agitation_correlation_deviation} className={fieldClass} />
+              </label>
             </div>
             <div className="flex flex-wrap gap-5 text-sm">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_approved} onChange={e => update('agitation_correlation_approved', e.target.checked)} disabled={readOnly} /> Correlation reviewed and approved</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_deviation} onChange={e => update('agitation_correlation_deviation', e.target.checked)} disabled={readOnly} /> Deviation from standard correlation</label>
+              <span className="inline-flex items-center gap-2 text-emerald-700"><ShieldCheck className="h-4 w-4" /> Approval is governed by the shared library</span>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_deviation} onChange={e => update('agitation_correlation_deviation', e.target.checked)} disabled={readOnly || !form.agitation_correlation_id} /> Project-specific deviation from selected correlation</label>
             </div>
+            {!form.agitation_correlation_id && <p className="text-xs text-amber-700">Select an approved shared-library version before saving. Legacy manual evidence remains visible in existing snapshots but cannot be newly self-approved here.</p>}
             <div className="grid gap-3 sm:grid-cols-4">
               <label><span className={labelClass}>Adjacent lower agitation class</span><input value={form.adjacent_lower_class || ''} onChange={e => update('adjacent_lower_class', e.target.value)} disabled={readOnly} className={fieldClass} /></label>
               <Field name="adjacent_lower_coefficient" label="Lower-class coefficient" unit="kg/m²·s·kPa" />
@@ -2271,7 +2450,7 @@ function ThermalTab({ book, readOnly, onRefresh }: { book: any; readOnly: boolea
 
           <div className="flex justify-end gap-2 border-t border-stone-100 pt-4">
             <button onClick={() => setSelected(null)} className="px-3 py-2 text-sm text-stone-600">Close</button>
-            {!readOnly && <Button onClick={save} disabled={saving}><Calculator className="w-4 h-4 mr-1.5" />{saving ? 'Calculating…' : 'Save & recalculate'}</Button>}
+            {!readOnly && <Button onClick={save} disabled={saving || !form.agitation_correlation_id}><Calculator className="w-4 h-4 mr-1.5" />{saving ? 'Calculating…' : 'Save & recalculate'}</Button>}
           </div>
           {readOnly && <p className="text-xs text-stone-500 text-right">This calculation is part of the frozen Design Book package and is read-only.</p>}
         </div>
@@ -2668,7 +2847,7 @@ export default function DesignBookDetail() {
 
       {tab === 'lss' && <LSSTab book={book} onNewLSS={() => !isDesignReadOnly && setShowNewLSS(true)} readOnly={isDesignReadOnly} />}
 
-      {tab === 'thermal' && <ThermalTab book={book} readOnly={isDesignReadOnly} onRefresh={refresh} />}
+      {tab === 'thermal' && <ThermalTab book={book} readOnly={isDesignReadOnly} canManageLibrary={isDesigner} onRefresh={refresh} />}
 
       {tab === 'piping' && (
         <div className="bg-white rounded-2xl border border-stone-200 border-dashed py-20 text-center">

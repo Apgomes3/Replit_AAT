@@ -26,6 +26,7 @@ import {
 import {
   buildThermalSourceContext,
   calculateThermalCalculation,
+  isApprovedThermalCorrelationSnapshot,
   THERMAL_CALCULATION_VERSION,
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
@@ -141,6 +142,12 @@ async function loadThermalCalculations(
       exhibitCalculations,
     });
     const saved = savedRows.find(row => row.system_id === system.id) || null;
+    const correlationSnapshot = saved?.correlation_snapshot ||
+      saved?.result_snapshot?.correlation_snapshot ||
+      saved?.input_snapshot?.agitation_correlation_snapshot ||
+      null;
+    const correlationEvidenceMissing = !!saved &&
+      !isApprovedThermalCorrelationSnapshot(correlationSnapshot);
     const stale = !!saved && (
       saved.source_fingerprint !== source.fingerprint ||
       saved.calculation_version !== THERMAL_CALCULATION_VERSION
@@ -155,12 +162,15 @@ async function loadThermalCalculations(
           calculation_version: saved.calculation_version,
           calculated_at: saved.calculated_at,
           source_fingerprint: saved.source_fingerprint,
-          status: stale ? 'Blocked' : saved.status,
+          status: stale || correlationEvidenceMissing ? 'Blocked' : saved.status,
           freshness: stale ? 'stale' : saved.freshness,
           is_stale: stale,
-          reasons: stale
+          reasons: correlationEvidenceMissing
+            ? ['Select a current approved shared-library evaporation correlation and recalculate before review or release.']
+            : stale
             ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
             : (saved.result_snapshot?.reasons || []),
+          correlation_snapshot: correlationSnapshot,
         }
       : null;
     return {
@@ -170,7 +180,7 @@ async function loadThermalCalculations(
       saved,
       calculation,
       current_preview: preview,
-      status: stale ? 'Stale' : saved?.status || 'Not configured',
+      status: stale ? 'Stale' : correlationEvidenceMissing ? 'Blocked' : saved?.status || 'Not configured',
       freshness: stale ? 'stale' : saved?.freshness || 'unsaved',
       source_fingerprint: source.fingerprint,
     };
@@ -188,9 +198,9 @@ async function insertThermalSnapshotRecord(
     `INSERT INTO design_book_thermal_calculations
        (design_book_id, system_id, calculation_version, status, freshness,
         source_fingerprint, source_snapshot, constants, formula_inputs,
-        input_snapshot, result_snapshot, sensitivity_cases,
+        input_snapshot, result_snapshot, sensitivity_cases, correlation_snapshot,
         deviation_justification, calculated_by, calculated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb,$14,$15,$16)`,
     [
       designBookId,
       row.system_id,
@@ -204,6 +214,8 @@ async function insertThermalSnapshotRecord(
       JSON.stringify(row.input_snapshot || item.calculation?.inputs || {}),
       JSON.stringify(row.result_snapshot || item.calculation || {}),
       JSON.stringify(row.sensitivity_cases || item.calculation?.sensitivity_cases || []),
+      JSON.stringify(row.correlation_snapshot || item.calculation?.correlation_snapshot ||
+        row.input_snapshot?.agitation_correlation_snapshot || {}),
       row.deviation_justification || null,
       row.calculated_by || null,
       row.calculated_at || new Date().toISOString(),
@@ -263,6 +275,129 @@ async function insertAudit(
     [entityType, entityId, action, actorId, details, ipAddress || null],
   );
 }
+
+function positiveCorrelationCoefficient(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function correlationLibraryRow(row: any) {
+  return {
+    id: row.id,
+    class_id: row.class_id,
+    class_code: row.class_code,
+    class_name: row.class_name,
+    class_description: row.class_description,
+    class_sort_order: row.class_sort_order,
+    class_is_active: row.class_is_active,
+    version: row.version,
+    coefficient_kg_m2_s_kpa: Number(row.coefficient_kg_m2_s_kpa),
+    source_reference: row.source_reference || null,
+    notes: row.notes || null,
+    status: row.status,
+    approved_by: row.approved_by,
+    approved_at: row.approved_at,
+    superseded_by: row.superseded_by || null,
+    superseded_at: row.superseded_at || null,
+    created_at: row.created_at,
+  };
+}
+
+async function resolveThermalCorrelationInputs(
+  runner: DbRunner,
+  rawInputs: Record<string, any>,
+  capturedAt = new Date().toISOString(),
+) {
+  const correlationId = String(rawInputs.agitation_correlation_id || '').trim();
+  if (!correlationId) {
+    const error: any = new Error('Select an approved shared-library evaporation correlation before saving.');
+    error.status = 400;
+    error.code = 'THERMAL_CORRELATION_REQUIRED';
+    throw error;
+  }
+
+  const result = await runner(
+    `SELECT c.id, c.agitation_class_id AS class_id, c.version,
+            c.coefficient_kg_m2_s_kpa, c.source_reference, c.notes,
+            c.status, c.approved_by, c.approved_at,
+            c.agitation_class_code AS class_code,
+            c.agitation_class_name AS class_name,
+            c.agitation_class_description AS class_description
+     FROM thermal_mass_transfer_correlations c
+     JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id
+     WHERE c.id=$1
+     FOR SHARE`,
+    [correlationId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    const error: any = new Error('The selected evaporation correlation does not exist.');
+    error.status = 400;
+    error.code = 'THERMAL_CORRELATION_NOT_FOUND';
+    throw error;
+  }
+  if (row.status !== 'approved') {
+    const error: any = new Error('The selected evaporation correlation has been superseded. Select the current approved version.');
+    error.status = 409;
+    error.code = 'THERMAL_CORRELATION_SUPERSEDED';
+    throw error;
+  }
+
+  const deviation = rawInputs.agitation_correlation_deviation === true;
+  const justification = String(rawInputs.deviation_justification || '').trim();
+  if (deviation && !justification) {
+    const error: any = new Error('A project-specific correlation deviation requires a justification.');
+    error.status = 400;
+    error.code = 'THERMAL_CORRELATION_DEVIATION_JUSTIFICATION_REQUIRED';
+    throw error;
+  }
+  const libraryCoefficient = positiveCorrelationCoefficient(row.coefficient_kg_m2_s_kpa);
+  const effectiveCoefficient = deviation
+    ? positiveCorrelationCoefficient(rawInputs.evaporation_coefficient_kg_m2_s_kpa)
+    : libraryCoefficient;
+  if (effectiveCoefficient == null) {
+    const error: any = new Error('A project-specific correlation deviation requires a positive mass-transfer coefficient.');
+    error.status = 400;
+    error.code = 'THERMAL_CORRELATION_DEVIATION_COEFFICIENT_REQUIRED';
+    throw error;
+  }
+
+  const snapshot = {
+    source: deviation ? 'project_deviation' : 'shared_library',
+    correlation_id: row.id,
+    class_id: row.class_id,
+    agitation_class: row.class_code,
+    agitation_class_name: row.class_name,
+    agitation_class_description: row.class_description || null,
+    version: row.version,
+    coefficient_kg_m2_s_kpa: libraryCoefficient,
+    effective_coefficient_kg_m2_s_kpa: effectiveCoefficient,
+    approved: true,
+    deviation,
+    deviation_justification: deviation ? justification : null,
+    source_reference: row.source_reference || null,
+    notes: row.notes || null,
+    approved_by: row.approved_by,
+    approved_at: row.approved_at,
+    captured_at: capturedAt,
+  };
+
+  return {
+    ...rawInputs,
+    agitation_class: row.class_code,
+    agitation_correlation_class: row.class_code,
+    agitation_correlation_version: row.version,
+    agitation_correlation_approved: true,
+    agitation_correlation_deviation: deviation,
+    evaporation_coefficient_kg_m2_s_kpa: effectiveCoefficient,
+    deviation_justification: deviation ? justification : '',
+    agitation_correlation_snapshot: snapshot,
+  };
+}
+
+export const thermalCorrelationTestUtils = {
+  resolveThermalCorrelationInputs,
+};
 
 export async function loadReleaseContext(
   id: string,
@@ -505,6 +640,225 @@ async function ensureBookEditable(id: string, res: Response) {
   return true;
 }
 
+const thermalCorrelationLibrarySelect = `
+  SELECT c.id, c.agitation_class_id AS class_id,
+         c.agitation_class_code AS class_code,
+         c.agitation_class_name AS class_name,
+         c.agitation_class_description AS class_description,
+         ac.sort_order AS class_sort_order, ac.is_active AS class_is_active,
+         c.version, c.coefficient_kg_m2_s_kpa, c.source_reference, c.notes,
+         c.status, c.approved_by, c.approved_at,
+         c.superseded_by, c.superseded_at, c.created_at
+  FROM thermal_mass_transfer_correlations c
+  JOIN thermal_agitation_classes ac ON ac.id=c.agitation_class_id`;
+
+router.get('/thermal-correlations', async (_req: AuthRequest, res: Response) => {
+  const [classes, result] = await Promise.all([
+    query(
+      `SELECT id, class_code, class_name, description, sort_order, is_active, created_at, updated_at
+       FROM thermal_agitation_classes
+       ORDER BY sort_order, class_name`,
+    ),
+    query(
+      `${thermalCorrelationLibrarySelect}
+       ORDER BY ac.sort_order, c.agitation_class_name, c.approved_at DESC, c.created_at DESC`,
+    ),
+  ]);
+  res.json({ classes: classes.rows, items: result.rows.map(correlationLibraryRow) });
+});
+
+router.post(
+  '/thermal-correlations/classes',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const classCode = String(req.body.class_code || '').trim();
+    const className = String(req.body.class_name || '').trim();
+    if (!classCode || !className) {
+      return res.status(400).json({
+        error: { code: 'THERMAL_CLASS_REQUIRED', message: 'Class code and class name are required.' },
+      });
+    }
+    try {
+      const result = await query(
+        `INSERT INTO thermal_agitation_classes
+           (class_code, class_name, description, sort_order, created_by)
+         VALUES ($1,$2,$3,$4,$5)
+         RETURNING *`,
+        [
+          classCode,
+          className,
+          String(req.body.description || '').trim() || null,
+          Number.isInteger(Number(req.body.sort_order)) ? Number(req.body.sort_order) : 0,
+          req.user!.id,
+        ],
+      );
+      await insertAudit(query, req.user!.id, 'thermal_agitation_class', result.rows[0].id, 'CREATE', {
+        summary: `Thermal agitation class ${classCode} created`,
+      }, req.ip);
+      res.status(201).json(result.rows[0]);
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        return res.status(409).json({
+          error: { code: 'THERMAL_CLASS_EXISTS', message: 'That agitation class code already exists.' },
+        });
+      }
+      throw error;
+    }
+  },
+);
+
+router.put(
+  '/thermal-correlations/classes/:classId',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const classCode = String(req.body.class_code || '').trim();
+    const className = String(req.body.class_name || '').trim();
+    if (!classCode || !className) {
+      return res.status(400).json({
+        error: { code: 'THERMAL_CLASS_REQUIRED', message: 'Class code and class name are required.' },
+      });
+    }
+    const result = await query(
+      `UPDATE thermal_agitation_classes
+       SET class_code=$1, class_name=$2, description=$3, sort_order=$4,
+           is_active=$5, updated_at=NOW()
+       WHERE id=$6
+       RETURNING *`,
+      [
+        classCode,
+        className,
+        String(req.body.description || '').trim() || null,
+        Number.isInteger(Number(req.body.sort_order)) ? Number(req.body.sort_order) : 0,
+        req.body.is_active !== false,
+        req.params.classId,
+      ],
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Agitation class not found.' } });
+    }
+    await insertAudit(query, req.user!.id, 'thermal_agitation_class', result.rows[0].id, 'UPDATE', {
+      summary: `Thermal agitation class ${classCode} updated; existing correlation versions remain unchanged`,
+    }, req.ip);
+    res.json(result.rows[0]);
+  },
+);
+
+router.post(
+  '/thermal-correlations/classes/:classId/versions',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const version = String(req.body.version || '').trim();
+    const coefficient = positiveCorrelationCoefficient(req.body.coefficient_kg_m2_s_kpa);
+    const sourceReference = String(req.body.source_reference || '').trim();
+    if (!version || coefficient == null || !sourceReference) {
+      return res.status(400).json({
+        error: {
+          code: 'THERMAL_CORRELATION_REQUIRED',
+          message: 'Version, positive mass-transfer coefficient, and source reference are required.',
+        },
+      });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const classResult = await client.query(
+        'SELECT * FROM thermal_agitation_classes WHERE id=$1 AND is_active=true FOR UPDATE',
+        [req.params.classId],
+      );
+      const agitationClass = classResult.rows[0];
+      if (!agitationClass) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          error: { code: 'NOT_FOUND', message: 'Active agitation class not found.' },
+        });
+      }
+      await client.query(
+        `UPDATE thermal_mass_transfer_correlations
+         SET status='superseded', superseded_by=$1, superseded_at=NOW()
+         WHERE agitation_class_id=$2 AND status='approved'`,
+        [req.user!.id, agitationClass.id],
+      );
+      const inserted = await client.query(
+        `INSERT INTO thermal_mass_transfer_correlations
+           (agitation_class_id, agitation_class_code, agitation_class_name,
+            agitation_class_description, version, coefficient_kg_m2_s_kpa,
+            source_reference, notes, approved_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING *`,
+        [
+          agitationClass.id,
+          agitationClass.class_code,
+          agitationClass.class_name,
+          agitationClass.description,
+          version,
+          coefficient,
+          sourceReference,
+          String(req.body.notes || '').trim() || null,
+          req.user!.id,
+        ],
+      );
+      await insertAudit(
+        client.query.bind(client) as DbRunner,
+        req.user!.id,
+        'thermal_correlation',
+        inserted.rows[0].id,
+        'APPROVE_VERSION',
+        {
+          summary: `${agitationClass.class_code} correlation ${version} approved`,
+          agitation_class_id: agitationClass.id,
+          coefficient_kg_m2_s_kpa: coefficient,
+          source_reference: sourceReference,
+        },
+        req.ip,
+      );
+      await client.query('COMMIT');
+      const response = await query(
+        `${thermalCorrelationLibrarySelect} WHERE c.id=$1`,
+        [inserted.rows[0].id],
+      );
+      res.status(201).json(correlationLibraryRow(response.rows[0]));
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error?.code === '23505') {
+        return res.status(409).json({
+          error: { code: 'THERMAL_CORRELATION_VERSION_EXISTS', message: 'That version already exists for this agitation class.' },
+        });
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+router.post(
+  '/thermal-correlations/versions/:versionId/supersede',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const result = await query(
+      `UPDATE thermal_mass_transfer_correlations
+       SET status='superseded', superseded_by=$1, superseded_at=NOW()
+       WHERE id=$2 AND status='approved'
+       RETURNING *`,
+      [req.user!.id, req.params.versionId],
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({
+        error: { code: 'THERMAL_CORRELATION_NOT_APPROVED', message: 'Approved correlation version not found.' },
+      });
+    }
+    await insertAudit(query, req.user!.id, 'thermal_correlation', result.rows[0].id, 'SUPERSEDE', {
+      summary: `Thermal correlation ${result.rows[0].version} superseded`,
+      reason: String(req.body.reason || '').trim() || null,
+    }, req.ip);
+    res.json(result.rows[0]);
+  },
+);
+
 router.get('/design-books/:id/thermal', authenticate, async (req: AuthRequest, res: Response) => {
   const frozen = await query(
     'SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1',
@@ -556,21 +910,27 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
         error: { code: 'INVALID_SYSTEM', message: 'The selected LSS system does not belong to this Design Book project.' },
       });
     }
-    const inputs = req.body?.inputs && typeof req.body.inputs === 'object'
+    const requestedInputs = req.body?.inputs && typeof req.body.inputs === 'object'
       ? req.body.inputs
       : req.body || {};
+    const calculatedAt = new Date().toISOString();
+    const inputs = await resolveThermalCorrelationInputs(
+      client.query.bind(client) as DbRunner,
+      requestedInputs,
+      calculatedAt,
+    );
     const calculation = calculateThermalCalculation(
       item.source,
       inputs,
-      new Date().toISOString(),
+      calculatedAt,
     );
     const saved = await client.query(
       `INSERT INTO design_book_thermal_calculations
          (design_book_id, system_id, calculation_version, status, freshness,
           source_fingerprint, source_snapshot, constants, formula_inputs,
-          input_snapshot, result_snapshot, sensitivity_cases,
+          input_snapshot, result_snapshot, sensitivity_cases, correlation_snapshot,
           deviation_justification, calculated_by, calculated_at)
-       VALUES ($1,$2,$3,$4,'fresh',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13,$14)
+       VALUES ($1,$2,$3,$4,'fresh',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15)
        ON CONFLICT (design_book_id, system_id)
        DO UPDATE SET
          calculation_version=EXCLUDED.calculation_version,
@@ -583,6 +943,7 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
          input_snapshot=EXCLUDED.input_snapshot,
          result_snapshot=EXCLUDED.result_snapshot,
          sensitivity_cases=EXCLUDED.sensitivity_cases,
+         correlation_snapshot=EXCLUDED.correlation_snapshot,
          deviation_justification=EXCLUDED.deviation_justification,
          calculated_by=EXCLUDED.calculated_by,
          calculated_at=EXCLUDED.calculated_at,
@@ -600,6 +961,7 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
         JSON.stringify(calculation.inputs),
         JSON.stringify(calculation),
         JSON.stringify(calculation.sensitivity_cases),
+        JSON.stringify(calculation.correlation_snapshot || {}),
         String(calculation.inputs.deviation_justification || '').trim() || null,
         req.user!.id,
         calculation.calculated_at,
@@ -617,6 +979,9 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
         calculation_version: calculation.calculation_version,
         calculation_status: calculation.status,
         source_fingerprint: calculation.source_fingerprint,
+        correlation_id: calculation.correlation_snapshot?.correlation_id || null,
+        correlation_version: calculation.correlation_snapshot?.version || null,
+        correlation_deviation: calculation.correlation_snapshot?.deviation || false,
         deviation_justification: String(calculation.inputs.deviation_justification || '').trim() || null,
       },
       req.ip,
