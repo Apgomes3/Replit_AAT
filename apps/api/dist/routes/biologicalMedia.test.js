@@ -105,6 +105,20 @@ const completeMediaProfile = {
             evidence_reference: 'CONTROLLED-REF',
         })).toContain('Coefficient unit must be kg TAN-N/kg feed protein.');
     });
+    (0, vitest_1.it)('allows the species-and-feed starter to remain controlled-value-only in draft', () => {
+        const draft = {
+            profile_code: 'SPECIES_AND_FEED_VALIDATED',
+            profile_name: 'Species and feed validated',
+            coefficient: null,
+            coefficient_unit: 'kg TAN-N/kg feed protein',
+            scope_type: 'Species and feed validated',
+            evidence_reference: '',
+            status: 'Draft',
+        };
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateTanProfile)(draft, false)).toEqual([]);
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateTanProfile)({ ...draft, status: 'Approved' }, true)).toContain('Coefficient must be greater than zero.');
+        (0, vitest_1.expect)((0, biologicalMedia_1.validateTanProfile)({ ...draft, coefficient: 'not-a-number' }, false)).toContain('Coefficient must be greater than zero.');
+    });
     (0, vitest_1.it)('accepts zero and positive Maximum TAN profiles but rejects missing, negative, and non-finite values', () => {
         (0, vitest_1.expect)((0, biologicalMedia_1.validateMaxTanProfile)({
             profile_code: 'ZERO_LIMIT',

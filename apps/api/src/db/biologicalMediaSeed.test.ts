@@ -5,6 +5,7 @@ import {
   seedTanGenerationProfiles,
   STARTER_TAN_PROFILES,
   TAN_COEFFICIENT_UNIT,
+  CONTROLLED_VALUE_TAN_PROFILE_CODE,
 } from './biologicalMediaSeed';
 
 describe('Biological Media TAN starter profiles', () => {
@@ -15,7 +16,7 @@ describe('Biological Media TAN starter profiles', () => {
       expect.objectContaining({ profile_name: 'Losordo nitrogen retention model', coefficient: 0.080, recommended_application: 'Less conservative production estimate.' }),
       expect.objectContaining({ profile_name: 'AAT conservative legacy', coefficient: 0.0976, recommended_application: 'May remain as an AAT controlled design profile.' }),
       expect.objectContaining({ profile_name: 'Eventual dissolved nitrogen', coefficient: 0.1024, recommended_application: 'Includes the nitrogen assumed to be excreted as urea and later converted to TAN.' }),
-      expect.objectContaining({ profile_name: 'Species and feed validated', coefficient: 0.0976, recommended_application: 'Preferred when reliable measured data exist.' }),
+       expect.objectContaining({ profile_name: 'Species and feed validated', coefficient: null, recommended_application: expect.stringContaining('administrator-controlled') }),
       expect.objectContaining({ profile_name: 'Theoretical maximum', coefficient: 0.160, recommended_application: 'All feed protein nitrogen becoming TAN-N; normally unrealistically conservative.' }),
     ]);
     expect(new Set(STARTER_TAN_PROFILES.map(profile => profile.profile_code)).size).toBe(6);
@@ -36,5 +37,20 @@ describe('Biological Media TAN starter profiles', () => {
     query.mockClear();
     query.mockResolvedValue({ rowCount: 0, rows: [] });
     expect(await seedTanGenerationProfiles(client, 'admin-1')).toBe(0);
+  });
+
+  it('fills missing starter revisions on an existing database without touching an existing revision', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+      .mockResolvedValue({ rowCount: 1, rows: [] });
+    const client = { query } as any;
+
+    expect(await seedTanGenerationProfiles(client, 'admin-1')).toBe(5);
+    expect(query).toHaveBeenCalledTimes(6);
+    expect(query.mock.calls[0][1][0]).toBe('EBELING_TIMMONS_GENERAL_RAS');
+    expect(query.mock.calls[0][1][2]).toBe(0.09216);
+    expect(query.mock.calls[4][1][0]).toBe(CONTROLLED_VALUE_TAN_PROFILE_CODE);
+    expect(query.mock.calls[4][1][2]).toBeNull();
+    expect(query.mock.calls[4][0]).toContain('ON CONFLICT (profile_code, revision) DO NOTHING');
   });
 });

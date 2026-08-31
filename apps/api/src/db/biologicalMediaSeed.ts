@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 
 export const TAN_COEFFICIENT_UNIT = 'kg TAN-N/kg feed protein';
+export const CONTROLLED_VALUE_TAN_PROFILE_CODE = 'SPECIES_AND_FEED_VALIDATED';
 
 export const STARTER_TAN_PROFILES = [
   {
@@ -28,10 +29,10 @@ export const STARTER_TAN_PROFILES = [
     recommended_application: 'Includes the nitrogen assumed to be excreted as urea and later converted to TAN.',
   },
   {
-    profile_code: 'SPECIES_AND_FEED_VALIDATED',
+    profile_code: CONTROLLED_VALUE_TAN_PROFILE_CODE,
     profile_name: 'Species and feed validated',
-    coefficient: 0.0976,
-    recommended_application: 'Preferred when reliable measured data exist.',
+    coefficient: null,
+    recommended_application: 'Requires an administrator-controlled, evidence-based value for the validated species and feed; no default is supplied.',
   },
   {
     profile_code: 'THEORETICAL_MAXIMUM',
@@ -46,7 +47,7 @@ export const STARTER_TAN_PROFILES = [
  * target deliberately does not update any column, so later administrator
  * revisions and edits can never be overwritten by a rerun.
  */
-export async function seedTanGenerationProfiles(client: PoolClient, adminId: string): Promise<number> {
+export async function seedTanGenerationProfiles(client: PoolClient, adminId: string | null): Promise<number> {
   let seeded = 0;
   for (const profile of STARTER_TAN_PROFILES) {
     const result = await client.query(

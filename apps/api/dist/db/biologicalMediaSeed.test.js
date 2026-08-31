@@ -11,7 +11,7 @@ const biologicalMediaSeed_1 = require("./biologicalMediaSeed");
             vitest_1.expect.objectContaining({ profile_name: 'Losordo nitrogen retention model', coefficient: 0.080, recommended_application: 'Less conservative production estimate.' }),
             vitest_1.expect.objectContaining({ profile_name: 'AAT conservative legacy', coefficient: 0.0976, recommended_application: 'May remain as an AAT controlled design profile.' }),
             vitest_1.expect.objectContaining({ profile_name: 'Eventual dissolved nitrogen', coefficient: 0.1024, recommended_application: 'Includes the nitrogen assumed to be excreted as urea and later converted to TAN.' }),
-            vitest_1.expect.objectContaining({ profile_name: 'Species and feed validated', coefficient: 0.0976, recommended_application: 'Preferred when reliable measured data exist.' }),
+            vitest_1.expect.objectContaining({ profile_name: 'Species and feed validated', coefficient: null, recommended_application: vitest_1.expect.stringContaining('administrator-controlled') }),
             vitest_1.expect.objectContaining({ profile_name: 'Theoretical maximum', coefficient: 0.160, recommended_application: 'All feed protein nitrogen becoming TAN-N; normally unrealistically conservative.' }),
         ]);
         (0, vitest_1.expect)(new Set(biologicalMediaSeed_1.STARTER_TAN_PROFILES.map(profile => profile.profile_code)).size).toBe(6);
@@ -29,5 +29,18 @@ const biologicalMediaSeed_1 = require("./biologicalMediaSeed");
         query.mockClear();
         query.mockResolvedValue({ rowCount: 0, rows: [] });
         (0, vitest_1.expect)(await (0, biologicalMediaSeed_1.seedTanGenerationProfiles)(client, 'admin-1')).toBe(0);
+    });
+    (0, vitest_1.it)('fills missing starter revisions on an existing database without touching an existing revision', async () => {
+        const query = vitest_1.vi.fn()
+            .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+            .mockResolvedValue({ rowCount: 1, rows: [] });
+        const client = { query };
+        (0, vitest_1.expect)(await (0, biologicalMediaSeed_1.seedTanGenerationProfiles)(client, 'admin-1')).toBe(5);
+        (0, vitest_1.expect)(query).toHaveBeenCalledTimes(6);
+        (0, vitest_1.expect)(query.mock.calls[0][1][0]).toBe('EBELING_TIMMONS_GENERAL_RAS');
+        (0, vitest_1.expect)(query.mock.calls[0][1][2]).toBe(0.09216);
+        (0, vitest_1.expect)(query.mock.calls[4][1][0]).toBe(biologicalMediaSeed_1.CONTROLLED_VALUE_TAN_PROFILE_CODE);
+        (0, vitest_1.expect)(query.mock.calls[4][1][2]).toBeNull();
+        (0, vitest_1.expect)(query.mock.calls[4][0]).toContain('ON CONFLICT (profile_code, revision) DO NOTHING');
     });
 });

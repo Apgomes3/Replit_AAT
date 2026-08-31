@@ -162,7 +162,12 @@ function request(app, method, path, token, body = {}) {
     });
     (0, vitest_1.beforeEach)(() => {
         state.calls.length = 0;
-        state.profiles.tan.status = 'Draft';
+        Object.assign(state.profiles.tan, {
+            profile_code: 'TAN-TEST',
+            coefficient: 0.09216,
+            evidence_reference: 'TAN-REF-TEST',
+            status: 'Draft',
+        });
         state.profiles.media.status = 'Draft';
     });
     (0, vitest_1.afterAll)(() => {
@@ -181,5 +186,23 @@ function request(app, method, path, token, body = {}) {
         (0, vitest_1.expect)(response.body.status).toBe('Approved');
         const update = state.calls.find(call => call.sql.includes('UPDATE lss_biological_media_profiles'));
         (0, vitest_1.expect)(update?.sql.match(/\$1::varchar/g)).toHaveLength(4);
+    });
+    (0, vitest_1.it)('validates the stored TAN revision instead of unsaved fields supplied with a status change', async () => {
+        Object.assign(state.profiles.tan, {
+            profile_code: 'SPECIES_AND_FEED_VALIDATED',
+            coefficient: null,
+            evidence_reference: null,
+        });
+        const response = await request(app, 'PATCH', '/api/v1/admin/biological-media/tan-profiles/tan-profile-1/status', token, {
+            status: 'Approved',
+            coefficient: 0.1,
+            evidence_reference: 'UNSAVED-SPOOF',
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.fields).toEqual(vitest_1.expect.arrayContaining([
+            'Coefficient must be greater than zero.',
+            'Evidence reference is required.',
+        ]));
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE lss_tan_generation_profiles'))).toBe(false);
     });
 });

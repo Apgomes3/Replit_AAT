@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.STARTER_TAN_PROFILES = exports.TAN_COEFFICIENT_UNIT = void 0;
+exports.STARTER_TAN_PROFILES = exports.CONTROLLED_VALUE_TAN_PROFILE_CODE = exports.TAN_COEFFICIENT_UNIT = void 0;
 exports.seedTanGenerationProfiles = seedTanGenerationProfiles;
 exports.TAN_COEFFICIENT_UNIT = 'kg TAN-N/kg feed protein';
+exports.CONTROLLED_VALUE_TAN_PROFILE_CODE = 'SPECIES_AND_FEED_VALIDATED';
 exports.STARTER_TAN_PROFILES = [
     {
         profile_code: 'EBELING_TIMMONS_GENERAL_RAS',
@@ -29,10 +30,10 @@ exports.STARTER_TAN_PROFILES = [
         recommended_application: 'Includes the nitrogen assumed to be excreted as urea and later converted to TAN.',
     },
     {
-        profile_code: 'SPECIES_AND_FEED_VALIDATED',
+        profile_code: exports.CONTROLLED_VALUE_TAN_PROFILE_CODE,
         profile_name: 'Species and feed validated',
-        coefficient: 0.0976,
-        recommended_application: 'Preferred when reliable measured data exist.',
+        coefficient: null,
+        recommended_application: 'Requires an administrator-controlled, evidence-based value for the validated species and feed; no default is supplied.',
     },
     {
         profile_code: 'THEORETICAL_MAXIMUM',

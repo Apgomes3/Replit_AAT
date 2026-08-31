@@ -123,6 +123,22 @@ describe('Biological Media controlled profile validation', () => {
     })).toContain('Coefficient unit must be kg TAN-N/kg feed protein.');
   });
 
+  it('allows the species-and-feed starter to remain controlled-value-only in draft', () => {
+    const draft = {
+      profile_code: 'SPECIES_AND_FEED_VALIDATED',
+      profile_name: 'Species and feed validated',
+      coefficient: null,
+      coefficient_unit: 'kg TAN-N/kg feed protein',
+      scope_type: 'Species and feed validated',
+      evidence_reference: '',
+      status: 'Draft',
+    };
+
+    expect(validateTanProfile(draft, false)).toEqual([]);
+    expect(validateTanProfile({ ...draft, status: 'Approved' }, true)).toContain('Coefficient must be greater than zero.');
+    expect(validateTanProfile({ ...draft, coefficient: 'not-a-number' }, false)).toContain('Coefficient must be greater than zero.');
+  });
+
   it('accepts zero and positive Maximum TAN profiles but rejects missing, negative, and non-finite values', () => {
     expect(validateMaxTanProfile({
       profile_code: 'ZERO_LIMIT',

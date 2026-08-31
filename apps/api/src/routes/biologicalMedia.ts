@@ -6,6 +6,7 @@ import {
   calculateBiologicalMediaPreview,
   normalizeBiologicalMediaInput,
 } from '../lib/biologicalMediaCalculations';
+import { CONTROLLED_VALUE_TAN_PROFILE_CODE } from '../db/biologicalMediaSeed';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -413,7 +414,14 @@ export function validateTanProfile(body: any, approving = body.status == null ? 
   if (!text(body.profile_code)) errors.push('Profile code is required.');
   if (!text(body.profile_name)) errors.push('Profile name is required.');
   const coefficient = numberOrNull(body.coefficient);
-  if (coefficient == null || coefficient <= 0) errors.push('Coefficient must be greater than zero.');
+  const coefficientWasProvided = body.coefficient != null && body.coefficient !== '';
+  const allowsControlledValueDraft = text(body.profile_code)?.toUpperCase() === CONTROLLED_VALUE_TAN_PROFILE_CODE
+    && !approving;
+  if ((coefficientWasProvided && coefficient == null)
+      || (coefficient == null && !allowsControlledValueDraft)
+      || (coefficient != null && coefficient <= 0)) {
+    errors.push('Coefficient must be greater than zero.');
+  }
   if (!text(body.coefficient_unit)) errors.push('Coefficient unit is required.');
   else if (text(body.coefficient_unit) !== TAN_COEFFICIENT_UNIT) {
     errors.push(`Coefficient unit must be ${TAN_COEFFICIENT_UNIT}.`);
@@ -1618,6 +1626,98 @@ router.post('/admin/biological-media/tan-profiles/:id/revisions', requireModuleM
   res.status(201).json(result.rows[0]);
 });
 
+const PROFILE_TABLES = {
+  media: {
+    table: 'lss_biological_media_profiles',
+    label: 'Media',
+    caseColumn: 'media_profile_revision_id',
+    snapshotColumn: 'media_profile_snapshot',
+  },
+  tan: {
+    table: 'lss_tan_generation_profiles',
+    label: 'TAN generation',
+    caseColumn: 'tan_generation_profile_revision_id',
+    snapshotColumn: 'tan_profile_snapshot',
+  },
+  'max-tan': {
+    table: 'lss_max_tan_profiles',
+    label: 'Maximum TAN',
+    caseColumn: 'max_tan_profile_revision_id',
+    snapshotColumn: 'max_tan_profile_snapshot',
+  },
+} as const;
+
+async function deleteProfileRevision(kind: keyof typeof PROFILE_TABLES, id: string, res: Response) {
+  const definition = PROFILE_TABLES[kind];
+  const existing = await profileRevision(definition.table, id);
+  if (!existing) {
+    return res.status(404).json({ error: { code: 'NOT_FOUND', message: `${definition.label} profile revision not found.` } });
+  }
+  if (existing.status === 'Approved') {
+    return res.status(409).json({
+      error: {
+        code: 'PROFILE_MUST_BE_RETIRED',
+        message: `Approved ${definition.label} profile revisions cannot be permanently deleted; use Retire instead.`,
+      },
+    });
+  }
+  if (existing.status !== 'Draft') {
+    return res.status(409).json({
+      error: {
+        code: 'DRAFT_REQUIRED',
+        message: `Only unreferenced Draft ${definition.label} profile revisions can be permanently deleted; use Retire instead.`,
+      },
+    });
+  }
+
+  const references = await query(
+    `SELECT
+       EXISTS (
+         SELECT 1 FROM lss_biological_media_cases
+         WHERE ${definition.caseColumn}=$1
+       ) AS referenced_by_cases,
+       EXISTS (
+         SELECT 1 FROM lss_biological_media_runs
+         WHERE ${definition.snapshotColumn}->>'id'=$1
+            OR ${definition.snapshotColumn}->>'profile_revision_id'=$1
+            OR ${definition.snapshotColumn}->>'revision_id'=$1
+       ) AS referenced_by_runs`,
+    [id],
+  );
+  if (references.rows[0]?.referenced_by_cases || references.rows[0]?.referenced_by_runs) {
+    return res.status(409).json({
+      error: {
+        code: 'PROFILE_REFERENCED',
+        message: `This ${definition.label} profile revision is referenced by a Biological Media case or immutable calculation run and cannot be permanently deleted; use Retire instead.`,
+      },
+    });
+  }
+
+  try {
+    const result = await query(`DELETE FROM ${definition.table} WHERE id=$1 AND status='Draft' RETURNING *`, [id]);
+    if (!result.rows[0]) {
+      return res.status(409).json({
+        error: {
+          code: 'PROFILE_NOT_DELETED',
+          message: `The ${definition.label} profile revision changed before deletion; refresh and try again.`,
+        },
+      });
+    }
+    return res.json({ deleted: true, id });
+  } catch (error: any) {
+    const mapped = databaseProfileError(error);
+    if (mapped) return res.status(409).json({ error: mapped });
+    throw error;
+  }
+}
+
+router.delete('/admin/biological-media/media-profiles/:id', requireModuleManage('design_books'), requireRole('admin'), async (req: AuthRequest, res: Response) =>
+  deleteProfileRevision('media', routeParam(req.params.id), res));
+router.delete('/admin/biological-media/tan-profiles/:id', requireModuleManage('design_books'), requireRole('admin'), async (req: AuthRequest, res: Response) =>
+  deleteProfileRevision('tan', routeParam(req.params.id), res));
+router.delete('/admin/biological-media/max-tan-profiles/:id', requireModuleManage('design_books'), requireRole('admin'), async (req: AuthRequest, res: Response) =>
+  deleteProfileRevision('max-tan', routeParam(req.params.id), res));
+
 router.post('/admin/biological-media/max-tan-profiles', requireModuleManage('design_books'), requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const errors = validateMaxTanProfile(req.body);
   if (errors.length) return res.status(400).json({ error: { code: 'VALIDATION', message: errors.join(' '), fields: errors } });
@@ -1691,7 +1791,7 @@ async function updateProfileStatus(table: string, id: string, body: any, req: Au
   }
   const nextStatus = requestedStatus;
   if (!nextStatus || !PROFILE_STATUSES.includes(nextStatus)) return res.status(400).json({ error: { code: 'VALIDATION', message: `Status must be one of: ${PROFILE_STATUSES.join(', ')}.` } });
-  const merged = { ...existing, ...body, status: nextStatus };
+  const merged = { ...existing, status: nextStatus };
   const errors = table === 'lss_max_tan_profiles'
     ? validateMaxTanProfile(merged)
     : table === 'lss_tan_generation_profiles'

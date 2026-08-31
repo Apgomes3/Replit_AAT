@@ -1,6 +1,7 @@
 import pool from './index';
 import dotenv from 'dotenv';
 import { pimAssignmentIndexMigration } from './pimAssignmentIndexMigration';
+import { seedTanGenerationProfiles } from './biologicalMediaSeed';
 dotenv.config();
 
 const schema = `
@@ -1452,7 +1453,7 @@ CREATE TABLE IF NOT EXISTS lss_tan_generation_profiles (
   profile_code VARCHAR(80) NOT NULL,
   profile_name VARCHAR(255) NOT NULL,
   revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
-  coefficient NUMERIC NOT NULL,
+  coefficient NUMERIC,
   coefficient_unit VARCHAR(120) NOT NULL,
   recommended_application TEXT,
   scope_type VARCHAR(80) NOT NULL,
@@ -1724,6 +1725,8 @@ FOR EACH ROW EXECUTE FUNCTION prevent_approved_biological_media_mutation();
 -- Additive Biological Media preview migration for existing databases.
 ALTER TABLE lss_tan_generation_profiles
   ADD COLUMN IF NOT EXISTS recommended_application TEXT;
+ALTER TABLE lss_tan_generation_profiles
+  ALTER COLUMN coefficient DROP NOT NULL;
 
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS overall_vtr_g_tan_n_m3_d NUMERIC;
 ALTER TABLE lss_biological_media_profiles ADD COLUMN IF NOT EXISTS default_safety_factor NUMERIC;
@@ -1903,6 +1906,11 @@ async function migrate() {
   try {
     console.log('Running migrations...');
     await client.query(schema);
+    const adminResult = await client.query(
+      `SELECT id FROM users WHERE role='admin' ORDER BY created_at, id LIMIT 1`,
+    );
+    const seededTanProfiles = await seedTanGenerationProfiles(client, adminResult.rows[0]?.id ?? null);
+    console.log(`Biological Media TAN profiles ready (${seededTanProfiles} starter records added).`);
     console.log('Migrations complete.');
   } catch (err) {
     console.error('Migration failed:', err);
