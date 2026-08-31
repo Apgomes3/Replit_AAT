@@ -1,6 +1,7 @@
 import { AQUARIUM_CALCULATION_VERSION } from './aquariumCalculations';
 import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from './pumpSelections';
 import { isApprovedThermalCorrelationSnapshot } from './thermalCalculations';
+import { FRICTION_LOSS_CALCULATION_VERSION } from './frictionLossCalculations';
 
 export type ReleaseSeverity = 'blocker' | 'warning';
 export type ReleaseCheckStatus = 'pass' | 'warning' | 'blocked';
@@ -32,6 +33,7 @@ export interface DesignBookReleaseContext {
   biological_media_runs?: any[];
   thermal_calculations?: any[];
   pump_selections?: any[];
+  friction_loss_calculations?: any[];
   engineering_calculations?: {
     exhibits?: any[];
     systems?: any[];
@@ -131,6 +133,8 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
   const biologicalMediaRuns = context.biological_media_runs || [];
   const thermalCalculations = context.thermal_calculations || [];
   const pumpSelections = context.pump_selections || [];
+  const hasFrictionLossPackage = Array.isArray(context.friction_loss_calculations);
+  const frictionLossCalculations = context.friction_loss_calculations || [];
   const scopes = Array.isArray(context.project_scopes) ? context.project_scopes : [];
   const hasLssScope = scopeMatches(scopes, 'LSS');
   const exhibitIds = exhibits.map(exhibit => exhibit.id).filter(Boolean);
@@ -224,6 +228,22 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
           : !selection.project_equipment_item_id || !selection.selected_pump ? 'no eligible selected pump is recorded'
           : selection.calculation_version !== PUMP_SELECTION_CALCULATION_VERSION ? 'calculation version is outdated'
           : 'sizing calculation is incomplete',
+      };
+    }).filter(Boolean);
+  });
+  const frictionCircuitIssues = lifeSupportSystems.flatMap(system => {
+    const calculations = frictionLossCalculations.find((entry: any) => entry.system_id === system.id)?.items || [];
+    return pumpCircuits(system, system.side_streams || []).map(circuit => {
+      const calculation = calculations.find((entry: any) => entry.circuit_key === circuit.circuit_key);
+      const ready = calculation?.freshness === 'fresh' &&
+        calculation?.status === 'ready' &&
+        calculation?.selected_pump &&
+        calculation?.calculation_version === FRICTION_LOSS_CALCULATION_VERSION &&
+        calculation?.result?.results?.combined_head_loss_m != null;
+      return ready ? null : {
+        system_id: system.id,
+        label: `${system.system_code || system.system_name || system.id} · ${circuit.circuit_name || circuit.circuit_key}`,
+        reason: calculation?.reasons?.[0] || 'Complete and recalculate suction and discharge friction loss.',
       };
     }).filter(Boolean);
   });
@@ -414,6 +434,19 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
           : 'Every active LSS Flow Route circuit has a fresh ready pump selection.',
       `/design-books/${context.id}?tab=lss`,
       [...new Set(pumpCircuitIssues.map((issue: any) => issue.system_id))],
+    ),
+    item(
+      'friction_loss_calculations',
+      'Friction Loss calculations',
+      hasLssScope ? 'blocker' : 'warning',
+      !hasLssScope || !hasFrictionLossPackage || frictionCircuitIssues.length === 0,
+      !hasLssScope ? 'Friction Loss is not required because LSS is outside project scope.'
+        : !hasFrictionLossPackage ? 'Legacy package predates Friction Loss calculations.'
+        : frictionCircuitIssues.length
+          ? `${frictionCircuitIssues.map((issue: any) => `${issue.label}: ${issue.reason}`).join('; ')}.`
+          : 'Every active LSS Flow Route circuit has a fresh Ready friction-loss calculation.',
+      `/design-books/${context.id}?tab=piping`,
+      [...new Set(frictionCircuitIssues.map((issue: any) => issue.system_id))],
     ),
     item(
       'calculation_freshness',

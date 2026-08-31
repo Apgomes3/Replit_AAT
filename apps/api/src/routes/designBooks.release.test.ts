@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AQUARIUM_CALCULATION_VERSION } from '../lib/aquariumCalculations';
 import { PUMP_SELECTION_CALCULATION_VERSION } from '../lib/pumpSelections';
+import { FRICTION_LOSS_CALCULATION_VERSION } from '../lib/frictionLossCalculations';
 
 const testSecret = 'design-books-release-test-secret';
 const bookId = 'book-release-1';
@@ -75,6 +76,7 @@ function validSnapshot() {
     systems: [],
     thermal_calculations: [] as any[],
     pump_selections: [] as any[],
+    friction_loss_calculations: [] as any[],
     engineering_calculations: {
       exhibits: [{ status: 'valid', inputs: { exhibit_id: 'exhibit-1' } }],
       systems: [],
@@ -128,6 +130,19 @@ function snapshotWithAllocations(flowPct: number | null, bioDegasPct: number | n
       circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
       selected_pump: { id: 'pump-item-1', product_code: 'P-101' },
       freshness: 'fresh', status: 'ready', calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
+    }],
+  }];
+  snapshot.friction_loss_calculations = [{
+    system_id: 'system-1',
+    items: [{
+      circuit_key: 'loop:1',
+      circuit_name: 'Loop 1',
+      project_equipment_item_id: 'pump-item-1',
+      selected_pump: { id: 'pump-item-1', product_code: 'P-101' },
+      freshness: 'fresh',
+      status: 'ready',
+      calculation_version: FRICTION_LOSS_CALCULATION_VERSION,
+      result: { results: { combined_head_loss_m: 3.2, combined_pressure_drop_kpa: 31.3 } },
     }],
   }];
   return snapshot;
@@ -242,10 +257,9 @@ describe('Design Book release API blocker enforcement', () => {
     const response = await requestPreflight(app);
 
     expect(response.status).toBe(200);
-    expect(response.body.status).toBe('Released');
-    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+    expect(response.body.status).toBe('Approved');
+    expect(response.body.checklist.find((item: any) => item.key === 'calculations')?.status).toBe('blocked');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
   });
 
   it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
@@ -257,14 +271,13 @@ describe('Design Book release API blocker enforcement', () => {
     const response = await requestPreflight(app);
 
     expect(response.status).toBe(200);
-    expect(response.body.status).toBe('Released');
-    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+    expect(response.body.status).toBe('Approved');
+    expect(response.body.checklist.find((item: any) => item.key === 'pump_selections')?.status).toBe('blocked');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
   });
 
   it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
-    state.snapshot = snapshotWithAllocations(60, 25);
+    state.snapshot = snapshotWithAllocations(null, null);
     state.snapshot.pump_selections = [{ system_id: 'system-1', items: [{
       circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1', selected_pump: { power_kw: 1.1 },
       freshness: 'fresh', status: 'incompatible', calculation_version: PUMP_SELECTION_CALCULATION_VERSION,
@@ -290,10 +303,11 @@ describe('Design Book release API blocker enforcement', () => {
     const response = await requestPreflight(app);
 
     expect(response.status).toBe(200);
-    expect(response.body.status).toBe('Released');
-    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+    expect(response.body.status).toBe('Approved');
+    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('pass');
+    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('pass');
+    expect(response.body.checklist.find((item: any) => item.key === 'friction_loss_calculations')?.status).toBe('pass');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
   });
 
   it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {
@@ -305,10 +319,9 @@ describe('Design Book release API blocker enforcement', () => {
     const response = await requestPreflight(app);
 
     expect(response.status).toBe(200);
-    expect(response.body.status).toBe('Released');
-    expect(response.body.checklist.find((item: any) => item.key === 'flow_route_allocations')?.status).toBe('warning');
-    expect(response.body.checklist.find((item: any) => item.key === 'bio_degas_allocations')?.status).toBe('warning');
-    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(true);
+    expect(response.body.status).toBe('Approved');
+    expect(response.body.checklist.find((item: any) => item.key === 'pump_selections')?.status).toBe('blocked');
+    expect(state.calls.some(call => call.sql.includes("SET status='Released'"))).toBe(false);
   });
 
   it('blocks an active LSS circuit with an underpowered/incompatible pump selection', async () => {

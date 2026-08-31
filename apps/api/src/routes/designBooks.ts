@@ -31,6 +31,12 @@ import {
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
 import { calculatePumpSelection, evaluateSelectedPumpSuitability, pumpSourceFingerprint, PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from '../lib/pumpSelections';
+import {
+  calculateFrictionLoss,
+  FRICTION_LOSS_CALCULATION_VERSION,
+  frictionSourceFingerprint,
+  frictionSourceSnapshot,
+} from '../lib/frictionLossCalculations';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -113,6 +119,170 @@ async function loadPumpSelections(runner: DbRunner, systems: any[]) {
             : stale ? 'stale' : reasons.length ? 'incomplete' : calculation.status, reasons,
           calculation_version: row?.calculation_version || PUMP_SELECTION_CALCULATION_VERSION,
           results: row ? (row.result_snapshot?.results || row.result_snapshot || calculation.results) : calculation.results };
+      }),
+    };
+  });
+}
+
+export async function loadFrictionLossPackages(
+  runner: DbRunner,
+  designBookId: string,
+  systems: any[],
+) {
+  const lifeSupportSystems = systems.filter(isLifeSupportSystem);
+  if (!lifeSupportSystems.length) return [];
+  const savedRows = (await runner(
+    `SELECT c.*, sps.project_equipment_item_id AS current_circuit_pump_id,
+            pei.equip_code AS current_equip_code, pei.description AS current_pump_description,
+            pm.id AS current_pump_product_master_id,
+            pm.product_code AS current_pump_product_code, pm.product_name AS current_pump_product_name,
+            pm.manufacturer AS current_pump_manufacturer, pm.model AS current_pump_model
+     FROM design_book_friction_loss_calculations c
+     LEFT JOIN system_pump_selections sps
+       ON sps.system_id=c.system_id AND sps.circuit_key=c.circuit_key
+     LEFT JOIN project_equipment_items pei ON pei.id=c.project_equipment_item_id
+     LEFT JOIN product_masters pm ON pm.id=pei.product_master_id
+     WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`,
+    [designBookId, lifeSupportSystems.map(system => system.id)],
+  )).rows;
+  const components = savedRows.length
+    ? (await runner(
+      `SELECT fc.*, ppi.piping_code AS current_piping_code, ppi.description AS current_description,
+              ppi.quantity AS current_project_quantity, ppi.unit AS current_unit,
+              ppi.system_id AS current_system_id, pm.product_code AS current_product_code,
+              pm.id AS current_product_master_id, pm.product_name AS current_product_name,
+              pm.application_type AS current_application_type
+       FROM design_book_friction_loss_components fc
+       LEFT JOIN project_piping_items ppi ON ppi.id=fc.project_piping_item_id
+       LEFT JOIN product_masters pm ON pm.id=ppi.product_master_id
+       WHERE fc.calculation_id = ANY($1::uuid[])
+       ORDER BY fc.calculation_id, fc.side, fc.sort_order, fc.id`,
+      [savedRows.map(row => row.id)],
+    )).rows
+    : [];
+  return lifeSupportSystems.map(system => {
+    const rows = savedRows.filter(row => row.system_id === system.id);
+    const circuitMap = new Map(pumpCircuits(system, system.side_streams || [])
+      .map(circuit => [circuit.circuit_key, circuit]));
+    rows.forEach(row => {
+      if (!circuitMap.has(row.circuit_key)) {
+        circuitMap.set(row.circuit_key, {
+          circuit_key: row.circuit_key,
+          circuit_kind: 'orphaned',
+          circuit_name: row.source_snapshot?.circuit?.circuit_name || row.circuit_key,
+          circuit_type: row.source_snapshot?.circuit?.circuit_type || null,
+          parent_loop_number: null,
+          side_stream_id: null,
+          flow_m3h: null,
+        });
+      }
+    });
+    return {
+      system_id: system.id,
+      system,
+      items: [...circuitMap.values()].map(circuit => {
+        const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+        if (!row) {
+          const preview = calculateFrictionLoss({ flow_m3h: circuit.flow_m3h, components: [] });
+          return {
+            ...circuit,
+            status: 'incomplete',
+            freshness: 'unsaved',
+            reasons: preview.reasons,
+            calculation_version: FRICTION_LOSS_CALCULATION_VERSION,
+            result: preview,
+            components: [],
+            selected_pump: null,
+          };
+        }
+        const currentPump = row.project_equipment_item_id && row.current_equip_code
+          ? {
+              id: row.project_equipment_item_id,
+              project_equipment_item_id: row.project_equipment_item_id,
+              equip_code: row.current_equip_code,
+              description: row.current_pump_description,
+              product_master_id: row.current_pump_product_master_id,
+              product_code: row.current_pump_product_code,
+              product_name: row.current_pump_product_name,
+              manufacturer: row.current_pump_manufacturer,
+              model: row.current_pump_model,
+            }
+          : null;
+        const currentComponents = components.filter(component => component.calculation_id === row.id)
+          .map(component => {
+            const currentSnapshot = component.current_piping_code && component.current_system_id === system.id
+              ? {
+                  project_piping_item_id: component.project_piping_item_id,
+                  id: component.project_piping_item_id,
+                  piping_code: component.current_piping_code,
+                  description: component.current_description,
+                  project_quantity: component.current_project_quantity,
+                  unit: component.current_unit,
+                  system_id: component.current_system_id,
+                  product_master_id: component.current_product_master_id,
+                  product_code: component.current_product_code,
+                  product_name: component.current_product_name,
+                  application_type: component.current_application_type,
+                }
+              : null;
+            return {
+              project_piping_item_id: component.project_piping_item_id,
+              piping_snapshot: currentSnapshot || component.piping_snapshot,
+              side: component.side,
+              component_kind: component.component_kind,
+              sort_order: component.sort_order,
+              internal_diameter_mm: component.internal_diameter_mm,
+              straight_length_m: component.straight_length_m,
+              material: component.material,
+              absolute_roughness_mm: component.absolute_roughness_mm,
+              fitting_k_value: component.fitting_k_value,
+              quantity: component.quantity,
+              reference_valid: !!currentSnapshot,
+            };
+          });
+        const currentSource = frictionSourceSnapshot(
+          circuit,
+          currentPump,
+          currentComponents.map(({ reference_valid, ...item }) => item),
+        );
+        const currentFingerprint = frictionSourceFingerprint(currentSource);
+        const stale = circuit.circuit_kind === 'orphaned' ||
+          row.calculation_version !== FRICTION_LOSS_CALCULATION_VERSION ||
+          row.source_fingerprint !== currentFingerprint ||
+          !currentPump ||
+          row.current_circuit_pump_id !== row.project_equipment_item_id ||
+          currentComponents.some(component => !component.reference_valid);
+        const staleReasons = [
+          ...(circuit.circuit_kind === 'orphaned' ? ['This saved calculation references a Flow Route circuit that no longer exists.'] : []),
+          ...(row.calculation_version !== FRICTION_LOSS_CALCULATION_VERSION ? [`Friction calculation version ${row.calculation_version} is outdated; recalculate using ${FRICTION_LOSS_CALCULATION_VERSION}.`] : []),
+          ...(!currentPump ? ['The selected pump is no longer assigned to this LSS system.'] : []),
+          ...(row.current_circuit_pump_id !== row.project_equipment_item_id
+            ? ['The pump selected for this Flow Route circuit changed after the friction calculation was saved.']
+            : []),
+          ...(currentComponents.some(component => !component.reference_valid) ? ['One or more assigned pipe or fitting items are no longer available for this LSS system.'] : []),
+          ...(row.source_fingerprint !== currentFingerprint && circuit.circuit_kind !== 'orphaned'
+            ? ['Flow Route flow, selected pump, or assigned hydraulic inputs changed after this calculation was saved. Recalculate before review or release.']
+            : []),
+        ];
+        return {
+          ...circuit,
+          calculation_id: row.id,
+          project_equipment_item_id: row.project_equipment_item_id,
+          selected_pump: row.source_snapshot?.selected_pump || currentPump,
+          components: row.result_snapshot?.components || currentComponents,
+          source_fingerprint: row.source_fingerprint,
+          current_source_fingerprint: currentFingerprint,
+          calculation_version: row.calculation_version,
+          freshness: stale ? 'stale' : 'fresh',
+          status: stale ? 'stale' : String(row.status || '').toLowerCase(),
+          reasons: stale ? staleReasons : (row.result_snapshot?.reasons || []),
+          result: {
+            ...row.result_snapshot,
+            status: stale ? 'stale' : row.result_snapshot?.status,
+            reasons: stale ? staleReasons : (row.result_snapshot?.reasons || []),
+          },
+          calculated_at: row.calculated_at,
+        };
       }),
     };
   });
@@ -221,6 +391,67 @@ async function insertThermalSnapshotRecord(
       row.calculated_at || new Date().toISOString(),
     ],
   );
+}
+
+async function insertFrictionSnapshotRecord(
+  runner: DbRunner,
+  designBookId: string,
+  systemId: string,
+  item: any,
+) {
+  if (!item?.circuit_key || !item?.project_equipment_item_id || !item?.source_fingerprint) return;
+  const sourceSnapshot = item.source_snapshot || {
+    circuit: {
+      circuit_key: item.circuit_key,
+      circuit_kind: item.circuit_kind,
+      circuit_name: item.circuit_name,
+      circuit_type: item.circuit_type,
+      parent_loop_number: item.parent_loop_number,
+      side_stream_id: item.side_stream_id,
+      flow_m3h: item.flow_m3h,
+    },
+    selected_pump: item.selected_pump,
+    components: item.result?.components || item.components || [],
+  };
+  const result = await runner(
+    `INSERT INTO design_book_friction_loss_calculations
+       (design_book_id, system_id, circuit_key, project_equipment_item_id,
+        calculation_version, status, freshness, source_fingerprint,
+        source_snapshot, input_snapshot, result_snapshot, calculated_by, calculated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13)
+     RETURNING id`,
+    [
+      designBookId, systemId, item.circuit_key, item.project_equipment_item_id,
+      item.calculation_version || FRICTION_LOSS_CALCULATION_VERSION,
+      String(item.status || '').toLowerCase() === 'ready' ? 'Ready' : 'Blocked',
+      item.freshness === 'stale' ? 'stale' : 'fresh', item.source_fingerprint,
+      JSON.stringify(sourceSnapshot),
+      JSON.stringify(item.result?.inputs || {
+        flow_m3h: item.flow_m3h,
+        components: item.result?.components || item.components || [],
+      }),
+      JSON.stringify(item.result || {}),
+      item.calculated_by || null, item.calculated_at || new Date().toISOString(),
+    ],
+  );
+  const calculationId = result.rows[0]?.id;
+  if (!calculationId) return;
+  for (const [index, component] of (item.result?.components || item.components || []).entries()) {
+    await runner(
+      `INSERT INTO design_book_friction_loss_components
+         (calculation_id, project_piping_item_id, side, component_kind, sort_order,
+          piping_snapshot, internal_diameter_mm, straight_length_m, material,
+          absolute_roughness_mm, fitting_k_value, quantity)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12)`,
+      [
+        calculationId, component.project_piping_item_id, component.side,
+        component.component_kind, component.sort_order ?? index,
+        JSON.stringify(component.piping_snapshot || {}), component.internal_diameter_mm,
+        component.straight_length_m, component.material, component.absolute_roughness_mm,
+        component.fitting_k_value, component.quantity,
+      ],
+    );
+  }
 }
 
 function nullableSpeciesNumber(value: unknown, label: string, allowZero = false): number | null {
@@ -584,6 +815,7 @@ export async function loadReleaseContext(
     exhibitCalculations,
   );
   const pumpSelections = await loadPumpSelections(runner, currentSystems);
+  const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
 
   const liveContext = {
     ...book,
@@ -600,6 +832,7 @@ export async function loadReleaseContext(
     biological_media_runs: biologicalMediaRuns,
     thermal_calculations: thermalCalculations,
     pump_selections: pumpSelections,
+    friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculatedAt,
@@ -1266,6 +1499,11 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     exhibitCalculations,
   );
   const pumpSelections = await loadPumpSelections(query, currentSystems);
+  const frictionLossCalculations = await loadFrictionLossPackages(
+    query,
+    routeParam(req.params.id),
+    currentSystems,
+  );
 
   const livePackage = {
     exhibits,
@@ -1278,6 +1516,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     substrate,
     thermal_calculations: thermalCalculations,
     pump_selections: pumpSelections,
+    friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
       calculated_at: calculationTimestamp,
@@ -2137,6 +2376,16 @@ router.post(
           row,
         );
       }
+      for (const group of snapshot.friction_loss_calculations || []) {
+        for (const item of group.items || []) {
+          await insertFrictionSnapshotRecord(
+            client.query.bind(client) as DbRunner,
+            next.id,
+            group.system_id,
+            item,
+          );
+        }
+      }
       await client.query('COMMIT');
       await logAudit(req.user!.id, 'design_book', next.id, 'CREATE_REVISION', {
         summary: `Revision ${revision} created from ${source.book_code} Rev ${source.revision}`,
@@ -2246,6 +2495,7 @@ function frozenFromSnapshot(snapshot: any) {
     hydraulics: snapshot?.hydraulics || [],
     substrate: snapshot?.substrate || [],
     thermal_calculations: snapshot?.thermal_calculations || [],
+    friction_loss_calculations: snapshot?.friction_loss_calculations || [],
     ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
   };
 }
@@ -2315,11 +2565,12 @@ function makeVersionSnapshot(context: any, capturedAt = new Date().toISOString()
       hydraulics: jsonCopy(context.hydraulics || []),
       substrate: jsonCopy(context.substrate || []),
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
+      friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
     },
     live_references: liveReferencesFromContext(context),
     scope: {
-      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'thermal calculations', 'review handovers'],
+      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'thermal calculations', 'friction loss calculations', 'review handovers'],
       live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
       restore_target: 'working_copy',
     },
@@ -2335,6 +2586,7 @@ function currentRestoreStateDigest(context: any) {
       hydraulics: jsonCopy(context.hydraulics || []),
       substrate: jsonCopy(context.substrate || []),
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
+      friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
     },
     live_references: liveReferencesFromContext(context),
@@ -2358,6 +2610,10 @@ function versionPresentation(version: any, currentContext: any) {
       hydraulics: (frozen.hydraulics || []).length,
       substrate_theming: (frozen.substrate || []).length,
       thermal_calculations: (frozen.thermal_calculations || []).length,
+      friction_loss_calculations: (frozen.friction_loss_calculations || []).reduce(
+        (sum: number, group: any) => sum + (group.items || []).length,
+        0,
+      ),
       review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
     },
     live_references: {
@@ -2367,7 +2623,7 @@ function versionPresentation(version: any, currentContext: any) {
       system_links: (referencesFromSnapshot(snapshot).system_links || []).length,
     },
     restorable_records: [
-      'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations',
+      'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations', 'friction loss calculations',
       ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
     ],
     preserved_records: Array.isArray(frozen.review_handovers) ? [] : ['review handovers (not captured by this older version)'],
@@ -2662,6 +2918,17 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
         routeParam(req.params.id),
         thermal,
       );
+    }
+    await client.query('DELETE FROM design_book_friction_loss_calculations WHERE design_book_id=$1', [req.params.id]);
+    for (const group of frozen.friction_loss_calculations || []) {
+      for (const item of group.items || []) {
+        await insertFrictionSnapshotRecord(
+          client.query.bind(client) as DbRunner,
+          routeParam(req.params.id),
+          group.system_id,
+          item,
+        );
+      }
     }
     if (Array.isArray(frozen.review_handovers)) {
       await client.query('DELETE FROM design_book_review_handovers WHERE design_book_id=$1', [req.params.id]);

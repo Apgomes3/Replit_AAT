@@ -981,6 +981,78 @@ CREATE TRIGGER guard_released_design_book_thermal
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_calculations
 FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 
+-- DESIGN BOOK: circuit-level Darcy–Weisbach and fitting K-value evidence.
+CREATE TABLE IF NOT EXISTS design_book_friction_loss_calculations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  circuit_key VARCHAR(255) NOT NULL,
+  project_equipment_item_id UUID REFERENCES project_equipment_items(id) ON DELETE RESTRICT,
+  calculation_version VARCHAR(80) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'Blocked'
+    CHECK (status IN ('Ready', 'Blocked', 'Warning')),
+  freshness VARCHAR(20) NOT NULL DEFAULT 'fresh'
+    CHECK (freshness IN ('fresh', 'stale')),
+  source_fingerprint VARCHAR(64) NOT NULL,
+  source_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  calculated_by UUID REFERENCES users(id),
+  calculated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id, circuit_key)
+);
+CREATE INDEX IF NOT EXISTS idx_db_friction_book ON design_book_friction_loss_calculations(design_book_id);
+CREATE INDEX IF NOT EXISTS idx_db_friction_system ON design_book_friction_loss_calculations(system_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_friction ON design_book_friction_loss_calculations;
+CREATE TRIGGER guard_released_design_book_friction
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_friction_loss_calculations
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+
+CREATE TABLE IF NOT EXISTS design_book_friction_loss_components (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  calculation_id UUID NOT NULL REFERENCES design_book_friction_loss_calculations(id) ON DELETE CASCADE,
+  project_piping_item_id UUID REFERENCES project_piping_items(id) ON DELETE RESTRICT,
+  side VARCHAR(20) NOT NULL CHECK (side IN ('suction', 'discharge')),
+  component_kind VARCHAR(20) NOT NULL CHECK (component_kind IN ('pipe', 'fitting')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  piping_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  internal_diameter_mm NUMERIC,
+  straight_length_m NUMERIC,
+  material VARCHAR(255),
+  absolute_roughness_mm NUMERIC,
+  fitting_k_value NUMERIC,
+  quantity NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_db_friction_components
+  ON design_book_friction_loss_components(calculation_id, side, sort_order);
+
+CREATE OR REPLACE FUNCTION prevent_released_friction_component_mutation()
+RETURNS TRIGGER AS $$
+DECLARE
+  parent_status TEXT;
+BEGIN
+  SELECT db.status INTO parent_status
+  FROM design_book_friction_loss_calculations c
+  JOIN design_books db ON db.id=c.design_book_id
+  WHERE c.id=COALESCE(NEW.calculation_id, OLD.calculation_id)
+  FOR UPDATE OF db;
+  IF parent_status = 'Released' THEN
+    RAISE EXCEPTION 'Released Design Book friction calculations are read-only'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS guard_released_design_book_friction_components
+  ON design_book_friction_loss_components;
+CREATE TRIGGER guard_released_design_book_friction_components
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_friction_loss_components
+FOR EACH ROW EXECUTE FUNCTION prevent_released_friction_component_mutation();
+
 -- THERMAL CORRELATION LIBRARY: engineering-administered, versioned evidence.
 -- Correlation versions are never edited in place. Superseding a version only
 -- changes its catalogue status; calculations keep their own JSON snapshot.

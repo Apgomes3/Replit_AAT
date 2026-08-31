@@ -20,6 +20,7 @@ import VersionsTab from './VersionsTab';
 import { useAuthStore } from '../../store/authStore';
 import ActivityLog from '../../components/ui/ActivityLog';
 import ModalDialog from '../../components/ui/ModalDialog';
+import FrictionLossTab from './FrictionLossTab';
 
 type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'review' | 'versions';
 
@@ -2600,15 +2601,15 @@ export default function DesignBookDetail() {
     exhibits: 'Exhibits',
     lss: 'Life Support Systems',
     thermal: 'Thermal',
-    piping: 'Piping & Fittings',
+    piping: 'Friction Loss',
     review: 'Review & Handover',
     versions: 'Versions',
   };
   const TABS: { key: Tab; label: string; count?: number }[] = DESIGN_BOOK_TAB_ORDER.map(key => ({
     key,
     label: tabLabels[key],
-    ...(['exhibits', 'lss', 'thermal'].includes(key)
-      ? { count: key === 'exhibits' ? exhibits.length : key === 'thermal' ? (book.thermal_calculations || []).length : systems.length }
+    ...(['exhibits', 'lss', 'thermal', 'piping'].includes(key)
+      ? { count: key === 'exhibits' ? exhibits.length : key === 'thermal' ? (book.thermal_calculations || []).length : key === 'piping' ? (book.friction_loss_calculations || []).length : systems.length }
       : {}),
   }));
 
@@ -2850,12 +2851,7 @@ export default function DesignBookDetail() {
       {tab === 'thermal' && <ThermalTab book={book} readOnly={isDesignReadOnly} canManageLibrary={isDesigner} onRefresh={refresh} />}
 
       {tab === 'piping' && (
-        <div className="bg-white rounded-2xl border border-stone-200 border-dashed py-20 text-center">
-          <AlertCircle className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-          <p className="text-stone-600 font-semibold text-lg">Piping & Fittings</p>
-          <p className="text-stone-400 text-sm mt-1 max-w-sm mx-auto">Pipe sizing, pressure drop calculations, and fitting schedules will appear here.</p>
-          <span className="inline-block mt-4 px-3 py-1 bg-stone-100 text-stone-500 rounded-full text-xs font-medium">Coming Soon</span>
-        </div>
+        <FrictionLossTab book={book} readOnly={isDesignReadOnly} onRefresh={refresh} />
       )}
 
       {tab === 'review' && (
