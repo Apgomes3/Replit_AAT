@@ -2330,9 +2330,9 @@ export function ThermalWallConstructionLibrary({
               <button type="button" onClick={() => setPendingWallApproval(null)} className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">
                 Cancel
               </button>
-              <button type="button" onClick={approveWallReplacement} disabled={wallLibrarySaving} className="rounded-lg bg-[#b86843] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9d5637] disabled:opacity-50">
+              <Button type="button" onClick={approveWallReplacement} variant="thermal" disabled={wallLibrarySaving}>
                 {wallLibrarySaving ? 'Approving…' : 'Confirm approval'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -2468,9 +2468,9 @@ export function ThermalWallConstructionLibrary({
               )}
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-[11px] text-[#9d6337]">Approval actor and time are captured from the signed-in account.</p>
-                <button type="button" onClick={requestWallApproval} disabled={wallLibrarySaving || !wallFormValid} className="rounded-lg bg-[#b86843] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9d5637] disabled:opacity-50">
+                <Button type="button" onClick={requestWallApproval} variant="thermal" disabled={wallLibrarySaving || !wallFormValid}>
                   Preview and approve
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -3026,16 +3026,16 @@ function ThermalTab({
                 {pendingSupersede.status === 'approved' ? 'Cancel' : 'Close'}
               </button>
               {pendingSupersede.status === 'approved' && (
-                <button
+                <Button
                   type="button"
                   onClick={supersedeCorrelation}
+                  variant="thermal"
                   disabled={librarySaving || usageLoading || usageError}
-                  className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
                 >
                   {librarySaving
                     ? approveReplacementAfterConfirmation ? 'Approving…' : 'Superseding…'
                     : approveReplacementAfterConfirmation ? 'Confirm and approve version' : 'Confirm supersede'}
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -3070,7 +3070,7 @@ function ThermalTab({
               <label><span className={labelClass}>Class name</span><input value={classForm.class_name} onChange={event => setClassForm(current => ({ ...current, class_name: event.target.value }))} className={fieldClass} /></label>
               <label><span className={labelClass}>Description</span><input value={classForm.description} onChange={event => setClassForm(current => ({ ...current, description: event.target.value }))} className={fieldClass} /></label>
               <label><span className={labelClass}>Selection guidance</span><input value={classForm.guidance} onChange={event => setClassForm(current => ({ ...current, guidance: event.target.value }))} className={fieldClass} /></label>
-              <button type="button" onClick={createAgitationClass} disabled={librarySaving || !classForm.class_code.trim() || !classForm.class_name.trim()} className="self-end rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Add class</button>
+              <Button type="button" onClick={createAgitationClass} variant="thermal" size="sm" disabled={librarySaving || !classForm.class_code.trim() || !classForm.class_name.trim()} className="self-end">Add class</Button>
             </div>
             <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr_1.5fr_auto]">
               <label>
@@ -3083,7 +3083,7 @@ function ThermalTab({
               <label><span className={labelClass}>New version</span><input value={versionForm.version} onChange={event => setVersionForm(current => ({ ...current, version: event.target.value }))} className={fieldClass} /></label>
               <label><span className={labelClass}>Coefficient (kg/m²·s·kPa)</span><input type="number" min="0" step="any" value={versionForm.coefficient_kg_m2_s_kpa} onChange={event => setVersionForm(current => ({ ...current, coefficient_kg_m2_s_kpa: event.target.value }))} className={fieldClass} /></label>
               <label><span className={labelClass}>Approval source / reference</span><input value={versionForm.source_reference} onChange={event => setVersionForm(current => ({ ...current, source_reference: event.target.value }))} className={fieldClass} /></label>
-              <button type="button" onClick={createCorrelationVersion} disabled={librarySaving || !versionForm.class_id || !versionForm.version.trim() || !versionForm.coefficient_kg_m2_s_kpa || !versionForm.source_reference.trim()} className="self-end rounded-lg bg-[#b86843] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9d5637] disabled:opacity-50">Approve version</button>
+              <Button type="button" onClick={createCorrelationVersion} variant="thermal" size="sm" disabled={librarySaving || !versionForm.class_id || !versionForm.version.trim() || !versionForm.coefficient_kg_m2_s_kpa || !versionForm.source_reference.trim()} className="self-end">Approve version</Button>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <label><span className={labelClass}>Lower class code</span><input value={versionForm.lower_agitation_class_code} onChange={event => setVersionForm(current => ({ ...current, lower_agitation_class_code: event.target.value }))} className={fieldClass} /></label>
@@ -3120,7 +3120,7 @@ function ThermalTab({
                           </button>
                         </td>
                         <td className="px-3 py-2 text-right">
-                          {correlation.status === 'approved' && <button type="button" onClick={() => requestSupersedeCorrelation(correlation)} disabled={librarySaving} className="text-amber-700 hover:text-amber-900 disabled:opacity-50">Supersede</button>}
+                          {correlation.status === 'approved' && <Button type="button" onClick={() => requestSupersedeCorrelation(correlation)} variant="thermal" size="sm" disabled={librarySaving}>Supersede</Button>}
                         </td>
                       </tr>
                     ))}

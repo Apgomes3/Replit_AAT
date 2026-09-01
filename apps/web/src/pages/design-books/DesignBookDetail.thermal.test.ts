@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement, useState } from 'react';
 import { describe, expect, it } from 'vitest';
-import Button from '../../components/ui/Button';
+import Button, { THERMAL_BUTTON_COLORS } from '../../components/ui/Button';
 import {
   DESIGN_BOOK_TAB_ORDER,
   isDesignBookTab,
@@ -291,25 +291,60 @@ describe('Design Book Thermal numeric fields', () => {
 });
 
 describe('Design Book Thermal calculation action', () => {
-  it('keeps the copper action readable across normal and disabled states', () => {
+  const luminance = (hex: string) => {
+    const channels = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16) / 255)
+      .map(channel => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const contrastRatio = (foreground: string, background: string) => {
+    const foregroundLuminance = luminance(foreground);
+    const backgroundLuminance = luminance(background);
+    const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+    const darker = Math.min(foregroundLuminance, backgroundLuminance);
+    return (lighter + 0.05) / (darker + 0.05);
+  };
+
+  it('keeps governed Thermal actions readable across normal, hover, loading, and disabled states', () => {
     render(
-      createElement(Button, {
-        variant: 'thermal',
-        disabled: true,
-        children: 'Save & recalculate',
-      }),
+      createElement(
+        'div',
+        null,
+        createElement(Button, {
+          variant: 'thermal',
+          children: 'Approve version',
+        }),
+        createElement(Button, {
+          variant: 'thermal',
+          disabled: true,
+          children: 'Approving…',
+        }),
+      ),
     );
 
-    const button = screen.getByRole('button', { name: 'Save & recalculate' });
-    expect(button).toHaveClass(
+    const normalButton = screen.getByRole('button', { name: 'Approve version' });
+    expect(normalButton).toHaveClass(
       'bg-[#9d5637]',
       'text-white',
       'hover:bg-[#7d442f]',
-      'disabled:bg-[#cbb9b0]',
+      'border-[#7d442f]',
+      'focus-visible:ring-[#b86843]',
+    );
+    expect(contrastRatio(THERMAL_BUTTON_COLORS.foreground, THERMAL_BUTTON_COLORS.background)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(THERMAL_BUTTON_COLORS.foreground, THERMAL_BUTTON_COLORS.hoverBackground)).toBeGreaterThanOrEqual(4.5);
+
+    const loadingButton = screen.getByRole('button', { name: 'Approving…' });
+    expect(loadingButton).toHaveClass(
+      'bg-[#9d5637]',
+      'text-white',
+      'hover:bg-[#7d442f]',
+      'disabled:bg-[#f3efe8]',
       'disabled:text-[#5c4439]',
+      'disabled:hover:bg-[#f3efe8]',
+      'disabled:hover:text-[#5c4439]',
       'disabled:opacity-100',
       'focus-visible:ring-[#b86843]',
     );
-    expect(button).toBeDisabled();
+    expect(contrastRatio(THERMAL_BUTTON_COLORS.disabledForeground, THERMAL_BUTTON_COLORS.disabledBackground)).toBeGreaterThanOrEqual(4.5);
+    expect(loadingButton).toBeDisabled();
   });
 });
