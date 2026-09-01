@@ -3217,6 +3217,84 @@ export default function DesignBookLSSDetail() {
           );
         };
 
+        const SourceSplitSummary = ({ source }: { source: unknown }) => {
+          const reference = sourceReferenceFor(source);
+          if (!reference) return null;
+          return (
+            <div
+              data-testid="flow-route-source-summary"
+              className={`mt-1 space-y-0.5 rounded border px-2 py-1.5 text-[10px] ${
+                reference.unavailableReason
+                  ? 'border-amber-200 bg-amber-50/70 text-amber-800'
+                  : 'border-cyan-200 bg-cyan-50/60 text-cyan-900'
+              }`}
+            >
+              <div className="flex items-center gap-1 font-semibold uppercase tracking-wide">
+                <GitBranch className="h-3 w-3 shrink-0" />
+                <span>Read-only exhibit split</span>
+              </div>
+              {reference.unavailableReason ? (
+                <div>Exhibit split unavailable: {reference.unavailableReason}</div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                    {reference.components.map(component => (
+                      <span key={component.label} className="font-mono">
+                        {component.label}: {component.percentage}% · {fmtReferenceFlow(component.flowM3h)}
+                      </span>
+                    ))}
+                  </div>
+                  {reference.components.length > 1 && (
+                    <div className="font-mono font-semibold">
+                      Combined: {fmtReferenceFlow(reference.combinedFlowM3h)}
+                    </div>
+                  )}
+                  <div className="text-stone-500">
+                    From <strong className="font-mono text-stone-700">{reference.exhibitCode}</strong>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        };
+
+        const LinkedExhibitsSummary = () => (
+          <div className="space-y-1">
+            {(links as any[]).length === 0 ? (
+              <span className="text-xs italic text-stone-400">No linked exhibits</span>
+            ) : (
+              (links as any[]).map((link: any) => {
+                const exhibit = exhibits.find(
+                  (candidate: any) => String(candidate.id) === String(link.exhibit_id),
+                );
+                const code = link.exhibit_code || exhibit?.exhibit_code || 'Exhibit';
+                const name = link.exhibit_name || exhibit?.exhibit_name;
+                const exhibitPath = linkedExhibitPathFor(link.exhibit_id);
+                const identity = name ? `${code} — ${name}` : code;
+                return (
+                  <div key={link.id || `${link.exhibit_id}-${link.link_type}`} className="text-xs">
+                    {exhibitPath ? (
+                      <Link
+                        to={exhibitPath}
+                        aria-label={`Open exhibit ${code}`}
+                        title="Open exhibit detail"
+                        className="font-medium text-blue-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 rounded"
+                      >
+                        {identity}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-stone-700">{identity}</span>
+                    )}
+                    <span className="ml-1 inline-flex rounded-full border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-stone-500">
+                      {link.link_type || 'Linked'}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        );
+
         const LOOP_COLORS: Record<number, { badge: string; border: string; label: string }> = {
           1: { badge: 'bg-violet-100 text-violet-700', border: 'border-violet-200', label: 'text-violet-800' },
           2: { badge: 'bg-blue-100 text-blue-700',     border: 'border-blue-200',   label: 'text-blue-800'   },
@@ -4205,235 +4283,277 @@ export default function DesignBookLSSDetail() {
                     </div>
                   </div>
                 )}
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-stone-100 bg-stone-50/60">
-                      <th className="text-left px-4 py-2.5 text-xs font-medium text-stone-500 min-w-32">Loop</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Flow Source</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Filtration</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Loop Flow ({UNIT_LABELS[flowUnit]})</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-stone-500">Bio / Degas ({UNIT_LABELS[flowUnit]})</th>
-                      <th className="px-3 py-2.5 w-24" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {[...new Set([
-                      ...activeLoops,
-                      ...(flowForm
-                        ? [1, 2, 3].filter(loop =>
-                            flowDraftLoopHasData(flowForm, loop) ||
-                            expandedCardLoops.includes(loop)
-                          )
-                        : []),
-                      ...(listEditRow !== null ? [listEditRow] : []),
-                    ])].map(n => {
-                      const colors    = LOOP_COLORS[n] ?? LOOP_COLORS[1];
-                      const isEditing = listEditRow === n;
+                <div className="overflow-x-auto" tabIndex={0} aria-label="Flow Route list">
+                  <table data-testid="flow-route-list-table" className="min-w-[1200px] w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-stone-100 bg-stone-50/60">
+                        <th className="min-w-32 px-4 py-2.5 text-left text-xs font-medium text-stone-500">Loop</th>
+                        <th className="min-w-56 px-3 py-2.5 text-left text-xs font-medium text-stone-500">Linked Exhibits</th>
+                        <th className="min-w-56 px-3 py-2.5 text-left text-xs font-medium text-stone-500">Flow Source</th>
+                        <th aria-label="Loop Flow" className="min-w-36 px-3 py-2.5 text-left text-xs font-medium text-stone-500">
+                          Loop Flow <span className="font-normal text-stone-400">({UNIT_LABELS[flowUnit]})</span>
+                        </th>
+                        <th className="min-w-48 px-3 py-2.5 text-left text-xs font-medium text-stone-500">Filtration</th>
+                        <th aria-label="Bio / Degas" className="min-w-44 px-3 py-2.5 text-left text-xs font-medium text-stone-500">
+                          Bio / Degas <span className="font-normal text-stone-400">({UNIT_LABELS[flowUnit]})</span>
+                        </th>
+                        <th className="min-w-56 px-3 py-2.5 text-left text-xs font-medium text-stone-500">Side Streams</th>
+                        <th aria-label="Actions" className="w-44 px-3 py-2.5 text-right text-xs font-medium text-stone-500">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {[...new Set([
+                        ...activeLoops,
+                        ...(flowForm
+                          ? [1, 2, 3].filter(loop =>
+                              flowDraftLoopHasData(flowForm, loop) ||
+                              expandedCardLoops.includes(loop)
+                            )
+                          : []),
+                        ...(listEditRow !== null ? [listEditRow] : []),
+                      ])].map(n => {
+                        const colors = LOOP_COLORS[n] ?? LOOP_COLORS[1];
+                        const isEditing = listEditRow === n;
 
-                      if (isEditing && listRowForm) {
-                        const linked: boolean = !!listRowForm.link_bio_degas;
-                        const rowLoopFlow = flowForPercentage(listRowForm.flow_pct);
-                        const rowBioPct = nullableNumber(listRowForm.bio_degas_pct);
-                        const rowBioFlow = rowLoopFlow != null && rowBioPct != null
-                          ? rowLoopFlow * rowBioPct / 100
-                          : null;
+                        if (isEditing && listRowForm) {
+                          const linked: boolean = !!listRowForm.link_bio_degas;
+                          const rowLoopFlow = flowForPercentage(listRowForm.flow_pct);
+                          const rowBioPct = nullableNumber(listRowForm.bio_degas_pct);
+                          const rowBioFlow = rowLoopFlow != null && rowBioPct != null
+                            ? rowLoopFlow * rowBioPct / 100
+                            : null;
+                          const rowSideStreams = sideStreamsFor(flowForm || system, n);
+                          return (
+                            <tr key={n} className="bg-blue-50/20">
+                              <td className="px-4 py-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-5 h-5 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
+                                  <input value={listRowForm.name}
+                                    onChange={event => setLRF('name', event.target.value)}
+                                    aria-label={`Loop ${n} name`}
+                                    className="w-28 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 align-top"><LinkedExhibitsSummary /></td>
+                              <td className="px-3 py-2 align-top">
+                                <select value={listRowForm.flow_source} onChange={e => setLRF('flow_source', e.target.value)}
+                                  className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
+                                  <option value="">— None —</option>
+                                  {FLOW_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                {listRowForm.flow_source && <SourceSplitSummary source={listRowForm.flow_source} />}
+                              </td>
+                              <td className="px-3 py-2 align-top font-mono text-xs">
+                                <input type="number" step="0.1" min="0" max="100" placeholder="%"
+                                  aria-label={`Loop ${n} flow allocation percentage`}
+                                  value={listRowForm.flow_pct}
+                                  onChange={e => setLRF('flow_pct', e.target.value)}
+                                  className="w-20 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                <div className="mt-1 text-stone-800">{fmtFlow(rowLoopFlow ?? 0)}</div>
+                                <div className="font-sans text-[10px] text-stone-400">{allocationStatus(nullableNumber(listRowForm.flow_pct), 'system')}</div>
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <select value={listRowForm.filtration} onChange={e => setLRF('filtration', e.target.value)}
+                                  className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
+                                  <option value="">— None —</option>
+                                  {FILTRATION_OPTS.map(o => (
+                                    <option key={o.value} value={o.value} disabled={o.saltwaterOnly && !isSaltwater}>
+                                      {o.label}{o.saltwaterOnly && !isSaltwater ? ' (saltwater only)' : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-2 align-top font-mono text-xs">
+                                <label className="mb-1 flex items-center gap-1 font-sans text-[10px] text-stone-500">
+                                  <input type="checkbox" checked={linked} onChange={e => setLRF('link_bio_degas', e.target.checked)}
+                                    className="rounded border-stone-300 text-emerald-600" />
+                                  Linked
+                                </label>
+                                {linked && (
+                                  <>
+                                    <input type="number" step="0.1" min="0" max="100" placeholder="% of loop"
+                                      aria-label={`Loop ${n} Bio/Degas allocation percentage`}
+                                      value={listRowForm.bio_degas_pct}
+                                      onChange={e => setLRF('bio_degas_pct', e.target.value)}
+                                      className="w-24 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                    <div className="mt-1 text-emerald-700">{fmtFlow(rowBioFlow ?? 0)}</div>
+                                    <div className="font-sans text-[10px] text-stone-400">{allocationStatus(rowBioPct, 'loop')}</div>
+                                  </>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                {rowSideStreams.length === 0 ? (
+                                  <span className="text-xs italic text-stone-400">None</span>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {rowSideStreams.map((stream: any) => {
+                                      const percentage = nullableNumber(stream.flow_pct);
+                                      const streamFlow = rowLoopFlow != null && percentage != null
+                                        ? rowLoopFlow * percentage / 100
+                                        : null;
+                                      return (
+                                        <div key={stream.id || `${stream.name}-${stream.sort_order}`} className="text-[10px]">
+                                          <div className="font-semibold text-cyan-800">{stream.name || 'Unnamed side stream'} <span className="font-normal text-stone-500">· {stream.preset || 'Custom'}</span></div>
+                                          <div className={streamFlow == null ? 'font-mono text-amber-700' : 'font-mono text-stone-500'}>
+                                            {percentage == null ? 'Allocation not reviewed' : `${percentage}% of parent`} · {fmtSideStreamFlow(streamFlow)}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 align-top">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button onClick={() => saveListRow(n)} disabled={flowSaving}
+                                    className="flex items-center gap-1 rounded bg-violet-600 px-2 py-1 text-xs text-white hover:bg-violet-700 disabled:opacity-50">
+                                    <Save className="h-3 w-3" /> {flowSaving ? '…' : 'Save'}
+                                  </button>
+                                  <button onClick={() => {
+                                    const row = listEditRow;
+                                    if (row !== null && listRowOriginal) {
+                                      setFlowForm((draft: any) => {
+                                        const restored = { ...(draft || createFlowDraft(system)) };
+                                        for (const key of FLOW_LOOP_FIELDS) {
+                                          restored[`loop${row}_${key}`] = listRowOriginal[key];
+                                        }
+                                        return flowDraftMatchesSystem(restored, system) ? null : restored;
+                                      });
+                                    }
+                                    setListEditRow(null);
+                                    setListRowForm(null);
+                                    setListRowOriginal(null);
+                                  }}
+                                    aria-label={`Cancel editing Loop ${n}`}
+                                    className="rounded border border-stone-200 p-1 text-xs text-stone-400 hover:text-stone-600">
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        const src = flowForm ? flowForm[`loop${n}_flow_source`] : system[`loop${n}_flow_source`];
+                        const filt = flowForm ? flowForm[`loop${n}_filtration`] : system[`loop${n}_filtration`];
+                        const bio = flowForm ? flowForm[`loop${n}_bio_degas_m3h`] : system[`loop${n}_bio_degas_m3h`];
+                        const loopPct = nullableNumber(flowForm ? flowForm[`loop${n}_flow_pct`] : system[`loop${n}_flow_pct`]);
+                        const bioPct = nullableNumber(flowForm ? flowForm[`loop${n}_bio_degas_pct`] : system[`loop${n}_bio_degas_pct`]);
+                        const linked = flowForm ? !!flowForm[`loop${n}_link_bio_degas`] : !!system[`loop${n}_link_bio_degas`];
+                        const displayedSource = flowForm || system;
+                        const displayedSideStreams = sideStreamsFor(displayedSource, n);
+                        const loopFlow = flowForPercentage(loopPct);
+                        const bioFlow = loopFlow != null && bioPct != null
+                          ? loopFlow * bioPct / 100
+                          : nullableNumber(bio);
                         return (
-                          <tr key={n} className="bg-blue-50/20">
-                            <td className="px-4 py-2.5">
+                          <tr key={n} className="group hover:bg-stone-50/60">
+                            <td className="px-4 py-3 align-top">
                               <div className="flex items-center gap-2">
                                 <span className={`w-5 h-5 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
-                                <input value={listRowForm.name}
-                                  onChange={event => setLRF('name', event.target.value)}
-                                  aria-label={`Loop ${n} name`}
-                                  className="w-28 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                <span className="text-xs font-semibold text-stone-700">{loopName(displayedSource, n)}</span>
                               </div>
                             </td>
-                            <td className="px-3 py-2">
-                              <select value={listRowForm.flow_source} onChange={e => setLRF('flow_source', e.target.value)}
-                                className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
-                                <option value="">— None —</option>
-                                {FLOW_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-                              </select>
-                              {listRowForm.flow_source && (
-                                <SourceSplitReference source={listRowForm.flow_source} compact />
-                              )}
-                            </td>
-                            <td className="px-3 py-2">
-                              <select value={listRowForm.filtration} onChange={e => setLRF('filtration', e.target.value)}
-                                className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
-                                <option value="">— None —</option>
-                                {FILTRATION_OPTS.map(o => (
-                                  <option key={o.value} value={o.value} disabled={o.saltwaterOnly && !isSaltwater}>
-                                    {o.label}{o.saltwaterOnly && !isSaltwater ? ' (saltwater only)' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2">
-                              <input type="number" step="0.1" min="0" max="100" placeholder="%"
-                                aria-label={`Loop ${n} flow allocation percentage`}
-                                value={listRowForm.flow_pct}
-                                onChange={e => setLRF('flow_pct', e.target.value)}
-                                className="w-20 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
-                              <div className="text-[10px] text-stone-500 mt-1 font-mono">{fmtFlow(rowLoopFlow ?? 0)}</div>
-                            </td>
-                            <td className="px-3 py-2">
-                              <label className="flex items-center gap-1 text-[10px] text-stone-500 mb-1">
-                                <input type="checkbox" checked={linked} onChange={e => setLRF('link_bio_degas', e.target.checked)}
-                                  className="rounded border-stone-300 text-emerald-600" />
-                                Linked
-                              </label>
-                              {linked && (
+                            <td className="px-3 py-3 align-top"><LinkedExhibitsSummary /></td>
+                            <td className="px-3 py-3 align-top">
+                              {src ? (
                                 <>
-                                  <input type="number" step="0.1" min="0" max="100" placeholder="% of loop"
-                                    aria-label={`Loop ${n} Bio/Degas allocation percentage`}
-                                    value={listRowForm.bio_degas_pct}
-                                    onChange={e => setLRF('bio_degas_pct', e.target.value)}
-                                    className="w-24 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
-                                  <div className="text-[10px] text-emerald-700 mt-1 font-mono">{fmtFlow(rowBioFlow ?? 0)}</div>
+                                  <span className="flex items-center gap-1.5 text-stone-700">
+                                    <Droplets className="h-3 w-3 shrink-0 text-cyan-500" /> {src}
+                                  </span>
+                                  <SourceSplitSummary source={src} />
                                 </>
+                              ) : <span className="text-xs italic text-stone-400">No source set</span>}
+                            </td>
+                            <td className="px-3 py-3 align-top font-mono text-xs">
+                              <span className="text-stone-800">{fmtFlow(loopFlow ?? 0)}</span>
+                              <span className="block font-sans text-[10px] text-stone-400">
+                                {allocationStatus(loopPct, 'system')}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              {filt ? (
+                                <span className="flex items-center gap-1.5 text-stone-700">
+                                  <FlaskConical className="h-3 w-3 shrink-0 text-violet-500" /> {filt}
+                                </span>
+                              ) : <span className="text-xs italic text-stone-400">—</span>}
+                            </td>
+                            <td className="px-3 py-3 align-top font-mono text-xs">
+                              {linked ? (
+                                <span className="flex flex-wrap items-center gap-1.5">
+                                  <span className="font-semibold text-emerald-700">{fmtFlow(bioFlow ?? 0)}</span>
+                                  <span className="font-sans text-[10px] text-stone-400">
+                                    {allocationStatus(bioPct, 'loop')}
+                                  </span>
+                                  <span className="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 font-sans text-[10px] text-emerald-600">
+                                    linked
+                                  </span>
+                                </span>
+                              ) : <span className="text-xs text-stone-300">—</span>}
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              {displayedSideStreams.length === 0 ? (
+                                <span className="text-xs italic text-stone-400">None</span>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {displayedSideStreams.map((stream: any) => {
+                                    const percentage = nullableNumber(stream.flow_pct);
+                                    const streamFlow = loopFlow != null && percentage != null
+                                      ? loopFlow * percentage / 100
+                                      : null;
+                                    return (
+                                      <div key={stream.id || `${stream.name}-${stream.sort_order}`} className="text-[10px]">
+                                        <div className="font-semibold text-cyan-800">{stream.name || 'Unnamed side stream'} <span className="font-normal text-stone-500">· {stream.preset || 'Custom'}</span></div>
+                                        <div className={streamFlow == null ? 'font-mono text-amber-700' : 'font-mono text-stone-500'}>
+                                          {percentage == null ? 'Allocation not reviewed' : `${percentage}% of parent`} · {fmtSideStreamFlow(streamFlow)}
+                                        </div>
+                                        {stream.notes && <div className="text-stone-400">{stream.notes}</div>}
+                                      </div>
+                                    );
+                                  })}
+                                  {displayedSideStreams.length > 1 && (
+                                    <div className="text-[9px] italic text-stone-400">Each branch is independent; no shared total.</div>
+                                  )}
+                                </div>
                               )}
                             </td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-1 justify-end">
-                                <button onClick={() => saveListRow(n)} disabled={flowSaving}
-                                  className="flex items-center gap-1 text-xs text-white bg-violet-600 hover:bg-violet-700 rounded px-2 py-1 disabled:opacity-50">
-                                  <Save className="w-3 h-3" /> {flowSaving ? '…' : 'Save'}
-                                </button>
-                                <button onClick={() => {
-                                  const row = listEditRow;
-                                  if (row !== null && listRowOriginal) {
-                                    setFlowForm((draft: any) => {
-                                      const restored = { ...(draft || createFlowDraft(system)) };
-                                      for (const key of FLOW_LOOP_FIELDS) {
-                                        restored[`loop${row}_${key}`] = listRowOriginal[key];
-                                      }
-                                      return flowDraftMatchesSystem(restored, system) ? null : restored;
-                                    });
-                                  }
-                                  setListEditRow(null);
-                                  setListRowForm(null);
-                                  setListRowOriginal(null);
-                                }}
-                                  className="text-xs text-stone-400 hover:text-stone-600 border border-stone-200 rounded p-1">
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
+                            <td className="px-3 py-3 align-top">
+                              {!readOnly && (
+                                <div className="flex flex-wrap items-center justify-end gap-1">
+                                  <button onClick={() => {
+                                    const draft = flowForm || createFlowDraft(system);
+                                    setListEditRow(n);
+                                    setFlowForm(draft);
+                                    setListRowOriginal(getFlowDraftRow(draft, n));
+                                    setListRowForm(getFlowDraftRow(draft, n));
+                                  }} className="flex items-center gap-1 rounded border border-stone-200 bg-white px-2 py-1 text-xs text-stone-500 hover:text-blue-600">
+                                    <Pencil className="h-3 w-3" /> Edit
+                                  </button>
+                                  <button onClick={() => {
+                                    const draft = flowForm || createFlowDraft(system);
+                                    setFlowForm(draft);
+                                    setExpandedCardLoops(prev => prev.includes(n) ? prev : [...prev, n]);
+                                    setFlowEditMode(true);
+                                    setFlowViewMode('card');
+                                  }} className="whitespace-nowrap rounded border border-cyan-200 bg-white px-2 py-1 text-xs text-cyan-700 hover:text-cyan-900">
+                                    Side streams
+                                  </button>
+                                  {n > 1 && (
+                                    <button onClick={() => deleteLoop(n)}
+                                      aria-label={`Remove Loop ${n}`}
+                                      className="rounded border border-stone-200 bg-white p-1 text-xs text-stone-300 hover:text-red-500">
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
-                      }
-
-                      const src    = flowForm ? flowForm[`loop${n}_flow_source`] : system[`loop${n}_flow_source`];
-                      const filt   = flowForm ? flowForm[`loop${n}_filtration`] : system[`loop${n}_filtration`];
-                      const bio    = flowForm ? flowForm[`loop${n}_bio_degas_m3h`] : system[`loop${n}_bio_degas_m3h`];
-                      const loopPct = nullableNumber(flowForm ? flowForm[`loop${n}_flow_pct`] : system[`loop${n}_flow_pct`]);
-                      const bioPct = nullableNumber(flowForm ? flowForm[`loop${n}_bio_degas_pct`] : system[`loop${n}_bio_degas_pct`]);
-                      const linked = flowForm ? !!flowForm[`loop${n}_link_bio_degas`] : !!system[`loop${n}_link_bio_degas`];
-                      const displayedSource = flowForm || system;
-                      const displayedSideStreams = sideStreamsFor(displayedSource, n);
-                      const loopFlow = flowForPercentage(loopPct);
-                      const bioFlow = loopFlow != null && bioPct != null
-                        ? loopFlow * bioPct / 100
-                        : nullableNumber(bio);
-                      return (
-                        <tr key={n} className="hover:bg-stone-50/60 group">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-5 h-5 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${colors.badge}`}>{n}</span>
-                              <span className="text-xs font-semibold text-stone-700">{loopName(displayedSource, n)}</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            {src ? (
-                              <>
-                                <span className="flex items-center gap-1.5 text-stone-700">
-                                  <Droplets className="w-3 h-3 text-cyan-500 shrink-0" /> {src}
-                                </span>
-                                <SourceSplitReference source={src} compact />
-                              </>
-                            ) : <span className="text-stone-300 text-xs italic">—</span>}
-                            {displayedSideStreams.length > 0 && (
-                              <div className="mt-2 border-l-2 border-cyan-200 pl-2 space-y-1.5">
-                                {displayedSideStreams.map((stream: any) => {
-                                  const percentage = nullableNumber(stream.flow_pct);
-                                  const streamFlow = loopFlow != null && percentage != null
-                                    ? loopFlow * percentage / 100
-                                    : null;
-                                  return (
-                                    <div key={stream.id || `${stream.name}-${stream.sort_order}`} className="text-[10px]">
-                                      <div className="font-semibold text-cyan-800">↳ {stream.name}</div>
-                                      <div className={streamFlow == null ? 'text-amber-700' : 'text-stone-500'}>
-                                        {percentage ?? '—'}% of parent · {fmtSideStreamFlow(streamFlow)}
-                                      </div>
-                                      {stream.notes && <div className="text-stone-400">{stream.notes}</div>}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            {filt ? (
-                              <span className="flex items-center gap-1.5 text-stone-700">
-                                <FlaskConical className="w-3 h-3 text-violet-500 shrink-0" /> {filt}
-                              </span>
-                            ) : <span className="text-stone-300 text-xs italic">—</span>}
-                          </td>
-                          <td className="px-3 py-3 font-mono text-xs">
-                            <span className="text-stone-800">{fmtFlow(loopFlow ?? 0)}</span>
-                            <span className="block text-stone-400 font-sans text-[10px]">
-                              {allocationStatus(loopPct, 'system')}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 font-mono text-xs">
-                            {linked ? (
-                              <span className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-emerald-700 font-semibold">{fmtFlow(bioFlow ?? 0)}</span>
-                                <span className="text-stone-400 font-sans text-[10px]">
-                                  {allocationStatus(bioPct, 'loop')}
-                                </span>
-                                <span className="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-sans">
-                                  linked
-                                </span>
-                              </span>
-                            ) : <span className="text-stone-200 text-xs">—</span>}
-                          </td>
-                          <td className="px-3 py-3">
-                            {!readOnly && (
-                            <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => {
-                                const draft = flowForm || createFlowDraft(system);
-                                setListEditRow(n);
-                                setFlowForm(draft);
-                                setListRowOriginal(getFlowDraftRow(draft, n));
-                                setListRowForm(getFlowDraftRow(draft, n));
-                              }} className="text-xs text-stone-400 hover:text-blue-600 border border-stone-200 rounded px-2 py-1 flex items-center gap-1 bg-white">
-                                <Pencil className="w-3 h-3" /> Edit
-                              </button>
-                              <button onClick={() => {
-                                const draft = flowForm || createFlowDraft(system);
-                                setFlowForm(draft);
-                                setExpandedCardLoops(prev => prev.includes(n) ? prev : [...prev, n]);
-                                setFlowEditMode(true);
-                                setFlowViewMode('card');
-                              }} className="text-xs text-cyan-700 hover:text-cyan-900 border border-cyan-200 rounded px-2 py-1 bg-white whitespace-nowrap">
-                                Side streams
-                              </button>
-                              {n > 1 && (
-                                <button onClick={() => deleteLoop(n)}
-                                  className="text-xs text-stone-300 hover:text-red-500 border border-stone-200 rounded p-1 bg-white">
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
                 {/* Add next loop footer */}
                 {canAddNext && listEditRow !== nextLoopToAdd && !readOnly && (
