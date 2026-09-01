@@ -147,7 +147,7 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
   }
   const canonicalId = product.id;
 
-  const [variants, boms, vendors, dimensions, electrical, hydraulic, classifiers, projects, relationships, linkedDocuments] =
+  const [variants, boms, vendors, dimensions, electrical, hydraulic, pneumatic, classifiers, projects, relationships, linkedDocuments] =
     await Promise.all([
       client.query('SELECT * FROM product_variants WHERE product_master_id=$1 ORDER BY variant_code', [canonicalId]),
       client.query(
@@ -172,6 +172,7 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
       client.query('SELECT * FROM product_dimensions WHERE product_master_id=$1', [canonicalId]),
       client.query('SELECT * FROM product_electrical WHERE product_master_id=$1', [canonicalId]),
       client.query('SELECT * FROM product_hydraulic WHERE product_master_id=$1', [canonicalId]),
+      client.query('SELECT * FROM product_pneumatic WHERE product_master_id=$1', [canonicalId]),
       client.query(
         `SELECT fc.id, fc.label, fc.unit, fc.field_type, fc.sort_order, pcv.value_text
          FROM family_classifiers fc
@@ -202,10 +203,12 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
     ]);
 
   const capturedAt = new Date().toISOString();
+  const isPneumaticProduct = String(product.product_category || '').toLowerCase() === 'pneumatic';
   const specificationRows = {
     dimensions: dimensions.rows[0] ?? null,
     electrical: electrical.rows[0] ?? null,
     hydraulic: hydraulic.rows[0] ?? null,
+    pneumatic: isPneumaticProduct ? pneumatic.rows[0] ?? null : null,
   };
   const sourceSnapshot = {
     schema_version: 1,
@@ -243,6 +246,7 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
     dimensions: specificationRows.dimensions,
     electrical: specificationRows.electrical,
     hydraulic: specificationRows.hydraulic,
+    pneumatic: specificationRows.pneumatic,
     bill_of_materials: boms.rows,
     vendors: vendors.rows,
     linked_projects: projects.rows,
@@ -288,6 +292,7 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
       dimensions: specificationRows.dimensions,
       electrical: specificationRows.electrical,
       hydraulic: specificationRows.hydraulic,
+      pneumatic: specificationRows.pneumatic,
       bill_of_materials: boms.rows,
       vendors: vendors.rows,
       linked_context: sourceSnapshot.linked_context,
@@ -857,7 +862,7 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
   res.json(updated);
 });
 
-router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/product-masters/:id/duplicate', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orig = await query(
     `SELECT pm.*, ph.design_flow_m3h AS hydraulic_design_flow_m3h
      FROM product_masters pm
@@ -905,6 +910,18 @@ router.post('/product-masters/:id/duplicate', authenticate, async (req: AuthRequ
          WHERE NOT EXISTS (SELECT 1 FROM product_hydraulic WHERE product_master_id=$3)`,
          [result.rows[0].id, linkedFlow, req.params.id, applyAatFrictionDefault ? 5.0 : null],
       );
+      if (String(src.product_category || '').toLowerCase() === 'pneumatic') {
+        await client.query(
+          `INSERT INTO product_pneumatic
+             (product_master_id, gas_flow_value, gas_flow_unit, operating_temperature_value, operating_temperature_unit,
+              dew_point_value, dew_point_unit, inlet_port_value, inlet_port_unit, outlet_port_value, outlet_port_unit, updated_at)
+           SELECT $1::uuid, gas_flow_value, gas_flow_unit, operating_temperature_value, operating_temperature_unit,
+                  dew_point_value, dew_point_unit, inlet_port_value, inlet_port_unit, outlet_port_value, outlet_port_unit, NOW()
+           FROM product_pneumatic
+           WHERE product_master_id=$2`,
+          [result.rows[0].id, req.params.id],
+        );
+      }
       if (applyAatFrictionDefault) {
         await client.query(
           `INSERT INTO product_hydraulic_catalog_defaults (product_master_id, default_key)
@@ -1274,7 +1291,7 @@ router.delete('/family-classifiers/:id', authenticate, async (req: AuthRequest, 
   res.json({ deleted: true });
 });
 
-// PRODUCT SPEC TABLES (dimensions, electrical, hydraulic)
+// PRODUCT SPEC TABLES (dimensions, electrical, hydraulic, pneumatic)
 const resolveProductId = async (param: string): Promise<string | null> => {
   const r = await query('SELECT id FROM product_masters WHERE id::text=$1 OR product_code=$1', [param]);
   return r.rows[0]?.id ?? null;
@@ -1348,6 +1365,131 @@ router.put('/product-masters/:id/electrical', authenticate, async (req: AuthRequ
       rated_power_kw=$2, voltage_v=$3, phases=$4, frequency_hz=$5, full_load_current_a=$6, rated_speed_rpm=$7, motor_type=$8, insulation_class=$9, protection_class=$10, efficiency_class=$11, notes=$12, updated_at=NOW()
     RETURNING *`, [pid, rated_power_kw||null, voltage_v||null, phases||null, frequency_hz||null, full_load_current_a||null, rated_speed_rpm||null, motor_type||null, insulation_class||null, protection_class||null, efficiency_class||null, notes||null]);
   res.json(r.rows[0]);
+});
+
+const PNEUMATIC_UNIT_ALIASES: Record<string, Record<string, string>> = {
+  gas_flow: { 'm3/h': 'm3/h', 'm³/h': 'm3/h', scfm: 'SCFM' },
+  temperature: { c: '°C', '°c': '°C', f: '°F', '°f': '°F' },
+  port: { dn: 'DN', mm: 'mm', in: 'in', inch: 'in' },
+};
+
+const isBlankPneumaticValue = (value: unknown) =>
+  value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+
+const readPneumaticPair = (
+  body: Record<string, any>,
+  current: Record<string, any>,
+  valueKey: string,
+  unitKey: string,
+  unitKind: keyof typeof PNEUMATIC_UNIT_ALIASES,
+  label: string,
+  allowNegative: boolean,
+) => {
+  const hasValue = Object.prototype.hasOwnProperty.call(body, valueKey);
+  const hasUnit = Object.prototype.hasOwnProperty.call(body, unitKey);
+  const rawValue = hasValue ? body[valueKey] : current[valueKey];
+  const rawUnit = hasUnit ? body[unitKey] : current[unitKey];
+
+  if (isBlankPneumaticValue(rawValue)) {
+    if (hasUnit && !isBlankPneumaticValue(rawUnit)) {
+      const error: any = new Error(`${label} unit cannot be set without a value`);
+      error.status = 400;
+      error.code = 'INVALID_PNEUMATIC_SPEC';
+      throw error;
+    }
+    return { value: null, unit: null };
+  }
+
+  const numericValue = typeof rawValue === 'number' || typeof rawValue === 'string'
+    ? Number(rawValue)
+    : Number.NaN;
+  if (!Number.isFinite(numericValue) || (!allowNegative && numericValue < 0)) {
+    const error: any = new Error(`${label} must be a finite, ${allowNegative ? '' : 'non-negative '}number`);
+    error.status = 400;
+    error.code = 'INVALID_PNEUMATIC_SPEC';
+    throw error;
+  }
+
+  const normalizedUnit = PNEUMATIC_UNIT_ALIASES[unitKind][String(rawUnit ?? '').trim().toLowerCase()];
+  if (!normalizedUnit) {
+    const error: any = new Error(`${label} must use a supported unit`);
+    error.status = 400;
+    error.code = 'INVALID_PNEUMATIC_SPEC';
+    throw error;
+  }
+  return { value: numericValue, unit: normalizedUnit };
+};
+
+router.get('/product-masters/:id/pneumatic', authenticate, async (req: AuthRequest, res: Response) => {
+  const pid = await resolveProductId(String(req.params.id));
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const productResult = await query('SELECT product_category FROM product_masters WHERE id=$1', [pid]);
+  if (String(productResult.rows[0]?.product_category || '').toLowerCase() !== 'pneumatic') {
+    return res.status(400).json({
+      error: { code: 'INVALID_PRODUCT_CATEGORY', message: 'Pneumatic specifications are only available for products in the Pneumatic category' },
+    });
+  }
+  const r = await query('SELECT * FROM product_pneumatic WHERE product_master_id=$1', [pid]);
+  res.json(r.rows[0] || {});
+});
+
+router.put('/product-masters/:id/pneumatic', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const pid = await resolveProductId(String(req.params.id));
+  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  const body = req.body || {};
+  try {
+    const saved = await withProductTransaction(async client => {
+      const productResult = await client.query(
+        'SELECT product_category FROM product_masters WHERE id=$1 FOR UPDATE',
+        [pid],
+      );
+      if (!productResult.rows[0]) {
+        const error: any = new Error('Product not found');
+        error.status = 404;
+        error.code = 'NOT_FOUND';
+        throw error;
+      }
+      if (String(productResult.rows[0].product_category || '').toLowerCase() !== 'pneumatic') {
+        const error: any = new Error('Pneumatic specifications are only available for products in the Pneumatic category');
+        error.status = 400;
+        error.code = 'INVALID_PRODUCT_CATEGORY';
+        throw error;
+      }
+
+      const existingResult = await client.query(
+        'SELECT * FROM product_pneumatic WHERE product_master_id=$1 FOR UPDATE',
+        [pid],
+      );
+      const current = existingResult.rows[0] || {};
+      const gasFlow = readPneumaticPair(body, current, 'gas_flow_value', 'gas_flow_unit', 'gas_flow', 'Gas flow', false);
+      const operatingTemperature = readPneumaticPair(body, current, 'operating_temperature_value', 'operating_temperature_unit', 'temperature', 'Operating temperature', true);
+      const dewPoint = readPneumaticPair(body, current, 'dew_point_value', 'dew_point_unit', 'temperature', 'Dew point', true);
+      const inletPort = readPneumaticPair(body, current, 'inlet_port_value', 'inlet_port_unit', 'port', 'Inlet port', false);
+      const outletPort = readPneumaticPair(body, current, 'outlet_port_value', 'outlet_port_unit', 'port', 'Outlet port', false);
+      const r = await client.query(
+        `INSERT INTO product_pneumatic
+           (product_master_id, gas_flow_value, gas_flow_unit, operating_temperature_value, operating_temperature_unit,
+            dew_point_value, dew_point_unit, inlet_port_value, inlet_port_unit, outlet_port_value, outlet_port_unit, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+         ON CONFLICT (product_master_id) DO UPDATE SET
+           gas_flow_value=$2, gas_flow_unit=$3, operating_temperature_value=$4, operating_temperature_unit=$5,
+           dew_point_value=$6, dew_point_unit=$7, inlet_port_value=$8, inlet_port_unit=$9,
+           outlet_port_value=$10, outlet_port_unit=$11, updated_at=NOW()
+         RETURNING *`,
+        [pid, gasFlow.value, gasFlow.unit, operatingTemperature.value, operatingTemperature.unit,
+          dewPoint.value, dewPoint.unit, inletPort.value, inletPort.unit, outletPort.value, outletPort.unit],
+      );
+      await insertAuditTx(client, req.user!.id, 'product', pid, 'PNEUMATIC_SPECIFICATION_UPDATE', {
+        summary: 'Pneumatic specifications updated',
+        before: current,
+        after: r.rows[0],
+      });
+      return r.rows[0];
+    });
+    res.json(saved);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get('/product-masters/:id/hydraulic', authenticate, async (req: AuthRequest, res: Response) => {

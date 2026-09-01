@@ -72,7 +72,7 @@ export default function ProductMastersList() {
   const familyNewOptions = useMemo(() => (familiesData?.items || []).filter((f: any) => f.category_code !== 'PIPING' && f.category_code !== 'TANK').map((f: any) => `${f.id} — ${f.product_family_name}`), [familiesData]);
 
   const families: any[] = familiesData?.items?.filter((f: any) => f.category_code !== 'PIPING' && f.category_code !== 'TANK') || [];
-  const categoryOptions: string[] = categoriesData?.items?.map((c: any) => c.name) || ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Tank', 'Electrical', 'Other'];
+  const categoryOptions: string[] = categoriesData?.items?.map((c: any) => c.name) || ['Filtration', 'Pumping', 'Disinfection', 'Thermal', 'Pneumatic', 'Piping', 'Control', 'Structural', 'Instrumentation', 'Tank', 'Electrical', 'Other'];
   const familyOptions = familiesData?.items?.map((f: any) => f.product_family_code) || [];
 
   const catalogItems: ProductMaster[] = useMemo(

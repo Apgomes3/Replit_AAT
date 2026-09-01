@@ -531,6 +531,7 @@ INSERT INTO product_categories (name, code, description, is_system, sort_order) 
   ('Pumping', 'PUMPING', 'Pumps, blowers and fluid movers', true, 20),
   ('Disinfection', 'DISINFECTION', 'UV, ozone and chemical dosing', true, 30),
   ('Thermal', 'THERMAL', 'Heating and chilling equipment', true, 40),
+  ('Pneumatic', 'PNEUMATIC', 'Pneumatic air and gas handling equipment', true, 45),
   ('Piping', 'PIPING', 'Pipes, fittings, valves and flanges', true, 50),
   ('Control', 'CONTROL', 'Controllers, PLCs and automation', true, 60),
   ('Structural', 'STRUCTURAL', 'Frames, supports and enclosures', true, 70),
@@ -750,6 +751,21 @@ CREATE TABLE IF NOT EXISTS product_hydraulic (
   npsh_required_m NUMERIC, fluid_type VARCHAR(100),
   min_temperature_c NUMERIC, max_temperature_c NUMERIC,
   notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS product_pneumatic (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
+  gas_flow_value NUMERIC,
+  gas_flow_unit VARCHAR(20),
+  operating_temperature_value NUMERIC,
+  operating_temperature_unit VARCHAR(10),
+  dew_point_value NUMERIC,
+  dew_point_unit VARCHAR(10),
+  inlet_port_value NUMERIC,
+  inlet_port_unit VARCHAR(10),
+  outlet_port_value NUMERIC,
+  outlet_port_unit VARCHAR(10),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS product_design_flow_reconciliations (

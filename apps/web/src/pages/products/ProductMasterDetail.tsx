@@ -11,7 +11,7 @@ import { VendorOption, BOMLine, Document } from '../../types';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useState, useRef } from 'react';
 import FormulaInput from '../../components/ui/FormulaInput';
-import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Tag, Pencil, Check, Copy } from 'lucide-react';
+import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Wind, Tag, Pencil, Check, Copy } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
 import ActivityLog from '../../components/ui/ActivityLog';
@@ -135,6 +135,10 @@ export default function ProductMasterDetail() {
   const [hydraulicSaving, setHydraulicSaving] = useState(false);
   const [hydraulicFlowResolution, setHydraulicFlowResolution] = useState<'hydraulic' | ''>('');
 
+  const [editingPneumatic, setEditingPneumatic] = useState(false);
+  const [pneumaticForm, setPneumaticForm] = useState<Record<string, any>>({});
+  const [pneumaticSaving, setPneumaticSaving] = useState(false);
+
   const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', wall_thickness_mm: '', weight_kg: '' });
   const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
 
@@ -246,6 +250,12 @@ export default function ProductMasterDetail() {
     queryKey: ['product-hydraulic', id],
     queryFn: () => api.get(`/product-masters/${id}/hydraulic`).then(r => r.data),
     enabled: !!product,
+  });
+
+  const { data: pneumaticData, refetch: refetchPneumatic } = useQuery({
+    queryKey: ['product-pneumatic', id],
+    queryFn: () => api.get(`/product-masters/${id}/pneumatic`).then(r => r.data),
+    enabled: String(product?.product_category || '').toLowerCase() === 'pneumatic',
   });
 
   const { data: materialsData } = useQuery({
@@ -543,6 +553,54 @@ export default function ProductMasterDetail() {
     finally { setHydraulicSaving(false); }
   };
 
+  const handleSavePneumatic = async () => {
+    const fields = [
+      ['gas_flow_value', 'gas_flow_unit', 'Gas flow', false],
+      ['operating_temperature_value', 'operating_temperature_unit', 'Operating temperature', true],
+      ['dew_point_value', 'dew_point_unit', 'Dew point', true],
+      ['inlet_port_value', 'inlet_port_unit', 'Inlet port', false],
+      ['outlet_port_value', 'outlet_port_unit', 'Outlet port', false],
+    ] as const;
+    for (const [valueKey, unitKey, label, allowNegative] of fields) {
+      const rawValue = pneumaticForm[valueKey];
+      const hasValue = rawValue !== null && rawValue !== undefined && String(rawValue).trim() !== '';
+      const hasUnit = pneumaticForm[unitKey] !== null && pneumaticForm[unitKey] !== undefined && String(pneumaticForm[unitKey]).trim() !== '';
+      if (!hasValue) {
+        if (hasUnit) { toast.error(`${label} unit cannot be set without a value`); return; }
+        continue;
+      }
+      const numeric = Number(rawValue);
+      if (!Number.isFinite(numeric) || (!allowNegative && numeric < 0)) {
+        toast.error(`${label} must be a finite, ${allowNegative ? '' : 'non-negative '}number`);
+        return;
+      }
+      if (!hasUnit) { toast.error(`${label} requires a unit`); return; }
+    }
+    setPneumaticSaving(true);
+    try {
+      const payload = { ...pneumaticForm };
+      for (const [valueKey] of fields) {
+        payload[valueKey] = payload[valueKey] === null || payload[valueKey] === undefined || String(payload[valueKey]).trim() === ''
+          ? null
+          : Number(payload[valueKey]);
+      }
+      for (const [, unitKey] of fields) {
+        payload[unitKey] = payload[unitKey] === null || payload[unitKey] === undefined || String(payload[unitKey]).trim() === ''
+          ? null
+          : String(payload[unitKey]).trim();
+      }
+      const { data: saved } = await api.put(`/product-masters/${id}/pneumatic`, payload);
+      queryClient.setQueryData(['product-pneumatic', id], saved);
+      toast.success('Pneumatic specifications saved');
+      setEditingPneumatic(false);
+      refetchPneumatic();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Failed to save pneumatic specifications');
+    } finally {
+      setPneumaticSaving(false);
+    }
+  };
+
   const calcTankShapeVolumes = (shape: string, L: number|null, W: number|null, H: number|null, WL: number|null) => {
     const s = shape || 'Rectangular';
     let grossV: number|null = null, opV: number|null = null;
@@ -598,6 +656,7 @@ export default function ProductMasterDetail() {
 
   const isPiping = product.product_category === 'Piping';
   const isTank = product.product_category === 'Tank';
+  const isPneumatic = String(product.product_category || '').toLowerCase() === 'pneumatic';
   const bom = product.boms?.[0];
   const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
@@ -1366,6 +1425,76 @@ export default function ProductMasterDetail() {
                 </div>
               );
             })()}
+
+            {/* Pneumatic Card */}
+            {isPneumatic && <div className="bg-white border border-slate-200 rounded-lg mt-3">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Wind className="w-3.5 h-3.5" />Pneumatic Specifications</span>
+                {!editingPneumatic
+                  ? <button onClick={() => { setPneumaticForm({ ...pneumaticData }); setEditingPneumatic(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingPneumatic(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSavePneumatic} disabled={pneumaticSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{pneumaticSaving ? 'Saving…' : 'Save'}</button></div>}
+              </div>
+              {editingPneumatic ? (
+                <div className="p-3 grid grid-cols-2 gap-2">
+                  {[
+                    ['gas_flow_value', 'gas_flow_unit', 'Gas Flow', [['m3/h', 'm³/h'], ['SCFM', 'SCFM']], false],
+                    ['operating_temperature_value', 'operating_temperature_unit', 'Operating Temperature', [['°C', '°C'], ['°F', '°F']], true],
+                    ['dew_point_value', 'dew_point_unit', 'Dew Point', [['°C', '°C'], ['°F', '°F']], true],
+                    ['inlet_port_value', 'inlet_port_unit', 'Inlet Port', [['DN', 'DN'], ['mm', 'mm'], ['in', 'in']], false],
+                    ['outlet_port_value', 'outlet_port_unit', 'Outlet Port', [['DN', 'DN'], ['mm', 'mm'], ['in', 'in']], false],
+                  ].map(([valueKey, unitKey, label, units, allowNegative]: any) => (
+                    <div key={valueKey}>
+                      <label className="block text-xs text-slate-500 mb-0.5">{label}</label>
+                      <div className="flex">
+                        <input
+                          type="number"
+                          min={allowNegative ? undefined : 0}
+                          step="any"
+                          value={pneumaticForm[valueKey] ?? ''}
+                          onChange={e => setPneumaticForm((form: any) => ({ ...form, [valueKey]: e.target.value }))}
+                          className="min-w-0 flex-1 border border-r-0 border-slate-200 rounded-l px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"
+                        />
+                        <select
+                          aria-label={`${label} unit`}
+                          value={pneumaticForm[unitKey] ?? ''}
+                          onChange={e => setPneumaticForm((form: any) => ({ ...form, [unitKey]: e.target.value }))}
+                          className="w-20 border border-slate-200 rounded-r px-1.5 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-600"
+                        >
+                          <option value="">Unit</option>
+                          {units.map(([value, unitLabel]: [string, string]) => <option key={value} value={value}>{unitLabel}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="col-span-2 text-xs text-slate-400">Clear both the value and unit to remove a saved specification.</p>
+                </div>
+              ) : (
+                <div className="p-3">
+                  {[
+                    ['Gas Flow', pneumaticData?.gas_flow_value, pneumaticData?.gas_flow_unit],
+                    ['Operating Temperature', pneumaticData?.operating_temperature_value, pneumaticData?.operating_temperature_unit],
+                    ['Dew Point', pneumaticData?.dew_point_value, pneumaticData?.dew_point_unit],
+                    ['Inlet Port', pneumaticData?.inlet_port_value, pneumaticData?.inlet_port_unit],
+                    ['Outlet Port', pneumaticData?.outlet_port_value, pneumaticData?.outlet_port_unit],
+                  ].filter(([, value]) => value !== null && value !== undefined && value !== '').length === 0
+                    ? <p className="text-xs text-slate-300 text-center py-2">No pneumatic specifications recorded — click Edit to add</p>
+                    : <div className="space-y-1">
+                        {[
+                          ['Gas Flow', pneumaticData?.gas_flow_value, pneumaticData?.gas_flow_unit],
+                          ['Operating Temperature', pneumaticData?.operating_temperature_value, pneumaticData?.operating_temperature_unit],
+                          ['Dew Point', pneumaticData?.dew_point_value, pneumaticData?.dew_point_unit],
+                          ['Inlet Port', pneumaticData?.inlet_port_value, pneumaticData?.inlet_port_unit],
+                          ['Outlet Port', pneumaticData?.outlet_port_value, pneumaticData?.outlet_port_unit],
+                        ].filter(([, value]) => value !== null && value !== undefined && value !== '').map(([label, value, unit]) => (
+                          <div key={String(label)} className="flex justify-between text-xs">
+                            <span className="text-slate-400">{label}</span>
+                            <span className="text-slate-700 font-medium">{String(value)}{unit ? <span className="text-slate-400 ml-1">{String(unit)}</span> : ''}</span>
+                          </div>
+                        ))}
+                      </div>}
+                </div>
+              )}
+            </div>}
 
             {/* Hydraulic Card */}
             <div className="bg-white border border-slate-200 rounded-lg mt-3">

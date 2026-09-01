@@ -136,6 +136,21 @@ export interface ProductMaster {
   projects?: { project_code: string; project_name: string; project_status: string }[];
 }
 
+export interface PneumaticSpecifications {
+  id?: string;
+  product_master_id?: string;
+  gas_flow_value?: number | string | null;
+  gas_flow_unit?: string | null;
+  operating_temperature_value?: number | string | null;
+  operating_temperature_unit?: string | null;
+  dew_point_value?: number | string | null;
+  dew_point_unit?: string | null;
+  inlet_port_value?: number | string | null;
+  inlet_port_unit?: string | null;
+  outlet_port_value?: number | string | null;
+  outlet_port_unit?: string | null;
+}
+
 export interface ProductVariant {
   id: string;
   variant_code: string;

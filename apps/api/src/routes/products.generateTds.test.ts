@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   revisions: [] as Array<Record<string, any>>,
   nextRevisionId: 1,
   usedDocumentCodes: [] as string[],
+  pneumatic: null as Record<string, any> | null,
 }));
 
 vi.mock('../db', () => {
@@ -25,6 +26,7 @@ vi.mock('../db', () => {
     if (sql.includes('FROM product_dimensions')) return { rows: [{ length_mm: 1000 }] };
     if (sql.includes('FROM product_electrical')) return { rows: [{ voltage_v: 400 }] };
     if (sql.includes('FROM product_hydraulic')) return { rows: [{ design_flow_m3h: state.product.design_flow_m3h }] };
+    if (sql.includes('FROM product_pneumatic')) return { rows: state.pneumatic ? [{ ...state.pneumatic }] : [] };
     if (sql.includes('FROM family_classifiers fc')) return { rows: [{ id: 'classifier-1', label: 'Connection Size', unit: 'DN', value_text: '80' }] };
     if (sql.includes('FROM product_usages')) return { rows: [{ id: 'project-1', project_code: 'PRJ-1' }] };
     if (sql.includes('FROM entity_relationships')) return { rows: [{ id: 'rel-1', edge_type: 'compatible_with' }] };
@@ -138,6 +140,7 @@ describe('PIM generated Technical Data Sheets', () => {
     state.revisions = [];
     state.nextRevisionId = 1;
     state.usedDocumentCodes = [];
+    state.pneumatic = null;
   });
 
   afterAll(() => {
@@ -155,6 +158,22 @@ describe('PIM generated Technical Data Sheets', () => {
     expect(response.body.revision.source_snapshot.specifications.electrical.voltage_v).toBe(400);
     expect(response.body.revision.source_snapshot.vendors[0].vendor_name).toBe('Vendor A');
     expect(response.body.revision.source_snapshot.classifier_values[0].value_text).toBe('80');
+  });
+
+  it('includes pneumatic specifications only while the product is in the Pneumatic category', async () => {
+    state.pneumatic = { gas_flow_value: 50, gas_flow_unit: 'SCFM' };
+    state.product.product_category = 'Pneumatic';
+    const pneumaticTds = await post(app, token);
+    expect(pneumaticTds.body.revision.source_snapshot.specifications.pneumatic).toMatchObject({
+      gas_flow_value: 50,
+      gas_flow_unit: 'SCFM',
+    });
+    expect(pneumaticTds.body.revision.content.sections.pneumatic.gas_flow_value).toBe(50);
+
+    state.product.product_category = 'Pumping';
+    const reclassifiedTds = await post(app, token);
+    expect(reclassifiedTds.body.revision.source_snapshot.specifications.pneumatic).toBeNull();
+    expect(reclassifiedTds.body.revision.content.sections.pneumatic).toBeNull();
   });
 
   it('regenerates an editable draft in place without creating a duplicate document or revision', async () => {

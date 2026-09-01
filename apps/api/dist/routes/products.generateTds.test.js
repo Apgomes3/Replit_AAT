@@ -48,6 +48,7 @@ const state = vitest_1.vi.hoisted(() => ({
     revisions: [],
     nextRevisionId: 1,
     usedDocumentCodes: [],
+    pneumatic: null,
 }));
 vitest_1.vi.mock('../db', () => {
     const clientQuery = vitest_1.vi.fn(async (sql, params = []) => {
@@ -67,6 +68,8 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [{ voltage_v: 400 }] };
         if (sql.includes('FROM product_hydraulic'))
             return { rows: [{ design_flow_m3h: state.product.design_flow_m3h }] };
+        if (sql.includes('FROM product_pneumatic'))
+            return { rows: state.pneumatic ? [{ ...state.pneumatic }] : [] };
         if (sql.includes('FROM family_classifiers fc'))
             return { rows: [{ id: 'classifier-1', label: 'Connection Size', unit: 'DN', value_text: '80' }] };
         if (sql.includes('FROM product_usages'))
@@ -183,6 +186,7 @@ function post(app, token) {
         state.revisions = [];
         state.nextRevisionId = 1;
         state.usedDocumentCodes = [];
+        state.pneumatic = null;
     });
     (0, vitest_1.afterAll)(() => {
         delete process.env.JWT_SECRET;
@@ -197,6 +201,20 @@ function post(app, token) {
         (0, vitest_1.expect)(response.body.revision.source_snapshot.specifications.electrical.voltage_v).toBe(400);
         (0, vitest_1.expect)(response.body.revision.source_snapshot.vendors[0].vendor_name).toBe('Vendor A');
         (0, vitest_1.expect)(response.body.revision.source_snapshot.classifier_values[0].value_text).toBe('80');
+    });
+    (0, vitest_1.it)('includes pneumatic specifications only while the product is in the Pneumatic category', async () => {
+        state.pneumatic = { gas_flow_value: 50, gas_flow_unit: 'SCFM' };
+        state.product.product_category = 'Pneumatic';
+        const pneumaticTds = await post(app, token);
+        (0, vitest_1.expect)(pneumaticTds.body.revision.source_snapshot.specifications.pneumatic).toMatchObject({
+            gas_flow_value: 50,
+            gas_flow_unit: 'SCFM',
+        });
+        (0, vitest_1.expect)(pneumaticTds.body.revision.content.sections.pneumatic.gas_flow_value).toBe(50);
+        state.product.product_category = 'Pumping';
+        const reclassifiedTds = await post(app, token);
+        (0, vitest_1.expect)(reclassifiedTds.body.revision.source_snapshot.specifications.pneumatic).toBeNull();
+        (0, vitest_1.expect)(reclassifiedTds.body.revision.content.sections.pneumatic).toBeNull();
     });
     (0, vitest_1.it)('regenerates an editable draft in place without creating a duplicate document or revision', async () => {
         const initial = await post(app, token);
