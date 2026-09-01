@@ -4,13 +4,14 @@ export const modules: ModuleMap = {
   "./components/mockups/edp-variants/CommandCenter.tsx": () => import("../components/mockups/edp-variants/CommandCenter.tsx"),
   "./components/mockups/edp-variants/PrecisionLight.tsx": () => import("../components/mockups/edp-variants/PrecisionLight.tsx"),
   "./components/mockups/edp-variants/WarmEnterprise.tsx": () => import("../components/mockups/edp-variants/WarmEnterprise.tsx"),
-  "./components/mockups/thermal-redesign/Current.tsx": () => import("../components/mockups/thermal-redesign/Current.tsx"),
-  "./components/mockups/thermal-redesign/ProgressiveDisclosure.tsx": () => import("../components/mockups/thermal-redesign/ProgressiveDisclosure.tsx"),
   "./components/mockups/order-mgmt/ActionQueue.tsx": () => import("../components/mockups/order-mgmt/ActionQueue.tsx"),
   "./components/mockups/order-mgmt/DailyDigest.tsx": () => import("../components/mockups/order-mgmt/DailyDigest.tsx"),
   "./components/mockups/order-mgmt/FocusFeed.tsx": () => import("../components/mockups/order-mgmt/FocusFeed.tsx"),
   "./components/mockups/order-mgmt/InboxZero.tsx": () => import("../components/mockups/order-mgmt/InboxZero.tsx"),
   "./components/mockups/order-mgmt/KanbanBoard.tsx": () => import("../components/mockups/order-mgmt/KanbanBoard.tsx"),
   "./components/mockups/order-mgmt/PipelineHealth.tsx": () => import("../components/mockups/order-mgmt/PipelineHealth.tsx"),
-  "./components/mockups/order-mgmt/PowerUser.tsx": () => import("../components/mockups/order-mgmt/PowerUser.tsx")
+  "./components/mockups/order-mgmt/PowerUser.tsx": () => import("../components/mockups/order-mgmt/PowerUser.tsx"),
+  "./components/mockups/thermal-redesign/Current.tsx": () => import("../components/mockups/thermal-redesign/Current.tsx"),
+  "./components/mockups/thermal-redesign/ProgressiveDisclosure.tsx": () => import("../components/mockups/thermal-redesign/ProgressiveDisclosure.tsx"),
+  "./components/mockups/thermal-redesign/ProgressiveDisclosureSlate.tsx": () => import("../components/mockups/thermal-redesign/ProgressiveDisclosureSlate.tsx")
 };

@@ -1,0 +1,298 @@
+.pd-page {
+  --pd-ink: #263746;
+  --pd-muted: #71808a;
+  --pd-border: #d8d4cb;
+  --pd-paper: #fbfaf7;
+  --pd-panel: #f3efe8;
+  --pd-blue: #dfeaf0;
+  --pd-blue-ink: #456b7d;
+  --pd-copper: #b86843;
+  --pd-copper-pale: #f2e2d8;
+  --pd-navy: #294b63;
+  background: #f3eee6;
+  color: var(--pd-ink);
+}
+
+.pd-page .pd-shell,
+.pd-page .pd-list-card,
+.pd-page .pd-calculation,
+.pd-page .pd-sheet {
+  color: var(--pd-ink);
+}
+
+.pd-page .pd-brand-mark {
+  background: var(--pd-navy);
+  color: #f5f0e8;
+}
+
+.pd-page .pd-heading h1,
+.pd-page .pd-list-head h2,
+.pd-page .pd-calculation-head h2,
+.pd-page .pd-sheet h2 {
+  color: var(--pd-ink);
+}
+
+.pd-page .pd-heading p,
+.pd-page .pd-context,
+.pd-page .pd-system-main span,
+.pd-page .pd-system-main small,
+.pd-page .pd-calculation-head p,
+.pd-page .pd-metric-note,
+.pd-page .pd-source-detail,
+.pd-page .pd-correlation small,
+.pd-page .pd-effective-content span,
+.pd-page .pd-sheet-copy,
+.pd-page .pd-calculation-footer,
+.pd-page .pd-provenance span {
+  color: var(--pd-muted);
+}
+
+.pd-page .pd-eyebrow,
+.pd-page .pd-kicker,
+.pd-page .pd-kicker.pd-teal,
+.pd-page .pd-teal,
+.pd-page .pd-card-label,
+.pd-page .pd-section h3 {
+  color: var(--pd-blue-ink);
+}
+
+.pd-page .pd-eyebrow span,
+.pd-page .pd-calculation-head h2 span,
+.pd-page .pd-step {
+  color: #9aa8af;
+}
+
+.pd-page .pd-admin-button,
+.pd-page .pd-close-link,
+.pd-page .pd-open-label,
+.pd-page .pd-text-action,
+.pd-page .pd-expand {
+  color: var(--pd-blue-ink);
+}
+
+.pd-page .pd-admin-button {
+  border-color: #b9c9d0;
+  background: rgba(251, 250, 247, 0.72);
+}
+
+.pd-page .pd-context {
+  border-color: var(--pd-border);
+}
+
+.pd-page .pd-list-card,
+.pd-page .pd-calculation {
+  border-color: var(--pd-border);
+  background: var(--pd-paper);
+  box-shadow: 0 14px 36px rgba(50, 52, 51, 0.06);
+}
+
+.pd-page .pd-system-row {
+  border-color: #e6e1d8;
+  background: transparent;
+}
+
+.pd-page .pd-system-row:hover,
+.pd-page .pd-system-selected {
+  background: #edf2f3;
+}
+
+.pd-page .pd-list-foot {
+  border-color: var(--pd-border);
+  background: #eee9e0;
+  color: var(--pd-muted);
+}
+
+.pd-page .pd-count,
+.pd-page .pd-pill-green,
+.pd-page .pd-source-detail {
+  background: var(--pd-blue);
+  color: var(--pd-blue-ink);
+}
+
+.pd-page .pd-pill-amber {
+  background: #f4e5cc;
+  color: #9d6337;
+}
+
+.pd-page .pd-pill-slate {
+  background: #e7e8e5;
+  color: #5d6870;
+}
+
+.pd-page .pd-pill-dot {
+  background: currentColor;
+}
+
+.pd-page .pd-trust-strip {
+  border-color: #c7d8df;
+  background: #e8f0f2;
+}
+
+.pd-page .pd-trust-strip > div,
+.pd-page .pd-trust-strip b {
+  color: var(--pd-blue-ink);
+}
+
+.pd-page .pd-trust-strip small {
+  color: #718894;
+}
+
+.pd-page .pd-section,
+.pd-page .pd-calculation-footer {
+  border-color: var(--pd-border);
+}
+
+.pd-page .pd-metric {
+  background: var(--pd-panel);
+}
+
+.pd-page .pd-metric-value,
+.pd-page .pd-effective-content strong {
+  color: var(--pd-ink);
+}
+
+.pd-page .pd-source-card,
+.pd-page .pd-correlation {
+  border-color: var(--pd-border);
+  background: #faf9f5;
+}
+
+.pd-page .pd-source-row,
+.pd-page .pd-provenance {
+  border-color: #e8e3da;
+}
+
+.pd-page .pd-effective-card {
+  border-color: #c7d8df;
+}
+
+.pd-page .pd-water-card {
+  background: #edf3f4;
+}
+
+.pd-page .pd-wall-card {
+  background: #f7eee8;
+  border-color: #e6c8b8;
+}
+
+.pd-page .pd-effective-icon {
+  background: #d9e8ed;
+  color: var(--pd-blue-ink);
+}
+
+.pd-page .pd-wall-card .pd-effective-icon {
+  background: var(--pd-copper-pale);
+  color: var(--pd-copper);
+}
+
+.pd-page .pd-correlation-grid .pd-agitation-card {
+  background: #edf3f4;
+  border-color: #c7d8df;
+}
+
+.pd-page .pd-select-field > span,
+.pd-page .pd-field > span {
+  color: var(--pd-blue-ink);
+}
+
+.pd-page .pd-select-wrap::after {
+  color: var(--pd-copper);
+}
+
+.pd-page .pd-select-wrap select,
+.pd-page .pd-input-with-unit {
+  border-color: #c7d1d4;
+  background: var(--pd-paper);
+  color: var(--pd-ink);
+}
+
+.pd-page .pd-select-wrap select:focus {
+  box-shadow: 0 0 0 2px rgba(184, 104, 67, 0.28);
+}
+
+.pd-page .pd-input-with-unit input,
+.pd-page .pd-field textarea {
+  color: var(--pd-ink);
+}
+
+.pd-page .pd-input-with-unit b {
+  background: var(--pd-panel);
+  color: var(--pd-muted);
+}
+
+.pd-page .pd-coefficient b {
+  color: var(--pd-copper);
+}
+
+.pd-page .pd-draft-label {
+  color: var(--pd-copper);
+}
+
+.pd-page .pd-saved {
+  color: #56778a;
+}
+
+.pd-page .pd-result-grid > div {
+  background: var(--pd-navy);
+  color: #eaf0f1;
+}
+
+.pd-page .pd-result-grid span {
+  color: #b7cbd2;
+}
+
+.pd-page .pd-result-grid .pd-result-cooling {
+  background: #52798c;
+}
+
+.pd-page .pd-result-grid .pd-result-heating {
+  background: var(--pd-copper);
+  color: #fff8f2;
+}
+
+.pd-page .pd-result-grid .pd-result-heating span {
+  color: #f7ddd0;
+}
+
+.pd-page .pd-button {
+  border-color: #c7d1d4;
+  color: var(--pd-blue-ink);
+  background: var(--pd-paper);
+}
+
+.pd-page .pd-button-primary {
+  border-color: var(--pd-copper);
+  background: var(--pd-copper);
+  color: #fff8f2;
+}
+
+.pd-page .pd-backdrop {
+  background: rgba(38, 55, 70, 0.42);
+}
+
+.pd-page .pd-sheet {
+  border-color: #c7d8df;
+  background: var(--pd-paper);
+  box-shadow: 0 20px 60px rgba(38, 55, 70, 0.22);
+}
+
+.pd-page .pd-icon-button {
+  color: var(--pd-muted);
+}
+
+.pd-page .pd-empty-hint {
+  border-color: #c8d2d2;
+  background: rgba(251, 250, 247, 0.55);
+  color: var(--pd-muted);
+}
+
+.pd-page .pd-empty-icon {
+  background: var(--pd-copper-pale);
+  color: var(--pd-copper);
+}
+
+@media (max-width: 500px) {
+  .pd-page .pd-admin-button {
+    background: var(--pd-paper);
+  }
+}

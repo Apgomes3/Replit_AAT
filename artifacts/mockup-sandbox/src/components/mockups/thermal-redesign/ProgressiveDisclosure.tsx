@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import "./ProgressiveDisclosure.css";
 import "./ProgressiveDisclosureAgitation.css";
+import "./ProgressiveDisclosurePalette.css";
 
 type System = {
   id: string;

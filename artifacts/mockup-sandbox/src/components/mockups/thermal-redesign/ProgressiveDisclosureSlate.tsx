@@ -1,0 +1,100 @@
+import { useState } from "react";
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ClipboardCheck,
+  Cloud,
+  ExternalLink,
+  FilePenLine,
+  LockKeyhole,
+  ShieldCheck,
+  Thermometer,
+  Waves,
+  X,
+} from "lucide-react";
+
+type System = {
+  id: string;
+  name: string;
+  scope: string;
+  tanks: string;
+  readiness: "Ready" | "Review";
+  cooling: string;
+  heating: string;
+  freshness: string;
+};
+
+const systems: System[] = [
+  { id: "LSS-001", name: "Main Tank LSS System", scope: "Kaohsiung Aquarium · Tropical Reef Hall", tanks: "2 linked exhibits · 3 linked tanks", readiness: "Ready", cooling: "24.8 kW", heating: "4.2 kW", freshness: "Source sync 8 min ago" },
+  { id: "LSS-002", name: "Quarantine Life Support", scope: "Kaohsiung Aquarium · Quarantine Wing", tanks: "1 linked exhibit · 1 linked tank", readiness: "Review", cooling: "8.6 kW", heating: "1.5 kW", freshness: "Source sync 14 min ago" },
+];
+
+const activity = [
+  { value: "calm", label: "Calm", coefficient: "0.000012", note: "Low surface activity" },
+  { value: "moderate", label: "Moderate", coefficient: "0.000018", note: "Typical reef surface activity" },
+  { value: "high", label: "High", coefficient: "0.000026", note: "Strong agitation or wave action" },
+];
+
+function Pill({ children, tone = "ready" }: { children: React.ReactNode; tone?: "ready" | "review" | "slate" }) {
+  const tones = { ready: "bg-[#dce9eb] text-[#235766]", review: "bg-[#efe6d5] text-[#83603b]", slate: "bg-[#e2e5ec] text-[#4c566d]" };
+  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide ${tones[tone]}`}><i className={`h-1.5 w-1.5 rounded-full ${tone === "review" ? "bg-[#b18751]" : tone === "slate" ? "bg-[#68738b]" : "bg-[#427888]"}`} />{children}</span>;
+}
+
+function Metric({ label, value, note }: { label: string; value: string; note?: string }) {
+  return <div className="border-l border-[#d9dee6] pl-4"><div className="text-[10px] font-bold uppercase tracking-[.16em] text-[#71809a]">{label}</div><div className="mt-1 text-[21px] font-semibold tracking-tight text-[#26344c]">{value}</div>{note && <div className="mt-1 text-[11px] leading-4 text-[#8190a5]">{note}</div>}</div>;
+}
+
+export function ProgressiveDisclosureSlate() {
+  const [selectedId, setSelectedId] = useState<string | null>("LSS-001");
+  const [showSources, setShowSources] = useState(false);
+  const [sheet, setSheet] = useState<"water" | "wall" | null>(null);
+  const [water, setWater] = useState("25.5");
+  const [wall, setWall] = useState("2.50");
+  const [draft, setDraft] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [agitation, setAgitation] = useState("moderate");
+  const selected = systems.find((s) => s.id === selectedId);
+  const selectedActivity = activity.find((a) => a.value === agitation) ?? activity[1];
+  const notify = () => { setSaved(true); window.setTimeout(() => setSaved(false), 2400); };
+  const openSheet = (kind: "water" | "wall") => { setSheet(kind); setDraft(kind === "water" ? water : wall); };
+
+  return (
+    <main className="min-h-[100dvh] bg-[#eef1f5] px-4 py-6 text-[#26344c] sm:px-8 lg:px-12" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+      <div className="mx-auto max-w-[1180px]">
+        <header className="flex flex-col gap-5 border-b border-[#d5dbe4] pb-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-4"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#344762] text-[#e4edf3] shadow-[0_8px_20px_rgba(52,71,98,.18)]"><Waves size={21} /></div><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-[#687691]">Design Book <span className="px-1 text-[#a0a8b8]">/</span> Thermal</div><h1 className="mt-1 text-3xl font-semibold tracking-[-.04em] text-[#26344c]">Thermal calculations</h1><p className="mt-1 max-w-xl text-sm text-[#687691]">Review one life-support system at a time. Governed platform values stay out of the designer workspace.</p></div></div>
+          <button onClick={() => notify()} className="inline-flex items-center gap-2 self-start rounded-lg border border-[#cbd3df] bg-[#f7f8fa] px-3.5 py-2 text-xs font-bold text-[#52617a] transition hover:border-[#8d9bb1] hover:bg-white"><LockKeyhole size={14} /> Platform Admin <ExternalLink size={12} /></button>
+        </header>
+        <div className="flex flex-col gap-2 border-b border-[#d5dbe4] py-4 text-xs text-[#687691] sm:flex-row sm:items-center sm:justify-between"><span><b className="text-[#43526c]">Kaohsiung Aquarium</b> · Life-support engineering book</span><span className="inline-flex items-center gap-1.5 text-[#477284]"><Cloud size={14} /> All source systems synced</span></div>
+
+        <section className="mt-7 overflow-hidden rounded-2xl border border-[#d5dbe4] bg-[#f8f9fb] shadow-[0_12px_35px_rgba(55,69,92,.06)]">
+          <div className="flex flex-col gap-3 border-b border-[#e0e4eb] px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-7"><div><div className="text-[10px] font-bold uppercase tracking-[.17em] text-[#527d8d]">Thermal systems</div><h2 className="mt-1 text-xl font-semibold tracking-[-.03em]">Choose a system to calculate</h2><p className="mt-1 text-sm text-[#748197]">Start with the linked scope and readiness state. Details stay closed until needed.</p></div><div className="rounded-full bg-[#e7ebf1] px-3 py-1 text-xs font-bold text-[#66738a]">2 systems</div></div>
+          <div className="divide-y divide-[#e0e4eb]">
+            {systems.map((system) => <button key={system.id} onClick={() => setSelectedId(system.id)} className={`grid w-full gap-4 px-5 py-5 text-left transition hover:bg-[#f1f4f7] sm:grid-cols-[70px_1fr_auto_auto] sm:items-center sm:px-7 ${selectedId === system.id ? "bg-[#edf2f5] shadow-[inset_3px_0_#547f90]" : ""}`}>
+              <div className="font-mono text-xs font-bold text-[#78869c]">{system.id}</div><div><strong className="block text-sm text-[#33435e]">{system.name}</strong><span className="mt-0.5 block text-xs text-[#718098]">{system.scope}</span><small className="mt-1 block text-[11px] text-[#96a0b1]">{system.tanks} · {system.freshness}</small></div>
+              <div className="flex items-center gap-4 sm:gap-5"><Pill tone={system.readiness === "Ready" ? "ready" : "review"}>{system.readiness}</Pill><div><span className="block text-[10px] uppercase tracking-wider text-[#8995a8]">Cooling</span><b className="text-xs text-[#485873]">{system.cooling}</b></div><div><span className="block text-[10px] uppercase tracking-wider text-[#8995a8]">Heating</span><b className="text-xs text-[#485873]">{system.heating}</b></div></div>
+              <span className="hidden items-center gap-1 text-xs font-bold text-[#527d8d] sm:flex">{selectedId === system.id ? "Opened" : "Open calculation"} <ArrowRight size={15} /></span>
+            </button>)}
+          </div>
+          <div className="flex items-center gap-2 border-t border-[#e0e4eb] px-5 py-3 text-[11px] text-[#7d899d] sm:px-7"><ShieldCheck size={14} className="text-[#668895]" /> Wall defaults and correlation versions are managed, versioned, and approved in Platform Admin.</div>
+        </section>
+
+        {selected ? <section className="mt-7 rounded-2xl border border-[#d5dbe4] bg-[#f8f9fb] shadow-[0_12px_35px_rgba(55,69,92,.06)]">
+          <div className="flex flex-col gap-3 border-b border-[#dfe4eb] px-5 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-7"><div><div className="text-[10px] font-bold uppercase tracking-[.17em] text-[#527d8d]">Focused calculation</div><h2 className="mt-1 text-xl font-semibold tracking-[-.03em]">{selected.id} <span className="text-[#9da7b5]">·</span> {selected.name}</h2><p className="mt-1 font-mono text-[10px] text-[#8a96a9]">THERMAL_V1.2 · snapshot fingerprint 34b92a8e7d19…</p></div><button onClick={() => setSelectedId(null)} className="inline-flex items-center gap-1.5 self-start text-xs font-bold text-[#6b7890] hover:text-[#33435e]"><X size={15} /> Close calculation</button></div>
+          <div className="grid border-b border-[#dfe4eb] bg-[#f1f4f7] sm:grid-cols-3">{[[ClipboardCheck, "Ready for review", "All linked sources are valid"], [Cloud, "Saved 2 min ago", "Draft controls are editable"], [ShieldCheck, "Evidence preserved", "Release snapshot stays immutable"]].map(([Icon, title, sub], i) => <div key={i} className="flex items-center gap-3 border-b border-[#dfe4eb] px-5 py-3 last:border-0 sm:border-b-0 sm:border-r sm:px-7"><Icon size={17} className="text-[#527d8d]" /><span><b className="block text-xs text-[#52617a]">{title as string}</b><small className="text-[11px] text-[#8a96a9]">{sub as string}</small></span></div>)}</div>
+
+          <div className="space-y-8 px-5 py-7 sm:px-7">
+            <div><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-3"><span className="rounded-md bg-[#344762] px-2 py-1 font-mono text-[10px] font-bold text-[#edf2f5]">01</span><h3 className="font-semibold">Linked source and geometry</h3></div><Pill>Fresh sources</Pill></div><div className="grid gap-5 sm:grid-cols-4"><Metric label="Effective volume" value="145.000 m³" /><Metric label="Free surface" value="68.20 m²" /><Metric label="Exposed wall" value="112.50 m²" /><Metric label="LSS circulation" value="180.00 m³/h" note="Reference only · not water exchange" /></div><div className="mt-5 grid gap-4 md:grid-cols-2"><div className="rounded-xl border border-[#dbe1e9] bg-[#f2f5f7] p-4"><div className="flex items-center gap-2 text-xs font-bold text-[#51647a]"><Waves size={15} className="text-[#557f91]" /> Water-temperature sources</div><div className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><b>EXH-014</b><span>24.0–26.0 °C <Pill>Valid</Pill></span></div><div className="flex justify-between"><b>EXH-015</b><span>25.0–27.0 °C <Pill>Valid</Pill></span></div></div><button onClick={() => setShowSources(!showSources)} className="mt-4 inline-flex items-center gap-1 text-[11px] font-bold text-[#527d8d]">{showSources ? "Hide source detail" : "Show source detail"} <ChevronDown size={14} className={showSources ? "rotate-180" : ""} /></button>{showSources && <p className="mt-3 border-t border-[#dbe1e9] pt-3 text-[11px] leading-5 text-[#7d899d]">Both ranges are current and linked from the exhibit register. Arithmetic midpoint is used when no reviewed override is present.</p>}</div><div className="rounded-xl border border-[#dbe1e9] bg-[#f2f5f7] p-4"><div className="flex items-center gap-2 text-xs font-bold text-[#51647a]"><LockKeyhole size={15} className="text-[#68778e]" /> Tank geometry provenance</div><div className="mt-4 space-y-3 text-xs"><div><b className="block">TNK-014, TNK-016</b><span className="text-[#7d899d]">Dimensions and plan geometry · calculated</span></div><div><b className="block">TNK-015</b><span className="text-[#7d899d]">Custom tank · reviewed exposed wall area 42.50 m²</span></div></div></div></div></div>
+            <div><div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-3"><span className="rounded-md bg-[#344762] px-2 py-1 font-mono text-[10px] font-bold text-[#edf2f5]">02</span><h3 className="font-semibold">Environment and effective values</h3></div><span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#8a96a9]"><FilePenLine size={14} /> Draft controls</span></div><div className="grid gap-5 sm:grid-cols-4"><Metric label="Ambient air" value="30 °C" /><Metric label="Relative humidity" value="65 %" /><Metric label="Surrounding surface" value="28 °C" /><Metric label="Atmospheric pressure" value="101.325 kPa" /></div><div className="mt-5 grid gap-4 md:grid-cols-2"><div className="flex gap-3 rounded-xl border border-[#bfd4da] bg-[#e9f1f3] p-4"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#527d8d] text-white"><Thermometer size={18} /></div><div className="flex-1"><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#527d8d]">Effective water temperature</div><strong className="mt-1 block text-lg">{water} °C</strong><span className="text-[11px] text-[#718798]">Derived from linked exhibit source range</span><button onClick={() => openSheet("water")} className="mt-3 flex items-center gap-1 text-[11px] font-bold text-[#477284]">Override value <ArrowRight size={14} /></button></div></div><div className="flex gap-3 rounded-xl border border-[#d3d9e3] bg-[#edf0f4] p-4"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#66748b] text-white"><Waves size={18} /></div><div className="flex-1"><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#66748b]">Effective wall value</div><strong className="mt-1 block text-lg">{wall} W/m²·K</strong><span className="text-[11px] text-[#718098]">Governed FRP wall · AAT_FOUNDATIONS_GRP_V1.0</span><button onClick={() => openSheet("wall")} className="mt-3 flex items-center gap-1 text-[11px] font-bold text-[#586982]">Edit wall value <ArrowRight size={14} /></button></div></div></div><div className="mt-4 grid gap-4 md:grid-cols-2"><div className="rounded-xl border border-[#dbe1e9] p-4"><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#71809a]">Surface agitation</div><b className="mt-1 block text-sm">Choose the activity at the water surface</b><small className="mt-1 block text-[11px] text-[#8491a4]">{selectedActivity.note} · used for evaporation</small></div><select value={agitation} onChange={(e) => setAgitation(e.target.value)} className="rounded-lg border border-[#cbd4df] bg-[#f7f8fa] px-2.5 py-2 text-xs font-bold text-[#52617a] outline-none"><option value="calm">Calm</option><option value="moderate">Moderate</option><option value="high">High</option></select></div><div className="mt-4 border-t border-[#e5e8ed] pt-3"><span className="text-[11px] text-[#8491a4]">Effective coefficient</span><b className="ml-3 font-mono text-sm text-[#52617a]">{selectedActivity.coefficient}</b><small className="ml-2 text-[10px] text-[#8491a4]">kg/m²·s·kPa</small></div></div><div className="flex items-center justify-between rounded-xl border border-[#dbe1e9] bg-[#f2f4f7] p-4"><div><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#71809a]">Active platform correlation</div><b className="mt-1 block text-sm">Generated evaporation model · v1.1</b><small className="mt-1 block text-[11px] text-[#8491a4]">Read-only · version selected by Platform Admin</small></div><Pill tone="slate">Platform governed</Pill></div></div></div>
+            <div><div className="mb-4 flex items-center gap-3"><span className="rounded-md bg-[#344762] px-2 py-1 font-mono text-[10px] font-bold text-[#edf2f5]">03</span><h3 className="font-semibold">Operational gains and result</h3><span className="ml-auto text-[11px] font-bold text-[#668895]">{saved ? "Saved just now" : "Autosaved draft"}</span></div><div className="grid gap-4 sm:grid-cols-3"><label className="text-xs font-bold text-[#66748b]">Equipment heat gain<div className="mt-2 flex rounded-lg border border-[#cbd4df] bg-[#f7f8fa]"><input defaultValue="2.4" className="w-full bg-transparent px-3 py-2.5 text-sm outline-none" /><b className="border-l border-[#dbe1e9] px-3 py-2.5 text-xs text-[#8792a3]">kW</b></div></label><label className="text-xs font-bold text-[#66748b]">Lighting power<div className="mt-2 flex rounded-lg border border-[#cbd4df] bg-[#f7f8fa]"><input defaultValue="1.8" className="w-full bg-transparent px-3 py-2.5 text-sm outline-none" /><b className="border-l border-[#dbe1e9] px-3 py-2.5 text-xs text-[#8792a3]">kW</b></div></label><label className="text-xs font-bold text-[#66748b]">Capacity margin<div className="mt-2 flex rounded-lg border border-[#cbd4df] bg-[#f7f8fa]"><input defaultValue="10" className="w-full bg-transparent px-3 py-2.5 text-sm outline-none" /><b className="border-l border-[#dbe1e9] px-3 py-2.5 text-xs text-[#8792a3]">%</b></div></label></div><div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#dbe1e9] bg-[#dbe1e9] sm:grid-cols-4"><div className="bg-[#f1f4f7] p-4"><span className="text-[11px] text-[#8190a5]">Net envelope</span><b className="mt-1 block text-lg">-22.18 kW</b></div><div className="bg-[#f1f4f7] p-4"><span className="text-[11px] text-[#8190a5]">Total load</span><b className="mt-1 block text-lg">-18.25 kW</b></div><div className="bg-[#e5eef0] p-4"><span className="text-[11px] text-[#527d8d]">Cooling with margin</span><b className="mt-1 block text-lg text-[#386a7b]">24.8 kW</b></div><div className="bg-[#eee9df] p-4"><span className="text-[11px] text-[#8a765c]">Heating with recovery + margin</span><b className="mt-1 block text-lg text-[#735e47]">4.2 kW</b></div></div></div>
+          </div>
+          <footer className="flex flex-col gap-3 border-t border-[#dfe4eb] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7"><span className="flex items-center gap-2 text-xs text-[#7d899d]"><ShieldCheck size={15} className="text-[#668895]" /> Changes remain Draft until review</span><button onClick={notify} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#344762] px-4 py-2.5 text-xs font-bold text-[#f0f4f7] shadow-[0_5px_12px_rgba(52,71,98,.2)] transition hover:bg-[#425873]"><Check size={15} /> Save &amp; recalculate</button></footer>
+        </section> : <div className="mt-7 flex items-center gap-3 rounded-xl border border-dashed border-[#c5cfdb] bg-[#f5f7f9] p-5 text-sm text-[#71809a]"><ArrowRight size={17} /><span><b className="block text-[#52617a]">Calculation details appear here</b><small>Select a system above to inspect sources, effective values, and results.</small></span></div>}
+      </div>
+      {sheet && <div className="fixed inset-0 z-10 flex items-end justify-center bg-[#26344c]/30 p-4 sm:items-center" onMouseDown={(e) => e.target === e.currentTarget && setSheet(null)}><section className="w-full max-w-md rounded-2xl border border-[#d5dbe4] bg-[#f8f9fb] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><div className="text-[10px] font-bold uppercase tracking-[.17em] text-[#527d8d]">{sheet === "wall" ? "Reviewed evidence" : "Designer override"}</div><h2 className="mt-1 text-xl font-semibold">{sheet === "wall" ? "Edit wall value" : "Override water temperature"}</h2></div><button onClick={() => setSheet(null)} aria-label="Close"><X size={18} /></button></div><p className="mt-3 text-sm leading-6 text-[#718098]">Use a reviewed project value when the governed source is not representative of this calculation.</p><label className="mt-5 block text-xs font-bold text-[#66748b]">Effective value<div className="mt-2 flex rounded-lg border border-[#cbd4df] bg-white"><input autoFocus type="number" value={draft} onChange={(e) => setDraft(e.target.value)} className="w-full bg-transparent px-3 py-3 text-sm outline-none" /><b className="border-l border-[#dbe1e9] px-3 py-3 text-xs text-[#8792a3]">{sheet === "wall" ? "W/m²·K" : "°C"}</b></div></label><label className="mt-4 block text-xs font-bold text-[#66748b]">Basis note <em className="font-normal text-[#a07855]">required for review</em><textarea rows={3} defaultValue="Reviewed with operations team against seasonal source conditions." className="mt-2 w-full resize-none rounded-lg border border-[#cbd4df] bg-white p-3 text-sm outline-none" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setSheet(null)} className="rounded-lg border border-[#cbd4df] px-3.5 py-2 text-xs font-bold text-[#66748b]">Cancel</button><button onClick={() => { sheet === "wall" ? setWall(draft) : setWater(draft); setSheet(null); notify(); }} className="inline-flex items-center gap-2 rounded-lg bg-[#344762] px-3.5 py-2 text-xs font-bold text-white"><Check size={14} /> Save reviewed value</button></div></section></div>}
+    </main>
+  );
+}
+
+export default ProgressiveDisclosureSlate;
