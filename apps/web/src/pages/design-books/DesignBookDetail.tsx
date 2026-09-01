@@ -1940,6 +1940,16 @@ function thermalNumber(value: any, decimals = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
 }
 
+function customTankWallAreaDefault(tank: any) {
+  const dimensions = tank?.dimensions || tank;
+  const length = Number(dimensions?.inner_length_mm);
+  const width = Number(dimensions?.inner_width_mm);
+  const waterHeight = Number(dimensions?.water_height_mm);
+  const quantity = Math.max(1, Number(tank?.quantity) || 1);
+  if (![length, width, waterHeight].every(value => Number.isFinite(value) && value > 0)) return null;
+  return 2 * (length + width) * waterHeight / 1e6 * quantity;
+}
+
 export function thermalEvidenceBasis(detail: any) {
   return {
     temperature: detail?.water_temperature_basis ||
@@ -2716,12 +2726,22 @@ function ThermalTab({
                 <p className="text-xs font-semibold text-stone-700 mb-2">Tank geometry provenance</p>
                 {(selected.source?.linked_tanks || []).map((tank: any) => (
                   <div key={tank.tank_id} className="border-b border-stone-100 last:border-0 py-1.5 text-xs">
-                    <b>{tank.tank_code || tank.tank_id}</b> · volume: {tank.volume_source}; surface: {tank.free_surface_source}; wall: {tank.exposed_wall_source}
-                    {tank.exposed_wall_area_m2 == null && (
+                    {(() => {
+                      const override = Number(form.custom_tank_wall_areas_m2?.[tank.tank_id]);
+                      const hasOverride = Number.isFinite(override) && override > 0;
+                      const defaultWallArea = customTankWallAreaDefault(tank);
+                      const wallSource = hasOverride
+                        ? 'manual override (custom tank)'
+                        : tank.exposed_wall_source;
+                      return (
+                        <>
+                          <b>{tank.tank_code || tank.tank_id}</b> · volume: {tank.volume_source}; surface: {tank.free_surface_source}; wall: {wallSource}
+                          {tank.shape === 'custom' && (
                       <label className="mt-2 flex items-center gap-2 text-stone-700">
                         <span>Reviewed exposed wall area (m²)</span>
                         <input type="number" min="0" step="any"
                           value={form.custom_tank_wall_areas_m2?.[tank.tank_id] ?? ''}
+                          placeholder={defaultWallArea == null ? 'Rectangular default' : defaultWallArea.toFixed(2)}
                           onChange={event => update('custom_tank_wall_areas_m2', {
                             ...(form.custom_tank_wall_areas_m2 || {}),
                             [tank.tank_id]: event.target.value === '' ? null : Number(event.target.value),
@@ -2729,7 +2749,10 @@ function ThermalTab({
                           disabled={readOnly}
                           className="w-28 rounded border border-stone-200 px-2 py-1 disabled:bg-stone-50" />
                       </label>
-                    )}
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>

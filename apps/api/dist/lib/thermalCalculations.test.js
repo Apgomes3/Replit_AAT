@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const thermalCalculations_1 = require("./thermalCalculations");
-function readySource() {
+function readySource(shapeType = 'Rectangular') {
     return (0, thermalCalculations_1.buildThermalSourceContext)({
         system: { id: 'system-1', system_code: 'LSS-1', design_flow_m3h: 120 },
         links: [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }],
@@ -17,7 +17,7 @@ function readySource() {
                 tank_code: 'TK-1',
                 exhibit_id: 'exhibit-1',
                 quantity: 1,
-                shape_type: 'Rectangular',
+                shape_type: shapeType,
                 surface_area_m2: 10,
                 inner_length_mm: 5000,
                 inner_width_mm: 2000,
@@ -260,19 +260,37 @@ function readyInputs() {
         (0, vitest_1.expect)(result.status).toBe('Blocked');
         (0, vitest_1.expect)(result.reasons.join(' ')).toMatch(/conflicting water design temperatures/i);
     });
-    (0, vitest_1.it)('blocks incomplete custom geometry and keeps sensitivity separate from the base', () => {
-        const source = readySource();
-        source.linked_tanks[0].shape = 'custom';
-        source.linked_tanks[0].exposed_wall_area_m2 = null;
-        const blocked = (0, thermalCalculations_1.calculateThermalCalculation)(source, readyInputs());
-        (0, vitest_1.expect)(blocked.status).toBe('Blocked');
-        (0, vitest_1.expect)(blocked.reasons.join(' ')).toMatch(/custom geometry/i);
+    (0, vitest_1.it)('defaults custom wall area from rectangular dimensions and keeps sensitivity separate from the base', () => {
+        const source = readySource('Custom');
+        (0, vitest_1.expect)(source.linked_tanks[0].exposed_wall_area_m2).toBe(21);
+        (0, vitest_1.expect)(source.linked_tanks[0].exposed_wall_source).toBe('rectangular default (custom tank)');
+        const defaulted = (0, thermalCalculations_1.calculateThermalCalculation)(source, readyInputs());
+        (0, vitest_1.expect)(defaulted.status).toBe('Ready');
+        (0, vitest_1.expect)(defaulted.results.exposed_wall_area_m2).toBe(21);
         const reviewed = (0, thermalCalculations_1.calculateThermalCalculation)(source, {
             ...readyInputs(),
-            custom_tank_wall_areas_m2: { 'tank-1': 21 },
+            custom_tank_wall_areas_m2: { 'tank-1': 7 },
         });
         (0, vitest_1.expect)(reviewed.status).toBe('Ready');
-        (0, vitest_1.expect)(reviewed.results.exposed_wall_area_m2).toBe(21);
+        (0, vitest_1.expect)(reviewed.results.exposed_wall_area_m2).toBe(7);
+        (0, vitest_1.expect)(reviewed.source_snapshot.linked_tanks[0].exposed_wall_source).toBe('manual override (custom tank)');
+        const cleared = (0, thermalCalculations_1.calculateThermalCalculation)(source, {
+            ...readyInputs(),
+            custom_tank_wall_areas_m2: { 'tank-1': null },
+        });
+        (0, vitest_1.expect)(cleared.results.exposed_wall_area_m2).toBe(21);
+        (0, vitest_1.expect)(cleared.source_snapshot.linked_tanks[0].exposed_wall_source).toBe('rectangular default (custom tank)');
+        const saved = { ...source, linked_tanks: [{ ...source.linked_tanks[0], exposed_wall_area_m2: 9, exposed_wall_source: 'tank saved exposed wall area' }] };
+        const savedResult = (0, thermalCalculations_1.calculateThermalCalculation)(saved, readyInputs());
+        (0, vitest_1.expect)(savedResult.results.exposed_wall_area_m2).toBe(9);
+        (0, vitest_1.expect)(savedResult.source_snapshot.linked_tanks[0].exposed_wall_source).toBe('tank saved exposed wall area');
+        const incomplete = {
+            ...source,
+            linked_tanks: [{ ...source.linked_tanks[0], dimensions: { inner_length_mm: null, inner_width_mm: 2000, water_height_mm: 1500 }, exposed_wall_area_m2: null }],
+        };
+        const blocked = (0, thermalCalculations_1.calculateThermalCalculation)(incomplete, readyInputs());
+        (0, vitest_1.expect)(blocked.status).toBe('Blocked');
+        (0, vitest_1.expect)(blocked.reasons.join(' ')).toMatch(/rectangular default.*reviewed override/i);
         const ready = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), readyInputs());
         (0, vitest_1.expect)(ready.sensitivity_summary.cases).toHaveLength(5);
         (0, vitest_1.expect)(ready.sensitivity_cases.some(item => item.case_key === 'surface_plus_10_pct')).toBe(true);

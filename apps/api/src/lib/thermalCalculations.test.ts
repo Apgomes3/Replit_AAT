@@ -8,7 +8,7 @@ import {
   THERMAL_CONSTRUCTION_DEFAULTS,
 } from './thermalCalculations';
 
-function readySource() {
+function readySource(shapeType = 'Rectangular') {
   return buildThermalSourceContext({
     system: { id: 'system-1', system_code: 'LSS-1', design_flow_m3h: 120 },
     links: [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }],
@@ -23,7 +23,7 @@ function readySource() {
       tank_code: 'TK-1',
       exhibit_id: 'exhibit-1',
       quantity: 1,
-      shape_type: 'Rectangular',
+      shape_type: shapeType,
       surface_area_m2: 10,
       inner_length_mm: 5000,
       inner_width_mm: 2000,
@@ -298,20 +298,42 @@ describe('AAT thermal calculation', () => {
     expect(result.reasons.join(' ')).toMatch(/conflicting water design temperatures/i);
   });
 
-  it('blocks incomplete custom geometry and keeps sensitivity separate from the base', () => {
-    const source = readySource();
-    source.linked_tanks[0].shape = 'custom';
-    source.linked_tanks[0].exposed_wall_area_m2 = null;
-    const blocked = calculateThermalCalculation(source, readyInputs());
-    expect(blocked.status).toBe('Blocked');
-    expect(blocked.reasons.join(' ')).toMatch(/custom geometry/i);
+  it('defaults custom wall area from rectangular dimensions and keeps sensitivity separate from the base', () => {
+    const source = readySource('Custom');
+    expect(source.linked_tanks[0].exposed_wall_area_m2).toBe(21);
+    expect(source.linked_tanks[0].exposed_wall_source).toBe('rectangular default (custom tank)');
+
+    const defaulted = calculateThermalCalculation(source, readyInputs());
+    expect(defaulted.status).toBe('Ready');
+    expect(defaulted.results.exposed_wall_area_m2).toBe(21);
 
     const reviewed = calculateThermalCalculation(source, {
       ...readyInputs(),
-      custom_tank_wall_areas_m2: { 'tank-1': 21 },
+      custom_tank_wall_areas_m2: { 'tank-1': 7 },
     });
     expect(reviewed.status).toBe('Ready');
-    expect(reviewed.results.exposed_wall_area_m2).toBe(21);
+    expect(reviewed.results.exposed_wall_area_m2).toBe(7);
+    expect(reviewed.source_snapshot.linked_tanks[0].exposed_wall_source).toBe('manual override (custom tank)');
+
+    const cleared = calculateThermalCalculation(source, {
+      ...readyInputs(),
+      custom_tank_wall_areas_m2: { 'tank-1': null },
+    });
+    expect(cleared.results.exposed_wall_area_m2).toBe(21);
+    expect(cleared.source_snapshot.linked_tanks[0].exposed_wall_source).toBe('rectangular default (custom tank)');
+
+    const saved = { ...source, linked_tanks: [{ ...source.linked_tanks[0], exposed_wall_area_m2: 9, exposed_wall_source: 'tank saved exposed wall area' }] };
+    const savedResult = calculateThermalCalculation(saved, readyInputs());
+    expect(savedResult.results.exposed_wall_area_m2).toBe(9);
+    expect(savedResult.source_snapshot.linked_tanks[0].exposed_wall_source).toBe('tank saved exposed wall area');
+
+    const incomplete = {
+      ...source,
+      linked_tanks: [{ ...source.linked_tanks[0], dimensions: { inner_length_mm: null, inner_width_mm: 2000, water_height_mm: 1500 }, exposed_wall_area_m2: null }],
+    };
+    const blocked = calculateThermalCalculation(incomplete, readyInputs());
+    expect(blocked.status).toBe('Blocked');
+    expect(blocked.reasons.join(' ')).toMatch(/rectangular default.*reviewed override/i);
 
     const ready = calculateThermalCalculation(readySource(), readyInputs());
     expect(ready.sensitivity_summary.cases).toHaveLength(5);

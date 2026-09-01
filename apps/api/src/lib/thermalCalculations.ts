@@ -12,7 +12,7 @@
 
 import crypto from 'crypto';
 
-export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v3';
+export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v4';
 export const THERMAL_CONSTRUCTION_BASIS_VERSION = 'aat-thermal-construction-v1';
 /**
  * Default wall U-values are governed engineering assumptions, not material
@@ -216,9 +216,11 @@ function tankGeometry(tank: any) {
   if (wallArea == null && shape === 'cylindrical' && width != null && waterHeight != null) {
     wallArea = Math.PI * width * waterHeight / 1e6;
     wallSource = 'cylindrical diameter × water height';
-  } else if (wallArea == null && shape !== 'custom' && length != null && width != null && waterHeight != null) {
+  } else if (wallArea == null && length != null && width != null && waterHeight != null) {
     wallArea = 2 * (length + width) * waterHeight / 1e6;
-    wallSource = 'rectangular inner perimeter × water height';
+    wallSource = shape === 'custom'
+      ? 'rectangular default (custom tank)'
+      : 'rectangular inner perimeter × water height';
   }
   const volume = positive(
     tank?.effective_operating_volume_m3 ?? tank?.design_volume_m3 ??
@@ -507,8 +509,24 @@ function correlationProblems(correlation: any, inputs: any) {
 }
 
 function resolvedWallArea(tank: any, inputs: any) {
-  return positive(tank.exposed_wall_area_m2) ??
-    positive(inputs.custom_tank_wall_areas_m2?.[tank.tank_id]);
+  return positive(inputs.custom_tank_wall_areas_m2?.[tank.tank_id]) ??
+    positive(tank.exposed_wall_area_m2);
+}
+
+function resolvedWallSource(tank: any, inputs: any) {
+  return positive(inputs.custom_tank_wall_areas_m2?.[tank.tank_id]) != null
+    ? 'manual override (custom tank)'
+    : tank.exposed_wall_source;
+}
+
+function sourceWithResolvedWallSources(source: any, inputs: any) {
+  return {
+    ...source,
+    linked_tanks: (source.linked_tanks || []).map((tank: any) => ({
+      ...tank,
+      exposed_wall_source: resolvedWallSource(tank, inputs),
+    })),
+  };
 }
 
 function validateCommonInputs(source: any, inputs: any, reasons: string[]) {
@@ -539,7 +557,7 @@ function validateCommonInputs(source: any, inputs: any, reasons: string[]) {
     reasons.push('Every linked tank requires a positive free-surface area.');
   }
   if (geometry.some((tank: any) => resolvedWallArea(tank, inputs) == null)) {
-    reasons.push('Every linked tank requires a positive exposed wall area; custom geometry needs a reviewed wall-area input.');
+    reasons.push('Every linked tank requires a positive exposed wall area; custom tanks use a rectangular default when length, width, and water height are available, otherwise provide a positive reviewed override.');
   }
   const wall = resolveWallUValue(inputs, reasons);
   const agitation = String(inputs.agitation_class || '').trim();
@@ -756,6 +774,7 @@ export function calculateThermalCalculation(source: any, inputs: any = {}, calcu
     normalizedInputs.surrounding_surface_temperature_c = normalizedInputs.ambient_air_temperature_c ?? null;
   }
   const base = calculateCase(source, normalizedInputs);
+  const resolvedSource = sourceWithResolvedWallSources(source, normalizedInputs);
   normalizedInputs.water_temperature_basis = base.water_temperature_basis;
   normalizedInputs.wall_construction_basis = base.wall_construction_basis;
   const sensitivityCases: any[] = [];
@@ -807,7 +826,7 @@ export function calculateThermalCalculation(source: any, inputs: any = {}, calcu
     freshness: 'fresh',
     is_stale: false,
     source_fingerprint: source.fingerprint || thermalFingerprint(source),
-    source_snapshot: source,
+    source_snapshot: resolvedSource,
     inputs: normalizedInputs,
     correlation_snapshot: normalizedInputs.agitation_correlation_snapshot || null,
     constants: THERMAL_CONSTANTS,
