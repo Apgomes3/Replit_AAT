@@ -10,6 +10,7 @@ import {
   thermalCorrelationVersionsForClass,
   thermalWallFormValues,
   thermalWallOverrideFlags,
+  thermalWallReplacementIsValid,
 } from './DesignBookDetail';
 
 describe('Design Book Life Support Systems list', () => {
@@ -134,5 +135,25 @@ describe('Design Book Thermal navigation', () => {
       thickness_mm: true,
       conductivity_w_m_k: true,
     });
+  });
+
+  it('blocks incomplete and non-positive wall replacement approvals', () => {
+    const valid = {
+      construction_code: 'acrylic',
+      construction_label: 'Acrylic',
+      material: 'Acrylic / PMMA',
+      thickness_mm: '20',
+      conductivity_w_m_k: '0.19',
+      source_basis: 'AAT Foundations',
+      source_reference: 'AAT Foundations 2026',
+      version: 'AAT_FOUNDATIONS_WALL_V2.0',
+      notes: '',
+    };
+
+    expect(thermalWallReplacementIsValid(valid)).toBe(true);
+    expect(thermalWallReplacementIsValid({ ...valid, material: '' })).toBe(false);
+    expect(thermalWallReplacementIsValid({ ...valid, thickness_mm: 0 })).toBe(false);
+    expect(thermalWallReplacementIsValid({ ...valid, conductivity_w_m_k: -0.1 })).toBe(false);
+    expect(thermalWallReplacementIsValid({ ...valid, source_reference: '' })).toBe(false);
   });
 });

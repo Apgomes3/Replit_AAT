@@ -20,6 +20,74 @@ const approvedWall = {
 };
 
 describe('Thermal wall construction approval boundary', () => {
+  it('rejects a stale successor confirmation when the approved version changed', () => {
+    expect(thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches(
+      { id: 'wall-2' },
+      'wall-1',
+    )).toBe(false);
+    expect(thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches(
+      { id: 'wall-2' },
+      'wall-2',
+    )).toBe(true);
+    expect(thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches(
+      null,
+      '',
+    )).toBe(true);
+    expect(thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches(
+      { id: 'wall-1' },
+      '',
+    )).toBe(false);
+  });
+
+  it('returns approved and superseded history with approval metadata', async () => {
+    const runner = vi.fn(async () => ({
+      rows: [
+        {
+          ...approvedWall,
+          approved_by_name: 'Alex Chen',
+          approved_by_email: 'engineer@example.com',
+        },
+        {
+          ...approvedWall,
+          id: 'wall-0',
+          version: 'AAT_FOUNDATIONS_WALL_V0.9',
+          status: 'superseded',
+          superseded_by: 'engineer-2',
+          superseded_at: '2026-08-01T00:00:00.000Z',
+          superseded_by_name: 'Priya Shah',
+          superseded_by_email: 'priya@example.com',
+        },
+      ],
+    }));
+
+    const history = await thermalCorrelationTestUtils.loadThermalWallConstructionHistory(
+      runner as any,
+    );
+
+    expect((runner.mock.calls as any[][])[0][0]).toContain(
+      'LEFT JOIN users approved_user',
+    );
+    expect(history).toEqual([
+      expect.objectContaining({
+        basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+        approval: expect.objectContaining({
+          status: 'approved',
+          approved_by_name: 'Alex Chen',
+          approved_by_email: 'engineer@example.com',
+        }),
+      }),
+      expect.objectContaining({
+        basis_version: 'AAT_FOUNDATIONS_WALL_V0.9',
+        approval: expect.objectContaining({
+          status: 'superseded',
+          superseded_by: 'engineer-2',
+          superseded_at: '2026-08-01T00:00:00.000Z',
+          superseded_by_name: 'Priya Shah',
+        }),
+      }),
+    ]);
+  });
+
   it('resolves the selected construction from locked governed evidence', async () => {
     const runner = vi.fn(async () => ({ rows: [approvedWall] }));
     const inputs = await thermalCorrelationTestUtils.resolveThermalWallConstructionInputs(

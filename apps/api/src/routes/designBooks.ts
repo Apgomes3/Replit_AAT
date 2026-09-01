@@ -622,6 +622,10 @@ function positiveCorrelationCoefficient(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function thermalWallExpectedCurrentMatches(current: any, expectedCurrentId: string) {
+  return current ? expectedCurrentId === current.id : !expectedCurrentId;
+}
+
 function thermalWallConstructionDefaultRow(row: any) {
   const thicknessMm = Number(row.thickness_mm);
   const conductivity = Number(row.conductivity_w_m_k);
@@ -651,6 +655,12 @@ function thermalWallConstructionDefaultRow(row: any) {
       status: row.status || 'approved',
       approved_by: row.approved_by || null,
       approved_at: row.approved_at || null,
+      approved_by_name: row.approved_by_name || null,
+      approved_by_email: row.approved_by_email || null,
+      superseded_by: row.superseded_by || null,
+      superseded_at: row.superseded_at || null,
+      superseded_by_name: row.superseded_by_name || null,
+      superseded_by_email: row.superseded_by_email || null,
     },
   };
 }
@@ -661,6 +671,21 @@ async function loadThermalWallConstructionDefaults(runner: DbRunner) {
      FROM thermal_wall_construction_defaults
      WHERE status='approved'
      ORDER BY construction_code, approved_at DESC, created_at DESC, id DESC`,
+  );
+  return result.rows.map(thermalWallConstructionDefaultRow);
+}
+
+async function loadThermalWallConstructionHistory(runner: DbRunner) {
+  const result = await runner(
+    `SELECT tw.*,
+            CONCAT_WS(' ', approved_user.first_name, approved_user.last_name) AS approved_by_name,
+            approved_user.email AS approved_by_email,
+            CONCAT_WS(' ', superseded_user.first_name, superseded_user.last_name) AS superseded_by_name,
+            superseded_user.email AS superseded_by_email
+     FROM thermal_wall_construction_defaults tw
+     LEFT JOIN users approved_user ON approved_user.id=tw.approved_by
+     LEFT JOIN users superseded_user ON superseded_user.id=tw.superseded_by
+     ORDER BY tw.construction_code, tw.approved_at DESC, tw.created_at DESC, tw.id DESC`,
   );
   return result.rows.map(thermalWallConstructionDefaultRow);
 }
@@ -1055,11 +1080,22 @@ export const thermalCorrelationTestUtils = {
   resolveThermalCorrelationInputs,
   resolveThermalWallConstructionInputs,
   loadThermalWallConstructionDefaults,
+  loadThermalWallConstructionHistory,
+  thermalWallExpectedCurrentMatches,
 };
 
 router.get('/thermal-wall-constructions', async (_req: AuthRequest, res: Response) => {
   res.json({ items: await loadThermalWallConstructionDefaults(query) });
 });
+
+router.get(
+  '/thermal-wall-constructions/history',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (_req: AuthRequest, res: Response) => {
+    res.json({ items: await loadThermalWallConstructionHistory(query) });
+  },
+);
 
 router.post(
   '/thermal-wall-constructions/:constructionCode/versions',
@@ -1073,6 +1109,7 @@ router.post(
     const conductivity = positiveCorrelationCoefficient(req.body.conductivity_w_m_k);
     const sourceBasis = String(req.body.source_basis || '').trim();
     const sourceReference = String(req.body.source_reference || '').trim();
+    const expectedCurrentId = String(req.body.expected_current_id || '').trim();
     if (!constructionCode || !version || !material || thickness == null || conductivity == null ||
         !sourceBasis || !sourceReference) {
       return res.status(400).json({
@@ -1099,6 +1136,15 @@ router.post(
       );
       const current = history.rows.find(row => row.status === 'approved');
       const previous = current || history.rows[0] || null;
+      if (!thermalWallExpectedCurrentMatches(current, expectedCurrentId)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: {
+            code: 'THERMAL_WALL_CONSTRUCTION_CHANGED',
+            message: 'The current wall construction version changed. Refresh the history and review the replacement again.',
+          },
+        });
+      }
       const constructionLabel = String(
         req.body.construction_label || previous?.construction_label || '',
       ).trim();

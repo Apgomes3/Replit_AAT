@@ -2077,6 +2077,344 @@ function ThermalCorrelationUsageList({ usages }: { usages: any[] }) {
   );
 }
 
+type ThermalWallForm = {
+  construction_code: string;
+  construction_label: string;
+  material: string;
+  thickness_mm: string | number;
+  conductivity_w_m_k: string | number;
+  source_basis: string;
+  source_reference: string;
+  version: string;
+  notes: string;
+};
+
+export function thermalWallReplacementIsValid(form: Partial<ThermalWallForm>) {
+  return Boolean(
+    String(form.construction_code || '').trim() &&
+    String(form.construction_label || '').trim() &&
+    String(form.material || '').trim() &&
+    Number.isFinite(Number(form.thickness_mm)) &&
+    Number(form.thickness_mm) > 0 &&
+    Number.isFinite(Number(form.conductivity_w_m_k)) &&
+    Number(form.conductivity_w_m_k) > 0 &&
+    String(form.source_basis || '').trim() &&
+    String(form.source_reference || '').trim() &&
+    String(form.version || '').trim(),
+  );
+}
+
+function thermalWallFormFrom(construction: any, preserveVersion = false): ThermalWallForm {
+  return {
+    construction_code: construction?.code || construction?.construction_code || '',
+    construction_label: construction?.label || construction?.construction_label || '',
+    material: construction?.material || '',
+    thickness_mm: construction?.thickness_mm ?? '',
+    conductivity_w_m_k: construction?.conductivity_w_m_k ?? '',
+    source_basis: construction?.source_basis || 'AAT Foundations',
+    source_reference: construction?.source_reference || '',
+    version: preserveVersion ? construction?.version || construction?.basis_version || '' : '',
+    notes: preserveVersion ? construction?.notes || '' : '',
+  };
+}
+
+function thermalWallDate(value: unknown) {
+  return value ? new Date(String(value)).toLocaleString() : '—';
+}
+
+function ThermalWallConstructionLibrary({
+  approvedDefaults,
+  canManageLibrary,
+  onRefresh,
+}: {
+  approvedDefaults: any[];
+  canManageLibrary: boolean;
+  onRefresh: () => void;
+}) {
+  const [showWallLibrary, setShowWallLibrary] = useState(false);
+  const [wallLibrarySaving, setWallLibrarySaving] = useState(false);
+  const [pendingWallApproval, setPendingWallApproval] = useState<{
+    current: any;
+    replacement: ThermalWallForm;
+  } | null>(null);
+  const [wallForm, setWallForm] = useState<ThermalWallForm>(() =>
+    thermalWallFormFrom(approvedDefaults[0]),
+  );
+  const {
+    data: wallLibrary,
+    isFetching: wallLibraryLoading,
+    isError: wallLibraryError,
+    refetch: refetchWallLibrary,
+  } = useQuery({
+    queryKey: ['thermal-wall-construction-history'],
+    queryFn: () => api.get('/thermal-wall-constructions/history').then(response => response.data),
+    enabled: showWallLibrary && canManageLibrary,
+  });
+  const wallItems: any[] = wallLibrary?.items || [];
+  const currentWallItems = wallItems.filter(item => item.approval?.status === 'approved');
+  const visibleCurrentWallItems = currentWallItems.length
+    ? currentWallItems
+    : approvedDefaults;
+  const wallFormValid = thermalWallReplacementIsValid(wallForm);
+  const fieldClass = 'w-full rounded-lg border border-stone-200 px-3 py-2 text-sm bg-white disabled:bg-stone-50 disabled:text-stone-500';
+  const labelClass = 'block text-xs font-medium text-stone-600 mb-1';
+
+  const selectWallConstruction = (code: string) => {
+    const construction = wallItems.find(item =>
+      (item.code || item.construction_code) === code &&
+      (item.approval?.status || item.status) === 'approved',
+    ) || approvedDefaults.find(item => item.code === code);
+    setWallForm(thermalWallFormFrom(construction));
+  };
+
+  const requestWallApproval = () => {
+    if (!wallFormValid) return;
+    const current = wallItems.find(item =>
+      (item.code || item.construction_code) === wallForm.construction_code &&
+      item.approval?.status === 'approved',
+    ) || approvedDefaults.find(item => item.code === wallForm.construction_code);
+    if (!current) {
+      toast.error('Select a current approved wall construction before approving a replacement.');
+      return;
+    }
+    setPendingWallApproval({ current, replacement: { ...wallForm } });
+  };
+
+  const approveWallReplacement = async () => {
+    if (!pendingWallApproval) return;
+    const { current, replacement } = pendingWallApproval;
+    setWallLibrarySaving(true);
+    try {
+      await api.post(`/thermal-wall-constructions/${replacement.construction_code}/versions`, {
+        expected_current_id: current.id,
+        construction_label: replacement.construction_label,
+        material: replacement.material,
+        thickness_mm: Number(replacement.thickness_mm),
+        conductivity_w_m_k: Number(replacement.conductivity_w_m_k),
+        source_basis: replacement.source_basis,
+        source_reference: replacement.source_reference,
+        version: replacement.version,
+        notes: replacement.notes,
+      });
+      await refetchWallLibrary();
+      onRefresh();
+      setPendingWallApproval(null);
+      setWallForm(currentForm => ({ ...currentForm, version: '', notes: '' }));
+      toast.success(`${replacement.construction_code} ${replacement.version} approved`);
+    } catch (error: any) {
+      if (error?.response?.data?.error?.code === 'THERMAL_WALL_CONSTRUCTION_CHANGED') {
+        await refetchWallLibrary();
+        setPendingWallApproval(null);
+      }
+      toast.error(error?.response?.data?.error?.message || 'Unable to approve wall construction version');
+    } finally {
+      setWallLibrarySaving(false);
+    }
+  };
+
+  return (
+    <>
+      {pendingWallApproval && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-stone-200 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Approve Thermal wall replacement</p>
+              <h2 className="mt-1 text-lg font-bold text-stone-900">Review the successor before it is published</h2>
+              <p className="mt-1 text-sm text-stone-500">
+                This approval will make the replacement the current default. Existing Design Book calculation, review, and release snapshots are not rewritten.
+              </p>
+            </div>
+            <div className="space-y-4 bg-stone-50/60 p-5">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Version being superseded</p>
+                    <p className="mt-1 font-semibold text-amber-950">
+                      {pendingWallApproval.current.label} · {pendingWallApproval.current.basis_version || pendingWallApproval.current.version}
+                    </p>
+                    <p className="mt-1 text-sm text-amber-900">
+                      {pendingWallApproval.current.material} · {pendingWallApproval.current.thickness_mm} {pendingWallApproval.current.thickness_units || 'mm'} · {pendingWallApproval.current.conductivity_w_m_k} {pendingWallApproval.current.conductivity_units || 'W/m·K'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Replacement to approve</p>
+                <p className="mt-1 font-semibold text-emerald-950">
+                  {pendingWallApproval.replacement.construction_label} · {pendingWallApproval.replacement.version}
+                </p>
+                <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm text-emerald-950 sm:grid-cols-2">
+                  <div><dt className="inline text-emerald-800">Material: </dt><dd className="inline">{pendingWallApproval.replacement.material}</dd></div>
+                  <div><dt className="inline text-emerald-800">Thickness: </dt><dd className="inline">{pendingWallApproval.replacement.thickness_mm} mm</dd></div>
+                  <div><dt className="inline text-emerald-800">Conductivity: </dt><dd className="inline">{pendingWallApproval.replacement.conductivity_w_m_k} W/m·K</dd></div>
+                  <div><dt className="inline text-emerald-800">Source: </dt><dd className="inline">{pendingWallApproval.replacement.source_basis} · {pendingWallApproval.replacement.source_reference}</dd></div>
+                </dl>
+                {pendingWallApproval.replacement.notes && (
+                  <p className="mt-2 border-t border-emerald-200 pt-2 text-sm text-emerald-900">
+                    <span className="font-medium">Notes:</span> {pendingWallApproval.replacement.notes}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                Approval actor and timestamp are recorded automatically from the signed-in engineering administrator.
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-stone-200 bg-white px-5 py-4">
+              <button type="button" onClick={() => setPendingWallApproval(null)} className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">
+                Cancel
+              </button>
+              <button type="button" onClick={approveWallReplacement} disabled={wallLibrarySaving} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+                {wallLibrarySaving ? 'Approving…' : 'Confirm approval'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <section className="rounded-xl border border-stone-200 bg-white">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2 font-semibold text-stone-900">
+              <Layers className="h-4 w-4 text-blue-600" />
+              Thermal wall construction defaults
+            </div>
+            <div className="text-xs text-stone-500">
+              {visibleCurrentWallItems.length} current approved construction{visibleCurrentWallItems.length === 1 ? '' : 's'}.
+              Governed values are versioned; captured calculation snapshots remain unchanged.
+            </div>
+          </div>
+          {canManageLibrary && (
+            <button
+              type="button"
+              onClick={() => setShowWallLibrary(value => !value)}
+              className="rounded-lg border border-stone-200 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            >
+              {showWallLibrary ? 'Close wall library' : 'Manage wall defaults'}
+            </button>
+          )}
+        </div>
+        <div className="grid gap-3 border-t border-stone-100 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4">
+          {visibleCurrentWallItems.map(item => (
+            <div key={item.id || item.code} className="rounded-lg bg-stone-50 px-3 py-2">
+              <div className="text-xs font-semibold text-stone-700">{item.label || item.construction_label}</div>
+              <div className="mt-1 text-xs text-stone-500">{item.material} · {item.thickness_mm} mm · {item.conductivity_w_m_k} W/m·K</div>
+              <div className="mt-1 text-[11px] text-stone-400">{item.basis_version || item.version}</div>
+            </div>
+          ))}
+          {!visibleCurrentWallItems.length && <p className="text-sm text-stone-500">No approved wall construction defaults are available.</p>}
+        </div>
+        {showWallLibrary && canManageLibrary && (
+          <div className="space-y-5 border-t border-stone-200 p-4">
+            <div>
+              <div className="flex items-center gap-2 font-semibold text-stone-900">
+                <LibraryBig className="h-4 w-4 text-blue-600" />
+                Approved and superseded history
+              </div>
+              <p className="mt-1 text-xs text-stone-500">Review source evidence and approval metadata before adding a successor version.</p>
+            </div>
+            {wallLibraryLoading ? (
+              <div className="py-6 text-center text-sm text-stone-500">Loading wall construction history…</div>
+            ) : wallLibraryError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">Unable to load wall construction history.</div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-stone-200">
+                <table className="min-w-[900px] w-full text-left text-xs">
+                  <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-500">
+                    <tr>
+                      <th className="px-3 py-2">Construction / version</th>
+                      <th className="px-3 py-2">Layer</th>
+                      <th className="px-3 py-2">Source</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Approval metadata</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {wallItems.map(item => (
+                      <tr key={item.id} className="align-top">
+                        <td className="px-3 py-3">
+                          <div className="font-semibold text-stone-800">{item.label} · {item.basis_version}</div>
+                          <div className="mt-1 font-mono text-stone-400">{item.code}</div>
+                        </td>
+                        <td className="px-3 py-3 text-stone-600">
+                          <div>{item.material}</div>
+                          <div className="mt-1">{item.thickness_mm} {item.thickness_units} · {item.conductivity_w_m_k} {item.conductivity_units}</div>
+                        </td>
+                        <td className="max-w-[220px] px-3 py-3 text-stone-600">
+                          <div>{item.source_basis}</div>
+                          <div className="mt-1 text-stone-400">{item.source_reference}</div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${
+                            item.approval?.status === 'approved'
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-stone-200 bg-stone-100 text-stone-600'
+                          }`}>
+                            {item.approval?.status === 'approved' ? 'Approved' : 'Superseded'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-stone-600">
+                          <div>Approved {thermalWallDate(item.approval?.approved_at)}</div>
+                          <div className="mt-1 text-stone-400">{item.approval?.approved_by_name || item.approval?.approved_by_email || item.approval?.approved_by || 'Recorded approver'}</div>
+                          {item.approval?.status === 'superseded' && (
+                            <div className="mt-2 border-t border-stone-100 pt-2">
+                              <div>Superseded {thermalWallDate(item.approval?.superseded_at)}</div>
+                              <div className="mt-1 text-stone-400">{item.approval?.superseded_by_name || item.approval?.superseded_by_email || item.approval?.superseded_by || 'Recorded actor'}</div>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {!wallItems.length && (
+                      <tr><td colSpan={5} className="px-3 py-6 text-center text-stone-500">No wall construction history is available.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <div className="flex items-start gap-2">
+                <UserCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-950">Approve a replacement version</p>
+                  <p className="mt-1 text-xs text-blue-800">The new version is additive. The currently approved version will be shown for confirmation and marked superseded atomically.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label><span className={labelClass}>Construction</span>
+                  <select aria-label="Wall construction" value={wallForm.construction_code} onChange={event => selectWallConstruction(event.target.value)} className={fieldClass}>
+                    <option value="">Select construction</option>
+                    {(currentWallItems.length ? currentWallItems : approvedDefaults).map(item => (
+                      <option key={item.id || item.code} value={item.code}>{item.code} · {item.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label><span className={labelClass}>Construction label</span><input value={wallForm.construction_label} onChange={event => setWallForm(current => ({ ...current, construction_label: event.target.value }))} className={fieldClass} /></label>
+                <label><span className={labelClass}>New version</span><input value={wallForm.version} onChange={event => setWallForm(current => ({ ...current, version: event.target.value }))} className={fieldClass} placeholder="AAT_FOUNDATIONS_WALL_V2.0" /></label>
+                <label><span className={labelClass}>Material</span><input value={wallForm.material} onChange={event => setWallForm(current => ({ ...current, material: event.target.value }))} className={fieldClass} /></label>
+                <label><span className={labelClass}>Thickness (mm)</span><input type="number" min="0" step="any" value={wallForm.thickness_mm} onChange={event => setWallForm(current => ({ ...current, thickness_mm: event.target.value }))} className={fieldClass} /></label>
+                <label><span className={labelClass}>Conductivity (W/m·K)</span><input type="number" min="0" step="any" value={wallForm.conductivity_w_m_k} onChange={event => setWallForm(current => ({ ...current, conductivity_w_m_k: event.target.value }))} className={fieldClass} /></label>
+                <label><span className={labelClass}>Source / standard</span><input value={wallForm.source_basis} onChange={event => setWallForm(current => ({ ...current, source_basis: event.target.value }))} className={fieldClass} /></label>
+                <label><span className={labelClass}>Source version / reference</span><input value={wallForm.source_reference} onChange={event => setWallForm(current => ({ ...current, source_reference: event.target.value }))} className={fieldClass} /></label>
+              </div>
+              <label className="mt-3 block"><span className={labelClass}>Engineering notes</span><textarea rows={2} value={wallForm.notes} onChange={event => setWallForm(current => ({ ...current, notes: event.target.value }))} className={`${fieldClass} resize-none`} placeholder="Record the basis for this successor version…" /></label>
+              {!wallFormValid && (
+                <p className="mt-2 text-xs text-red-700">Complete the construction, version, material, source fields and enter positive thickness and conductivity values.</p>
+              )}
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-[11px] text-blue-800">Approval actor and time are captured from the signed-in account.</p>
+                <button type="button" onClick={requestWallApproval} disabled={wallLibrarySaving || !wallFormValid} className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+                  Preview and approve
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
 function ThermalTab({
   book,
   readOnly,
@@ -2487,10 +2825,17 @@ function ThermalTab({
 
   if (!items.length) {
     return (
-      <div className="rounded-2xl border border-stone-200 bg-white py-16 text-center">
-        <ThermometerSun className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-        <p className="font-semibold text-stone-700">No LSS systems to calculate</p>
-        <p className="text-sm text-stone-500 mt-1">Create and link an LSS system first.</p>
+      <div className="space-y-4">
+        <ThermalWallConstructionLibrary
+          approvedDefaults={book.thermal_construction_defaults || []}
+          canManageLibrary={canManageLibrary}
+          onRefresh={onRefresh}
+        />
+        <div className="rounded-2xl border border-stone-200 bg-white py-16 text-center">
+          <ThermometerSun className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+          <p className="font-semibold text-stone-700">No LSS systems to calculate</p>
+          <p className="text-sm text-stone-500 mt-1">Create and link an LSS system first.</p>
+        </div>
       </div>
     );
   }
@@ -2524,6 +2869,11 @@ function ThermalTab({
 
   return (
     <div className="space-y-4">
+      <ThermalWallConstructionLibrary
+        approvedDefaults={constructionDefaults}
+        canManageLibrary={canManageLibrary}
+        onRefresh={onRefresh}
+      />
       {pendingSupersede && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
           <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -3502,7 +3852,16 @@ export default function DesignBookDetail() {
 
       {tab === 'lss' && <LSSTab book={book} onNewLSS={() => !isDesignReadOnly && setShowNewLSS(true)} readOnly={isDesignReadOnly} />}
 
-      {tab === 'thermal' && <ThermalTab book={book} readOnly={isDesignReadOnly} canManageLibrary={isDesigner} onRefresh={refresh} />}
+      {tab === 'thermal' && (
+        <ThermalTab
+          book={book}
+          readOnly={isDesignReadOnly}
+          canManageLibrary={isDesigner &&
+            user?.moduleAccess?.design_books !== 'view' &&
+            user?.moduleAccess?.design_books !== 'hidden'}
+          onRefresh={refresh}
+        />
+      )}
 
       {tab === 'piping' && (
         <FrictionLossTab book={book} readOnly={isDesignReadOnly} onRefresh={refresh} />
