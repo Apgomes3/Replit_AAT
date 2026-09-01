@@ -9,7 +9,7 @@ import {
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
   Droplets, ArrowLeft, Route, FlaskConical, Wind,
   Layers, Package, ExternalLink, Zap, Weight, Maximize2, LockKeyhole,
-  MoreHorizontal, FileDown, GitCompare, Archive,
+  MoreHorizontal, FileDown, GitCompare, Archive, GitFork,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -25,6 +25,7 @@ import {
 } from './foamFractionatorSizing';
 import { summarizeFiltration } from './LSSCompactUnitsCatalog';
 import LSSPumpSelectionPanel from './LSSPumpSelectionPanel';
+import NewRevisionModal from './NewRevisionModal';
 
 const SYSTEM_TYPES = [
   'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
@@ -91,19 +92,30 @@ function buildFrozenUvSelectionData(book: any, systemId: string | undefined) {
         || '85T',
       uv_revision: input.uv_revision_id || result?.uv_revision_id ? {
         id: input.uv_revision_id || result?.uv_revision_id,
-        product_master_id: input.product_master_id || result?.product_master_id || null,
-        revision_number: input.engineering_revision_number ?? null,
-        product_code: input.product_code || result?.product_code || null,
-        product_name: input.product_name || result?.product_name || null,
-        manufacturer: input.manufacturer || result?.manufacturer || null,
-        material_code: input.material_code || result?.material_code || null,
-        rated_power_kw: input.rated_power_kw ?? result?.rated_power_kw ?? null,
-        lamp_count: input.lamp_count ?? result?.lamp_count ?? null,
-        effective_reactor_volume_l: input.effective_reactor_volume_l ?? result?.effective_reactor_volume_l ?? null,
-        irradiance_85t_mw_cm2: input.irradiance_85t_mw_cm2 ?? result?.irradiance_85t_mw_cm2 ?? null,
-        irradiance_95t_mw_cm2: input.irradiance_95t_mw_cm2 ?? result?.irradiance_95t_mw_cm2 ?? null,
-        source_basis: input.source_basis || result?.source_basis || null,
-        source_evidence: input.source_evidence || result?.source_evidence || null,
+        product_master_id: input.product_master_id || result?.product_master_id || sideStream?.uv_revision?.product_master_id || null,
+        revision_number: input.engineering_revision_number ?? sideStream?.uv_revision?.revision_number ?? null,
+        product_code: input.product_code || result?.product_code || sideStream?.uv_revision?.product_code || null,
+        product_name: input.product_name || result?.product_name || sideStream?.uv_revision?.product_name || null,
+        manufacturer: input.manufacturer || result?.manufacturer || sideStream?.uv_revision?.manufacturer || null,
+        material_code: input.material_code || result?.material_code || sideStream?.uv_revision?.material_code || null,
+        rated_power_kw: input.rated_power_kw ?? result?.rated_power_kw ?? sideStream?.uv_revision?.rated_power_kw ?? null,
+        lamp_count: input.lamp_count ?? result?.lamp_count ?? sideStream?.uv_revision?.lamp_count ?? null,
+        lamp_power_w: input.lamp_power_w ?? result?.lamp_power_w ?? sideStream?.uv_revision?.lamp_power_w ?? null,
+        effective_reactor_volume_l: input.effective_reactor_volume_l
+          ?? result?.effective_reactor_volume_l
+          ?? sideStream?.uv_revision?.effective_reactor_volume_l
+          ?? null,
+        irradiance_85t_mw_cm2: input.irradiance_85t_mw_cm2
+          ?? result?.irradiance_85t_mw_cm2
+          ?? sideStream?.uv_revision?.irradiance_85t_mw_cm2
+          ?? null,
+        irradiance_95t_mw_cm2: input.irradiance_95t_mw_cm2
+          ?? result?.irradiance_95t_mw_cm2
+          ?? sideStream?.uv_revision?.irradiance_95t_mw_cm2
+          ?? null,
+        compatibility: input.compatibility || result?.compatibility || sideStream?.uv_revision?.compatibility || null,
+        source_basis: input.source_basis || result?.source_basis || sideStream?.uv_revision?.source_basis || null,
+        source_evidence: input.source_evidence || result?.source_evidence || sideStream?.uv_revision?.source_evidence || null,
       } : null,
       frozen_flow_m3h: input.flow_m3h ?? result?.flow_m3h ?? null,
     };
@@ -1316,6 +1328,7 @@ export default function DesignBookLSSDetail() {
   const qc = useQueryClient();
   const user = useAuthStore(state => state.user);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [showNewRevision, setShowNewRevision] = useState(false);
   const [lifecycleAction, setLifecycleAction] = useState<'archive' | 'supersede' | null>(null);
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [replacementSystemId, setReplacementSystemId] = useState('');
@@ -2285,6 +2298,8 @@ export default function DesignBookLSSDetail() {
   const canManageProjects = user?.moduleAccess?.projects !== 'view'
     && user?.moduleAccess?.projects !== 'hidden';
   const canEdit = (user?.role === 'admin' || user?.role === 'engineer') && canManageProjects;
+  const canCreateRevision = book?.status === 'Released'
+    && (user?.role === 'admin' || user?.role === 'engineer');
   const retired = ['Archived', 'Decommissioned', 'Superseded'].includes(system.status);
   const readOnly = !canEdit
     || (!!book && !['Draft', 'In Progress'].includes(book.status))
@@ -2368,6 +2383,13 @@ export default function DesignBookLSSDetail() {
           onSaved={() => { setEditLink(null); refresh(); }}
         />
       )}
+      {showNewRevision && canCreateRevision && (
+        <NewRevisionModal
+          book={book}
+          destination={{ systemId: systemId!, tab: 'uv' }}
+          onClose={() => setShowNewRevision(false)}
+        />
+      )}
 
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-stone-500">
@@ -2390,7 +2412,7 @@ export default function DesignBookLSSDetail() {
           retired ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
         }`}>
           <LockKeyhole className="w-4 h-4 shrink-0" />
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="font-medium">
               {retired
                 ? `${system.status} LSS — historical record is read-only.`
@@ -2412,6 +2434,16 @@ export default function DesignBookLSSDetail() {
               </Link>
             )}
           </div>
+          {activeTab === 'uv' && canCreateRevision && (
+            <button
+              type="button"
+              onClick={() => setShowNewRevision(true)}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700"
+            >
+              <GitFork className="h-3.5 w-3.5" />
+              Create Draft Revision
+            </button>
+          )}
         </div>
       )}
 
@@ -4677,6 +4709,7 @@ export default function DesignBookLSSDetail() {
           const savedResult = uvResult;
 
           const hasUvStreams = uvStreams.length > 0;
+          const hasFrozenUvSelection = usesFrozenPackage && !!uvSelectionDataForView?.saved;
           const showUvLoading = !usesFrozenPackage && uvSelectionLoading;
           const showUvError = !usesFrozenPackage && uvSelectionIsError;
           const uvErrorMessage = (uvSelectionError as any)?.response?.data?.error?.message
@@ -4734,6 +4767,21 @@ export default function DesignBookLSSDetail() {
 
           return (
             <div className="space-y-5">
+              {usesFrozenPackage && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                  <div className="flex items-start gap-2">
+                    <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Frozen UV selection — read-only</p>
+                      <p className="mt-1 text-xs text-emerald-800">
+                        UV products, UVT basis, unit count, and target fluence cannot be changed in this revision.
+                        Historical values below come only from the captured Design Book package.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Header card */}
               <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-cyan-50/30">
@@ -4752,9 +4800,10 @@ export default function DesignBookLSSDetail() {
                 </div>
 
                 {/* Target fluence + calculate */}
+                {(!usesFrozenPackage || hasFrozenUvSelection) && (
                 <div className="px-5 py-4 border-b border-stone-100 bg-stone-50/40">
                   <div className="flex flex-wrap items-end gap-4">
-                    <div>
+                    {!usesFrozenPackage ? <div>
                       <label className="block text-xs font-medium text-stone-600 mb-1">
                         Target fluence (mJ/cm²)
                       </label>
@@ -4773,7 +4822,14 @@ export default function DesignBookLSSDetail() {
                         <span className="text-xs text-stone-400">mJ/cm²</span>
                       </div>
                       <p className="text-[10px] text-stone-400 mt-1">Typical: 30–80 mJ/cm² depending on organism target. Default: 50 mJ/cm².</p>
-                    </div>
+                    </div> : (
+                      <div>
+                        <p className="text-xs font-medium text-stone-500">Captured target fluence</p>
+                        <p className="mt-1 font-mono text-sm font-semibold text-stone-800">
+                          {uvSelectionDataForView?.saved?.target_fluence_mj_cm2} mJ/cm²
+                        </p>
+                      </div>
+                    )}
                     {!readOnly && (
                       <div className="flex items-center gap-3">
                         <button
@@ -4794,8 +4850,10 @@ export default function DesignBookLSSDetail() {
                     )}
                   </div>
                 </div>
+                )}
 
                 {/* Fluence formula reference */}
+                {(!usesFrozenPackage || hasFrozenUvSelection) && (
                 <div className="px-5 py-3 bg-cyan-50/20 border-b border-stone-100">
                   <p className="text-[10px] text-stone-500">
                     <strong>Formula:</strong> F = I × V × n / Q &nbsp;·&nbsp;
@@ -4803,6 +4861,18 @@ export default function DesignBookLSSDetail() {
                     &nbsp;·&nbsp; <strong>Hydraulic limit:</strong> Q / (lamps × n) ≤ 6.25 L/s per lamp
                   </p>
                 </div>
+                )}
+
+                {usesFrozenPackage && !hasFrozenUvSelection && (
+                  <div className="px-5 py-10 text-center">
+                    <Zap className="mx-auto mb-3 h-8 w-8 text-stone-200" />
+                    <p className="text-sm font-medium text-stone-700">No UV calculation was captured in this revision</p>
+                    <p className="mx-auto mt-1 max-w-xl text-xs text-stone-500">
+                      This released package contains no frozen UV product selection or calculated result.
+                      Create a Draft revision to use the latest approved UV engineering values.
+                    </p>
+                  </div>
+                )}
 
                 {/* UV data loading state */}
                 {showUvLoading && (
@@ -4829,7 +4899,7 @@ export default function DesignBookLSSDetail() {
                 )}
 
                 {/* No UV streams empty state */}
-                {!showUvLoading && !showUvError && !hasUvStreams && (
+                {!usesFrozenPackage && !showUvLoading && !showUvError && !hasUvStreams && (
                   <div className="px-5 py-10 text-center">
                     <Zap className="mx-auto mb-3 w-8 h-8 text-stone-200" />
                     <p className="text-sm font-medium text-stone-500">No UV side streams configured</p>
@@ -4840,7 +4910,7 @@ export default function DesignBookLSSDetail() {
                 )}
 
                 {/* UV stream cards */}
-                {!showUvLoading && !showUvError && hasUvStreams && (
+                {!showUvLoading && !showUvError && hasUvStreams && (!usesFrozenPackage || hasFrozenUvSelection) && (
                   <div className="divide-y divide-stone-100">
                     {uvStreams.map((stream: any) => {
                       const assignment = getAssignment(stream.id);
@@ -4958,6 +5028,9 @@ export default function DesignBookLSSDetail() {
                                 Rev {assignedRevision.revision_number}
                                 {assignedRevision.manufacturer ? ` · ${assignedRevision.manufacturer}` : ''}
                               </div>
+                              <div className="text-stone-500 mt-0.5">
+                                Governing UVT basis: {stream.uvt_basis === '95T' ? '95%T' : '85%T'}
+                              </div>
                             </div>
                           )}
 
@@ -5048,7 +5121,7 @@ export default function DesignBookLSSDetail() {
                           )}
 
                           {/* If no result yet and no selection */}
-                          {!streamResult && !assignment.uv_revision_id && !stream.uv_revision_id && (
+                          {!readOnly && !streamResult && !assignment.uv_revision_id && !stream.uv_revision_id && (
                             <p className="text-[10px] text-stone-400 italic">Select a UV product revision above and click Save & Calculate.</p>
                           )}
                         </div>

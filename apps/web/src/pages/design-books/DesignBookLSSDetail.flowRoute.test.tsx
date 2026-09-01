@@ -140,6 +140,7 @@ function renderFlowRoute(
   mediaProfiles: any[] = [],
   tanProfiles: any[] = [],
   sandFilterProducts: any[] = [],
+  uvSelectionData: any = { streams: [], selectable_revisions: [], saved: null },
 ) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
@@ -155,7 +156,7 @@ function renderFlowRoute(
     if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: mediaProfiles } });
     if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: tanProfiles } });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
-    if (url === '/design-books/book-1/uv/system-1') return Promise.resolve({ data: { uv_streams: [], selectable_revisions: [], saved_selection: null } });
+    if (url === '/design-books/book-1/uv/system-1') return Promise.resolve({ data: uvSelectionData });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
   const queryClient = new QueryClient({
@@ -262,7 +263,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     };
     const frozenBook = {
       ...baseBook,
-      status: 'For Review',
+      status: 'Released',
       systems: [frozenSystem],
       system_links: [],
       uv_selections: [{
@@ -315,9 +316,170 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     );
 
     expect(await screen.findByText('UV-100 — UV Reactor')).toBeInTheDocument();
+    expect(screen.getByText('Frozen UV selection — read-only')).toBeInTheDocument();
+    expect(screen.getByText(/cannot be changed in this revision/)).toBeInTheDocument();
+    expect(screen.getByText(/20\.00 L/)).toBeInTheDocument();
+    expect(screen.getByText(/1\.5000 mW\/cm²/)).toBeInTheDocument();
+    expect(screen.getByText(/1\.8000 mW\/cm²/)).toBeInTheDocument();
+    expect(screen.getAllByText(/50 mJ\/cm²/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Governing UVT basis: 85%T')).toBeInTheDocument();
     expect(screen.getByText(/75\.0000 mJ\/cm²/)).toBeInTheDocument();
     expect(screen.getByText(/0\.694 ✓/)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /UV product revision/ })).not.toBeInTheDocument();
     expect(apiGet).not.toHaveBeenCalledWith('/design-books/book-1/uv/system-1');
+  });
+
+  it('explains when a released revision captured no UV calculation', async () => {
+    renderFlowRoute(
+      baseSystem,
+      {
+        ...baseBook,
+        status: 'Released',
+        systems: [{
+          ...baseSystem,
+          side_streams: [{
+            id: 'uv-stream-1',
+            parent_loop_number: 1,
+            name: 'UV branch',
+            preset: 'UV',
+            flow_pct: 50,
+          }],
+        }],
+        system_links: [],
+        uv_selections: [],
+      },
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?tab=uv',
+    );
+
+    expect(await screen.findByText('No UV calculation was captured in this revision')).toBeInTheDocument();
+    expect(screen.queryByText('Select a UV product revision above and click Save & Calculate.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No UV side streams configured')).not.toBeInTheDocument();
+    expect(apiGet).not.toHaveBeenCalledWith('/design-books/book-1/uv/system-1');
+  });
+
+  it('only offers the released UV revision action to authorized designers', async () => {
+    useAuthStore.setState(state => ({
+      ...state,
+      user: state.user ? { ...state.user, role: 'hq_manager' } : null,
+    }));
+    renderFlowRoute(
+      baseSystem,
+      {
+        ...baseBook,
+        status: 'Released',
+        systems: [baseSystem],
+        system_links: [],
+        uv_selections: [],
+      },
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?tab=uv',
+    );
+
+    expect(await screen.findByText('Frozen UV selection — read-only')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create Draft Revision' })).not.toBeInTheDocument();
+  });
+
+  it('returns to the same LSS UV tab after creating a Draft revision', async () => {
+    const user = userEvent.setup();
+    apiPost.mockResolvedValueOnce({ data: { id: 'book-2' } });
+    renderFlowRoute(
+      baseSystem,
+      {
+        ...baseBook,
+        status: 'Released',
+        systems: [baseSystem],
+        system_links: [],
+        uv_selections: [],
+      },
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?tab=uv',
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Create Draft Revision' }));
+    const dialog = screen.getByRole('dialog', { name: 'Create New Revision' });
+    await user.type(within(dialog).getByLabelText('New revision *'), 'B');
+    await user.type(within(dialog).getByLabelText('Unique book code *'), 'B');
+    await user.click(within(dialog).getByRole('button', { name: 'Create Draft Revision' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith(
+      '/design-books/book-1/revisions',
+      expect.objectContaining({ revision: 'B', book_code: 'DB-001-B' }),
+    ));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(
+      '/design-books/book-2/lss/system-1?tab=uv',
+    ));
+  });
+
+  it('loads live approved UV choices and calculates explicitly in a Draft revision', async () => {
+    const user = userEvent.setup();
+    const uvSystem = {
+      ...baseSystem,
+      side_streams: [{
+        id: 'uv-stream-1',
+        parent_loop_number: 1,
+        name: 'UV branch',
+        preset: 'UV',
+        flow_pct: 50,
+        sort_order: 0,
+      }],
+    };
+    const approvedRevision = {
+      revision_id: 'uv-revision-2',
+      revision_number: 4,
+      product_code: 'UV-200',
+      product_name: 'Current Approved Reactor',
+      manufacturer: 'Aquatic Systems',
+      lamp_count: 6,
+      lamp_power_w: 90,
+      effective_reactor_volume_l: 30,
+      irradiance_85t_mw_cm2: 1.7,
+      irradiance_95t_mw_cm2: 2.1,
+      compatibility: 'Freshwater',
+    };
+    renderFlowRoute(
+      uvSystem,
+      baseBook,
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?tab=uv',
+      null,
+      [],
+      [],
+      [],
+      {
+        streams: uvSystem.side_streams,
+        selectable_revisions: [approvedRevision],
+        saved: null,
+      },
+    );
+
+    const panel = within(await screen.findByRole('tabpanel', { name: 'UV Selection' }));
+    const productSelect = await panel.findByRole('combobox', { name: 'UV product revision for UV branch' });
+    expect(apiGet).toHaveBeenCalledWith('/design-books/book-1/uv/system-1');
+    expect(panel.getByRole('option', { name: /UV-200 — Current Approved Reactor/ })).toBeInTheDocument();
+    await user.selectOptions(productSelect, 'uv-revision-2');
+    await user.clear(panel.getByRole('spinbutton', { name: 'Unit quantity for UV branch' }));
+    await user.type(panel.getByRole('spinbutton', { name: 'Unit quantity for UV branch' }), '2');
+    await user.selectOptions(panel.getByRole('combobox', { name: 'UVT basis for UV branch' }), '95T');
+    await user.clear(panel.getByRole('spinbutton', { name: 'Target UV fluence in mJ/cm²' }));
+    await user.type(panel.getByRole('spinbutton', { name: 'Target UV fluence in mJ/cm²' }), '60');
+    await user.click(panel.getByRole('button', { name: 'Save & Calculate' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1/side-streams/uv-stream-1',
+      expect.objectContaining({
+        uv_revision_id: 'uv-revision-2',
+        uv_unit_quantity: 2,
+        uvt_basis: '95T',
+      }),
+    ));
+    expect(apiPost).toHaveBeenCalledWith('/design-books/book-1/uv/system-1', {
+      target_fluence_mj_cm2: 60,
+    });
   });
 
   it('opens on an accessible system overview with linked flow information', async () => {
