@@ -3,6 +3,7 @@ import { RefObject, useEffect, useRef } from 'react';
 interface ModalFocusOptions {
   onClose: () => void;
   initialFocusRef?: RefObject<HTMLElement | null>;
+  restoreFocusRef?: RefObject<HTMLElement | null>;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -21,12 +22,14 @@ const FOCUSABLE_SELECTOR = [
 export function useModalFocus<T extends HTMLElement>({
   onClose,
   initialFocusRef,
+  restoreFocusRef,
 }: ModalFocusOptions): RefObject<T | null> {
   const dialogRef = useRef<T | null>(null);
   const openerRef = useRef<HTMLElement | null>(
-    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+    restoreFocusRef?.current
+      || (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
       ? document.activeElement
-      : null,
+      : null),
   );
   const onCloseRef = useRef(onClose);
 

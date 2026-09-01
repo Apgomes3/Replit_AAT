@@ -54,3 +54,33 @@
 .animate-count-up {
   animation: count-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
+
+.tds-section { page-break-inside: avoid; }
+
+@media print {
+  @page { size: A4; margin: 14mm; }
+  body.tds-printing > #root * {
+    visibility: hidden !important;
+  }
+  body.tds-printing .tds-workspace-overlay,
+  body.tds-printing .tds-workspace-overlay > .tds-print-sheet,
+  body.tds-printing .tds-workspace-overlay > .tds-print-sheet * {
+    visibility: visible !important;
+  }
+  body.tds-printing .tds-workspace-overlay > .tds-print-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+  body.tds-printing .tds-workspace-overlay {
+    position: static;
+    overflow: visible;
+    background: white;
+    padding: 0;
+  }
+}

@@ -13,6 +13,9 @@ import toast from 'react-hot-toast';
 import { Upload, CheckCircle, XCircle, Download, Trash2, FolderOpen, FolderX, Plus, Package, PackageX, Pencil, Save, Database } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useConfirm } from '../../hooks/useConfirm';
+import TdsRenderer from '../../components/documents/TdsRenderer';
+import TdsEditor from '../../components/documents/TdsEditor';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -29,6 +32,60 @@ function nextRevLetter(existing: string[]): string {
     i--;
   }
   return 'A' + chars.join('');
+}
+
+function TdsWorkspaceModal({
+  mode,
+  document,
+  revision,
+  pdfLoading,
+  onDownloadPdf,
+  onClose,
+  returnFocusRef,
+}: {
+  mode: 'web' | 'print';
+  document: any;
+  revision: any;
+  pdfLoading: boolean;
+  onDownloadPdf: () => void;
+  onClose: () => void;
+  returnFocusRef: React.RefObject<HTMLElement | null>;
+}) {
+  const dialogRef = useModalFocus<HTMLDivElement>({ onClose, restoreFocusRef: returnFocusRef });
+
+  useEffect(() => {
+    if (mode !== 'print') return;
+    globalThis.document.body.classList.add('tds-printing');
+    const timer = window.setTimeout(() => window.print(), 50);
+    return () => {
+      window.clearTimeout(timer);
+      globalThis.document.body.classList.remove('tds-printing');
+    };
+  }, [mode]);
+
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tds-workspace-title"
+      tabIndex={-1}
+      className="tds-workspace-overlay fixed inset-0 z-50 overflow-y-auto bg-slate-100/95 p-4 sm:p-8"
+    >
+      <div className="tds-print-controls mx-auto mb-4 flex max-w-4xl items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div>
+          <div id="tds-workspace-title" className="text-sm font-semibold text-slate-800">{mode === 'print' ? 'Print Preview' : 'Web View'}</div>
+          <div className="text-xs text-slate-500">Rev {revision.revision_code} · This view does not change the revision.</div>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={onDownloadPdf} disabled={pdfLoading}>{pdfLoading ? 'Generating…' : 'Download PDF'}</Button>
+          {mode === 'print' && <Button size="sm" variant="primary" onClick={() => window.print()}>Print</Button>}
+          <Button size="sm" onClick={onClose}>Close</Button>
+        </div>
+      </div>
+      <TdsRenderer content={revision.content} document={document} revision={revision} />
+    </div>
+  );
 }
 
 export default function DocumentDetail() {
@@ -60,9 +117,15 @@ export default function DocumentDetail() {
   const [productLinkSaving, setProductLinkSaving] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [editingGeneratedContent, setEditingGeneratedContent] = useState(false);
-  const [generatedContentDraft, setGeneratedContentDraft] = useState('');
+  const [generatedContentDraft, setGeneratedContentDraft] = useState<Record<string, any> | null>(null);
   const [generatedContentSaving, setGeneratedContentSaving] = useState(false);
   const [showSourceSnapshot, setShowSourceSnapshot] = useState(false);
+  const [showTdsMenu, setShowTdsMenu] = useState(false);
+  const [tdsViewMode, setTdsViewMode] = useState<'web' | 'print' | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const pdfUrlRef = useRef<string | null>(null);
+  const tdsMenuRef = useRef<HTMLDivElement>(null);
+  const tdsMenuTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const close = () => setRevCtxMenu(null);
@@ -79,10 +142,46 @@ export default function DocumentDetail() {
 
   useEffect(() => {
     const latestRevision = document?.revisions?.[0];
-    setGeneratedContentDraft(latestRevision?.content ? JSON.stringify(latestRevision.content, null, 2) : '');
+    setGeneratedContentDraft(latestRevision?.content ? JSON.parse(JSON.stringify(latestRevision.content)) : null);
     setEditingGeneratedContent(false);
     setShowSourceSnapshot(false);
   }, [document?.id, document?.revisions?.[0]?.id, document?.revisions?.[0]?.generated_at]);
+
+  useEffect(() => () => {
+    if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!showTdsMenu) return;
+    tdsMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    const closeOutside = (event: MouseEvent) => {
+      if (!tdsMenuRef.current?.contains(event.target as Node)) setShowTdsMenu(false);
+    };
+    globalThis.document.addEventListener('mousedown', closeOutside);
+    return () => globalThis.document.removeEventListener('mousedown', closeOutside);
+  }, [showTdsMenu]);
+
+  const handleTdsMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(tdsMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') || []);
+    const activeIndex = items.indexOf(globalThis.document.activeElement as HTMLButtonElement);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setShowTdsMenu(false);
+      tdsMenuTriggerRef.current?.focus();
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      items[(activeIndex + 1) % items.length]?.focus();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      items[(activeIndex - 1 + items.length) % items.length]?.focus();
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      items[0]?.focus();
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      items[items.length - 1]?.focus();
+    }
+  };
 
   const { data: history } = useQuery({
     queryKey: ['lifecycle', 'document', id],
@@ -213,18 +312,10 @@ export default function DocumentDetail() {
 
   const handleSaveGeneratedContent = async () => {
     const latestRevision = document.revisions?.[0];
-    if (!latestRevision || generatedContentSaving) return;
-    let content: Record<string, unknown>;
-    try {
-      content = JSON.parse(generatedContentDraft);
-      if (!content || typeof content !== 'object' || Array.isArray(content)) throw new Error('invalid');
-    } catch {
-      toast.error('TDS content must be a valid JSON object');
-      return;
-    }
+    if (!latestRevision || !generatedContentDraft || generatedContentSaving) return;
     setGeneratedContentSaving(true);
     try {
-      await api.put(`/documents/${id}/revisions/${latestRevision.id}/content`, { content });
+      await api.put(`/documents/${id}/revisions/${latestRevision.id}/content`, { content: generatedContentDraft });
       toast.success('Draft TDS content saved');
       setEditingGeneratedContent(false);
       refetch();
@@ -232,6 +323,35 @@ export default function DocumentDetail() {
       toast.error(error?.response?.data?.error?.message || 'Could not save TDS content');
     } finally {
       setGeneratedContentSaving(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    const latestRevision = document.revisions?.[0];
+    if (!latestRevision || pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      const response = await api.get(`/documents/${id}/revisions/${latestRevision.id}/tds.pdf`, { responseType: 'blob' });
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+      const url = URL.createObjectURL(response.data);
+      pdfUrlRef.current = url;
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        const link = window.document.createElement('a');
+        link.href = url;
+        link.download = `${document.document_code}-Rev-${latestRevision.revision_code}.pdf`;
+        link.click();
+      }
+      window.setTimeout(() => {
+        if (pdfUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          pdfUrlRef.current = null;
+        }
+      }, 60000);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Could not generate the TDS PDF. Retry from this revision.');
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -292,7 +412,28 @@ export default function DocumentDetail() {
                       {' '}· Rev {latestGeneratedRevision.revision_code}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                   <div className="flex gap-2 items-center">
+                     {latestGeneratedRevision.content && (
+                       <div ref={tdsMenuRef} className="relative" onKeyDown={handleTdsMenuKeyDown}>
+                         <button
+                           ref={tdsMenuTriggerRef}
+                           type="button"
+                           aria-haspopup="menu"
+                           aria-expanded={showTdsMenu}
+                           onClick={() => setShowTdsMenu(value => !value)}
+                           className="inline-flex items-center gap-1.5 rounded border border-stone-300 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50"
+                         >
+                           Preview / Print
+                         </button>
+                         {showTdsMenu && (
+                           <div role="menu" aria-label="TDS preview actions" className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
+                             <button role="menuitem" className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { setShowTdsMenu(false); setTdsViewMode('web'); }}>Web View</button>
+                             <button role="menuitem" className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { setShowTdsMenu(false); setTdsViewMode('print'); }}>Print Preview</button>
+                             <button role="menuitem" className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50" disabled={pdfLoading} onClick={() => { setShowTdsMenu(false); handleDownloadPdf(); }}>{pdfLoading ? 'Generating PDF…' : 'Download PDF'}</button>
+                           </div>
+                         )}
+                       </div>
+                     )}
                     <Button size="sm" onClick={() => setShowSourceSnapshot(value => !value)}>
                       {showSourceSnapshot ? 'Hide Source' : 'View Source'}
                     </Button>
@@ -308,28 +449,15 @@ export default function DocumentDetail() {
                     Changes here belong only to this document revision and do not overwrite Product Master values.
                   </p>
                   {editingGeneratedContent ? (
-                    <div>
-                      <textarea
-                        value={generatedContentDraft}
-                        onChange={event => setGeneratedContentDraft(event.target.value)}
-                        rows={22}
-                        spellCheck={false}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs focus:outline-none focus:border-blue-600"
-                      />
-                      <div className="flex justify-end gap-2 mt-3">
-                        <Button size="sm" onClick={() => {
-                          setEditingGeneratedContent(false);
-                          setGeneratedContentDraft(JSON.stringify(latestGeneratedRevision.content, null, 2));
-                        }}>Cancel</Button>
-                        <Button size="sm" variant="primary" onClick={handleSaveGeneratedContent} disabled={generatedContentSaving}>
-                          <Save className="w-3.5 h-3.5" />{generatedContentSaving ? 'Saving…' : 'Save Draft'}
-                        </Button>
-                      </div>
-                    </div>
+                     <TdsEditor
+                       content={generatedContentDraft || latestGeneratedRevision.content}
+                       onChange={setGeneratedContentDraft}
+                       onSave={handleSaveGeneratedContent}
+                       onCancel={() => { setEditingGeneratedContent(false); setGeneratedContentDraft(JSON.parse(JSON.stringify(latestGeneratedRevision.content))); }}
+                       saving={generatedContentSaving}
+                     />
                   ) : latestGeneratedRevision.content ? (
-                    <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 overflow-auto max-h-[32rem] whitespace-pre-wrap">
-                      {JSON.stringify(latestGeneratedRevision.content, null, 2)}
-                    </pre>
+                     <TdsRenderer content={latestGeneratedRevision.content} document={document} revision={latestGeneratedRevision} />
                   ) : (
                     <p className="text-sm text-slate-400">This revision has no structured generated content.</p>
                   )}
@@ -644,6 +772,17 @@ export default function DocumentDetail() {
             <Trash2 className="w-3.5 h-3.5" />Delete Revision {revCtxMenu.rev.revision_code}
           </button>
         </div>
+      )}
+      {tdsViewMode && latestGeneratedRevision?.content && (
+        <TdsWorkspaceModal
+          mode={tdsViewMode}
+          document={document}
+          revision={latestGeneratedRevision}
+          pdfLoading={pdfLoading}
+          onDownloadPdf={handleDownloadPdf}
+          onClose={() => setTdsViewMode(null)}
+          returnFocusRef={tdsMenuTriggerRef}
+        />
       )}
       {dialog}
     </div>

@@ -1,7 +1,7 @@
 import clsx from 'clsx';
-import { ReactNode } from 'react';
+import { ButtonHTMLAttributes, ReactNode } from 'react';
 
-interface ButtonProps {
+interface ButtonProps extends Pick<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'aria-haspopup' | 'aria-expanded' | 'title'> {
   children: ReactNode;
   onClick?: () => void;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
