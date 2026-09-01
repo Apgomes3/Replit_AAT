@@ -9,6 +9,7 @@ import clsx from 'clsx';
 import api from '../../lib/api';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
+import { SEARCH_SHORTCUT } from '../../lib/shortcuts';
 
 const RECENT_KEY = 'cmd-palette-recent';
 const MAX_RECENT = 6;
@@ -360,6 +361,15 @@ export default function CommandPalette() {
             <span className="flex items-center gap-1">
               <kbd className="inline-flex items-center rounded border border-stone-200 bg-white px-1 py-0.5 text-[10px] text-stone-500">↵</kbd>
               open
+            </span>
+            <span
+              className="flex items-center gap-1"
+              aria-label={`Close: ${SEARCH_SHORTCUT.mac} or ${SEARCH_SHORTCUT.win}`}
+            >
+              <kbd className="inline-flex items-center rounded border border-stone-200 bg-white px-1 py-0.5 text-[10px] text-stone-500">{SEARCH_SHORTCUT.mac}</kbd>
+              <span className="text-stone-300">/</span>
+              <kbd className="inline-flex items-center rounded border border-stone-200 bg-white px-1 py-0.5 text-[10px] text-stone-500">{SEARCH_SHORTCUT.win}</kbd>
+              toggle
             </span>
             <span className="flex items-center gap-1">
               <kbd className="inline-flex items-center rounded border border-stone-200 bg-white px-1 py-0.5 text-[10px] text-stone-500">esc</kbd>

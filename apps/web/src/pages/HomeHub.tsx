@@ -6,8 +6,9 @@ import api from '../lib/api';
 import {
   Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight,
   Network, FileText, Search, Ruler, BookOpen, BookMarked, Plus, X, Settings,
-  Users, LayoutGrid, GitBranch, Layers, Wrench,
+  Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard,
 } from 'lucide-react';
+import ShortcutMapModal from '../components/ui/ShortcutMapModal';
 
 const ALL_QUICK_LINKS = [
   { label: 'Graph Explorer',  href: '/graph',                   icon: 'Network'      },
@@ -70,6 +71,7 @@ export default function HomeHub() {
   };
   const [pinnedHrefs, setPinnedHrefs] = useState<string[]>(loadSaved);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [shortcutMapOpen, setShortcutMapOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -229,8 +231,20 @@ export default function HomeHub() {
           >
             Welcome back, {firstName}
           </h1>
-          <p className="text-stone-400 mt-1 text-sm">Choose a module to get started</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-stone-400 text-sm">Choose a module to get started</p>
+            <button
+              onClick={() => setShortcutMapOpen(true)}
+              className="flex items-center gap-1 text-xs text-stone-400 hover:text-blue-600 transition-colors"
+              aria-label="Open keyboard shortcuts"
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              Keyboard shortcuts
+            </button>
+          </div>
         </div>
+
+        {shortcutMapOpen && <ShortcutMapModal onClose={() => setShortcutMapOpen(false)} />}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
           {visibleModules.map((mod, i) => {
