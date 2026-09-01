@@ -7,6 +7,7 @@ const index_1 = __importDefault(require("./index"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const pimAssignmentIndexMigration_1 = require("./pimAssignmentIndexMigration");
 const biologicalMediaSeed_1 = require("./biologicalMediaSeed");
+const thermalCorrelationSeed_1 = require("./thermalCorrelationSeed");
 dotenv_1.default.config();
 const schema = `
 -- USERS & AUTH
@@ -1195,7 +1196,16 @@ ALTER TABLE thermal_mass_transfer_correlations
   ADD COLUMN IF NOT EXISTS upper_agitation_class_code VARCHAR(100),
   ADD COLUMN IF NOT EXISTS upper_agitation_class_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS upper_class_coefficient_kg_m2_s_kpa NUMERIC,
-  ADD COLUMN IF NOT EXISTS related_agitation_values JSONB NOT NULL DEFAULT '{}'::jsonb;
+  ADD COLUMN IF NOT EXISTS related_agitation_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS activity_factor NUMERIC,
+  ADD COLUMN IF NOT EXISTS base_coefficient_kg_m2_s_kpa NUMERIC,
+  ADD COLUMN IF NOT EXISTS coefficient_unit VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS base_coefficient_unit VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS formula_basis TEXT,
+  ADD COLUMN IF NOT EXISTS source_basis TEXT,
+  ADD COLUMN IF NOT EXISTS source_document TEXT,
+  ADD COLUMN IF NOT EXISTS source_revision TEXT,
+  ADD COLUMN IF NOT EXISTS approving_engineer TEXT;
 CREATE INDEX IF NOT EXISTS idx_thermal_correlation_related
   ON thermal_mass_transfer_correlations USING gin (related_agitation_values);
 DO $$
@@ -1213,6 +1223,20 @@ BEGIN
     ALTER TABLE thermal_mass_transfer_correlations
       ADD CONSTRAINT thermal_upper_coefficient_positive
       CHECK (upper_class_coefficient_kg_m2_s_kpa IS NULL OR upper_class_coefficient_kg_m2_s_kpa > 0);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='thermal_activity_factor_positive'
+  ) THEN
+    ALTER TABLE thermal_mass_transfer_correlations
+      ADD CONSTRAINT thermal_activity_factor_positive
+      CHECK (activity_factor IS NULL OR activity_factor > 0);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='thermal_base_coefficient_positive'
+  ) THEN
+    ALTER TABLE thermal_mass_transfer_correlations
+      ADD CONSTRAINT thermal_base_coefficient_positive
+      CHECK (base_coefficient_kg_m2_s_kpa IS NULL OR base_coefficient_kg_m2_s_kpa > 0);
   END IF;
 END $$;
 
@@ -1268,6 +1292,15 @@ BEGIN
    OR NEW.upper_agitation_class_name IS DISTINCT FROM OLD.upper_agitation_class_name
    OR NEW.upper_class_coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.upper_class_coefficient_kg_m2_s_kpa
    OR NEW.related_agitation_values IS DISTINCT FROM OLD.related_agitation_values
+      OR NEW.activity_factor IS DISTINCT FROM OLD.activity_factor
+      OR NEW.base_coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.base_coefficient_kg_m2_s_kpa
+      OR NEW.coefficient_unit IS DISTINCT FROM OLD.coefficient_unit
+      OR NEW.base_coefficient_unit IS DISTINCT FROM OLD.base_coefficient_unit
+      OR NEW.formula_basis IS DISTINCT FROM OLD.formula_basis
+      OR NEW.source_basis IS DISTINCT FROM OLD.source_basis
+      OR NEW.source_document IS DISTINCT FROM OLD.source_document
+      OR NEW.source_revision IS DISTINCT FROM OLD.source_revision
+      OR NEW.approving_engineer IS DISTINCT FROM OLD.approving_engineer
      OR NEW.version IS DISTINCT FROM OLD.version
      OR NEW.coefficient_kg_m2_s_kpa IS DISTINCT FROM OLD.coefficient_kg_m2_s_kpa
      OR NEW.source_reference IS DISTINCT FROM OLD.source_reference
@@ -2405,6 +2438,8 @@ async function migrate() {
         console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
         const seededMediaEvidence = await (0, biologicalMediaSeed_1.seedBiologicalMediaEvidence)(client);
         console.log(`Biological Media evidence library ready (${seededMediaEvidence} starter records added).`);
+        const seededThermalCorrelations = await (0, thermalCorrelationSeed_1.seedThermalCorrelations)(client, adminResult.rows[0]?.id ?? null);
+        console.log(`Thermal correlation library ready (${seededThermalCorrelations} starter records added).`);
         console.log('Migrations complete.');
     }
     catch (err) {

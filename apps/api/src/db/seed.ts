@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { seedSpeciesCatalog } from './speciesCatalogSeed';
 import { seedBiologicalMediaEvidence, seedBiologicalMediaProfiles, seedTanGenerationProfiles } from './biologicalMediaSeed';
+import { seedThermalCorrelations } from './thermalCorrelationSeed';
 dotenv.config();
 
 async function seed() {
@@ -50,6 +51,8 @@ async function seed() {
     console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
     const seededMediaEvidence = await seedBiologicalMediaEvidence(client);
     console.log(`Biological Media evidence library ready (${seededMediaEvidence} starter records added).`);
+    const seededThermalCorrelations = await seedThermalCorrelations(client, adminId);
+    console.log(`Thermal correlation library ready (${seededThermalCorrelations} starter records added).`);
 
     // Materials
     await client.query(`

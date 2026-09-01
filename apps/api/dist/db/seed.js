@@ -8,6 +8,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const speciesCatalogSeed_1 = require("./speciesCatalogSeed");
 const biologicalMediaSeed_1 = require("./biologicalMediaSeed");
+const thermalCorrelationSeed_1 = require("./thermalCorrelationSeed");
 dotenv_1.default.config();
 async function seed() {
     const client = await index_1.default.connect();
@@ -49,6 +50,8 @@ async function seed() {
         console.log(`Biological Media Overall VTR profiles ready (${seededMediaProfiles} starter records added).`);
         const seededMediaEvidence = await (0, biologicalMediaSeed_1.seedBiologicalMediaEvidence)(client);
         console.log(`Biological Media evidence library ready (${seededMediaEvidence} starter records added).`);
+        const seededThermalCorrelations = await (0, thermalCorrelationSeed_1.seedThermalCorrelations)(client, adminId);
+        console.log(`Thermal correlation library ready (${seededThermalCorrelations} starter records added).`);
         // Materials
         await client.query(`
       INSERT INTO materials (material_code, material_name, material_category, density, chemical_resistance, temperature_limit) VALUES
