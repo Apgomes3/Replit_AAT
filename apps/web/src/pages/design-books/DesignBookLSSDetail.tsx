@@ -85,7 +85,26 @@ function buildFrozenUvSelectionData(book: any, systemId: string | undefined) {
         ?? sideStream?.uv_unit_quantity
         ?? result?.unit_quantity
         ?? null,
-      uv_revision: sideStream?.uv_revision || null,
+      uvt_basis: input.uvt_basis
+        || result?.selected_uvt_basis
+        || sideStream?.uvt_basis
+        || '85T',
+      uv_revision: input.uv_revision_id || result?.uv_revision_id ? {
+        id: input.uv_revision_id || result?.uv_revision_id,
+        product_master_id: input.product_master_id || result?.product_master_id || null,
+        revision_number: input.engineering_revision_number ?? null,
+        product_code: input.product_code || result?.product_code || null,
+        product_name: input.product_name || result?.product_name || null,
+        manufacturer: input.manufacturer || result?.manufacturer || null,
+        material_code: input.material_code || result?.material_code || null,
+        rated_power_kw: input.rated_power_kw ?? result?.rated_power_kw ?? null,
+        lamp_count: input.lamp_count ?? result?.lamp_count ?? null,
+        effective_reactor_volume_l: input.effective_reactor_volume_l ?? result?.effective_reactor_volume_l ?? null,
+        irradiance_85t_mw_cm2: input.irradiance_85t_mw_cm2 ?? result?.irradiance_85t_mw_cm2 ?? null,
+        irradiance_95t_mw_cm2: input.irradiance_95t_mw_cm2 ?? result?.irradiance_95t_mw_cm2 ?? null,
+        source_basis: input.source_basis || result?.source_basis || null,
+        source_evidence: input.source_evidence || result?.source_evidence || null,
+      } : null,
       frozen_flow_m3h: input.flow_m3h ?? result?.flow_m3h ?? null,
     };
   });
@@ -1444,7 +1463,11 @@ export default function DesignBookLSSDetail() {
 
   // UV Selection state
   const [uvTargetFluence, setUvTargetFluence] = useState<string>('50');
-  const [uvStreamAssignments, setUvStreamAssignments] = useState<Record<string, { uv_revision_id: string; uv_unit_quantity: string }>>({});
+  const [uvStreamAssignments, setUvStreamAssignments] = useState<Record<string, {
+    uv_revision_id: string;
+    uv_unit_quantity: string;
+    uvt_basis: '85T' | '95T';
+  }>>({});
   const [uvCalculating, setUvCalculating] = useState(false);
   const [uvResult, setUvResult] = useState<any>(null);
 
@@ -1495,11 +1518,16 @@ export default function DesignBookLSSDetail() {
       setUvResult(uvSelectionDataForView.saved.result_snapshot ?? null);
     }
     // Initialize per-stream assignments from the live stream data or frozen package.
-    const assignments: Record<string, { uv_revision_id: string; uv_unit_quantity: string }> = {};
+    const assignments: Record<string, {
+      uv_revision_id: string;
+      uv_unit_quantity: string;
+      uvt_basis: '85T' | '95T';
+    }> = {};
     for (const stream of (uvSelectionDataForView.streams || [])) {
       assignments[stream.id] = {
         uv_revision_id: stream.uv_revision_id || '',
         uv_unit_quantity: stream.uv_unit_quantity != null ? String(stream.uv_unit_quantity) : '1',
+        uvt_basis: stream.uvt_basis === '95T' ? '95T' : '85T',
       };
     }
     setUvStreamAssignments(assignments);
@@ -1516,7 +1544,10 @@ export default function DesignBookLSSDetail() {
         if (!assignment) return;
         const revisionId = assignment.uv_revision_id || null;
         const qty = assignment.uv_unit_quantity ? parseInt(assignment.uv_unit_quantity, 10) : null;
-        if (revisionId !== (stream.uv_revision_id || null) || qty !== (stream.uv_unit_quantity || null)) {
+        const uvtBasis = assignment.uvt_basis;
+        if (revisionId !== (stream.uv_revision_id || null)
+          || qty !== (stream.uv_unit_quantity || null)
+          || uvtBasis !== (stream.uvt_basis || '85T')) {
           await api.put(`/systems/${systemId}/side-streams/${stream.id}`, {
             parent_loop_number: stream.parent_loop_number,
             name: stream.name,
@@ -1526,6 +1557,7 @@ export default function DesignBookLSSDetail() {
             sort_order: stream.sort_order,
             uv_revision_id: revisionId,
             uv_unit_quantity: qty,
+            uvt_basis: uvtBasis,
           });
         }
       }));
@@ -4670,7 +4702,11 @@ export default function DesignBookLSSDetail() {
           };
 
           const getAssignment = (streamId: string) =>
-            uvStreamAssignments[streamId] ?? { uv_revision_id: '', uv_unit_quantity: '1' };
+            uvStreamAssignments[streamId] ?? {
+              uv_revision_id: '',
+              uv_unit_quantity: '1',
+              uvt_basis: '85T' as const,
+            };
 
           const setAssignment = (streamId: string, key: string, value: string) => {
             setUvStreamAssignments(prev => ({
@@ -4814,7 +4850,7 @@ export default function DesignBookLSSDetail() {
                         (r: any) => r.revision_id === assignment.uv_revision_id);
                       const assignedRevision = stream.uv_revision || selectedRevision;
                       const resultStatus = streamResult?.status;
-                      const targetMet = streamResult?.target_met_85t === true && streamResult?.hydraulic_pass !== false;
+                      const targetMet = streamResult?.target_met_selected === true && streamResult?.hydraulic_pass !== false;
 
                       return (
                         <div key={stream.id} className="px-5 py-4">
@@ -4849,7 +4885,7 @@ export default function DesignBookLSSDetail() {
 
                           {/* Product + quantity selectors */}
                           {!readOnly && (
-                            <div className="grid sm:grid-cols-[1fr_auto] gap-3 mb-3">
+                            <div className="grid sm:grid-cols-[1fr_auto_auto] gap-3 mb-3">
                               <div>
                                 <label className="block text-[10px] font-medium text-stone-500 mb-1">
                                   UV Product Revision
@@ -4889,6 +4925,20 @@ export default function DesignBookLSSDetail() {
                                   aria-label={`Unit quantity for ${stream.name}`}
                                   className={`${inputCls} bg-white`}
                                 />
+                              </div>
+                              <div className="min-w-[130px]">
+                                <label className="block text-[10px] font-medium text-stone-500 mb-1">
+                                  Governing UVT basis
+                                </label>
+                                <select
+                                  value={assignment.uvt_basis}
+                                  onChange={e => setAssignment(stream.id, 'uvt_basis', e.target.value)}
+                                  aria-label={`UVT basis for ${stream.name}`}
+                                  className={`${inputCls} bg-white`}
+                                >
+                                  <option value="85T">85%T</option>
+                                  <option value="95T">95%T</option>
+                                </select>
                               </div>
                             </div>
                           )}
@@ -4965,15 +5015,20 @@ export default function DesignBookLSSDetail() {
                                   </div>
                                   <div>
                                     <span className="text-stone-500">Fluence @ 85th pct UVT:</span>
-                                    <strong className={`ml-1 font-mono ${streamResult.target_met_85t ? 'text-emerald-700' : 'text-red-700'}`}>
+                                    <strong className={`ml-1 font-mono ${streamResult.selected_uvt_basis === '85T' ? (streamResult.target_met_85t ? 'text-emerald-700' : 'text-red-700') : 'text-stone-700'}`}>
                                       {Number(streamResult.fluence_85t_mj_cm2 ?? 0).toFixed(4)} mJ/cm²
-                                      {streamResult.target_met_85t ? ' ✓' : ` ✗ (need ${uvTargetFluence})`}
+                                      {streamResult.selected_uvt_basis === '85T'
+                                        ? (streamResult.target_met_85t ? ' ✓ governing' : ` ✗ governing (need ${uvTargetFluence})`)
+                                        : ' reference'}
                                     </strong>
                                   </div>
                                   <div>
                                     <span className="text-stone-500">Fluence @ 95th pct UVT:</span>
-                                    <strong className="ml-1 font-mono text-stone-700">
+                                    <strong className={`ml-1 font-mono ${streamResult.selected_uvt_basis === '95T' ? (streamResult.target_met_95t ? 'text-emerald-700' : 'text-red-700') : 'text-stone-700'}`}>
                                       {Number(streamResult.fluence_95t_mj_cm2 ?? 0).toFixed(4)} mJ/cm²
+                                      {streamResult.selected_uvt_basis === '95T'
+                                        ? (streamResult.target_met_95t ? ' ✓ governing' : ` ✗ governing (need ${uvTargetFluence})`)
+                                        : ' reference'}
                                     </strong>
                                   </div>
                                 </div>
@@ -5015,9 +5070,9 @@ export default function DesignBookLSSDetail() {
                         <strong className="ml-1">{savedResult.streams?.length ?? 0}</strong>
                       </div>
                       <div>
-                        <span className="opacity-70">Passing at 85th pct:</span>
+                        <span className="opacity-70">Passing selected UVT basis:</span>
                         <strong className="ml-1">
-                          {savedResult.streams?.filter((s: any) => s.target_met_85t && s.hydraulic_pass !== false).length ?? 0}
+                          {savedResult.streams?.filter((s: any) => s.target_met_selected && s.hydraulic_pass !== false).length ?? 0}
                           {' / '}{savedResult.streams?.length ?? 0}
                         </strong>
                       </div>

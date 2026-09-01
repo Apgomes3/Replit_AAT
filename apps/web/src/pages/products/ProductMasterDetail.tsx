@@ -277,6 +277,7 @@ export default function ProductMasterDetail() {
     design_flow_m3h: product.design_flow_m3h,
     design_head_m: product.design_head_m,
     power_kw: product.power_kw,
+    lamp_count: product.lamp_count,
     primary_material_code: product.primary_material_code,
     standard_status: product.standard_status,
     image_url: product.image_url,
@@ -311,6 +312,7 @@ export default function ProductMasterDetail() {
       design_flow_m3h: (hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) != null ? String(hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) : '',
       design_head_m: product.design_head_m != null ? String(product.design_head_m) : '',
       primary_material_code: product.primary_material_code || '',
+      lamp_count: product.lamp_count != null ? String(product.lamp_count) : '',
       notes: product.notes || '',
       tank_family_id: (product as any).tank_family_id || '',
       cost: (product as any).cost != null ? String((product as any).cost) : '',
@@ -339,6 +341,7 @@ export default function ProductMasterDetail() {
         design_flow_conflict_resolution: productFlowResolution || undefined,
         design_head_m: editForm.design_head_m ? parseFloat(editForm.design_head_m) : null,
         primary_material_code: editForm.primary_material_code || null,
+        lamp_count: editForm.lamp_count ? parseInt(editForm.lamp_count, 10) : null,
         notes: editForm.notes || null,
         tank_family_id: editForm.tank_family_id || null,
         cost: editForm.cost !== '' ? parseFloat(editForm.cost) : null,
@@ -1055,6 +1058,11 @@ export default function ProductMasterDetail() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Lamp Count</label>
+                  <input type="number" min="1" step="1" value={editForm.lamp_count ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, lamp_count: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
                 <div className="col-span-2">
                   {(() => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, CopyPlus, RefreshCw, ShieldCheck, Sun, X } from 'lucide-react';
+import { Check, CopyPlus, LayoutGrid, List, RefreshCw, ShieldCheck, Sun, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import Button from '../../components/ui/Button';
@@ -9,14 +9,11 @@ import PageHeader from '../../components/ui/PageHeader';
 const inputClass = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:bg-stone-50 disabled:text-stone-500';
 
 const emptyForm = {
-  lamp_count: '',
-  lamp_power_w: '',
   effective_reactor_volume_l: '',
   irradiance_85t_mw_cm2: '',
   irradiance_95t_mw_cm2: '',
-  compatibility: '',
-  arrangement: '',
   source_evidence: '',
+  source_basis: 'AAT Foundations',
   approved_per_lamp_flow_exception_m3h: '',
   notes: '',
 };
@@ -41,8 +38,6 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
     setForm({
       ...emptyForm,
       ...(revision || {}),
-      lamp_count: revision?.lamp_count ?? '',
-      lamp_power_w: revision?.lamp_power_w ?? '',
       effective_reactor_volume_l: revision?.effective_reactor_volume_l ?? '',
       irradiance_85t_mw_cm2: revision?.irradiance_85t_mw_cm2 ?? '',
       irradiance_95t_mw_cm2: revision?.irradiance_95t_mw_cm2 ?? '',
@@ -57,8 +52,6 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
       const payload = {
         ...form,
         ...(revising ? { source_revision_id: revision.id } : {}),
-        lamp_count: numeric(form.lamp_count),
-        lamp_power_w: numeric(form.lamp_power_w),
         effective_reactor_volume_l: numeric(form.effective_reactor_volume_l),
         irradiance_85t_mw_cm2: numeric(form.irradiance_85t_mw_cm2),
         irradiance_95t_mw_cm2: numeric(form.irradiance_95t_mw_cm2),
@@ -100,6 +93,7 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
           ['Configuration', product.configuration || product.application_type || 'Not set'],
           ['Control type', product.control_type || 'Not set'],
           ['Rated power', product.rated_power_kw != null ? `${product.rated_power_kw} kW` : 'Not set'],
+          ['Lamp count', product.pim_lamp_count ?? product.lamp_count ?? 'Not set'],
           ['PIM status', product.pim_status || 'Not set'],
         ].map(([label, value]) => (
           <div key={label}><div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{label}</div><div className="mt-1 text-sm font-medium text-stone-700">{value}</div></div>
@@ -107,8 +101,6 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
       </div>
       <div className="grid gap-4 p-5 md:grid-cols-3">
         {[
-          ['lamp_count', 'Lamp count *', '1'],
-          ['lamp_power_w', 'Lamp power per lamp (W) *', '0.1'],
           ['effective_reactor_volume_l', 'Effective reactor volume (L) *', '0.001'],
           ['irradiance_85t_mw_cm2', 'Irradiance at 85%T (mW/cm²) *', '0.001'],
           ['irradiance_95t_mw_cm2', 'Irradiance at 95%T (mW/cm²) *', '0.001'],
@@ -118,12 +110,9 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
             <input type="number" min="0" step={step} className={inputClass} value={form[key]} onChange={event => set(key, event.target.value)} />
           </label>
         ))}
-        <label className="text-xs font-medium text-stone-500 md:col-span-3">Compatibility *
-          <textarea rows={2} className={inputClass} value={form.compatibility} onChange={event => set('compatibility', event.target.value)} placeholder="Water types, materials, temperature or salinity limits" />
-        </label>
-        <label className="text-xs font-medium text-stone-500 md:col-span-3">Lamp / reactor arrangement *
-          <textarea rows={2} className={inputClass} value={form.arrangement} onChange={event => set('arrangement', event.target.value)} placeholder="Describe lamp placement, banks and reactor arrangement" />
-        </label>
+        <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600 md:col-span-3">
+          Material compatibility is governed from the material library. Reviewed source: <strong>AAT Foundations</strong>.
+        </div>
         <label className="text-xs font-medium text-stone-500 md:col-span-3">Controlled source evidence *
           <input className={inputClass} value={form.source_evidence} onChange={event => set('source_evidence', event.target.value)} placeholder="Manufacturer datasheet, test report or controlled engineering document" />
         </label>
@@ -145,6 +134,7 @@ export default function AdminUVEngineering() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingRevision, setEditingRevision] = useState<any | null>(null);
   const [reconciling, setReconciling] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const { data = { items: [] }, isLoading } = useQuery({
     queryKey: ['uv-engineering', 'admin'],
     queryFn: () => api.get('/admin/uv-engineering', { params: { include_history: true } }).then(response => response.data),
@@ -189,7 +179,38 @@ export default function AdminUVEngineering() {
       {editingRevision && selected && <EngineeringForm product={selected} revision={editingRevision === true ? currentRevision : editingRevision}
         onClose={() => setEditingRevision(null)} onSaved={refresh} />}
 
-      <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="flex justify-end gap-1">
+        <button type="button" aria-label="List view" onClick={() => setViewMode('list')} className={`rounded-lg border p-2 ${viewMode === 'list' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-stone-200 text-stone-500'}`}><List className="h-4 w-4" /></button>
+        <button type="button" aria-label="Card view" onClick={() => setViewMode('cards')} className={`rounded-lg border p-2 ${viewMode === 'cards' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-stone-200 text-stone-500'}`}><LayoutGrid className="h-4 w-4" /></button>
+      </div>
+      {viewMode === 'cards' && (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {products.map((product: any) => {
+            const revision = product.current_revision || product.latest_revision || product.revisions?.[0];
+            return (
+              <article key={product.id} className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div><h2 className="font-semibold text-stone-800">{product.product_name}</h2><p className="font-mono text-xs text-stone-400">{product.product_code}</p></div>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(revision?.status || 'Draft')}`}>{revision?.status || 'No revision'}</span>
+                </div>
+                <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                  <div><dt className="text-stone-400">Material</dt><dd>{product.primary_material_code || 'Missing'}</dd></div>
+                  <div><dt className="text-stone-400">Power</dt><dd>{product.rated_power_kw != null ? `${product.rated_power_kw} kW` : 'Missing'}</dd></div>
+                  <div><dt className="text-stone-400">Lamps</dt><dd>{product.pim_lamp_count ?? product.lamp_count ?? 'Missing'}</dd></div>
+                  <div><dt className="text-stone-400">Unit volume</dt><dd>{revision?.effective_reactor_volume_l ?? 'Missing'} L</dd></div>
+                  <div><dt className="text-stone-400">85%T irradiance</dt><dd>{revision?.irradiance_85t_mw_cm2 ?? 'Missing'}</dd></div>
+                  <div><dt className="text-stone-400">95%T irradiance</dt><dd>{revision?.irradiance_95t_mw_cm2 ?? 'Missing'}</dd></div>
+                  <div><dt className="text-stone-400">Source</dt><dd>{revision?.source_basis || 'AAT Foundations'}</dd></div>
+                  <div><dt className="text-stone-400">Sync</dt><dd>{product.sync_status || 'Current'}</dd></div>
+                </dl>
+                <p className={`mt-3 text-xs font-semibold ${product.calculation_enabled ? 'text-emerald-700' : 'text-amber-700'}`}>{product.calculation_enabled ? 'Calculation ready' : product.completeness_message || 'Incomplete'}</p>
+                <button onClick={() => { setSelectedId(product.id); setEditingRevision(revision || {}); }} className="mt-3 text-xs font-semibold text-blue-600 hover:underline">{revision?.status === 'Approved' ? 'Revise' : 'Edit engineering data'}</button>
+              </article>
+            );
+          })}
+        </section>
+      )}
+      <section className={`${viewMode === 'cards' ? 'hidden' : ''} overflow-hidden rounded-xl border border-stone-200 bg-white`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-stone-50 text-left text-[10px] uppercase tracking-wide text-stone-400">

@@ -203,6 +203,46 @@ describe('UV hydraulic lamp limit', () => {
 });
 
 describe('UV material compatibility warnings', () => {
+  it('uses the selected 95%T basis as the governing compliance result', () => {
+    const input = makeInput(3.6, makeRevision({
+      irradiance_85t_mw_cm2: 1,
+      irradiance_95t_mw_cm2: 10,
+    }));
+    input.uvt_basis = '95T';
+    const result = calculateUVStream(input, 5, null);
+
+    expect(result.target_met_85t).toBe(false);
+    expect(result.target_met_95t).toBe(true);
+    expect(result.selected_uvt_basis).toBe('95T');
+    expect(result.target_met_selected).toBe(true);
+    expect(result.selected_fluence_mj_cm2).toBe(result.fluence_95t_mj_cm2);
+  });
+
+  it('uses governed compatibility and explains a missing material/water mapping', () => {
+    const blocked = calculateUVStream(
+      makeInput(3.6, makeRevision({
+        compatibility: 'All',
+        material_code: 'MAT-SS316',
+        compatibility_allowed: false,
+      })),
+      0,
+      'Marine',
+    );
+    expect(blocked.compatibility_warning).toContain('MAT-SS316');
+    expect(blocked.reasons).toContainEqual(expect.stringContaining('MAT-SS316'));
+
+    const missing = calculateUVStream(
+      makeInput(3.6, makeRevision({
+        compatibility: 'All',
+        material_code: 'MAT-UNKNOWN',
+        compatibility_allowed: null,
+      })),
+      0,
+      'Freshwater',
+    );
+    expect(missing.compatibility_warning).toContain('No governed material compatibility mapping');
+  });
+
   it.each([
     { waterType: 'Marine', compatibility: 'Freshwater', warning: true },
     { waterType: 'Marine', compatibility: 'Titanium', warning: false },

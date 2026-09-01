@@ -119,6 +119,32 @@ const baseContext = () => ({
     sort_order: 0,
   }],
   review_handovers: [],
+  uv_selections: [{
+    id: 'uv-selection-1',
+    design_book_id: 'book-1',
+    system_id: 'system-1',
+    target_fluence_mj_cm2: '50',
+    input_snapshot: {
+      streams: [{
+        side_stream_id: 'side-stream-1',
+        product_master_id: 'pim-uv-1',
+        uv_revision_id: 'uv-revision-1',
+        uvt_basis: '95T',
+        lamp_count: 4,
+        effective_reactor_volume_l: 52.01,
+        irradiance_85t_mw_cm2: 29.09,
+        irradiance_95t_mw_cm2: 45.62,
+        material_code: 'MAT-TI',
+      }],
+    },
+    result_snapshot: {
+      streams: [{
+        side_stream_id: 'side-stream-1',
+        selected_uvt_basis: '95T',
+        selected_fluence_mj_cm2: 122.0244,
+      }],
+    },
+  }],
 });
 
 describe('Design Book version snapshots', () => {
@@ -275,7 +301,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(7);
+    expect(snapshot.schema_version).toBe(8);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -297,6 +323,13 @@ describe('Design Book version snapshots', () => {
       power_unit: 'kW',
       power_kw: '0.25',
       pim_product_code: 'LT-100',
+    });
+    expect(snapshot.frozen.uv_selections[0].input_snapshot.streams[0]).toMatchObject({
+      product_master_id: 'pim-uv-1',
+      uv_revision_id: 'uv-revision-1',
+      uvt_basis: '95T',
+      lamp_count: 4,
+      material_code: 'MAT-TI',
     });
     expect(snapshot.frozen.species[0]).toMatchObject({
       catalog_species_id: 'catalog-1',
@@ -391,7 +424,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(7);
+    expect(insertParams[6]).toBe(8);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 

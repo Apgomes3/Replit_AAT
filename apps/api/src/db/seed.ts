@@ -62,6 +62,7 @@ async function seed() {
         ('MAT-GRP',     'GRP (Polyester Laminate)',   'Composite', 1700, 'Good - seawater',                        70),
         ('MAT-SS316',   'Stainless Steel 316L',       'Metal',     7990, 'Good - seawater, chlorides',            400),
         ('MAT-SS304',   'Stainless Steel 304',        'Metal',     7900, 'Moderate - freshwater, mild chemicals', 400),
+        ('MAT-TI',      'Titanium',                    'Metal',     4506, 'Excellent - freshwater and seawater',   600),
         ('MAT-CS',      'Carbon Steel',               'Metal',     7850, 'Low - requires coating/lining',         400),
         ('MAT-ALU',     'Aluminium',                  'Metal',     2700, 'Good - freshwater, atmosphere',         150),
         ('MAT-HDPE',    'High Density Polyethylene',  'Plastic',    960, 'Excellent - most chemicals',             60),
@@ -73,6 +74,26 @@ async function seed() {
         ('MAT-GLASS',   'Float / Toughened Glass',    'Glass',     2500, 'Excellent - seawater, chemicals',       200),
         ('MAT-CONC',    'Reinforced Concrete',        'Concrete',  2400, 'Good - seawater (with coating)',        NULL)
       ON CONFLICT (material_code) DO NOTHING
+    `);
+
+    // Governed UV material/water relationships. Do not infer UV suitability from
+    // free-text revision notes: an absent relationship is intentionally a blocker.
+    await client.query(`
+      INSERT INTO material_water_compatibility (material_code, water_type, allowed, source) VALUES
+        ('MAT-TI', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-TI', 'Salt Water', true, 'AAT Foundations'),
+        ('MAT-TI', 'Marine', true, 'AAT Foundations'),
+        ('MAT-PVC', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-PVC', 'Salt Water', true, 'AAT Foundations'),
+        ('MAT-PVC', 'Marine', true, 'AAT Foundations'),
+        ('MAT-SS304', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-SS304', 'Salt Water', false, 'AAT Foundations'),
+        ('MAT-SS304', 'Marine', false, 'AAT Foundations'),
+        ('MAT-SS316', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-SS316', 'Salt Water', false, 'AAT Foundations'),
+        ('MAT-SS316', 'Marine', false, 'AAT Foundations')
+      ON CONFLICT (material_code, water_type) DO UPDATE
+        SET allowed=EXCLUDED.allowed, source=EXCLUDED.source, updated_at=NOW()
     `);
 
     // Specifications

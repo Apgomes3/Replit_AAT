@@ -78,15 +78,17 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
   const rows = (await runner(
     `SELECT s.*,
             r.id AS uv_rev_id, r.revision_number AS uv_revision_number, r.status AS uv_rev_status,
-            r.lamp_count AS uv_lamp_count, r.lamp_power_w AS uv_lamp_power_w,
+            pm.lamp_count AS uv_lamp_count, pm.power_kw * 1000 AS uv_lamp_power_w,
             r.effective_reactor_volume_l AS uv_effective_reactor_volume_l,
             r.irradiance_85t_mw_cm2 AS uv_irradiance_85t_mw_cm2,
             r.irradiance_95t_mw_cm2 AS uv_irradiance_95t_mw_cm2,
             r.compatibility AS uv_compatibility, r.arrangement AS uv_arrangement,
+            r.source_basis AS uv_source_basis, r.source_evidence AS uv_source_evidence,
             r.approved_per_lamp_flow_exception_m3h AS uv_approved_per_lamp_flow_exception_m3h,
             r.notes AS uv_rev_notes,
             pm.product_code AS uv_product_code, pm.product_name AS uv_product_name,
-            pm.manufacturer AS uv_manufacturer
+            pm.manufacturer AS uv_manufacturer, pm.id AS uv_product_master_id,
+            pm.primary_material_code AS uv_material_code, pm.power_kw AS uv_rated_power_kw
        FROM system_flow_side_streams s
        LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
        LEFT JOIN uv_engineering_catalogs uc ON uc.id=r.catalog_id
@@ -122,11 +124,16 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
           irradiance_95t_mw_cm2: row.uv_irradiance_95t_mw_cm2,
           compatibility: row.uv_compatibility,
           arrangement: row.uv_arrangement,
+          source_basis: row.uv_source_basis,
+          source_evidence: row.uv_source_evidence,
           approved_per_lamp_flow_exception_m3h: row.uv_approved_per_lamp_flow_exception_m3h,
           notes: row.uv_rev_notes,
           product_code: row.uv_product_code,
           product_name: row.uv_product_name,
           manufacturer: row.uv_manufacturer,
+          product_master_id: row.uv_product_master_id,
+          material_code: row.uv_material_code,
+          rated_power_kw: row.uv_rated_power_kw,
         } : null,
       })),
     fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
@@ -3613,7 +3620,7 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
-const VERSION_SNAPSHOT_SCHEMA = 7;
+const VERSION_SNAPSHOT_SCHEMA = 8;
 const VERSION_REFERENCE_FIELDS = {
   project: ['id', 'project_code', 'project_name'],
   exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -3705,6 +3712,7 @@ function frozenFromSnapshot(snapshot: any) {
     thermal_calculations: snapshot?.thermal_calculations || [],
     friction_loss_calculations: snapshot?.friction_loss_calculations || [],
     ...(Array.isArray(snapshot?.lights) ? { lights: snapshot.lights } : {}),
+    ...(Array.isArray(snapshot?.uv_selections) ? { uv_selections: snapshot.uv_selections } : {}),
     ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
   };
 }
@@ -3774,13 +3782,14 @@ function makeVersionSnapshot(context: any, capturedAt = new Date().toISOString()
       hydraulics: jsonCopy(context.hydraulics || []),
       substrate: jsonCopy(context.substrate || []),
       lights: jsonCopy(context.lights || []),
+      uv_selections: jsonCopy(context.uv_selections || []),
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
       friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
     },
     live_references: liveReferencesFromContext(context),
     scope: {
-      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'thermal calculations', 'friction loss calculations', 'review handovers'],
+      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'thermal calculations', 'friction loss calculations', 'review handovers'],
       live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
       restore_target: 'working_copy',
     },
@@ -3796,6 +3805,7 @@ function currentRestoreStateDigest(context: any) {
       hydraulics: jsonCopy(context.hydraulics || []),
       substrate: jsonCopy(context.substrate || []),
       lights: jsonCopy(context.lights || []),
+      uv_selections: jsonCopy(context.uv_selections || []),
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
       friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
@@ -3821,6 +3831,7 @@ function versionPresentation(version: any, currentContext: any) {
       hydraulics: (frozen.hydraulics || []).length,
       substrate_theming: (frozen.substrate || []).length,
       lights: (frozen.lights || []).length,
+      uv_selections: (frozen.uv_selections || []).length,
       thermal_calculations: (frozen.thermal_calculations || []).length,
       friction_loss_calculations: (frozen.friction_loss_calculations || []).reduce(
         (sum: number, group: any) => sum + (group.items || []).length,
@@ -3837,10 +3848,12 @@ function versionPresentation(version: any, currentContext: any) {
     restorable_records: [
       'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations', 'friction loss calculations',
       ...(Array.isArray(frozen.lights) ? ['lighting schedule'] : []),
+      ...(Array.isArray(frozen.uv_selections) ? ['UV selections'] : []),
       ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
     ],
     preserved_records: [
       ...(!Array.isArray(frozen.lights) ? ['lighting schedule (not captured by this older version)'] : []),
+      ...(!Array.isArray(frozen.uv_selections) ? ['UV selections (not captured by this older version)'] : []),
       ...(!Array.isArray(frozen.review_handovers) ? ['review handovers (not captured by this older version)'] : []),
     ],
     live_reference_records: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
@@ -3860,6 +3873,7 @@ function versionPresentation(version: any, currentContext: any) {
         hydraulics: (currentContext.hydraulics || []).length,
         substrate_theming: (currentContext.substrate || []).length,
         lights: (currentContext.lights || []).length,
+        uv_selections: (currentContext.uv_selections || []).length,
         thermal_calculations: (currentContext.thermal_calculations || []).length,
         review_handovers: (currentContext.review_handovers || []).length,
       },
@@ -3874,6 +3888,10 @@ function versionPresentation(version: any, currentContext: any) {
           ? frozen.lights.length
           : (currentContext.lights || []).length,
         lights_preserved: !Array.isArray(frozen.lights),
+        uv_selections: Array.isArray(frozen.uv_selections)
+          ? frozen.uv_selections.length
+          : (currentContext.uv_selections || []).length,
+        uv_selections_preserved: !Array.isArray(frozen.uv_selections),
         thermal_calculations: (frozen.thermal_calculations || []).length,
         review_handovers: Array.isArray(frozen.review_handovers)
           ? frozen.review_handovers.length
@@ -4152,6 +4170,25 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
         );
       }
     }
+    if (Array.isArray(frozen.uv_selections)) {
+      await client.query('DELETE FROM design_book_uv_selections WHERE design_book_id=$1', [req.params.id]);
+      for (const selection of frozen.uv_selections) {
+        await client.query(
+          `INSERT INTO design_book_uv_selections
+             (design_book_id, system_id, target_fluence_mj_cm2, input_snapshot, result_snapshot,
+              calculation_version, freshness, calculated_by, calculated_at, created_at, updated_at)
+           SELECT $1, s.id, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9,
+                  COALESCE($10,NOW()), COALESCE($11,NOW())
+             FROM systems s
+            WHERE s.id=$2 AND s.project_id=(SELECT project_id FROM design_books WHERE id=$1)`,
+          [req.params.id, selection.system_id, selection.target_fluence_mj_cm2,
+            JSON.stringify(selection.input_snapshot || {}), JSON.stringify(selection.result_snapshot || {}),
+            selection.calculation_version ?? null, selection.freshness || 'stale',
+            selection.calculated_by ?? null, selection.calculated_at ?? null,
+            selection.created_at ?? null, selection.updated_at ?? null],
+        );
+      }
+    }
     await client.query('DELETE FROM design_book_thermal_calculations WHERE design_book_id=$1', [req.params.id]);
     for (const thermal of frozen.thermal_calculations || []) {
       await insertThermalSnapshotRecord(
@@ -4234,11 +4271,12 @@ router.get(
     const streamsResult = await query(
       `SELECT s.*,
               r.id AS rev_id, r.revision_number, r.status AS rev_status,
-              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              pm.lamp_count, pm.power_kw * 1000 AS lamp_power_w, r.effective_reactor_volume_l,
               r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
-              r.compatibility, r.arrangement, r.source_evidence,
+              r.compatibility, r.arrangement, r.source_evidence, r.source_basis,
               r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
-              pm.product_code, pm.product_name, pm.manufacturer
+              pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
+              pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw
          FROM system_flow_side_streams s
          LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
          LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
@@ -4251,11 +4289,13 @@ router.get(
     // Load approved selectable revisions for the product picker
     const selectableResult = await query(
       `SELECT c.id AS catalog_id, r.id AS revision_id, r.revision_number,
-              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              pm.lamp_count, pm.power_kw * 1000 AS lamp_power_w, r.effective_reactor_volume_l,
               r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
-              r.compatibility, r.arrangement, r.source_evidence,
+              r.source_evidence, r.source_basis,
               r.approved_per_lamp_flow_exception_m3h, r.notes,
-              pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status
+              pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
+              pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw,
+              pm.status AS pim_status
          FROM uv_engineering_catalogs c
          JOIN product_masters pm ON pm.id=c.product_master_id
          JOIN product_families pf ON pf.id=pm.product_family_id
@@ -4265,11 +4305,14 @@ router.get(
            ORDER BY revision_number DESC LIMIT 1
          ) r ON true
         WHERE c.needs_review=false AND pm.status='Active' AND pf.product_family_code='PFM-UV'
-          AND r.lamp_count > 0 AND r.lamp_power_w > 0 AND r.effective_reactor_volume_l > 0
+          AND NULLIF(BTRIM(pm.product_code),'') IS NOT NULL
+          AND NULLIF(BTRIM(pm.product_name),'') IS NOT NULL
+          AND NULLIF(BTRIM(pm.primary_material_code),'') IS NOT NULL
+          AND pm.power_kw > 0 AND pm.lamp_count > 0 AND r.effective_reactor_volume_l > 0
           AND r.irradiance_85t_mw_cm2 > 0 AND r.irradiance_95t_mw_cm2 > 0
-          AND NULLIF(BTRIM(r.compatibility),'') IS NOT NULL
-          AND NULLIF(BTRIM(r.arrangement),'') IS NOT NULL
-          AND NULLIF(BTRIM(r.source_evidence),'') IS NOT NULL
+          AND r.source_basis='AAT Foundations' AND r.source_basis_verified=true
+          AND EXISTS (SELECT 1 FROM material_water_compatibility mwc
+                      WHERE mwc.material_code=pm.primary_material_code AND mwc.allowed=true)
         ORDER BY pm.product_code`,
     );
 
@@ -4290,6 +4333,7 @@ router.get(
         sort_order: Number(row.sort_order),
         uv_revision_id: row.uv_revision_id,
         uv_unit_quantity: row.uv_unit_quantity != null ? Number(row.uv_unit_quantity) : null,
+        uvt_basis: row.uvt_basis || '85T',
         uv_revision: row.rev_id ? {
           id: row.rev_id,
           revision_number: Number(row.revision_number),
@@ -4302,12 +4346,16 @@ router.get(
           compatibility: row.compatibility,
           arrangement: row.arrangement,
           source_evidence: row.source_evidence,
+          source_basis: row.source_basis,
           approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
             ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
           notes: row.rev_notes,
           product_code: row.product_code,
           product_name: row.product_name,
           manufacturer: row.manufacturer,
+          product_master_id: row.product_master_id,
+          material_code: row.material_code,
+          rated_power_kw: row.rated_power_kw != null ? Number(row.rated_power_kw) : null,
         } : null,
       })),
       selectable_revisions: selectableResult.rows.map(row => ({
@@ -4322,12 +4370,16 @@ router.get(
         compatibility: row.compatibility,
         arrangement: row.arrangement,
         source_evidence: row.source_evidence,
+        source_basis: row.source_basis,
         approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
           ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
         notes: row.notes,
         product_code: row.product_code,
         product_name: row.product_name,
         manufacturer: row.manufacturer,
+        product_master_id: row.product_master_id,
+        material_code: row.material_code,
+        rated_power_kw: row.rated_power_kw != null ? Number(row.rated_power_kw) : null,
         pim_status: row.pim_status,
       })),
       saved: savedResult.rows[0] ? {
@@ -4410,18 +4462,27 @@ router.post(
     const streamsResult = await query(
       `SELECT s.*,
               r.id AS rev_id, r.revision_number, r.status AS rev_status,
-              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              pm.lamp_count, pm.power_kw * 1000 AS lamp_power_w, r.effective_reactor_volume_l,
               r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
-              r.compatibility, r.arrangement, r.source_evidence,
+              r.compatibility, r.arrangement, r.source_evidence, r.source_basis,
               r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
-              pm.product_code, pm.product_name, pm.manufacturer
+              pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
+              pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw,
+              mwc.allowed AS compatibility_allowed, mwc.water_type AS mapped_water_type
          FROM system_flow_side_streams s
          LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
          LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
          LEFT JOIN product_masters pm ON pm.id=c.product_master_id
+         LEFT JOIN material_water_compatibility mwc
+           ON mwc.material_code=pm.primary_material_code
+          AND mwc.water_type=CASE
+            WHEN $2 IN ('Marine', 'Salt Water', 'Brackish') THEN CASE WHEN $2='Marine' THEN 'Marine' ELSE 'Salt Water' END
+            WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+            ELSE $2
+          END
         WHERE s.system_id=$1 AND s.preset='UV'
         ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`,
-      [systemId],
+      [systemId, system.water_type],
     );
 
     // Build UVStreamInput objects
@@ -4442,6 +4503,7 @@ router.post(
         side_stream_name: row.name,
         flow_m3h: streamFlowM3h,
         uv_unit_quantity: row.uv_unit_quantity != null ? Number(row.uv_unit_quantity) : null,
+        uvt_basis: row.uvt_basis === '95T' ? '95T' : '85T',
         uvt_85t_pct: null,
         uvt_95t_pct: null,
         uv_revision: row.rev_id ? {
@@ -4457,12 +4519,22 @@ router.post(
           compatibility: row.compatibility,
           arrangement: row.arrangement,
           source_evidence: row.source_evidence,
+          source_basis: row.source_basis,
           approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
             ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
           notes: row.rev_notes,
           product_code: row.product_code,
           product_name: row.product_name,
           manufacturer: row.manufacturer,
+          product_master_id: row.product_master_id,
+          material_code: row.material_code,
+          rated_power_kw: row.rated_power_kw != null ? Number(row.rated_power_kw) : null,
+          compatibility_allowed: row.compatibility_allowed,
+          compatibility_reason: row.mapped_water_type == null
+            ? `No governed material compatibility mapping exists for ${row.material_code || 'the selected material'} and ${system.water_type || 'the system water type'}.`
+            : row.compatibility_allowed === false
+              ? `${row.material_code} is not approved for ${system.water_type}.`
+              : null,
         } : null,
       };
     });
@@ -4488,7 +4560,14 @@ router.post(
           JOIN product_families pf ON pf.id=pm.product_family_id
          WHERE r.id = ANY($1::uuid[]) AND r.status='Approved'
            AND c.needs_review=false AND pm.status='Active'
-           AND pf.product_family_code='PFM-UV'`,
+           AND pf.product_family_code='PFM-UV'
+           AND NULLIF(BTRIM(pm.product_code),'') IS NOT NULL
+           AND NULLIF(BTRIM(pm.product_name),'') IS NOT NULL
+           AND NULLIF(BTRIM(pm.primary_material_code),'') IS NOT NULL
+           AND pm.power_kw > 0 AND pm.lamp_count > 0
+           AND r.effective_reactor_volume_l > 0
+           AND r.irradiance_85t_mw_cm2 > 0 AND r.irradiance_95t_mw_cm2 > 0
+           AND r.source_basis='AAT Foundations' AND r.source_basis_verified=true`,
         [assignedRevisionIds],
       );
       const eligibleIds = new Set(eligibleCheck.rows.map(r => r.id));
@@ -4514,6 +4593,21 @@ router.post(
         flow_m3h: s.flow_m3h,
         uv_revision_id: s.uv_revision?.id || null,
         uv_unit_quantity: s.uv_unit_quantity,
+        uvt_basis: s.uvt_basis || '85T',
+        product_master_id: s.uv_revision?.product_master_id || null,
+        product_code: s.uv_revision?.product_code || null,
+        product_name: s.uv_revision?.product_name || null,
+        manufacturer: s.uv_revision?.manufacturer || null,
+        material_code: s.uv_revision?.material_code || null,
+        rated_power_kw: s.uv_revision?.rated_power_kw ?? null,
+        lamp_count: s.uv_revision?.lamp_count ?? null,
+        engineering_revision_number: s.uv_revision?.revision_number ?? null,
+        effective_reactor_volume_l: s.uv_revision?.effective_reactor_volume_l ?? null,
+        irradiance_85t_mw_cm2: s.uv_revision?.irradiance_85t_mw_cm2 ?? null,
+        irradiance_95t_mw_cm2: s.uv_revision?.irradiance_95t_mw_cm2 ?? null,
+        source_basis: s.uv_revision?.source_basis || null,
+        source_evidence: s.uv_revision?.source_evidence || null,
+        compatibility_allowed: s.uv_revision?.compatibility_allowed ?? null,
       })),
     };
 

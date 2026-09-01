@@ -2389,6 +2389,41 @@ ALTER TABLE uv_engineering_revisions ADD CONSTRAINT uv_engineering_positive_valu
   AND (approved_per_lamp_flow_exception_m3h IS NULL OR approved_per_lamp_flow_exception_m3h > 0)
 ) NOT VALID;
 
+-- UV governance: PIM owns product identity/material/power/lamp count; engineering
+-- revisions own the approved reactor and irradiance evidence.
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS lamp_count INTEGER;
+ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis VARCHAR(100) NOT NULL DEFAULT 'AAT Foundations';
+ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE uv_engineering_revisions ALTER COLUMN source_basis SET DEFAULT 'AAT Foundations';
+ALTER TABLE system_flow_side_streams ADD COLUMN IF NOT EXISTS uvt_basis VARCHAR(10) NOT NULL DEFAULT '85T';
+ALTER TABLE system_flow_side_streams DROP CONSTRAINT IF EXISTS chk_uvt_basis;
+ALTER TABLE system_flow_side_streams ADD CONSTRAINT chk_uvt_basis CHECK (uvt_basis IN ('85T', '95T'));
+
+CREATE TABLE IF NOT EXISTS material_water_compatibility (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  material_code VARCHAR(50) NOT NULL REFERENCES materials(material_code) ON DELETE CASCADE,
+  water_type VARCHAR(50) NOT NULL,
+  allowed BOOLEAN NOT NULL DEFAULT true,
+  source VARCHAR(100) NOT NULL DEFAULT 'AAT Foundations',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(material_code, water_type)
+);
+CREATE INDEX IF NOT EXISTS idx_material_water_compatibility_lookup
+  ON material_water_compatibility(material_code, water_type);
+
+-- Pre-governance approvals retain their historical evidence but cannot be
+-- represented as reviewed AAT Foundations data until an administrator creates
+-- and approves a new revision.
+UPDATE uv_engineering_catalogs c
+SET needs_review=true,
+    review_reason=COALESCE(c.review_reason, 'Approved UV evidence predates governed source verification')
+WHERE EXISTS (
+  SELECT 1 FROM uv_engineering_revisions r
+  WHERE r.catalog_id=c.id AND r.status='Approved' AND r.source_basis_verified=false
+);
+
 CREATE OR REPLACE FUNCTION protect_uv_engineering_revision_values()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -2408,13 +2443,13 @@ BEGIN
     IF ROW(NEW.id, NEW.catalog_id, NEW.revision_number, NEW.lamp_count,
       NEW.lamp_power_w, NEW.effective_reactor_volume_l,
       NEW.irradiance_85t_mw_cm2, NEW.irradiance_95t_mw_cm2, NEW.compatibility,
-      NEW.arrangement, NEW.source_evidence, NEW.approved_per_lamp_flow_exception_m3h, NEW.notes,
+      NEW.arrangement, NEW.source_evidence, NEW.source_basis, NEW.source_basis_verified, NEW.approved_per_lamp_flow_exception_m3h, NEW.notes,
       NEW.supersedes_id, NEW.created_by, NEW.created_at)
       IS DISTINCT FROM
       ROW(OLD.id, OLD.catalog_id, OLD.revision_number, OLD.lamp_count,
       OLD.lamp_power_w, OLD.effective_reactor_volume_l,
       OLD.irradiance_85t_mw_cm2, OLD.irradiance_95t_mw_cm2, OLD.compatibility,
-      OLD.arrangement, OLD.source_evidence, OLD.approved_per_lamp_flow_exception_m3h, OLD.notes,
+      OLD.arrangement, OLD.source_evidence, OLD.source_basis, OLD.source_basis_verified, OLD.approved_per_lamp_flow_exception_m3h, OLD.notes,
       OLD.supersedes_id, OLD.created_by, OLD.created_at)
     THEN
       RAISE EXCEPTION 'Approved UV engineering identity, lineage, and values are immutable';
@@ -2424,6 +2459,67 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$;
+
+CREATE OR REPLACE FUNCTION mark_uv_calculations_stale()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE affected_material TEXT;
+BEGIN
+  IF TG_TABLE_NAME = 'system_flow_side_streams' THEN
+    UPDATE design_book_uv_selections
+       SET freshness='stale', updated_at=NOW()
+     WHERE system_id=COALESCE(NEW.system_id, OLD.system_id);
+  ELSIF TG_TABLE_NAME = 'systems' THEN
+    UPDATE design_book_uv_selections
+       SET freshness='stale', updated_at=NOW()
+     WHERE system_id=COALESCE(NEW.id, OLD.id);
+  ELSIF TG_TABLE_NAME = 'system_exhibit_links' THEN
+    UPDATE design_book_uv_selections
+       SET freshness='stale', updated_at=NOW()
+     WHERE system_id=COALESCE(NEW.system_id, OLD.system_id);
+  ELSIF TG_TABLE_NAME = 'design_book_exhibit_hydraulics' THEN
+    UPDATE design_book_uv_selections uv
+       SET freshness='stale', updated_at=NOW()
+     WHERE uv.design_book_id=COALESCE(NEW.design_book_id, OLD.design_book_id)
+       AND EXISTS (
+         SELECT 1 FROM system_exhibit_links sel
+         WHERE sel.system_id=uv.system_id
+           AND sel.exhibit_id=COALESCE(NEW.exhibit_id, OLD.exhibit_id)
+       );
+  ELSIF TG_TABLE_NAME = 'material_water_compatibility' THEN
+    affected_material := COALESCE(NEW.material_code, OLD.material_code);
+    UPDATE design_book_uv_selections
+       SET freshness='stale', updated_at=NOW()
+     WHERE input_snapshot->'streams' @> jsonb_build_array(
+       jsonb_build_object('material_code', affected_material)
+     );
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END $$;
+
+DROP TRIGGER IF EXISTS trg_uv_side_stream_calculation_stale ON system_flow_side_streams;
+CREATE TRIGGER trg_uv_side_stream_calculation_stale
+AFTER INSERT OR UPDATE OR DELETE ON system_flow_side_streams
+FOR EACH ROW EXECUTE FUNCTION mark_uv_calculations_stale();
+
+DROP TRIGGER IF EXISTS trg_uv_system_calculation_stale ON systems;
+CREATE TRIGGER trg_uv_system_calculation_stale
+AFTER UPDATE OF design_flow_m3h, water_type, calculation_inputs, loop1_flow_pct, loop2_flow_pct, loop3_flow_pct ON systems
+FOR EACH ROW EXECUTE FUNCTION mark_uv_calculations_stale();
+
+DROP TRIGGER IF EXISTS trg_uv_system_link_calculation_stale ON system_exhibit_links;
+CREATE TRIGGER trg_uv_system_link_calculation_stale
+AFTER INSERT OR UPDATE OR DELETE ON system_exhibit_links
+FOR EACH ROW EXECUTE FUNCTION mark_uv_calculations_stale();
+
+DROP TRIGGER IF EXISTS trg_uv_hydraulic_calculation_stale ON design_book_exhibit_hydraulics;
+CREATE TRIGGER trg_uv_hydraulic_calculation_stale
+AFTER INSERT OR UPDATE OR DELETE ON design_book_exhibit_hydraulics
+FOR EACH ROW EXECUTE FUNCTION mark_uv_calculations_stale();
+
+DROP TRIGGER IF EXISTS trg_uv_material_calculation_stale ON material_water_compatibility;
+CREATE TRIGGER trg_uv_material_calculation_stale
+AFTER INSERT OR UPDATE OR DELETE ON material_water_compatibility
+FOR EACH ROW EXECUTE FUNCTION mark_uv_calculations_stale();
 DROP TRIGGER IF EXISTS trg_protect_uv_engineering_revision_values ON uv_engineering_revisions;
 CREATE TRIGGER trg_protect_uv_engineering_revision_values
 BEFORE UPDATE OR DELETE ON uv_engineering_revisions
@@ -2436,7 +2532,7 @@ RETURNS jsonb LANGUAGE sql STABLE AS $$
     'manufacturer', p.manufacturer, 'status', p.status,
     'category', p.product_category, 'material', p.primary_material_code,
     'configuration', p.configuration, 'control_type', p.control_type,
-    'rated_power_kw', p.power_kw
+    'rated_power_kw', p.power_kw, 'lamp_count', p.lamp_count
   )
 $$;
 
@@ -2478,12 +2574,18 @@ BEGIN
     OR OLD.primary_material_code IS DISTINCT FROM NEW.primary_material_code
     OR OLD.configuration IS DISTINCT FROM NEW.configuration
     OR OLD.control_type IS DISTINCT FROM NEW.control_type
-    OR OLD.power_kw IS DISTINCT FROM NEW.power_kw;
+    OR OLD.power_kw IS DISTINCT FROM NEW.power_kw
+    OR OLD.lamp_count IS DISTINCT FROM NEW.lamp_count;
   IF changed THEN
     UPDATE uv_engineering_catalogs
     SET pim_snapshot=uv_engineering_pim_snapshot(NEW), needs_review=true,
         review_reason='Authoritative PIM identity changed', updated_at=NOW()
     WHERE product_master_id=NEW.id;
+    UPDATE design_book_uv_selections
+       SET freshness='stale', updated_at=NOW()
+     WHERE input_snapshot->'streams' @> jsonb_build_array(
+       jsonb_build_object('product_master_id', NEW.id::text)
+     );
   END IF;
   RETURN NEW;
 END $$;
