@@ -14,3 +14,9 @@ The Design Book owns the project pump tag and the design values entered or calcu
 **Why:** A catalog model identifies what pump is being used, while the Design Book records the project-specific duty point and assignment. Mixing those ownership boundaries would make catalog maintenance change historical project evidence unexpectedly.
 
 **How to apply:** Create the project pump tag first, validate sizing against the authoritative Flow Route basis, then allow a separate model-link action. Preserve the tag, design values, and selected-model snapshot in review/released Design Book packages.
+
+Pump lines are role-scoped within a circuit: the primary line uses the authoritative Flow Route duty, while an optional Foam Fractionator venturi line must carry its own explicit flow basis and never inherit the primary duty.
+
+**Why:** A venturi pump can serve a materially different duty from the supply pump. Reusing the primary flow would create plausible-looking but incorrect sizing evidence, and a single circuit-level uniqueness key cannot represent both roles.
+
+**How to apply:** Enforce uniqueness on system, circuit, and role; keep FFSP and FFVP snapshots/fingerprints separate; require a positive FFVP flow before calculation or release.

@@ -57,6 +57,8 @@ const state = vitest_1.vi.hoisted(() => ({
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (sql, params = []) => {
         state.calls.push({ sql, params });
+        if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK')
+            return { rows: [] };
         if (sql.includes('SELECT rma.access_level'))
             return { rows: [{ access_level: 'manage' }] };
         if (sql.startsWith('SELECT * FROM design_books') || sql.includes('FROM design_books db'))
@@ -75,19 +77,48 @@ vitest_1.vi.mock('../db', () => {
             return { rows: state.sideStreams };
         if (sql.includes('FROM system_pump_selections'))
             return { rows: state.saved };
+        if (sql.startsWith('SELECT id FROM project_equipment_items'))
+            return { rows: [] };
+        if (sql.includes('SELECT equip_code FROM project_equipment_items'))
+            return { rows: [] };
         if (sql.includes('FROM project_equipment_items'))
             return { rows: state.candidates };
+        if (sql.includes('INSERT INTO project_equipment_items')) {
+            const created = {
+                id: 'created-pump-1', project_equipment_item_id: 'created-pump-1',
+                equip_code: params[0], project_id: params[1], system_id: params[2],
+                description: params[3], quantity: 1, unit: 'EA', status: 'Design',
+            };
+            state.candidates.push(created);
+            return { rows: [created] };
+        }
         if (sql.includes('INSERT INTO system_pump_selections')) {
-            state.saved = [{
-                    system_id: params[0], circuit_key: params[1], project_equipment_item_id: params[2],
-                    design_head_m: String(params[3]), pump_efficiency_pct: String(params[4]), motor_efficiency_pct: String(params[5]),
-                    source_fingerprint: params[6], pump_snapshot: JSON.parse(params[7]), calculation_version: params[8],
-                }];
+            const createAllocation = sql.includes('VALUES ($1,$2,$3,NULL,NULL,NULL');
+            const saved = createAllocation ? {
+                system_id: params[0], circuit_key: params[1], project_equipment_item_id: params[2],
+                design_head_m: null, pump_efficiency_pct: null, motor_efficiency_pct: null,
+                source_fingerprint: params[3], pump_snapshot: JSON.parse(params[4]),
+                calculation_version: params[5], result_snapshot: JSON.parse(params[6]),
+                pump_role: params[8], venturi_flow_m3h: params[9],
+            } : {
+                system_id: params[0], circuit_key: params[1], project_equipment_item_id: params[2],
+                design_head_m: String(params[3]), pump_efficiency_pct: String(params[4]), motor_efficiency_pct: String(params[5]),
+                source_fingerprint: params[6], pump_snapshot: JSON.parse(params[7]), calculation_version: params[8],
+                result_snapshot: JSON.parse(params[9]), pump_role: params[11], venturi_flow_m3h: params[12],
+            };
+            state.saved = state.saved.filter(row => !(row.system_id === saved.system_id && row.circuit_key === saved.circuit_key &&
+                (row.pump_role || 'primary') === (saved.pump_role || 'primary')));
+            state.saved.push(saved);
             return { rows: [] };
         }
         return { rows: [] };
     });
-    return { default: { connect: vitest_1.vi.fn() }, query };
+    return {
+        default: {
+            connect: vitest_1.vi.fn(async () => ({ query, release: vitest_1.vi.fn() })),
+        },
+        query,
+    };
 });
 function request(app, method, path, body) {
     return new Promise((resolve, reject) => {
@@ -127,6 +158,10 @@ function request(app, method, path, body) {
         state.links = [];
         state.system.calculation_inputs = { design_flow_source: 'manual_override' };
         state.system.design_flow_m3h = '100';
+        state.system.loop1_name = 'Main return';
+        state.system.loop1_flow_source = 'Bottom Drain';
+        state.system.loop1_filtration = 'Sand Filter';
+        state.system.loop1_flow_pct = '60';
     });
     (0, vitest_1.afterAll)(() => { delete process.env.JWT_SECRET; });
     (0, vitest_1.it)('derives stable main and side-stream circuit keys and flows, scoped candidates', async () => {
@@ -182,6 +217,86 @@ function request(app, method, path, body) {
         (0, vitest_1.expect)(response.body.status).toBe('incompatible');
         (0, vitest_1.expect)(response.body.reasons.join(' ')).toContain('catalog power is 1.1 kW');
         (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('INSERT INTO system_pump_selections'))).toBe(true);
+    });
+    (0, vitest_1.it)('creates and immediately allocates an FFSP project pump to the current project and LSS', async () => {
+        state.system.design_flow_m3h = '224.15';
+        state.system.loop1_flow_pct = '100';
+        state.system.loop1_filtration = 'Foam Fractionation';
+        state.system.loop1_name = 'Foam Fractionator Loop';
+        state.candidates = [];
+        const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+            design_book_id: 'book-1',
+            circuit_key: 'loop:1',
+            pump_role: 'primary',
+            equip_code: 'FFSP-001',
+            description: 'FFSP — Foam Fractionator Supply Pump',
+        });
+        (0, vitest_1.expect)(response.status).toBe(201);
+        (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
+            id: 'created-pump-1',
+            project_id: 'project-1',
+            system_id: 'system-1',
+            equip_code: 'FFSP-001',
+            description: 'FFSP — Foam Fractionator Supply Pump',
+        });
+        (0, vitest_1.expect)(response.body.pump_line).toMatchObject({
+            circuit_key: 'loop:1',
+            pump_role: 'primary',
+            project_equipment_item_id: 'created-pump-1',
+            effective_flow_m3h: 224.15,
+            status: 'incomplete',
+        });
+        (0, vitest_1.expect)(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
+        (0, vitest_1.expect)(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
+    });
+    (0, vitest_1.it)('requires a distinct positive venturi duty flow before FFVP sizing', async () => {
+        state.system.design_flow_m3h = '224.15';
+        state.system.loop1_flow_pct = '100';
+        state.system.loop1_filtration = 'Foam Fractionation';
+        state.saved = [{
+                system_id: 'system-1', circuit_key: 'loop:1', pump_role: 'venturi',
+                project_equipment_item_id: 'pump-item-1', pump_snapshot: state.candidates[0],
+                venturi_flow_m3h: null,
+            }];
+        const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+            design_book_id: 'book-1', circuit_key: 'loop:1', pump_role: 'venturi',
+            project_equipment_item_id: 'pump-item-1',
+            design_head_m: 8, pump_efficiency_pct: 75, motor_efficiency_pct: 90,
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.message).toContain('Venturi duty flow is required');
+    });
+    (0, vitest_1.it)('persists primary and venturi roles independently on one FF circuit', async () => {
+        state.system.design_flow_m3h = '224.15';
+        state.system.loop1_flow_pct = '100';
+        state.system.loop1_filtration = 'Foam Fractionation';
+        state.saved = [{
+                system_id: 'system-1', circuit_key: 'loop:1', pump_role: 'primary',
+                project_equipment_item_id: 'pump-item-1', pump_snapshot: state.candidates[0],
+                design_head_m: '10', pump_efficiency_pct: '80', motor_efficiency_pct: '90',
+                source_fingerprint: 'legacy', calculation_version: 'pump-selection-v1',
+            }, {
+                system_id: 'system-1', circuit_key: 'loop:1', pump_role: 'venturi',
+                project_equipment_item_id: 'pump-item-1', pump_snapshot: state.candidates[0],
+                design_head_m: null, pump_efficiency_pct: null, motor_efficiency_pct: null,
+                venturi_flow_m3h: null, source_fingerprint: 'legacy',
+                calculation_version: 'pump-selection-v1',
+            }];
+        const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+            design_book_id: 'book-1', circuit_key: 'loop:1', pump_role: 'venturi',
+            project_equipment_item_id: 'pump-item-1', venturi_flow_m3h: 42.5,
+            design_head_m: 8, pump_efficiency_pct: 75, motor_efficiency_pct: 90,
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body).toMatchObject({
+            pump_role: 'venturi',
+            effective_flow_m3h: 42.5,
+            project_equipment_item_id: 'pump-item-1',
+        });
+        (0, vitest_1.expect)(state.saved).toHaveLength(2);
+        const insert = state.calls.find(call => call.sql.includes('ON CONFLICT (system_id,circuit_key,pump_role)'));
+        (0, vitest_1.expect)(insert?.params[11]).toBe('venturi');
+        (0, vitest_1.expect)(insert?.params[12]).toBe(42.5);
     });
     (0, vitest_1.it)('rejects changes to a non-editable Design Book', async () => {
         state.book.status = 'For Review';

@@ -1,5 +1,5 @@
 import { AQUARIUM_CALCULATION_VERSION } from './aquariumCalculations';
-import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from './pumpSelections';
+import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits, isFoamFractionatorCircuit, PUMP_ROLE_VENTURI } from './pumpSelections';
 import { isApprovedThermalCorrelationSnapshot } from './thermalCalculations';
 import { FRICTION_LOSS_CALCULATION_VERSION } from './frictionLossCalculations';
 import { isLifeSupportSystem } from './lssSystems';
@@ -213,23 +213,46 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
       !isApprovedThermalCorrelationSnapshot(correlationSnapshot);
   });
   const pumpCircuitIssues = lifeSupportSystems.flatMap(system => {
-    const selections = pumpSelections.find((entry: any) => entry.system_id === system.id)?.items || [];
-    return pumpCircuits(system, system.side_streams || []).map(circuit => {
-      const selection = selections.find((item: any) => item.circuit_key === circuit.circuit_key);
-      const ready = selection?.project_equipment_item_id && selection?.selected_pump &&
-        selection?.freshness === 'fresh' && selection?.status === 'ready' &&
-        selection?.calculation_version === PUMP_SELECTION_CALCULATION_VERSION;
-      return ready ? null : {
+    const allItems: any[] = pumpSelections.find((entry: any) => entry.system_id === system.id)?.items || [];
+    return pumpCircuits(system, system.side_streams || []).flatMap(circuit => {
+      const systemLabel = `${system.system_code || system.system_name || system.id} · ${circuit.circuit_name || circuit.circuit_key}`;
+      // Primary supply pump is always required for every circuit.
+      const primarySelection = allItems.find((item: any) =>
+        item.circuit_key === circuit.circuit_key &&
+        (item.pump_role === 'primary' || !item.pump_role));
+      const primaryReady = primarySelection?.project_equipment_item_id && primarySelection?.selected_pump &&
+        primarySelection?.freshness === 'fresh' && primarySelection?.status === 'ready' &&
+        primarySelection?.calculation_version === PUMP_SELECTION_CALCULATION_VERSION;
+      const primaryIssue = primaryReady ? null : {
         system_id: system.id,
-        label: `${system.system_code || system.system_name || system.id} · ${circuit.circuit_name || circuit.circuit_key}`,
-        reason: !selection ? 'no pump selection exists'
-          : selection.status === 'stale' || selection.freshness === 'stale' ? 'selection is stale'
-          : selection.status === 'incompatible' ? 'selected pump is incompatible with the required duty'
-          : !selection.project_equipment_item_id || !selection.selected_pump ? 'no eligible selected pump is recorded'
-          : selection.calculation_version !== PUMP_SELECTION_CALCULATION_VERSION ? 'calculation version is outdated'
+        label: isFoamFractionatorCircuit(circuit) ? `${systemLabel} (FFSP)` : systemLabel,
+        reason: !primarySelection ? 'no pump selection exists'
+          : primarySelection.status === 'stale' || primarySelection.freshness === 'stale' ? 'selection is stale'
+          : primarySelection.status === 'incompatible' ? 'selected pump is incompatible with the required duty'
+          : !primarySelection.project_equipment_item_id || !primarySelection.selected_pump ? 'no eligible selected pump is recorded'
+          : primarySelection.calculation_version !== PUMP_SELECTION_CALCULATION_VERSION ? 'calculation version is outdated'
           : 'sizing calculation is incomplete',
       };
-    }).filter(Boolean);
+      // Venturi pump: only required when a FFVP line has been saved.  If the
+      // designer chose "No" (no venturi row), the circuit passes with FFSP alone.
+      const venturiSelection = allItems.find((item: any) =>
+        item.circuit_key === circuit.circuit_key && item.pump_role === PUMP_ROLE_VENTURI);
+      const venturiIssue = venturiSelection ? (() => {
+        const ready = venturiSelection.project_equipment_item_id && venturiSelection.selected_pump &&
+          venturiSelection.freshness === 'fresh' && venturiSelection.status === 'ready' &&
+          venturiSelection.calculation_version === PUMP_SELECTION_CALCULATION_VERSION;
+        return ready ? null : {
+          system_id: system.id,
+          label: `${systemLabel} (FFVP)`,
+          reason: venturiSelection.status === 'stale' || venturiSelection.freshness === 'stale' ? 'FFVP selection is stale'
+            : venturiSelection.status === 'incompatible' ? 'FFVP selected pump is incompatible with the required duty'
+            : !venturiSelection.project_equipment_item_id || !venturiSelection.selected_pump ? 'no eligible FFVP pump is recorded'
+            : venturiSelection.calculation_version !== PUMP_SELECTION_CALCULATION_VERSION ? 'FFVP calculation version is outdated'
+            : 'FFVP sizing calculation is incomplete',
+        };
+      })() : null;
+      return [primaryIssue, venturiIssue].filter(Boolean);
+    });
   });
   const frictionCircuitIssues = lifeSupportSystems.flatMap(system => {
     const calculations = frictionLossCalculations.find((entry: any) => entry.system_id === system.id)?.items || [];

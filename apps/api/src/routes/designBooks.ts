@@ -31,7 +31,7 @@ import {
   THERMAL_CONSTRUCTION_DEFAULTS,
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
-import { calculatePumpSelection, evaluateSelectedPumpSuitability, pumpSourceFingerprint, PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits } from '../lib/pumpSelections';
+import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits, pumpLinesForCircuit } from '../lib/pumpSelections';
 import {
   calculateFrictionLoss,
   FRICTION_LOSS_CALCULATION_VERSION,
@@ -135,51 +135,21 @@ export async function loadPumpSelections(runner: DbRunner, systems: any[]) {
   )).rows;
   return systems.map(system => {
     const rows = saved.filter(row => row.system_id === system.id);
-    const circuits = new Map(pumpCircuits(system, system.side_streams || []).map(item => [item.circuit_key, item]));
+    const circuitMap = new Map(pumpCircuits(system, system.side_streams || []).map(item => [item.circuit_key, item]));
+    // Retain orphaned saved rows so stale evidence remains auditable.
     rows.forEach(row => {
-      if (!circuits.has(row.circuit_key)) circuits.set(row.circuit_key, {
+      if (!circuitMap.has(row.circuit_key)) circuitMap.set(row.circuit_key, {
         circuit_key: row.circuit_key, circuit_kind: 'orphaned', circuit_name: row.circuit_key,
         circuit_type: null, parent_loop_number: null, side_stream_id: null, flow_m3h: null,
       });
     });
     return {
       system_id: system.id,
-      items: [...circuits.values()].map(circuit => {
-        const row = rows.find(value => value.circuit_key === circuit.circuit_key);
-        const source = {
-          circuit: { circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind, circuit_name: circuit.circuit_name,
-            circuit_type: circuit.circuit_type, parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id, flow_m3h: circuit.flow_m3h },
-          design_head_m: row?.design_head_m == null ? null : Number(row.design_head_m),
-          pump_efficiency_pct: row?.pump_efficiency_pct == null ? null : Number(row.pump_efficiency_pct),
-          motor_efficiency_pct: row?.motor_efficiency_pct == null ? null : Number(row.motor_efficiency_pct),
-        };
-        const calculation = calculatePumpSelection({ flow_m3h: circuit.flow_m3h, design_head_m: row?.design_head_m, pump_efficiency_pct: row?.pump_efficiency_pct, motor_efficiency_pct: row?.motor_efficiency_pct });
-        const suitability = evaluateSelectedPumpSuitability({
-          selectedPump: row?.pump_snapshot, circuitFlowM3h: circuit.flow_m3h,
-          designHeadM: row?.design_head_m, calculation,
-        });
-        const orphaned = circuit.circuit_kind === 'orphaned';
-        const currentFingerprint = pumpSourceFingerprint(source);
-        const versionStale = !!row && row.calculation_version !== PUMP_SELECTION_CALCULATION_VERSION;
-        const stale = !!row && (row.source_fingerprint !== currentFingerprint || versionStale);
-        const reasons = orphaned
-          ? ['This saved selection references a Flow Route circuit that no longer exists.']
-          : [
-              ...(row && row.source_fingerprint !== currentFingerprint ? ['Flow Route or sizing inputs changed after this pump calculation was saved. Save and calculate again.'] : []),
-              ...(versionStale ? [`Pump sizing calculation version ${row.calculation_version} is outdated; recalculate using ${PUMP_SELECTION_CALCULATION_VERSION}.`] : []),
-              ...(row?.project_equipment_item_id && row?.pump_snapshot ? [] : ['Select a pump assigned to this LSS system.']),
-              ...calculation.reasons,
-              ...suitability.reasons,
-            ];
-        return { ...circuit, project_equipment_item_id: row?.project_equipment_item_id || null, selected_pump: row?.pump_snapshot || null,
-          design_head_m: row?.design_head_m ?? null, pump_efficiency_pct: row?.pump_efficiency_pct ?? null, motor_efficiency_pct: row?.motor_efficiency_pct ?? null,
-          source_fingerprint: row?.source_fingerprint || null, current_source_fingerprint: currentFingerprint,
-          freshness: row ? (stale ? 'stale' : 'fresh') : 'unsaved',
-          status: orphaned ? 'stale' : suitability.status === 'incompatible' ? 'incompatible'
-            : stale ? 'stale' : reasons.length ? 'incomplete' : calculation.status, reasons,
-          calculation_version: row?.calculation_version || PUMP_SELECTION_CALCULATION_VERSION,
-          results: row ? (row.result_snapshot?.results || row.result_snapshot || calculation.results) : calculation.results };
-      }),
+      // Flat list: each entry is one (circuit, pump_role) pair.  Non-FF circuits
+      // produce one item; Foam Fractionator circuits produce one per saved role.
+      items: [...circuitMap.values()].flatMap(circuit =>
+        pumpLinesForCircuit(circuit, rows),
+      ),
     };
   });
 }
@@ -205,6 +175,7 @@ export async function loadFrictionLossPackages(
      JOIN product_masters pm ON pm.id=pei.product_master_id
      LEFT JOIN product_families pf ON pf.id=pm.product_family_id
      WHERE sps.system_id = ANY($1::uuid[])
+       AND (sps.pump_role='primary' OR sps.pump_role IS NULL)
        AND (pm.status IS NULL OR pm.status='Active')
        AND (
          UPPER(COALESCE(pm.product_category,'')) IN ('PUMP','PUMPS','PUMPING')
@@ -226,6 +197,7 @@ export async function loadFrictionLossPackages(
      FROM design_book_friction_loss_calculations c
      LEFT JOIN system_pump_selections sps
        ON sps.system_id=c.system_id AND sps.circuit_key=c.circuit_key
+      AND (sps.pump_role='primary' OR sps.pump_role IS NULL)
      LEFT JOIN project_equipment_items pei ON pei.id=c.project_equipment_item_id
      LEFT JOIN product_masters pm ON pm.id=pei.product_master_id
      WHERE c.design_book_id=$1 AND c.system_id = ANY($2::uuid[])`,
@@ -270,8 +242,10 @@ export async function loadFrictionLossPackages(
       system,
       items: [...circuitMap.values()].map(circuit => {
         const row = rows.find(value => value.circuit_key === circuit.circuit_key);
+        // Friction loss uses the primary supply pump for each circuit.
         const pumpSelection = pumpSelections.find(
-          selection => selection.circuit_key === circuit.circuit_key,
+          selection => selection.circuit_key === circuit.circuit_key &&
+            (selection.pump_role === 'primary' || !selection.pump_role),
         ) || null;
         const eligiblePump = eligibleCircuitPumps.find(candidate =>
           candidate.system_id === system.id &&

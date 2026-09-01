@@ -2325,6 +2325,30 @@ ALTER TABLE system_flow_side_streams
   DROP CONSTRAINT IF EXISTS chk_uv_unit_quantity_positive;
 ALTER TABLE system_flow_side_streams
   ADD CONSTRAINT chk_uv_unit_quantity_positive CHECK (uv_unit_quantity IS NULL OR uv_unit_quantity >= 1);
+
+-- Multi-role pump lines: each circuit can have a primary supply pump and, for Foam
+-- Fractionator loops, an independently sized venturi pump.  The pump_role column
+-- distinguishes the two roles so the table can hold one row per (system, circuit, role).
+-- venturi_flow_m3h is the explicit flow basis used for FFVP sizing; it must NOT fall back
+-- to the supply-pump circuit flow, which would silently misrepresent the venturi duty.
+ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_role VARCHAR(50) NOT NULL DEFAULT 'primary';
+ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS venturi_flow_m3h NUMERIC;
+-- A newly allocated pump line exists before sizing inputs are known.
+ALTER TABLE system_pump_selections ALTER COLUMN design_head_m DROP NOT NULL;
+ALTER TABLE system_pump_selections ALTER COLUMN pump_efficiency_pct DROP NOT NULL;
+ALTER TABLE system_pump_selections ALTER COLUMN motor_efficiency_pct DROP NOT NULL;
+ALTER TABLE system_pump_selections DROP CONSTRAINT IF EXISTS chk_system_pump_selections_role;
+ALTER TABLE system_pump_selections
+  ADD CONSTRAINT chk_system_pump_selections_role CHECK (pump_role IN ('primary', 'venturi'));
+
+-- Replace the original (system_id, circuit_key) uniqueness with the role-aware version.
+-- The old constraint name is the Postgres auto-name for UNIQUE(system_id, circuit_key).
+ALTER TABLE system_pump_selections
+  DROP CONSTRAINT IF EXISTS system_pump_selections_system_id_circuit_key_key;
+ALTER TABLE system_pump_selections
+  DROP CONSTRAINT IF EXISTS uq_system_pump_selections_circuit_role;
+ALTER TABLE system_pump_selections
+  ADD CONSTRAINT uq_system_pump_selections_circuit_role UNIQUE (system_id, circuit_key, pump_role);
 `;
 async function migrate() {
     const client = await index_1.default.connect();
