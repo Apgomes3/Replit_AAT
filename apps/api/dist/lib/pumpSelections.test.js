@@ -2,6 +2,19 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const pumpSelections_1 = require("./pumpSelections");
+(0, vitest_1.describe)('pump circuit intent', () => {
+    const system = { design_flow_m3h: 100, loop1_flow_pct: 80, loop1_filtration: 'Sand Filter' };
+    const streams = [
+        { id: 'yes', parent_loop_number: 1, name: 'UV', preset: 'UV', flow_pct: 25, has_dedicated_pump: true },
+        { id: 'no', parent_loop_number: 1, name: 'Thermal', preset: 'Thermal', flow_pct: 50, has_dedicated_pump: false },
+    ];
+    (0, vitest_1.it)('only creates side-stream duties for branches with a dedicated pump', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.pumpCircuits)(system, streams).map(item => item.circuit_key)).toEqual([
+            'loop:1',
+            'side_stream:yes',
+        ]);
+    });
+});
 (0, vitest_1.describe)('pump selection calculation', () => {
     (0, vitest_1.it)('calculates hydraulic, shaft, motor input and next standard motor', () => {
         const result = (0, pumpSelections_1.calculatePumpSelection)({ flow_m3h: 36, design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90 });

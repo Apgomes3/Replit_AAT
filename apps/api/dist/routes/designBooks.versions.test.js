@@ -108,6 +108,61 @@ const baseContext = () => ({
     review_handovers: [],
 });
 (0, vitest_1.describe)('Design Book version snapshots', () => {
+    (0, vitest_1.it)('loads saved UV selections into the release context for review snapshots', async () => {
+        const systemId = '00000000-0000-4000-8000-000000000401';
+        const uvSelection = {
+            id: '00000000-0000-4000-8000-000000000402',
+            design_book_id: 'book-1',
+            system_id: systemId,
+            target_fluence_mj_cm2: '50',
+            input_snapshot: {
+                streams: [{
+                        side_stream_id: 'uv-stream-1',
+                        side_stream_name: 'UV branch',
+                        flow_m3h: 25,
+                        uv_revision_id: 'uv-revision-1',
+                        uv_unit_quantity: 2,
+                    }],
+            },
+            result_snapshot: {
+                overall_status: 'pass',
+                streams: [{
+                        side_stream_id: 'uv-stream-1',
+                        product_code: 'UV-100',
+                        fluence_85t_mj_cm2: 75,
+                        hydraulic_pass: true,
+                    }],
+            },
+        };
+        const runner = vitest_1.vi.fn(async (sql, params) => {
+            if (sql.includes('FROM design_books db')) {
+                return { rows: [{
+                            id: 'book-1',
+                            project_id: 'project-1',
+                            status: 'Draft',
+                            project_scopes: ['LSS'],
+                        }] };
+            }
+            if (sql.includes('SELECT * FROM systems WHERE project_id')) {
+                return { rows: [{
+                            id: systemId,
+                            project_id: 'project-1',
+                            system_code: 'LSS-UV',
+                            system_name: 'UV Life Support',
+                            system_type: 'Life Support',
+                            side_streams: [],
+                        }] };
+            }
+            if (sql.includes('FROM design_book_uv_selections')) {
+                (0, vitest_1.expect)(params).toEqual(['book-1', [systemId]]);
+                return { rows: [uvSelection] };
+            }
+            return { rows: [] };
+        });
+        const context = await designBooks_1.versionSnapshotTestUtils.loadReleaseContext('book-1', runner, false, true);
+        (0, vitest_1.expect)(context.uv_selections).toEqual([uvSelection]);
+        (0, vitest_1.expect)(runner.mock.calls.some(([sql]) => (String(sql).includes('FROM design_book_uv_selections')))).toBe(true);
+    });
     (0, vitest_1.it)('uses inherited PIM tank dimensions and custom surface area in release calculations', async () => {
         const tankRow = {
             id: 'tank-1',

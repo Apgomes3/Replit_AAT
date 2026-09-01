@@ -894,6 +894,7 @@ function createFlowDraft(system: any) {
   draft.side_streams = (system.side_streams || []).map((stream: any) => ({
     ...stream,
     flow_pct: stream.flow_pct != null ? String(stream.flow_pct) : '',
+    has_dedicated_pump: stream.has_dedicated_pump !== false,
   }));
   draft.fractionator_allocations = (system.fractionator_allocations || []).map((allocation: any) => ({
     ...allocation,
@@ -949,6 +950,7 @@ function flowDraftMatchesSystem(draft: Record<string, any>, system: any) {
     name: String(stream.name || ''),
     preset: stream.preset || null,
     flow_pct: stream.flow_pct === '' || stream.flow_pct == null ? null : Number(stream.flow_pct),
+    has_dedicated_pump: stream.has_dedicated_pump !== false,
     notes: stream.notes || null,
     sort_order: Number(stream.sort_order || 0),
   }));
@@ -991,6 +993,7 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
       name: String(stream.name || '').trim(),
       preset: stream.preset || 'Custom',
       flow_pct: nullableNumber(stream.flow_pct),
+      has_dedicated_pump: stream.has_dedicated_pump === true,
       notes: String(stream.notes || '').trim() || null,
       sort_order: index,
     }));
@@ -3676,6 +3679,9 @@ export default function DesignBookLSSDetail() {
                         <div className={`font-mono text-xs mt-0.5 ${derivedFlow == null ? 'text-amber-700' : 'text-cyan-800'}`}>
                           {fmtSideStreamFlow(derivedFlow)}
                         </div>
+                        <div className="mt-1 text-[10px] font-medium text-stone-600">
+                          Dedicated pump: {stream.has_dedicated_pump === false ? 'No' : 'Yes'}
+                        </div>
                         {derivedFlow == null && (
                           <p className="text-[10px] text-amber-700 mt-0.5">Set the parent loop allocation to calculate branch flow.</p>
                         )}
@@ -3730,6 +3736,7 @@ export default function DesignBookLSSDetail() {
                 name: preset === 'Custom' ? '' : preset,
                 preset,
                 flow_pct: '',
+                has_dedicated_pump: false,
                 notes: '',
                 sort_order: sideStreams.length,
               },
@@ -3890,6 +3897,16 @@ export default function DesignBookLSSDetail() {
                             aria-label={`${stream.name || 'New'} side stream notes`}
                             placeholder="Notes (optional)"
                             className={`${inputCls} mt-2 resize-none`} />
+                          <label className="mt-2 flex items-center gap-2 text-xs font-medium text-stone-700">
+                            <input
+                              type="checkbox"
+                              checked={stream.has_dedicated_pump === true}
+                              onChange={event => updateSideStream(stream.id, 'has_dedicated_pump', event.target.checked)}
+                              aria-label={`${stream.name || 'New'} has a dedicated pump`}
+                              className="h-4 w-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            This side stream has a dedicated pump
+                          </label>
                           {derivedFlow == null && (
                             <p className="text-[10px] text-amber-700 mt-1">Parent loop flow unavailable; the percentage will still be saved.</p>
                           )}

@@ -93,16 +93,11 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [created] };
         }
         if (sql.includes('INSERT INTO system_pump_selections')) {
-            const createAllocation = sql.includes('VALUES ($1,$2,$3,NULL,NULL,NULL');
-            const saved = createAllocation ? {
+            const saved = {
                 system_id: params[0], circuit_key: params[1], project_equipment_item_id: params[2],
-                design_head_m: null, pump_efficiency_pct: null, motor_efficiency_pct: null,
-                source_fingerprint: params[3], pump_snapshot: JSON.parse(params[4]),
-                calculation_version: params[5], result_snapshot: JSON.parse(params[6]),
-                pump_role: params[8], venturi_flow_m3h: params[9],
-            } : {
-                system_id: params[0], circuit_key: params[1], project_equipment_item_id: params[2],
-                design_head_m: String(params[3]), pump_efficiency_pct: String(params[4]), motor_efficiency_pct: String(params[5]),
+                design_head_m: params[3] == null ? null : String(params[3]),
+                pump_efficiency_pct: params[4] == null ? null : String(params[4]),
+                motor_efficiency_pct: params[5] == null ? null : String(params[5]),
                 source_fingerprint: params[6], pump_snapshot: JSON.parse(params[7]), calculation_version: params[8],
                 result_snapshot: JSON.parse(params[9]), pump_role: params[11], venturi_flow_m3h: params[12],
             };
@@ -174,6 +169,17 @@ function request(app, method, path, body) {
         (0, vitest_1.expect)(response.body.pump_candidates[0]).toMatchObject({ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', power_kw: '3' });
         const candidateCall = state.calls.find(call => call.sql.includes('FROM project_equipment_items'));
         (0, vitest_1.expect)(candidateCall?.params).toEqual(['project-1', 'system-1']);
+    });
+    (0, vitest_1.it)('excludes side streams explicitly marked as not having a dedicated pump', async () => {
+        state.sideStreams = [{
+                id: 'side-1', system_id: 'system-1', parent_loop_number: 1,
+                name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0,
+                has_dedicated_pump: false,
+            }];
+        const response = await request(app, 'GET', '/api/v1/systems/system-1/pump-selections?design_book_id=book-1');
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body.items.map((item) => item.circuit_key)).not.toContain('side_stream:side-1');
+        (0, vitest_1.expect)(response.body.items.map((item) => item.circuit_key)).toContain('loop:1');
     });
     (0, vitest_1.it)('rejects a pump not returned by the eligible candidate query', async () => {
         const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
@@ -248,6 +254,42 @@ function request(app, method, path, body) {
         });
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
+    });
+    (0, vitest_1.it)('treats a repeated create request as idempotent without creating another equipment item', async () => {
+        state.candidates = [];
+        const body = {
+            design_book_id: 'book-1',
+            circuit_key: 'loop:1',
+            pump_role: 'primary',
+        };
+        (0, vitest_1.expect)((await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', body)).status).toBe(201);
+        const repeated = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', body);
+        (0, vitest_1.expect)(repeated.status).toBe(200);
+        (0, vitest_1.expect)(repeated.body.idempotent).toBe(true);
+        (0, vitest_1.expect)(state.calls.filter(call => call.sql.includes('INSERT INTO project_equipment_items'))).toHaveLength(1);
+    });
+    (0, vitest_1.it)('refuses to create equipment for an orphaned no-pump side-stream duty', async () => {
+        state.sideStreams = [{
+                id: 'side-1', system_id: 'system-1', parent_loop_number: 1,
+                name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0,
+                has_dedicated_pump: false,
+            }];
+        state.saved = [{
+                system_id: 'system-1',
+                circuit_key: 'side_stream:side-1',
+                pump_role: 'primary',
+                project_equipment_item_id: null,
+                pump_snapshot: null,
+                result_snapshot: { status: 'incomplete' },
+            }];
+        const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+            design_book_id: 'book-1',
+            circuit_key: 'side_stream:side-1',
+            pump_role: 'primary',
+        });
+        (0, vitest_1.expect)(response.status).toBe(409);
+        (0, vitest_1.expect)(response.body.error.code).toBe('INACTIVE_PUMP_DUTY');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('INSERT INTO project_equipment_items'))).toBe(false);
     });
     (0, vitest_1.it)('requires a distinct positive venturi duty flow before FFVP sizing', async () => {
         state.system.design_flow_m3h = '224.15';

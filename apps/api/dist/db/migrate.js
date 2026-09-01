@@ -1623,6 +1623,7 @@ CREATE TABLE IF NOT EXISTS system_flow_side_streams (
   name               VARCHAR(255) NOT NULL CHECK (BTRIM(name) <> ''),
   preset             VARCHAR(30),
   flow_pct           NUMERIC(6,3) NOT NULL CHECK (flow_pct >= 0 AND flow_pct <= 100),
+  has_dedicated_pump BOOLEAN NOT NULL DEFAULT true,
   notes              TEXT,
   sort_order         INTEGER NOT NULL DEFAULT 0,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -2397,6 +2398,16 @@ WHERE NOT EXISTS (SELECT 1 FROM uv_engineering_revisions r WHERE r.catalog_id=c.
 ALTER TABLE system_flow_side_streams
   ADD COLUMN IF NOT EXISTS uv_revision_id UUID REFERENCES uv_engineering_revisions(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS uv_unit_quantity INTEGER;
+-- Existing branches historically produced pump work, so retain that behavior
+-- during upgrade. New branches explicitly send their Flow Route decision.
+ALTER TABLE system_flow_side_streams
+  ADD COLUMN IF NOT EXISTS has_dedicated_pump BOOLEAN;
+UPDATE system_flow_side_streams
+SET has_dedicated_pump=true
+WHERE has_dedicated_pump IS NULL;
+ALTER TABLE system_flow_side_streams
+  ALTER COLUMN has_dedicated_pump SET DEFAULT true,
+  ALTER COLUMN has_dedicated_pump SET NOT NULL;
 ALTER TABLE system_flow_side_streams
   DROP CONSTRAINT IF EXISTS chk_uv_unit_quantity_positive;
 ALTER TABLE system_flow_side_streams
@@ -2417,10 +2428,51 @@ ALTER TABLE system_pump_selections DROP CONSTRAINT IF EXISTS chk_system_pump_sel
 ALTER TABLE system_pump_selections
   ADD CONSTRAINT chk_system_pump_selections_role CHECK (pump_role IN ('primary', 'venturi'));
 
--- Replace the original (system_id, circuit_key) uniqueness with the role-aware version.
--- The old constraint name is the Postgres auto-name for UNIQUE(system_id, circuit_key).
-ALTER TABLE system_pump_selections
-  DROP CONSTRAINT IF EXISTS system_pump_selections_system_id_circuit_key_key;
+-- Replace every legacy two-column uniqueness rule, regardless of the name used
+-- by an older migration or a manually upgraded database.
+DO $$
+DECLARE legacy_constraint RECORD;
+BEGIN
+  FOR legacy_constraint IN
+    SELECT c.conname
+    FROM pg_constraint c
+    WHERE c.conrelid='system_pump_selections'::regclass
+      AND c.contype='u'
+      AND (
+        SELECT array_agg(a.attname ORDER BY a.attname)
+        FROM unnest(c.conkey) key(attnum)
+        JOIN pg_attribute a
+          ON a.attrelid=c.conrelid AND a.attnum=key.attnum
+      ) = ARRAY['circuit_key','system_id']::name[]
+  LOOP
+    EXECUTE format(
+      'ALTER TABLE system_pump_selections DROP CONSTRAINT %I',
+      legacy_constraint.conname
+    );
+  END LOOP;
+END $$;
+DO $$
+DECLARE legacy_index RECORD;
+BEGIN
+  FOR legacy_index IN
+    SELECT index_class.relname AS index_name
+    FROM pg_index i
+    JOIN pg_class table_class ON table_class.oid=i.indrelid
+    JOIN pg_class index_class ON index_class.oid=i.indexrelid
+    WHERE table_class.oid='system_pump_selections'::regclass
+      AND i.indisunique
+      AND i.indnkeyatts=2
+      AND (
+        SELECT array_agg(a.attname ORDER BY a.attname)
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY key(attnum, position)
+        JOIN pg_attribute a
+          ON a.attrelid=i.indrelid AND a.attnum=key.attnum
+        WHERE key.position <= i.indnkeyatts
+      ) = ARRAY['circuit_key','system_id']::name[]
+  LOOP
+    EXECUTE format('DROP INDEX IF EXISTS %I', legacy_index.index_name);
+  END LOOP;
+END $$;
 ALTER TABLE system_pump_selections
   DROP CONSTRAINT IF EXISTS uq_system_pump_selections_circuit_role;
 ALTER TABLE system_pump_selections

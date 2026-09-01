@@ -167,6 +167,11 @@ function normalizeSideStreams(value) {
         if (uvUnitQuantity != null && (!Number.isInteger(uvUnitQuantity) || uvUnitQuantity < 1)) {
             throw new Error(`${name} UV unit quantity must be a positive integer.`);
         }
+        const dedicatedPumpValue = stream?.has_dedicated_pump ?? stream?.dedicated_pump;
+        const hasDedicatedPump = dedicatedPumpValue == null
+            ? null
+            : dedicatedPumpValue === true || dedicatedPumpValue === 1 ||
+                dedicatedPumpValue === '1' || dedicatedPumpValue === 'true';
         return {
             id: stream?.id ? String(stream.id) : null,
             parent_loop_number: parentLoopNumber,
@@ -177,6 +182,7 @@ function normalizeSideStreams(value) {
             sort_order: Number.isInteger(Number(stream?.sort_order)) ? Number(stream.sort_order) : index,
             uv_revision_id: uvRevisionId,
             uv_unit_quantity: uvUnitQuantity,
+            has_dedicated_pump: hasDedicatedPump,
         };
     });
     return normalized;
@@ -1999,18 +2005,21 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                     if (stream.id && existingIds.has(stream.id)) {
                         await saveClient.query(`UPDATE system_flow_side_streams
                SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
-                   sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10, updated_at=NOW()
+                   sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10,
+                   has_dedicated_pump=COALESCE($11,has_dedicated_pump), updated_at=NOW()
                WHERE id=$1 AND system_id=$2`, [stream.id, req.params.id, stream.parent_loop_number, stream.name, stream.preset,
                             stream.flow_pct, stream.notes, stream.sort_order,
-                            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null]);
+                            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null,
+                            stream.has_dedicated_pump]);
                     }
                     else {
                         await saveClient.query(`INSERT INTO system_flow_side_streams
                  (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order,
-                  uv_revision_id, uv_unit_quantity)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
+                  uv_revision_id, uv_unit_quantity, has_dedicated_pump)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
                             stream.flow_pct, stream.notes, stream.sort_order,
-                            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null]);
+                            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null,
+                            stream.has_dedicated_pump ?? false]);
                     }
                 }
             }
@@ -2050,6 +2059,7 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
             name: stream.name,
             preset: stream.preset || null,
             flow_pct: Number(stream.flow_pct),
+            has_dedicated_pump: stream.has_dedicated_pump !== false,
             notes: stream.notes || null,
             sort_order: Number(stream.sort_order || 0),
         });
@@ -2230,9 +2240,11 @@ router.post('/systems/:id/side-streams', auth_1.authenticate, (0, auth_1.require
             return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system.rows[0]) });
         }
         created = (await client.query(`INSERT INTO system_flow_side_streams
-         (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
-            stream.flow_pct, stream.notes, stream.sort_order])).rows[0];
+         (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order,
+          has_dedicated_pump)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
+            stream.flow_pct, stream.notes, stream.sort_order,
+            stream.has_dedicated_pump ?? false])).rows[0];
         await client.query('COMMIT');
     }
     catch (error) {
@@ -2296,10 +2308,12 @@ router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, a
         }
         updated = (await client.query(`UPDATE system_flow_side_streams
        SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
-           sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10, updated_at=NOW()
+           sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10,
+           has_dedicated_pump=COALESCE($11,has_dedicated_pump), updated_at=NOW()
        WHERE id=$1 AND system_id=$2 RETURNING *`, [req.params.sideStreamId, req.params.id, stream.parent_loop_number, stream.name,
             stream.preset, stream.flow_pct, stream.notes, stream.sort_order,
-            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null])).rows[0];
+            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null,
+            stream.has_dedicated_pump])).rows[0];
         await client.query('COMMIT');
     }
     catch (error) {

@@ -121,15 +121,10 @@ describe('LSSPumpSelectionPanel', () => {
     expect(await screen.findByText('224.15 m³/h')).toBeInTheDocument();
     expect(screen.getByText('Do you need a separate venturi pump?')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Yes — add FFVP' }));
-    expect(screen.getByLabelText('New pump equipment code')).toHaveValue('FFVP-001');
-    expect(screen.getByLabelText('New pump description')).toHaveValue('FFVP — Foam Fractionator Venturi Pump');
-    await user.click(screen.getByRole('button', { name: 'Create pump' }));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
       design_book_id: 'book-1',
       circuit_key: 'loop:1',
       pump_role: 'venturi',
-      equip_code: 'FFVP-001',
-      description: 'FFVP — Foam Fractionator Venturi Pump',
     }));
   });
 

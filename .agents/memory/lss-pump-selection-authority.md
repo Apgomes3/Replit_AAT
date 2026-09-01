@@ -20,3 +20,9 @@ Pump lines are role-scoped within a circuit: the primary line uses the authorita
 **Why:** A venturi pump can serve a materially different duty from the supply pump. Reusing the primary flow would create plausible-looking but incorrect sizing evidence, and a single circuit-level uniqueness key cannot represent both roles.
 
 **How to apply:** Enforce uniqueness on system, circuit, and role; keep FFSP and FFVP snapshots/fingerprints separate; require a positive FFVP flow before calculation or release.
+
+Side-stream pump work is controlled by the explicit dedicated-pump decision saved in Flow Route. A No answer creates no active pump duty, while historical selections remain visible as stale/orphaned evidence.
+
+**Why:** Parallel branches do not always have their own pump, and forcing one creates false readiness blockers. Existing engineering evidence must still remain auditable after the decision changes.
+
+**How to apply:** Filter active pump and friction duties from saved side-stream intent, but never delete or detach prior selection snapshots merely because a branch is changed to No.

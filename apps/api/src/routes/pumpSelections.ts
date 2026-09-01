@@ -235,6 +235,14 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   // Validate that the circuit exists and is active.
   const allLines = await liveItems(query, system);
   const existingLine = allLines.find(item => item.circuit_key === circuitKey && item.pump_role === pumpRole);
+  if (!existingLine || existingLine.circuit_kind === 'orphaned') {
+    return res.status(409).json({
+      error: {
+        code: 'INACTIVE_PUMP_DUTY',
+        message: 'This pump duty is no longer active in Flow Route. Historical evidence remains available for review.',
+      },
+    });
+  }
 
   // For FFVP: only allowed on Foam Fractionator circuits.
   if (pumpRole === PUMP_ROLE_VENTURI) {
@@ -242,11 +250,6 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     if (!primaryLine || !isFoamFractionatorCircuit(primaryLine)) {
       return res.status(400).json({ error: { code: 'VALIDATION', message: 'Venturi pump lines are only supported on Foam Fractionator circuits.' } });
     }
-  }
-
-  // Reject creating a duplicate pump line (would break the unique constraint).
-  if (existingLine && existingLine.project_equipment_item_id) {
-    return res.status(409).json({ error: { code: 'DUPLICATE_PUMP_LINE', message: `A pump is already allocated to this circuit (${circuitKey}) with role "${pumpRole}".` } });
   }
 
   // Generate a default equip_code if none supplied.
@@ -272,6 +275,26 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      [`${system.id}:${circuitKey}:${pumpRole}`],
+    );
+    const lockedSelection = (await client.query(
+      `SELECT * FROM system_pump_selections
+       WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3
+       FOR UPDATE`,
+      [system.id, circuitKey, pumpRole],
+    )).rows[0];
+    if (lockedSelection?.project_equipment_item_id) {
+      await client.query('COMMIT');
+      const circuit = allLines.find(item =>
+        item.circuit_key === circuitKey && item.pump_role === PUMP_ROLE_PRIMARY)!;
+      return res.status(200).json({
+        project_equipment_item: lockedSelection.pump_snapshot,
+        pump_line: buildPumpLineItem(circuit, lockedSelection, pumpRole),
+        idempotent: true,
+      });
+    }
     const result = await client.query(
       `INSERT INTO project_equipment_items
          (equip_code, project_id, system_id, description, quantity, unit, status)
@@ -298,15 +321,15 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       },
       pump_role: pumpRole,
       ...(pumpRole === PUMP_ROLE_VENTURI ? { venturi_flow_m3h: venturiFlow } : {}),
-      design_head_m: null,
-      pump_efficiency_pct: null,
-      motor_efficiency_pct: null,
+      design_head_m: existingLine?.design_head_m ?? null,
+      pump_efficiency_pct: existingLine?.pump_efficiency_pct ?? null,
+      motor_efficiency_pct: existingLine?.motor_efficiency_pct ?? null,
     };
     const calculation = calculatePumpSelection({
       flow_m3h: pumpRole === PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h,
-      design_head_m: null,
-      pump_efficiency_pct: null,
-      motor_efficiency_pct: null,
+      design_head_m: existingLine?.design_head_m,
+      pump_efficiency_pct: existingLine?.pump_efficiency_pct,
+      motor_efficiency_pct: existingLine?.motor_efficiency_pct,
     });
     const snapshot = {
       ...pei,
@@ -316,13 +339,29 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     await client.query(
       `INSERT INTO system_pump_selections
          (system_id,circuit_key,project_equipment_item_id,design_head_m,
-          pump_efficiency_pct,motor_efficiency_pct,source_fingerprint,pump_snapshot,
+           pump_efficiency_pct,motor_efficiency_pct,source_fingerprint,pump_snapshot,
           calculation_version,result_snapshot,updated_by,pump_role,venturi_flow_m3h)
-       VALUES ($1,$2,$3,NULL,NULL,NULL,$4,$5::jsonb,$6,$7::jsonb,$8,$9,$10)`,
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13)
+        ON CONFLICT (system_id,circuit_key,pump_role) DO UPDATE SET
+          project_equipment_item_id=EXCLUDED.project_equipment_item_id,
+          design_head_m=EXCLUDED.design_head_m,
+          pump_efficiency_pct=EXCLUDED.pump_efficiency_pct,
+          motor_efficiency_pct=EXCLUDED.motor_efficiency_pct,
+          source_fingerprint=EXCLUDED.source_fingerprint,
+          pump_snapshot=EXCLUDED.pump_snapshot,
+          calculation_version=EXCLUDED.calculation_version,
+          result_snapshot=EXCLUDED.result_snapshot,
+          updated_by=EXCLUDED.updated_by,
+          venturi_flow_m3h=EXCLUDED.venturi_flow_m3h,
+          updated_at=NOW()`,
       [
-        system.id, circuitKey, pei.id, pumpSourceFingerprint(source),
-        JSON.stringify(snapshot), PUMP_SELECTION_CALCULATION_VERSION,
-        JSON.stringify(calculation), req.user!.id, pumpRole, venturiFlow,
+        system.id, circuitKey, pei.id,
+        existingLine?.design_head_m ?? null,
+        existingLine?.pump_efficiency_pct ?? null,
+        existingLine?.motor_efficiency_pct ?? null,
+        pumpSourceFingerprint(source), JSON.stringify(snapshot),
+        PUMP_SELECTION_CALCULATION_VERSION, JSON.stringify(calculation),
+        req.user!.id, pumpRole, venturiFlow,
       ],
     );
     await client.query('COMMIT');

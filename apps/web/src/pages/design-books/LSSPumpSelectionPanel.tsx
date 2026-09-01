@@ -65,99 +65,6 @@ function statusStyle(status?: string | null) {
 }
 
 // ---------------------------------------------------------------------------
-// Add-Pump inline form
-// ---------------------------------------------------------------------------
-function AddPumpForm({
-  systemId,
-  bookId,
-  circuitKey,
-  pumpRole,
-  defaultEquipCode,
-  defaultDescription,
-  onCreated,
-  onCancel,
-}: {
-  systemId: string;
-  bookId: string;
-  circuitKey: string;
-  pumpRole: string;
-  defaultEquipCode: string;
-  defaultDescription: string;
-  onCreated: (pei: any) => void;
-  onCancel: () => void;
-}) {
-  const [equipCode, setEquipCode] = useState(defaultEquipCode);
-  const [description, setDescription] = useState(defaultDescription);
-  const [saving, setSaving] = useState(false);
-
-  const create = async () => {
-    setSaving(true);
-    try {
-      const resp = await api.post(`/systems/${systemId}/pump-lines`, {
-        design_book_id: bookId,
-        circuit_key: circuitKey,
-        pump_role: pumpRole,
-        equip_code: equipCode.trim(),
-        description: description.trim(),
-      });
-      onCreated(resp.data.project_equipment_item);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || 'Unable to create pump equipment');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-blue-800">
-        Create project equipment pump
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label>
-          <span className="mb-1 block text-xs font-medium text-stone-600">Equipment code</span>
-          <input
-            aria-label="New pump equipment code"
-            type="text"
-            value={equipCode}
-            onChange={e => setEquipCode(e.target.value)}
-            className={inputClass}
-            placeholder="e.g. FFSP-001"
-          />
-        </label>
-        <label>
-          <span className="mb-1 block text-xs font-medium text-stone-600">Description</span>
-          <input
-            aria-label="New pump description"
-            type="text"
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            className={inputClass}
-          />
-        </label>
-      </div>
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={create}
-          disabled={saving || !equipCode.trim()}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-        >
-          <Plus className="h-3.5 w-3.5" /> {saving ? 'Creating…' : 'Create pump'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 hover:bg-stone-50"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Single pump-line card (sizing form)
 // ---------------------------------------------------------------------------
 function PumpLineCard({
@@ -235,9 +142,9 @@ function PumpLineCard({
   const displayFlow = isVenturi ? form.venturi_flow_m3h : line.flow_m3h;
 
   return (
-    <div className="space-y-4 p-5">
+    <div className="space-y-3 p-3 sm:p-4">
       {/* Flow display — read-only for FFSP; editable for FFVP */}
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {isVenturi ? (
           <label className="lg:col-span-2">
             <span className="mb-1 block text-xs font-medium text-stone-600">
@@ -293,7 +200,7 @@ function PumpLineCard({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="lg:col-span-2">
           <span className="mb-1 block text-xs font-medium text-stone-600">Selected system pump</span>
           <select
@@ -347,16 +254,16 @@ function PumpLineCard({
         </label>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {[
           ['Hydraulic power', results.hydraulic_power_kw],
           ['Pump shaft power', results.shaft_power_kw],
           ['Motor input', results.motor_input_kw],
           ['Initial motor size', results.recommended_motor_kw],
         ].map(([label, value], index) => (
-          <div key={String(label)} className={index === 3 ? 'rounded-xl bg-stone-900 px-4 py-3 text-white' : 'rounded-xl border border-stone-200 bg-stone-50 px-4 py-3'}>
+          <div key={String(label)} className={index === 3 ? 'rounded-lg bg-stone-900 px-3 py-2 text-white' : 'rounded-lg border border-stone-200 bg-stone-50 px-3 py-2'}>
             <div className={index === 3 ? 'text-xs text-stone-300' : 'text-xs text-stone-500'}>{label}</div>
-            <div className="mt-1 font-mono text-lg font-bold">{numberText(value)} kW</div>
+            <div className="mt-0.5 font-mono text-sm font-bold">{numberText(value)} kW</div>
           </div>
         ))}
       </div>
@@ -430,7 +337,7 @@ function CircuitGroup({
   const [venturiChoice, setVenturiChoice] = useState<'asking' | 'yes' | 'no'>(
     venturiLine ? 'yes' : 'asking',
   );
-  const [showAddPump, setShowAddPump] = useState<string | null>(null); // pump_role being created
+  const [creatingRole, setCreatingRole] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [removingVenturi, setRemovingVenturi] = useState(false);
 
@@ -438,6 +345,26 @@ function CircuitGroup({
   useEffect(() => {
     if (venturiLine && venturiChoice !== 'yes') setVenturiChoice('yes');
   }, [!!venturiLine]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const createPump = async (pumpRole: 'primary' | 'venturi') => {
+    if (creatingRole) return;
+    setCreatingRole(pumpRole);
+    try {
+      await api.post(`/systems/${systemId}/pump-lines`, {
+        design_book_id: bookId,
+        circuit_key: circuitKey,
+        pump_role: pumpRole,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
+      await queryClient.invalidateQueries({ queryKey: ['design-book', bookId] });
+      toast.success(`${pumpRole === 'venturi' ? 'Venturi pump' : 'Pump'} created and allocated`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Unable to create and allocate pump');
+      if (pumpRole === 'venturi') setVenturiChoice('asking');
+    } finally {
+      setCreatingRole(null);
+    }
+  };
 
   const removeVenturi = async () => {
     setRemovingVenturi(true);
@@ -461,10 +388,10 @@ function CircuitGroup({
     : 'incomplete';
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+    <article className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       {/* Circuit header */}
       <header
-        className="flex cursor-pointer flex-wrap items-start justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-4"
+        className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-4 py-3"
         onClick={() => setExpanded(v => !v)}
       >
         <div className="flex-1">
@@ -505,47 +432,26 @@ function CircuitGroup({
                   </span>
                 </div>
               )}
-              {showAddPump === 'primary' && !readOnly ? (
-                <div className="p-5">
-                  <AddPumpForm
-                    systemId={systemId}
-                    bookId={bookId}
-                    circuitKey={circuitKey}
-                    pumpRole="primary"
-                    defaultEquipCode={isFF ? 'FFSP-001' : 'PUMP-001'}
-                    defaultDescription={primaryLine.pump_role_name || 'Supply Pump'}
-                    onCreated={async () => {
-                      setShowAddPump(null);
-                      await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
-                      await queryClient.invalidateQueries({ queryKey: ['design-book', bookId] });
-                      toast.success('Pump created and added to candidates');
-                    }}
-                    onCancel={() => setShowAddPump(null)}
-                  />
+              {!readOnly && primaryLine.circuit_kind !== 'orphaned' && !primaryLine.project_equipment_item_id && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 bg-amber-50 px-4 py-2">
+                  <span className="text-xs text-amber-800">No pump allocated.</span>
+                  <button
+                    type="button"
+                    onClick={() => createPump('primary')}
+                    disabled={!!creatingRole}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> {creatingRole === 'primary' ? 'Creating…' : 'Add pump'}
+                  </button>
                 </div>
-              ) : (
-                <>
-                  {!readOnly && !primaryLine.project_equipment_item_id && (
-                    <div className="flex items-center justify-between border-b border-stone-100 bg-amber-50 px-5 py-3">
-                      <span className="text-sm text-amber-800">No pump is allocated to this circuit.</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddPump('primary')}
-                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                      >
-                        <Plus className="h-4 w-4" /> Add pump
-                      </button>
-                    </div>
-                  )}
-                  <PumpLineCard
-                    line={primaryLine}
-                    candidates={candidates}
-                    readOnly={readOnly}
-                    systemId={systemId}
-                    bookId={bookId}
-                  />
-                </>
               )}
+              <PumpLineCard
+                line={primaryLine}
+                candidates={candidates}
+                readOnly={readOnly || primaryLine.circuit_kind === 'orphaned'}
+                systemId={systemId}
+                bookId={bookId}
+              />
             </div>
           )}
 
@@ -558,7 +464,8 @@ function CircuitGroup({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => { setVenturiChoice('yes'); setShowAddPump('venturi'); }}
+                  onClick={() => { setVenturiChoice('yes'); void createPump('venturi'); }}
+                  disabled={!!creatingRole}
                   className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
                 >
                   Yes — add FFVP
@@ -585,27 +492,6 @@ function CircuitGroup({
               >
                 Change
               </button>
-            </div>
-          )}
-
-          {/* Add FFVP pump form (when Yes chosen but no pump created yet) */}
-          {isFF && !readOnly && venturiChoice === 'yes' && showAddPump === 'venturi' && !venturiLine && (
-            <div className="p-5">
-              <AddPumpForm
-                systemId={systemId}
-                bookId={bookId}
-                circuitKey={circuitKey}
-                pumpRole="venturi"
-                defaultEquipCode="FFVP-001"
-                defaultDescription="FFVP — Foam Fractionator Venturi Pump"
-                onCreated={async () => {
-                  setShowAddPump(null);
-                  await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
-                  await queryClient.invalidateQueries({ queryKey: ['design-book', bookId] });
-                  toast.success('Venturi pump created and added to candidates');
-                }}
-                onCancel={() => { setVenturiChoice('asking'); setShowAddPump(null); }}
-              />
             </div>
           )}
 
@@ -695,7 +581,7 @@ export default function LSSPumpSelectionPanel({
   }));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         <div className="flex items-start gap-2">
           <Zap className="mt-0.5 h-4 w-4 shrink-0" />
@@ -715,7 +601,7 @@ export default function LSSPumpSelectionPanel({
           This pump-selection package is frozen with the Design Book revision.
         </div>
       )}
-      <div className="space-y-4">
+      <div className="space-y-2">
         {groupedByCircuit.map(({ circuitKey, lines }) => (
           <CircuitGroup
             key={circuitKey}

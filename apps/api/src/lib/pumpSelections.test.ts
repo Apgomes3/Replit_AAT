@@ -2,8 +2,23 @@ import { describe, expect, it } from 'vitest';
 import {
   calculatePumpSelection, evaluateSelectedPumpSuitability, WATER_DENSITY_KG_M3,
   isFoamFractionatorCircuit, defaultPumpLineName, buildPumpLineItem, pumpLinesForCircuit,
-  PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, FOAM_FRACTIONATION_CIRCUIT_TYPE,
+  pumpCircuits, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, FOAM_FRACTIONATION_CIRCUIT_TYPE,
 } from './pumpSelections';
+
+describe('pump circuit intent', () => {
+  const system = { design_flow_m3h: 100, loop1_flow_pct: 80, loop1_filtration: 'Sand Filter' };
+  const streams = [
+    { id: 'yes', parent_loop_number: 1, name: 'UV', preset: 'UV', flow_pct: 25, has_dedicated_pump: true },
+    { id: 'no', parent_loop_number: 1, name: 'Thermal', preset: 'Thermal', flow_pct: 50, has_dedicated_pump: false },
+  ];
+
+  it('only creates side-stream duties for branches with a dedicated pump', () => {
+    expect(pumpCircuits(system, streams).map(item => item.circuit_key)).toEqual([
+      'loop:1',
+      'side_stream:yes',
+    ]);
+  });
+});
 
 describe('pump selection calculation', () => {
   it('calculates hydraulic, shaft, motor input and next standard motor', () => {

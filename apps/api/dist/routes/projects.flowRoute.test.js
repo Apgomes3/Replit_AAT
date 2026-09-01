@@ -301,6 +301,7 @@ const basePayload = {
                     name: 'Thermal',
                     preset: 'Thermal',
                     flow_pct: 25,
+                    has_dedicated_pump: true,
                     notes: 'Heat exchanger branch',
                     sort_order: 0,
                 },
@@ -309,6 +310,7 @@ const basePayload = {
                     name: 'UV Contact',
                     preset: 'UV',
                     flow_pct: 40,
+                    has_dedicated_pump: false,
                     notes: null,
                     sort_order: 1,
                 },
@@ -321,6 +323,7 @@ const basePayload = {
         (0, vitest_1.expect)(inserts).toHaveLength(2);
         (0, vitest_1.expect)(inserts[0].params.slice(1, 6)).toEqual([1, 'Thermal', 'Thermal', 25, 'Heat exchanger branch']);
         (0, vitest_1.expect)(inserts[1].params.slice(1, 6)).toEqual([1, 'UV Contact', 'UV', 40, null]);
+        (0, vitest_1.expect)(inserts.map(insert => insert.params[9])).toEqual([true, false]);
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
     });

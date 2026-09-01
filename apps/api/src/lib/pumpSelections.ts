@@ -77,7 +77,7 @@ export function pumpCircuits(system: any, sideStreams: any[]) {
         flow_m3h: baseFlow != null && pct != null ? baseFlow * pct / 100 : null,
       };
     }),
-    ...(sideStreams || []).map(stream => {
+    ...(sideStreams || []).filter(stream => stream.has_dedicated_pump !== false).map(stream => {
       const pct = nullableNumber(system[`loop${stream.parent_loop_number}_flow_pct`]);
       const branch = nullableNumber(stream.flow_pct);
       return {
