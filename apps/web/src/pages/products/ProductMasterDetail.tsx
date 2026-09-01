@@ -883,6 +883,12 @@ export default function ProductMasterDetail() {
         crumbs={[
           { label: 'PIM', href: '/pim' },
           { label: 'Products', href: '/products/masters' },
+          ...(product.product_family_id && product.product_family_name
+            ? [{
+                label: product.product_family_name,
+                href: `/products/masters?${new URLSearchParams({ family: String(product.product_family_id) }).toString()}`,
+              }]
+            : []),
           { label: product.product_code },
         ]}
         actions={

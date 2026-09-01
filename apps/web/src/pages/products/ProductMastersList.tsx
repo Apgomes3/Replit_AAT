@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 import api from '../../lib/api';
 import { ProductMaster } from '../../types';
@@ -24,9 +24,10 @@ function deriveCode(name: string): string {
 
 export default function ProductMastersList() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
-  const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
+  const selectedFamilyId = searchParams.get('family');
   const [showObsolete, setShowObsolete] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [editRow, setEditRow] = useState<ProductMaster | null>(null);
@@ -38,6 +39,18 @@ export default function ProductMastersList() {
   const [creatingEditCategory, setCreatingEditCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryLoading, setNewCategoryLoading] = useState(false);
+
+  const selectFamily = (familyId: string | null) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (familyId) {
+        next.set('family', familyId);
+      } else {
+        next.delete('family');
+      }
+      return next;
+    }, { replace: true });
+  };
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['product-masters', search, showObsolete],
@@ -236,7 +249,7 @@ export default function ProductMastersList() {
           </div>
           <div className="py-1">
             <button
-              onClick={() => setSelectedFamilyId(null)}
+              onClick={() => selectFamily(null)}
               className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
                 selectedFamilyId === null
                   ? 'bg-blue-600/10 text-blue-600 font-medium'
@@ -250,7 +263,7 @@ export default function ProductMastersList() {
             {families.map((fam: any) => (
               <button
                 key={fam.id}
-                onClick={() => setSelectedFamilyId(fam.id === selectedFamilyId ? null : fam.id)}
+                onClick={() => selectFamily(fam.id === selectedFamilyId ? null : fam.id)}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
                   selectedFamilyId === fam.id
                     ? 'bg-blue-600/10 text-blue-600 font-medium'

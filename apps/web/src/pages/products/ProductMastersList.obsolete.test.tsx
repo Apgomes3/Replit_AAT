@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductMastersList from './ProductMastersList';
 
@@ -43,9 +43,21 @@ const products = [
     product_category: 'Pumping',
     standard_status: 'Obsolete',
   },
+  {
+    id: 'unassigned-1',
+    product_code: 'P-UNASSIGNED',
+    product_name: 'Unassigned product',
+    product_category: 'Pumping',
+    standard_status: 'Active',
+  },
 ];
 
-function renderList() {
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
+}
+
+function renderList(initialEntries = ['/products/masters']) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -54,7 +66,8 @@ function renderList() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
+        <LocationProbe />
         <ProductMastersList />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -87,7 +100,13 @@ describe('ProductMastersList obsolete visibility', () => {
               category_code: 'PUMP',
               description: 'Pump products',
               product_count: 2,
-            }],
+              }, {
+                id: 'family-2',
+                product_family_name: 'Other Pumps',
+                category_code: 'PUMP',
+                description: 'Other pump products',
+                product_count: 0,
+              }],
           },
         };
       }
@@ -101,7 +120,7 @@ describe('ProductMastersList obsolete visibility', () => {
 
     expect(await screen.findByText('Active pump')).toBeInTheDocument();
     expect(screen.queryByText('Obsolete pump')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /All Products 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /All Products 2/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Pumps 1/ }));
     expect(screen.getByRole('heading', { name: 'Pumps' })).toBeInTheDocument();
@@ -111,14 +130,14 @@ describe('ProductMastersList obsolete visibility', () => {
     expect(await screen.findByText('Obsolete pump')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hide obsoleted' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('heading', { name: 'Pumps' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /All Products 2/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /All Products 3/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Pumps 2/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Export CSV' }));
     expect(mocks.exportCsv).toHaveBeenCalledWith(
       expect.stringMatching(/^products-\d{4}-\d{2}-\d{2}\.csv$/),
       expect.any(Array),
-      products,
+      products.filter(product => product.product_family_id === 'family-1'),
     );
 
     await user.type(screen.getByPlaceholderText('Search by name or code...'), 'obsolete');
@@ -129,5 +148,25 @@ describe('ProductMastersList obsolete visibility', () => {
     });
     expect(mocks.get).toHaveBeenCalledWith(expect.stringContaining('include_obsolete=true'));
     expect(mocks.get).toHaveBeenCalledWith(expect.stringContaining('q=obsolete'));
+  });
+
+  it('restores a family from the URL and keeps sidebar navigation in sync', async () => {
+    const user = userEvent.setup();
+    renderList(['/products/masters?family=family-1']);
+
+    expect(await screen.findByRole('heading', { name: 'Pumps' })).toBeInTheDocument();
+    expect(screen.getByText('Active pump')).toBeInTheDocument();
+    expect(screen.queryByText('Unassigned product')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?family=family-1');
+
+    await user.click(screen.getByRole('button', { name: /Other Pumps 0/ }));
+    expect(screen.getByRole('heading', { name: 'Other Pumps' })).toBeInTheDocument();
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?family=family-2');
+    expect(screen.queryByText('Active pump')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /All Products 2/ }));
+    expect(screen.getByRole('heading', { name: 'Products' })).toBeInTheDocument();
+    expect(screen.getByTestId('location-search')).toHaveTextContent('');
+    expect(screen.getByText('Unassigned product')).toBeInTheDocument();
   });
 });
