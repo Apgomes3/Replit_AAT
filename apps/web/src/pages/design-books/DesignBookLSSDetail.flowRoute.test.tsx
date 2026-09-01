@@ -225,6 +225,94 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     vi.clearAllMocks();
   });
 
+  it('renders frozen UV selection evidence without querying the live UV endpoint', async () => {
+    const frozenSystem = {
+      ...baseSystem,
+      side_streams: [{
+        id: 'uv-stream-1',
+        system_id: 'system-1',
+        parent_loop_number: 1,
+        name: 'UV branch',
+        preset: 'UV',
+        flow_pct: 50,
+        sort_order: 0,
+        uv_revision_id: 'uv-revision-1',
+        uv_unit_quantity: 2,
+        uv_revision: {
+          id: 'uv-revision-1',
+          revision_number: 3,
+          lamp_count: 4,
+          lamp_power_w: 80,
+          effective_reactor_volume_l: 20,
+          irradiance_85t_mw_cm2: 1.5,
+          irradiance_95t_mw_cm2: 1.8,
+          compatibility: 'Freshwater',
+          product_code: 'UV-100',
+          product_name: 'UV Reactor',
+          manufacturer: 'Aquatic Systems',
+        },
+      }],
+    };
+    const frozenBook = {
+      ...baseBook,
+      status: 'For Review',
+      systems: [frozenSystem],
+      system_links: [],
+      uv_selections: [{
+        id: 'uv-selection-1',
+        system_id: 'system-1',
+        target_fluence_mj_cm2: 50,
+        calculation_version: 'UV_SEL_V1.0',
+        freshness: 'fresh',
+        input_snapshot: {
+          streams: [{
+            side_stream_id: 'uv-stream-1',
+            side_stream_name: 'UV branch',
+            flow_m3h: 20,
+            uv_revision_id: 'uv-revision-1',
+            uv_unit_quantity: 2,
+          }],
+        },
+        result_snapshot: {
+          target_fluence_mj_cm2: 50,
+          overall_status: 'pass',
+          streams: [{
+            side_stream_id: 'uv-stream-1',
+            side_stream_name: 'UV branch',
+            product_code: 'UV-100',
+            product_name: 'UV Reactor',
+            unit_quantity: 2,
+            status: 'ready',
+            flow_ls: 5.556,
+            flow_per_unit_ls: 2.778,
+            flow_per_lamp_ls: 0.694,
+            hydraulic_pass: true,
+            hydraulic_exception: false,
+            contact_time_s: 7.2,
+            fluence_85t_mj_cm2: 75,
+            fluence_95t_mj_cm2: 90,
+            target_met_85t: true,
+            target_met_95t: true,
+            reasons: [],
+          }],
+        },
+      }],
+    };
+
+    renderFlowRoute(
+      baseSystem,
+      frozenBook,
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?tab=uv',
+    );
+
+    expect(await screen.findByText('UV-100 — UV Reactor')).toBeInTheDocument();
+    expect(screen.getByText(/75\.0000 mJ\/cm²/)).toBeInTheDocument();
+    expect(screen.getByText(/0\.694 ✓/)).toBeInTheDocument();
+    expect(apiGet).not.toHaveBeenCalledWith('/design-books/book-1/uv/system-1');
+  });
+
   it('opens on an accessible system overview with linked flow information', async () => {
     renderFlowRoute(
       baseSystem,

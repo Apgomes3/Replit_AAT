@@ -1064,6 +1064,15 @@ export async function loadReleaseContext(
       )).rows;
     }
   }
+  const uvSelections = systems.length
+    ? (await runner(
+      `SELECT *
+       FROM design_book_uv_selections
+       WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])
+       ORDER BY system_id`,
+      [id, systems.map(system => system.id)],
+    )).rows
+    : [];
   const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
   const compactUnits = compactUnitIds.length
     ? (await runner(
@@ -1123,6 +1132,7 @@ export async function loadReleaseContext(
     review_handovers: handovers,
     biological_media_cases: biologicalMediaCases,
     biological_media_runs: biologicalMediaRuns,
+    uv_selections: uvSelections,
     thermal_calculations: thermalCalculations,
     thermal_construction_defaults: THERMAL_CONSTRUCTION_DEFAULTS,
     pump_selections: pumpSelections,

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -58,6 +58,51 @@ const LSS_TABS: Array<{ id: LssTab; label: string }> = [
 
 function isLssTab(value: string | null): value is LssTab {
   return LSS_TABS.some(tab => tab.id === value);
+}
+
+function buildFrozenUvSelectionData(book: any, systemId: string | undefined) {
+  const system = (book?.systems || []).find((item: any) => item.id === systemId);
+  const selection = (book?.uv_selections || []).find((item: any) => item.system_id === systemId);
+  const sideStreams = (system?.side_streams || []).filter((stream: any) => stream.preset === 'UV');
+  const inputStreams = selection?.input_snapshot?.streams || [];
+  const resultStreams = selection?.result_snapshot?.streams || [];
+  const streams = (inputStreams.length ? inputStreams : sideStreams).map((input: any) => {
+    const sideStream = sideStreams.find((stream: any) => stream.id === input.side_stream_id);
+    const result = resultStreams.find((stream: any) => stream.side_stream_id === input.side_stream_id);
+    return {
+      id: input.side_stream_id || sideStream?.id,
+      parent_loop_number: sideStream?.parent_loop_number ?? null,
+      name: sideStream?.name || input.side_stream_name || result?.side_stream_name || 'UV stream',
+      preset: sideStream?.preset || 'UV',
+      flow_pct: sideStream?.flow_pct ?? null,
+      notes: sideStream?.notes ?? null,
+      sort_order: sideStream?.sort_order ?? 0,
+      uv_revision_id: input.uv_revision_id
+        || sideStream?.uv_revision_id
+        || result?.uv_revision_id
+        || null,
+      uv_unit_quantity: input.uv_unit_quantity
+        ?? sideStream?.uv_unit_quantity
+        ?? result?.unit_quantity
+        ?? null,
+      uv_revision: sideStream?.uv_revision || null,
+      frozen_flow_m3h: input.flow_m3h ?? result?.flow_m3h ?? null,
+    };
+  });
+
+  return {
+    streams,
+    selectable_revisions: [],
+    saved: selection ? {
+      id: selection.id,
+      target_fluence_mj_cm2: Number(selection.target_fluence_mj_cm2),
+      calculation_version: selection.calculation_version,
+      freshness: selection.freshness,
+      calculated_at: selection.calculated_at,
+      result_snapshot: selection.result_snapshot || null,
+      input_snapshot: selection.input_snapshot || null,
+    } : null,
+  };
 }
 
 function EquipmentEmptyState({ title, description }: { title: string; description: string }) {
@@ -1266,6 +1311,7 @@ export default function DesignBookLSSDetail() {
     queryKey: ['design-book', bookId],
     queryFn: () => api.get(`/design-books/${bookId}`).then(r => r.data),
   });
+  const usesFrozenPackage = !!book && !['Draft', 'In Progress'].includes(book.status);
   const { data: liveLinks = [], isLoading: linksLoading } = useQuery({
     queryKey: ['system-exhibit-links', systemId],
     queryFn: () => api.get(`/systems/${systemId}/exhibit-links`).then(r => r.data),
@@ -1287,7 +1333,7 @@ export default function DesignBookLSSDetail() {
   const { data: uvSelectionData, refetch: refetchUvSelection } = useQuery({
     queryKey: ['uv-selection', bookId, systemId],
     queryFn: () => api.get(`/design-books/${bookId}/uv/${systemId}`).then(r => r.data),
-    enabled: !!systemId && !!bookId && activeTab === 'uv',
+    enabled: !!systemId && !!bookId && !!book && activeTab === 'uv' && !usesFrozenPackage,
   });
   const { data: biologicalMedia = null, isError: biologicalMediaIsError, error: biologicalMediaQueryError } = useQuery({
     queryKey: ['biological-media', systemId, bookId],
@@ -1306,7 +1352,6 @@ export default function DesignBookLSSDetail() {
     queryKey: ['maximum-tan-profiles'],
     queryFn: () => api.get('/biological-media/max-tan-profiles', { params: { approved_only: true } }).then(r => r.data),
   });
-  const usesFrozenPackage = !!book && !['Draft', 'In Progress'].includes(book.status);
   const availableCompactUnits = usesFrozenPackage && Array.isArray(book?.compact_units)
     ? book.compact_units
     : compactUnits;
@@ -1316,6 +1361,10 @@ export default function DesignBookLSSDetail() {
   const links = usesFrozenPackage
     ? (book.system_links || []).filter((item: any) => item.system_id === systemId)
     : liveLinks;
+  const uvSelectionDataForView = useMemo(
+    () => usesFrozenPackage ? buildFrozenUvSelectionData(book, systemId) : uvSelectionData,
+    [book, systemId, usesFrozenPackage, uvSelectionData],
+  );
   const { data: biologicalSpeciesData = { items: [] } } = useQuery({
     queryKey: ['species-catalog-picker', system?.water_type],
     queryFn: () => api.get('/species-catalog', { params: { limit: 1000, water_type: system?.water_type } }).then(r => r.data),
@@ -1422,30 +1471,30 @@ export default function DesignBookLSSDetail() {
 
   // Sync UV state when data loads or tab changes
   useEffect(() => {
-    if (!uvSelectionData) return;
-    if (uvSelectionData.saved?.target_fluence_mj_cm2) {
-      setUvTargetFluence(String(uvSelectionData.saved.target_fluence_mj_cm2));
+    if (!uvSelectionDataForView) return;
+    if (uvSelectionDataForView.saved?.target_fluence_mj_cm2) {
+      setUvTargetFluence(String(uvSelectionDataForView.saved.target_fluence_mj_cm2));
     }
-    if (uvSelectionData.saved) {
-      setUvResult(uvSelectionData.saved.result_snapshot ?? null);
+    if (uvSelectionDataForView.saved) {
+      setUvResult(uvSelectionDataForView.saved.result_snapshot ?? null);
     }
-    // Initialize per-stream assignments from live stream data
+    // Initialize per-stream assignments from the live stream data or frozen package.
     const assignments: Record<string, { uv_revision_id: string; uv_unit_quantity: string }> = {};
-    for (const stream of (uvSelectionData.streams || [])) {
+    for (const stream of (uvSelectionDataForView.streams || [])) {
       assignments[stream.id] = {
         uv_revision_id: stream.uv_revision_id || '',
         uv_unit_quantity: stream.uv_unit_quantity != null ? String(stream.uv_unit_quantity) : '1',
       };
     }
     setUvStreamAssignments(assignments);
-  }, [uvSelectionData]);
+  }, [uvSelectionDataForView]);
 
   const calculateUVSelection = async () => {
     if (!bookId || !systemId) return;
     setUvCalculating(true);
     try {
       // Save UV revision + quantity to each stream first
-      const streams: any[] = uvSelectionData?.streams || [];
+      const streams: any[] = uvSelectionDataForView?.streams || [];
       await Promise.all(streams.map(async (stream: any) => {
         const assignment = uvStreamAssignments[stream.id];
         if (!assignment) return;
@@ -4413,8 +4462,8 @@ export default function DesignBookLSSDetail() {
       >
         {/* UV Selection Panel */}
         {(() => {
-          const uvStreams: any[] = uvSelectionData?.streams || [];
-          const selectableRevisions: any[] = uvSelectionData?.selectable_revisions || [];
+          const uvStreams: any[] = uvSelectionDataForView?.streams || [];
+          const selectableRevisions: any[] = uvSelectionDataForView?.selectable_revisions || [];
           const savedResult = uvResult;
 
           const hasUvStreams = uvStreams.length > 0;
