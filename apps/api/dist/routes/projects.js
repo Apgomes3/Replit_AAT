@@ -158,6 +158,13 @@ function normalizeSideStreams(value) {
         if (preset && !FLOW_SIDE_STREAM_PRESETS.includes(preset)) {
             throw new Error(`${name} has an unsupported preset.`);
         }
+        const uvRevisionId = stream?.uv_revision_id == null || stream.uv_revision_id === ''
+            ? null : String(stream.uv_revision_id);
+        const uvUnitQuantity = stream?.uv_unit_quantity == null || stream.uv_unit_quantity === ''
+            ? null : Number(stream.uv_unit_quantity);
+        if (uvUnitQuantity != null && (!Number.isInteger(uvUnitQuantity) || uvUnitQuantity < 1)) {
+            throw new Error(`${name} UV unit quantity must be a positive integer.`);
+        }
         return {
             id: stream?.id ? String(stream.id) : null,
             parent_loop_number: parentLoopNumber,
@@ -166,6 +173,8 @@ function normalizeSideStreams(value) {
             flow_pct: flowPct,
             notes: stream?.notes == null || stream.notes === '' ? null : String(stream.notes),
             sort_order: Number.isInteger(Number(stream?.sort_order)) ? Number(stream.sort_order) : index,
+            uv_revision_id: uvRevisionId,
+            uv_unit_quantity: uvUnitQuantity,
         };
     });
     return normalized;
@@ -1815,6 +1824,30 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
             ]);
             namedSystem = namedResult.rows[0] || namedSystem;
             if (normalizedSideStreams) {
+                // Validate any UV revision assignments are Approved and from an eligible catalog.
+                const uvRevisionIds = normalizedSideStreams
+                    .map(s => s.uv_revision_id)
+                    .filter(Boolean);
+                if (uvRevisionIds.length > 0) {
+                    const eligibleCheck = await saveClient.query(`SELECT r.id FROM uv_engineering_revisions r
+              JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
+              JOIN product_masters pm ON pm.id=c.product_master_id
+              JOIN product_families pf ON pf.id=pm.product_family_id
+             WHERE r.id = ANY($1::uuid[]) AND r.status='Approved'
+               AND c.needs_review=false AND pm.status='Active'
+               AND pf.product_family_code='PFM-UV'`, [uvRevisionIds]);
+                    const eligibleIds = new Set(eligibleCheck.rows.map((r) => r.id));
+                    const ineligible = uvRevisionIds.filter(id => !eligibleIds.has(id));
+                    if (ineligible.length > 0) {
+                        await saveClient.query('ROLLBACK');
+                        return res.status(400).json({
+                            error: {
+                                code: 'INELIGIBLE_UV_REVISION',
+                                message: 'One or more UV revisions are not Approved or eligible for assignment.',
+                            },
+                        });
+                    }
+                }
                 const existing = existingSideStreams;
                 const existingIds = new Set(existing.map((stream) => String(stream.id)));
                 const requestedIds = new Set(normalizedSideStreams.filter(stream => stream.id && existingIds.has(stream.id)).map(stream => stream.id));
@@ -1827,15 +1860,18 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                     if (stream.id && existingIds.has(stream.id)) {
                         await saveClient.query(`UPDATE system_flow_side_streams
                SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
-                   sort_order=$8, updated_at=NOW()
+                   sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10, updated_at=NOW()
                WHERE id=$1 AND system_id=$2`, [stream.id, req.params.id, stream.parent_loop_number, stream.name, stream.preset,
-                            stream.flow_pct, stream.notes, stream.sort_order]);
+                            stream.flow_pct, stream.notes, stream.sort_order,
+                            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null]);
                     }
                     else {
                         await saveClient.query(`INSERT INTO system_flow_side_streams
-                 (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
-                            stream.flow_pct, stream.notes, stream.sort_order]);
+                 (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order,
+                  uv_revision_id, uv_unit_quantity)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
+                            stream.flow_pct, stream.notes, stream.sort_order,
+                            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null]);
                     }
                 }
             }
@@ -2078,11 +2114,30 @@ router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, a
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Side stream not found' } });
         }
         previous = current.rows[0];
+        // Validate UV revision is approved and from an eligible catalog if provided.
+        if (stream.uv_revision_id) {
+            const revCheck = await client.query(`SELECT r.id FROM uv_engineering_revisions r
+         JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
+         JOIN product_masters pm ON pm.id=c.product_master_id
+         JOIN product_families pf ON pf.id=pm.product_family_id
+         WHERE r.id=$1 AND r.status='Approved' AND c.needs_review=false
+           AND pm.status='Active' AND pf.product_family_code='PFM-UV'`, [stream.uv_revision_id]);
+            if (!revCheck.rows[0]) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: {
+                        code: 'INVALID_UV_REVISION',
+                        message: 'The UV revision must be Approved and from an active, eligible PFM-UV product.',
+                    },
+                });
+            }
+        }
         updated = (await client.query(`UPDATE system_flow_side_streams
        SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
-           sort_order=$8, updated_at=NOW()
+           sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10, updated_at=NOW()
        WHERE id=$1 AND system_id=$2 RETURNING *`, [req.params.sideStreamId, req.params.id, stream.parent_loop_number, stream.name,
-            stream.preset, stream.flow_pct, stream.notes, stream.sort_order])).rows[0];
+            stream.preset, stream.flow_pct, stream.notes, stream.sort_order,
+            stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null])).rows[0];
         await client.query('COMMIT');
     }
     catch (error) {

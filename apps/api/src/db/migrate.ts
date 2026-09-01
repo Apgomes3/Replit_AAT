@@ -1564,6 +1564,26 @@ CREATE TABLE IF NOT EXISTS system_flow_side_streams (
 CREATE INDEX IF NOT EXISTS idx_system_flow_side_streams_parent
   ON system_flow_side_streams(system_id, parent_loop_number, sort_order, created_at);
 
+-- Saved UV selection results per Design Book / LSS system.
+-- (UV FK columns on system_flow_side_streams are added after uv_engineering_revisions is created below.)
+CREATE TABLE IF NOT EXISTS design_book_uv_selections (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id        UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id             UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  target_fluence_mj_cm2 NUMERIC NOT NULL DEFAULT 50.0,
+  input_snapshot        JSONB NOT NULL DEFAULT '{}',
+  result_snapshot       JSONB NOT NULL DEFAULT '{}',
+  calculation_version   VARCHAR(30),
+  freshness             VARCHAR(20) NOT NULL DEFAULT 'stale',
+  calculated_by         UUID REFERENCES users(id) ON DELETE SET NULL,
+  calculated_at         TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id)
+);
+CREATE INDEX IF NOT EXISTS idx_design_book_uv_selections_book
+  ON design_book_uv_selections(design_book_id, system_id);
+
 -- Circuit-keyed pump selections are intentionally independent of Flow Route
 -- rows: a route can be revised while its prior selection remains auditable.
 CREATE TABLE IF NOT EXISTS system_pump_selections (
@@ -2292,6 +2312,15 @@ ON CONFLICT (product_master_id) DO NOTHING;
 INSERT INTO uv_engineering_revisions (catalog_id, revision_number, status)
 SELECT c.id, 1, 'Draft' FROM uv_engineering_catalogs c
 WHERE NOT EXISTS (SELECT 1 FROM uv_engineering_revisions r WHERE r.catalog_id=c.id);
+
+-- UV side-stream assignment columns: added here so the FK resolves after the referenced table exists.
+ALTER TABLE system_flow_side_streams
+  ADD COLUMN IF NOT EXISTS uv_revision_id UUID REFERENCES uv_engineering_revisions(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS uv_unit_quantity INTEGER;
+ALTER TABLE system_flow_side_streams
+  DROP CONSTRAINT IF EXISTS chk_uv_unit_quantity_positive;
+ALTER TABLE system_flow_side_streams
+  ADD CONSTRAINT chk_uv_unit_quantity_positive CHECK (uv_unit_quantity IS NULL OR uv_unit_quantity >= 1);
 `;
 
 async function migrate() {

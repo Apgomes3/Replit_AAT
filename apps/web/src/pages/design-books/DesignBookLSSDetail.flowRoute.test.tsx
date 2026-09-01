@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import '@testing-library/jest-dom/vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -150,6 +151,7 @@ function renderFlowRoute(
     if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: mediaProfiles } });
     if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: tanProfiles } });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
+    if (url === '/design-books/book-1/uv/system-1') return Promise.resolve({ data: { uv_streams: [], selectable_revisions: [], saved_selection: null } });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
   const queryClient = new QueryClient({
@@ -180,6 +182,7 @@ function renderBrowserFlowRoute() {
     if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: [] } });
     if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: [] } });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
+    if (url === '/design-books/book-1/uv/system-1') return Promise.resolve({ data: { uv_streams: [], selectable_revisions: [], saved_selection: null } });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
   window.history.replaceState({}, '', '/design-books/book-1/lss/system-1?tab=flow');
@@ -767,8 +770,8 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(otherTab).toHaveFocus();
     expect(screen.getByRole('tabpanel', { name: 'Other Equipment' })).toHaveTextContent('Not configured');
     await user.click(screen.getByRole('tab', { name: 'UV Selection' }));
-    expect(screen.getByRole('tabpanel', { name: 'UV Selection' })).toHaveTextContent(
-      'UV equipment selection will be available here',
+    await waitFor(() =>
+      expect(screen.getByRole('tabpanel', { name: 'UV Selection' })).toBeInTheDocument(),
     );
     expect(screen.getByTestId('location')).toHaveTextContent(
       '/design-books/book-1/lss/system-1?view=details&tab=uv#equipment',

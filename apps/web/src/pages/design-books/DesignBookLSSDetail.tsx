@@ -1239,6 +1239,11 @@ export default function DesignBookLSSDetail() {
     queryFn: () => api.get(`/systems/${systemId}/fractionator-products`).then(r => r.data.items),
     enabled: !!systemId,
   });
+  const { data: uvSelectionData, refetch: refetchUvSelection } = useQuery({
+    queryKey: ['uv-selection', bookId, systemId],
+    queryFn: () => api.get(`/design-books/${bookId}/uv/${systemId}`).then(r => r.data),
+    enabled: !!systemId && !!bookId && activeTab === 'uv',
+  });
   const { data: biologicalMedia = null, isError: biologicalMediaIsError, error: biologicalMediaQueryError } = useQuery({
     queryKey: ['biological-media', systemId, bookId],
     queryFn: () => api.get(`/systems/${systemId}/biological-media`, { params: { design_book_id: bookId } }).then(r => r.data),
@@ -1327,6 +1332,12 @@ export default function DesignBookLSSDetail() {
   });
   const [biologicalMediaSaving, setBiologicalMediaSaving] = useState(false);
 
+  // UV Selection state
+  const [uvTargetFluence, setUvTargetFluence] = useState<string>('50');
+  const [uvStreamAssignments, setUvStreamAssignments] = useState<Record<string, { uv_revision_id: string; uv_unit_quantity: string }>>({});
+  const [uvCalculating, setUvCalculating] = useState(false);
+  const [uvResult, setUvResult] = useState<any>(null);
+
   // Flow Route edit state
   const [flowEditMode, setFlowEditMode] = useState(false);
   const [flowSaving,   setFlowSaving]   = useState(false);
@@ -1363,6 +1374,65 @@ export default function DesignBookLSSDetail() {
       _stale: false,
     });
   }, [biologicalMedia?.case?.id, biologicalMedia?.case?.updated_at, biologicalMedia?.maximum_tan_default?.id]);
+
+  // Sync UV state when data loads or tab changes
+  useEffect(() => {
+    if (!uvSelectionData) return;
+    if (uvSelectionData.saved?.target_fluence_mj_cm2) {
+      setUvTargetFluence(String(uvSelectionData.saved.target_fluence_mj_cm2));
+    }
+    if (uvSelectionData.saved) {
+      setUvResult(uvSelectionData.saved.result_snapshot ?? null);
+    }
+    // Initialize per-stream assignments from live stream data
+    const assignments: Record<string, { uv_revision_id: string; uv_unit_quantity: string }> = {};
+    for (const stream of (uvSelectionData.streams || [])) {
+      assignments[stream.id] = {
+        uv_revision_id: stream.uv_revision_id || '',
+        uv_unit_quantity: stream.uv_unit_quantity != null ? String(stream.uv_unit_quantity) : '1',
+      };
+    }
+    setUvStreamAssignments(assignments);
+  }, [uvSelectionData]);
+
+  const calculateUVSelection = async () => {
+    if (!bookId || !systemId) return;
+    setUvCalculating(true);
+    try {
+      // Save UV revision + quantity to each stream first
+      const streams: any[] = uvSelectionData?.streams || [];
+      await Promise.all(streams.map(async (stream: any) => {
+        const assignment = uvStreamAssignments[stream.id];
+        if (!assignment) return;
+        const revisionId = assignment.uv_revision_id || null;
+        const qty = assignment.uv_unit_quantity ? parseInt(assignment.uv_unit_quantity, 10) : null;
+        if (revisionId !== (stream.uv_revision_id || null) || qty !== (stream.uv_unit_quantity || null)) {
+          await api.put(`/systems/${systemId}/side-streams/${stream.id}`, {
+            parent_loop_number: stream.parent_loop_number,
+            name: stream.name,
+            preset: stream.preset,
+            flow_pct: stream.flow_pct,
+            notes: stream.notes,
+            sort_order: stream.sort_order,
+            uv_revision_id: revisionId,
+            uv_unit_quantity: qty,
+          });
+        }
+      }));
+      // Calculate
+      const response = await api.post(`/design-books/${bookId}/uv/${systemId}`, {
+        target_fluence_mj_cm2: parseFloat(uvTargetFluence) || 50,
+      });
+      setUvResult(response.data.result);
+      toast.success('UV fluence selection calculated');
+      await refetchUvSelection();
+      qc.invalidateQueries({ queryKey: ['system', systemId] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'UV selection calculation failed');
+    } finally {
+      setUvCalculating(false);
+    }
+  };
 
   const saveBiologicalMedia = async () => {
     setBiologicalMediaSaving(true);
@@ -3369,10 +3439,15 @@ export default function DesignBookLSSDetail() {
                     const derivedFlow = loopFlow != null && percentage != null
                       ? loopFlow * percentage / 100
                       : null;
+                    const isUV = stream.preset === 'UV';
+                    const uvRev = stream.uv_revision;
                     return (
-                      <div key={stream.id || `${stream.name}-${stream.sort_order}`} className="rounded-md border border-cyan-100 bg-cyan-50/40 px-2.5 py-2">
+                      <div key={stream.id || `${stream.name}-${stream.sort_order}`} className={`rounded-md border px-2.5 py-2 ${isUV ? 'border-cyan-200 bg-cyan-50/60' : 'border-cyan-100 bg-cyan-50/40'}`}>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-stone-700">{stream.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            {isUV && <Zap className="w-3 h-3 text-cyan-500 shrink-0" />}
+                            <span className="text-xs font-semibold text-stone-700">{stream.name}</span>
+                          </div>
                           <span className="text-[10px] text-stone-500">{percentage ?? '—'}% of parent</span>
                         </div>
                         <div className={`font-mono text-xs mt-0.5 ${derivedFlow == null ? 'text-amber-700' : 'text-cyan-800'}`}>
@@ -3380,6 +3455,17 @@ export default function DesignBookLSSDetail() {
                         </div>
                         {derivedFlow == null && (
                           <p className="text-[10px] text-amber-700 mt-0.5">Set the parent loop allocation to calculate branch flow.</p>
+                        )}
+                        {isUV && uvRev && (
+                          <div className="mt-1 text-[10px] text-cyan-700">
+                            <span className="font-medium">{uvRev.product_code}</span>
+                            {uvRev.product_name ? ` — ${uvRev.product_name}` : ''}
+                            {stream.uv_unit_quantity ? ` · ${stream.uv_unit_quantity} unit${stream.uv_unit_quantity === 1 ? '' : 's'}` : ''}
+                            {' · '}Rev {uvRev.revision_number}
+                          </div>
+                        )}
+                        {isUV && !uvRev && (
+                          <p className="text-[10px] text-amber-600 mt-0.5">No UV product assigned — open UV Selection tab.</p>
                         )}
                         {stream.notes && <p className="text-[10px] text-stone-500 mt-1">{stream.notes}</p>}
                       </div>
@@ -4165,10 +4251,381 @@ export default function DesignBookLSSDetail() {
         tabIndex={0}
         hidden={activeTab !== 'uv'}
       >
-        <EquipmentEmptyState
-          title="UV Selection"
-          description="UV equipment selection will be available here once the system equipment catalog is connected."
-        />
+        {/* UV Selection Panel */}
+        {(() => {
+          const uvStreams: any[] = uvSelectionData?.streams || [];
+          const selectableRevisions: any[] = uvSelectionData?.selectable_revisions || [];
+          const savedResult = uvResult;
+
+          const hasUvStreams = uvStreams.length > 0;
+          const systemFlowM3h = systemFlow ?? null;
+
+          const loopFlowM3h = (loopNumber: number): number | null => {
+            if (systemFlowM3h == null) return null;
+            const pct = nullableNumber(system[`loop${loopNumber}_flow_pct`]);
+            return pct != null ? systemFlowM3h * pct / 100 : null;
+          };
+
+          const streamFlowM3h = (stream: any): number | null => {
+            const loopFlow = loopFlowM3h(Number(stream.parent_loop_number));
+            const pct = nullableNumber(stream.flow_pct);
+            return loopFlow != null && pct != null ? loopFlow * pct / 100 : null;
+          };
+
+          const fmtUvFlow = (m3h: number | null): string => {
+            if (m3h == null) return '—';
+            const ls = m3h / 3.6;
+            return `${m3h.toFixed(2)} m³/h · ${ls.toFixed(3)} L/s`;
+          };
+
+          const getAssignment = (streamId: string) =>
+            uvStreamAssignments[streamId] ?? { uv_revision_id: '', uv_unit_quantity: '1' };
+
+          const setAssignment = (streamId: string, key: string, value: string) => {
+            setUvStreamAssignments(prev => ({
+              ...prev,
+              [streamId]: { ...getAssignment(streamId), [key]: value },
+            }));
+          };
+
+          const getStreamResult = (streamId: string) =>
+            savedResult?.streams?.find((s: any) => s.side_stream_id === streamId) ?? null;
+
+          const overallColor = savedResult?.overall_status === 'pass'
+            ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+            : savedResult?.overall_status === 'fail'
+              ? 'border-red-300 bg-red-50 text-red-700'
+              : savedResult?.overall_status === 'partial'
+                ? 'border-amber-200 bg-amber-50 text-amber-800'
+                : 'border-stone-200 bg-stone-50 text-stone-600';
+
+          const loopNames: Record<number, string> = {
+            1: system.loop1_name || 'Loop 1',
+            2: system.loop2_name || 'Loop 2',
+            3: system.loop3_name || 'Loop 3',
+          };
+
+          return (
+            <div className="space-y-5">
+              {/* Header card */}
+              <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-cyan-50/30">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-cyan-600" />
+                    <span className="text-sm font-semibold text-cyan-800">UV Fluence Selection</span>
+                  </div>
+                  {savedResult && (
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${overallColor}`}>
+                      {savedResult.overall_status === 'pass' ? '✓ All streams pass'
+                        : savedResult.overall_status === 'fail' ? 'Fluence target not met'
+                        : savedResult.overall_status === 'partial' ? 'Partial — some streams pass'
+                        : 'Incomplete'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Target fluence + calculate */}
+                <div className="px-5 py-4 border-b border-stone-100 bg-stone-50/40">
+                  <div className="flex flex-wrap items-end gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-stone-600 mb-1">
+                        Target fluence (mJ/cm²)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="10000"
+                          step="1"
+                          value={uvTargetFluence}
+                          onChange={e => setUvTargetFluence(e.target.value)}
+                          disabled={readOnly}
+                          aria-label="Target UV fluence in mJ/cm²"
+                          className={`${inputCls} max-w-32 bg-white`}
+                        />
+                        <span className="text-xs text-stone-400">mJ/cm²</span>
+                      </div>
+                      <p className="text-[10px] text-stone-400 mt-1">Typical: 30–80 mJ/cm² depending on organism target. Default: 50 mJ/cm².</p>
+                    </div>
+                    {!readOnly && (
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={calculateUVSelection}
+                          disabled={uvCalculating || !hasUvStreams}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-semibold hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Activity className="w-3.5 h-3.5" />
+                          {uvCalculating ? 'Calculating…' : 'Save & Calculate'}
+                        </button>
+                        {!hasUvStreams && (
+                          <p className="text-xs text-amber-700">
+                            Add a UV side stream in the Flow Route tab first.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Fluence formula reference */}
+                <div className="px-5 py-3 bg-cyan-50/20 border-b border-stone-100">
+                  <p className="text-[10px] text-stone-500">
+                    <strong>Formula:</strong> F = I × V × n / Q &nbsp;·&nbsp;
+                    I = irradiance (mW/cm²) · V = reactor volume (L/unit) · n = unit count · Q = stream flow (L/s)
+                    &nbsp;·&nbsp; <strong>Hydraulic limit:</strong> Q / (lamps × n) ≤ 6.25 L/s per lamp
+                  </p>
+                </div>
+
+                {/* No UV streams empty state */}
+                {!hasUvStreams && (
+                  <div className="px-5 py-10 text-center">
+                    <Zap className="mx-auto mb-3 w-8 h-8 text-stone-200" />
+                    <p className="text-sm font-medium text-stone-500">No UV side streams configured</p>
+                    <p className="text-xs text-stone-400 mt-1">
+                      Open the Flow Route tab and add a UV side stream to a loop to begin UV selection.
+                    </p>
+                  </div>
+                )}
+
+                {/* UV stream cards */}
+                {hasUvStreams && (
+                  <div className="divide-y divide-stone-100">
+                    {uvStreams.map((stream: any) => {
+                      const assignment = getAssignment(stream.id);
+                      const derivedFlow = streamFlowM3h(stream);
+                      const streamResult = getStreamResult(stream.id);
+                      const selectedRevision = selectableRevisions.find(
+                        (r: any) => r.revision_id === assignment.uv_revision_id);
+                      const assignedRevision = stream.uv_revision || selectedRevision;
+                      const resultStatus = streamResult?.status;
+                      const targetMet = streamResult?.target_met_85t === true && streamResult?.hydraulic_pass !== false;
+
+                      return (
+                        <div key={stream.id} className="px-5 py-4">
+                          {/* Stream header */}
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-cyan-700 bg-cyan-100 px-2 py-0.5 rounded-full">
+                                  {loopNames[Number(stream.parent_loop_number)]}
+                                </span>
+                                <span className="text-sm font-semibold text-stone-800">{stream.name}</span>
+                              </div>
+                              <div className="text-[10px] text-stone-500 mt-0.5">
+                                {stream.flow_pct != null ? `${Number(stream.flow_pct).toFixed(1)}% of loop · ` : ''}
+                                Flow: <span className="font-mono">{fmtUvFlow(derivedFlow)}</span>
+                              </div>
+                            </div>
+                            {streamResult && (
+                              <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded border ${
+                                resultStatus === 'ready' && targetMet
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                  : resultStatus === 'ready' && !targetMet
+                                    ? 'border-red-200 bg-red-50 text-red-700'
+                                    : 'border-amber-200 bg-amber-50 text-amber-700'
+                              }`}>
+                                {resultStatus === 'ready' && targetMet ? '✓ Pass'
+                                  : resultStatus === 'ready' ? '✗ Fail'
+                                  : 'Incomplete'}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Product + quantity selectors */}
+                          {!readOnly && (
+                            <div className="grid sm:grid-cols-[1fr_auto] gap-3 mb-3">
+                              <div>
+                                <label className="block text-[10px] font-medium text-stone-500 mb-1">
+                                  UV Product Revision
+                                </label>
+                                <select
+                                  value={assignment.uv_revision_id}
+                                  onChange={e => setAssignment(stream.id, 'uv_revision_id', e.target.value)}
+                                  aria-label={`UV product revision for ${stream.name}`}
+                                  className={`${inputCls} bg-white text-sm`}
+                                >
+                                  <option value="">— Select approved UV product —</option>
+                                  {selectableRevisions.map((rev: any) => (
+                                    <option key={rev.revision_id} value={rev.revision_id}>
+                                      {rev.product_code} — {rev.product_name}
+                                      {rev.manufacturer ? ` (${rev.manufacturer})` : ''}
+                                      {' '}· Rev {rev.revision_number}
+                                      {' '}· {rev.lamp_count}L × {Number(rev.effective_reactor_volume_l).toFixed(1)}L
+                                    </option>
+                                  ))}
+                                </select>
+                                {selectableRevisions.length === 0 && (
+                                  <p className="text-[10px] text-amber-700 mt-1">
+                                    No approved UV products are available. An admin must approve engineering data in the PIM UV Engineering catalog first.
+                                  </p>
+                                )}
+                              </div>
+                              <div className="min-w-[100px]">
+                                <label className="block text-[10px] font-medium text-stone-500 mb-1">
+                                  Units
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={assignment.uv_unit_quantity}
+                                  onChange={e => setAssignment(stream.id, 'uv_unit_quantity', e.target.value)}
+                                  aria-label={`Unit quantity for ${stream.name}`}
+                                  className={`${inputCls} bg-white`}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Read-only: current assignment if no selectors */}
+                          {readOnly && assignedRevision && (
+                            <div className="rounded-lg border border-cyan-100 bg-cyan-50/40 px-3 py-2 text-xs mb-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold text-stone-700">
+                                  {assignedRevision.product_code} — {assignedRevision.product_name}
+                                </span>
+                                <span className="text-stone-500">
+                                  {stream.uv_unit_quantity ?? 1} unit{(stream.uv_unit_quantity ?? 1) === 1 ? '' : 's'}
+                                </span>
+                              </div>
+                              <div className="text-stone-500 mt-0.5">
+                                Rev {assignedRevision.revision_number}
+                                {assignedRevision.manufacturer ? ` · ${assignedRevision.manufacturer}` : ''}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Selected product spec summary */}
+                          {(() => {
+                            const rev = selectedRevision || (stream.uv_revision_id ? stream.uv_revision : null);
+                            if (!rev) return null;
+                            return (
+                              <div className="rounded-md bg-stone-50 border border-stone-200 px-3 py-2 text-[10px] text-stone-600 mb-3 grid sm:grid-cols-3 gap-x-4 gap-y-1">
+                                <div><span className="text-stone-400">Lamps/unit:</span> <strong>{rev.lamp_count ?? rev.lamp_count}</strong></div>
+                                <div><span className="text-stone-400">Lamp power:</span> <strong>{Number(rev.lamp_power_w ?? 0).toFixed(0)} W</strong></div>
+                                <div><span className="text-stone-400">Reactor vol/unit:</span> <strong>{Number(rev.effective_reactor_volume_l ?? 0).toFixed(2)} L</strong></div>
+                                <div><span className="text-stone-400">Irradiance 85th pct:</span> <strong className="font-mono">{Number(rev.irradiance_85t_mw_cm2 ?? 0).toFixed(4)} mW/cm²</strong></div>
+                                <div><span className="text-stone-400">Irradiance 95th pct:</span> <strong className="font-mono">{Number(rev.irradiance_95t_mw_cm2 ?? 0).toFixed(4)} mW/cm²</strong></div>
+                                <div><span className="text-stone-400">Compatibility:</span> <strong>{rev.compatibility}</strong></div>
+                                {rev.approved_per_lamp_flow_exception_m3h && (
+                                  <div className="sm:col-span-3">
+                                    <span className="text-amber-700">Approved hydraulic exception: </span>
+                                    <strong className="text-amber-800">{Number(rev.approved_per_lamp_flow_exception_m3h).toFixed(2)} m³/h per lamp</strong>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Calculation result */}
+                          {streamResult && (
+                            <div className={`rounded-lg border px-3 py-2.5 text-xs ${
+                              resultStatus === 'ready' && targetMet
+                                ? 'border-emerald-200 bg-emerald-50'
+                                : resultStatus === 'ready'
+                                  ? 'border-red-100 bg-red-50'
+                                  : 'border-amber-100 bg-amber-50'
+                            }`}>
+                              {streamResult.status === 'ready' ? (
+                                <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                                  <div>
+                                    <span className="text-stone-500">Flow (L/s):</span>
+                                    <strong className="ml-1 font-mono">{Number(streamResult.flow_ls ?? 0).toFixed(3)}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-stone-500">Flow/unit (L/s):</span>
+                                    <strong className="ml-1 font-mono">{Number(streamResult.flow_per_unit_ls ?? 0).toFixed(3)}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-stone-500">Flow/lamp (L/s):</span>
+                                    <strong className={`ml-1 font-mono ${streamResult.hydraulic_pass ? 'text-emerald-700' : 'text-red-700'}`}>
+                                      {Number(streamResult.flow_per_lamp_ls ?? 0).toFixed(3)}
+                                      {streamResult.hydraulic_pass ? ' ✓' : ' ✗'}{streamResult.hydraulic_exception ? ' (exception)' : ''}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-stone-500">Contact time (s):</span>
+                                    <strong className="ml-1 font-mono">{Number(streamResult.contact_time_s ?? 0).toFixed(3)}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-stone-500">Fluence @ 85th pct UVT:</span>
+                                    <strong className={`ml-1 font-mono ${streamResult.target_met_85t ? 'text-emerald-700' : 'text-red-700'}`}>
+                                      {Number(streamResult.fluence_85t_mj_cm2 ?? 0).toFixed(4)} mJ/cm²
+                                      {streamResult.target_met_85t ? ' ✓' : ` ✗ (need ${uvTargetFluence})`}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-stone-500">Fluence @ 95th pct UVT:</span>
+                                    <strong className="ml-1 font-mono text-stone-700">
+                                      {Number(streamResult.fluence_95t_mj_cm2 ?? 0).toFixed(4)} mJ/cm²
+                                    </strong>
+                                  </div>
+                                </div>
+                              ) : (
+                                <ul className="space-y-0.5">
+                                  {(streamResult.reasons || []).map((reason: string, i: number) => (
+                                    <li key={i} className="text-amber-800">· {reason}</li>
+                                  ))}
+                                </ul>
+                              )}
+                              {streamResult.compatibility_warning && (
+                                <p className="mt-2 text-amber-700 border-t border-amber-100 pt-2">
+                                  ⚠ {streamResult.compatibility_warning}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* If no result yet and no selection */}
+                          {!streamResult && !assignment.uv_revision_id && !stream.uv_revision_id && (
+                            <p className="text-[10px] text-stone-400 italic">Select a UV product revision above and click Save & Calculate.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Overall saved result summary */}
+                {savedResult && hasUvStreams && (
+                  <div className={`mx-5 mb-5 rounded-lg border px-4 py-3 text-xs ${overallColor}`}>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-semibold">Overall result</span>
+                      <span className="font-mono text-[10px]">Target: {savedResult.target_fluence_mj_cm2} mJ/cm²</span>
+                    </div>
+                    <div className="grid sm:grid-cols-3 gap-2">
+                      <div>
+                        <span className="opacity-70">Streams calculated:</span>
+                        <strong className="ml-1">{savedResult.streams?.length ?? 0}</strong>
+                      </div>
+                      <div>
+                        <span className="opacity-70">Passing at 85th pct:</span>
+                        <strong className="ml-1">
+                          {savedResult.streams?.filter((s: any) => s.target_met_85t && s.hydraulic_pass !== false).length ?? 0}
+                          {' / '}{savedResult.streams?.length ?? 0}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="opacity-70">Hydraulic OK:</span>
+                        <strong className="ml-1">
+                          {savedResult.streams?.filter((s: any) => s.hydraulic_pass === true).length ?? 0}
+                          {' / '}{savedResult.streams?.length ?? 0}
+                        </strong>
+                      </div>
+                    </div>
+                    {savedResult.overall_status === 'pass' && (
+                      <p className="mt-2 font-semibold">All UV streams meet the target fluence and hydraulic limit.</p>
+                    )}
+                    {savedResult.overall_status === 'fail' && (
+                      <p className="mt-2">One or more streams do not meet the target fluence or hydraulic limit. Increase unit count or select a larger model.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
       <div
         id="lss-panel-thermal"

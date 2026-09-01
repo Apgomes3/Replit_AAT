@@ -39,6 +39,11 @@ import {
   frictionSourceSnapshot,
 } from '../lib/frictionLossCalculations';
 import { isLifeSupportSystem } from '../lib/lssSystems';
+import {
+  calculateUVSelection,
+  UV_CALCULATION_VERSION,
+  UVStreamInput,
+} from '../lib/uvCalculations';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -70,9 +75,23 @@ function pumpSelectionPrerequisiteReasons(selection: any) {
 async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
   if (!systems.length) return systems;
   const rows = (await runner(
-    `SELECT * FROM system_flow_side_streams
-     WHERE system_id = ANY($1::uuid[])
-     ORDER BY parent_loop_number, sort_order, created_at, id`,
+    `SELECT s.*,
+            r.id AS uv_rev_id, r.revision_number AS uv_revision_number, r.status AS uv_rev_status,
+            r.lamp_count AS uv_lamp_count, r.lamp_power_w AS uv_lamp_power_w,
+            r.effective_reactor_volume_l AS uv_effective_reactor_volume_l,
+            r.irradiance_85t_mw_cm2 AS uv_irradiance_85t_mw_cm2,
+            r.irradiance_95t_mw_cm2 AS uv_irradiance_95t_mw_cm2,
+            r.compatibility AS uv_compatibility, r.arrangement AS uv_arrangement,
+            r.approved_per_lamp_flow_exception_m3h AS uv_approved_per_lamp_flow_exception_m3h,
+            r.notes AS uv_rev_notes,
+            pm.product_code AS uv_product_code, pm.product_name AS uv_product_name,
+            pm.manufacturer AS uv_manufacturer
+       FROM system_flow_side_streams s
+       LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
+       LEFT JOIN uv_engineering_catalogs uc ON uc.id=r.catalog_id
+       LEFT JOIN product_masters pm ON pm.id=uc.product_master_id
+      WHERE s.system_id = ANY($1::uuid[])
+      ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`,
     [systems.map(system => system.id)],
   )).rows;
   const fractionators = (await runner(
@@ -82,7 +101,28 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
   )).rows;
   return systems.map(system => ({
     ...system,
-    side_streams: rows.filter(stream => stream.system_id === system.id),
+    side_streams: rows
+      .filter(stream => stream.system_id === system.id)
+      .map(row => ({
+        ...row,
+        uv_revision: row.uv_rev_id ? {
+          id: row.uv_rev_id,
+          revision_number: row.uv_revision_number,
+          status: row.uv_rev_status,
+          lamp_count: row.uv_lamp_count,
+          lamp_power_w: row.uv_lamp_power_w,
+          effective_reactor_volume_l: row.uv_effective_reactor_volume_l,
+          irradiance_85t_mw_cm2: row.uv_irradiance_85t_mw_cm2,
+          irradiance_95t_mw_cm2: row.uv_irradiance_95t_mw_cm2,
+          compatibility: row.uv_compatibility,
+          arrangement: row.uv_arrangement,
+          approved_per_lamp_flow_exception_m3h: row.uv_approved_per_lamp_flow_exception_m3h,
+          notes: row.uv_rev_notes,
+          product_code: row.uv_product_code,
+          product_name: row.uv_product_name,
+          manufacturer: row.uv_manufacturer,
+        } : null,
+      })),
     fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
   }));
 }
@@ -3541,5 +3581,334 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
     client.release();
   }
 });
+
+// ─── UV Selection ──────────────────────────────────────────────────────────────
+
+router.get(
+  '/design-books/:id/uv/:systemId',
+  async (req: AuthRequest, res: Response) => {
+    const bookId = routeParam(req.params.id);
+    const systemId = routeParam(req.params.systemId);
+    // Verify book exists and system belongs to the same project.
+    const book = await query(
+      `SELECT db.id, db.status FROM design_books db
+        JOIN systems s ON s.project_id=db.project_id
+       WHERE db.id=$1 AND s.id=$2`,
+      [bookId, systemId],
+    );
+    if (!book.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book or system not found' } });
+
+    // Load UV side streams for this system (with revision details joined)
+    const streamsResult = await query(
+      `SELECT s.*,
+              r.id AS rev_id, r.revision_number, r.status AS rev_status,
+              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
+              r.compatibility, r.arrangement, r.source_evidence,
+              r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
+              pm.product_code, pm.product_name, pm.manufacturer
+         FROM system_flow_side_streams s
+         LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
+         LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
+         LEFT JOIN product_masters pm ON pm.id=c.product_master_id
+        WHERE s.system_id=$1 AND s.preset='UV'
+        ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`,
+      [systemId],
+    );
+
+    // Load approved selectable revisions for the product picker
+    const selectableResult = await query(
+      `SELECT c.id AS catalog_id, r.id AS revision_id, r.revision_number,
+              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
+              r.compatibility, r.arrangement, r.source_evidence,
+              r.approved_per_lamp_flow_exception_m3h, r.notes,
+              pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status
+         FROM uv_engineering_catalogs c
+         JOIN product_masters pm ON pm.id=c.product_master_id
+         JOIN product_families pf ON pf.id=pm.product_family_id
+         JOIN LATERAL (
+           SELECT * FROM uv_engineering_revisions
+           WHERE catalog_id=c.id AND status='Approved'
+           ORDER BY revision_number DESC LIMIT 1
+         ) r ON true
+        WHERE c.needs_review=false AND pm.status='Active' AND pf.product_family_code='PFM-UV'
+          AND r.lamp_count > 0 AND r.lamp_power_w > 0 AND r.effective_reactor_volume_l > 0
+          AND r.irradiance_85t_mw_cm2 > 0 AND r.irradiance_95t_mw_cm2 > 0
+          AND NULLIF(BTRIM(r.compatibility),'') IS NOT NULL
+          AND NULLIF(BTRIM(r.arrangement),'') IS NOT NULL
+          AND NULLIF(BTRIM(r.source_evidence),'') IS NOT NULL
+        ORDER BY pm.product_code`,
+    );
+
+    // Load saved selection
+    const savedResult = await query(
+      'SELECT * FROM design_book_uv_selections WHERE design_book_id=$1 AND system_id=$2',
+      [bookId, systemId],
+    );
+
+    res.json({
+      streams: streamsResult.rows.map(row => ({
+        id: row.id,
+        parent_loop_number: Number(row.parent_loop_number),
+        name: row.name,
+        preset: row.preset,
+        flow_pct: row.flow_pct != null ? Number(row.flow_pct) : null,
+        notes: row.notes,
+        sort_order: Number(row.sort_order),
+        uv_revision_id: row.uv_revision_id,
+        uv_unit_quantity: row.uv_unit_quantity != null ? Number(row.uv_unit_quantity) : null,
+        uv_revision: row.rev_id ? {
+          id: row.rev_id,
+          revision_number: Number(row.revision_number),
+          status: row.rev_status,
+          lamp_count: Number(row.lamp_count),
+          lamp_power_w: Number(row.lamp_power_w),
+          effective_reactor_volume_l: Number(row.effective_reactor_volume_l),
+          irradiance_85t_mw_cm2: Number(row.irradiance_85t_mw_cm2),
+          irradiance_95t_mw_cm2: Number(row.irradiance_95t_mw_cm2),
+          compatibility: row.compatibility,
+          arrangement: row.arrangement,
+          source_evidence: row.source_evidence,
+          approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
+            ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
+          notes: row.rev_notes,
+          product_code: row.product_code,
+          product_name: row.product_name,
+          manufacturer: row.manufacturer,
+        } : null,
+      })),
+      selectable_revisions: selectableResult.rows.map(row => ({
+        catalog_id: row.catalog_id,
+        revision_id: row.revision_id,
+        revision_number: Number(row.revision_number),
+        lamp_count: Number(row.lamp_count),
+        lamp_power_w: Number(row.lamp_power_w),
+        effective_reactor_volume_l: Number(row.effective_reactor_volume_l),
+        irradiance_85t_mw_cm2: Number(row.irradiance_85t_mw_cm2),
+        irradiance_95t_mw_cm2: Number(row.irradiance_95t_mw_cm2),
+        compatibility: row.compatibility,
+        arrangement: row.arrangement,
+        source_evidence: row.source_evidence,
+        approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
+          ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
+        notes: row.notes,
+        product_code: row.product_code,
+        product_name: row.product_name,
+        manufacturer: row.manufacturer,
+        pim_status: row.pim_status,
+      })),
+      saved: savedResult.rows[0] ? {
+        id: savedResult.rows[0].id,
+        target_fluence_mj_cm2: Number(savedResult.rows[0].target_fluence_mj_cm2),
+        calculation_version: savedResult.rows[0].calculation_version,
+        freshness: savedResult.rows[0].freshness,
+        calculated_at: savedResult.rows[0].calculated_at,
+        result_snapshot: savedResult.rows[0].result_snapshot,
+        input_snapshot: savedResult.rows[0].input_snapshot,
+      } : null,
+    });
+  },
+);
+
+router.post(
+  '/design-books/:id/uv/:systemId',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const bookId = routeParam(req.params.id);
+    const systemId = routeParam(req.params.systemId);
+    // Verify book is editable and system belongs to the same project as the book.
+    if (!await ensureBookEditable(bookId, res)) return;
+    const ownershipCheck = await query(
+      `SELECT s.id FROM systems s
+        JOIN design_books db ON db.project_id=s.project_id
+       WHERE db.id=$1 AND s.id=$2`,
+      [bookId, systemId],
+    );
+    if (!ownershipCheck.rows[0]) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System does not belong to this Design Book\'s project.' } });
+    }
+
+    const rawTarget = req.body.target_fluence_mj_cm2;
+    const targetFluence = rawTarget != null && rawTarget !== '' ? Number(rawTarget) : 50.0;
+    if (!Number.isFinite(targetFluence) || targetFluence <= 0 || targetFluence > 10000) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'Target fluence must be a positive number (mJ/cm²).' },
+      });
+    }
+
+    // Load system and its UV side streams with flow calculations
+    const systemResult = await query(
+      `SELECT s.*,
+              s.calculation_inputs->>'design_flow_source' AS design_flow_source,
+              se.design_flow_m3h AS exhibit_flow_m3h,
+              s.loop1_flow_pct, s.loop2_flow_pct, s.loop3_flow_pct
+         FROM systems s
+         LEFT JOIN LATERAL (
+           SELECT SUM(COALESCE(sel.flow_allocation_m3h, calc.total_return_flow_m3h)) AS design_flow_m3h
+           FROM system_exhibit_links sel
+           LEFT JOIN LATERAL (
+             SELECT results->>'total_return_flow_m3h' AS total_return_flow_m3h
+             FROM design_book_exhibit_hydraulics dbeh
+             WHERE dbeh.exhibit_id=sel.exhibit_id AND dbeh.design_book_id=$2
+             ORDER BY dbeh.updated_at DESC LIMIT 1
+           ) calc ON true
+           WHERE sel.system_id=s.id AND sel.link_type='Primary'
+         ) se ON true
+        WHERE s.id=$1`,
+      [systemId, bookId],
+    );
+    if (!systemResult.rows[0]) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    }
+    const system = systemResult.rows[0];
+
+    // Resolve design flow — manual_override uses the persisted design_flow_m3h;
+    // linked_exhibits uses the aggregated exhibit hydraulic return flow.
+    const designFlowSource = system.design_flow_source || 'linked_exhibits';
+    const designFlowM3h = designFlowSource === 'manual_override'
+      ? (system.design_flow_m3h != null ? Number(system.design_flow_m3h) : null)
+      : (system.exhibit_flow_m3h != null ? Number(system.exhibit_flow_m3h) : null);
+
+    // Load UV side streams with revision details
+    const streamsResult = await query(
+      `SELECT s.*,
+              r.id AS rev_id, r.revision_number, r.status AS rev_status,
+              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
+              r.compatibility, r.arrangement, r.source_evidence,
+              r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
+              pm.product_code, pm.product_name, pm.manufacturer
+         FROM system_flow_side_streams s
+         LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
+         LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
+         LEFT JOIN product_masters pm ON pm.id=c.product_master_id
+        WHERE s.system_id=$1 AND s.preset='UV'
+        ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`,
+      [systemId],
+    );
+
+    // Build UVStreamInput objects
+    const streamInputs: UVStreamInput[] = streamsResult.rows.map(row => {
+      const loopPct = row.parent_loop_number != null
+        ? Number(system[`loop${row.parent_loop_number}_flow_pct`])
+        : null;
+      const loopFlowM3h = designFlowM3h != null && Number.isFinite(loopPct)
+        ? designFlowM3h * loopPct / 100
+        : null;
+      const streamPct = row.flow_pct != null ? Number(row.flow_pct) : null;
+      const streamFlowM3h = loopFlowM3h != null && streamPct != null
+        ? loopFlowM3h * streamPct / 100
+        : null;
+
+      return {
+        side_stream_id: String(row.id),
+        side_stream_name: row.name,
+        flow_m3h: streamFlowM3h,
+        uv_unit_quantity: row.uv_unit_quantity != null ? Number(row.uv_unit_quantity) : null,
+        uvt_85t_pct: null,
+        uvt_95t_pct: null,
+        uv_revision: row.rev_id ? {
+          id: row.rev_id,
+          catalog_id: row.catalog_id,
+          revision_number: Number(row.revision_number),
+          status: row.rev_status,
+          lamp_count: Number(row.lamp_count),
+          lamp_power_w: Number(row.lamp_power_w),
+          effective_reactor_volume_l: Number(row.effective_reactor_volume_l),
+          irradiance_85t_mw_cm2: Number(row.irradiance_85t_mw_cm2),
+          irradiance_95t_mw_cm2: Number(row.irradiance_95t_mw_cm2),
+          compatibility: row.compatibility,
+          arrangement: row.arrangement,
+          source_evidence: row.source_evidence,
+          approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
+            ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
+          notes: row.rev_notes,
+          product_code: row.product_code,
+          product_name: row.product_name,
+          manufacturer: row.manufacturer,
+        } : null,
+      };
+    });
+
+    if (streamInputs.length === 0) {
+      return res.status(400).json({
+        error: {
+          code: 'NO_UV_STREAMS',
+          message: 'This system has no UV side streams. Add a UV side stream in the Flow Route tab first.',
+        },
+      });
+    }
+
+    // Validate every assigned revision is still Approved and from an eligible catalog.
+    const assignedRevisionIds = streamInputs
+      .map(s => s.uv_revision?.id)
+      .filter(Boolean) as string[];
+    if (assignedRevisionIds.length > 0) {
+      const eligibleCheck = await query(
+        `SELECT r.id FROM uv_engineering_revisions r
+          JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
+          JOIN product_masters pm ON pm.id=c.product_master_id
+          JOIN product_families pf ON pf.id=pm.product_family_id
+         WHERE r.id = ANY($1::uuid[]) AND r.status='Approved'
+           AND c.needs_review=false AND pm.status='Active'
+           AND pf.product_family_code='PFM-UV'`,
+        [assignedRevisionIds],
+      );
+      const eligibleIds = new Set(eligibleCheck.rows.map(r => r.id));
+      const ineligible = assignedRevisionIds.filter(id => !eligibleIds.has(id));
+      if (ineligible.length > 0) {
+        return res.status(400).json({
+          error: {
+            code: 'INELIGIBLE_UV_REVISION',
+            message: 'One or more assigned UV revisions are no longer Approved or eligible. Please re-select products before calculating.',
+          },
+        });
+      }
+    }
+
+    const result = calculateUVSelection(streamInputs, targetFluence, system.water_type);
+    const inputSnapshot = {
+      target_fluence_mj_cm2: targetFluence,
+      design_flow_m3h: designFlowM3h,
+      water_type: system.water_type,
+      streams: streamInputs.map(s => ({
+        side_stream_id: s.side_stream_id,
+        side_stream_name: s.side_stream_name,
+        flow_m3h: s.flow_m3h,
+        uv_revision_id: s.uv_revision?.id || null,
+        uv_unit_quantity: s.uv_unit_quantity,
+      })),
+    };
+
+    await query(
+      `INSERT INTO design_book_uv_selections
+         (design_book_id, system_id, target_fluence_mj_cm2, input_snapshot, result_snapshot,
+          calculation_version, freshness, calculated_by, calculated_at)
+       VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,'fresh',$7,NOW())
+       ON CONFLICT (design_book_id, system_id) DO UPDATE
+         SET target_fluence_mj_cm2=$3, input_snapshot=$4::jsonb, result_snapshot=$5::jsonb,
+             calculation_version=$6, freshness='fresh', calculated_by=$7,
+             calculated_at=NOW(), updated_at=NOW()`,
+      [bookId, systemId, targetFluence, JSON.stringify(inputSnapshot),
+        JSON.stringify(result), UV_CALCULATION_VERSION, req.user!.id],
+    );
+
+    await logAudit(req.user!.id, 'design_book_uv', bookId, 'CALCULATE', {
+      summary: `UV fluence selection calculated for system ${systemId}`,
+      system_id: systemId,
+      target_fluence_mj_cm2: targetFluence,
+      overall_status: result.overall_status,
+      stream_count: streamInputs.length,
+    });
+
+    const saved = await query(
+      'SELECT * FROM design_book_uv_selections WHERE design_book_id=$1 AND system_id=$2',
+      [bookId, systemId],
+    );
+    res.json({ result, saved: saved.rows[0] });
+  },
+);
 
 export default router;
