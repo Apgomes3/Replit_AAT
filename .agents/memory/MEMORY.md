@@ -24,3 +24,4 @@
 - [PIM design-flow authority](pim-design-flow-authority.md) — Hydraulic is the engineering-facing value; paired writes and conflict resolution must remain atomic and auditable.
 - [Product hydraulic catalog defaults](product-hydraulic-catalog-defaults.md) — apply identified vendor defaults once; later operator edits, including blanking, remain authoritative.
 - [Generated PIM TDS revisions](generated-pim-tds-revisions.md) — freeze PIM provenance per revision; document edits stay separate, and generated identity/linkage remain immutable.
+- [UV fluence parity precision](uv-fluence-parity-precision.md) — parity expectations use full-precision workbook flow, not the four-decimal flow displayed in the specification.
