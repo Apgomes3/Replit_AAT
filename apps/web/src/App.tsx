@@ -38,6 +38,7 @@ import AdminPOStageRoles from './pages/admin/AdminPOStageRoles';
 import AdminTankCostRates from './pages/admin/AdminTankCostRates';
 import AdminBiologicalMediaProfiles from './pages/admin/AdminBiologicalMediaProfiles';
 import AdminUVEngineering from './pages/admin/AdminUVEngineering';
+import AdminThermalWallConstructions from './pages/admin/AdminThermalWallConstructions';
 import PurchaseOrdersList from './pages/procurement/PurchaseOrdersList';
 import PurchaseOrderDetail from './pages/procurement/PurchaseOrderDetail';
 import PIMDashboard from './pages/pim/PIMDashboard';
@@ -70,6 +71,12 @@ function ModuleGuard({ moduleKey, children }: { moduleKey: string; children: Rea
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const user = useAuthStore(state => state.user);
   if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function EngineeringAdminGuard({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore(state => state.user);
+  if (user?.role !== 'admin' && user?.role !== 'engineer') return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -120,6 +127,7 @@ export default function App() {
             <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
             <Route path="admin/biological-media-profiles" element={<AdminGuard><AdminBiologicalMediaProfiles /></AdminGuard>} />
             <Route path="admin/uv-engineering" element={<AdminGuard><AdminUVEngineering /></AdminGuard>} />
+             <Route path="admin/thermal-wall-constructions" element={<EngineeringAdminGuard><AdminThermalWallConstructions /></EngineeringAdminGuard>} />
             <Route path="purchase-orders" element={<ModuleGuard moduleKey="orders"><PurchaseOrdersList /></ModuleGuard>} />
             <Route path="purchase-orders/:id" element={<ModuleGuard moduleKey="orders"><PurchaseOrderDetail /></ModuleGuard>} />
             <Route path="design-book-engine" element={<ModuleGuard moduleKey="design_books"><DesignBookEngineDashboard /></ModuleGuard>} />

@@ -118,4 +118,24 @@ describe('LeftNav accessibility behavior', () => {
     expect(screen.getByText('Order Management')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Platform Admin' })).not.toBeInTheDocument();
   });
+
+  it('shows only Thermal governance to engineers with Design Book manage access', async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({
+      user: {
+        id: 'engineer-1',
+        email: 'engineer@example.com',
+        firstName: 'Design',
+        lastName: 'Engineer',
+        role: 'engineer',
+        moduleAccess: { design_books: 'manage' },
+      },
+    });
+
+    renderNav();
+    await user.click(screen.getByRole('button', { name: 'Platform Admin' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Thermal Wall Constructions' })).toBeVisible();
+    expect(screen.queryByRole('menuitem', { name: 'Users' })).not.toBeInTheDocument();
+  });
 });

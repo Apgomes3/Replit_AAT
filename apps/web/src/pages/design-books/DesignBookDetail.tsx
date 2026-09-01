@@ -2187,7 +2187,7 @@ function thermalWallDate(value: unknown) {
   return value ? new Date(String(value)).toLocaleString() : '—';
 }
 
-function ThermalWallConstructionLibrary({
+export function ThermalWallConstructionLibrary({
   approvedDefaults,
   canManageLibrary,
   onRefresh,
@@ -2935,11 +2935,6 @@ function ThermalTab({
   if (!items.length) {
     return (
       <div className="space-y-4 rounded-2xl bg-[#f3eee6] p-3 sm:p-5">
-        {canManageLibrary && <ThermalWallConstructionLibrary
-          approvedDefaults={book.thermal_construction_defaults || []}
-          canManageLibrary={canManageLibrary}
-          onRefresh={onRefresh}
-        />}
         <div className="rounded-2xl border border-[#d8d4cb] bg-[#fbfaf7] py-16 text-center">
           <ThermometerSun className="mx-auto mb-3 h-10 w-10 text-[#9aa8af]" />
           <p className="font-semibold text-[#263746]">No LSS systems to calculate</p>
@@ -3557,13 +3552,6 @@ function ThermalTab({
           </div>
           {readOnly && <p className="text-xs text-stone-500 text-right">This calculation is part of the frozen Design Book package and is read-only.</p>}
         </div>
-      )}
-      {canManageLibrary && (
-        <ThermalWallConstructionLibrary
-          approvedDefaults={constructionDefaults}
-          canManageLibrary={canManageLibrary}
-          onRefresh={onRefresh}
-        />
       )}
     </div>
   );

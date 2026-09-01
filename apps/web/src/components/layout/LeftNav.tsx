@@ -49,6 +49,7 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'system-types', to: '/admin/system-types', icon: Layers, label: 'System Types' },
   { id: 'biological-media-profiles', to: '/admin/biological-media-profiles', icon: Activity, label: 'Biological Media Profiles' },
   { id: 'uv-engineering', to: '/admin/uv-engineering', icon: Sun, label: 'UV Engineering Products' },
+  { id: 'thermal-wall-constructions', to: '/admin/thermal-wall-constructions', icon: Layers, label: 'Thermal Wall Constructions' },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
   { id: 'po-stage-roles', to: '/admin/po-stage-roles', icon: GitBranch, label: 'PO Stage Roles' },
   { id: 'roles', to: '/admin/roles', icon: Users, label: 'Roles' },
@@ -212,7 +213,7 @@ function DraggableSection({ section, savedOrder, onOrderChange, collapsed }: {
 }
 
 const ADMIN_GROUPS = [
-  { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families', 'tank-cost-rates', 'system-types', 'biological-media-profiles', 'uv-engineering'].includes(i.id)) },
+  { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families', 'tank-cost-rates', 'system-types', 'biological-media-profiles', 'uv-engineering', 'thermal-wall-constructions'].includes(i.id)) },
   { label: 'Documents', items: ADMIN_ITEMS.filter(i => ['document-register'].includes(i.id)) },
   { label: 'Order Management', items: ADMIN_ITEMS.filter(i => ['po-stage-roles'].includes(i.id)) },
   { label: 'System', items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import', 'audit-log'].includes(i.id)) },
@@ -220,9 +221,16 @@ const ADMIN_GROUPS = [
 
 function AdminPopup({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
+  const user = useAuthStore(state => state.user);
   const ref = useRef<HTMLDivElement>(null);
   const menuItemRefs = useRef<HTMLButtonElement[]>([]);
   const [activeItemIndex, setActiveItemIndex] = useState(0);
+  const visibleGroups = user?.role === 'engineer'
+    ? ADMIN_GROUPS.map(group => ({
+      ...group,
+      items: group.items.filter(item => item.id === 'thermal-wall-constructions'),
+    })).filter(group => group.items.length > 0)
+    : ADMIN_GROUPS;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
@@ -274,13 +282,13 @@ function AdminPopup({ onClose }: { onClose: () => void }) {
         <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.12em]">Platform Admin</span>
       </div>
       <div className="py-1 max-h-[70vh] overflow-y-auto">
-        {ADMIN_GROUPS.map((group, gi) => (
+         {visibleGroups.map((group, gi) => (
           <div key={group.label}>
             {gi > 0 && <div className="border-t border-stone-100 my-1" />}
             <div className="px-3 pt-2 pb-0.5 text-[10px] font-bold text-stone-300 uppercase tracking-[0.12em]">{group.label}</div>
             {group.items.map((item, itemOffset) => {
               const Icon = item.icon;
-              const itemIndex = ADMIN_GROUPS.slice(0, gi).reduce((total, previousGroup) => total + previousGroup.items.length, 0) + itemOffset;
+               const itemIndex = visibleGroups.slice(0, gi).reduce((total, previousGroup) => total + previousGroup.items.length, 0) + itemOffset;
               return (
                 <button
                   key={item.id}
@@ -323,6 +331,8 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
   const { open: openPalette } = useCommandPalette();
   const user = useAuthStore(state => state.user);
   const moduleVisible = (moduleKey: ModuleKey) => user?.moduleAccess?.[moduleKey] !== 'hidden';
+  const canAccessPlatformAdmin = user?.role === 'admin' ||
+    (user?.role === 'engineer' && user?.moduleAccess?.design_books === 'manage');
   const visibleSections = SECTIONS.filter(section => moduleVisible(section.moduleKey));
 
   const handleOrderChange = (sectionId: string, newOrder: string[]) => {
@@ -412,7 +422,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
         ))}
       </div>
 
-      {user?.role === 'admin' && <div className="border-t border-stone-200/80 p-2">
+      {canAccessPlatformAdmin && <div className="border-t border-stone-200/80 p-2">
         <button
           ref={adminTriggerRef}
           onClick={() => setShowAdmin(v => !v)}
@@ -438,7 +448,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
         </button>
       </div>}
 
-      {user?.role === 'admin' && showAdmin && <AdminPopup onClose={closeAdminMenu} />}
+      {canAccessPlatformAdmin && showAdmin && <AdminPopup onClose={closeAdminMenu} />}
     </nav>
   );
 }
