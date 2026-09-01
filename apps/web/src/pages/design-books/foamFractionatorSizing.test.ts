@@ -76,4 +76,15 @@ describe('Sand Filter sizing guidance', () => {
     expect(result.status).toBe('incomplete');
     expect(result.reason).toContain('Sand Filter');
   });
+
+  it.each([0, -1, 1.5])('rejects invalid quantities without calculating capacity', quantity => {
+    const result = calculateSandFilterSizingRecommendation(
+      36,
+      [product('SF-1000', 1000, quantity)],
+      6,
+    );
+
+    expect(result.status).toBe('incomplete');
+    expect(result.reason).toContain('positive whole-number quantity');
+  });
 });

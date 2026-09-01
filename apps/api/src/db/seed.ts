@@ -119,6 +119,7 @@ async function seed() {
     `);
 
     const ffFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-FF'`);
+    const sandFilterFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-SF'`);
     const pumpFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-PUMP'`);
     const drumFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-DRUM'`);
     const uvFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-UV'`);
@@ -143,6 +144,35 @@ async function seed() {
         ('PM-FIT-FLG80',    $5, 'Flange PN10 DN80 FRP',        'Piping',     'Seawater',                NULL, NULL, 'MAT-FRP-VE', 'Active', ROUND((RANDOM()*4500+500)::numeric,2), ROUND((RANDOM()*7000+800)::numeric,2))
       ON CONFLICT (product_code) DO NOTHING
     `, [ffFamilyRes.rows[0].id, pumpFamilyRes.rows[0].id, drumFamilyRes.rows[0].id, uvFamilyRes.rows[0].id, pipeFamilyRes.rows[0].id]);
+
+    // Approved AAT Sand Filter Product Masters already maintained in PIM.
+    // Preserve existing operator-managed rows and only fill the two reviewed
+    // diameter values currently available; unknown diameters stay explicit.
+    await client.query(`
+      INSERT INTO product_masters
+        (product_code, product_family_id, product_name, product_category, application_type, standard_status, status)
+      VALUES
+        ('AAT-SF-900',  $1, 'Sand Filter 900',  'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1200', $1, 'Sand Filter 1200', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1400', $1, 'Sand Filter 1400', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1600', $1, 'Sand Filter 1600', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1800', $1, 'Sand Filter 1800', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-2000', $1, 'Sand Filter 2000', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-2300', $1, 'Sand Filter 2300', 'Filtration', 'Sand Filtration', 'Active', 'Active')
+      ON CONFLICT (product_code) DO NOTHING
+    `, [sandFilterFamilyRes.rows[0].id]);
+    await client.query(`
+      INSERT INTO product_dimensions (product_master_id, diameter_mm)
+      SELECT pm.id, reviewed.diameter_mm
+      FROM (VALUES
+        ('AAT-SF-1200', 1200::numeric),
+        ('AAT-SF-1400', 1400::numeric)
+      ) AS reviewed(product_code, diameter_mm)
+      JOIN product_masters pm ON pm.product_code=reviewed.product_code
+      JOIN product_families pf ON pf.id=pm.product_family_id
+      WHERE pf.product_family_code='PFM-SF'
+      ON CONFLICT (product_master_id) DO NOTHING
+    `);
 
     // Components
     await client.query(`

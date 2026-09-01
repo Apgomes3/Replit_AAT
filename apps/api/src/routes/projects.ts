@@ -206,6 +206,7 @@ async function normalizeSandFilterAllocations(
   value: unknown,
   system: any,
   runner: (text: string, params?: any[]) => Promise<{ rows: any[] }> = query,
+  existingSnapshots: Map<string, any> = new Map(),
 ) {
   if (!Array.isArray(value)) return null;
   const seenLoops = new Set<number>();
@@ -240,12 +241,11 @@ async function normalizeSandFilterAllocations(
       quantities.set(id, quantity);
     }
     const catalog = productIds.length ? (await runner(
-      `SELECT pm.id, pm.product_code, pm.product_name, pd.diameter_mm
+      `SELECT pm.id, pm.product_code, pm.product_name, pm.status, pm.standard_status, pd.diameter_mm
        FROM product_masters pm
        JOIN product_families pf ON pf.id=pm.product_family_id
        LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
-       WHERE pm.id = ANY($1::uuid[]) AND pf.product_family_code='PFM-SF'
-         AND COALESCE(pm.status, 'Active')='Active'`,
+       WHERE pm.id = ANY($1::uuid[]) AND pf.product_family_code='PFM-SF'`,
       [productIds],
     )).rows : [];
     if (catalog.length !== productIds.length) {
@@ -253,10 +253,20 @@ async function normalizeSandFilterAllocations(
     }
     const products = productIds.map(id => {
       const product = catalog.find(item => String(item.id) === id);
+      const snapshot = existingSnapshots.get(`${loopNumber}:${id}`);
+      const isActive = (product?.status == null ||
+        String(product.status).trim().toLowerCase() === 'active') &&
+        String(product?.standard_status || '').trim().toLowerCase() === 'active';
+      if (!snapshot && !isActive) {
+        throw new Error(`Loop ${loopNumber} includes a product that is not an active AAT Sand Filter.`);
+      }
+      // An existing allocation is a historical snapshot. Keep its catalog
+      // values when a later PIM edit changes the reusable Product Master.
+      const source = snapshot || product;
       return {
-        product_master_id: product.id, product_code: product.product_code,
-        product_name: product.product_name,
-        diameter_mm: product.diameter_mm == null ? null : Number(product.diameter_mm),
+        product_master_id: product.id, product_code: source.product_code,
+        product_name: source.product_name,
+        diameter_mm: source.diameter_mm == null ? null : Number(source.diameter_mm),
         quantity: quantities.get(id),
       };
     });
@@ -1731,7 +1741,9 @@ router.get('/systems/:id/sand-filter-products', authenticate, async (req: AuthRe
      FROM product_masters pm
      JOIN product_families pf ON pf.id=pm.product_family_id
      LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
-     WHERE pf.product_family_code='PFM-SF' AND COALESCE(pm.status, 'Active')='Active'
+     WHERE pf.product_family_code='PFM-SF'
+       AND LOWER(BTRIM(COALESCE(pm.status, 'Active')))='active'
+       AND LOWER(BTRIM(COALESCE(pm.standard_status, '')))='active'
      ORDER BY pm.product_code`,
   );
   res.json({ items: result.rows });
@@ -1955,8 +1967,20 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
     try {
       normalizedFractionators = await normalizeFractionatorAllocations(
         fractionator_allocations, intendedSystem);
+      const existingSandFilterAllocations = sand_filter_allocations
+        ? await loadSystemSandFilterAllocations(String(req.params.id))
+        : [];
+      const existingSandFilterSnapshots = new Map<string, any>();
+      for (const allocation of existingSandFilterAllocations) {
+        for (const product of allocation.products || []) {
+          existingSandFilterSnapshots.set(
+            `${Number(allocation.parent_loop_number)}:${String(product.product_master_id)}`,
+            product,
+          );
+        }
+      }
       normalizedSandFilters = await normalizeSandFilterAllocations(
-        sand_filter_allocations, intendedSystem);
+        sand_filter_allocations, intendedSystem, query, existingSandFilterSnapshots);
     } catch (error: any) {
       return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
     }

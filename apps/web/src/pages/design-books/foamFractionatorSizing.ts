@@ -114,6 +114,13 @@ function calculateEquipmentSizingRecommendation(
   if (recommendations.some(product => !product.unitAreaM2)) {
     return { status: 'incomplete' as const, reason: diameterReason, products: recommendations };
   }
+  if (recommendations.some(product => !Number.isInteger(product.quantity) || product.quantity <= 0)) {
+    return {
+      status: 'incomplete' as const,
+      reason: 'Enter a positive whole-number quantity for each selected Sand Filter.',
+      products: recommendations,
+    };
+  }
   const parentFlowLs = parentFlow / 3.6;
   const selectedAreaM2 = recommendations.reduce((sum, product) => sum + product.unitAreaM2! * product.quantity, 0);
   const capacity = selectedAreaM2 * recommendedRate;

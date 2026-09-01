@@ -139,6 +139,7 @@ function renderFlowRoute(
   biologicalMedia: any = null,
   mediaProfiles: any[] = [],
   tanProfiles: any[] = [],
+  sandFilterProducts: any[] = [],
 ) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
@@ -146,6 +147,9 @@ function renderFlowRoute(
     if (url === '/systems/system-1/exhibit-links') return Promise.resolve({ data: links });
     if (url === '/systems/system-1/fractionator-products') {
       return Promise.resolve({ data: { items: fractionatorProducts } });
+    }
+    if (url === '/systems/system-1/sand-filter-products') {
+      return Promise.resolve({ data: { items: sandFilterProducts } });
     }
     if (url === '/systems/system-1/biological-media') return Promise.resolve({ data: biologicalMedia });
     if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: mediaProfiles } });
@@ -176,6 +180,9 @@ function renderBrowserFlowRoute() {
     if (url === '/design-books/book-1') return Promise.resolve({ data: baseBook });
     if (url === '/systems/system-1/exhibit-links') return Promise.resolve({ data: [] });
     if (url === '/systems/system-1/fractionator-products') {
+      return Promise.resolve({ data: { items: [] } });
+    }
+    if (url === '/systems/system-1/sand-filter-products') {
       return Promise.resolve({ data: { items: [] } });
     }
     if (url === '/systems/system-1/biological-media') return Promise.resolve({ data: null });
@@ -2249,5 +2256,138 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getByText('Model diameter')).toBeInTheDocument();
     expect(route.queryByRole('spinbutton', { name: 'FF-500 quantity' })).not.toBeInTheDocument();
     expect(route.queryByRole('button', { name: 'Remove FF-500' })).not.toBeInTheDocument();
+  });
+
+  it('renders saved Sand Filter PIM diameter and capacity with Sand Filter-specific copy', async () => {
+    const user = userEvent.setup();
+    const sandProduct = {
+      id: 'sf-900',
+      product_code: 'PM-SF-900',
+      product_name: 'AAT Sand Filter 900',
+      diameter_mm: 900,
+    };
+    const system = {
+      ...baseSystem,
+      sand_filter_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 6,
+        notes: 'Main sand filter bank',
+        calculation_status: 'required_above_capacity',
+        products: [{
+          product_master_id: 'sf-900',
+          product_code: 'PM-SF-900',
+          product_name: 'AAT Sand Filter 900',
+          diameter_mm: 900,
+          quantity: 2,
+        }],
+      }],
+    };
+
+    renderFlowRoute(system, baseBook, [], [], undefined, null, [], [], sandProduct ? [sandProduct] : []);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+    expect(route.getByText('Sand Filter capacity')).toBeInTheDocument();
+    const card = within(route.getByRole('region', { name: 'Sand Filter PM-SF-900' }));
+    expect(card.getAllByText('Ø900 mm').length).toBeGreaterThan(0);
+
+    await user.click(card.getByRole('button', { name: 'Details' }));
+    expect(card.getByText('Calculated area')).toBeVisible();
+    expect(card.getByText('Calculated capacity')).toBeVisible();
+    expect(card.getByText('Actual loading')).toBeVisible();
+    expect(card.getByText('Main sand filter bank')).toBeVisible();
+    expect(route.queryByText(/selected fractionator/i)).not.toBeInTheDocument();
+  });
+
+  it('selects and saves a Sand Filter catalog snapshot without fabricating missing values', async () => {
+    const user = userEvent.setup();
+    const sandProduct = {
+      id: 'sf-900',
+      product_code: 'PM-SF-900',
+      product_name: 'AAT Sand Filter 900',
+      diameter_mm: 900,
+    };
+
+    renderFlowRoute(baseSystem, baseBook, [], [], undefined, null, [], [], [sandProduct]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const sandOption = route.getByRole('option', {
+      name: 'PM-SF-900 — AAT Sand Filter 900 — Ø900 mm',
+    });
+    await user.selectOptions(sandOption.closest('select')!, 'sf-900');
+    expect(route.getByRole('region', { name: 'Sand Filter PM-SF-900' })).toBeInTheDocument();
+    expect(route.queryByText(/Add fractionator model/i)).not.toBeInTheDocument();
+
+    await user.type(route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' }), '6');
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        sand_filter_allocations: [expect.objectContaining({
+          parent_loop_number: 1,
+          process_rate_ls_m2: 6,
+          products: [expect.objectContaining({
+            product_master_id: 'sf-900',
+            quantity: 1,
+          })],
+        })],
+      }),
+    ));
+  });
+
+  it('shows an actionable Sand Filter empty catalog state', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+
+    expect(route.getByText(
+      'No active approved AAT Sand Filter Product Masters are available. Add or activate one in PIM with a saved diameter.',
+    )).toBeInTheDocument();
+  });
+
+  it('keeps a frozen Sand Filter snapshot read-only after the reusable catalog changes', async () => {
+    const user = userEvent.setup();
+    const releasedBook = {
+      ...baseBook,
+      status: 'Released',
+      systems: [{
+        ...baseSystem,
+        sand_filter_allocations: [{
+          parent_loop_number: 1,
+          process_rate_ls_m2: 6,
+          calculation_status: 'required_above_capacity',
+          products: [{
+            product_master_id: 'sf-1200',
+            product_code: 'AAT-SF-1200',
+            product_name: 'Sand Filter 1200',
+            diameter_mm: 1200,
+            quantity: 1,
+          }],
+        }],
+      }],
+      system_links: [],
+    };
+    const changedCatalogProduct = {
+      id: 'sf-1200',
+      product_code: 'AAT-SF-1200-RENAMED',
+      product_name: 'Renamed Sand Filter',
+      diameter_mm: 1400,
+    };
+
+    renderFlowRoute(baseSystem, releasedBook, [], [], undefined, null, [], [], [changedCatalogProduct]);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+    const card = within(route.getByRole('region', { name: 'Sand Filter AAT-SF-1200' }));
+    expect(card.getAllByText('Ø1200 mm').length).toBeGreaterThan(0);
+    expect(route.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+
+    await user.click(card.getByRole('button', { name: 'Details' }));
+    expect(card.getByText('Model diameter')).toBeInTheDocument();
+    expect(card.queryByRole('spinbutton', { name: 'AAT-SF-1200 quantity' })).not.toBeInTheDocument();
+    expect(card.queryByText('Renamed Sand Filter')).not.toBeInTheDocument();
   });
 });

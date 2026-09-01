@@ -744,7 +744,7 @@ function isEditingField(target: EventTarget | null): boolean {
     && (target.matches('input, select, textarea, [contenteditable="true"]') || target.isContentEditable);
 }
 
-function FractionatorProductCard({
+function FlowEquipmentProductCard({
   product,
   loopNumber,
   calculation,
@@ -775,7 +775,7 @@ function FractionatorProductCard({
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const productId = String(product.product_master_id);
-  const detailsId = `fractionator-details-${loopNumber}-${productId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const detailsId = `flow-equipment-details-${loopNumber}-${productId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const diameter = Number(product.diameter_mm);
   const quantity = Number(product.quantity);
   const area = diameter > 0 && quantity > 0
@@ -3280,17 +3280,34 @@ export default function DesignBookLSSDetail() {
             return { ...(catalog || {}), ...selected };
           });
         };
-        const fractionatorCalculation = (source: any, n: number, loopFlow: number | null) => {
+        const flowEquipmentCalculation = (source: any, n: number, loopFlow: number | null) => {
           const allocation = fractionatorFor(source, n);
           const products = selectedFractionatorProducts(source, n);
           const isSandFilter = source?.[`loop${n}_filtration`] === 'Sand Filter';
-          if (loopFlow == null) return { status: 'incomplete', reason: 'Parent loop flow is unavailable for capacity calculation.' };
+          const equipmentLabel = isSandFilter ? 'Sand Filter' : 'Foam Fractionator';
+          if (!Number.isFinite(loopFlow) || !(Number(loopFlow) > 0)) {
+            return {
+              status: 'incomplete',
+              reason: `Enter a positive parent-loop allocation to calculate ${equipmentLabel} capacity.`,
+            };
+          }
           if (!products.length) return { status: 'incomplete', reason: `Select at least one ${isSandFilter ? 'AAT Sand Filter' : 'Foam Fractionator'}.` };
           if (products.some((product: any) => !(Number(product.diameter_mm) > 0))) {
-            return { status: 'incomplete', reason: 'A selected fractionator has no valid saved diameter.' };
+            return { status: 'incomplete', reason: `A selected ${equipmentLabel} has no valid saved diameter.` };
+          }
+          if (products.some((product: any) => {
+            const quantity = Number(product.quantity);
+            return !Number.isInteger(quantity) || quantity <= 0;
+          })) {
+            return {
+              status: 'incomplete',
+              reason: `Enter a positive whole-number quantity for each selected ${equipmentLabel}.`,
+            };
           }
           const rate = Number(allocation?.process_rate_ls_m2);
-          if (!(rate > 0)) return { status: 'incomplete', reason: 'Enter an AAT process rate greater than zero.' };
+          if (!Number.isFinite(rate) || !(rate > 0)) {
+            return { status: 'incomplete', reason: 'Enter an AAT process rate greater than zero.' };
+          }
           const area = products.reduce((sum: number, product: any) =>
             sum + Math.PI * Math.pow(Number(product.diameter_mm) / 2000, 2) * Number(product.quantity), 0);
           const flowLs = loopFlow / 3.6;
@@ -3303,7 +3320,7 @@ export default function DesignBookLSSDetail() {
             advisory: isSandFilter ? rate < 5 || rate > 7 : rate < 18 || rate > 22,
           };
         };
-        const FractionatorSummary = ({ source, n, loopFlow, editable = false }: {
+        const FlowEquipmentSummary = ({ source, n, loopFlow, editable = false }: {
           source: any; n: number; loopFlow: number | null; editable?: boolean;
         }) => {
           const allocation = fractionatorFor(source, n) || {
@@ -3312,7 +3329,7 @@ export default function DesignBookLSSDetail() {
           const isSandFilter = source?.[`loop${n}_filtration`] === 'Sand Filter';
           const equipmentLabel = isSandFilter ? 'Sand Filter' : 'Foam Fractionator';
           const catalogProducts = isSandFilter ? sandFilterProducts : fractionatorProducts;
-          const calculation: any = fractionatorCalculation(source, n, loopFlow);
+          const calculation: any = flowEquipmentCalculation(source, n, loopFlow);
           const statusStyle = calculation.status === 'matched'
             ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
             : calculation.status === 'required_above_capacity'
@@ -3382,7 +3399,7 @@ export default function DesignBookLSSDetail() {
               {editable && (
                 <div className="space-y-3 mb-3">
                   <div>
-                    <label className="block text-[10px] font-medium mb-1">Add fractionator model</label>
+                    <label className="block text-[10px] font-medium mb-1">Add {equipmentLabel} model</label>
                     <select value="" onChange={event => {
                       if (!event.target.value) return;
                       const selected = catalogProducts.find((product: any) => product.id === event.target.value);
@@ -3399,6 +3416,13 @@ export default function DesignBookLSSDetail() {
                         </option>
                       ))}
                     </select>
+                    {catalogProducts.length === 0 && (
+                      <p className="mt-1.5 text-[10px] font-medium text-amber-800">
+                        {isSandFilter
+                          ? 'No active approved AAT Sand Filter Product Masters are available. Add or activate one in PIM with a saved diameter.'
+                          : 'No active Foam Fractionator Product Masters are available.'}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -3406,7 +3430,7 @@ export default function DesignBookLSSDetail() {
                     {selectedProducts.map((product: any) => {
                       const productId = String(product.product_master_id);
                       return (
-                        <FractionatorProductCard
+                        <FlowEquipmentProductCard
                           key={productId}
                           product={product}
                           loopNumber={n}
@@ -3625,10 +3649,10 @@ export default function DesignBookLSSDetail() {
                 </div>
               )}
               {filt === 'Sand Filter' && (
-                <FractionatorSummary source={system} n={n} loopFlow={loopFlow} />
+                <FlowEquipmentSummary source={system} n={n} loopFlow={loopFlow} />
               )}
               {filt === 'Foam Fractionation' && (
-                <FractionatorSummary source={system} n={n} loopFlow={loopFlow} />
+                <FlowEquipmentSummary source={system} n={n} loopFlow={loopFlow} />
               )}
               <div className="flex items-center gap-2 text-sm flex-wrap">
                 <Gauge className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
@@ -3826,10 +3850,10 @@ export default function DesignBookLSSDetail() {
               </div>
               </div>
               {curFilt === 'Foam Fractionation' && (
-                <FractionatorSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
+                <FlowEquipmentSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
               )}
               {curFilt === 'Sand Filter' && (
-                <FractionatorSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
+                <FlowEquipmentSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
               )}
               <div className="border-t border-stone-100 pt-4">
                 <div className="flex items-center justify-between gap-3 mb-3">
