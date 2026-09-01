@@ -16,7 +16,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UV_MAX_FLOW_PER_LAMP_LS = exports.UV_CALCULATION_VERSION = void 0;
 exports.calculateUVStream = calculateUVStream;
 exports.calculateUVSelection = calculateUVSelection;
-exports.UV_CALCULATION_VERSION = 'UV_SEL_V1.0';
+exports.UV_CALCULATION_VERSION = 'UV_SEL_V2.0';
 /** Max flow per lamp in L/s — from manufacturer hydraulic design guidance. */
 exports.UV_MAX_FLOW_PER_LAMP_LS = 6.25;
 /** Convert m³/h → L/s */
@@ -27,6 +27,18 @@ function m3hToLs(m3h) {
 function compatibilityWarning(revision, waterType) {
     if (!waterType)
         return null;
+    if (revision.compatibility_allowed === false) {
+        return revision.compatibility_reason
+            || `${revision.material_code || 'The selected material'} is not approved for ${waterType}.`;
+    }
+    if (revision.compatibility_allowed === true)
+        return null;
+    if (revision.material_code) {
+        return revision.compatibility_reason
+            || `No governed material compatibility mapping exists for ${revision.material_code} and ${waterType}.`;
+    }
+    // Legacy snapshots retain their historical free-text behavior. New
+    // calculations supply compatibility_allowed from the governed relationship.
     const compat = (revision.compatibility || '').toLowerCase();
     const isSaltwater = waterType === 'Marine' || waterType === 'Salt Water' || waterType === 'Brackish';
     const isFreshwater = waterType === 'Freshwater' || waterType === 'Blackwater';
@@ -42,11 +54,13 @@ function calculateUVStream(input, targetFluenceMjCm2, waterType) {
     const reasons = [];
     const { side_stream_id, side_stream_name, flow_m3h, uv_revision, uv_unit_quantity } = input;
     const rev = uv_revision;
+    const selectedBasis = input.uvt_basis === '95T' ? '95T' : '85T';
     const base = {
         side_stream_id,
         side_stream_name,
         flow_m3h: flow_m3h ?? null,
         uv_revision_id: rev?.id ?? null,
+        product_master_id: rev?.product_master_id ?? null,
         product_code: rev?.product_code ?? null,
         product_name: rev?.product_name ?? null,
         unit_quantity: uv_unit_quantity ?? null,
@@ -60,6 +74,16 @@ function calculateUVStream(input, targetFluenceMjCm2, waterType) {
         fluence_95t_mj_cm2: null,
         target_met_85t: null,
         target_met_95t: null,
+        selected_uvt_basis: selectedBasis,
+        selected_irradiance_mw_cm2: null,
+        selected_fluence_mj_cm2: null,
+        target_met_selected: null,
+        material_code: rev?.material_code ?? null,
+        rated_power_kw: rev?.rated_power_kw ?? null,
+        lamp_count: rev?.lamp_count ?? null,
+        effective_reactor_volume_l: rev?.effective_reactor_volume_l ?? null,
+        irradiance_85t_mw_cm2: rev?.irradiance_85t_mw_cm2 ?? null,
+        irradiance_95t_mw_cm2: rev?.irradiance_95t_mw_cm2 ?? null,
         compatibility_warning: null,
         status: 'incomplete',
         reasons,
@@ -102,10 +126,15 @@ function calculateUVStream(input, targetFluenceMjCm2, waterType) {
     const fluence95 = I_95 * contactTimeS;
     const targetMet85 = fluence85 >= targetFluenceMjCm2;
     const targetMet95 = fluence95 >= targetFluenceMjCm2;
-    if (!targetMet85) {
-        reasons.push(`Fluence at 85th pct UVT (${fluence85.toFixed(4)} mJ/cm²) does not meet target of ${targetFluenceMjCm2} mJ/cm².`);
+    const selectedIrradiance = selectedBasis === '95T' ? I_95 : I_85;
+    const selectedFluence = selectedBasis === '95T' ? fluence95 : fluence85;
+    const targetMetSelected = selectedBasis === '95T' ? targetMet95 : targetMet85;
+    if (!targetMetSelected) {
+        reasons.push(`Fluence at ${selectedBasis === '95T' ? '95' : '85'}%T (${selectedFluence.toFixed(4)} mJ/cm²) does not meet target of ${targetFluenceMjCm2} mJ/cm².`);
     }
     const compatWarn = compatibilityWarning(rev, waterType);
+    if (compatWarn)
+        reasons.push(compatWarn);
     return {
         ...base,
         flow_ls: flowLs,
@@ -118,6 +147,9 @@ function calculateUVStream(input, targetFluenceMjCm2, waterType) {
         fluence_95t_mj_cm2: fluence95,
         target_met_85t: targetMet85,
         target_met_95t: targetMet95,
+        selected_irradiance_mw_cm2: selectedIrradiance,
+        selected_fluence_mj_cm2: selectedFluence,
+        target_met_selected: targetMetSelected,
         compatibility_warning: compatWarn,
         status: reasons.length > 0 ? 'error' : 'ready',
         reasons,
@@ -126,8 +158,8 @@ function calculateUVStream(input, targetFluenceMjCm2, waterType) {
 function calculateUVSelection(streams, targetFluenceMjCm2, waterType) {
     const results = streams.map(s => calculateUVStream(s, targetFluenceMjCm2, waterType));
     const allReady = results.every(r => r.status === 'ready');
-    const allPass = allReady && results.every(r => r.target_met_85t === true && r.hydraulic_pass === true);
-    const anyPass = results.some(r => r.status === 'ready' && r.target_met_85t === true);
+    const allPass = allReady && results.every(r => r.target_met_selected === true && r.hydraulic_pass === true);
+    const anyPass = results.some(r => r.status === 'ready' && r.target_met_selected === true);
     const anyIncomplete = results.some(r => r.status === 'incomplete');
     const overallStatus = results.length === 0 ? 'incomplete'
         : allPass ? 'pass'

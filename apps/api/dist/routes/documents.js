@@ -10,6 +10,7 @@ const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const crypto_1 = __importDefault(require("crypto"));
+const tdsRenderer_1 = require("../lib/tdsRenderer");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('documents'));
 const uploadsDir = path_1.default.join(__dirname, '../../uploads');
@@ -215,7 +216,7 @@ router.put('/documents/:id/revisions/:revId/content', auth_1.authenticate, (0, a
     if (!content || typeof content !== 'object' || Array.isArray(content)) {
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'content must be a JSON object' } });
     }
-    const current = await (0, db_1.query)(`SELECT dr.id, dr.status, d.generated_source
+    const current = await (0, db_1.query)(`SELECT dr.id, dr.status, d.generated_source, dr.generated_source AS revision_generated_source
      FROM document_revisions dr
      JOIN documents d ON d.id=dr.document_id
      WHERE dr.id=$1 AND dr.document_id=$2`, [req.params.revId, req.params.id]);
@@ -223,6 +224,9 @@ router.put('/documents/:id/revisions/:revId/content', auth_1.authenticate, (0, a
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document revision not found' } });
     }
     if (current.rows[0].generated_source !== 'pim_tds') {
+        return res.status(400).json({ error: { code: 'NOT_GENERATED_TDS', message: 'Only generated TDS revisions have editable structured content' } });
+    }
+    if (current.rows[0].revision_generated_source !== 'pim_tds') {
         return res.status(400).json({ error: { code: 'NOT_GENERATED_TDS', message: 'Only generated TDS revisions have editable structured content' } });
     }
     const editableStatuses = ['Draft', 'Internal Review', 'Review Commented', 'Resubmitted'];
@@ -237,6 +241,35 @@ router.put('/documents/:id/revisions/:revId/content', auth_1.authenticate, (0, a
     const updated = await (0, db_1.query)(`UPDATE document_revisions SET content=$1
      WHERE id=$2 AND document_id=$3 RETURNING *`, [content, req.params.revId, req.params.id]);
     res.json(updated.rows[0]);
+});
+// Render only the requested generated revision. This endpoint reads the frozen
+// revision content and never creates or stores a derivative document.
+router.get('/documents/:id/revisions/:revId/tds.pdf', auth_1.authenticate, async (req, res) => {
+    const result = await (0, db_1.query)(`SELECT d.id AS document_id, d.document_code, d.document_title, d.status AS document_status,
+            d.generated_source AS document_generated_source,
+            dr.id AS revision_id, dr.revision_code, dr.status, dr.content,
+            dr.generated_at, dr.generated_source AS revision_generated_source
+     FROM documents d
+     JOIN document_revisions dr ON dr.document_id=d.id
+     WHERE d.id::text=$1 AND dr.id::text=$2`, [req.params.id, req.params.revId]);
+    const row = result.rows[0];
+    if (!row) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Generated TDS revision not found' } });
+    }
+    if (row.document_generated_source !== 'pim_tds' || row.revision_generated_source !== 'pim_tds') {
+        return res.status(400).json({ error: { code: 'NOT_GENERATED_TDS', message: 'The requested revision is not a generated PIM Technical Data Sheet' } });
+    }
+    if (!row.content || typeof row.content !== 'object' || Array.isArray(row.content)) {
+        return res.status(422).json({ error: { code: 'TDS_CONTENT_MISSING', message: 'This generated revision has no renderable structured content' } });
+    }
+    const pdf = (0, tdsRenderer_1.renderTdsPdf)(row.content, row, row);
+    res.status(200);
+    res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${String(row.document_code || 'tds').replace(/[^a-z0-9_.-]/gi, '-')}-Rev-${String(row.revision_code || 'A').replace(/[^a-z0-9_-]/gi, '-')}.pdf"`,
+        'Cache-Control': 'no-store',
+    });
+    return res.send(pdf);
 });
 // DELETE REVISION (admin only)
 router.delete('/documents/revisions/:revId', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {

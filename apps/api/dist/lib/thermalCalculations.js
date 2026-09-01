@@ -732,9 +732,27 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
     };
     const wallConstructionBasis = {
         construction_type: common.wall.construction?.code || null,
-        construction_label: common.wall.construction?.label || null,
+        construction_label: common.wall.construction?.label ||
+            common.wall.effective_layers?.[0]?.material ||
+            common.wall.layers?.[0]?.material ||
+            null,
+        material: common.wall.effective_layers?.[0]?.material ||
+            common.wall.layers?.[0]?.material ||
+            common.wall.construction?.material ||
+            null,
+        thickness_mm: common.wall.effective_layers?.[0]?.thickness_m != null
+            ? common.wall.effective_layers[0].thickness_m * 1000
+            : common.wall.layers?.[0]?.thickness_m != null
+                ? common.wall.layers[0].thickness_m * 1000
+                : common.wall.construction?.thickness_mm ?? null,
+        conductivity_w_m_k: common.wall.effective_layers?.[0]?.conductivity_w_m_k ??
+            common.wall.layers?.[0]?.conductivity_w_m_k ??
+            common.wall.construction?.conductivity_w_m_k ??
+            null,
         u_value_w_m2_k: uValue,
         units: 'W/m²·K',
+        thickness_units: 'mm',
+        conductivity_units: 'W/m·K',
         source: common.wall.source,
         reviewed: common.wall.reviewed === true,
         assumption_label: common.wall.assumption_label || null,

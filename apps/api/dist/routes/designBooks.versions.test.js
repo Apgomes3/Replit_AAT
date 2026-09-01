@@ -105,7 +105,50 @@ const baseContext = () => ({
             theming_volume_m3: '2.4',
             theming_volume_pct: '8.5',
         }],
+    lights: [{
+            id: 'light-1',
+            exhibit_id: 'exhibit-1',
+            product_master_id: 'pim-light-1',
+            model: 'ALP-100',
+            description: 'Aqua LED Pendant',
+            lighting_type: 'LED',
+            quantity: 4,
+            power_value: '0.25',
+            power_unit: 'kW',
+            power_kw: '0.25',
+            pim_model: 'ALP-100',
+            pim_description: 'Aqua LED Pendant',
+            pim_product_code: 'LT-100',
+            pim_power_kw: '0.25',
+            sort_order: 0,
+        }],
     review_handovers: [],
+    uv_selections: [{
+            id: 'uv-selection-1',
+            design_book_id: 'book-1',
+            system_id: 'system-1',
+            target_fluence_mj_cm2: '50',
+            input_snapshot: {
+                streams: [{
+                        side_stream_id: 'side-stream-1',
+                        product_master_id: 'pim-uv-1',
+                        uv_revision_id: 'uv-revision-1',
+                        uvt_basis: '95T',
+                        lamp_count: 4,
+                        effective_reactor_volume_l: 52.01,
+                        irradiance_85t_mw_cm2: 29.09,
+                        irradiance_95t_mw_cm2: 45.62,
+                        material_code: 'MAT-TI',
+                    }],
+            },
+            result_snapshot: {
+                streams: [{
+                        side_stream_id: 'side-stream-1',
+                        selected_uvt_basis: '95T',
+                        selected_fluence_mj_cm2: 122.0244,
+                    }],
+            },
+        }],
 });
 (0, vitest_1.describe)('Design Book version snapshots', () => {
     (0, vitest_1.it)('loads saved UV selections into the release context for review snapshots', async () => {
@@ -250,7 +293,7 @@ const baseContext = () => ({
     });
     (0, vitest_1.it)('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
         const snapshot = designBooks_1.versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
-        (0, vitest_1.expect)(snapshot.schema_version).toBe(6);
+        (0, vitest_1.expect)(snapshot.schema_version).toBe(8);
         (0, vitest_1.expect)(designBooks_1.versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
         (0, vitest_1.expect)(snapshot.frozen.hydraulics[0]).toMatchObject({
             weir_formula_method: 'francis_184',
@@ -263,6 +306,22 @@ const baseContext = () => ({
             substrate_height_mm: '80',
             theming_height_mm: '500',
             theming_volume_pct: '8.5',
+        });
+        (0, vitest_1.expect)(snapshot.frozen.lights[0]).toMatchObject({
+            product_master_id: 'pim-light-1',
+            model: 'ALP-100',
+            quantity: 4,
+            power_value: '0.25',
+            power_unit: 'kW',
+            power_kw: '0.25',
+            pim_product_code: 'LT-100',
+        });
+        (0, vitest_1.expect)(snapshot.frozen.uv_selections[0].input_snapshot.streams[0]).toMatchObject({
+            product_master_id: 'pim-uv-1',
+            uv_revision_id: 'uv-revision-1',
+            uvt_basis: '95T',
+            lamp_count: 4,
+            material_code: 'MAT-TI',
         });
         (0, vitest_1.expect)(snapshot.frozen.species[0]).toMatchObject({
             catalog_species_id: 'catalog-1',
@@ -345,7 +404,7 @@ const baseContext = () => ({
         (0, vitest_1.expect)(calls[2]).toContain('INSERT INTO design_book_versions');
         (0, vitest_1.expect)(result.version_number).toBe(8);
         const insertParams = runner.mock.calls[2][1];
-        (0, vitest_1.expect)(insertParams[6]).toBe(6);
+        (0, vitest_1.expect)(insertParams[6]).toBe(8);
         (0, vitest_1.expect)(insertParams[7]).toBe(snapshot.integrity.digest);
     });
     (0, vitest_1.it)('preserves uncaptured handovers for legacy snapshots and invalidates stale restore previews', () => {
@@ -359,6 +418,7 @@ const baseContext = () => ({
         };
         const frozen = designBooks_1.versionSnapshotTestUtils.frozenFromSnapshot(legacy);
         (0, vitest_1.expect)(Object.prototype.hasOwnProperty.call(frozen, 'review_handovers')).toBe(false);
+        (0, vitest_1.expect)(Object.prototype.hasOwnProperty.call(frozen, 'lights')).toBe(false);
         const before = baseContext();
         const previewToken = designBooks_1.versionSnapshotTestUtils.currentRestoreStateDigest(before);
         const edited = baseContext();

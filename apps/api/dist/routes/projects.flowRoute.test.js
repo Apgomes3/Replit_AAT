@@ -60,6 +60,8 @@ const state = vitest_1.vi.hoisted(() => ({
         design_flow_m3h: '100',
     },
     fractionatorCatalog: [],
+    sandFilterCatalog: [],
+    sandFilterAllocations: [],
 }));
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (sql, params = []) => {
@@ -76,8 +78,14 @@ vitest_1.vi.mock('../db', () => {
         if (sql.includes("pf.product_family_code='PFM-FF'")) {
             return { rows: state.fractionatorCatalog };
         }
+        if (sql.includes("pf.product_family_code='PFM-SF'")) {
+            return { rows: state.sandFilterCatalog };
+        }
         if (sql.includes('FROM system_flow_fractionator_allocations')) {
             return { rows: [] };
+        }
+        if (sql.includes('FROM system_flow_sand_filter_allocations')) {
+            return { rows: state.sandFilterAllocations };
         }
         if (sql.includes('SELECT DISTINCT water_type FROM exhibits')) {
             return { rows: [] };
@@ -176,6 +184,8 @@ const basePayload = {
         state.currentSystem.system_config = 'bespoke';
         state.currentSystem.compact_unit_id = null;
         state.fractionatorCatalog = [];
+        state.sandFilterCatalog = [];
+        state.sandFilterAllocations = [];
     });
     (0, vitest_1.afterAll)(() => {
         delete process.env.JWT_SECRET;
@@ -276,6 +286,102 @@ const basePayload = {
         });
         (0, vitest_1.expect)(response.status).toBe(400);
         (0, vitest_1.expect)(response.body.error.message).toContain('only available for Marine or Salt Water');
+    });
+    (0, vitest_1.it)('persists active AAT Sand Filter identity and diameter snapshots', async () => {
+        state.sandFilterCatalog = [{
+                id: '33333333-3333-4333-8333-333333333333',
+                product_code: 'PM-SF-900',
+                product_name: 'AAT Sand Filter 900',
+                status: 'Active',
+                standard_status: 'Active',
+                diameter_mm: '900',
+            }];
+        const response = await request(app, {
+            ...basePayload,
+            loop1_flow_pct: 40,
+            sand_filter_allocations: [{
+                    parent_loop_number: 1,
+                    process_rate_ls_m2: 6,
+                    notes: 'Main filter bank',
+                    products: [{
+                            product_master_id: '33333333-3333-4333-8333-333333333333',
+                            quantity: 2,
+                        }],
+                }],
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const insert = state.calls.find(call => call.sql.includes('INSERT INTO system_flow_sand_filter_allocations'));
+        (0, vitest_1.expect)(insert?.params[2]).toBe(6);
+        (0, vitest_1.expect)(JSON.parse(insert?.params[4])).toEqual([{
+                product_master_id: '33333333-3333-4333-8333-333333333333',
+                product_code: 'PM-SF-900',
+                product_name: 'AAT Sand Filter 900',
+                diameter_mm: 900,
+                quantity: 2,
+            }]);
+        (0, vitest_1.expect)(['matched', 'required_above_capacity', 'capacity_above_required'])
+            .toContain(insert?.params[5]);
+    });
+    (0, vitest_1.it)('retains an existing Sand Filter snapshot when PIM values later change', async () => {
+        const productId = '33333333-3333-4333-8333-333333333333';
+        state.sandFilterAllocations = [{
+                parent_loop_number: 1,
+                products: [{
+                        product_master_id: productId,
+                        product_code: 'PM-SF-900',
+                        product_name: 'AAT Sand Filter 900',
+                        diameter_mm: 900,
+                        quantity: 1,
+                    }],
+            }];
+        state.sandFilterCatalog = [{
+                id: productId,
+                product_code: 'PM-SF-1000-RENAMED',
+                product_name: 'Renamed Sand Filter',
+                status: 'Inactive',
+                standard_status: 'Obsolete',
+                diameter_mm: '1000',
+            }];
+        const response = await request(app, {
+            ...basePayload,
+            sand_filter_allocations: [{
+                    parent_loop_number: 1,
+                    process_rate_ls_m2: 6,
+                    notes: 'Unrelated note edit',
+                    products: [{ product_master_id: productId, quantity: 3 }],
+                }],
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const insert = state.calls.find(call => call.sql.includes('INSERT INTO system_flow_sand_filter_allocations'));
+        (0, vitest_1.expect)(JSON.parse(insert?.params[4])).toEqual([vitest_1.expect.objectContaining({
+                product_code: 'PM-SF-900',
+                product_name: 'AAT Sand Filter 900',
+                diameter_mm: 900,
+                quantity: 3,
+            })]);
+    });
+    (0, vitest_1.it)('rejects a newly selected Sand Filter that is not active and approved', async () => {
+        state.sandFilterCatalog = [{
+                id: '33333333-3333-4333-8333-333333333333',
+                product_code: 'PM-SF-900',
+                product_name: 'AAT Sand Filter 900',
+                status: 'Inactive',
+                standard_status: 'Obsolete',
+                diameter_mm: '900',
+            }];
+        const response = await request(app, {
+            ...basePayload,
+            sand_filter_allocations: [{
+                    parent_loop_number: 1,
+                    process_rate_ls_m2: 6,
+                    products: [{
+                            product_master_id: '33333333-3333-4333-8333-333333333333',
+                            quantity: 1,
+                        }],
+                }],
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.message).toContain('not an active AAT Sand Filter');
     });
     (0, vitest_1.it)('rejects individual percentages outside the allowed range', async () => {
         const response = await request(app, {

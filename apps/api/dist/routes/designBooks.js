@@ -83,15 +83,17 @@ async function attachSystemSideStreams(runner, systems) {
         return systems;
     const rows = (await runner(`SELECT s.*,
             r.id AS uv_rev_id, r.revision_number AS uv_revision_number, r.status AS uv_rev_status,
-            r.lamp_count AS uv_lamp_count, r.lamp_power_w AS uv_lamp_power_w,
+            pm.lamp_count AS uv_lamp_count, pm.power_kw * 1000 AS uv_lamp_power_w,
             r.effective_reactor_volume_l AS uv_effective_reactor_volume_l,
             r.irradiance_85t_mw_cm2 AS uv_irradiance_85t_mw_cm2,
             r.irradiance_95t_mw_cm2 AS uv_irradiance_95t_mw_cm2,
             r.compatibility AS uv_compatibility, r.arrangement AS uv_arrangement,
+            r.source_basis AS uv_source_basis, r.source_evidence AS uv_source_evidence,
             r.approved_per_lamp_flow_exception_m3h AS uv_approved_per_lamp_flow_exception_m3h,
             r.notes AS uv_rev_notes,
             pm.product_code AS uv_product_code, pm.product_name AS uv_product_name,
-            pm.manufacturer AS uv_manufacturer
+            pm.manufacturer AS uv_manufacturer, pm.id AS uv_product_master_id,
+            pm.primary_material_code AS uv_material_code, pm.power_kw AS uv_rated_power_kw
        FROM system_flow_side_streams s
        LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
        LEFT JOIN uv_engineering_catalogs uc ON uc.id=r.catalog_id
@@ -119,11 +121,16 @@ async function attachSystemSideStreams(runner, systems) {
                 irradiance_95t_mw_cm2: row.uv_irradiance_95t_mw_cm2,
                 compatibility: row.uv_compatibility,
                 arrangement: row.uv_arrangement,
+                source_basis: row.uv_source_basis,
+                source_evidence: row.uv_source_evidence,
                 approved_per_lamp_flow_exception_m3h: row.uv_approved_per_lamp_flow_exception_m3h,
                 notes: row.uv_rev_notes,
                 product_code: row.uv_product_code,
                 product_name: row.uv_product_name,
                 manufacturer: row.uv_manufacturer,
+                product_master_id: row.uv_product_master_id,
+                material_code: row.uv_material_code,
+                rated_power_kw: row.uv_rated_power_kw,
             } : null,
         })),
         fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
@@ -539,6 +546,9 @@ function positiveCorrelationCoefficient(value) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
+function thermalWallExpectedCurrentMatches(current, expectedCurrentId) {
+    return current ? expectedCurrentId === current.id : !expectedCurrentId;
+}
 function thermalWallConstructionDefaultRow(row) {
     const thicknessMm = Number(row.thickness_mm);
     const conductivity = Number(row.conductivity_w_m_k);
@@ -566,6 +576,12 @@ function thermalWallConstructionDefaultRow(row) {
             status: row.status || 'approved',
             approved_by: row.approved_by || null,
             approved_at: row.approved_at || null,
+            approved_by_name: row.approved_by_name || null,
+            approved_by_email: row.approved_by_email || null,
+            superseded_by: row.superseded_by || null,
+            superseded_at: row.superseded_at || null,
+            superseded_by_name: row.superseded_by_name || null,
+            superseded_by_email: row.superseded_by_email || null,
         },
     };
 }
@@ -574,6 +590,18 @@ async function loadThermalWallConstructionDefaults(runner) {
      FROM thermal_wall_construction_defaults
      WHERE status='approved'
      ORDER BY construction_code, approved_at DESC, created_at DESC, id DESC`);
+    return result.rows.map(thermalWallConstructionDefaultRow);
+}
+async function loadThermalWallConstructionHistory(runner) {
+    const result = await runner(`SELECT tw.*,
+            CONCAT_WS(' ', approved_user.first_name, approved_user.last_name) AS approved_by_name,
+            approved_user.email AS approved_by_email,
+            CONCAT_WS(' ', superseded_user.first_name, superseded_user.last_name) AS superseded_by_name,
+            superseded_user.email AS superseded_by_email
+     FROM thermal_wall_construction_defaults tw
+     LEFT JOIN users approved_user ON approved_user.id=tw.approved_by
+     LEFT JOIN users superseded_user ON superseded_user.id=tw.superseded_by
+     ORDER BY tw.construction_code, tw.approved_at DESC, tw.created_at DESC, tw.id DESC`);
     return result.rows.map(thermalWallConstructionDefaultRow);
 }
 async function resolveThermalWallConstructionInputs(runner, rawInputs, editableStatus = 'Draft') {
@@ -936,9 +964,14 @@ exports.thermalCorrelationTestUtils = {
     resolveThermalCorrelationInputs,
     resolveThermalWallConstructionInputs,
     loadThermalWallConstructionDefaults,
+    loadThermalWallConstructionHistory,
+    thermalWallExpectedCurrentMatches,
 };
 router.get('/thermal-wall-constructions', async (_req, res) => {
     res.json({ items: await loadThermalWallConstructionDefaults(index_1.query) });
+});
+router.get('/thermal-wall-constructions/history', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (_req, res) => {
+    res.json({ items: await loadThermalWallConstructionHistory(index_1.query) });
 });
 router.post('/thermal-wall-constructions/:constructionCode/versions', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
     const constructionCode = routeParam(req.params.constructionCode).trim().toLowerCase();
@@ -948,6 +981,7 @@ router.post('/thermal-wall-constructions/:constructionCode/versions', (0, auth_1
     const conductivity = positiveCorrelationCoefficient(req.body.conductivity_w_m_k);
     const sourceBasis = String(req.body.source_basis || '').trim();
     const sourceReference = String(req.body.source_reference || '').trim();
+    const expectedCurrentId = String(req.body.expected_current_id || '').trim();
     if (!constructionCode || !version || !material || thickness == null || conductivity == null ||
         !sourceBasis || !sourceReference) {
         return res.status(400).json({
@@ -970,6 +1004,15 @@ router.post('/thermal-wall-constructions/:constructionCode/versions', (0, auth_1
          FOR UPDATE`, [constructionCode]);
         const current = history.rows.find(row => row.status === 'approved');
         const previous = current || history.rows[0] || null;
+        if (!thermalWallExpectedCurrentMatches(current, expectedCurrentId)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: {
+                    code: 'THERMAL_WALL_CONSTRUCTION_CHANGED',
+                    message: 'The current wall construction version changed. Refresh the history and review the replacement again.',
+                },
+            });
+        }
         const constructionLabel = String(req.body.construction_label || previous?.construction_label || '').trim();
         if (!constructionLabel) {
             await client.query('ROLLBACK');
@@ -1091,9 +1134,19 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
      WHERE s.design_book_id=$1 ORDER BY s.exhibit_id, s.sort_order`, [id]);
     const hydraulicsResult = await runner('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1', [id]);
     const substrateResult = await runner('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1', [id]);
+    const lightsResult = await runner(`SELECT l.*, pm.product_code AS current_pim_product_code,
+            pm.product_name AS current_pim_product_name,
+            pm.power_kw AS current_pim_power_kw,
+            pe.rated_power_kw AS current_pim_rated_power_kw
+     FROM design_book_exhibit_lights l
+     LEFT JOIN product_masters pm ON pm.id=l.product_master_id
+     LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
+     WHERE l.design_book_id=$1
+     ORDER BY l.exhibit_id, l.sort_order, l.created_at, l.id`, [id]);
     const species = speciesResult.rows.map(speciesValueSources);
     const hydraulics = hydraulicsResult.rows;
     const substrate = substrateResult.rows;
+    const lights = lightsResult.rows;
     const handovers = (await runner(`SELECT h.*, u.first_name || ' ' || u.last_name AS created_by_name
      FROM design_book_review_handovers h
      LEFT JOIN users u ON u.id=h.created_by
@@ -1176,6 +1229,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         species,
         hydraulics,
         substrate,
+        lights,
         review_handovers: handovers,
         biological_media_cases: biologicalMediaCases,
         biological_media_runs: biologicalMediaRuns,
@@ -1950,6 +2004,16 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
     const hydraulics = hydraulicsResult.rows;
     const substrateResult = await (0, index_1.query)(`SELECT * FROM design_book_exhibit_substrate WHERE design_book_id = $1`, [req.params.id]);
     const substrate = substrateResult.rows;
+    const lightsResult = await (0, index_1.query)(`SELECT l.*, pm.product_code AS current_pim_product_code,
+            pm.product_name AS current_pim_product_name,
+            pm.power_kw AS current_pim_power_kw,
+            pe.rated_power_kw AS current_pim_rated_power_kw
+     FROM design_book_exhibit_lights l
+     LEFT JOIN product_masters pm ON pm.id=l.product_master_id
+     LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
+     WHERE l.design_book_id=$1
+     ORDER BY l.exhibit_id, l.sort_order, l.created_at, l.id`, [req.params.id]);
+    const lights = lightsResult.rows;
     // All design-book hydraulic and LSS values are calculated here from the
     // current project inputs.  Consumers receive the inputs and policy along
     // with the values, so they do not need to reproduce engineering formulas.
@@ -2003,6 +2067,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         species,
         hydraulics,
         substrate,
+        lights,
         thermal_calculations: thermalCalculations,
         thermal_construction_defaults: thermalConstructionDefaults,
         pump_selections: pumpSelections,
@@ -2102,6 +2167,255 @@ router.delete('/design-books/:id', auth_1.authenticate, (0, auth_1.requireRole)(
      RETURNING id`, [req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    res.json({ deleted: true });
+});
+const LIGHTING_TYPES = new Set(['LED', 'T8', 'T5', 'Metal Halide', 'Other']);
+const LIGHTING_UNITS = new Set(['W', 'kW']);
+function lightResponse(row) {
+    const quantity = Number(row.quantity);
+    const powerKw = Number(row.power_kw);
+    const powerValue = Number(row.power_value);
+    return {
+        ...row,
+        quantity,
+        power_kw: powerKw,
+        power_value: powerValue,
+        total_power_kw: quantity * powerKw,
+        total_power_value: quantity * powerValue,
+        pim_power_kw: row.pim_power_kw == null ? null : Number(row.pim_power_kw),
+        source: row.product_master_id ? 'pim' : 'manual',
+    };
+}
+async function ensureLightingExhibit(bookId, exhibitId, res) {
+    const result = await (0, index_1.query)(`SELECT e.id
+     FROM exhibits e
+     JOIN design_books db ON db.project_id=e.project_id
+     WHERE db.id=$1 AND e.id=$2`, [bookId, exhibitId]);
+    if (!result.rows[0]) {
+        res.status(404).json({
+            error: { code: 'INVALID_EXHIBIT', message: 'The selected exhibit does not belong to this Design Book project.' },
+        });
+        return false;
+    }
+    return true;
+}
+function lightingProductWhere(qParam) {
+    const filters = [
+        `(UPPER(COALESCE(pm.product_category,'')) IN ('LIGHTING','LIGHT','LUMINAIRE','LAMP')
+      OR UPPER(COALESCE(pm.application_type,'')) LIKE '%LIGHT%'
+      OR UPPER(COALESCE(pm.application_type,'')) LIKE '%LAMP%'
+      OR UPPER(pm.product_name) LIKE '%LIGHT%'
+      OR UPPER(pm.product_name) LIKE '%LAMP%'
+      OR UPPER(pm.product_name) LIKE '%LED%'
+      OR UPPER(pm.product_name) LIKE '%T8%'
+      OR UPPER(pm.product_name) LIKE '%T5%'
+      OR UPPER(pm.product_name) LIKE '%METAL HALIDE%')`,
+        `(pm.status IS NULL OR UPPER(BTRIM(pm.status))='ACTIVE')`,
+        `(pm.standard_status IS NULL OR UPPER(BTRIM(pm.standard_status)) <> 'OBSOLETE')`,
+        `COALESCE(pe.rated_power_kw, pm.power_kw) IS NOT NULL`,
+        `COALESCE(pe.rated_power_kw, pm.power_kw) > 0`,
+    ];
+    const params = [];
+    const q = String(qParam || '').trim();
+    if (q) {
+        params.push(`%${q}%`);
+        const p = params.length;
+        filters.push(`(pm.product_code ILIKE $${p} OR pm.product_name ILIKE $${p} OR COALESCE(pm.model,'') ILIKE $${p})`);
+    }
+    return { where: filters.join(' AND '), params };
+}
+router.get('/design-books/:id/lighting-products', auth_1.authenticate, async (req, res) => {
+    const book = await (0, index_1.query)('SELECT id FROM design_books WHERE id=$1', [req.params.id]);
+    if (!book.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    const { where, params } = lightingProductWhere(req.query.q);
+    const result = await (0, index_1.query)(`SELECT pm.id, pm.product_code, pm.product_name, pm.model, pm.product_category,
+            COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
+            pe.rated_power_kw, pe.voltage_v, pe.notes AS electrical_notes
+     FROM product_masters pm
+     LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
+     WHERE ${where}
+     ORDER BY pm.product_code, pm.product_name
+     LIMIT 50`, params);
+    res.json({
+        items: result.rows.map(row => ({
+            ...row,
+            model: row.model || row.product_code,
+            description: row.product_name,
+            power_kw: Number(row.power_kw),
+        })),
+    });
+});
+router.get('/design-books/:id/exhibits/:exhibitId/lights', auth_1.authenticate, async (req, res) => {
+    const book = await (0, index_1.query)('SELECT id, status, review_snapshot, release_snapshot FROM design_books WHERE id=$1', [req.params.id]);
+    if (!book.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    if (!await ensureLightingExhibit(routeParam(req.params.id), routeParam(req.params.exhibitId), res))
+        return;
+    const frozen = book.rows[0].status === 'Released'
+        ? book.rows[0].release_snapshot
+        : ['For Review', 'Approved'].includes(book.rows[0].status) ? book.rows[0].review_snapshot : null;
+    if (frozen && Array.isArray(frozen.lights)) {
+        return res.json({ items: frozen.lights.filter((row) => row.exhibit_id === req.params.exhibitId).map(lightResponse), frozen: true });
+    }
+    const result = await (0, index_1.query)(`SELECT l.*, pm.product_code AS current_pim_product_code,
+            pm.product_name AS current_pim_product_name,
+            pm.power_kw AS current_pim_power_kw,
+            pe.rated_power_kw AS current_pim_rated_power_kw
+     FROM design_book_exhibit_lights l
+     LEFT JOIN product_masters pm ON pm.id=l.product_master_id
+     LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
+     WHERE l.design_book_id=$1 AND l.exhibit_id=$2
+     ORDER BY l.sort_order, l.created_at, l.id`, [req.params.id, req.params.exhibitId]);
+    res.json({ items: result.rows.map(lightResponse), frozen: false });
+});
+async function loadEligibleLightingProduct(productMasterId) {
+    const { where, params } = lightingProductWhere('');
+    params.push(productMasterId);
+    const result = await (0, index_1.query)(`SELECT pm.id, pm.product_code, pm.product_name, pm.model, pm.product_category,
+            COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw
+     FROM product_masters pm
+     LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
+     WHERE ${where} AND pm.id=$${params.length}`, params);
+    return result.rows[0] || null;
+}
+function parseLightInput(body) {
+    const model = String(body.model || '').trim();
+    const description = String(body.description || '').trim();
+    const lightingType = String(body.lighting_type || body.lightingType || '').trim();
+    const quantity = Number(body.quantity);
+    const powerUnit = String(body.power_unit || body.powerUnit || 'kW');
+    const powerValue = Number(body.power_value ?? body.unit_power ?? body.power);
+    if (!model || !description || !lightingType)
+        throw new Error('Model, description, lighting type, quantity, and power are required.');
+    if (!LIGHTING_TYPES.has(lightingType) && lightingType.length > 100)
+        throw new Error('Lighting type is too long.');
+    if (!Number.isInteger(quantity) || quantity <= 0)
+        throw new Error('Quantity must be a positive whole number.');
+    if (!LIGHTING_UNITS.has(powerUnit))
+        throw new Error('Power unit must be W or kW.');
+    if (!Number.isFinite(powerValue) || powerValue <= 0)
+        throw new Error('Power must be greater than zero.');
+    const powerKw = powerUnit === 'W' ? powerValue / 1000 : powerValue;
+    return { model, description, lightingType, quantity, powerUnit, powerValue, powerKw };
+}
+router.post('/design-books/:id/exhibits/:exhibitId/lights', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
+    if (!await ensureBookEditable(routeParam(req.params.id), res))
+        return;
+    if (!await ensureLightingExhibit(routeParam(req.params.id), routeParam(req.params.exhibitId), res))
+        return;
+    try {
+        const productMasterId = String(req.body.product_master_id || '').trim() || null;
+        let pim = null;
+        if (productMasterId) {
+            pim = await loadEligibleLightingProduct(productMasterId);
+            if (!pim)
+                return res.status(400).json({ error: { code: 'INVALID_LIGHTING_PRODUCT', message: 'Selected Product Master is not an eligible active lighting product with an electrical power rating.' } });
+        }
+        let input = parseLightInput({
+            ...req.body,
+            model: pim ? (pim.model || pim.product_code) : req.body.model,
+            description: pim ? pim.product_name : req.body.description,
+            power_unit: pim ? 'kW' : req.body.power_unit,
+            power_value: pim ? Number(pim.power_kw) : req.body.power_value,
+        });
+        const result = await (0, index_1.query)(`INSERT INTO design_book_exhibit_lights
+         (design_book_id, exhibit_id, product_master_id, model, description, lighting_type,
+          quantity, power_value, power_unit, power_kw, pim_model, pim_description,
+          pim_product_code, pim_power_kw, pim_captured_at, sort_order, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),$15,$16,$16)
+       RETURNING *`, [req.params.id, req.params.exhibitId, productMasterId, input.model, input.description,
+            input.lightingType, input.quantity, input.powerValue, input.powerUnit, input.powerKw,
+            pim ? (pim.model || pim.product_code) : null, pim?.product_name || null, pim?.product_code || null,
+            pim ? Number(pim.power_kw) : null, Number(req.body.sort_order) || 0, req.user.id]);
+        await (0, audit_1.logAudit)(req.user.id, 'design_book', routeParam(req.params.id), 'LIGHT_ADDED', {
+            summary: `${input.model} lighting row added`, exhibit_id: req.params.exhibitId, product_master_id: productMasterId,
+        }, req.ip);
+        res.status(201).json(lightResponse(result.rows[0]));
+    }
+    catch (error) {
+        res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
+});
+router.put('/design-books/:id/exhibits/:exhibitId/lights/:lightId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
+    if (!await ensureBookEditable(routeParam(req.params.id), res))
+        return;
+    if (!await ensureLightingExhibit(routeParam(req.params.id), routeParam(req.params.exhibitId), res))
+        return;
+    try {
+        const existingResult = await (0, index_1.query)('SELECT * FROM design_book_exhibit_lights WHERE id=$1 AND design_book_id=$2 AND exhibit_id=$3', [req.params.lightId, req.params.id, req.params.exhibitId]);
+        const existing = existingResult.rows[0];
+        if (!existing)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit light not found' } });
+        const productMasterIdWasProvided = req.body.product_master_id !== undefined;
+        const productMasterId = !productMasterIdWasProvided
+            ? existing.product_master_id
+            : String(req.body.product_master_id || '').trim() || null;
+        let pim = null;
+        const productSelectionChanged = productMasterIdWasProvided
+            && productMasterId !== existing.product_master_id;
+        if (productMasterId && productSelectionChanged) {
+            pim = await loadEligibleLightingProduct(productMasterId);
+            if (!pim)
+                return res.status(400).json({ error: { code: 'INVALID_LIGHTING_PRODUCT', message: 'Selected Product Master is not an eligible active lighting product with an electrical power rating.' } });
+        }
+        const rawRequestedUnit = String(req.body.power_unit ?? existing.power_unit);
+        if (!LIGHTING_UNITS.has(rawRequestedUnit))
+            throw new Error('Power unit must be W or kW.');
+        const requestedUnit = rawRequestedUnit;
+        const retainedPimPowerKw = productMasterId && !productSelectionChanged
+            ? Number(existing.power_kw)
+            : null;
+        const input = parseLightInput({
+            ...existing,
+            ...req.body,
+            model: pim ? (pim.model || pim.product_code) : productMasterId ? existing.model : (req.body.model ?? existing.model),
+            description: pim ? pim.product_name : productMasterId ? existing.description : (req.body.description ?? existing.description),
+            power_value: pim
+                ? Number(pim.power_kw)
+                : retainedPimPowerKw != null
+                    ? (requestedUnit === 'W' ? retainedPimPowerKw * 1000 : retainedPimPowerKw)
+                    : (req.body.power_value ?? req.body.unit_power ?? existing.power_value),
+            lighting_type: req.body.lighting_type ?? existing.lighting_type,
+            power_unit: pim ? 'kW' : requestedUnit,
+        });
+        const snapshot = productMasterId
+            ? {
+                model: pim ? (pim.model || pim.product_code) : existing.pim_model,
+                description: pim ? pim.product_name : existing.pim_description,
+                code: pim ? pim.product_code : existing.pim_product_code,
+                powerKw: pim ? Number(pim.power_kw) : existing.pim_power_kw,
+            }
+            : { model: null, description: null, code: null, powerKw: null };
+        const result = await (0, index_1.query)(`UPDATE design_book_exhibit_lights
+       SET product_master_id=$1, model=$2, description=$3, lighting_type=$4, quantity=$5,
+           power_value=$6, power_unit=$7, power_kw=$8, pim_model=$9, pim_description=$10,
+           pim_product_code=$11, pim_power_kw=$12,
+           pim_captured_at=CASE WHEN $1 IS NULL THEN NULL WHEN $1 IS DISTINCT FROM product_master_id THEN NOW() ELSE pim_captured_at END,
+           sort_order=$13, updated_by=$14, updated_at=NOW()
+       WHERE id=$15 AND design_book_id=$16 AND exhibit_id=$17
+       RETURNING *`, [productMasterId, input.model, input.description, input.lightingType, input.quantity,
+            input.powerValue, input.powerUnit, input.powerKw, snapshot.model,
+            snapshot.description, snapshot.code, snapshot.powerKw,
+            req.body.sort_order === undefined ? existing.sort_order : Number(req.body.sort_order) || 0,
+            req.user.id, req.params.lightId, req.params.id, req.params.exhibitId]);
+        res.json(lightResponse(result.rows[0]));
+    }
+    catch (error) {
+        res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
+});
+router.delete('/design-books/:id/exhibits/:exhibitId/lights/:lightId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('design_books'), async (req, res) => {
+    if (!await ensureBookEditable(routeParam(req.params.id), res))
+        return;
+    if (!await ensureLightingExhibit(routeParam(req.params.id), routeParam(req.params.exhibitId), res))
+        return;
+    const result = await (0, index_1.query)('DELETE FROM design_book_exhibit_lights WHERE id=$1 AND design_book_id=$2 AND exhibit_id=$3 RETURNING id', [req.params.lightId, req.params.id, req.params.exhibitId]);
+    if (!result.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit light not found' } });
+    await (0, audit_1.logAudit)(req.user.id, 'design_book', routeParam(req.params.id), 'LIGHT_REMOVED', {
+        summary: 'Exhibit lighting row removed', exhibit_id: req.params.exhibitId, light_id: req.params.lightId,
+    }, req.ip);
     res.json({ deleted: true });
 });
 // Species CRUD
@@ -2721,6 +3035,16 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
                 row.theming_type, row.theming_height_mm, row.theming_volume_m3, row.theming_volume_pct, row.notes,
             ]);
         }
+        for (const row of snapshot.lights || []) {
+            await client.query(`INSERT INTO design_book_exhibit_lights
+             (design_book_id, exhibit_id, product_master_id, model, description, lighting_type,
+              quantity, power_value, power_unit, power_kw, pim_model, pim_description,
+              pim_product_code, pim_power_kw, pim_captured_at, sort_order, created_by, updated_by)
+           VALUES ($1,$2,(SELECT id FROM product_masters WHERE id=$3),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)`, [next.id, row.exhibit_id, row.product_master_id ?? null, row.model, row.description,
+                row.lighting_type, row.quantity, row.power_value, row.power_unit || 'kW', row.power_kw,
+                row.pim_model ?? null, row.pim_description ?? null, row.pim_product_code ?? null,
+                row.pim_power_kw ?? null, row.pim_captured_at ?? null, row.sort_order ?? 0, req.user.id]);
+        }
         for (const row of snapshot.thermal_calculations || []) {
             await insertThermalSnapshotRecord(client.query.bind(client), next.id, row);
         }
@@ -2751,7 +3075,7 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
     }
 });
 // ─── Versions ────────────────────────────────────────────────────────────────
-const VERSION_SNAPSHOT_SCHEMA = 6;
+const VERSION_SNAPSHOT_SCHEMA = 8;
 const VERSION_REFERENCE_FIELDS = {
     project: ['id', 'project_code', 'project_name'],
     exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -2839,6 +3163,8 @@ function frozenFromSnapshot(snapshot) {
         substrate: snapshot?.substrate || [],
         thermal_calculations: snapshot?.thermal_calculations || [],
         friction_loss_calculations: snapshot?.friction_loss_calculations || [],
+        ...(Array.isArray(snapshot?.lights) ? { lights: snapshot.lights } : {}),
+        ...(Array.isArray(snapshot?.uv_selections) ? { uv_selections: snapshot.uv_selections } : {}),
         ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
     };
 }
@@ -2907,13 +3233,15 @@ function makeVersionSnapshot(context, capturedAt = new Date().toISOString()) {
             species: jsonCopy(context.species || []),
             hydraulics: jsonCopy(context.hydraulics || []),
             substrate: jsonCopy(context.substrate || []),
+            lights: jsonCopy(context.lights || []),
+            uv_selections: jsonCopy(context.uv_selections || []),
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
             friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
         },
         live_references: liveReferencesFromContext(context),
         scope: {
-            frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'thermal calculations', 'friction loss calculations', 'review handovers'],
+            frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'thermal calculations', 'friction loss calculations', 'review handovers'],
             live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
             restore_target: 'working_copy',
         },
@@ -2927,6 +3255,8 @@ function currentRestoreStateDigest(context) {
             species: jsonCopy(context.species || []),
             hydraulics: jsonCopy(context.hydraulics || []),
             substrate: jsonCopy(context.substrate || []),
+            lights: jsonCopy(context.lights || []),
+            uv_selections: jsonCopy(context.uv_selections || []),
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
             friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
@@ -2946,6 +3276,8 @@ function versionPresentation(version, currentContext) {
             species: (frozen.species || []).length,
             hydraulics: (frozen.hydraulics || []).length,
             substrate_theming: (frozen.substrate || []).length,
+            lights: (frozen.lights || []).length,
+            uv_selections: (frozen.uv_selections || []).length,
             thermal_calculations: (frozen.thermal_calculations || []).length,
             friction_loss_calculations: (frozen.friction_loss_calculations || []).reduce((sum, group) => sum + (group.items || []).length, 0),
             review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
@@ -2958,9 +3290,15 @@ function versionPresentation(version, currentContext) {
         },
         restorable_records: [
             'book metadata', 'species', 'hydraulics', 'substrate and theming', 'thermal calculations', 'friction loss calculations',
+            ...(Array.isArray(frozen.lights) ? ['lighting schedule'] : []),
+            ...(Array.isArray(frozen.uv_selections) ? ['UV selections'] : []),
             ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
         ],
-        preserved_records: Array.isArray(frozen.review_handovers) ? [] : ['review handovers (not captured by this older version)'],
+        preserved_records: [
+            ...(!Array.isArray(frozen.lights) ? ['lighting schedule (not captured by this older version)'] : []),
+            ...(!Array.isArray(frozen.uv_selections) ? ['UV selections (not captured by this older version)'] : []),
+            ...(!Array.isArray(frozen.review_handovers) ? ['review handovers (not captured by this older version)'] : []),
+        ],
         live_reference_records: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
     };
     return {
@@ -2977,6 +3315,8 @@ function versionPresentation(version, currentContext) {
                 species: (currentContext.species || []).length,
                 hydraulics: (currentContext.hydraulics || []).length,
                 substrate_theming: (currentContext.substrate || []).length,
+                lights: (currentContext.lights || []).length,
+                uv_selections: (currentContext.uv_selections || []).length,
                 thermal_calculations: (currentContext.thermal_calculations || []).length,
                 review_handovers: (currentContext.review_handovers || []).length,
             },
@@ -2987,6 +3327,14 @@ function versionPresentation(version, currentContext) {
                 species: (frozen.species || []).length,
                 hydraulics: (frozen.hydraulics || []).length,
                 substrate_theming: (frozen.substrate || []).length,
+                lights: Array.isArray(frozen.lights)
+                    ? frozen.lights.length
+                    : (currentContext.lights || []).length,
+                lights_preserved: !Array.isArray(frozen.lights),
+                uv_selections: Array.isArray(frozen.uv_selections)
+                    ? frozen.uv_selections.length
+                    : (currentContext.uv_selections || []).length,
+                uv_selections_preserved: !Array.isArray(frozen.uv_selections),
                 thermal_calculations: (frozen.thermal_calculations || []).length,
                 review_handovers: Array.isArray(frozen.review_handovers)
                     ? frozen.review_handovers.length
@@ -3189,6 +3537,39 @@ router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate
                 s.substrate_volume_m3 ?? null, s.theming_type ?? null, s.theming_height_mm ?? null,
                 s.theming_volume_m3 ?? null, s.theming_volume_pct ?? null, s.notes ?? null]);
         }
+        if (Array.isArray(frozen.lights)) {
+            await client.query('DELETE FROM design_book_exhibit_lights WHERE design_book_id=$1', [req.params.id]);
+            for (const light of frozen.lights) {
+                await client.query(`INSERT INTO design_book_exhibit_lights
+             (design_book_id, exhibit_id, product_master_id, model, description, lighting_type,
+              quantity, power_value, power_unit, power_kw, pim_model, pim_description,
+              pim_product_code, pim_power_kw, pim_captured_at, sort_order, created_by, updated_by,
+              created_at, updated_at)
+           VALUES ($1,$2,(SELECT id FROM product_masters WHERE id=$3),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+                   COALESCE($19,NOW()),COALESCE($20,NOW()))`, [req.params.id, light.exhibit_id, light.product_master_id ?? null, light.model,
+                    light.description, light.lighting_type, light.quantity, light.power_value,
+                    light.power_unit || 'kW', light.power_kw, light.pim_model ?? null,
+                    light.pim_description ?? null, light.pim_product_code ?? null, light.pim_power_kw ?? null,
+                    light.pim_captured_at ?? null, light.sort_order ?? 0, light.created_by ?? req.user.id,
+                    req.user.id, light.created_at ?? null, light.updated_at ?? null]);
+            }
+        }
+        if (Array.isArray(frozen.uv_selections)) {
+            await client.query('DELETE FROM design_book_uv_selections WHERE design_book_id=$1', [req.params.id]);
+            for (const selection of frozen.uv_selections) {
+                await client.query(`INSERT INTO design_book_uv_selections
+             (design_book_id, system_id, target_fluence_mj_cm2, input_snapshot, result_snapshot,
+              calculation_version, freshness, calculated_by, calculated_at, created_at, updated_at)
+           SELECT $1, s.id, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9,
+                  COALESCE($10,NOW()), COALESCE($11,NOW())
+             FROM systems s
+            WHERE s.id=$2 AND s.project_id=(SELECT project_id FROM design_books WHERE id=$1)`, [req.params.id, selection.system_id, selection.target_fluence_mj_cm2,
+                    JSON.stringify(selection.input_snapshot || {}), JSON.stringify(selection.result_snapshot || {}),
+                    selection.calculation_version ?? null, selection.freshness || 'stale',
+                    selection.calculated_by ?? null, selection.calculated_at ?? null,
+                    selection.created_at ?? null, selection.updated_at ?? null]);
+            }
+        }
         await client.query('DELETE FROM design_book_thermal_calculations WHERE design_book_id=$1', [req.params.id]);
         for (const thermal of frozen.thermal_calculations || []) {
             await insertThermalSnapshotRecord(client.query.bind(client), routeParam(req.params.id), thermal);
@@ -3250,11 +3631,12 @@ router.get('/design-books/:id/uv/:systemId', async (req, res) => {
     // Load UV side streams for this system (with revision details joined)
     const streamsResult = await (0, index_1.query)(`SELECT s.*,
               r.id AS rev_id, r.revision_number, r.status AS rev_status,
-              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              pm.lamp_count, pm.power_kw * 1000 AS lamp_power_w, r.effective_reactor_volume_l,
               r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
-              r.compatibility, r.arrangement, r.source_evidence,
+              r.compatibility, r.arrangement, r.source_evidence, r.source_basis,
               r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
-              pm.product_code, pm.product_name, pm.manufacturer
+              pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
+              pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw
          FROM system_flow_side_streams s
          LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
          LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
@@ -3263,11 +3645,13 @@ router.get('/design-books/:id/uv/:systemId', async (req, res) => {
         ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`, [systemId]);
     // Load approved selectable revisions for the product picker
     const selectableResult = await (0, index_1.query)(`SELECT c.id AS catalog_id, r.id AS revision_id, r.revision_number,
-              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              pm.lamp_count, pm.power_kw * 1000 AS lamp_power_w, r.effective_reactor_volume_l,
               r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
-              r.compatibility, r.arrangement, r.source_evidence,
+              r.source_evidence, r.source_basis,
               r.approved_per_lamp_flow_exception_m3h, r.notes,
-              pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status
+              pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
+              pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw,
+              pm.status AS pim_status
          FROM uv_engineering_catalogs c
          JOIN product_masters pm ON pm.id=c.product_master_id
          JOIN product_families pf ON pf.id=pm.product_family_id
@@ -3277,11 +3661,14 @@ router.get('/design-books/:id/uv/:systemId', async (req, res) => {
            ORDER BY revision_number DESC LIMIT 1
          ) r ON true
         WHERE c.needs_review=false AND pm.status='Active' AND pf.product_family_code='PFM-UV'
-          AND r.lamp_count > 0 AND r.lamp_power_w > 0 AND r.effective_reactor_volume_l > 0
+          AND NULLIF(BTRIM(pm.product_code),'') IS NOT NULL
+          AND NULLIF(BTRIM(pm.product_name),'') IS NOT NULL
+          AND NULLIF(BTRIM(pm.primary_material_code),'') IS NOT NULL
+          AND pm.power_kw > 0 AND pm.lamp_count > 0 AND r.effective_reactor_volume_l > 0
           AND r.irradiance_85t_mw_cm2 > 0 AND r.irradiance_95t_mw_cm2 > 0
-          AND NULLIF(BTRIM(r.compatibility),'') IS NOT NULL
-          AND NULLIF(BTRIM(r.arrangement),'') IS NOT NULL
-          AND NULLIF(BTRIM(r.source_evidence),'') IS NOT NULL
+          AND r.source_basis='AAT Foundations' AND r.source_basis_verified=true
+          AND EXISTS (SELECT 1 FROM material_water_compatibility mwc
+                      WHERE mwc.material_code=pm.primary_material_code AND mwc.allowed=true)
         ORDER BY pm.product_code`);
     // Load saved selection
     const savedResult = await (0, index_1.query)('SELECT * FROM design_book_uv_selections WHERE design_book_id=$1 AND system_id=$2', [bookId, systemId]);
@@ -3296,6 +3683,7 @@ router.get('/design-books/:id/uv/:systemId', async (req, res) => {
             sort_order: Number(row.sort_order),
             uv_revision_id: row.uv_revision_id,
             uv_unit_quantity: row.uv_unit_quantity != null ? Number(row.uv_unit_quantity) : null,
+            uvt_basis: row.uvt_basis || '85T',
             uv_revision: row.rev_id ? {
                 id: row.rev_id,
                 revision_number: Number(row.revision_number),
@@ -3308,12 +3696,16 @@ router.get('/design-books/:id/uv/:systemId', async (req, res) => {
                 compatibility: row.compatibility,
                 arrangement: row.arrangement,
                 source_evidence: row.source_evidence,
+                source_basis: row.source_basis,
                 approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
                     ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
                 notes: row.rev_notes,
                 product_code: row.product_code,
                 product_name: row.product_name,
                 manufacturer: row.manufacturer,
+                product_master_id: row.product_master_id,
+                material_code: row.material_code,
+                rated_power_kw: row.rated_power_kw != null ? Number(row.rated_power_kw) : null,
             } : null,
         })),
         selectable_revisions: selectableResult.rows.map(row => ({
@@ -3328,12 +3720,16 @@ router.get('/design-books/:id/uv/:systemId', async (req, res) => {
             compatibility: row.compatibility,
             arrangement: row.arrangement,
             source_evidence: row.source_evidence,
+            source_basis: row.source_basis,
             approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
                 ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
             notes: row.notes,
             product_code: row.product_code,
             product_name: row.product_name,
             manufacturer: row.manufacturer,
+            product_master_id: row.product_master_id,
+            material_code: row.material_code,
+            rated_power_kw: row.rated_power_kw != null ? Number(row.rated_power_kw) : null,
             pim_status: row.pim_status,
         })),
         saved: savedResult.rows[0] ? {
@@ -3400,17 +3796,26 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
     // Load UV side streams with revision details
     const streamsResult = await (0, index_1.query)(`SELECT s.*,
               r.id AS rev_id, r.revision_number, r.status AS rev_status,
-              r.lamp_count, r.lamp_power_w, r.effective_reactor_volume_l,
+              pm.lamp_count, pm.power_kw * 1000 AS lamp_power_w, r.effective_reactor_volume_l,
               r.irradiance_85t_mw_cm2, r.irradiance_95t_mw_cm2,
-              r.compatibility, r.arrangement, r.source_evidence,
+              r.compatibility, r.arrangement, r.source_evidence, r.source_basis,
               r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
-              pm.product_code, pm.product_name, pm.manufacturer
+              pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
+              pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw,
+              mwc.allowed AS compatibility_allowed, mwc.water_type AS mapped_water_type
          FROM system_flow_side_streams s
          LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
          LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
          LEFT JOIN product_masters pm ON pm.id=c.product_master_id
+         LEFT JOIN material_water_compatibility mwc
+           ON mwc.material_code=pm.primary_material_code
+          AND mwc.water_type=CASE
+            WHEN $2 IN ('Marine', 'Salt Water', 'Brackish') THEN CASE WHEN $2='Marine' THEN 'Marine' ELSE 'Salt Water' END
+            WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+            ELSE $2
+          END
         WHERE s.system_id=$1 AND s.preset='UV'
-        ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`, [systemId]);
+        ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`, [systemId, system.water_type]);
     // Build UVStreamInput objects
     const streamInputs = streamsResult.rows.map(row => {
         const loopPct = row.parent_loop_number != null
@@ -3428,6 +3833,7 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
             side_stream_name: row.name,
             flow_m3h: streamFlowM3h,
             uv_unit_quantity: row.uv_unit_quantity != null ? Number(row.uv_unit_quantity) : null,
+            uvt_basis: row.uvt_basis === '95T' ? '95T' : '85T',
             uvt_85t_pct: null,
             uvt_95t_pct: null,
             uv_revision: row.rev_id ? {
@@ -3443,12 +3849,22 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
                 compatibility: row.compatibility,
                 arrangement: row.arrangement,
                 source_evidence: row.source_evidence,
+                source_basis: row.source_basis,
                 approved_per_lamp_flow_exception_m3h: row.approved_per_lamp_flow_exception_m3h != null
                     ? Number(row.approved_per_lamp_flow_exception_m3h) : null,
                 notes: row.rev_notes,
                 product_code: row.product_code,
                 product_name: row.product_name,
                 manufacturer: row.manufacturer,
+                product_master_id: row.product_master_id,
+                material_code: row.material_code,
+                rated_power_kw: row.rated_power_kw != null ? Number(row.rated_power_kw) : null,
+                compatibility_allowed: row.compatibility_allowed,
+                compatibility_reason: row.mapped_water_type == null
+                    ? `No governed material compatibility mapping exists for ${row.material_code || 'the selected material'} and ${system.water_type || 'the system water type'}.`
+                    : row.compatibility_allowed === false
+                        ? `${row.material_code} is not approved for ${system.water_type}.`
+                        : null,
             } : null,
         };
     });
@@ -3471,7 +3887,14 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
           JOIN product_families pf ON pf.id=pm.product_family_id
          WHERE r.id = ANY($1::uuid[]) AND r.status='Approved'
            AND c.needs_review=false AND pm.status='Active'
-           AND pf.product_family_code='PFM-UV'`, [assignedRevisionIds]);
+           AND pf.product_family_code='PFM-UV'
+           AND NULLIF(BTRIM(pm.product_code),'') IS NOT NULL
+           AND NULLIF(BTRIM(pm.product_name),'') IS NOT NULL
+           AND NULLIF(BTRIM(pm.primary_material_code),'') IS NOT NULL
+           AND pm.power_kw > 0 AND pm.lamp_count > 0
+           AND r.effective_reactor_volume_l > 0
+           AND r.irradiance_85t_mw_cm2 > 0 AND r.irradiance_95t_mw_cm2 > 0
+           AND r.source_basis='AAT Foundations' AND r.source_basis_verified=true`, [assignedRevisionIds]);
         const eligibleIds = new Set(eligibleCheck.rows.map(r => r.id));
         const ineligible = assignedRevisionIds.filter(id => !eligibleIds.has(id));
         if (ineligible.length > 0) {
@@ -3494,6 +3917,21 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
             flow_m3h: s.flow_m3h,
             uv_revision_id: s.uv_revision?.id || null,
             uv_unit_quantity: s.uv_unit_quantity,
+            uvt_basis: s.uvt_basis || '85T',
+            product_master_id: s.uv_revision?.product_master_id || null,
+            product_code: s.uv_revision?.product_code || null,
+            product_name: s.uv_revision?.product_name || null,
+            manufacturer: s.uv_revision?.manufacturer || null,
+            material_code: s.uv_revision?.material_code || null,
+            rated_power_kw: s.uv_revision?.rated_power_kw ?? null,
+            lamp_count: s.uv_revision?.lamp_count ?? null,
+            engineering_revision_number: s.uv_revision?.revision_number ?? null,
+            effective_reactor_volume_l: s.uv_revision?.effective_reactor_volume_l ?? null,
+            irradiance_85t_mw_cm2: s.uv_revision?.irradiance_85t_mw_cm2 ?? null,
+            irradiance_95t_mw_cm2: s.uv_revision?.irradiance_95t_mw_cm2 ?? null,
+            source_basis: s.uv_revision?.source_basis || null,
+            source_evidence: s.uv_revision?.source_evidence || null,
+            compatibility_allowed: s.uv_revision?.compatibility_allowed ?? null,
         })),
     };
     await (0, index_1.query)(`INSERT INTO design_book_uv_selections

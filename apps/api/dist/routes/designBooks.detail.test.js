@@ -115,6 +115,7 @@ vitest_1.vi.mock('../db', () => {
             sql.includes('FROM design_book_exhibit_species') ||
             sql.includes('FROM design_book_exhibit_hydraulics') ||
             sql.includes('FROM design_book_exhibit_substrate') ||
+            sql.includes('FROM design_book_exhibit_lights') ||
             sql.includes('FROM system_exhibit_links') ||
             sql.includes('FROM design_book_thermal_calculations') ||
             sql.includes('FROM design_book_friction_loss_calculations') ||

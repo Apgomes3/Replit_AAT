@@ -60,6 +60,7 @@ async function seed() {
         ('MAT-GRP',     'GRP (Polyester Laminate)',   'Composite', 1700, 'Good - seawater',                        70),
         ('MAT-SS316',   'Stainless Steel 316L',       'Metal',     7990, 'Good - seawater, chlorides',            400),
         ('MAT-SS304',   'Stainless Steel 304',        'Metal',     7900, 'Moderate - freshwater, mild chemicals', 400),
+        ('MAT-TI',      'Titanium',                    'Metal',     4506, 'Excellent - freshwater and seawater',   600),
         ('MAT-CS',      'Carbon Steel',               'Metal',     7850, 'Low - requires coating/lining',         400),
         ('MAT-ALU',     'Aluminium',                  'Metal',     2700, 'Good - freshwater, atmosphere',         150),
         ('MAT-HDPE',    'High Density Polyethylene',  'Plastic',    960, 'Excellent - most chemicals',             60),
@@ -71,6 +72,25 @@ async function seed() {
         ('MAT-GLASS',   'Float / Toughened Glass',    'Glass',     2500, 'Excellent - seawater, chemicals',       200),
         ('MAT-CONC',    'Reinforced Concrete',        'Concrete',  2400, 'Good - seawater (with coating)',        NULL)
       ON CONFLICT (material_code) DO NOTHING
+    `);
+        // Governed UV material/water relationships. Do not infer UV suitability from
+        // free-text revision notes: an absent relationship is intentionally a blocker.
+        await client.query(`
+      INSERT INTO material_water_compatibility (material_code, water_type, allowed, source) VALUES
+        ('MAT-TI', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-TI', 'Salt Water', true, 'AAT Foundations'),
+        ('MAT-TI', 'Marine', true, 'AAT Foundations'),
+        ('MAT-PVC', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-PVC', 'Salt Water', true, 'AAT Foundations'),
+        ('MAT-PVC', 'Marine', true, 'AAT Foundations'),
+        ('MAT-SS304', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-SS304', 'Salt Water', false, 'AAT Foundations'),
+        ('MAT-SS304', 'Marine', false, 'AAT Foundations'),
+        ('MAT-SS316', 'Freshwater', true, 'AAT Foundations'),
+        ('MAT-SS316', 'Salt Water', false, 'AAT Foundations'),
+        ('MAT-SS316', 'Marine', false, 'AAT Foundations')
+      ON CONFLICT (material_code, water_type) DO UPDATE
+        SET allowed=EXCLUDED.allowed, source=EXCLUDED.source, updated_at=NOW()
     `);
         // Specifications
         await client.query(`
@@ -112,6 +132,7 @@ async function seed() {
       ON CONFLICT (product_family_code) DO NOTHING
     `);
         const ffFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-FF'`);
+        const sandFilterFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-SF'`);
         const pumpFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-PUMP'`);
         const drumFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-DRUM'`);
         const uvFamilyRes = await client.query(`SELECT id FROM product_families WHERE product_family_code = 'PFM-UV'`);
@@ -135,6 +156,34 @@ async function seed() {
         ('PM-FIT-FLG80',    $5, 'Flange PN10 DN80 FRP',        'Piping',     'Seawater',                NULL, NULL, 'MAT-FRP-VE', 'Active', ROUND((RANDOM()*4500+500)::numeric,2), ROUND((RANDOM()*7000+800)::numeric,2))
       ON CONFLICT (product_code) DO NOTHING
     `, [ffFamilyRes.rows[0].id, pumpFamilyRes.rows[0].id, drumFamilyRes.rows[0].id, uvFamilyRes.rows[0].id, pipeFamilyRes.rows[0].id]);
+        // Approved AAT Sand Filter Product Masters already maintained in PIM.
+        // Preserve existing operator-managed rows and only fill the two reviewed
+        // diameter values currently available; unknown diameters stay explicit.
+        await client.query(`
+      INSERT INTO product_masters
+        (product_code, product_family_id, product_name, product_category, application_type, standard_status, status)
+      VALUES
+        ('AAT-SF-900',  $1, 'Sand Filter 900',  'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1200', $1, 'Sand Filter 1200', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1400', $1, 'Sand Filter 1400', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1600', $1, 'Sand Filter 1600', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-1800', $1, 'Sand Filter 1800', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-2000', $1, 'Sand Filter 2000', 'Filtration', 'Sand Filtration', 'Active', 'Active'),
+        ('AAT-SF-2300', $1, 'Sand Filter 2300', 'Filtration', 'Sand Filtration', 'Active', 'Active')
+      ON CONFLICT (product_code) DO NOTHING
+    `, [sandFilterFamilyRes.rows[0].id]);
+        await client.query(`
+      INSERT INTO product_dimensions (product_master_id, diameter_mm)
+      SELECT pm.id, reviewed.diameter_mm
+      FROM (VALUES
+        ('AAT-SF-1200', 1200::numeric),
+        ('AAT-SF-1400', 1400::numeric)
+      ) AS reviewed(product_code, diameter_mm)
+      JOIN product_masters pm ON pm.product_code=reviewed.product_code
+      JOIN product_families pf ON pf.id=pm.product_family_id
+      WHERE pf.product_family_code='PFM-SF'
+      ON CONFLICT (product_master_id) DO NOTHING
+    `);
         // Components
         await client.query(`
       INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost, sell_price) VALUES

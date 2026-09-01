@@ -48,6 +48,9 @@ const state = vitest_1.vi.hoisted(() => ({
     sourceSnapshot: { product: { product_name: 'Authoritative PIM name' } },
     moduleAccess: null,
     documentType: 'Technical Data Sheet',
+    documentGeneratedSource: 'pim_tds',
+    revisionGeneratedSource: 'pim_tds',
+    pdfRevisionFound: true,
 }));
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (sql, params = []) => {
@@ -68,7 +71,24 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [{ id: 'revision-1', document_id: 'document-1', revision_code: 'A', status: state.status, generated_source: 'pim_tds' }] };
         }
         if (sql.includes('SELECT dr.id, dr.status, d.generated_source')) {
-            return { rows: [{ id: 'revision-1', status: state.status, generated_source: 'pim_tds' }] };
+            return { rows: [{ id: 'revision-1', status: state.status, generated_source: 'pim_tds', revision_generated_source: state.revisionGeneratedSource }] };
+        }
+        if (sql.includes('document_generated_source')) {
+            return {
+                rows: state.pdfRevisionFound ? [{
+                        document_id: 'document-1',
+                        document_code: 'P-100-TDS',
+                        document_title: 'Pump Technical Data Sheet',
+                        document_status: state.status,
+                        document_generated_source: state.documentGeneratedSource,
+                        revision_id: 'revision-1',
+                        revision_code: 'A',
+                        status: state.status,
+                        content: state.content,
+                        generated_at: '2026-09-01T10:00:00.000Z',
+                        revision_generated_source: state.revisionGeneratedSource,
+                    }] : [],
+            };
         }
         if (sql.includes('UPDATE document_revisions SET content')) {
             state.content = params[0];
@@ -105,11 +125,14 @@ function request(app, token, method, path, body) {
                 },
             }, res => {
                 let response = '';
-                res.setEncoding('utf8');
+                res.setEncoding('binary');
                 res.on('data', chunk => { response += chunk; });
                 res.on('end', () => server.close(error => error ? reject(error) : resolve({
                     status: res.statusCode ?? 0,
-                    body: response ? JSON.parse(response) : {},
+                    body: response
+                        ? (res.headers['content-type']?.includes('application/json') ? JSON.parse(response) : Buffer.from(response, 'binary'))
+                        : {},
+                    headers: res.headers,
                 })));
             });
             req.on('error', reject);
@@ -139,6 +162,9 @@ function put(app, token, content) {
         state.sourceSnapshot = { product: { product_name: 'Authoritative PIM name' } };
         state.moduleAccess = null;
         state.documentType = 'Technical Data Sheet';
+        state.documentGeneratedSource = 'pim_tds';
+        state.revisionGeneratedSource = 'pim_tds';
+        state.pdfRevisionFound = true;
     });
     (0, vitest_1.afterAll)(() => {
         delete process.env.JWT_SECRET;
@@ -164,6 +190,13 @@ function put(app, token, content) {
         (0, vitest_1.expect)(response.status).toBe(403);
         (0, vitest_1.expect)(response.body.error.code).toBe('MODULE_READ_ONLY');
     });
+    (0, vitest_1.it)('does not edit a non-generated revision attached to a generated document', async () => {
+        state.revisionGeneratedSource = 'upload';
+        const response = await put(app, token, { title: 'Should not save' });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.code).toBe('NOT_GENERATED_TDS');
+        (0, vitest_1.expect)(state.content.title).toBe('Original draft');
+    });
     (0, vitest_1.it)('prevents generated TDS documents from being reassigned to another product', async () => {
         const response = await request(app, token, 'PUT', '/api/v1/documents/document-1/product', { product_id: 'other-product' });
         (0, vitest_1.expect)(response.status).toBe(409);
@@ -186,5 +219,47 @@ function put(app, token, content) {
         const response = await request(app, adminToken, 'DELETE', '/api/v1/documents/revisions/revision-1');
         (0, vitest_1.expect)(response.status).toBe(409);
         (0, vitest_1.expect)(response.body.error.code).toBe('REVISION_FROZEN');
+    });
+    (0, vitest_1.it)('renders the requested generated revision as an uncached inline PDF without changing lifecycle state', async () => {
+        state.status = 'Approved';
+        state.content = {
+            title: 'Reviewer-owned pump sheet',
+            sections: { identity: { product_code: 'P-100', product_name: 'Pump' }, notes: 'Approved wording' },
+        };
+        const response = await request(app, token, 'GET', '/api/v1/documents/document-1/revisions/revision-1/tds.pdf');
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.headers['content-type']).toContain('application/pdf');
+        (0, vitest_1.expect)(response.headers['content-disposition']).toContain('inline');
+        (0, vitest_1.expect)(response.headers['cache-control']).toBe('no-store');
+        (0, vitest_1.expect)(response.body.subarray(0, 8).toString()).toBe('%PDF-1.4');
+        (0, vitest_1.expect)(response.body.toString('binary')).toContain('Reviewer-owned pump sheet');
+        (0, vitest_1.expect)(state.status).toBe('Approved');
+        (0, vitest_1.expect)(state.sourceSnapshot.product.product_name).toBe('Authoritative PIM name');
+    });
+    (0, vitest_1.it)('does not expose a revision that is not linked to the requested document', async () => {
+        state.pdfRevisionFound = false;
+        const response = await request(app, token, 'GET', '/api/v1/documents/other-document/revisions/revision-1/tds.pdf');
+        (0, vitest_1.expect)(response.status).toBe(404);
+        (0, vitest_1.expect)(response.body.error.code).toBe('NOT_FOUND');
+    });
+    (0, vitest_1.it)('rejects non-generated revisions and missing generated content', async () => {
+        state.revisionGeneratedSource = 'upload';
+        const wrongType = await request(app, token, 'GET', '/api/v1/documents/document-1/revisions/revision-1/tds.pdf');
+        (0, vitest_1.expect)(wrongType.status).toBe(400);
+        (0, vitest_1.expect)(wrongType.body.error.code).toBe('NOT_GENERATED_TDS');
+        state.revisionGeneratedSource = 'pim_tds';
+        state.content = null;
+        const missingContent = await request(app, token, 'GET', '/api/v1/documents/document-1/revisions/revision-1/tds.pdf');
+        (0, vitest_1.expect)(missingContent.status).toBe(422);
+        (0, vitest_1.expect)(missingContent.body.error.code).toBe('TDS_CONTENT_MISSING');
+    });
+    (0, vitest_1.it)('allows view-only users to render but blocks hidden document access', async () => {
+        state.moduleAccess = 'view';
+        const viewResponse = await request(app, token, 'GET', '/api/v1/documents/document-1/revisions/revision-1/tds.pdf');
+        (0, vitest_1.expect)(viewResponse.status).toBe(200);
+        state.moduleAccess = 'hidden';
+        const hiddenResponse = await request(app, token, 'GET', '/api/v1/documents/document-1/revisions/revision-1/tds.pdf');
+        (0, vitest_1.expect)(hiddenResponse.status).toBe(403);
+        (0, vitest_1.expect)(hiddenResponse.body.error.code).toBe('MODULE_HIDDEN');
     });
 });

@@ -20,6 +20,54 @@ const approvedWall = {
     approved_at: '2026-09-01T00:00:00.000Z',
 };
 (0, vitest_1.describe)('Thermal wall construction approval boundary', () => {
+    (0, vitest_1.it)('rejects a stale successor confirmation when the approved version changed', () => {
+        (0, vitest_1.expect)(designBooks_1.thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches({ id: 'wall-2' }, 'wall-1')).toBe(false);
+        (0, vitest_1.expect)(designBooks_1.thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches({ id: 'wall-2' }, 'wall-2')).toBe(true);
+        (0, vitest_1.expect)(designBooks_1.thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches(null, '')).toBe(true);
+        (0, vitest_1.expect)(designBooks_1.thermalCorrelationTestUtils.thermalWallExpectedCurrentMatches({ id: 'wall-1' }, '')).toBe(false);
+    });
+    (0, vitest_1.it)('returns approved and superseded history with approval metadata', async () => {
+        const runner = vitest_1.vi.fn(async () => ({
+            rows: [
+                {
+                    ...approvedWall,
+                    approved_by_name: 'Alex Chen',
+                    approved_by_email: 'engineer@example.com',
+                },
+                {
+                    ...approvedWall,
+                    id: 'wall-0',
+                    version: 'AAT_FOUNDATIONS_WALL_V0.9',
+                    status: 'superseded',
+                    superseded_by: 'engineer-2',
+                    superseded_at: '2026-08-01T00:00:00.000Z',
+                    superseded_by_name: 'Priya Shah',
+                    superseded_by_email: 'priya@example.com',
+                },
+            ],
+        }));
+        const history = await designBooks_1.thermalCorrelationTestUtils.loadThermalWallConstructionHistory(runner);
+        (0, vitest_1.expect)(runner.mock.calls[0][0]).toContain('LEFT JOIN users approved_user');
+        (0, vitest_1.expect)(history).toEqual([
+            vitest_1.expect.objectContaining({
+                basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+                approval: vitest_1.expect.objectContaining({
+                    status: 'approved',
+                    approved_by_name: 'Alex Chen',
+                    approved_by_email: 'engineer@example.com',
+                }),
+            }),
+            vitest_1.expect.objectContaining({
+                basis_version: 'AAT_FOUNDATIONS_WALL_V0.9',
+                approval: vitest_1.expect.objectContaining({
+                    status: 'superseded',
+                    superseded_by: 'engineer-2',
+                    superseded_at: '2026-08-01T00:00:00.000Z',
+                    superseded_by_name: 'Priya Shah',
+                }),
+            }),
+        ]);
+    });
     (0, vitest_1.it)('resolves the selected construction from locked governed evidence', async () => {
         const runner = vitest_1.vi.fn(async () => ({ rows: [approvedWall] }));
         const inputs = await designBooks_1.thermalCorrelationTestUtils.resolveThermalWallConstructionInputs(runner, { tank_construction_type: 'acrylic' });

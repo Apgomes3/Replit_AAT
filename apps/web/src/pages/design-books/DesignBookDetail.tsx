@@ -1951,15 +1951,30 @@ function customTankWallAreaDefault(tank: any) {
 }
 
 export function thermalEvidenceBasis(detail: any) {
+  const calculation = detail?.calculation ||
+    detail?.result_snapshot ||
+    detail?.saved?.result_snapshot ||
+    detail?.current_preview ||
+    detail ||
+    {};
+  const inputSnapshot = detail?.saved?.input_snapshot ||
+    detail?.input_snapshot ||
+    calculation?.inputs ||
+    {};
+  const formulaInputs = detail?.saved?.formula_inputs ||
+    detail?.formula_inputs ||
+    calculation?.formula_inputs ||
+    {};
+  const wall = calculation?.wall_construction_basis ||
+    formulaInputs?.wall_construction_basis ||
+    inputSnapshot?.wall_construction_basis ||
+    null;
   return {
-    temperature: detail?.water_temperature_basis ||
-      detail?.formula_inputs?.water_temperature_basis ||
-      detail?.inputs?.water_temperature_basis ||
+    temperature: calculation?.water_temperature_basis ||
+      formulaInputs?.water_temperature_basis ||
+      inputSnapshot?.water_temperature_basis ||
       null,
-    wall: detail?.wall_construction_basis ||
-      detail?.formula_inputs?.wall_construction_basis ||
-      detail?.inputs?.wall_construction_basis ||
-      null,
+    wall: wall ? normalizeThermalWallConstruction(wall) : null,
   };
 }
 
@@ -1984,21 +1999,99 @@ export function thermalCorrelationDefaults(correlation: any) {
   };
 }
 
-export function thermalWallFormValues(construction: any) {
+function thermalWallThicknessMm(source: any) {
+  if (source?.thickness_mm != null && source.thickness_mm !== '') {
+    const thickness = Number(source.thickness_mm);
+    return Number.isFinite(thickness) ? thickness : '';
+  }
+  if (source?.thickness_m != null && source.thickness_m !== '') {
+    const thickness = Number(source.thickness_m);
+    return Number.isFinite(thickness) ? thickness * 1000 : '';
+  }
+  return '';
+}
+
+function firstThermalWallText(...values: any[]) {
+  return values.find(value => String(value ?? '').trim()) ?? '';
+}
+
+export function normalizeThermalWallConstruction(construction: any) {
+  if (!construction) return null;
+  const effectiveLayer = construction.effective_layers?.[0] ||
+    construction.layers?.[0] ||
+    construction.default_layers?.[0] ||
+    null;
+  const material = firstThermalWallText(construction.material, effectiveLayer?.material);
+  const code = firstThermalWallText(
+    construction.code,
+    construction.construction_code,
+    construction.construction_type,
+  );
+  const label = firstThermalWallText(
+    construction.label,
+    construction.construction_label,
+    material,
+    code,
+  );
+  const thicknessMm = thermalWallThicknessMm(
+    construction.thickness_mm != null || construction.thickness_m != null
+      ? construction
+      : effectiveLayer,
+  );
+  const conductivity = construction.conductivity_w_m_k ??
+    effectiveLayer?.conductivity_w_m_k ??
+    '';
+  const normalizeLayer = (layer: any) => layer ? {
+    ...layer,
+    thickness_mm: thermalWallThicknessMm(layer),
+    thickness_units: 'mm',
+    conductivity_units: layer.conductivity_units || 'W/m·K',
+  } : layer;
   return {
-    wall_material: construction?.material ?? '',
-    wall_thickness_mm: construction?.thickness_mm ?? '',
-    wall_conductivity_w_m_k: construction?.conductivity_w_m_k ?? '',
+    ...construction,
+    code,
+    construction_code: code,
+    construction_type: code,
+    label,
+    construction_label: label,
+    material,
+    thickness_mm: thicknessMm,
+    conductivity_w_m_k: conductivity,
+    units: construction.units || 'W/m²·K',
+    thickness_units: 'mm',
+    conductivity_units: construction.conductivity_units || 'W/m·K',
+    assumption_label: construction.assumption_label ||
+      (label ? `Saved Thermal wall assumption — ${label}` : 'Saved Thermal wall assumption'),
+    basis_version: construction.basis_version || construction.version || '',
+    default_layers: Array.isArray(construction.default_layers)
+      ? construction.default_layers.map(normalizeLayer)
+      : construction.default_layers,
+    effective_layers: Array.isArray(construction.effective_layers)
+      ? construction.effective_layers.map(normalizeLayer)
+      : construction.effective_layers,
+    layers: Array.isArray(construction.layers)
+      ? construction.layers.map(normalizeLayer)
+      : construction.layers,
+  };
+}
+
+export function thermalWallFormValues(construction: any) {
+  const normalized = normalizeThermalWallConstruction(construction);
+  return {
+    wall_material: normalized?.material ?? '',
+    wall_thickness_mm: normalized?.thickness_mm ?? '',
+    wall_conductivity_w_m_k: normalized?.conductivity_w_m_k ?? '',
   };
 }
 
 export function thermalWallOverrideFlags(form: any, construction: any) {
-  if (!construction) return {};
+  const normalized = normalizeThermalWallConstruction(construction);
+  if (!normalized) return {};
   return {
-    material: String(form.wall_material || '').trim() !== String(construction.material || '').trim(),
-    thickness_mm: Number(form.wall_thickness_mm) !== Number(construction.thickness_mm),
+    material: String(form.wall_material || '').trim() !== String(normalized.material || '').trim(),
+    thickness_mm: Number(form.wall_thickness_mm) !== Number(normalized.thickness_mm),
     conductivity_w_m_k:
-      Number(form.wall_conductivity_w_m_k) !== Number(construction.conductivity_w_m_k),
+      Number(form.wall_conductivity_w_m_k) !== Number(normalized.conductivity_w_m_k),
   };
 }
 
@@ -2105,16 +2198,17 @@ export function thermalWallReplacementIsValid(form: Partial<ThermalWallForm>) {
 }
 
 function thermalWallFormFrom(construction: any, preserveVersion = false): ThermalWallForm {
+  const normalized = normalizeThermalWallConstruction(construction);
   return {
-    construction_code: construction?.code || construction?.construction_code || '',
-    construction_label: construction?.label || construction?.construction_label || '',
-    material: construction?.material || '',
-    thickness_mm: construction?.thickness_mm ?? '',
-    conductivity_w_m_k: construction?.conductivity_w_m_k ?? '',
-    source_basis: construction?.source_basis || 'AAT Foundations',
-    source_reference: construction?.source_reference || '',
-    version: preserveVersion ? construction?.version || construction?.basis_version || '' : '',
-    notes: preserveVersion ? construction?.notes || '' : '',
+    construction_code: normalized?.code || '',
+    construction_label: normalized?.label || '',
+    material: normalized?.material || '',
+    thickness_mm: normalized?.thickness_mm ?? '',
+    conductivity_w_m_k: normalized?.conductivity_w_m_k ?? '',
+    source_basis: normalized?.source_basis || 'AAT Foundations',
+    source_reference: normalized?.source_reference || '',
+    version: preserveVersion ? normalized?.version || normalized?.basis_version || '' : '',
+    notes: preserveVersion ? normalized?.notes || '' : '',
   };
 }
 
@@ -2427,6 +2521,9 @@ function ThermalTab({
   onRefresh: () => void;
 }) {
   const items: any[] = book.thermal_calculations || [];
+  const constructionDefaults: any[] = (book.thermal_construction_defaults || [])
+    .map(normalizeThermalWallConstruction)
+    .filter(Boolean);
   const [selected, setSelected] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
@@ -2470,28 +2567,34 @@ function ThermalTab({
   });
 
   const open = (item: any) => {
-    const existing = item.saved?.input_snapshot || item.calculation?.inputs || {};
-    const wallEvidence = thermalEvidenceBasis(item.calculation || item.current_preview).wall || {};
+    const calculation = item.calculation ||
+      item.result_snapshot ||
+      item.saved?.result_snapshot ||
+      item.current_preview ||
+      {};
+    const existing = item.saved?.input_snapshot ||
+      item.input_snapshot ||
+      calculation?.inputs ||
+      {};
+    const wallEvidence = thermalEvidenceBasis(item).wall || {};
     const constructionType = existing.tank_construction_type ??
       existing.tank_construction ??
       wallEvidence.construction_type ??
       '';
-    const constructionDefault = (book.thermal_construction_defaults || []).find(
+    const currentConstructionDefault = constructionDefaults.find(
       (candidate: any) => candidate.code === constructionType,
+    );
+    const constructionDefault = normalizeThermalWallConstruction(
+      existing.tank_wall_default_basis ||
+      wallEvidence.default_basis ||
+      currentConstructionDefault,
     );
     const effectiveWallLayer = existing.tank_wall_layers?.[0] ||
       wallEvidence.effective_layers?.[0] ||
       wallEvidence.layers?.[0];
-    const effectiveWallValues = effectiveWallLayer
-      ? {
-          wall_material: effectiveWallLayer.material ?? '',
-          wall_thickness_mm: effectiveWallLayer.thickness_mm ??
-            (effectiveWallLayer.thickness_m != null
-              ? Number(effectiveWallLayer.thickness_m) * 1000
-              : ''),
-          wall_conductivity_w_m_k: effectiveWallLayer.conductivity_w_m_k ?? '',
-        }
-      : thermalWallFormValues(constructionDefault);
+    const effectiveWallValues = thermalWallFormValues(
+      effectiveWallLayer || wallEvidence || constructionDefault,
+    );
     const correlationSnapshot = existing.agitation_correlation_snapshot ||
       item.calculation?.correlation_snapshot || item.saved?.correlation_snapshot || {};
     const databaseDefaults = correlationSnapshot.database_defaults || {};
@@ -2536,6 +2639,7 @@ function ThermalTab({
       agitation_correlation_overrides: overrides,
       reviewed_u_value_w_m2_k: existing.reviewed_u_value_w_m2_k ?? '',
       tank_construction_type: constructionType,
+      tank_wall_default_basis: constructionDefault,
       ...effectiveWallValues,
       tank_wall_override_justification:
         existing.tank_wall_override_justification ??
@@ -2555,23 +2659,25 @@ function ThermalTab({
 
   const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
   const selectConstruction = (constructionCode: string) => {
-    const construction = (book.thermal_construction_defaults || []).find(
+    const construction = constructionDefaults.find(
       (candidate: any) => candidate.code === constructionCode,
     );
     setForm((current: any) => ({
       ...current,
       tank_construction_type: constructionCode,
+      tank_wall_default_basis: construction,
       reviewed_u_value_w_m2_k: '',
       tank_wall_override_justification: '',
       ...thermalWallFormValues(construction),
     }));
   };
   const resetWallLayer = () => {
-    const construction = (book.thermal_construction_defaults || []).find(
+    const construction = constructionDefaults.find(
       (candidate: any) => candidate.code === form.tank_construction_type,
     );
     setForm((current: any) => ({
       ...current,
+      tank_wall_default_basis: construction,
       tank_wall_override_justification: '',
       ...thermalWallFormValues(construction),
     }));
@@ -2841,10 +2947,11 @@ function ThermalTab({
   }
 
   const detail = selected?.calculation || selected?.current_preview;
-  const evidenceBasis = thermalEvidenceBasis(detail);
-  const constructionDefaults: any[] = book.thermal_construction_defaults || [];
-  const selectedConstructionDefault = constructionDefaults.find(
-    item => item.code === form.tank_construction_type,
+  const evidenceBasis = thermalEvidenceBasis(selected || detail);
+  const selectedConstructionDefault = normalizeThermalWallConstruction(
+    form.tank_wall_default_basis ||
+    constructionDefaults.find(item => item.code === form.tank_construction_type) ||
+    (evidenceBasis.wall?.material ? evidenceBasis.wall : null),
   );
   const wallOverrideFlags = thermalWallOverrideFlags(form, selectedConstructionDefault);
   const hasWallLayerOverride = Object.values(wallOverrideFlags).some(Boolean);
@@ -3308,9 +3415,9 @@ function ThermalTab({
                   </span>
                   <div className="mt-1 text-sm font-medium text-amber-950">
                     {selectedConstructionDefault
-                      ? `${selectedConstructionDefault.material}: ${thermalNumber(selectedConstructionDefault.thickness_mm, 2)} ${selectedConstructionDefault.thickness_units} · k ${thermalNumber(selectedConstructionDefault.conductivity_w_m_k, 3)} ${selectedConstructionDefault.conductivity_units}`
-                      : evidenceBasis.wall?.construction_label
-                        ? `${evidenceBasis.wall.construction_label}: ${thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} ${evidenceBasis.wall.units}`
+                      ? `${selectedConstructionDefault.label}: ${selectedConstructionDefault.material} · ${thermalNumber(selectedConstructionDefault.thickness_mm, 2)} ${selectedConstructionDefault.thickness_units} · k ${thermalNumber(selectedConstructionDefault.conductivity_w_m_k, 3)} ${selectedConstructionDefault.conductivity_units}`
+                      : evidenceBasis.wall?.label
+                        ? `${evidenceBasis.wall.label}: ${thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} ${evidenceBasis.wall.units}`
                         : 'Select a standard construction or use a reviewed custom basis.'}
                   </div>
                   <p className="mt-1 text-xs text-amber-800">

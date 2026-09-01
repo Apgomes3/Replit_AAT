@@ -112,8 +112,13 @@ describe('AAT thermal calculation', () => {
       expect(result.wall_construction_basis).toMatchObject({
         construction_type: construction.code,
         construction_label: construction.label,
+        material: construction.material,
+        thickness_mm: construction.thickness_mm,
+        conductivity_w_m_k: construction.conductivity_w_m_k,
         u_value_w_m2_k: construction.u_value_w_m2_k,
         units: 'W/m²·K',
+        thickness_units: 'mm',
+        conductivity_units: 'W/m·K',
         source: 'AAT Foundations governed wall-layer default',
         reviewed: false,
         assumption_label: construction.assumption_label,

@@ -8,6 +8,7 @@ import {
   thermalEvidenceBasis,
   thermalCorrelationDefaults,
   thermalCorrelationVersionsForClass,
+  normalizeThermalWallConstruction,
   thermalWallFormValues,
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
@@ -65,7 +66,19 @@ describe('Design Book Thermal navigation', () => {
     expect(thermalEvidenceBasis({
       water_temperature_basis: temperature,
       wall_construction_basis: wall,
-    })).toEqual({ temperature, wall });
+    })).toEqual({
+      temperature,
+      wall: expect.objectContaining({
+        construction_type: 'frp',
+        construction_label: 'FRP',
+        label: 'FRP',
+        units: 'W/m²·K',
+        thickness_units: 'mm',
+        conductivity_units: 'W/m·K',
+        assumption_label: 'Saved Thermal wall assumption — FRP',
+        basis_version: 'aat-thermal-construction-v1',
+      }),
+    });
   });
 
   it('falls back to frozen input evidence for older result wrappers', () => {
@@ -77,7 +90,98 @@ describe('Design Book Thermal navigation', () => {
         water_temperature_basis: temperature,
         wall_construction_basis: wall,
       },
-    })).toEqual({ temperature, wall });
+    })).toEqual({
+      temperature,
+      wall: expect.objectContaining({
+        source: 'reviewed custom U-value',
+        u_value_w_m2_k: 2.75,
+        units: 'W/m²·K',
+        assumption_label: 'Saved Thermal wall assumption',
+      }),
+    });
+  });
+
+  it('normalizes saved metre layers and database-default field names for the form', () => {
+    expect(normalizeThermalWallConstruction({
+      construction_code: 'acrylic',
+      construction_label: 'Acrylic',
+      material: 'Acrylic / PMMA',
+      thickness_mm: '12',
+      conductivity_w_m_k: '0.19',
+      version: 'AAT_FOUNDATIONS_WALL_V1.0',
+    })).toMatchObject({
+      code: 'acrylic',
+      label: 'Acrylic',
+      thickness_mm: 12,
+      thickness_units: 'mm',
+      conductivity_units: 'W/m·K',
+      basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+    });
+
+    expect(thermalWallFormValues({
+      construction_type: 'frp',
+      construction_label: 'FRP',
+      effective_layers: [{
+        material: 'Project FRP',
+        thickness_m: 0.008,
+        conductivity_w_m_k: 0.3,
+      }],
+    })).toEqual({
+      wall_material: 'Project FRP',
+      wall_thickness_mm: 8,
+      wall_conductivity_w_m_k: 0.3,
+    });
+  });
+
+  it('reads wall evidence through a saved-calculation response wrapper', () => {
+    expect(thermalEvidenceBasis({
+      saved: {
+        input_snapshot: {
+          wall_construction_basis: {
+            construction_type: 'concrete',
+            construction_label: 'Concrete',
+            assumption_label: 'Governed concrete basis',
+            basis_version: 'WALL-V1',
+            effective_layers: [{
+              material: 'Reinforced concrete',
+              thickness_m: 0.15,
+              conductivity_w_m_k: 1.4,
+            }],
+          },
+        },
+      },
+    }).wall).toMatchObject({
+      code: 'concrete',
+      label: 'Concrete',
+      material: 'Reinforced concrete',
+      thickness_mm: 150,
+      conductivity_w_m_k: 1.4,
+      thickness_units: 'mm',
+      conductivity_units: 'W/m·K',
+      assumption_label: 'Governed concrete basis',
+      basis_version: 'WALL-V1',
+    });
+  });
+
+  it('keeps reviewed custom U-value evidence distinct from a wall construction', () => {
+    const wall = thermalEvidenceBasis({
+      calculation: {
+        wall_construction_basis: {
+          source: 'reviewed custom U-value',
+          u_value_w_m2_k: 2.75,
+          reviewed: true,
+        },
+      },
+    }).wall;
+
+    expect(wall).toMatchObject({
+      label: '',
+      material: '',
+      thickness_mm: '',
+      conductivity_w_m_k: '',
+      units: 'W/m²·K',
+      reviewed: true,
+    });
   });
 
   it('filters approved versions to the selected surface-activity class', () => {

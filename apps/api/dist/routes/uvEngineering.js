@@ -43,18 +43,31 @@ const consumerRouter = (0, express_1.Router)();
 exports.uvEngineeringConsumerRoutes = consumerRouter;
 const STATUSES = ['Draft', 'In Review', 'Approved', 'Retired', 'Disabled'];
 const EDITABLE_FIELDS = [
-    'lamp_count', 'lamp_power_w', 'effective_reactor_volume_l', 'irradiance_85t_mw_cm2',
+    // lamp_count, material, rated power, and identity are PIM-owned. The legacy
+    // compatibility/arrangement columns remain readable for old snapshots only.
+    'effective_reactor_volume_l', 'irradiance_85t_mw_cm2',
     'irradiance_95t_mw_cm2', 'compatibility', 'arrangement', 'source_evidence',
+    'source_basis',
     'approved_per_lamp_flow_exception_m3h', 'notes',
 ];
+const CREATE_REVISION_FIELDS = [...EDITABLE_FIELDS, 'source_basis_verified'];
 function complete(row) {
-    return Number.isInteger(Number(row.lamp_count)) && Number(row.lamp_count) > 0
-        && row.lamp_power_w != null && Number(row.lamp_power_w) > 0
+    const governed = row.governance_loaded === true;
+    const lampCount = row.pim_lamp_count ?? row.lamp_count;
+    const ratedPower = row.pim_rated_power_kw ?? row.lamp_power_w;
+    const hasCompatibilityMapping = row.material_compatibility_count == null
+        ? !!String(row.compatibility || '').trim()
+        : Number(row.material_compatibility_count) > 0;
+    return !!String(row.product_code || 'known').trim()
+        && !!String(row.product_name || 'known').trim()
+        && (!governed || !!String(row.primary_material_code || '').trim())
+        && Number.isInteger(Number(lampCount)) && Number(lampCount) > 0
+        && ratedPower != null && Number(ratedPower) > 0
         && row.effective_reactor_volume_l != null && Number(row.effective_reactor_volume_l) > 0
         && row.irradiance_85t_mw_cm2 != null && Number(row.irradiance_85t_mw_cm2) > 0
         && row.irradiance_95t_mw_cm2 != null && Number(row.irradiance_95t_mw_cm2) > 0
-        && !!String(row.compatibility || '').trim() && !!String(row.arrangement || '').trim()
-        && !!String(row.source_evidence || '').trim();
+        && hasCompatibilityMapping
+        && !!String(row.source_basis || row.source_evidence || '').trim();
 }
 function engineeringPayloadError(payload, fields = EDITABLE_FIELDS) {
     const numericFields = ['lamp_count', 'lamp_power_w', 'effective_reactor_volume_l',
@@ -71,34 +84,42 @@ function engineeringPayloadError(payload, fields = EDITABLE_FIELDS) {
 }
 const catalogSelect = `SELECT c.*, pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status,
   pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type, pm.power_kw AS rated_power_kw,
+  pm.lamp_count AS pim_lamp_count,
   pf.product_family_code, pf.product_family_name,
   row_to_json(latest) AS latest_revision,
+  COALESCE(pm.lamp_count, latest.lamp_count) AS lamp_count,
+  COALESCE(pm.power_kw, latest.lamp_power_w) AS effective_rated_power_kw,
+  COALESCE(compatibility.material_compatibility_count, 0) AS material_compatibility_count,
   CASE WHEN c.needs_review THEN 'Needs Review' ELSE 'Current' END AS sync_status,
   CASE WHEN c.needs_review THEN false
        WHEN pm.status <> 'Active' OR pf.product_family_code <> 'PFM-UV' THEN false
        WHEN latest.status <> 'Approved' THEN false
-       WHEN latest.lamp_count IS NULL OR latest.lamp_count <= 0
-         OR latest.lamp_power_w IS NULL OR latest.lamp_power_w <= 0
+       WHEN NULLIF(BTRIM(pm.product_code),'') IS NULL OR NULLIF(BTRIM(pm.product_name),'') IS NULL
+         OR NULLIF(BTRIM(pm.primary_material_code),'') IS NULL OR pm.power_kw IS NULL OR pm.power_kw <= 0
+         OR pm.lamp_count IS NULL OR pm.lamp_count <= 0
          OR latest.effective_reactor_volume_l IS NULL OR latest.effective_reactor_volume_l <= 0
          OR latest.irradiance_85t_mw_cm2 IS NULL OR latest.irradiance_85t_mw_cm2 <= 0
          OR latest.irradiance_95t_mw_cm2 IS NULL OR latest.irradiance_95t_mw_cm2 <= 0
-         OR NULLIF(BTRIM(latest.compatibility),'') IS NULL
-         OR NULLIF(BTRIM(latest.arrangement),'') IS NULL
-         OR NULLIF(BTRIM(latest.source_evidence),'') IS NULL THEN false
+         OR COALESCE(compatibility.material_compatibility_count, 0) = 0
+         OR COALESCE(latest.source_basis, '') <> 'AAT Foundations'
+         OR latest.source_basis_verified IS NOT TRUE THEN false
        ELSE true END AS calculation_enabled,
   CASE WHEN c.needs_review THEN COALESCE(c.review_reason, 'PIM identity requires review')
        WHEN pm.status <> 'Active' THEN 'PIM product is inactive'
        WHEN pf.product_family_code <> 'PFM-UV' THEN 'Product is no longer in PFM-UV'
        WHEN latest.id IS NULL THEN 'Engineering revision required'
        WHEN latest.status <> 'Approved' THEN 'Engineering revision is not approved'
-       WHEN latest.lamp_count IS NULL OR latest.lamp_count <= 0
-         OR latest.lamp_power_w IS NULL OR latest.lamp_power_w <= 0
-         OR latest.effective_reactor_volume_l IS NULL OR latest.effective_reactor_volume_l <= 0
+       WHEN NULLIF(BTRIM(pm.product_code),'') IS NULL OR NULLIF(BTRIM(pm.product_name),'') IS NULL THEN 'PIM product identity is incomplete'
+       WHEN NULLIF(BTRIM(pm.primary_material_code),'') IS NULL THEN 'PIM primary material is missing'
+       WHEN pm.power_kw IS NULL OR pm.power_kw <= 0 THEN 'PIM rated power is missing or invalid'
+       WHEN pm.lamp_count IS NULL OR pm.lamp_count <= 0 THEN 'PIM lamp count is missing or invalid'
+       WHEN latest.effective_reactor_volume_l IS NULL OR latest.effective_reactor_volume_l <= 0
          OR latest.irradiance_85t_mw_cm2 IS NULL OR latest.irradiance_85t_mw_cm2 <= 0
          OR latest.irradiance_95t_mw_cm2 IS NULL OR latest.irradiance_95t_mw_cm2 <= 0
-         OR NULLIF(BTRIM(latest.compatibility),'') IS NULL
-         OR NULLIF(BTRIM(latest.arrangement),'') IS NULL
-         OR NULLIF(BTRIM(latest.source_evidence),'') IS NULL THEN 'Required engineering data is incomplete'
+         THEN 'Required engineering data is incomplete'
+       WHEN COALESCE(compatibility.material_compatibility_count, 0) = 0 THEN 'No governed water compatibility mapping exists for the PIM material'
+       WHEN COALESCE(latest.source_basis, '') <> 'AAT Foundations'
+         OR latest.source_basis_verified IS NOT TRUE THEN 'Reviewed source must be verified as AAT Foundations'
        ELSE 'Ready for calculations' END AS completeness_message
  FROM uv_engineering_catalogs c
  JOIN product_masters pm ON pm.id=c.product_master_id
@@ -109,7 +130,13 @@ const catalogSelect = `SELECT c.*, pm.product_code, pm.product_name, pm.manufact
    WHERE r.catalog_id=c.id
    ORDER BY r.revision_number DESC
    LIMIT 1
- ) latest ON true`;
+  ) latest ON true
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS material_compatibility_count
+    FROM material_water_compatibility mwc
+    WHERE mwc.material_code=pm.primary_material_code
+      AND mwc.allowed=true
+  ) compatibility ON true`;
 adminRouter.use(auth_1.authenticate, (0, auth_1.requireModuleManage)('pim'), (0, auth_1.requireRole)('admin'));
 adminRouter.get('/', async (req, res) => {
     const result = await (0, db_1.query)(`${catalogSelect} ORDER BY pm.product_code`);
@@ -126,7 +153,7 @@ adminRouter.post('/reconcile', async (req, res) => {
     const catalogs = await (0, db_1.query)(`INSERT INTO uv_engineering_catalogs (product_master_id, pim_snapshot)
     SELECT pm.id, jsonb_build_object('product_code',pm.product_code,'product_name',pm.product_name,'manufacturer',pm.manufacturer,
       'status',pm.status,'category',pm.product_category,'material',pm.primary_material_code,'configuration',pm.configuration,
-      'control_type',pm.control_type,'rated_power_kw',pm.power_kw)
+      'control_type',pm.control_type,'rated_power_kw',pm.power_kw,'lamp_count',pm.lamp_count)
     FROM product_masters pm JOIN product_families pf ON pf.id=pm.product_family_id WHERE pf.product_family_code='PFM-UV'
     ON CONFLICT (product_master_id) DO NOTHING RETURNING id`);
     const revisions = await (0, db_1.query)(`INSERT INTO uv_engineering_revisions (catalog_id, revision_number, status)
@@ -183,9 +210,11 @@ adminRouter.post('/:id/revisions', async (req, res) => {
             source = requestedSource.rows[0];
         }
         const revisionNumber = Number(latest.rows[0]?.revision_number || 0) + 1;
-        const values = EDITABLE_FIELDS.map(field => req.body[field] !== undefined ? req.body[field] : source?.[field] ?? null);
-        const result = await client.query(`INSERT INTO uv_engineering_revisions (catalog_id, revision_number, status, ${EDITABLE_FIELDS.join(',')}, supersedes_id, created_by)
-      VALUES ($1,$2,'Draft',${EDITABLE_FIELDS.map((_, i) => `$${i + 3}`).join(',')},$${EDITABLE_FIELDS.length + 3},$${EDITABLE_FIELDS.length + 4}) RETURNING *`, [req.params.id, revisionNumber, ...values, source?.id || null, req.user.id]);
+        const values = CREATE_REVISION_FIELDS.map(field => field === 'source_basis_verified'
+            ? false
+            : req.body[field] !== undefined ? req.body[field] : source?.[field] ?? null);
+        const result = await client.query(`INSERT INTO uv_engineering_revisions (catalog_id, revision_number, status, ${CREATE_REVISION_FIELDS.join(',')}, supersedes_id, created_by)
+      VALUES ($1,$2,'Draft',${CREATE_REVISION_FIELDS.map((_, i) => `$${i + 3}`).join(',')},$${CREATE_REVISION_FIELDS.length + 3},$${CREATE_REVISION_FIELDS.length + 4}) RETURNING *`, [req.params.id, revisionNumber, ...values, source?.id || null, req.user.id]);
         created = result.rows[0];
         await client.query('COMMIT');
     }
@@ -205,6 +234,12 @@ adminRouter.put('/revisions/:id', async (req, res) => {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'UV engineering revision not found' } });
     if (!['Draft', 'In Review'].includes(existing.rows[0].status))
         return res.status(409).json({ error: { code: 'IMMUTABLE_REVISION', message: 'Approved, retired, or disabled revisions cannot be edited; create a new draft revision.' } });
+    if (Object.prototype.hasOwnProperty.call(req.body, 'lamp_count')) {
+        const payloadError = engineeringPayloadError(req.body, ['lamp_count']);
+        if (payloadError)
+            return res.status(400).json({ error: { code: 'VALIDATION', message: payloadError } });
+        return res.status(400).json({ error: { code: 'PIM_OWNED_FIELD', message: 'Lamp count is owned by the linked Product Master.' } });
+    }
     const fields = EDITABLE_FIELDS.filter(field => Object.prototype.hasOwnProperty.call(req.body, field));
     if (!fields.length)
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'No editable engineering fields supplied.' } });
@@ -225,8 +260,30 @@ adminRouter.patch('/revisions/:id/status', async (req, res) => {
     const from = existing.rows[0].status;
     if (status === from)
         return res.json(existing.rows[0]);
-    if (status === 'Approved' && !complete(existing.rows[0]))
-        return res.status(400).json({ error: { code: 'INCOMPLETE_REVISION', message: 'All required UV engineering fields must be complete and greater than zero before approval.' } });
+    if (status === 'Approved') {
+        const governance = await (0, db_1.query)(`SELECT true AS governance_loaded, pm.product_code, pm.product_name,
+              pm.primary_material_code, pm.power_kw AS pim_rated_power_kw,
+              pm.lamp_count AS pim_lamp_count,
+              (SELECT COUNT(*)::int FROM material_water_compatibility mwc
+                WHERE mwc.material_code=pm.primary_material_code AND mwc.allowed=true) AS material_compatibility_count
+         FROM uv_engineering_catalogs c
+         JOIN product_masters pm ON pm.id=c.product_master_id
+        WHERE c.id=$1`, [existing.rows[0].catalog_id]);
+        const candidate = governance.rows[0]
+            ? { ...existing.rows[0], ...governance.rows[0] }
+            : existing.rows[0];
+        if (!complete(candidate)) {
+            return res.status(400).json({
+                error: {
+                    code: 'INCOMPLETE_REVISION',
+                    message: 'Approval requires complete PIM identity, material, rated power and lamp count, governed material compatibility, positive reactor/irradiance values, and the AAT Foundations source.',
+                },
+            });
+        }
+        if (governance.rows[0] && existing.rows[0].source_basis !== 'AAT Foundations') {
+            return res.status(400).json({ error: { code: 'INVALID_SOURCE_BASIS', message: 'Reviewed source must be AAT Foundations.' } });
+        }
+    }
     const transitions = {
         Draft: ['Draft', 'In Review', 'Approved', 'Disabled'],
         'In Review': ['In Review', 'Draft', 'Approved', 'Disabled'],
@@ -238,6 +295,7 @@ adminRouter.patch('/revisions/:id/status', async (req, res) => {
         return res.status(409).json({ error: { code: 'IMMUTABLE_REVISION', message: `${from} revisions cannot be changed to ${status}; create a new draft revision if engineering values must change.` } });
     }
     const result = await (0, db_1.query)(`UPDATE uv_engineering_revisions SET status=$1::varchar, approved_by=CASE WHEN $1::varchar='Approved' THEN $2 ELSE approved_by END,
+    source_basis_verified=CASE WHEN $1::varchar='Approved' THEN true ELSE source_basis_verified END,
     approved_at=CASE WHEN $1::varchar='Approved' THEN NOW() ELSE approved_at END, retired_at=CASE WHEN $1::varchar='Retired' THEN NOW() ELSE retired_at END,
     updated_at=NOW() WHERE id=$3 RETURNING *`, [status, req.user.id, req.params.id]);
     if (status === 'Approved') {
@@ -252,6 +310,7 @@ consumerRouter.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('pim'));
 consumerRouter.get('/uv-engineering/selectable', async (_req, res) => {
     const result = await (0, db_1.query)(`SELECT c.*, pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status,
       pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type, pm.power_kw AS rated_power_kw,
+      pm.lamp_count,
       pf.product_family_code, pf.product_family_name, row_to_json(r) AS latest_revision,
       row_to_json(r) AS selected_revision, true AS calculation_enabled
     FROM uv_engineering_catalogs c
@@ -265,10 +324,14 @@ consumerRouter.get('/uv-engineering/selectable', async (_req, res) => {
       LIMIT 1
     ) r ON true
     WHERE c.needs_review=false AND pm.status='Active' AND pf.product_family_code='PFM-UV'
-      AND r.lamp_count > 0 AND r.lamp_power_w > 0 AND r.effective_reactor_volume_l > 0
+      AND NULLIF(BTRIM(pm.product_code),'') IS NOT NULL
+      AND NULLIF(BTRIM(pm.product_name),'') IS NOT NULL
+      AND NULLIF(BTRIM(pm.primary_material_code),'') IS NOT NULL
+      AND pm.power_kw > 0 AND pm.lamp_count > 0 AND r.effective_reactor_volume_l > 0
       AND r.irradiance_85t_mw_cm2 > 0 AND r.irradiance_95t_mw_cm2 > 0
-      AND NULLIF(BTRIM(r.compatibility),'') IS NOT NULL AND NULLIF(BTRIM(r.arrangement),'') IS NOT NULL
-      AND NULLIF(BTRIM(r.source_evidence),'') IS NOT NULL
+      AND r.source_basis='AAT Foundations' AND r.source_basis_verified=true
+      AND EXISTS (SELECT 1 FROM material_water_compatibility mwc
+                  WHERE mwc.material_code=pm.primary_material_code AND mwc.allowed=true)
     ORDER BY pm.product_code`);
     res.json({ items: result.rows });
 });

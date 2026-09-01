@@ -167,6 +167,11 @@ function normalizeSideStreams(value) {
         if (uvUnitQuantity != null && (!Number.isInteger(uvUnitQuantity) || uvUnitQuantity < 1)) {
             throw new Error(`${name} UV unit quantity must be a positive integer.`);
         }
+        const uvtBasis = stream?.uvt_basis == null || stream.uvt_basis === ''
+            ? '85T' : String(stream.uvt_basis).toUpperCase();
+        if (!['85T', '95T'].includes(uvtBasis)) {
+            throw new Error(`${name} UVT basis must be 85T or 95T.`);
+        }
         const dedicatedPumpValue = stream?.has_dedicated_pump ?? stream?.dedicated_pump;
         const hasDedicatedPump = dedicatedPumpValue == null
             ? null
@@ -182,6 +187,7 @@ function normalizeSideStreams(value) {
             sort_order: Number.isInteger(Number(stream?.sort_order)) ? Number(stream.sort_order) : index,
             uv_revision_id: uvRevisionId,
             uv_unit_quantity: uvUnitQuantity,
+            uvt_basis: uvtBasis,
             has_dedicated_pump: hasDedicatedPump,
         };
     });
@@ -200,7 +206,7 @@ async function loadSystemSandFilterAllocations(systemId, runner = db_1.query) {
     return (await runner(`SELECT * FROM system_flow_sand_filter_allocations
      WHERE system_id=$1 ORDER BY parent_loop_number`, [systemId])).rows;
 }
-async function normalizeSandFilterAllocations(value, system, runner = db_1.query) {
+async function normalizeSandFilterAllocations(value, system, runner = db_1.query, existingSnapshots = new Map()) {
     if (!Array.isArray(value))
         return null;
     const seenLoops = new Set();
@@ -236,21 +242,30 @@ async function normalizeSandFilterAllocations(value, system, runner = db_1.query
             productIds.push(id);
             quantities.set(id, quantity);
         }
-        const catalog = productIds.length ? (await runner(`SELECT pm.id, pm.product_code, pm.product_name, pd.diameter_mm
+        const catalog = productIds.length ? (await runner(`SELECT pm.id, pm.product_code, pm.product_name, pm.status, pm.standard_status, pd.diameter_mm
        FROM product_masters pm
        JOIN product_families pf ON pf.id=pm.product_family_id
        LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
-       WHERE pm.id = ANY($1::uuid[]) AND pf.product_family_code='PFM-SF'
-         AND COALESCE(pm.status, 'Active')='Active'`, [productIds])).rows : [];
+       WHERE pm.id = ANY($1::uuid[]) AND pf.product_family_code='PFM-SF'`, [productIds])).rows : [];
         if (catalog.length !== productIds.length) {
             throw new Error(`Loop ${loopNumber} includes a product that is not an active AAT Sand Filter.`);
         }
         const products = productIds.map(id => {
             const product = catalog.find(item => String(item.id) === id);
+            const snapshot = existingSnapshots.get(`${loopNumber}:${id}`);
+            const isActive = (product?.status == null ||
+                String(product.status).trim().toLowerCase() === 'active') &&
+                String(product?.standard_status || '').trim().toLowerCase() === 'active';
+            if (!snapshot && !isActive) {
+                throw new Error(`Loop ${loopNumber} includes a product that is not an active AAT Sand Filter.`);
+            }
+            // An existing allocation is a historical snapshot. Keep its catalog
+            // values when a later PIM edit changes the reusable Product Master.
+            const source = snapshot || product;
             return {
-                product_master_id: product.id, product_code: product.product_code,
-                product_name: product.product_name,
-                diameter_mm: product.diameter_mm == null ? null : Number(product.diameter_mm),
+                product_master_id: product.id, product_code: source.product_code,
+                product_name: source.product_name,
+                diameter_mm: source.diameter_mm == null ? null : Number(source.diameter_mm),
                 quantity: quantities.get(id),
             };
         });
@@ -1599,7 +1614,9 @@ router.get('/systems/:id/sand-filter-products', auth_1.authenticate, async (req,
      FROM product_masters pm
      JOIN product_families pf ON pf.id=pm.product_family_id
      LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
-     WHERE pf.product_family_code='PFM-SF' AND COALESCE(pm.status, 'Active')='Active'
+     WHERE pf.product_family_code='PFM-SF'
+       AND LOWER(BTRIM(COALESCE(pm.status, 'Active')))='active'
+       AND LOWER(BTRIM(COALESCE(pm.standard_status, '')))='active'
      ORDER BY pm.product_code`);
     res.json({ items: result.rows });
 });
@@ -1795,7 +1812,16 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         let normalizedSandFilters = null;
         try {
             normalizedFractionators = await normalizeFractionatorAllocations(fractionator_allocations, intendedSystem);
-            normalizedSandFilters = await normalizeSandFilterAllocations(sand_filter_allocations, intendedSystem);
+            const existingSandFilterAllocations = sand_filter_allocations
+                ? await loadSystemSandFilterAllocations(String(req.params.id))
+                : [];
+            const existingSandFilterSnapshots = new Map();
+            for (const allocation of existingSandFilterAllocations) {
+                for (const product of allocation.products || []) {
+                    existingSandFilterSnapshots.set(`${Number(allocation.parent_loop_number)}:${String(product.product_master_id)}`, product);
+                }
+            }
+            normalizedSandFilters = await normalizeSandFilterAllocations(sand_filter_allocations, intendedSystem, db_1.query, existingSandFilterSnapshots);
         }
         catch (error) {
             return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
@@ -2006,20 +2032,20 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
                         await saveClient.query(`UPDATE system_flow_side_streams
                SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
                    sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10,
-                   has_dedicated_pump=COALESCE($11,has_dedicated_pump), updated_at=NOW()
+                   has_dedicated_pump=COALESCE($11,has_dedicated_pump), uvt_basis=$12, updated_at=NOW()
                WHERE id=$1 AND system_id=$2`, [stream.id, req.params.id, stream.parent_loop_number, stream.name, stream.preset,
                             stream.flow_pct, stream.notes, stream.sort_order,
                             stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null,
-                            stream.has_dedicated_pump]);
+                            stream.has_dedicated_pump, stream.uvt_basis]);
                     }
                     else {
                         await saveClient.query(`INSERT INTO system_flow_side_streams
                  (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order,
-                  uv_revision_id, uv_unit_quantity, has_dedicated_pump)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
+                  uv_revision_id, uv_unit_quantity, has_dedicated_pump, uvt_basis)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [req.params.id, stream.parent_loop_number, stream.name, stream.preset,
                             stream.flow_pct, stream.notes, stream.sort_order,
                             stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null,
-                            stream.has_dedicated_pump ?? false]);
+                            stream.has_dedicated_pump ?? false, stream.uvt_basis]);
                     }
                 }
             }
@@ -2309,11 +2335,11 @@ router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, a
         updated = (await client.query(`UPDATE system_flow_side_streams
        SET parent_loop_number=$3, name=$4, preset=$5, flow_pct=$6, notes=$7,
            sort_order=$8, uv_revision_id=$9, uv_unit_quantity=$10,
-           has_dedicated_pump=COALESCE($11,has_dedicated_pump), updated_at=NOW()
+           has_dedicated_pump=COALESCE($11,has_dedicated_pump), uvt_basis=$12, updated_at=NOW()
        WHERE id=$1 AND system_id=$2 RETURNING *`, [req.params.sideStreamId, req.params.id, stream.parent_loop_number, stream.name,
             stream.preset, stream.flow_pct, stream.notes, stream.sort_order,
             stream.uv_revision_id ?? null, stream.uv_unit_quantity ?? null,
-            stream.has_dedicated_pump])).rows[0];
+            stream.has_dedicated_pump, stream.uvt_basis])).rows[0];
         await client.query('COMMIT');
     }
     catch (error) {
