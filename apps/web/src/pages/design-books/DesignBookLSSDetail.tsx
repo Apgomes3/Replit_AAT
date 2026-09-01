@@ -1330,7 +1330,13 @@ export default function DesignBookLSSDetail() {
     queryFn: () => api.get(`/systems/${systemId}/sand-filter-products`).then(r => r.data.items),
     enabled: !!systemId,
   });
-  const { data: uvSelectionData, refetch: refetchUvSelection } = useQuery({
+  const {
+    data: uvSelectionData,
+    refetch: refetchUvSelection,
+    isLoading: uvSelectionLoading,
+    isError: uvSelectionIsError,
+    error: uvSelectionError,
+  } = useQuery({
     queryKey: ['uv-selection', bookId, systemId],
     queryFn: () => api.get(`/design-books/${bookId}/uv/${systemId}`).then(r => r.data),
     enabled: !!systemId && !!bookId && !!book && activeTab === 'uv' && !usesFrozenPackage,
@@ -1375,6 +1381,13 @@ export default function DesignBookLSSDetail() {
     qc.invalidateQueries({ queryKey: ['system', systemId] });
     qc.invalidateQueries({ queryKey: ['system-exhibit-links', systemId] });
     qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+  };
+
+  // Flow Route saves can change the UV side-stream list while the UV query is
+  // inactive. Refresh it explicitly so switching tabs never reveals cached data.
+  const refreshUvSelection = async () => {
+    if (usesFrozenPackage) return;
+    await refetchUvSelection().catch(() => undefined);
   };
 
   // Ref supports Flow Route draft editing without persisting calculated values.
@@ -2077,6 +2090,7 @@ export default function DesignBookLSSDetail() {
       qc.invalidateQueries({ queryKey: ['system', systemId] });
       qc.invalidateQueries({ queryKey: ['system-exhibit-links', systemId] });
       qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+      qc.invalidateQueries({ queryKey: ['uv-selection', bookId, systemId] });
       toast.success('System configuration reset');
     } catch (error: any) {
       const message = error?.response?.data?.error?.message
@@ -2122,6 +2136,7 @@ export default function DesignBookLSSDetail() {
       toast.success('Flow route saved');
       clearFlowDraft();
       refresh();
+      await refreshUvSelection();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Failed to save flow route');
     } finally {
@@ -2158,6 +2173,7 @@ export default function DesignBookLSSDetail() {
       // Await refetch so the loop stays visible in the list until new data arrives
       await qc.refetchQueries({ queryKey: ['system', systemId] });
       qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+      await refreshUvSelection();
       setListEditRow(null);
       setListRowForm(null);
       setListRowOriginal(null);
@@ -2194,6 +2210,7 @@ export default function DesignBookLSSDetail() {
       toast.success(`Loop ${n} removed`);
       clearFlowDraft();
       refresh();
+      await refreshUvSelection();
     } catch {
       toast.error('Failed to remove loop');
     } finally {
@@ -4467,6 +4484,10 @@ export default function DesignBookLSSDetail() {
           const savedResult = uvResult;
 
           const hasUvStreams = uvStreams.length > 0;
+          const showUvLoading = !usesFrozenPackage && uvSelectionLoading;
+          const showUvError = !usesFrozenPackage && uvSelectionIsError;
+          const uvErrorMessage = (uvSelectionError as any)?.response?.data?.error?.message
+            || 'UV Selection data could not be loaded. Try again.';
           const systemFlowM3h = systemFlow ?? null;
 
           const loopFlowM3h = (loopNumber: number): number | null => {
@@ -4586,8 +4607,32 @@ export default function DesignBookLSSDetail() {
                   </p>
                 </div>
 
+                {/* UV data loading state */}
+                {showUvLoading && (
+                  <div className="px-5 py-10 text-center" role="status">
+                    <Activity className="mx-auto mb-3 w-8 h-8 text-cyan-200 animate-pulse" />
+                    <p className="text-sm font-medium text-stone-500">Loading UV side streams…</p>
+                  </div>
+                )}
+
+                {/* UV data error state */}
+                {showUvError && (
+                  <div className="px-5 py-10 text-center">
+                    <AlertCircle className="mx-auto mb-3 w-8 h-8 text-red-300" />
+                    <p className="text-sm font-medium text-red-700">Unable to load UV side streams</p>
+                    <p className="text-xs text-red-600 mt-1">{uvErrorMessage}</p>
+                    <button
+                      type="button"
+                      onClick={() => { void refetchUvSelection(); }}
+                      className="mt-3 px-3 py-1.5 rounded-lg border border-red-200 bg-white text-xs font-semibold text-red-700 hover:bg-red-50"
+                    >
+                      Retry UV Selection
+                    </button>
+                  </div>
+                )}
+
                 {/* No UV streams empty state */}
-                {!hasUvStreams && (
+                {!showUvLoading && !showUvError && !hasUvStreams && (
                   <div className="px-5 py-10 text-center">
                     <Zap className="mx-auto mb-3 w-8 h-8 text-stone-200" />
                     <p className="text-sm font-medium text-stone-500">No UV side streams configured</p>
@@ -4598,7 +4643,7 @@ export default function DesignBookLSSDetail() {
                 )}
 
                 {/* UV stream cards */}
-                {hasUvStreams && (
+                {!showUvLoading && !showUvError && hasUvStreams && (
                   <div className="divide-y divide-stone-100">
                     {uvStreams.map((stream: any) => {
                       const assignment = getAssignment(stream.id);

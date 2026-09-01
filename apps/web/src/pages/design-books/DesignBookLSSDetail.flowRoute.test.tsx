@@ -1608,6 +1608,73 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     ));
   });
 
+  it('refreshes saved UV side streams before switching from Flow Route to UV Selection', async () => {
+    const user = userEvent.setup();
+    let persistedSystem: any = baseSystem;
+    let persistedUvData: any = {
+      streams: [],
+      selectable_revisions: [],
+      saved: null,
+    };
+
+    renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/systems/system-1') return Promise.resolve({ data: persistedSystem });
+      if (url === '/design-books/book-1') return Promise.resolve({ data: baseBook });
+      if (url === '/design-books/book-1/uv/system-1') return Promise.resolve({ data: persistedUvData });
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    apiPut.mockImplementation(async (url: string, payload: any) => {
+      if (url !== '/systems/system-1') return { data: {} };
+      const savedStreams = (payload.side_streams || []).map((stream: any, index: number) => ({
+        ...stream,
+        id: `saved-side-${index + 1}`,
+      }));
+      persistedSystem = { ...baseSystem, ...payload, side_streams: savedStreams };
+      persistedUvData = {
+        streams: savedStreams.filter((stream: any) => stream.preset === 'UV'),
+        selectable_revisions: [],
+        saved: null,
+      };
+      return { data: persistedSystem };
+    });
+
+    const route = within(document.querySelector('#flow-route')!);
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    await user.click(route.getByRole('button', { name: /UV/ }));
+    await user.type(route.getByRole('spinbutton', { name: 'UV side stream percentage' }), '100');
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/design-books/book-1/uv/system-1'));
+    await user.click(screen.getByRole('tab', { name: 'UV Selection' }));
+
+    const uvPanel = within(screen.getByRole('tabpanel', { name: 'UV Selection' }));
+    expect(await uvPanel.findByText('UV', { exact: true })).toBeInTheDocument();
+    expect(uvPanel.queryByText('No UV side streams configured')).not.toBeInTheDocument();
+  });
+
+  it('shows a UV request failure instead of the valid no-streams state', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/design-books/book-1/uv/system-1') {
+        return Promise.reject(new Error('UV service unavailable'));
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    await user.click(screen.getByRole('tab', { name: 'UV Selection' }));
+
+    const uvPanel = within(screen.getByRole('tabpanel', { name: 'UV Selection' }));
+    expect(await uvPanel.findByText('Unable to load UV side streams')).toBeInTheDocument();
+    expect(uvPanel.getByRole('button', { name: 'Retry UV Selection' })).toBeInTheDocument();
+    expect(uvPanel.queryByText('No UV side streams configured')).not.toBeInTheDocument();
+  });
+
   it('keeps a saved rename and side stream visible after reload and when editing resumes', async () => {
     const user = userEvent.setup();
     const firstRender = renderFlowRoute(baseSystem);
