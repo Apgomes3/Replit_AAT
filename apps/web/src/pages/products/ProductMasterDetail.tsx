@@ -554,6 +554,7 @@ export default function ProductMasterDetail() {
   };
 
   const handleSavePneumatic = async () => {
+    if (pneumaticSaving) return;
     const fields = [
       ['gas_flow_value', 'gas_flow_unit', 'Gas flow', false],
       ['operating_temperature_value', 'operating_temperature_unit', 'Operating temperature', true],
@@ -590,12 +591,21 @@ export default function ProductMasterDetail() {
           : String(payload[unitKey]).trim();
       }
       const { data: saved } = await api.put(`/product-masters/${id}/pneumatic`, payload);
+      if (!saved || typeof saved !== 'object') {
+        throw new Error('The server did not return the saved pneumatic specifications');
+      }
       queryClient.setQueryData(['product-pneumatic', id], saved);
       toast.success('Pneumatic specifications saved');
       setEditingPneumatic(false);
       refetchPneumatic();
     } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || 'Failed to save pneumatic specifications');
+      const message = error?.response?.data?.error?.message
+        || (error?.code === 'ECONNABORTED'
+          ? 'Saving pneumatic specifications timed out. Check your connection and try again.'
+          : error?.message === 'Network Error'
+            ? 'Could not reach the server. Check your connection and try again.'
+            : error?.message);
+      toast.error(message || 'Failed to save pneumatic specifications');
     } finally {
       setPneumaticSaving(false);
     }

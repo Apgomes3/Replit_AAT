@@ -15,6 +15,10 @@ const state = vi.hoisted(() => ({
   pneumatic: null as Record<string, any> | null,
   snapshot: null as Record<string, any> | null,
   duplicatePneumatic: null as Record<string, any> | null,
+  failLookup: false,
+  failPneumaticRead: false,
+  failPneumaticWrite: false,
+  failAudit: false,
   calls: [] as Array<{ sql: string; params: any[] }>,
   auditActions: [] as string[],
 }));
@@ -23,6 +27,18 @@ vi.mock('../db', () => {
   const query = vi.fn(async (text: string, params: any[] = []) => {
     const sql = text.replace(/\s+/g, ' ').trim().toLowerCase();
     state.calls.push({ sql, params });
+    if (state.failLookup && sql.startsWith('select id from product_masters where id::text=$1 or product_code=$1')) {
+      throw new Error('database lookup unavailable');
+    }
+    if (state.failPneumaticRead && sql.startsWith('select * from product_pneumatic')) {
+      throw new Error('pneumatic table unavailable');
+    }
+    if (state.failPneumaticWrite && sql.startsWith('insert into product_pneumatic') && sql.includes('on conflict')) {
+      throw new Error('pneumatic write unavailable');
+    }
+    if (state.failAudit && sql.startsWith('insert into audit_logs')) {
+      throw new Error('audit write unavailable');
+    }
     if (sql === 'begin') {
       state.snapshot = state.pneumatic ? { ...state.pneumatic } : null;
       return { rows: [] };
@@ -161,6 +177,10 @@ describe('PIM pneumatic specifications', () => {
     state.pneumatic = null;
     state.snapshot = null;
     state.duplicatePneumatic = null;
+    state.failLookup = false;
+    state.failPneumaticRead = false;
+    state.failPneumaticWrite = false;
+    state.failAudit = false;
     state.calls.length = 0;
     state.auditActions.length = 0;
   });
@@ -273,6 +293,45 @@ describe('PIM pneumatic specifications', () => {
     });
     expect(response.status).toBe(403);
     expect(response.body.error.code).toBe('MODULE_READ_ONLY');
+    expect(state.pneumatic).toBeNull();
+  });
+
+  it('returns a finite error when pneumatic lookup fails before the transaction', async () => {
+    state.failLookup = true;
+    const response = await request(app, 'PUT', `/api/v1/product-masters/${productId}/pneumatic`, token, {
+      gas_flow_value: 20,
+      gas_flow_unit: 'SCFM',
+    });
+    expect(response.status).toBe(500);
+    expect(response.body.error.message).toBe('database lookup unavailable');
+    expect(state.pneumatic).toBeNull();
+  });
+
+  it('returns a finite error when pneumatic reads fail', async () => {
+    state.failPneumaticRead = true;
+    const response = await request(app, 'GET', `/api/v1/product-masters/${productId}/pneumatic`, token);
+    expect(response.status).toBe(500);
+    expect(response.body.error.message).toBe('pneumatic table unavailable');
+  });
+
+  it('rolls back the pneumatic row when saving or auditing fails', async () => {
+    state.failAudit = true;
+    const response = await request(app, 'PUT', `/api/v1/product-masters/${productId}/pneumatic`, token, {
+      gas_flow_value: 20,
+      gas_flow_unit: 'SCFM',
+    });
+    expect(response.status).toBe(500);
+    expect(response.body.error.message).toBe('audit write unavailable');
+    expect(state.pneumatic).toBeNull();
+
+    state.failAudit = false;
+    state.failPneumaticWrite = true;
+    const retry = await request(app, 'PUT', `/api/v1/product-masters/${productId}/pneumatic`, token, {
+      gas_flow_value: 20,
+      gas_flow_unit: 'SCFM',
+    });
+    expect(retry.status).toBe(500);
+    expect(retry.body.error.message).toBe('pneumatic write unavailable');
     expect(state.pneumatic).toBeNull();
   });
 

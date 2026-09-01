@@ -1420,24 +1420,28 @@ const readPneumaticPair = (
   return { value: numericValue, unit: normalizedUnit };
 };
 
-router.get('/product-masters/:id/pneumatic', authenticate, async (req: AuthRequest, res: Response) => {
-  const pid = await resolveProductId(String(req.params.id));
-  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  const productResult = await query('SELECT product_category FROM product_masters WHERE id=$1', [pid]);
-  if (String(productResult.rows[0]?.product_category || '').toLowerCase() !== 'pneumatic') {
-    return res.status(400).json({
-      error: { code: 'INVALID_PRODUCT_CATEGORY', message: 'Pneumatic specifications are only available for products in the Pneumatic category' },
-    });
+router.get('/product-masters/:id/pneumatic', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const pid = await resolveProductId(String(req.params.id));
+    if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+    const productResult = await query('SELECT product_category FROM product_masters WHERE id=$1', [pid]);
+    if (String(productResult.rows[0]?.product_category || '').toLowerCase() !== 'pneumatic') {
+      return res.status(400).json({
+        error: { code: 'INVALID_PRODUCT_CATEGORY', message: 'Pneumatic specifications are only available for products in the Pneumatic category' },
+      });
+    }
+    const r = await query('SELECT * FROM product_pneumatic WHERE product_master_id=$1', [pid]);
+    res.json(r.rows[0] || {});
+  } catch (error) {
+    next(error);
   }
-  const r = await query('SELECT * FROM product_pneumatic WHERE product_master_id=$1', [pid]);
-  res.json(r.rows[0] || {});
 });
 
 router.put('/product-masters/:id/pneumatic', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const pid = await resolveProductId(String(req.params.id));
-  if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
-  const body = req.body || {};
   try {
+    const pid = await resolveProductId(String(req.params.id));
+    if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+    const body = req.body || {};
     const saved = await withProductTransaction(async client => {
       const productResult = await client.query(
         'SELECT product_category FROM product_masters WHERE id=$1 FOR UPDATE',
@@ -1479,6 +1483,12 @@ router.put('/product-masters/:id/pneumatic', authenticate, requireModuleManage('
         [pid, gasFlow.value, gasFlow.unit, operatingTemperature.value, operatingTemperature.unit,
           dewPoint.value, dewPoint.unit, inletPort.value, inletPort.unit, outletPort.value, outletPort.unit],
       );
+      if (!r.rows[0]) {
+        const error: any = new Error('The server did not return the saved pneumatic specifications');
+        error.status = 500;
+        error.code = 'PNEUMATIC_SAVE_FAILED';
+        throw error;
+      }
       await insertAuditTx(client, req.user!.id, 'product', pid, 'PNEUMATIC_SPECIFICATION_UPDATE', {
         summary: 'Pneumatic specifications updated',
         before: current,
