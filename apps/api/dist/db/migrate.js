@@ -1637,6 +1637,19 @@ CREATE TABLE IF NOT EXISTS system_flow_fractionator_allocations (
   CHECK (process_rate_ls_m2 IS NULL OR process_rate_ls_m2 > 0),
   CHECK (jsonb_typeof(products) = 'array')
 );
+
+CREATE TABLE IF NOT EXISTS system_flow_sand_filter_allocations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  parent_loop_number INTEGER NOT NULL CHECK (parent_loop_number BETWEEN 1 AND 3),
+  process_rate_ls_m2 NUMERIC CHECK (process_rate_ls_m2 IS NULL OR process_rate_ls_m2 > 0),
+  products JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes TEXT,
+  calculation_status VARCHAR(40) NOT NULL DEFAULT 'incomplete',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(system_id, parent_loop_number)
+);
 CREATE INDEX IF NOT EXISTS idx_system_flow_fractionators_parent
   ON system_flow_fractionator_allocations(system_id, parent_loop_number);
 

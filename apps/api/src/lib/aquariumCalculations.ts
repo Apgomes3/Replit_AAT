@@ -13,6 +13,7 @@ export const ALLOCATION_TOLERANCE_PCT = 0.01;
 export const VOLUME_DECIMALS = 4;
 export const FLOW_DECIMALS = 3;
 export const FOAM_FRACTIONATOR_MATCH_TOLERANCE_PCT = 5;
+export const SAND_FILTER_MATCH_TOLERANCE_PCT = 5;
 export const AAT_TARGET_TIME_DECIMALS = 6;
 export const AAT_TIME_MINUTES_DECIMALS = 2;
 export const AAT_TURNOVER_DECIMALS = 3;
@@ -213,6 +214,86 @@ export function calculateFoamFractionatorCapacity(
     inputs: {
       process_rate_ls_m2: processRate,
       recommended_process_rate_ls_m2: { minimum: 18, maximum: 22 },
+      parent_loop_flow_m3h: roundEngineering(parentFlowM3h, FLOW_DECIMALS),
+      products: selectedProducts,
+    },
+    results: {
+      selected_count: selectedProducts.reduce((sum, product) => sum + product.quantity, 0),
+      total_area_m2: roundEngineering(totalArea, VOLUME_DECIMALS),
+      parent_loop_flow_ls: roundEngineering(parentFlowLs, FLOW_DECIMALS),
+      capacity_ls: roundEngineering(capacityLs, FLOW_DECIMALS),
+      capacity_m3h: roundEngineering(capacityLs == null ? null : capacityLs * 3.6, FLOW_DECIMALS),
+      actual_loading_ls_m2: roundEngineering(actualLoading, FLOW_DECIMALS),
+    },
+    formula: 'area = Σ(quantity × π × (diameter ÷ 2)²); capacity = total area × process rate; actual loading = parent loop flow ÷ total area',
+  };
+}
+
+/**
+ * Calculates the open filtration area and capacity of selected AAT Sand
+ * Filters.  Sand-filter sizing intentionally shares the transparent hydraulic
+ * basis used by fractionators, but keeps its own governed recommendation.
+ */
+export function calculateSandFilterCapacity(
+  parentLoopFlowM3h: unknown,
+  processRateLsM2: unknown,
+  products: any[],
+) {
+  const parentFlowM3h = parentLoopFlowM3h == null || parentLoopFlowM3h === ''
+    ? null
+    : numberOrNull(parentLoopFlowM3h);
+  const processRate = positiveOrNull(processRateLsM2);
+  const selectedProducts = Array.isArray(products) ? products.map(product => {
+    const quantity = Number(product?.quantity);
+    const diameterMm = positiveOrNull(product?.diameter_mm);
+    const unitAreaM2 = diameterMm == null ? null : Math.PI * Math.pow(diameterMm / 2000, 2);
+    return {
+      product_master_id: product?.product_master_id || null,
+      product_code: product?.product_code || null,
+      product_name: product?.product_name || null,
+      quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 0,
+      diameter_mm: diameterMm,
+      unit_area_m2: roundEngineering(unitAreaM2, VOLUME_DECIMALS),
+      total_area_m2: unitAreaM2 == null || !(quantity > 0)
+        ? null
+        : roundEngineering(unitAreaM2 * quantity, VOLUME_DECIMALS),
+    };
+  }) : [];
+  const reasons: string[] = [];
+  if (parentFlowM3h == null || parentFlowM3h < 0) reasons.push('Parent loop allocation is unavailable.');
+  if (!selectedProducts.length) reasons.push('Select at least one AAT Sand Filter.');
+  if (selectedProducts.some(product => product.quantity <= 0)) reasons.push('Every selected sand filter requires a positive whole-number quantity.');
+  if (selectedProducts.some(product => product.diameter_mm == null)) reasons.push('Every selected sand filter requires a valid saved diameter.');
+  if (processRate == null) reasons.push('Enter an AAT process rate greater than zero.');
+  const totalArea = !selectedProducts.length
+    || reasons.some(reason => reason.includes('diameter') || reason.includes('quantity'))
+    ? null
+    : selectedProducts.reduce((sum, product) =>
+        sum + Math.PI * Math.pow(Number(product.diameter_mm) / 2000, 2) * product.quantity, 0);
+  const parentFlowLs = parentFlowM3h == null ? null : parentFlowM3h / 3.6;
+  const capacityLs = totalArea == null || processRate == null ? null : totalArea * processRate;
+  const actualLoading = totalArea == null || totalArea <= 0 || parentFlowLs == null
+    ? null
+    : parentFlowLs / totalArea;
+  let matchStatus: 'incomplete' | 'matched' | 'required_above_capacity' | 'capacity_above_required' = 'incomplete';
+  if (!reasons.length && capacityLs != null && parentFlowLs != null) {
+    const tolerance = Math.max(capacityLs, parentFlowLs) * SAND_FILTER_MATCH_TOLERANCE_PCT / 100;
+    matchStatus = Math.abs(capacityLs - parentFlowLs) <= tolerance
+      ? 'matched'
+      : parentFlowLs > capacityLs
+        ? 'required_above_capacity'
+        : 'capacity_above_required';
+  }
+  return {
+    status: reasons.length ? 'invalid' as CalculationStatus : 'valid' as CalculationStatus,
+    match_status: matchStatus,
+    reasons,
+    advisory: processRate != null && (processRate < 5 || processRate > 7)
+      ? 'Selected process rate is outside the recommended AAT range of 5–7 L/s/m².'
+      : null,
+    inputs: {
+      process_rate_ls_m2: processRate,
+      recommended_process_rate_ls_m2: { minimum: 5, maximum: 7 },
       parent_loop_flow_m3h: roundEngineering(parentFlowM3h, FLOW_DECIMALS),
       products: selectedProducts,
     },
@@ -537,6 +618,7 @@ export function calculateSystemEngineering(
   calculatedAt = new Date().toISOString(),
   sideStreams: any[] = system?.side_streams || [],
   fractionatorAllocations: any[] = system?.fractionator_allocations || [],
+  sandFilterAllocations: any[] = system?.sand_filter_allocations || [],
 ) {
   const linked = (links || []).map(link => {
     const exhibit = exhibitCalculations.find(calc => calc.inputs.exhibit_id === link.exhibit_id);
@@ -681,6 +763,21 @@ export function calculateSystemEngineering(
             };
           })()
         : null,
+      sand_filter: String(system?.[`loop${loopNumber}_filtration`] || '') === 'Sand Filter'
+        ? (() => {
+            const allocation = sandFilterAllocations.find(
+              item => Number(item.parent_loop_number) === loopNumber);
+            return {
+              allocation_id: allocation?.id || null,
+              notes: allocation?.notes || null,
+              ...calculateSandFilterCapacity(
+                parentFlow,
+                allocation?.process_rate_ls_m2,
+                allocation?.products || [],
+              ),
+            };
+          })()
+        : null,
     };
   });
   for (const loop of flowRoute) {
@@ -692,6 +789,17 @@ export function calculateSystemEngineering(
       );
     } else if (foam.match_status === 'required_above_capacity') {
       reasons.push(`${loop.name} required flow is above the selected Foam Fractionator capacity.`);
+    }
+  }
+  for (const loop of flowRoute) {
+    const sand = loop.sand_filter;
+    if (!sand) continue;
+    if (sand.match_status === 'incomplete') {
+      reasons.push(
+        `${loop.name} Sand Filter capacity is incomplete: ${sand.reasons.join(' ')}`,
+      );
+    } else if (sand.match_status === 'required_above_capacity') {
+      reasons.push(`${loop.name} required flow is above the selected Sand Filter capacity.`);
     }
   }
 

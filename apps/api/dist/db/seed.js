@@ -99,6 +99,7 @@ async function seed() {
         await client.query(`
       INSERT INTO product_families (product_family_code, product_family_name, category_code, status) VALUES
         ('PFM-FF',   'Foam Fractionators', 'FILTRATION',  'Active'),
+        ('PFM-SF',   'AAT Sand Filters',   'FILTRATION',  'Active'),
         ('PFM-PUMP', 'Circulation Pumps',  'PUMPING',     'Active'),
         ('PFM-DRUM', 'Drum Filters',       'FILTRATION',  'Active'),
         ('PFM-UV',   'UV Sterilizers',     'DISINFECTION','Active'),

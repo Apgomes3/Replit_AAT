@@ -2,6 +2,34 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const aquariumCalculations_1 = require("./aquariumCalculations");
+(0, vitest_1.describe)('AAT Sand Filter capacity', () => {
+    const filter = (diameter_mm, quantity = 1) => ({
+        product_master_id: 'sf-1', product_code: 'SF-1', product_name: 'Sand Filter',
+        diameter_mm, quantity,
+    });
+    (0, vitest_1.it)('calculates one and multiple filter capacity from saved diameters', () => {
+        const one = (0, aquariumCalculations_1.calculateSandFilterCapacity)(10, 6, [filter(1000)]);
+        (0, vitest_1.expect)(one.status).toBe('valid');
+        (0, vitest_1.expect)(one.results.total_area_m2).toBeCloseTo(Math.PI * .25, 4);
+        (0, vitest_1.expect)(one.results.capacity_ls).toBeCloseTo(Math.PI * .25 * 6, 3);
+        (0, vitest_1.expect)(one.advisory).toBeNull();
+        const multiple = (0, aquariumCalculations_1.calculateSandFilterCapacity)(20, 5, [
+            filter(1000, 2),
+            { ...filter(500, 3), product_master_id: 'sf-2' },
+        ]);
+        (0, vitest_1.expect)(multiple.results.selected_count).toBe(5);
+        (0, vitest_1.expect)(multiple.results.total_area_m2).toBeCloseTo(2.1598, 4);
+    });
+    (0, vitest_1.it)('keeps the 5–7 range advisory and reports incomplete inputs', () => {
+        (0, vitest_1.expect)((0, aquariumCalculations_1.calculateSandFilterCapacity)(10, 8, [filter(1000)]).advisory).toContain('5–7');
+        (0, vitest_1.expect)((0, aquariumCalculations_1.calculateSandFilterCapacity)(null, null, []).reasons).toEqual(vitest_1.expect.arrayContaining([
+            vitest_1.expect.stringContaining('Parent loop'),
+            vitest_1.expect.stringContaining('Select'),
+            vitest_1.expect.stringContaining('process rate'),
+        ]));
+        (0, vitest_1.expect)((0, aquariumCalculations_1.calculateSandFilterCapacity)(10, 6, [filter(null)]).match_status).toBe('incomplete');
+    });
+});
 (0, vitest_1.describe)('AAT recommended exhibit flow', () => {
     vitest_1.it.each([
         { volume: 0.8, timeHours: 0.25, flowM3h: 3.2, turnover: 4 },

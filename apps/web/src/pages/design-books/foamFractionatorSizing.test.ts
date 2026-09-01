@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { calculateFoamFractionatorSizingRecommendation } from './foamFractionatorSizing';
+import {
+  calculateFoamFractionatorSizingRecommendation,
+  calculateSandFilterSizingRecommendation,
+} from './foamFractionatorSizing';
 
 const product = (id: string, diameterMm: number | null, quantity: number) => ({
   product_master_id: id,
@@ -48,5 +51,29 @@ describe('Foam Fractionator sizing guidance', () => {
     const result = calculateFoamFractionatorSizingRecommendation(flow, products, 20);
     expect(result.status).toBe('incomplete');
     expect(result.reason).toContain(reason);
+  });
+});
+
+describe('Sand Filter sizing guidance', () => {
+  it('uses 6 L/s/m² and rounds suggested quantities up', () => {
+    const result = calculateSandFilterSizingRecommendation(
+      36,
+      [product('SF-1000', 1000, 1)],
+      5,
+    );
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') return;
+    expect(result.recommendedRateLsM2).toBe(6);
+    expect(result.products[0].suggestedQuantity).toBe(3);
+  });
+
+  it('explains incomplete saved diameter evidence', () => {
+    const result = calculateSandFilterSizingRecommendation(
+      36,
+      [product('SF-1000', null, 1)],
+      6,
+    );
+    expect(result.status).toBe('incomplete');
+    expect(result.reason).toContain('Sand Filter');
   });
 });

@@ -100,6 +100,11 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
      WHERE system_id = ANY($1::uuid[]) ORDER BY parent_loop_number`,
     [systems.map(system => system.id)],
   )).rows;
+  const sandFilters = (await runner(
+    `SELECT * FROM system_flow_sand_filter_allocations
+     WHERE system_id = ANY($1::uuid[]) ORDER BY parent_loop_number`,
+    [systems.map(system => system.id)],
+  )).rows;
   return systems.map(system => ({
     ...system,
     side_streams: rows
@@ -125,6 +130,7 @@ async function attachSystemSideStreams(runner: DbRunner, systems: any[]) {
         } : null,
       })),
     fractionator_allocations: fractionators.filter(allocation => allocation.system_id === system.id),
+    sand_filter_allocations: sandFilters.filter(allocation => allocation.system_id === system.id),
   }));
 }
 
@@ -1046,6 +1052,7 @@ export async function loadReleaseContext(
     calculatedAt,
     system.side_streams || [],
     system.fractionator_allocations || [],
+    system.sand_filter_allocations || [],
   ));
   const currentSystems = systems.map(system => {
     const calculation = systemCalculations.find(
@@ -2068,6 +2075,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     calculationTimestamp,
     system.side_streams || [],
     system.fractionator_allocations || [],
+    system.sand_filter_allocations || [],
   ));
   const currentSystems = systems.map(system => {
     const calculation = systemCalculations.find(

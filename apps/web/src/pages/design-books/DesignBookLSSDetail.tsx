@@ -18,6 +18,10 @@ import {
   FOAM_PROCESS_RATE_SLIDER_MAX,
   FOAM_PROCESS_RATE_SLIDER_MIN,
   FOAM_RECOMMENDED_PROCESS_RATE_LS_M2,
+  calculateSandFilterSizingRecommendation,
+  SAND_FILTER_PROCESS_RATE_SLIDER_MAX,
+  SAND_FILTER_PROCESS_RATE_SLIDER_MIN,
+  SAND_FILTER_RECOMMENDED_PROCESS_RATE_LS_M2,
 } from './foamFractionatorSizing';
 import { summarizeFiltration } from './LSSCompactUnitsCatalog';
 import LSSPumpSelectionPanel from './LSSPumpSelectionPanel';
@@ -707,6 +711,8 @@ function FractionatorProductCard({
   formatFlow,
   onQuantityChange,
   onRemove,
+  equipmentLabel = 'Foam Fractionator',
+  recommendedRange = '18–22',
 }: {
   product: any;
   loopNumber: number;
@@ -719,6 +725,8 @@ function FractionatorProductCard({
   formatFlow: (value: number | null) => string;
   onQuantityChange: (value: string) => void;
   onRemove: () => void;
+  equipmentLabel?: string;
+  recommendedRange?: string;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const productId = String(product.product_master_id);
@@ -735,14 +743,14 @@ function FractionatorProductCard({
 
   return (
     <section
-      aria-label={`Foam Fractionator ${product.product_code}`}
+      aria-label={`${equipmentLabel} ${product.product_code}`}
       className="min-w-0 max-w-full rounded-md border border-current/20 bg-white/60 overflow-hidden"
     >
       <div className="p-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <strong className="block truncate text-sm">{product.product_code}</strong>
-            <span className="block truncate text-[10px] opacity-70">{product.product_name || 'Foam Fractionator model'}</span>
+            <span className="block truncate text-[10px] opacity-70">{product.product_name || `${equipmentLabel} model`}</span>
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
@@ -802,7 +810,7 @@ function FractionatorProductCard({
             <p className="mt-2 font-semibold">{calculation.reason}</p>
           )}
           {calculation.advisory && (
-            <p className="mt-2 font-semibold">Advisory: selected rate is outside the recommended 18–22 L/s/m² range.</p>
+            <p className="mt-2 font-semibold">Advisory: selected rate is outside the recommended {recommendedRange} L/s/m² range.</p>
           )}
           {notes && (
             <p className="mt-2 opacity-80"><span className="font-semibold">Notes:</span> {notes}</p>
@@ -850,6 +858,11 @@ function createFlowDraft(system: any) {
       quantity: String(product.quantity),
     })),
   }));
+  draft.sand_filter_allocations = (system.sand_filter_allocations || []).map((allocation: any) => ({
+    ...allocation,
+    process_rate_ls_m2: allocation.process_rate_ls_m2 != null ? String(allocation.process_rate_ls_m2) : '',
+    products: (allocation.products || []).map((product: any) => ({ ...product, quantity: String(product.quantity) })),
+  }));
   return draft;
 }
 
@@ -863,6 +876,8 @@ function flowDraftLoopHasData(draft: Record<string, any>, n: number) {
     draft[`loop${n}_link_bio_degas`] ||
     (draft.side_streams || []).some((stream: any) => Number(stream.parent_loop_number) === n)
     || (draft.fractionator_allocations || []).some(
+      (allocation: any) => Number(allocation.parent_loop_number) === n)
+    || (draft.sand_filter_allocations || []).some(
       (allocation: any) => Number(allocation.parent_loop_number) === n)
   );
 }
@@ -895,7 +910,9 @@ function flowDraftMatchesSystem(draft: Record<string, any>, system: any) {
   return loopsMatch && JSON.stringify(comparableStreams(draft.side_streams || [])) ===
     JSON.stringify(comparableStreams(system.side_streams || []))
     && JSON.stringify(draft.fractionator_allocations || []) ===
-      JSON.stringify(createFlowDraft(system).fractionator_allocations || []);
+      JSON.stringify(createFlowDraft(system).fractionator_allocations || [])
+    && JSON.stringify(draft.sand_filter_allocations || []) ===
+      JSON.stringify(createFlowDraft(system).sand_filter_allocations || []);
 }
 
 function nullableNumber(value: unknown): number | null {
@@ -943,6 +960,18 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
       products: (allocation.products || []).map((product: any) => ({
         product_master_id: product.product_master_id,
         quantity: Number(product.quantity),
+      })),
+    }));
+  fields.sand_filter_allocations = (draft.sand_filter_allocations || [])
+    .filter((allocation: any) =>
+      Number(allocation.parent_loop_number) !== clearedLoop
+      && draft[`loop${Number(allocation.parent_loop_number)}_filtration`] === 'Sand Filter')
+    .map((allocation: any) => ({
+      parent_loop_number: Number(allocation.parent_loop_number),
+      process_rate_ls_m2: nullableNumber(allocation.process_rate_ls_m2),
+      notes: String(allocation.notes || '').trim() || null,
+      products: (allocation.products || []).map((product: any) => ({
+        product_master_id: product.product_master_id, quantity: Number(product.quantity),
       })),
     }));
   return fields;
@@ -1248,6 +1277,11 @@ export default function DesignBookLSSDetail() {
   const { data: fractionatorProducts = [] } = useQuery({
     queryKey: ['foam-fractionator-products', systemId],
     queryFn: () => api.get(`/systems/${systemId}/fractionator-products`).then(r => r.data.items),
+    enabled: !!systemId,
+  });
+  const { data: sandFilterProducts = [] } = useQuery({
+    queryKey: ['sand-filter-products', systemId],
+    queryFn: () => api.get(`/systems/${systemId}/sand-filter-products`).then(r => r.data.items),
     enabled: !!systemId,
   });
   const { data: uvSelectionData, refetch: refetchUvSelection } = useQuery({
@@ -1596,6 +1630,14 @@ export default function DesignBookLSSDetail() {
       ...(draft || createFlowDraft(systemRef.current)),
       fractionator_allocations: update([
         ...(draft?.fractionator_allocations || createFlowDraft(systemRef.current).fractionator_allocations),
+      ]),
+    }));
+  };
+  const setSandFilterAllocations = (update: (allocations: any[]) => any[]) => {
+    setFlowForm((draft: any) => ({
+      ...(draft || createFlowDraft(systemRef.current)),
+      sand_filter_allocations: update([
+        ...(draft?.sand_filter_allocations || createFlowDraft(systemRef.current).sand_filter_allocations),
       ]),
     }));
   };
@@ -3155,12 +3197,16 @@ export default function DesignBookLSSDetail() {
             .filter((stream: any) => Number(stream.parent_loop_number) === n)
             .sort((left: any, right: any) => Number(left.sort_order || 0) - Number(right.sort_order || 0));
         const fractionatorFor = (source: any, n: number) =>
-          (source?.fractionator_allocations || []).find(
+          (source?.[`loop${n}_filtration`] === 'Sand Filter'
+            ? source?.sand_filter_allocations || []
+            : source?.fractionator_allocations || []).find(
             (allocation: any) => Number(allocation.parent_loop_number) === n);
         const selectedFractionatorProducts = (source: any, n: number) => {
           const allocation = fractionatorFor(source, n);
           return (allocation?.products || []).map((selected: any) => {
-            const catalog = fractionatorProducts.find(
+            const catalogProducts = source?.[`loop${n}_filtration`] === 'Sand Filter'
+              ? sandFilterProducts : fractionatorProducts;
+            const catalog = catalogProducts.find(
               (product: any) => product.id === selected.product_master_id);
             return { ...(catalog || {}), ...selected };
           });
@@ -3168,8 +3214,9 @@ export default function DesignBookLSSDetail() {
         const fractionatorCalculation = (source: any, n: number, loopFlow: number | null) => {
           const allocation = fractionatorFor(source, n);
           const products = selectedFractionatorProducts(source, n);
-          if (loopFlow == null) return { status: 'incomplete', reason: 'Set the parent loop allocation to calculate capacity.' };
-          if (!products.length) return { status: 'incomplete', reason: 'Select at least one Foam Fractionator.' };
+          const isSandFilter = source?.[`loop${n}_filtration`] === 'Sand Filter';
+          if (loopFlow == null) return { status: 'incomplete', reason: 'Parent loop flow is unavailable for capacity calculation.' };
+          if (!products.length) return { status: 'incomplete', reason: `Select at least one ${isSandFilter ? 'AAT Sand Filter' : 'Foam Fractionator'}.` };
           if (products.some((product: any) => !(Number(product.diameter_mm) > 0))) {
             return { status: 'incomplete', reason: 'A selected fractionator has no valid saved diameter.' };
           }
@@ -3184,7 +3231,7 @@ export default function DesignBookLSSDetail() {
             status: Math.abs(flowLs - capacityLs) <= tolerance ? 'matched'
               : flowLs > capacityLs ? 'required_above_capacity' : 'capacity_above_required',
             products, area, flowLs, rate, capacityLs, actualLoading: flowLs / area,
-            advisory: rate < 18 || rate > 22,
+            advisory: isSandFilter ? rate < 5 || rate > 7 : rate < 18 || rate > 22,
           };
         };
         const FractionatorSummary = ({ source, n, loopFlow, editable = false }: {
@@ -3193,6 +3240,9 @@ export default function DesignBookLSSDetail() {
           const allocation = fractionatorFor(source, n) || {
             parent_loop_number: n, process_rate_ls_m2: '', notes: '', products: [],
           };
+          const isSandFilter = source?.[`loop${n}_filtration`] === 'Sand Filter';
+          const equipmentLabel = isSandFilter ? 'Sand Filter' : 'Foam Fractionator';
+          const catalogProducts = isSandFilter ? sandFilterProducts : fractionatorProducts;
           const calculation: any = fractionatorCalculation(source, n, loopFlow);
           const statusStyle = calculation.status === 'matched'
             ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -3205,22 +3255,29 @@ export default function DesignBookLSSDetail() {
             : calculation.status === 'required_above_capacity' ? 'Required flow above capacity'
             : calculation.status === 'capacity_above_required' ? 'Capacity above required flow'
             : 'Calculation incomplete';
-          const updateAllocation = (changes: any) => setFractionatorAllocations(allocations => {
+          const allocationSetter = isSandFilter ? setSandFilterAllocations : setFractionatorAllocations;
+          const updateAllocation = (changes: any) => allocationSetter(allocations => {
             const existing = allocations.find((item: any) => Number(item.parent_loop_number) === n);
             return existing
               ? allocations.map((item: any) => Number(item.parent_loop_number) === n ? { ...item, ...changes } : item)
               : [...allocations, { ...allocation, ...changes }];
           });
           const selectedProducts = selectedFractionatorProducts(source, n);
-          const recommendation: any = calculateFoamFractionatorSizingRecommendation(
+          const recommendation: any = (isSandFilter
+            ? calculateSandFilterSizingRecommendation
+            : calculateFoamFractionatorSizingRecommendation)(
             loopFlow,
             selectedProducts,
             allocation.process_rate_ls_m2,
           );
           const currentRate = Number(allocation.process_rate_ls_m2);
+          const sliderMin = isSandFilter ? SAND_FILTER_PROCESS_RATE_SLIDER_MIN : FOAM_PROCESS_RATE_SLIDER_MIN;
+          const sliderMax = isSandFilter ? SAND_FILTER_PROCESS_RATE_SLIDER_MAX : FOAM_PROCESS_RATE_SLIDER_MAX;
+          const recommendedRate = isSandFilter ? SAND_FILTER_RECOMMENDED_PROCESS_RATE_LS_M2 : FOAM_RECOMMENDED_PROCESS_RATE_LS_M2;
+          const recommendedRange = isSandFilter ? '5–7' : '18–22';
           const sliderValue = Number.isFinite(currentRate) && currentRate > 0
-            ? Math.min(FOAM_PROCESS_RATE_SLIDER_MAX, Math.max(FOAM_PROCESS_RATE_SLIDER_MIN, currentRate))
-            : FOAM_RECOMMENDED_PROCESS_RATE_LS_M2;
+            ? Math.min(sliderMax, Math.max(sliderMin, currentRate))
+            : recommendedRate;
           const applyRecommendedRate = () => {
             if (recommendation.status !== 'ready') return;
             updateAllocation({ process_rate_ls_m2: String(recommendation.recommendedRateLsM2) });
@@ -3250,7 +3307,7 @@ export default function DesignBookLSSDetail() {
           return (
             <div className={`rounded-lg border p-3 ${statusStyle}`}>
               <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="text-xs font-semibold">Foam Fractionator capacity</span>
+                <span className="text-xs font-semibold">{equipmentLabel} capacity</span>
                 <span className="text-[10px] font-semibold">{statusLabel}</span>
               </div>
               {editable && (
@@ -3259,15 +3316,15 @@ export default function DesignBookLSSDetail() {
                     <label className="block text-[10px] font-medium mb-1">Add fractionator model</label>
                     <select value="" onChange={event => {
                       if (!event.target.value) return;
-                      const selected = fractionatorProducts.find((product: any) => product.id === event.target.value);
+                      const selected = catalogProducts.find((product: any) => product.id === event.target.value);
                       if (!selected || allocation.products.some((product: any) => product.product_master_id === selected.id)) return;
                       updateAllocation({ products: [...allocation.products, {
                         product_master_id: selected.id, product_code: selected.product_code,
                         product_name: selected.product_name, diameter_mm: selected.diameter_mm, quantity: '1',
                       }] });
                     }} className={`${inputCls} bg-white`}>
-                      <option value="">— Select Foam Fractionator —</option>
-                      {fractionatorProducts.map((product: any) => (
+                      <option value="">— Select {equipmentLabel} —</option>
+                      {catalogProducts.map((product: any) => (
                         <option key={product.id} value={product.id}>
                           {product.product_code} — {product.product_name} — {product.diameter_mm ? `Ø${product.diameter_mm} mm` : 'diameter unavailable'}
                         </option>
@@ -3301,6 +3358,8 @@ export default function DesignBookLSSDetail() {
                             products: allocation.products.filter(
                               (item: any) => item.product_master_id !== product.product_master_id),
                           })}
+                          equipmentLabel={equipmentLabel}
+                          recommendedRange={recommendedRange}
                         />
                       );
                     })}
@@ -3319,8 +3378,8 @@ export default function DesignBookLSSDetail() {
                       </div>
                       <input
                         type="range"
-                        min={FOAM_PROCESS_RATE_SLIDER_MIN}
-                        max={FOAM_PROCESS_RATE_SLIDER_MAX}
+                        min={sliderMin}
+                        max={sliderMax}
                         step="0.1"
                         value={sliderValue}
                         onChange={event => updateAllocation({ process_rate_ls_m2: event.target.value })}
@@ -3328,9 +3387,9 @@ export default function DesignBookLSSDetail() {
                         className="w-full accent-violet-600"
                       />
                       <div className="flex justify-between text-[9px] text-stone-400">
-                        <span>{FOAM_PROCESS_RATE_SLIDER_MIN}</span>
-                        <span>Recommended: 18–22</span>
-                        <span>{FOAM_PROCESS_RATE_SLIDER_MAX}</span>
+                        <span>{sliderMin}</span>
+                        <span>Recommended: {recommendedRange}</span>
+                        <span>{sliderMax}</span>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
                         <input
@@ -3344,11 +3403,11 @@ export default function DesignBookLSSDetail() {
                           className={`${inputCls} bg-white max-w-32`}
                         />
                         <span className="text-[10px] text-stone-500">L/s/m²</span>
-                        {(currentRate > 0 && (currentRate < FOAM_PROCESS_RATE_SLIDER_MIN || currentRate > FOAM_PROCESS_RATE_SLIDER_MAX)) && (
-                          <span className="text-[9px] text-stone-500">Type any positive value; slider is 10–30.</span>
+                        {(currentRate > 0 && (currentRate < sliderMin || currentRate > sliderMax)) && (
+                          <span className="text-[9px] text-stone-500">Type any positive value; slider is {sliderMin}–{sliderMax}.</span>
                         )}
                       </div>
-                      <p className="text-[10px] mt-1">Recommended operating range: 18–22 L/s/m². Values outside it are allowed with an advisory.</p>
+                      <p className="text-[10px] mt-1">Recommended operating range: {recommendedRange} L/s/m². Values outside it are allowed with an advisory.</p>
                     </div>
                     <div className="rounded-md border border-cyan-200 bg-cyan-50/70 p-2.5 text-[10px] text-cyan-950">
                       <div className="flex items-center justify-between gap-2 mb-1">
@@ -3495,6 +3554,9 @@ export default function DesignBookLSSDetail() {
                     </div>
                   </div>
                 </div>
+              )}
+              {filt === 'Sand Filter' && (
+                <FractionatorSummary source={system} n={n} loopFlow={loopFlow} />
               )}
               {filt === 'Foam Fractionation' && (
                 <FractionatorSummary source={system} n={n} loopFlow={loopFlow} />
@@ -3691,6 +3753,9 @@ export default function DesignBookLSSDetail() {
               </div>
               </div>
               {curFilt === 'Foam Fractionation' && (
+                <FractionatorSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
+              )}
+              {curFilt === 'Sand Filter' && (
                 <FractionatorSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
               )}
               <div className="border-t border-stone-100 pt-4">

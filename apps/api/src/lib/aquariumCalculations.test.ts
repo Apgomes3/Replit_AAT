@@ -2,12 +2,45 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateAatRecommendedFlow,
   calculateFoamFractionatorCapacity,
+  calculateSandFilterCapacity,
   calculateExhibitHydraulics,
   calculateSideStreamFlow,
   calculateSystemEngineering,
   compatibleWaterTypes,
   evaluateCompactUnit,
 } from './aquariumCalculations';
+
+describe('AAT Sand Filter capacity', () => {
+  const filter = (diameter_mm: number | null, quantity = 1) => ({
+    product_master_id: 'sf-1', product_code: 'SF-1', product_name: 'Sand Filter',
+    diameter_mm, quantity,
+  });
+
+  it('calculates one and multiple filter capacity from saved diameters', () => {
+    const one = calculateSandFilterCapacity(10, 6, [filter(1000)]);
+    expect(one.status).toBe('valid');
+    expect(one.results.total_area_m2).toBeCloseTo(Math.PI * .25, 4);
+    expect(one.results.capacity_ls).toBeCloseTo(Math.PI * .25 * 6, 3);
+    expect(one.advisory).toBeNull();
+
+    const multiple = calculateSandFilterCapacity(20, 5, [
+      filter(1000, 2),
+      { ...filter(500, 3), product_master_id: 'sf-2' },
+    ]);
+    expect(multiple.results.selected_count).toBe(5);
+    expect(multiple.results.total_area_m2).toBeCloseTo(2.1598, 4);
+  });
+
+  it('keeps the 5–7 range advisory and reports incomplete inputs', () => {
+    expect(calculateSandFilterCapacity(10, 8, [filter(1000)]).advisory).toContain('5–7');
+    expect(calculateSandFilterCapacity(null, null, []).reasons).toEqual(expect.arrayContaining([
+      expect.stringContaining('Parent loop'),
+      expect.stringContaining('Select'),
+      expect.stringContaining('process rate'),
+    ]));
+    expect(calculateSandFilterCapacity(10, 6, [filter(null)]).match_status).toBe('incomplete');
+  });
+});
 
 describe('AAT recommended exhibit flow', () => {
   it.each([

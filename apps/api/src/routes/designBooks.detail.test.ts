@@ -24,6 +24,21 @@ const systems = [1, 2, 3].map(index => ({
   side_streams: [],
   fractionator_allocations: [],
 }));
+const sandFilterAllocation = {
+  id: '00000000-0000-4000-8000-000000000199',
+  system_id: systems[0].id,
+  parent_loop_number: 1,
+  process_rate_ls_m2: 6,
+  notes: 'Reviewed basis',
+  products: [{
+    product_master_id: '00000000-0000-4000-8000-000000000198',
+    product_code: 'SF-1000',
+    product_name: 'Approved Sand Filter',
+    diameter_mm: 1000,
+    quantity: 2,
+  }],
+  calculation_status: 'capacity_above_required',
+};
 
 const state = vi.hoisted(() => ({
   calls: [] as Array<{ sql: string; params: any[] }>,
@@ -61,6 +76,9 @@ vi.mock('../db', () => {
     }
     if (sql.includes('FROM systems s')) {
       return { rows: systems };
+    }
+    if (sql.includes('FROM system_flow_sand_filter_allocations')) {
+      return { rows: [sandFilterAllocation] };
     }
     if (sql.includes('FROM system_flow_side_streams') ||
         sql.includes('FROM system_flow_fractionator_allocations') ||
@@ -175,6 +193,7 @@ describe('Design Book detail thermal response', () => {
     expect(response.body.friction_loss_calculations.map((item: any) => item.system_id)).toEqual(
       systems.map(system => system.id),
     );
+    expect(response.body.systems[0].sand_filter_allocations).toEqual([sandFilterAllocation]);
   });
 
   it('inherits a fresh circuit pump into an unsaved friction-loss package', async () => {
