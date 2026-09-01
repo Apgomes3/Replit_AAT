@@ -202,4 +202,47 @@ describe('thermal correlation approval boundary', () => {
       status: 400,
     });
   });
+
+  it('uses a newly approved version for new calculations without changing captured evidence', async () => {
+    const originalRunner = vi.fn(async () => ({
+      rows: [{ ...approvedRow, version: '2026.1', coefficient_kg_m2_s_kpa: '0.000001' }],
+    }));
+    const originalInputs = await thermalCorrelationTestUtils.resolveThermalCorrelationInputs(
+      originalRunner as any,
+      { agitation_correlation_id: 'correlation-1' },
+      '2026-08-31T00:00:00.000Z',
+    );
+    const capturedEvidence = structuredClone(originalInputs.agitation_correlation_snapshot);
+
+    const updatedRunner = vi.fn(async () => ({
+      rows: [{
+        ...approvedRow,
+        id: 'correlation-2',
+        version: '2026.3',
+        coefficient_kg_m2_s_kpa: '0.0000017',
+      }],
+    }));
+    const updatedInputs = await thermalCorrelationTestUtils.resolveThermalCorrelationInputs(
+      updatedRunner as any,
+      { agitation_correlation_id: 'correlation-2' },
+      '2026-09-01T00:00:00.000Z',
+    );
+
+    expect(capturedEvidence).toMatchObject({
+      correlation_id: 'correlation-1',
+      version: '2026.1',
+      coefficient_kg_m2_s_kpa: 0.000001,
+    });
+    expect(originalInputs.agitation_correlation_snapshot).toEqual(capturedEvidence);
+    expect(updatedInputs).toMatchObject({
+      agitation_correlation_version: '2026.3',
+      evaporation_coefficient_kg_m2_s_kpa: 0.0000017,
+      agitation_correlation_snapshot: {
+        correlation_id: 'correlation-2',
+        version: '2026.3',
+        coefficient_kg_m2_s_kpa: 0.0000017,
+        approved: true,
+      },
+    });
+  });
 });
