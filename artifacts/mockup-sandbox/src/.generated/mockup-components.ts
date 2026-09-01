@@ -10,5 +10,7 @@ export const modules: ModuleMap = {
   "./components/mockups/order-mgmt/InboxZero.tsx": () => import("../components/mockups/order-mgmt/InboxZero.tsx"),
   "./components/mockups/order-mgmt/KanbanBoard.tsx": () => import("../components/mockups/order-mgmt/KanbanBoard.tsx"),
   "./components/mockups/order-mgmt/PipelineHealth.tsx": () => import("../components/mockups/order-mgmt/PipelineHealth.tsx"),
-  "./components/mockups/order-mgmt/PowerUser.tsx": () => import("../components/mockups/order-mgmt/PowerUser.tsx")
+  "./components/mockups/order-mgmt/PowerUser.tsx": () => import("../components/mockups/order-mgmt/PowerUser.tsx"),
+  "./components/mockups/thermal-redesign/Current.tsx": () => import("../components/mockups/thermal-redesign/Current.tsx"),
+  "./components/mockups/thermal-redesign/ProgressiveDisclosure.tsx": () => import("../components/mockups/thermal-redesign/ProgressiveDisclosure.tsx")
 };
