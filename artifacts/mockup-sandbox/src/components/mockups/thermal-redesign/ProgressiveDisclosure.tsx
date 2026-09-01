@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import "./ProgressiveDisclosure.css";
+import "./ProgressiveDisclosureAgitation.css";
 
 type System = {
   id: string;
@@ -47,6 +48,19 @@ const systems: System[] = [
     heating: "1.5 kW",
     sourceFreshness: "Source sync 14 min ago",
   },
+];
+
+type AgitationClass = "calm" | "moderate" | "high";
+
+const agitationOptions: Array<{
+  value: AgitationClass;
+  label: string;
+  coefficient: string;
+  note: string;
+}> = [
+  { value: "calm", label: "Calm", coefficient: "0.000012", note: "Low surface activity" },
+  { value: "moderate", label: "Moderate", coefficient: "0.000018", note: "Typical reef surface activity" },
+  { value: "high", label: "High", coefficient: "0.000026", note: "Strong agitation or wave action" },
 ];
 
 function StatusPill({ children, tone = "green" }: { children: React.ReactNode; tone?: "green" | "amber" | "slate" }) {
@@ -119,6 +133,8 @@ function Calculation({ system, onClose }: { system: System; onClose: () => void 
   const [sheet, setSheet] = useState<"wall" | "temperature" | null>(null);
   const [saved, setSaved] = useState(false);
   const [showSources, setShowSources] = useState(false);
+  const [agitationClass, setAgitationClass] = useState<AgitationClass>("moderate");
+  const selectedAgitation = agitationOptions.find((option) => option.value === agitationClass) ?? agitationOptions[1];
 
   const saveReviewed = (value: string) => {
     if (sheet === "wall") {
@@ -194,7 +210,32 @@ function Calculation({ system, onClose }: { system: System; onClose: () => void 
             <button className="pd-text-action" onClick={() => setSheet("wall")}>Edit wall value <ArrowRight size={14} /></button>
           </div>
         </div>
-        <div className="pd-correlation"><div><span className="pd-kicker">Active platform correlation</span><b>Moderate surface activity · v1.1</b><small>Read-only · selected by Platform Admin · coefficient 0.000018 kg/m²·s·kPa</small></div><StatusPill tone="slate">Platform governed</StatusPill></div>
+        <div className="pd-correlation-grid">
+          <div className="pd-correlation pd-agitation-card">
+            <div className="pd-correlation-copy">
+              <span className="pd-kicker">Surface agitation</span>
+              <b>Choose the activity at the water surface</b>
+              <small>{selectedAgitation.note} · used for evaporation</small>
+            </div>
+            <label className="pd-select-field">
+              <span>Activity class</span>
+              <div className="pd-select-wrap">
+                <select value={agitationClass} onChange={(event) => setAgitationClass(event.target.value as AgitationClass)}>
+                  {agitationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+            </label>
+            <div className="pd-coefficient"><span>Effective coefficient</span><b>{selectedAgitation.coefficient}</b><small>kg/m²·s·kPa</small></div>
+          </div>
+          <div className="pd-correlation">
+            <div className="pd-correlation-copy">
+              <span className="pd-kicker">Active platform correlation</span>
+              <b>Generated evaporation model · v1.1</b>
+              <small>Read-only · version selected by Platform Admin</small>
+            </div>
+            <StatusPill tone="slate">Platform governed</StatusPill>
+          </div>
+        </div>
       </div>
 
       <div className="pd-section pd-results-section">
