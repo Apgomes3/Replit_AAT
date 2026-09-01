@@ -8,7 +8,7 @@ import {
   SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
   ArrowUpToLine, Wind, BookOpen, Mountain, Palette, Calculator,
   ArrowRight, ArrowLeft, AlertTriangle, MoreHorizontal, LockKeyhole,
-  LibraryBig,
+  LibraryBig, Lightbulb, Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -31,10 +31,10 @@ import {
   WeirMethod,
 } from '../../lib/weir';
 
-type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir';
+type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir' | 'lights';
 
 function isExhibitTab(value: string | null): value is ExhibitTab {
-  return value === 'tank' || value === 'species' || value === 'flow' || value === 'weir';
+  return value === 'tank' || value === 'species' || value === 'flow' || value === 'weir' || value === 'lights';
 }
 
 function isEditingField(target: EventTarget | null): boolean {
@@ -3034,6 +3034,337 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
   );
 }
 
+type LightForm = {
+  product_master_id: string;
+  model: string;
+  description: string;
+  lighting_type: string;
+  custom_type: string;
+  quantity: string;
+  power_value: string;
+  power_unit: 'W' | 'kW';
+};
+
+const emptyLightForm = (): LightForm => ({
+  product_master_id: '',
+  model: '',
+  description: '',
+  lighting_type: 'LED',
+  custom_type: '',
+  quantity: '1',
+  power_value: '',
+  power_unit: 'W',
+});
+
+function displayLightType(light: any) {
+  return light.lighting_type || '—';
+}
+
+function formatPower(value: unknown) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return number.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function LightsSection({ bookId, exhibitId, lights, readOnly, onRefresh }: {
+  bookId: string;
+  exhibitId: string;
+  lights: any[];
+  readOnly: boolean;
+  onRefresh: () => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [mode, setMode] = useState<'manual' | 'pim'>('manual');
+  const [form, setForm] = useState<LightForm>(emptyLightForm);
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const isOpen = editingId !== null;
+
+  const { data: productData, isFetching: searchingProducts } = useQuery({
+    queryKey: ['design-book-lighting-products', bookId, search],
+    queryFn: () => api.get(`/design-books/${bookId}/lighting-products`, { params: { q: search } }).then(r => r.data),
+    enabled: isOpen && mode === 'pim',
+  });
+  const products: any[] = productData?.items || [];
+
+  const selectedType = form.lighting_type === 'Other' ? form.custom_type.trim() : form.lighting_type;
+  const quantity = Number(form.quantity);
+  const unitPower = Number(form.power_value);
+  const total = Number.isFinite(quantity) && Number.isFinite(unitPower) ? quantity * unitPower : null;
+  const valid = !!form.model.trim() && !!form.description.trim() && !!selectedType
+    && Number.isInteger(quantity) && quantity > 0 && Number.isFinite(unitPower) && unitPower > 0;
+
+  const openNew = () => {
+    setEditingId('new');
+    setMode('manual');
+    setForm(emptyLightForm());
+    setSearch('');
+    setError('');
+  };
+
+  const openEdit = (light: any) => {
+    const commonType = ['LED', 'T8', 'T5', 'Metal Halide'].includes(light.lighting_type);
+    setEditingId(light.id);
+    setMode(light.product_master_id ? 'pim' : 'manual');
+    setForm({
+      product_master_id: light.product_master_id || '',
+      model: light.model || '',
+      description: light.description || '',
+      lighting_type: commonType ? light.lighting_type : 'Other',
+      custom_type: commonType ? '' : (light.lighting_type || ''),
+      quantity: String(light.quantity ?? 1),
+      power_value: String(light.power_value ?? ''),
+      power_unit: light.power_unit === 'kW' ? 'kW' : 'W',
+    });
+    setSearch('');
+    setError('');
+  };
+
+  const selectProduct = (product: any) => {
+    setForm(current => ({
+      ...current,
+      product_master_id: product.id,
+      model: product.model || product.product_code,
+      description: product.description || product.product_name,
+      power_value: String(product.power_kw),
+      power_unit: 'kW',
+    }));
+    setError('');
+  };
+
+  const changeUnit = (nextUnit: 'W' | 'kW') => {
+    setForm(current => {
+      if (current.power_unit === nextUnit) return current;
+      const currentValue = Number(current.power_value);
+      if (!Number.isFinite(currentValue)) return { ...current, power_unit: nextUnit };
+      return {
+        ...current,
+        power_unit: nextUnit,
+        power_value: String(nextUnit === 'W' ? currentValue * 1000 : currentValue / 1000),
+      };
+    });
+  };
+
+  const save = async () => {
+    if (!valid) {
+      setError('Complete every required field with a positive quantity and power.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    const payload = {
+      product_master_id: form.product_master_id || null,
+      model: form.model.trim(),
+      description: form.description.trim(),
+      lighting_type: selectedType,
+      quantity,
+      power_value: unitPower,
+      power_unit: form.power_unit,
+    };
+    try {
+      if (editingId === 'new') {
+        await api.post(`/design-books/${bookId}/exhibits/${exhibitId}/lights`, payload);
+        toast.success('Light added');
+      } else {
+        await api.put(`/design-books/${bookId}/exhibits/${exhibitId}/lights/${editingId}`, payload);
+        toast.success('Light updated');
+      }
+      setEditingId(null);
+      onRefresh();
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || 'Could not save this light.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (light: any) => {
+    if (!window.confirm(`Remove ${light.model} from this exhibit lighting schedule?`)) return;
+    setRemovingId(light.id);
+    setError('');
+    try {
+      await api.delete(`/design-books/${bookId}/exhibits/${exhibitId}/lights/${light.id}`);
+      toast.success('Light removed');
+      onRefresh();
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || 'Could not remove this light.');
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
+            <Lightbulb className="w-5 h-5 text-amber-500" /> Exhibit Lighting Schedule
+          </h2>
+          <p className="text-sm text-stone-500 mt-1">Point-in-time fixture details and electrical load for this exhibit.</p>
+        </div>
+        {!readOnly && !isOpen && (
+          <button type="button" onClick={openNew}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+            <Plus className="w-4 h-4" /> Add Light
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {isOpen && (
+        <div className="rounded-xl border border-blue-200 bg-white p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold text-stone-800">{editingId === 'new' ? 'Add exhibit light' : 'Edit exhibit light'}</h3>
+            <button type="button" onClick={() => setEditingId(null)} aria-label="Close light editor" className="text-stone-400 hover:text-stone-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setMode('manual'); setForm(current => ({ ...current, product_master_id: '' })); }}
+              className={`rounded-lg border px-3 py-2 text-sm ${mode === 'manual' ? 'border-blue-300 bg-blue-50 text-blue-700 font-semibold' : 'border-stone-200 text-stone-600'}`}>
+              Manual light
+            </button>
+            <button type="button" onClick={() => setMode('pim')}
+              className={`rounded-lg border px-3 py-2 text-sm ${mode === 'pim' ? 'border-blue-300 bg-blue-50 text-blue-700 font-semibold' : 'border-stone-200 text-stone-600'}`}>
+              PIM Product Master
+            </button>
+          </div>
+          {mode === 'pim' && (
+            <div className="rounded-lg border border-stone-200 bg-stone-50 p-3">
+              <label htmlFor="lighting-product-search" className="block text-xs font-semibold text-stone-600 mb-1.5">Search eligible lighting products</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" />
+                <input id="lighting-product-search" value={search} onChange={event => setSearch(event.target.value)}
+                  placeholder="Search model or product name…" className="w-full rounded-lg border border-stone-200 bg-white py-2 pl-9 pr-3 text-sm" />
+              </div>
+              <div className="mt-2 max-h-44 overflow-auto space-y-1">
+                {searchingProducts ? <p className="py-3 text-center text-xs text-stone-400">Loading lighting products…</p>
+                  : products.length === 0 ? <p className="py-3 text-center text-xs text-stone-400">No eligible powered lighting products found.</p>
+                    : products.map(product => (
+                      <button type="button" key={product.id} onClick={() => selectProduct(product)}
+                        className={`w-full rounded-lg border p-2.5 text-left text-sm hover:border-blue-300 hover:bg-blue-50 ${
+                          form.product_master_id === product.id ? 'border-blue-400 bg-blue-50' : 'border-stone-200 bg-white'
+                        }`}>
+                        <span className="font-semibold text-stone-800">{product.model || product.product_code}</span>
+                        <span className="ml-2 text-stone-500">{product.product_name}</span>
+                        <span className="float-right font-mono text-xs text-blue-700">{formatPower(product.power_kw)} kW</span>
+                      </button>
+                    ))}
+              </div>
+            </div>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm text-stone-600">Model *
+              <input aria-label="Light model" value={form.model} disabled={mode === 'pim' && !!form.product_master_id}
+                onChange={event => setForm(current => ({ ...current, model: event.target.value }))}
+                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 disabled:bg-stone-100" />
+            </label>
+            <label className="text-sm text-stone-600">Description *
+              <input aria-label="Light description" value={form.description} disabled={mode === 'pim' && !!form.product_master_id}
+                onChange={event => setForm(current => ({ ...current, description: event.target.value }))}
+                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 disabled:bg-stone-100" />
+            </label>
+            <label className="text-sm text-stone-600">Lighting type *
+              <select aria-label="Lighting type" value={form.lighting_type}
+                onChange={event => setForm(current => ({ ...current, lighting_type: event.target.value }))}
+                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2">
+                {['LED', 'T8', 'T5', 'Metal Halide', 'Other'].map(type => <option key={type}>{type}</option>)}
+              </select>
+            </label>
+            {form.lighting_type === 'Other' && (
+              <label className="text-sm text-stone-600">Custom lighting type *
+                <input aria-label="Custom lighting type" value={form.custom_type}
+                  onChange={event => setForm(current => ({ ...current, custom_type: event.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2" />
+              </label>
+            )}
+            <label className="text-sm text-stone-600">Quantity *
+              <input aria-label="Light quantity" type="number" min="1" step="1" value={form.quantity}
+                onChange={event => setForm(current => ({ ...current, quantity: event.target.value }))}
+                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2" />
+            </label>
+            <div>
+              <label htmlFor="light-power" className="text-sm text-stone-600">Power per light *</label>
+              <div className="mt-1 flex">
+                <input id="light-power" aria-label="Power per light" type="number" min="0" step="any" value={form.power_value}
+                  disabled={!!form.product_master_id}
+                  onChange={event => setForm(current => ({ ...current, power_value: event.target.value }))}
+                  className="min-w-0 flex-1 rounded-l-lg border border-stone-200 px-3 py-2 disabled:bg-stone-100" />
+                <select aria-label="Power unit" value={form.power_unit} onChange={event => changeUnit(event.target.value as 'W' | 'kW')}
+                  className="rounded-r-lg border border-l-0 border-stone-200 bg-stone-50 px-3 py-2">
+                  <option>W</option><option>kW</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2 text-sm">
+            <span className="text-stone-500">Calculated row total</span>
+            <strong className="font-mono text-stone-800">{total != null && Number.isFinite(total) ? formatPower(total) : '—'} {form.power_unit}</strong>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditingId(null)} className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-600">Cancel</button>
+            <button type="button" onClick={save} disabled={saving || !valid}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              {saving ? 'Saving…' : editingId === 'new' ? 'Add Light' : 'Save Light'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {lights.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-stone-300 bg-white py-14 text-center">
+          <Lightbulb className="w-8 h-8 text-stone-250 mx-auto mb-2" />
+          <p className="text-sm font-medium text-stone-600">No lights scheduled</p>
+          <p className="mt-1 text-xs text-stone-400">{readOnly ? 'This frozen revision has no lighting rows.' : 'Add a manual light or select an eligible PIM product.'}</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <table className="min-w-[880px] w-full text-sm">
+            <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+              <tr>
+                <th className="px-4 py-3">Model</th><th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">Type</th><th className="px-4 py-3 text-right">Qty</th>
+                <th className="px-4 py-3 text-right">Power / light</th><th className="px-4 py-3 text-right">Total</th>
+                {!readOnly && <th className="px-4 py-3 text-right">Actions</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {lights.map(light => (
+                <tr key={light.id}>
+                  <td className="px-4 py-3 font-semibold text-stone-800">
+                    {light.model}
+                    {light.product_master_id && <span className="ml-2 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700"><LibraryBig className="w-3 h-3" /> PIM {light.pim_product_code}</span>}
+                  </td>
+                  <td className="px-4 py-3 text-stone-600">{light.description}</td>
+                  <td className="px-4 py-3 text-stone-600">{displayLightType(light)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{light.quantity}</td>
+                  <td className="px-4 py-3 text-right font-mono">{formatPower(light.power_value)} {light.power_unit}</td>
+                  <td className="px-4 py-3 text-right font-mono font-semibold">{formatPower(Number(light.quantity) * Number(light.power_value))} {light.power_unit}</td>
+                  {!readOnly && (
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button type="button" onClick={() => openEdit(light)} aria-label={`Edit ${light.model}`} className="rounded p-1.5 text-blue-600 hover:bg-blue-50"><Pencil className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => remove(light)} disabled={removingId === light.id} aria-label={`Remove ${light.model}`} className="rounded p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ExhibitDetail() {
   const { bookId, exhibitId } = useParams<{ bookId: string; exhibitId: string }>();
@@ -3113,6 +3444,7 @@ export default function ExhibitDetail() {
   const allSpecies: any[] = book.species || [];
   const allHydraulics: any[] = book.hydraulics || [];
   const allSubstrate: any[]  = book.substrate  || [];
+  const allLights: any[] = book.lights || [];
 
   const exhibit = exhibits.find((e: any) => e.id === exhibitId);
   if (!exhibit) return <div className="p-10 text-center text-stone-500">Exhibit not found.</div>;
@@ -3122,6 +3454,7 @@ export default function ExhibitDetail() {
   const species = allSpecies.filter((s: any) => s.exhibit_id === exhibitId);
   const hydraulics  = allHydraulics.find((h: any) => h.exhibit_id === exhibitId) ?? null;
   const substrateData = allSubstrate.find((s: any) => s.exhibit_id === exhibitId) ?? null;
+  const lights = allLights.filter((light: any) => light.exhibit_id === exhibitId);
   const engineeringCalculation = book.engineering_calculations?.exhibits?.find(
     (calculation: any) => calculation.inputs?.exhibit_id === exhibitId,
   ) ?? null;
@@ -3135,6 +3468,7 @@ export default function ExhibitDetail() {
     { id: 'species', label: 'Species',      icon: <Fish       className="w-3.5 h-3.5" />, badge: species.length || undefined },
     { id: 'flow',    label: 'Water Flow',   icon: <Gauge      className="w-3.5 h-3.5" /> },
     { id: 'weir',    label: 'Weir Design',  icon: <Calculator className="w-3.5 h-3.5" /> },
+    { id: 'lights',  label: 'Lights',        icon: <Lightbulb  className="w-3.5 h-3.5" />, badge: lights.length || undefined },
   ] as const;
 
   return (
@@ -3357,6 +3691,16 @@ export default function ExhibitDetail() {
           hydraulics={hydraulics}
           substrateData={substrateData}
           calculation={engineeringCalculation}
+          onRefresh={refresh}
+        />
+      )}
+
+      {activeTab === 'lights' && (
+        <LightsSection
+          bookId={book.id}
+          exhibitId={exhibitId!}
+          lights={lights}
+          readOnly={readOnly}
           onRefresh={refresh}
         />
       )}

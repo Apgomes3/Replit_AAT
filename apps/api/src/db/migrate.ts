@@ -1497,6 +1497,59 @@ CREATE TRIGGER guard_released_design_book_substrate
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_exhibit_substrate
 FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 
+-- DESIGN BOOK: Exhibit Lighting Schedule
+-- Power is stored in the user's selected display unit and normalized to kW so
+-- totals remain stable when a schedule is displayed in W or kW.
+CREATE TABLE IF NOT EXISTS design_book_exhibit_lights (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  exhibit_id UUID NOT NULL REFERENCES exhibits(id) ON DELETE CASCADE,
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
+  model VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  lighting_type VARCHAR(100) NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  power_value NUMERIC(14,6) NOT NULL CHECK (power_value > 0),
+  power_unit VARCHAR(2) NOT NULL DEFAULT 'kW' CHECK (power_unit IN ('W', 'kW')),
+  power_kw NUMERIC(14,6) NOT NULL CHECK (power_kw > 0),
+  pim_model VARCHAR(255),
+  pim_description TEXT,
+  pim_product_code VARCHAR(255),
+  pim_power_kw NUMERIC(14,6),
+  pim_captured_at TIMESTAMPTZ,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_by UUID REFERENCES users(id),
+  updated_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_db_lights_book_exhibit
+  ON design_book_exhibit_lights(design_book_id, exhibit_id, sort_order, created_at);
+CREATE INDEX IF NOT EXISTS idx_db_lights_pim
+  ON design_book_exhibit_lights(product_master_id)
+  WHERE product_master_id IS NOT NULL;
+CREATE OR REPLACE FUNCTION prevent_noneditable_design_book_light_mutation()
+RETURNS TRIGGER AS $$
+DECLARE
+  parent_status TEXT;
+BEGIN
+  SELECT status INTO parent_status
+  FROM design_books
+  WHERE id = COALESCE(NEW.design_book_id, OLD.design_book_id)
+  FOR UPDATE;
+
+  IF parent_status NOT IN ('Draft', 'In Progress') THEN
+    RAISE EXCEPTION 'Design Book lighting is read-only while under review, approved, or released'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS guard_released_design_book_lights ON design_book_exhibit_lights;
+CREATE TRIGGER guard_released_design_book_lights
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_exhibit_lights
+FOR EACH ROW EXECUTE FUNCTION prevent_noneditable_design_book_light_mutation();
+
 -- DESIGN BOOK: Versions (point-in-time JSONB snapshots)
 CREATE TABLE IF NOT EXISTS design_book_versions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, Database,
-  Fish, GitBranch, Layers, LinkIcon, Plus, RotateCcw, Save, ShieldCheck,
+  Fish, GitBranch, Layers, Lightbulb, LinkIcon, Plus, RotateCcw, Save, ShieldCheck,
   User, Waves, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -40,6 +40,9 @@ function ScopeSummary({ version }: { version: any }) {
           <Pill icon={<Fish className="w-3 h-3" />} text={`${frozen.species || 0} species rows`} />
           <Pill icon={<Waves className="w-3 h-3" />} text={`${frozen.hydraulics || 0} hydraulic records`} />
           <Pill icon={<Layers className="w-3 h-3" />} text={`${frozen.substrate_theming || 0} substrate/theming records`} />
+          {frozen.lights == null
+            ? <Pill icon={<Lightbulb className="w-3 h-3" />} text="Lighting preserved (older snapshot)" blue />
+            : <Pill icon={<Lightbulb className="w-3 h-3" />} text={`${frozen.lights} lighting rows`} />}
           {frozen.review_handovers == null
             ? <Pill icon={<Database className="w-3 h-3" />} text="Handovers preserved (older snapshot)" blue />
             : <Pill icon={<Database className="w-3 h-3" />} text={`${frozen.review_handovers} review handovers`} />}
@@ -165,10 +168,11 @@ function PreviewColumn({ title, data, after = false }: { title: string; data: an
       <p className="text-xs uppercase tracking-wide font-semibold text-stone-500 mb-2">{title}</p>
       <p className="text-sm font-semibold text-stone-800">{data?.book_title || 'Untitled'}</p>
       <p className="text-xs text-stone-500 mt-0.5">Revision {data?.revision || '—'} · {data?.status || '—'}</p>
-      <div className="grid grid-cols-4 gap-2 mt-3 text-center">
+      <div className="grid grid-cols-5 gap-2 mt-3 text-center">
         <PreviewCount label="Species" value={data?.species || 0} />
         <PreviewCount label="Hydraulics" value={data?.hydraulics || 0} />
         <PreviewCount label="Theming" value={data?.substrate_theming || 0} />
+        <PreviewCount label={data?.lights_preserved ? 'Lights kept' : 'Lights'} value={data?.lights || 0} />
         <PreviewCount label={data?.review_handovers_preserved ? 'Handovers kept' : 'Handovers'} value={data?.review_handovers || 0} />
       </div>
     </div>

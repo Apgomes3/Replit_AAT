@@ -101,6 +101,23 @@ const baseContext = () => ({
     theming_volume_m3: '2.4',
     theming_volume_pct: '8.5',
   }],
+  lights: [{
+    id: 'light-1',
+    exhibit_id: 'exhibit-1',
+    product_master_id: 'pim-light-1',
+    model: 'ALP-100',
+    description: 'Aqua LED Pendant',
+    lighting_type: 'LED',
+    quantity: 4,
+    power_value: '0.25',
+    power_unit: 'kW',
+    power_kw: '0.25',
+    pim_model: 'ALP-100',
+    pim_description: 'Aqua LED Pendant',
+    pim_product_code: 'LT-100',
+    pim_power_kw: '0.25',
+    sort_order: 0,
+  }],
   review_handovers: [],
 });
 
@@ -258,7 +275,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(6);
+    expect(snapshot.schema_version).toBe(7);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -271,6 +288,15 @@ describe('Design Book version snapshots', () => {
       substrate_height_mm: '80',
       theming_height_mm: '500',
       theming_volume_pct: '8.5',
+    });
+    expect(snapshot.frozen.lights[0]).toMatchObject({
+      product_master_id: 'pim-light-1',
+      model: 'ALP-100',
+      quantity: 4,
+      power_value: '0.25',
+      power_unit: 'kW',
+      power_kw: '0.25',
+      pim_product_code: 'LT-100',
     });
     expect(snapshot.frozen.species[0]).toMatchObject({
       catalog_species_id: 'catalog-1',
@@ -365,7 +391,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(6);
+    expect(insertParams[6]).toBe(7);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 
@@ -380,6 +406,7 @@ describe('Design Book version snapshots', () => {
     };
     const frozen = versionSnapshotTestUtils.frozenFromSnapshot(legacy);
     expect(Object.prototype.hasOwnProperty.call(frozen, 'review_handovers')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(frozen, 'lights')).toBe(false);
 
     const before = baseContext();
     const previewToken = versionSnapshotTestUtils.currentRestoreStateDigest(before);

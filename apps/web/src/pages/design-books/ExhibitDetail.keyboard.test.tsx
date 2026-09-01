@@ -12,12 +12,14 @@ vi.mock('../../lib/api', () => ({
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
 const apiGet = vi.mocked(api.get);
 const apiPost = vi.mocked(api.post);
 const apiPut = vi.mocked(api.put);
+const apiDelete = vi.mocked(api.delete);
 
 const currentPath = '/design-books/book-1/exhibits/exhibit-1';
 const book = {
@@ -36,6 +38,7 @@ const book = {
   species: [],
   hydraulics: [],
   substrate: [],
+  lights: [],
   engineering_calculations: { exhibits: [] },
 };
 
@@ -65,6 +68,7 @@ describe('ExhibitDetail Escape navigation', () => {
     apiGet.mockResolvedValue({ data: book });
     apiPost.mockResolvedValue({ data: {} });
     apiPut.mockResolvedValue({ data: {} });
+    apiDelete.mockResolvedValue({ data: {} });
     useAuthStore.setState({
       user: {
         id: 'engineer-1',
@@ -441,5 +445,157 @@ describe('ExhibitDetail Escape navigation', () => {
       height_mm: null,
       design_water_level_mm: null,
     })));
+  });
+
+  it('places the URL-addressable Lights tab immediately after Weir Design in both navigation surfaces', async () => {
+    const user = userEvent.setup();
+    renderExhibit([`${currentPath}?tab=lights`]);
+
+    expect(await screen.findByRole('heading', { name: 'Exhibit Lighting Schedule' })).toBeInTheDocument();
+    const tabButtons = screen.getAllByRole('button').filter(button =>
+      ['Tank', 'Species', 'Water Flow', 'Weir Design', 'Lights'].includes(button.textContent?.trim() || ''),
+    );
+    expect(tabButtons.slice(-5).map(button => button.textContent?.trim())).toEqual([
+      'Tank', 'Species', 'Water Flow', 'Weir Design', 'Lights',
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Open exhibit tools' }));
+    const menu = screen.getByRole('menu', { name: 'Exhibit tools' });
+    expect(Array.from(menu.querySelectorAll('[role="menuitem"]')).map(item => item.textContent?.trim())).toEqual([
+      'Back to Design Book', 'Tank', 'Species', 'Water Flow', 'Weir Design', 'Lights',
+    ]);
+  });
+
+  it('adds a manual light and converts the displayed power without changing its physical load', async () => {
+    const user = userEvent.setup();
+    renderExhibit([`${currentPath}?tab=lights`]);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Light' }));
+    await user.type(screen.getByLabelText('Light model'), 'AquaBeam 1000');
+    await user.type(screen.getByLabelText('Light description'), 'Main display wash');
+    await user.clear(screen.getByLabelText('Light quantity'));
+    await user.type(screen.getByLabelText('Light quantity'), '2');
+    await user.type(screen.getByLabelText('Power per light'), '1000');
+    await user.selectOptions(screen.getByLabelText('Power unit'), 'kW');
+
+    expect(screen.getByLabelText('Power per light')).toHaveValue(1);
+    expect(screen.getByText('2 kW')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add Light' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith(
+      '/design-books/book-1/exhibits/exhibit-1/lights',
+      expect.objectContaining({
+        product_master_id: null,
+        model: 'AquaBeam 1000',
+        description: 'Main display wash',
+        lighting_type: 'LED',
+        quantity: 2,
+        power_value: 1,
+        power_unit: 'kW',
+      }),
+    ));
+  });
+
+  it('prefills a PIM light from its authoritative kW electrical rating', async () => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url === '/design-books/book-1/lighting-products') {
+        return {
+          data: {
+            items: [{
+              id: 'light-pim-1',
+              product_code: 'LT-100',
+              product_name: 'Aqua LED Pendant',
+              model: 'ALP-100',
+              description: 'Aqua LED Pendant',
+              power_kw: 0.25,
+            }],
+          },
+        } as any;
+      }
+      return { data: book } as any;
+    });
+    const user = userEvent.setup();
+    renderExhibit([`${currentPath}?tab=lights`]);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Light' }));
+    await user.click(screen.getByRole('button', { name: 'PIM Product Master' }));
+    await user.click(await screen.findByRole('button', { name: /ALP-100.*Aqua LED Pendant.*0.25 kW/i }));
+
+    expect(screen.getByLabelText('Light model')).toHaveValue('ALP-100');
+    expect(screen.getByLabelText('Light description')).toHaveValue('Aqua LED Pendant');
+    expect(screen.getByLabelText('Power per light')).toHaveValue(0.25);
+    expect(screen.getByLabelText('Power unit')).toHaveValue('kW');
+    await user.click(screen.getByRole('button', { name: 'Add Light' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith(
+      '/design-books/book-1/exhibits/exhibit-1/lights',
+      expect.objectContaining({ product_master_id: 'light-pim-1', power_value: 0.25, power_unit: 'kW' }),
+    ));
+  });
+
+  it('keeps a saved PIM rating read-only while allowing display-unit conversion', async () => {
+    const pimLight = {
+      id: 'light-pim-1',
+      exhibit_id: 'exhibit-1',
+      product_master_id: 'pim-1',
+      pim_product_code: 'LT-100',
+      model: 'ALP-100',
+      description: 'Aqua LED Pendant',
+      lighting_type: 'LED',
+      quantity: 1,
+      power_value: 0.25,
+      power_unit: 'kW',
+      power_kw: 0.25,
+    };
+    apiGet.mockResolvedValue({ data: { ...book, lights: [pimLight] } });
+    const user = userEvent.setup();
+    renderExhibit([`${currentPath}?tab=lights`]);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit ALP-100' }));
+    expect(screen.getByLabelText('Power per light')).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText('Power unit'), 'W');
+    expect(screen.getByLabelText('Power per light')).toHaveValue(250);
+    await user.clear(screen.getByLabelText('Light quantity'));
+    await user.type(screen.getByLabelText('Light quantity'), '3');
+    await user.click(screen.getByRole('button', { name: 'Save Light' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/design-books/book-1/exhibits/exhibit-1/lights/light-pim-1',
+      expect.objectContaining({
+        product_master_id: 'pim-1',
+        quantity: 3,
+        power_value: 250,
+        power_unit: 'W',
+      }),
+    ));
+  });
+
+  it('shows frozen lighting rows read-only and confirms removal in editable books', async () => {
+    const light = {
+      id: 'light-1',
+      exhibit_id: 'exhibit-1',
+      model: 'MH-400',
+      description: 'Legacy feature light',
+      lighting_type: 'Metal Halide',
+      quantity: 2,
+      power_value: 400,
+      power_unit: 'W',
+    };
+    apiGet.mockResolvedValueOnce({ data: { ...book, status: 'Released', lights: [light] } });
+    renderExhibit([`${currentPath}?tab=lights`]);
+
+    expect(await screen.findByText('MH-400')).toBeInTheDocument();
+    expect(screen.getByText('800 W')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add Light' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove MH-400' })).not.toBeInTheDocument();
+
+    apiGet.mockResolvedValueOnce({ data: { ...book, lights: [light] } });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    renderExhibit([`${currentPath}?tab=lights`]);
+    await user.click(await screen.findByRole('button', { name: 'Remove MH-400' }));
+    expect(confirm).toHaveBeenCalled();
+    await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/design-books/book-1/exhibits/exhibit-1/lights/light-1'));
+    confirm.mockRestore();
   });
 });
