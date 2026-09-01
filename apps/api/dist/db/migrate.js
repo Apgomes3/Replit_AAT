@@ -8,6 +8,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const pimAssignmentIndexMigration_1 = require("./pimAssignmentIndexMigration");
 const biologicalMediaSeed_1 = require("./biologicalMediaSeed");
 const thermalCorrelationSeed_1 = require("./thermalCorrelationSeed");
+const thermalWallConstructionSeed_1 = require("./thermalWallConstructionSeed");
 dotenv_1.default.config();
 const schema = `
 -- USERS & AUTH
@@ -1077,6 +1078,63 @@ DROP TRIGGER IF EXISTS guard_released_design_book_thermal ON design_book_thermal
 CREATE TRIGGER guard_released_design_book_thermal
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_calculations
 FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+
+-- THERMAL WALL CONSTRUCTION LIBRARY: provisional, versioned AAT Foundations
+-- starter evidence. Revisions are additive; saved calculations retain their
+-- own default/effective layer snapshots.
+CREATE TABLE IF NOT EXISTS thermal_wall_construction_defaults (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  construction_code VARCHAR(100) NOT NULL,
+  construction_label VARCHAR(255) NOT NULL,
+  material VARCHAR(255) NOT NULL,
+  thickness_mm NUMERIC NOT NULL CHECK (thickness_mm > 0),
+  conductivity_w_m_k NUMERIC NOT NULL CHECK (conductivity_w_m_k > 0),
+  thickness_units VARCHAR(30) NOT NULL DEFAULT 'mm',
+  conductivity_units VARCHAR(50) NOT NULL DEFAULT 'W/m·K',
+  version VARCHAR(100) NOT NULL,
+  source_basis TEXT NOT NULL,
+  source_reference TEXT NOT NULL,
+  notes TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'approved'
+    CHECK (status IN ('approved', 'superseded')),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  superseded_by UUID REFERENCES users(id),
+  superseded_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(construction_code, version)
+);
+CREATE INDEX IF NOT EXISTS idx_thermal_wall_construction_active
+  ON thermal_wall_construction_defaults(construction_code, status, approved_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_thermal_wall_construction_approved
+  ON thermal_wall_construction_defaults(construction_code)
+  WHERE status='approved';
+CREATE OR REPLACE FUNCTION protect_thermal_wall_construction_default()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Thermal wall construction evidence is immutable; add a new version'
+      USING ERRCODE = '55000';
+  END IF;
+  IF OLD.status <> 'approved'
+     OR NEW.status <> 'superseded'
+     OR NEW.superseded_by IS NULL
+     OR NEW.superseded_at IS NULL
+     OR (to_jsonb(OLD) - 'status' - 'superseded_by' - 'superseded_at' - 'updated_at'
+         IS DISTINCT FROM
+         to_jsonb(NEW) - 'status' - 'superseded_by' - 'superseded_at' - 'updated_at') THEN
+    RAISE EXCEPTION 'Thermal wall construction evidence is immutable; only approved versions may be superseded'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS guard_thermal_wall_construction_default
+  ON thermal_wall_construction_defaults;
+CREATE TRIGGER guard_thermal_wall_construction_default
+BEFORE UPDATE OR DELETE ON thermal_wall_construction_defaults
+FOR EACH ROW EXECUTE FUNCTION protect_thermal_wall_construction_default();
 
 -- DESIGN BOOK: circuit-level Darcy–Weisbach and fitting K-value evidence.
 CREATE TABLE IF NOT EXISTS design_book_friction_loss_calculations (
@@ -2492,6 +2550,8 @@ async function migrate() {
         console.log(`Biological Media evidence library ready (${seededMediaEvidence} starter records added).`);
         const seededThermalCorrelations = await (0, thermalCorrelationSeed_1.seedThermalCorrelations)(client, adminResult.rows[0]?.id ?? null);
         console.log(`Thermal correlation library ready (${seededThermalCorrelations} starter records added).`);
+        const seededThermalWallConstructions = await (0, thermalWallConstructionSeed_1.seedThermalWallConstructions)(client, adminResult.rows[0]?.id ?? null);
+        console.log(`Thermal wall construction library ready (${seededThermalWallConstructions} starter records added).`);
         console.log('Migrations complete.');
     }
     catch (err) {

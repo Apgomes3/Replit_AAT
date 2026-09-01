@@ -1984,6 +1984,24 @@ export function thermalCorrelationDefaults(correlation: any) {
   };
 }
 
+export function thermalWallFormValues(construction: any) {
+  return {
+    wall_material: construction?.material ?? '',
+    wall_thickness_mm: construction?.thickness_mm ?? '',
+    wall_conductivity_w_m_k: construction?.conductivity_w_m_k ?? '',
+  };
+}
+
+export function thermalWallOverrideFlags(form: any, construction: any) {
+  if (!construction) return {};
+  return {
+    material: String(form.wall_material || '').trim() !== String(construction.material || '').trim(),
+    thickness_mm: Number(form.wall_thickness_mm) !== Number(construction.thickness_mm),
+    conductivity_w_m_k:
+      Number(form.wall_conductivity_w_m_k) !== Number(construction.conductivity_w_m_k),
+  };
+}
+
 function ThermalCorrelationUsageList({ usages }: { usages: any[] }) {
   const statusOrder = ['Draft', 'In Progress', 'For Review', 'Approved', 'Released'];
   const byStatus = usages.reduce((groups: Map<string, Map<string, any[]>>, usage) => {
@@ -2115,6 +2133,27 @@ function ThermalTab({
 
   const open = (item: any) => {
     const existing = item.saved?.input_snapshot || item.calculation?.inputs || {};
+    const wallEvidence = thermalEvidenceBasis(item.calculation || item.current_preview).wall || {};
+    const constructionType = existing.tank_construction_type ??
+      existing.tank_construction ??
+      wallEvidence.construction_type ??
+      '';
+    const constructionDefault = (book.thermal_construction_defaults || []).find(
+      (candidate: any) => candidate.code === constructionType,
+    );
+    const effectiveWallLayer = existing.tank_wall_layers?.[0] ||
+      wallEvidence.effective_layers?.[0] ||
+      wallEvidence.layers?.[0];
+    const effectiveWallValues = effectiveWallLayer
+      ? {
+          wall_material: effectiveWallLayer.material ?? '',
+          wall_thickness_mm: effectiveWallLayer.thickness_mm ??
+            (effectiveWallLayer.thickness_m != null
+              ? Number(effectiveWallLayer.thickness_m) * 1000
+              : ''),
+          wall_conductivity_w_m_k: effectiveWallLayer.conductivity_w_m_k ?? '',
+        }
+      : thermalWallFormValues(constructionDefault);
     const correlationSnapshot = existing.agitation_correlation_snapshot ||
       item.calculation?.correlation_snapshot || item.saved?.correlation_snapshot || {};
     const databaseDefaults = correlationSnapshot.database_defaults || {};
@@ -2158,13 +2197,12 @@ function ThermalTab({
         existing.agitation_correlations?.[existing.adjacent_agitation_classes?.[1]]?.coefficient_kg_m2_s_kpa ?? '',
       agitation_correlation_overrides: overrides,
       reviewed_u_value_w_m2_k: existing.reviewed_u_value_w_m2_k ?? '',
-      tank_construction_type: existing.tank_construction_type ??
-        existing.tank_construction ??
-        item.calculation?.wall_construction_basis?.construction_type ??
+      tank_construction_type: constructionType,
+      ...effectiveWallValues,
+      tank_wall_override_justification:
+        existing.tank_wall_override_justification ??
+        wallEvidence.layer_override_justification ??
         '',
-      wall_material: existing.tank_wall_layers?.[0]?.material ?? '',
-      wall_thickness_mm: existing.tank_wall_layers?.[0]?.thickness_mm ?? '',
-      wall_conductivity_w_m_k: existing.tank_wall_layers?.[0]?.conductivity_w_m_k ?? '',
       equipment_heat_gain_kw: existing.equipment_heat_gain_kw ?? 0,
       lighting_power_kw: existing.lighting_power_kw ?? 0,
       lighting_coupling_pct: existing.lighting_coupling_pct ?? 85,
@@ -2178,6 +2216,28 @@ function ThermalTab({
   };
 
   const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
+  const selectConstruction = (constructionCode: string) => {
+    const construction = (book.thermal_construction_defaults || []).find(
+      (candidate: any) => candidate.code === constructionCode,
+    );
+    setForm((current: any) => ({
+      ...current,
+      tank_construction_type: constructionCode,
+      reviewed_u_value_w_m2_k: '',
+      tank_wall_override_justification: '',
+      ...thermalWallFormValues(construction),
+    }));
+  };
+  const resetWallLayer = () => {
+    const construction = (book.thermal_construction_defaults || []).find(
+      (candidate: any) => candidate.code === form.tank_construction_type,
+    );
+    setForm((current: any) => ({
+      ...current,
+      tank_wall_override_justification: '',
+      ...thermalWallFormValues(construction),
+    }));
+  };
   const updateCorrelationOverride = (key: string, formKey: string, value: any) =>
     setForm((current: any) => ({
       ...current,
@@ -2401,6 +2461,7 @@ function ThermalTab({
         reviewed_u_value_w_m2_k: numericOrNull(form.reviewed_u_value_w_m2_k),
         tank_construction_type: form.tank_construction_type || null,
         tank_wall_layers: wallLayers,
+        tank_wall_override_justification: form.tank_wall_override_justification || '',
         equipment_heat_gain_kw: numericOrNull(form.equipment_heat_gain_kw),
         lighting_power_kw: numericOrNull(form.lighting_power_kw),
         lighting_coupling_pct: numericOrNull(form.lighting_coupling_pct),
@@ -2440,6 +2501,8 @@ function ThermalTab({
   const selectedConstructionDefault = constructionDefaults.find(
     item => item.code === form.tank_construction_type,
   );
+  const wallOverrideFlags = thermalWallOverrideFlags(form, selectedConstructionDefault);
+  const hasWallLayerOverride = Object.values(wallOverrideFlags).some(Boolean);
   const selectedAgitationClass = agitationClasses.find(
     item => item.class_code === form.agitation_class,
   );
@@ -2875,7 +2938,7 @@ function ThermalTab({
                   <select
                     aria-label="Tank construction type"
                     value={form.tank_construction_type || ''}
-                    onChange={event => update('tank_construction_type', event.target.value)}
+                    onChange={event => selectConstruction(event.target.value)}
                     disabled={readOnly}
                     className={fieldClass}
                   >
@@ -2895,7 +2958,7 @@ function ThermalTab({
                   </span>
                   <div className="mt-1 text-sm font-medium text-amber-950">
                     {selectedConstructionDefault
-                      ? `${selectedConstructionDefault.label}: ${thermalNumber(selectedConstructionDefault.u_value_w_m2_k, 2)} ${selectedConstructionDefault.units}`
+                      ? `${selectedConstructionDefault.material}: ${thermalNumber(selectedConstructionDefault.thickness_mm, 2)} ${selectedConstructionDefault.thickness_units} · k ${thermalNumber(selectedConstructionDefault.conductivity_w_m_k, 3)} ${selectedConstructionDefault.conductivity_units}`
                       : evidenceBasis.wall?.construction_label
                         ? `${evidenceBasis.wall.construction_label}: ${thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} ${evidenceBasis.wall.units}`
                         : 'Select a standard construction or use a reviewed custom basis.'}
@@ -2907,22 +2970,61 @@ function ThermalTab({
                     {(selectedConstructionDefault?.basis_version || evidenceBasis.wall?.basis_version) &&
                       ` · ${selectedConstructionDefault?.basis_version || evidenceBasis.wall?.basis_version}`}
                   </p>
+                  {selectedConstructionDefault?.approval && (
+                    <p className="mt-1 text-xs text-amber-800">
+                      Approval: {selectedConstructionDefault.approval.status}
+                      {selectedConstructionDefault.approval.approved_at
+                        ? ` · ${new Date(selectedConstructionDefault.approval.approved_at).toLocaleDateString()}`
+                        : ''}
+                    </p>
+                  )}
                 </div>
                 <Field name="reviewed_u_value_w_m2_k" label="Reviewed custom wall U-value (optional)" unit="W/m²·K" />
-                <label><span className={labelClass}>Wall material</span><input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k || !!form.tank_construction_type} className={fieldClass} /></label>
                 <label>
-                  <span className={labelClass}>Wall layer thickness (mm)</span>
-                  <input aria-label="Wall layer thickness" type="number" step="any" value={form.wall_thickness_mm ?? ''} onChange={e => update('wall_thickness_mm', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k || !!form.tank_construction_type} className={fieldClass} />
+                  <span className={labelClass}>Effective wall material{wallOverrideFlags.material ? ' · Override' : ''}</span>
+                  <input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)}
+                    disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
+                  {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.material}</span>}
                 </label>
                 <label>
-                  <span className={labelClass}>Wall conductivity (W/m·K)</span>
-                  <input aria-label="Wall conductivity" type="number" step="any" value={form.wall_conductivity_w_m_k ?? ''} onChange={e => update('wall_conductivity_w_m_k', e.target.value)} disabled={readOnly || !!form.reviewed_u_value_w_m2_k || !!form.tank_construction_type} className={fieldClass} />
+                  <span className={labelClass}>Effective wall layer thickness (mm){wallOverrideFlags.thickness_mm ? ' · Override' : ''}</span>
+                  <input aria-label="Wall layer thickness" type="number" min="0" step="any" value={form.wall_thickness_mm ?? ''} onChange={e => update('wall_thickness_mm', e.target.value)} disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
+                  {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.thickness_mm} mm</span>}
+                </label>
+                <label>
+                  <span className={labelClass}>Effective wall conductivity (W/m·K){wallOverrideFlags.conductivity_w_m_k ? ' · Override' : ''}</span>
+                  <input aria-label="Wall conductivity" type="number" min="0" step="any" value={form.wall_conductivity_w_m_k ?? ''} onChange={e => update('wall_conductivity_w_m_k', e.target.value)} disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
+                  {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.conductivity_w_m_k} {selectedConstructionDefault.conductivity_units}</span>}
                 </label>
               </div>
+              {selectedConstructionDefault && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+                  <div className="text-xs text-stone-600">
+                    {hasWallLayerOverride
+                      ? 'Effective values differ from the frozen governed default.'
+                      : 'Effective values match the governed default.'}
+                  </div>
+                  <button type="button" onClick={resetWallLayer}
+                    disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k || !hasWallLayerOverride}
+                    className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 disabled:opacity-40">
+                    Reset to governed default
+                  </button>
+                </div>
+              )}
+              {hasWallLayerOverride && (
+                <label>
+                  <span className={labelClass}>Wall-layer override justification (optional)</span>
+                  <input value={form.tank_wall_override_justification || ''}
+                    onChange={event => update('tank_wall_override_justification', event.target.value)}
+                    disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k}
+                    className={fieldClass} />
+                </label>
+              )}
               {evidenceBasis.wall && (
                 <div className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
                   Saved calculation basis: <b>{evidenceBasis.wall.source}</b> · {thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} {evidenceBasis.wall.units}
                   {evidenceBasis.wall.reviewed ? ' · reviewed engineering value' : ' · governed default assumption'}
+                  {Object.values(evidenceBasis.wall.layer_override_flags || {}).some(Boolean) ? ' · designer layer override' : ''}
                 </div>
               )}
             </div>

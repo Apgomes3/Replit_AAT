@@ -8,6 +8,8 @@ import {
   thermalEvidenceBasis,
   thermalCorrelationDefaults,
   thermalCorrelationVersionsForClass,
+  thermalWallFormValues,
+  thermalWallOverrideFlags,
 } from './DesignBookDetail';
 
 describe('Design Book Life Support Systems list', () => {
@@ -104,6 +106,33 @@ describe('Design Book Thermal navigation', () => {
       correlation_adjustment_value: 0.15,
       adjacent_upper_class: 'high_agitation_aerated',
       adjacent_upper_coefficient: 1.8e-6,
+    });
+  });
+
+  it('populates and resets effective wall values from a governed construction', () => {
+    const acrylic = {
+      material: 'Acrylic / PMMA',
+      thickness_mm: 12,
+      conductivity_w_m_k: 0.19,
+    };
+    expect(thermalWallFormValues(acrylic)).toEqual({
+      wall_material: 'Acrylic / PMMA',
+      wall_thickness_mm: 12,
+      wall_conductivity_w_m_k: 0.19,
+    });
+    expect(thermalWallOverrideFlags(thermalWallFormValues(acrylic), acrylic)).toEqual({
+      material: false,
+      thickness_mm: false,
+      conductivity_w_m_k: false,
+    });
+    expect(thermalWallOverrideFlags({
+      wall_material: 'Project acrylic',
+      wall_thickness_mm: '20',
+      wall_conductivity_w_m_k: '0.2',
+    }, acrylic)).toEqual({
+      material: true,
+      thickness_mm: true,
+      conductivity_w_m_k: true,
     });
   });
 });

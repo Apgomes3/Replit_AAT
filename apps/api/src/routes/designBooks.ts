@@ -28,7 +28,7 @@ import {
   calculateThermalCalculation,
   isApprovedThermalCorrelationSnapshot,
   THERMAL_CALCULATION_VERSION,
-  THERMAL_CONSTRUCTION_DEFAULTS,
+  THERMAL_CONSTANTS,
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
 import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits, pumpLinesForCircuit } from '../lib/pumpSelections';
@@ -615,6 +615,132 @@ function positiveCorrelationCoefficient(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function thermalWallConstructionDefaultRow(row: any) {
+  const thicknessMm = Number(row.thickness_mm);
+  const conductivity = Number(row.conductivity_w_m_k);
+  const uValue = 1 / (
+    1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+    thicknessMm / 1000 / conductivity +
+    1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
+  );
+  return {
+    id: row.id || null,
+    code: row.construction_code || row.code,
+    label: row.construction_label || row.label,
+    material: row.material,
+    thickness_mm: thicknessMm,
+    conductivity_w_m_k: conductivity,
+    u_value_w_m2_k: uValue,
+    units: 'W/m²·K',
+    thickness_units: row.thickness_units || 'mm',
+    conductivity_units: row.conductivity_units || 'W/m·K',
+    basis_version: row.version || row.basis_version,
+    source_basis: row.source_basis || 'AAT Foundations',
+    source_reference: row.source_reference,
+    notes: row.notes || null,
+    assumption_label: row.assumption_label ||
+      `Provisional ${row.source_basis || 'AAT Foundations'} starter default — ${row.material} wall`,
+    approval: {
+      status: row.status || 'approved',
+      approved_by: row.approved_by || null,
+      approved_at: row.approved_at || null,
+    },
+  };
+}
+
+async function loadThermalWallConstructionDefaults(runner: DbRunner) {
+  const result = await runner(
+    `SELECT DISTINCT ON (construction_code) *
+     FROM thermal_wall_construction_defaults
+     WHERE status='approved'
+     ORDER BY construction_code, approved_at DESC, created_at DESC, id DESC`,
+  );
+  return result.rows.map(thermalWallConstructionDefaultRow);
+}
+
+async function resolveThermalWallConstructionInputs(
+  runner: DbRunner,
+  rawInputs: Record<string, any>,
+  editableStatus = 'Draft',
+) {
+  const constructionCode = String(
+    rawInputs.tank_construction_type ?? rawInputs.tank_construction ?? '',
+  ).trim().toLowerCase();
+  if (!constructionCode) return rawInputs;
+
+  const result = await runner(
+    `SELECT *
+     FROM thermal_wall_construction_defaults
+     WHERE construction_code=$1 AND status='approved'
+     ORDER BY approved_at DESC, created_at DESC, id DESC
+     LIMIT 1
+     FOR SHARE`,
+    [constructionCode],
+  );
+  const defaultRecord = result.rows[0]
+    ? thermalWallConstructionDefaultRow(result.rows[0])
+    : null;
+  if (!defaultRecord) {
+    const error: any = new Error('Select a current approved Thermal wall construction default.');
+    error.status = 400;
+    error.code = 'THERMAL_WALL_CONSTRUCTION_NOT_FOUND';
+    throw error;
+  }
+
+  const requestedLayers = Array.isArray(rawInputs.tank_wall_layers) &&
+    rawInputs.tank_wall_layers.length
+    ? rawInputs.tank_wall_layers
+    : [{
+        material: defaultRecord.material,
+        thickness_mm: defaultRecord.thickness_mm,
+        conductivity_w_m_k: defaultRecord.conductivity_w_m_k,
+      }];
+  if (requestedLayers.length !== 1) {
+    const error: any = new Error('A standard Thermal construction requires exactly one effective wall layer.');
+    error.status = 400;
+    error.code = 'THERMAL_WALL_LAYER_INVALID';
+    throw error;
+  }
+  const requested = requestedLayers[0] || {};
+  const material = String(requested.material || '').trim();
+  const thickness = positiveCorrelationCoefficient(requested.thickness_mm);
+  const conductivity = positiveCorrelationCoefficient(requested.conductivity_w_m_k);
+  if (!material || thickness == null || conductivity == null) {
+    const error: any = new Error('Wall material, thickness, and conductivity are required; thickness and conductivity must be positive.');
+    error.status = 400;
+    error.code = 'THERMAL_WALL_LAYER_INVALID';
+    throw error;
+  }
+  const overrides = {
+    material: material !== defaultRecord.material,
+    thickness_mm: Math.abs(thickness - defaultRecord.thickness_mm) > 1e-9,
+    conductivity_w_m_k: Math.abs(conductivity - defaultRecord.conductivity_w_m_k) > 1e-9,
+  };
+  if (Object.values(overrides).some(Boolean) && editableStatus !== 'Draft') {
+    const error: any = new Error('Thermal wall-layer default overrides are only allowed while the Design Book is in Draft.');
+    error.status = 409;
+    error.code = 'THERMAL_WALL_LAYER_OVERRIDE_DRAFT_ONLY';
+    throw error;
+  }
+
+  return {
+    ...rawInputs,
+    tank_construction_type: constructionCode,
+    tank_wall_default_basis: defaultRecord,
+    tank_wall_layers: [{
+      material,
+      thickness_mm: thickness,
+      conductivity_w_m_k: conductivity,
+    }],
+    tank_wall_layer_overrides: overrides,
+    tank_wall_override_justification: String(
+      rawInputs.tank_wall_override_justification ||
+      rawInputs.wall_layer_override_justification ||
+      '',
+    ).trim(),
+  };
+}
+
 function correlationLibraryRow(row: any) {
   return {
     id: row.id,
@@ -920,7 +1046,127 @@ async function resolveThermalCorrelationInputs(
 
 export const thermalCorrelationTestUtils = {
   resolveThermalCorrelationInputs,
+  resolveThermalWallConstructionInputs,
+  loadThermalWallConstructionDefaults,
 };
+
+router.get('/thermal-wall-constructions', async (_req: AuthRequest, res: Response) => {
+  res.json({ items: await loadThermalWallConstructionDefaults(query) });
+});
+
+router.post(
+  '/thermal-wall-constructions/:constructionCode/versions',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const constructionCode = routeParam(req.params.constructionCode).trim().toLowerCase();
+    const version = String(req.body.version || '').trim();
+    const material = String(req.body.material || '').trim();
+    const thickness = positiveCorrelationCoefficient(req.body.thickness_mm);
+    const conductivity = positiveCorrelationCoefficient(req.body.conductivity_w_m_k);
+    const sourceBasis = String(req.body.source_basis || '').trim();
+    const sourceReference = String(req.body.source_reference || '').trim();
+    if (!constructionCode || !version || !material || thickness == null || conductivity == null ||
+        !sourceBasis || !sourceReference) {
+      return res.status(400).json({
+        error: {
+          code: 'THERMAL_WALL_CONSTRUCTION_REQUIRED',
+          message: 'Version, material, positive thickness and conductivity, source basis, and source reference are required.',
+        },
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `thermal-wall-construction:${constructionCode}`,
+      ]);
+      const history = await client.query(
+        `SELECT *
+         FROM thermal_wall_construction_defaults
+         WHERE construction_code=$1
+         ORDER BY approved_at DESC, created_at DESC, id DESC
+         FOR UPDATE`,
+        [constructionCode],
+      );
+      const current = history.rows.find(row => row.status === 'approved');
+      const previous = current || history.rows[0] || null;
+      const constructionLabel = String(
+        req.body.construction_label || previous?.construction_label || '',
+      ).trim();
+      if (!constructionLabel) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: {
+            code: 'THERMAL_WALL_CONSTRUCTION_LABEL_REQUIRED',
+            message: 'Construction label is required for a new wall construction.',
+          },
+        });
+      }
+      if (current) {
+        await client.query(
+          `UPDATE thermal_wall_construction_defaults
+           SET status='superseded', superseded_by=$1, superseded_at=NOW(), updated_at=NOW()
+           WHERE id=$2`,
+          [req.user!.id, current.id],
+        );
+      }
+      const inserted = await client.query(
+        `INSERT INTO thermal_wall_construction_defaults
+           (construction_code, construction_label, material, thickness_mm,
+            conductivity_w_m_k, thickness_units, conductivity_units, version,
+            source_basis, source_reference, notes, status, approved_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'approved',$12)
+         RETURNING *`,
+        [
+          constructionCode,
+          constructionLabel,
+          material,
+          thickness,
+          conductivity,
+          String(req.body.thickness_units || 'mm').trim() || 'mm',
+          String(req.body.conductivity_units || 'W/m·K').trim() || 'W/m·K',
+          version,
+          sourceBasis,
+          sourceReference,
+          String(req.body.notes || '').trim() || null,
+          req.user!.id,
+        ],
+      );
+      await insertAudit(
+        client.query.bind(client) as DbRunner,
+        req.user!.id,
+        'thermal_wall_construction',
+        inserted.rows[0].id,
+        'APPROVE_VERSION',
+        {
+          summary: `${constructionCode} wall construction ${version} approved`,
+          construction_code: constructionCode,
+          version,
+          superseded_version_id: current?.id || null,
+          source_reference: sourceReference,
+        },
+        req.ip,
+      );
+      await client.query('COMMIT');
+      res.status(201).json(thermalWallConstructionDefaultRow(inserted.rows[0]));
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      if (error?.code === '23505') {
+        return res.status(409).json({
+          error: {
+            code: 'THERMAL_WALL_CONSTRUCTION_VERSION_EXISTS',
+            message: 'That wall construction version already exists.',
+          },
+        });
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
 
 export async function loadReleaseContext(
   id: string,
@@ -1116,6 +1362,7 @@ export async function loadReleaseContext(
     tanks,
     exhibitCalculations,
   );
+  const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);
   const pumpSelections = await loadPumpSelections(runner, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
 
@@ -1134,7 +1381,7 @@ export async function loadReleaseContext(
     biological_media_runs: biologicalMediaRuns,
     uv_selections: uvSelections,
     thermal_calculations: thermalCalculations,
-    thermal_construction_defaults: THERMAL_CONSTRUCTION_DEFAULTS,
+    thermal_construction_defaults: thermalConstructionDefaults,
     pump_selections: pumpSelections,
     friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {
@@ -1797,11 +2044,16 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
       client.query.bind(client) as DbRunner,
       requestedInputs,
       calculatedAt,
-        context.status,
+      context.status,
+    );
+    const resolvedInputs = await resolveThermalWallConstructionInputs(
+      client.query.bind(client) as DbRunner,
+      inputs,
+      context.status,
     );
     const calculation = calculateThermalCalculation(
       item.source,
-      inputs,
+      resolvedInputs,
       calculatedAt,
     );
     const saved = await client.query(
@@ -2144,6 +2396,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     tanks,
     exhibitCalculations,
   );
+  const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(query);
   const pumpSelections = await loadPumpSelections(query, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(
     query,
@@ -2161,7 +2414,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     hydraulics,
     substrate,
     thermal_calculations: thermalCalculations,
-    thermal_construction_defaults: THERMAL_CONSTRUCTION_DEFAULTS,
+    thermal_construction_defaults: thermalConstructionDefaults,
     pump_selections: pumpSelections,
     friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {

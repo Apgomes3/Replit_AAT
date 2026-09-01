@@ -114,13 +114,30 @@ describe('AAT thermal calculation', () => {
         construction_label: construction.label,
         u_value_w_m2_k: construction.u_value_w_m2_k,
         units: 'W/m²·K',
-        source: 'assumed tank construction U-value',
+        source: 'AAT Foundations governed wall-layer default',
         reviewed: false,
         assumption_label: construction.assumption_label,
         basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
         source_reference: construction.source_reference,
       });
       expect(result.inputs.wall_construction_basis).toEqual(result.wall_construction_basis);
+      expect(result.wall_construction_basis).toMatchObject({
+        default_layers: [{
+          material: construction.material,
+          thickness_m: construction.thickness_mm / 1000,
+          conductivity_w_m_k: construction.conductivity_w_m_k,
+        }],
+        effective_layers: [{
+          material: construction.material,
+          thickness_m: construction.thickness_mm / 1000,
+          conductivity_w_m_k: construction.conductivity_w_m_k,
+        }],
+        layer_override_flags: {
+          material: false,
+          thickness_mm: false,
+          conductivity_w_m_k: false,
+        },
+      });
     },
   );
 
@@ -129,6 +146,11 @@ describe('AAT thermal calculation', () => {
       ...readyInputs(),
       tank_construction_type: 'acrylic',
       reviewed_u_value_w_m2_k: 2.75,
+      tank_wall_layers: [{
+        material: 'Must not be combined',
+        thickness_mm: 50,
+        conductivity_w_m_k: 0.04,
+      }],
     });
 
     expect(result.status).toBe('Ready');
@@ -139,7 +161,57 @@ describe('AAT thermal calculation', () => {
       source: 'reviewed custom U-value',
       reviewed: true,
       basis_version: null,
+      default_layers: null,
+      effective_layers: null,
     });
+  });
+
+  it('calculates a selected construction from designer-edited effective layer values', () => {
+    const inputs = readyInputs();
+    delete (inputs as any).reviewed_u_value_w_m2_k;
+    const result = calculateThermalCalculation(readySource(), {
+      ...inputs,
+      tank_construction_type: 'acrylic',
+      tank_wall_layers: [{
+        material: 'Project acrylic',
+        thickness_mm: 20,
+        conductivity_w_m_k: 0.2,
+      }],
+      tank_wall_override_justification: 'Reviewed project wall schedule.',
+    });
+    const expected = 1 / (
+      1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+      0.02 / 0.2 +
+      1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
+    );
+
+    expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(expected, 12);
+    expect(result.wall_construction_basis).toMatchObject({
+      source: 'AAT Foundations wall-layer default with designer override',
+      default_layers: [{ material: 'Acrylic / PMMA', thickness_m: 0.012, conductivity_w_m_k: 0.19 }],
+      effective_layers: [{ material: 'Project acrylic', thickness_m: 0.02, conductivity_w_m_k: 0.2 }],
+      layer_override_flags: { material: true, thickness_mm: true, conductivity_w_m_k: true },
+      layer_override_justification: 'Reviewed project wall schedule.',
+    });
+  });
+
+  it('blocks non-positive selected-construction layer values instead of falling back to defaults', () => {
+    const inputs = readyInputs();
+    delete (inputs as any).reviewed_u_value_w_m2_k;
+    const result = calculateThermalCalculation(readySource(), {
+      ...inputs,
+      tank_construction_type: 'frp',
+      tank_wall_layers: [{
+        material: 'FRP / GRP laminate',
+        thickness_mm: 0,
+        conductivity_w_m_k: -1,
+      }],
+    });
+
+    expect(result.status).toBe('Blocked');
+    expect(result.reasons).toContain(
+      'Every tank wall layer requires material, positive thickness, and positive conductivity.',
+    );
   });
 
   it('retains reviewed explicit wall layers when no default construction applies', () => {

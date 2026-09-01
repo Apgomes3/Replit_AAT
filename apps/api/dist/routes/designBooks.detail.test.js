@@ -121,6 +121,16 @@ vitest_1.vi.mock('../db', () => {
             sql.includes('FROM system_pump_selections')) {
             return { rows: [] };
         }
+        if (sql.includes('FROM thermal_wall_construction_defaults')) {
+            return {
+                rows: [
+                    { construction_code: 'acrylic', construction_label: 'Acrylic', material: 'Acrylic / PMMA', thickness_mm: 12, conductivity_w_m_k: 0.19, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                    { construction_code: 'concrete', construction_label: 'Concrete', material: 'Reinforced concrete', thickness_mm: 150, conductivity_w_m_k: 1.4, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                    { construction_code: 'frp', construction_label: 'FRP', material: 'FRP / GRP laminate', thickness_mm: 6, conductivity_w_m_k: 0.25, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                    { construction_code: 'steel', construction_label: 'Steel', material: 'Stainless steel 316L', thickness_mm: 3, conductivity_w_m_k: 14, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                ],
+            };
+        }
         throw new Error(`Unexpected query in Design Book detail regression test: ${sql}`);
     });
     return {
@@ -199,10 +209,10 @@ function requestDetail(app) {
             source_fingerprint: vitest_1.expect.any(String),
         }))));
         (0, vitest_1.expect)(response.body.thermal_construction_defaults).toEqual([
-            vitest_1.expect.objectContaining({ code: 'acrylic', label: 'Acrylic', units: 'W/m²·K' }),
-            vitest_1.expect.objectContaining({ code: 'concrete', label: 'Concrete', units: 'W/m²·K' }),
-            vitest_1.expect.objectContaining({ code: 'frp', label: 'FRP', units: 'W/m²·K' }),
-            vitest_1.expect.objectContaining({ code: 'steel', label: 'Steel', units: 'W/m²·K' }),
+            vitest_1.expect.objectContaining({ code: 'acrylic', material: 'Acrylic / PMMA', thickness_mm: 12, conductivity_w_m_k: 0.19 }),
+            vitest_1.expect.objectContaining({ code: 'concrete', material: 'Reinforced concrete', thickness_mm: 150, conductivity_w_m_k: 1.4 }),
+            vitest_1.expect.objectContaining({ code: 'frp', material: 'FRP / GRP laminate', thickness_mm: 6, conductivity_w_m_k: 0.25 }),
+            vitest_1.expect.objectContaining({ code: 'steel', material: 'Stainless steel 316L', thickness_mm: 3, conductivity_w_m_k: 14 }),
         ]);
         (0, vitest_1.expect)(state.calls).toContainEqual(vitest_1.expect.objectContaining({
             params: [bookId, systems.map(system => system.id)],

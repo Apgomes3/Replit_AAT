@@ -12,49 +12,77 @@
 
 import crypto from 'crypto';
 
-export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v4';
-export const THERMAL_CONSTRUCTION_BASIS_VERSION = 'aat-thermal-construction-v1';
+export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v5';
+export const THERMAL_CONSTRUCTION_BASIS_VERSION = 'AAT_FOUNDATIONS_WALL_V1.0';
 /**
- * Default wall U-values are governed engineering assumptions, not material
- * conductivity calculations. Keep the basis version and source reference in
- * every result so a saved calculation remains auditable if this table changes.
+ * These are provisional AAT Foundations starter values. The database seed
+ * stores the same values with approval metadata; this catalogue is deliberately
+ * kept as a safe calculation/test fallback for legacy databases and previews.
  */
 export const THERMAL_CONSTRUCTION_DEFAULTS = [
   {
     code: 'acrylic',
     label: 'Acrylic',
-    u_value_w_m2_k: 5.7,
+    material: 'Acrylic / PMMA',
+    thickness_mm: 12,
+    conductivity_w_m_k: 0.19,
+    u_value_w_m2_k: 3.7061118335500645,
     units: 'W/m²·K',
-    assumption_label: 'Engineering assumption — standard acrylic tank wall',
+    thickness_units: 'mm',
+    conductivity_units: 'W/m·K',
+    source_basis: 'AAT Foundations',
+    source_reference: 'AAT Foundations wall construction starter defaults',
+    notes: 'Provisional starter default; confirm project-specific construction with the responsible engineer.',
+    assumption_label: 'Provisional AAT Foundations starter default — acrylic / PMMA wall',
     basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
-    source_reference: 'AAT thermal construction assumption basis v1',
   },
   {
     code: 'concrete',
     label: 'Concrete',
-    u_value_w_m2_k: 1.5,
+    material: 'Reinforced concrete',
+    thickness_mm: 150,
+    conductivity_w_m_k: 1.4,
+    u_value_w_m2_k: 3.1866464339908953,
     units: 'W/m²·K',
-    assumption_label: 'Engineering assumption — standard concrete tank wall',
+    thickness_units: 'mm',
+    conductivity_units: 'W/m·K',
+    source_basis: 'AAT Foundations',
+    source_reference: 'AAT Foundations wall construction starter defaults',
+    notes: 'Provisional starter default; confirm project-specific construction with the responsible engineer.',
+    assumption_label: 'Provisional AAT Foundations starter default — reinforced concrete wall',
     basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
-    source_reference: 'AAT thermal construction assumption basis v1',
   },
   {
     code: 'frp',
     label: 'FRP',
-    u_value_w_m2_k: 2.5,
+    material: 'FRP / GRP laminate',
+    thickness_mm: 6,
+    conductivity_w_m_k: 0.25,
+    u_value_w_m2_k: 4.335260115606936,
     units: 'W/m²·K',
-    assumption_label: 'Engineering assumption — standard FRP tank wall',
+    thickness_units: 'mm',
+    conductivity_units: 'W/m·K',
+    source_basis: 'AAT Foundations',
+    source_reference: 'AAT Foundations wall construction starter defaults',
+    notes: 'Provisional starter default; confirm project-specific construction with the responsible engineer.',
+    assumption_label: 'Provisional AAT Foundations starter default — FRP / GRP laminate wall',
     basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
-    source_reference: 'AAT thermal construction assumption basis v1',
   },
   {
     code: 'steel',
     label: 'Steel',
-    u_value_w_m2_k: 5.8,
+    material: 'Stainless steel 316L',
+    thickness_mm: 3,
+    conductivity_w_m_k: 14,
+    u_value_w_m2_k: 4.833697778800783,
     units: 'W/m²·K',
-    assumption_label: 'Engineering assumption — standard steel tank wall',
+    thickness_units: 'mm',
+    conductivity_units: 'W/m·K',
+    source_basis: 'AAT Foundations',
+    source_reference: 'AAT Foundations wall construction starter defaults',
+    notes: 'Provisional starter default; confirm project-specific construction with the responsible engineer.',
+    assumption_label: 'Provisional AAT Foundations starter default — stainless steel 316L wall',
     basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
-    source_reference: 'AAT thermal construction assumption basis v1',
   },
 ] as const;
 export const THERMAL_CONSTANTS = {
@@ -422,17 +450,72 @@ function resolveWallUValue(inputs: any, reasons: string[]) {
       assumption_label: 'Reviewed engineering value — custom wall U-value',
       basis_version: null,
       source_reference: null,
+      default_layers: null,
+      effective_layers: null,
+      layer_override_flags: {},
+      layer_override_justification: null,
     };
   }
   if (construction) {
+    const defaultBasis = inputs.tank_wall_default_basis || construction;
+    const defaultLayer = {
+      material: String(defaultBasis.material || construction.material || '').trim(),
+      thickness_mm: Number(defaultBasis.thickness_mm ?? construction.thickness_mm),
+      conductivity_w_m_k: Number(
+        defaultBasis.conductivity_w_m_k ?? construction.conductivity_w_m_k,
+      ),
+    };
+    const requestedLayers = Array.isArray(inputs.tank_wall_layers) &&
+      inputs.tank_wall_layers.length
+      ? inputs.tank_wall_layers
+      : [defaultLayer];
+    const validLayers = requestedLayers.map((layer: any) => ({
+      material: String(layer?.material || '').trim(),
+      thickness_m: positive(layer?.thickness_mm) == null ? null : Number(layer.thickness_mm) / 1000,
+      conductivity_w_m_k: positive(layer?.conductivity_w_m_k),
+    }));
+    const defaultLayers = [{
+      material: defaultLayer.material,
+      thickness_m: positive(defaultLayer.thickness_mm) == null ? null : defaultLayer.thickness_mm / 1000,
+      conductivity_w_m_k: positive(defaultLayer.conductivity_w_m_k),
+    }];
+    if (validLayers.some(layer => !layer.material || layer.thickness_m == null || layer.conductivity_w_m_k == null) ||
+        defaultLayers.some(layer => !layer.material || layer.thickness_m == null || layer.conductivity_w_m_k == null)) {
+      reasons.push('Every tank wall layer requires material, positive thickness, and positive conductivity.');
+      return { value: null, source: 'incomplete wall construction' };
+    }
+    const effectiveLayer = validLayers[0];
+    const defaultLayerResolved = defaultLayers[0];
+    const layerOverrideFlags = {
+      material: effectiveLayer.material !== defaultLayerResolved.material,
+      thickness_mm: Math.abs(effectiveLayer.thickness_m - defaultLayerResolved.thickness_m) > 1e-12,
+      conductivity_w_m_k: Math.abs(effectiveLayer.conductivity_w_m_k - defaultLayerResolved.conductivity_w_m_k) > 1e-12,
+    };
+    const hasLayerOverride = Object.values(layerOverrideFlags).some(Boolean);
+    const resistance = 1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+      validLayers.reduce((sum: number, layer: any) => sum + layer.thickness_m / layer.conductivity_w_m_k, 0) +
+      1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k;
     return {
-      value: construction.u_value_w_m2_k,
-      source: 'assumed tank construction U-value',
-      construction,
+      value: 1 / resistance,
+      source: hasLayerOverride
+        ? 'AAT Foundations wall-layer default with designer override'
+        : 'AAT Foundations governed wall-layer default',
+      construction: {
+        ...construction,
+        label: defaultBasis.label || construction.label,
+      },
       reviewed: false,
-      assumption_label: construction.assumption_label,
-      basis_version: construction.basis_version,
-      source_reference: construction.source_reference,
+      assumption_label: defaultBasis.assumption_label || construction.assumption_label,
+      basis_version: defaultBasis.basis_version || construction.basis_version,
+      source_reference: defaultBasis.source_reference || construction.source_reference,
+      source_basis: defaultBasis.source_basis || 'AAT Foundations',
+      approval: defaultBasis.approval || null,
+      default_layers: defaultLayers,
+      effective_layers: validLayers,
+      layer_override_flags: layerOverrideFlags,
+      layer_override_justification: String(
+        inputs.tank_wall_override_justification || inputs.wall_layer_override_justification || '',
+      ).trim() || null,
     };
   }
   const layers = Array.isArray(inputs.tank_wall_layers) ? inputs.tank_wall_layers : [];
@@ -460,6 +543,12 @@ function resolveWallUValue(inputs: any, reasons: string[]) {
     assumption_label: 'Reviewed engineering value — explicit wall-layer construction',
     basis_version: null,
     source_reference: null,
+    default_layers: null,
+    effective_layers: validLayers,
+    layer_override_flags: {},
+    layer_override_justification: String(
+      inputs.tank_wall_override_justification || inputs.wall_layer_override_justification || '',
+    ).trim() || null,
     layers: validLayers,
   };
 }
@@ -685,8 +774,14 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
     reviewed: common.wall.reviewed === true,
     assumption_label: common.wall.assumption_label || null,
     basis_version: common.wall.basis_version || null,
+    source_basis: common.wall.source_basis || null,
     source_reference: common.wall.source_reference || null,
-    layers: common.wall.layers || null,
+    approval: common.wall.approval || null,
+    layers: common.wall.effective_layers || common.wall.layers || null,
+    default_layers: common.wall.default_layers || null,
+    effective_layers: common.wall.effective_layers || common.wall.layers || null,
+    layer_override_flags: common.wall.layer_override_flags || {},
+    layer_override_justification: common.wall.layer_override_justification || null,
   };
   return {
     status: reasons.length ? 'Blocked' as ThermalStatus : 'Ready' as ThermalStatus,
