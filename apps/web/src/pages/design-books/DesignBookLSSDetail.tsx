@@ -1416,6 +1416,9 @@ export default function DesignBookLSSDetail() {
     qc.invalidateQueries({ queryKey: ['system', systemId] });
     qc.invalidateQueries({ queryKey: ['system-exhibit-links', systemId] });
     qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+    // Pump circuits are derived from the live Flow Route. Keep an already
+    // mounted Pump Selection view synchronized after a successful save.
+    qc.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
   };
 
   // Flow Route saves can change the UV side-stream list while the UV query is
@@ -2184,6 +2187,7 @@ export default function DesignBookLSSDetail() {
       toast.success('Flow route saved');
       clearFlowDraft();
       refresh();
+      await qc.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
       await refreshUvSelection();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Failed to save flow route');
@@ -2221,6 +2225,7 @@ export default function DesignBookLSSDetail() {
       // Await refetch so the loop stays visible in the list until new data arrives
       await qc.refetchQueries({ queryKey: ['system', systemId] });
       qc.invalidateQueries({ queryKey: ['design-book', bookId] });
+      await qc.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
       await refreshUvSelection();
       setListEditRow(null);
       setListRowForm(null);

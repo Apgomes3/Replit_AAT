@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
     loop1_name: 'Main return', loop1_flow_source: 'Bottom Drain', loop1_filtration: 'Sand Filter', loop1_flow_pct: '60',
   } as any,
   sideStreams: [{ id: 'side-1', system_id: 'system-1', parent_loop_number: 1, name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0 }] as any[],
+  fractionatorAllocations: [] as any[],
   saved: [] as any[],
   candidates: [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }],
   exhibits: [] as any[], tanks: [] as any[], hydraulics: [] as any[], links: [] as any[],
@@ -30,6 +31,7 @@ vi.mock('../db', () => {
     if (sql.includes('FROM design_book_exhibit_hydraulics')) return { rows: state.hydraulics };
     if (sql.includes('FROM system_exhibit_links')) return { rows: state.links };
     if (sql.includes('FROM system_flow_side_streams')) return { rows: state.sideStreams };
+    if (sql.includes('FROM system_flow_fractionator_allocations')) return { rows: state.fractionatorAllocations };
     if (sql.includes('FROM system_pump_selections')) return { rows: state.saved };
     if (sql.startsWith('SELECT id FROM project_equipment_items')) return { rows: [] };
     if (sql.includes('SELECT equip_code FROM project_equipment_items')) return { rows: [] };
@@ -93,6 +95,7 @@ describe('pump selection HTTP routes', () => {
   beforeEach(() => {
     state.calls.length = 0; state.book = { id: 'book-1', project_id: 'project-1', status: 'Draft' };
     state.saved = []; state.candidates = [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }];
+    state.fractionatorAllocations = [];
     state.exhibits = []; state.tanks = []; state.hydraulics = []; state.links = [];
     state.system.calculation_inputs = { design_flow_source: 'manual_override' }; state.system.design_flow_m3h = '100';
     state.system.loop1_name = 'Main return';
@@ -205,6 +208,42 @@ describe('pump selection HTTP routes', () => {
     });
     expect(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
     expect(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
+  });
+
+  it('creates the first FFVP line from its active FFSP circuit', async () => {
+    state.system.design_flow_m3h = '224.15';
+    state.system.loop1_flow_pct = '100';
+    state.system.loop1_filtration = 'Foam Fractionation';
+    state.system.loop1_name = 'Foam Fractionator Loop';
+    state.candidates = [];
+    state.fractionatorAllocations = [{
+      system_id: 'system-1',
+      parent_loop_number: 1,
+      products: [{ product_master_id: 'ff-1', quantity: 2, venturi_flow_m3h: 21.25 }],
+    }];
+
+    const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'venturi',
+      equip_code: 'FFVP-001',
+      description: 'FFVP — Foam Fractionator Venturi Pump',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.project_equipment_item).toMatchObject({
+      id: 'created-pump-1',
+      equip_code: 'FFVP-001',
+      description: 'FFVP — Foam Fractionator Venturi Pump',
+    });
+    expect(response.body.pump_line).toMatchObject({
+      circuit_key: 'loop:1',
+      pump_role: 'venturi',
+      pump_role_name: 'FFVP — Foam Fractionator Venturi Pump',
+      effective_flow_m3h: 42.5,
+      status: 'incomplete',
+    });
+    expect(state.calls.some(call => call.sql.includes('INSERT INTO system_pump_selections'))).toBe(true);
   });
 
   it('treats a repeated create request as idempotent without creating another equipment item', async () => {

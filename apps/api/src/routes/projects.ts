@@ -326,10 +326,12 @@ async function normalizeFractionatorAllocations(
       quantities.set(id, quantity);
     }
     const catalog = productIds.length ? (await runner(
-      `SELECT pm.id, pm.product_code, pm.product_name, pd.diameter_mm
+      `SELECT pm.id, pm.product_code, pm.product_name, pd.diameter_mm,
+              ph.venturi_flow_m3h
        FROM product_masters pm
        JOIN product_families pf ON pf.id=pm.product_family_id
        LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
+       LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
        WHERE pm.id = ANY($1::uuid[]) AND pf.product_family_code='PFM-FF'`,
       [productIds],
     )).rows : [];
@@ -343,6 +345,7 @@ async function normalizeFractionatorAllocations(
         product_code: product.product_code,
         product_name: product.product_name,
         diameter_mm: product.diameter_mm == null ? null : Number(product.diameter_mm),
+        venturi_flow_m3h: product.venturi_flow_m3h == null ? null : Number(product.venturi_flow_m3h),
         quantity: quantities.get(id),
       };
     });
@@ -1729,10 +1732,12 @@ router.get('/systems/:id/fractionator-products', authenticate, async (req: AuthR
   const system = await query('SELECT id FROM systems WHERE id=$1', [req.params.id]);
   if (!system.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   const result = await query(
-    `SELECT pm.id, pm.product_code, pm.product_name, pm.standard_status, pd.diameter_mm
+    `SELECT pm.id, pm.product_code, pm.product_name, pm.standard_status, pd.diameter_mm,
+            ph.venturi_flow_m3h
      FROM product_masters pm
      JOIN product_families pf ON pf.id=pm.product_family_id
      LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      WHERE pf.product_family_code='PFM-FF' AND COALESCE(pm.status, 'Active')='Active'
      ORDER BY pm.product_code`,
   );

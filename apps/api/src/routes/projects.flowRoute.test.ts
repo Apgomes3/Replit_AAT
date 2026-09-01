@@ -212,6 +212,7 @@ describe('system Flow Route allocation persistence', () => {
       product_code: 'PM-FF-800',
       product_name: 'Foam Fractionator FF-800',
       diameter_mm: '800',
+      venturi_flow_m3h: '21.25',
     }];
     const response = await request(app, {
       ...basePayload,
@@ -237,6 +238,7 @@ describe('system Flow Route allocation persistence', () => {
     expect(JSON.parse(insert?.params[4])).toEqual([expect.objectContaining({
       product_code: 'PM-FF-800',
       diameter_mm: 800,
+      venturi_flow_m3h: 21.25,
       quantity: 2,
     })]);
     expect(['matched', 'required_above_capacity', 'capacity_above_required'])

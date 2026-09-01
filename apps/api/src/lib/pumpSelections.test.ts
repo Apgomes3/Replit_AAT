@@ -18,6 +18,26 @@ describe('pump circuit intent', () => {
       'side_stream:yes',
     ]);
   });
+
+  it('derives FFVP duty from selected fractionator venturi flows and quantities', () => {
+    const circuits = pumpCircuits({
+      ...system,
+      loop1_filtration: FOAM_FRACTIONATION_CIRCUIT_TYPE,
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        products: [
+          { product_master_id: 'ff-1', quantity: 2, venturi_flow_m3h: 12.5 },
+          { product_master_id: 'ff-2', quantity: 1, venturi_flow_m3h: 8 },
+        ],
+      }],
+    }, []);
+
+    expect(circuits[0]).toMatchObject({
+      circuit_key: 'loop:1',
+      flow_m3h: 80,
+      venturi_flow_m3h: 33,
+    });
+  });
 });
 
 describe('pump selection calculation', () => {
@@ -159,6 +179,39 @@ describe('buildPumpLineItem', () => {
     const ffsp = buildPumpLineItem(circuit, row, PUMP_ROLE_PRIMARY);
     const ffvp = buildPumpLineItem(circuit, row, PUMP_ROLE_VENTURI);
     expect(ffsp.current_source_fingerprint).not.toBe(ffvp.current_source_fingerprint);
+  });
+
+  it('keeps saved pump sizing fresh when only the circuit display name changes', () => {
+    const savedRow = {
+      project_equipment_item_id: 'pump-1',
+      pump_snapshot: { id: 'pump-1', power_kw: 15 },
+      design_head_m: 10,
+      pump_efficiency_pct: 80,
+      motor_efficiency_pct: 90,
+      calculation_version: 'pump-selection-v1',
+    };
+    const original = buildPumpLineItem(
+      { ...circuit, circuit_name: 'Original Loop' },
+      savedRow,
+      PUMP_ROLE_PRIMARY,
+    );
+    const renamed = buildPumpLineItem(
+      { ...circuit, circuit_name: 'Renamed Loop' },
+      { ...savedRow, source_fingerprint: original.current_source_fingerprint },
+      PUMP_ROLE_PRIMARY,
+    );
+
+    expect(renamed).toMatchObject({
+      circuit_key: 'loop:1',
+      circuit_name: 'Renamed Loop',
+      project_equipment_item_id: 'pump-1',
+      design_head_m: 10,
+      pump_efficiency_pct: 80,
+      motor_efficiency_pct: 90,
+      freshness: 'fresh',
+      status: 'ready',
+    });
+    expect(renamed.results).toEqual(original.results);
   });
 });
 

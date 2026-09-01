@@ -4,7 +4,7 @@ import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage, re
 import {
   calculatePumpSelection, evaluateSelectedPumpSuitability, PUMP_SELECTION_CALCULATION_VERSION,
   pumpSourceFingerprint, pumpCircuits, isFoamFractionatorCircuit, pumpLinesForCircuit,
-  buildPumpLineItem, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, defaultPumpLineName,
+  buildPumpLineItem, pumpSourcePayload, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, defaultPumpLineName,
 } from '../lib/pumpSelections';
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
@@ -154,21 +154,14 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
     if (!selected) return res.status(400).json({ error: { code: 'INELIGIBLE_PUMP', message: 'Selected equipment is not an eligible pump assigned to this system and project.' } });
   }
 
-  // Build the fingerprint-source payload that includes role and venturi flow.
+  // Build a label-independent fingerprint source. Circuit names are display
+  // labels and must not make saved pump sizing stale when they are renamed.
   const circuit = line;
-  const sourcePayload = {
-    circuit: {
-      circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind,
-      circuit_name: circuit.circuit_name, circuit_type: circuit.circuit_type,
-      parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id,
-      flow_m3h: circuit.flow_m3h,
-    },
-    pump_role: pumpRole,
-    ...(isVenturi ? { venturi_flow_m3h: effectiveFlow } : {}),
+  const sourcePayload = pumpSourcePayload(circuit, pumpRole, effectiveFlow, {
     design_head_m: numberOrNull(input.design_head_m),
     pump_efficiency_pct: numberOrNull(input.pump_efficiency_pct),
     motor_efficiency_pct: numberOrNull(input.motor_efficiency_pct),
-  };
+  });
 
   await query(
     `INSERT INTO system_pump_selections
@@ -232,10 +225,14 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   const circuitKey = input.circuit_key;
   if (!circuitKey) return res.status(400).json({ error: { code: 'VALIDATION', message: 'circuit_key is required.' } });
 
-  // Validate that the circuit exists and is active.
+  // Validate that the circuit exists and is active. A first FFVP line is not
+  // returned by liveItems until it has been saved, so validate its parent
+  // primary circuit rather than requiring the not-yet-existing venturi line.
   const allLines = await liveItems(query, system);
+  const primaryLine = allLines.find(item => item.circuit_key === circuitKey && item.pump_role === PUMP_ROLE_PRIMARY);
   const existingLine = allLines.find(item => item.circuit_key === circuitKey && item.pump_role === pumpRole);
-  if (!existingLine || existingLine.circuit_kind === 'orphaned') {
+  const circuitLine = pumpRole === PUMP_ROLE_VENTURI ? primaryLine : existingLine;
+  if (!circuitLine || circuitLine.circuit_kind === 'orphaned') {
     return res.status(409).json({
       error: {
         code: 'INACTIVE_PUMP_DUTY',
@@ -246,7 +243,6 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
 
   // For FFVP: only allowed on Foam Fractionator circuits.
   if (pumpRole === PUMP_ROLE_VENTURI) {
-    const primaryLine = allLines.find(item => item.circuit_key === circuitKey && item.pump_role === PUMP_ROLE_PRIMARY);
     if (!primaryLine || !isFoamFractionatorCircuit(primaryLine)) {
       return res.status(400).json({ error: { code: 'VALIDATION', message: 'Venturi pump lines are only supported on Foam Fractionator circuits.' } });
     }
@@ -256,10 +252,10 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   const equipCode = (input.equip_code || '').trim() || await generateEquipCode(
     book.project_id,
     pumpRole,
-    !!existingLine && isFoamFractionatorCircuit(existingLine),
+    isFoamFractionatorCircuit(circuitLine),
   );
   const description = (input.description || '').trim() || defaultPumpLineName(
-    existingLine || { circuit_name: circuitKey, circuit_type: null, circuit_kind: 'loop' },
+    circuitLine || { circuit_name: circuitKey, circuit_type: null, circuit_kind: 'loop' },
     pumpRole,
   );
 
@@ -310,21 +306,13 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       return res.status(400).json({ error: { code: 'INVALID_CIRCUIT', message: 'Circuit key is not active in the saved Flow Route.' } });
     }
     const venturiFlow = pumpRole === PUMP_ROLE_VENTURI
-      ? numberOrNull(input.venturi_flow_m3h)
+      ? (numberOrNull(input.venturi_flow_m3h) ?? numberOrNull(circuit.venturi_flow_m3h))
       : null;
-    const source = {
-      circuit: {
-        circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind,
-        circuit_name: circuit.circuit_name, circuit_type: circuit.circuit_type,
-        parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id,
-        flow_m3h: circuit.flow_m3h,
-      },
-      pump_role: pumpRole,
-      ...(pumpRole === PUMP_ROLE_VENTURI ? { venturi_flow_m3h: venturiFlow } : {}),
+    const source = pumpSourcePayload(circuit, pumpRole, pumpRole === PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h, {
       design_head_m: existingLine?.design_head_m ?? null,
       pump_efficiency_pct: existingLine?.pump_efficiency_pct ?? null,
       motor_efficiency_pct: existingLine?.motor_efficiency_pct ?? null,
-    };
+    });
     const calculation = calculatePumpSelection({
       flow_m3h: pumpRole === PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h,
       design_head_m: existingLine?.design_head_m,

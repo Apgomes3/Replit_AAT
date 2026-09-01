@@ -141,6 +141,7 @@ function renderFlowRoute(
   tanProfiles: any[] = [],
   sandFilterProducts: any[] = [],
   uvSelectionData: any = { streams: [], selectable_revisions: [], saved: null },
+  pumpSelectionData: any = { items: [], pump_candidates: [], frozen: false },
 ) {
   apiGet.mockImplementation((url: string) => {
     if (url === '/systems/system-1') return Promise.resolve({ data: system });
@@ -157,6 +158,7 @@ function renderFlowRoute(
     if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: tanProfiles } });
     if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
     if (url === '/design-books/book-1/uv/system-1') return Promise.resolve({ data: uvSelectionData });
+    if (url === '/systems/system-1/pump-selections') return Promise.resolve({ data: pumpSelectionData });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
   const queryClient = new QueryClient({
@@ -1715,6 +1717,125 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
         ],
       }),
     ));
+  });
+
+  it('refreshes live Pump Selection after a full Flow Route rename without changing the circuit key', async () => {
+    const user = userEvent.setup();
+    const pumpSelectionData = {
+      items: [{
+        circuit_key: 'loop:1',
+        circuit_kind: 'loop',
+        circuit_name: 'Loop 1',
+        circuit_type: 'Sand Filter',
+        pump_role: 'primary',
+        flow_m3h: 40,
+        project_equipment_item_id: 'pump-1',
+        design_head_m: 10,
+        pump_efficiency_pct: 80,
+        motor_efficiency_pct: 90,
+        freshness: 'fresh',
+        status: 'ready',
+        results: { recommended_motor_kw: 1.5 },
+      }],
+      pump_candidates: [{ id: 'pump-1', equip_code: 'P-101', product_name: 'Duty Pump' }],
+      frozen: false,
+    };
+    renderFlowRoute(
+      { ...baseSystem, loop1_name: 'Loop 1' },
+      baseBook,
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?tab=pump',
+      null,
+      [],
+      [],
+      [],
+      { streams: [], selectable_revisions: [], saved: null },
+      pumpSelectionData,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Loop 1' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Flow Route' }));
+    const route = within(document.querySelector('#flow-route')!);
+    await user.click(route.getByRole('button', { name: 'Edit Loop 1 name' }));
+    await user.clear(route.getByRole('textbox', { name: 'Loop 1 name' }));
+    await user.type(route.getByRole('textbox', { name: 'Loop 1 name' }), 'Renamed Main Loop');
+    await user.click(route.getByRole('button', { name: 'Save Loop 1 name' }));
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({ loop1_name: 'Renamed Main Loop' }),
+    ));
+
+    pumpSelectionData.items[0].circuit_name = 'Renamed Main Loop';
+    await user.click(screen.getByRole('tab', { name: 'Pump Selection' }));
+    expect(await screen.findByRole('heading', { name: 'Renamed Main Loop' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Loop 1' })).not.toBeInTheDocument();
+    expect(screen.getByText('1.50 kW')).toBeInTheDocument();
+    expect(pumpSelectionData.items[0].circuit_key).toBe('loop:1');
+  });
+
+  it('refreshes live Pump Selection after a focused list-row rename', async () => {
+    const user = userEvent.setup();
+    const pumpSelectionData = {
+      items: [{
+        circuit_key: 'loop:2',
+        circuit_kind: 'loop',
+        circuit_name: 'Polishing',
+        circuit_type: 'Pressurized Bag Filter',
+        pump_role: 'primary',
+        flow_m3h: 35,
+        project_equipment_item_id: 'pump-2',
+        design_head_m: 12,
+        pump_efficiency_pct: 78,
+        motor_efficiency_pct: 91,
+        freshness: 'fresh',
+        status: 'ready',
+        results: { recommended_motor_kw: 1.5 },
+      }],
+      pump_candidates: [{ id: 'pump-2', equip_code: 'P-102', product_name: 'Polishing Pump' }],
+      frozen: false,
+    };
+    renderFlowRoute(
+      {
+        ...baseSystem,
+        loop1_name: 'Main Filtration',
+        loop2_name: 'Polishing',
+        loop2_flow_source: 'Surface Skim',
+        loop2_filtration: 'Pressurized Bag Filter',
+        loop2_flow_pct: 35,
+      },
+      baseBook,
+      [],
+      [],
+      '/design-books/book-1/lss/system-1?tab=pump',
+      null,
+      [],
+      [],
+      [],
+      { streams: [], selectable_revisions: [], saved: null },
+      pumpSelectionData,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Polishing' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Flow Route' }));
+    const route = within(document.querySelector('#flow-route')!);
+    await user.click(route.getByRole('button', { name: 'List' }));
+    const polishingRow = route.getByText('Polishing').closest('tr')!;
+    await user.click(within(polishingRow).getByRole('button', { name: /Edit/ }));
+    await user.clear(route.getByRole('textbox', { name: 'Loop 2 name' }));
+    await user.type(route.getByRole('textbox', { name: 'Loop 2 name' }), 'Secondary Polishing');
+    await user.click(within(polishingRow).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({ loop2_name: 'Secondary Polishing' }),
+    ));
+
+    pumpSelectionData.items[0].circuit_name = 'Secondary Polishing';
+    await user.click(screen.getByRole('tab', { name: 'Pump Selection' }));
+    expect(await screen.findByRole('heading', { name: 'Secondary Polishing' })).toBeInTheDocument();
+    expect(screen.getByText('1.50 kW')).toBeInTheDocument();
+    expect(pumpSelectionData.items[0].circuit_key).toBe('loop:2');
   });
 
   it('cancels an inline rename without changing the Flow Route draft', async () => {
