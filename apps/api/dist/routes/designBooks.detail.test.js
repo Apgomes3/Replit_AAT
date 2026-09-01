@@ -76,6 +76,7 @@ const state = vitest_1.vi.hoisted(() => ({
     status: 'Draft',
     reviewSnapshot: null,
     releaseSnapshot: null,
+    wallConstructionVersion: 'AAT_FOUNDATIONS_WALL_V1.0',
 }));
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (sql, params = []) => {
@@ -125,10 +126,10 @@ vitest_1.vi.mock('../db', () => {
         if (sql.includes('FROM thermal_wall_construction_defaults')) {
             return {
                 rows: [
-                    { construction_code: 'acrylic', construction_label: 'Acrylic', material: 'Acrylic / PMMA', thickness_mm: 12, conductivity_w_m_k: 0.19, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
-                    { construction_code: 'concrete', construction_label: 'Concrete', material: 'Reinforced concrete', thickness_mm: 150, conductivity_w_m_k: 1.4, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
-                    { construction_code: 'frp', construction_label: 'FRP', material: 'FRP / GRP laminate', thickness_mm: 6, conductivity_w_m_k: 0.25, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
-                    { construction_code: 'steel', construction_label: 'Steel', material: 'Stainless steel 316L', thickness_mm: 3, conductivity_w_m_k: 14, version: 'AAT_FOUNDATIONS_WALL_V1.0', source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                    { construction_code: 'acrylic', construction_label: 'Acrylic', material: 'Acrylic / PMMA', thickness_mm: 12, conductivity_w_m_k: 0.19, version: state.wallConstructionVersion, source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                    { construction_code: 'concrete', construction_label: 'Concrete', material: 'Reinforced concrete', thickness_mm: 150, conductivity_w_m_k: 1.4, version: state.wallConstructionVersion, source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                    { construction_code: 'frp', construction_label: 'FRP', material: 'FRP / GRP laminate', thickness_mm: 6, conductivity_w_m_k: 0.25, version: state.wallConstructionVersion, source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
+                    { construction_code: 'steel', construction_label: 'Steel', material: 'Stainless steel 316L', thickness_mm: 3, conductivity_w_m_k: 14, version: state.wallConstructionVersion, source_basis: 'AAT Foundations', source_reference: 'AAT Foundations wall construction starter defaults', status: 'approved' },
                 ],
             };
         }
@@ -190,6 +191,7 @@ function requestDetail(app) {
         state.status = 'Draft';
         state.reviewSnapshot = null;
         state.releaseSnapshot = null;
+        state.wallConstructionVersion = 'AAT_FOUNDATIONS_WALL_V1.0';
     });
     (0, vitest_1.afterAll)(() => {
         delete process.env.JWT_SECRET;
@@ -314,7 +316,7 @@ function requestDetail(app) {
         ['For Review', 'reviewSnapshot'],
         ['Approved', 'reviewSnapshot'],
         ['Released', 'releaseSnapshot'],
-    ])('keeps %s Thermal data frozen', async (status, snapshotKey) => {
+    ])('keeps %s Thermal data frozen after the wall library is superseded', async (status, snapshotKey) => {
         const frozenThermal = [{
                 system_id: 'frozen-system',
                 freshness: 'fresh',
@@ -336,10 +338,23 @@ function requestDetail(app) {
                     },
                 },
             }];
+        const frozenDefaults = [{
+                code: 'frp',
+                label: 'FRP',
+                material: 'FRP / GRP laminate',
+                thickness_mm: 6,
+                conductivity_w_m_k: 0.25,
+                version: 'AAT_FOUNDATIONS_WALL_V1.0',
+            }];
         state.status = status;
-        state[snapshotKey] = { thermal_calculations: frozenThermal };
+        state.wallConstructionVersion = 'AAT_FOUNDATIONS_WALL_V2.0';
+        state[snapshotKey] = {
+            thermal_calculations: frozenThermal,
+            thermal_construction_defaults: frozenDefaults,
+        };
         const response = await requestDetail(app);
         (0, vitest_1.expect)(response.status).toBe(200);
         (0, vitest_1.expect)(response.body.thermal_calculations).toEqual(frozenThermal);
+        (0, vitest_1.expect)(response.body.thermal_construction_defaults).toEqual(frozenDefaults);
     });
 });

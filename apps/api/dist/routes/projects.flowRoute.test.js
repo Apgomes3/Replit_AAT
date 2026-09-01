@@ -231,6 +231,7 @@ const basePayload = {
                 product_code: 'PM-FF-800',
                 product_name: 'Foam Fractionator FF-800',
                 diameter_mm: '800',
+                venturi_flow_m3h: '21.25',
             }];
         const response = await request(app, {
             ...basePayload,
@@ -254,6 +255,7 @@ const basePayload = {
         (0, vitest_1.expect)(JSON.parse(insert?.params[4])).toEqual([vitest_1.expect.objectContaining({
                 product_code: 'PM-FF-800',
                 diameter_mm: 800,
+                venturi_flow_m3h: 21.25,
                 quantity: 2,
             })]);
         (0, vitest_1.expect)(['matched', 'required_above_capacity', 'capacity_above_required'])

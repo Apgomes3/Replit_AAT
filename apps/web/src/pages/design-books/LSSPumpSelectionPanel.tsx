@@ -332,6 +332,11 @@ function CircuitGroup({
   const primaryLine = lines.find(l => l.pump_role === 'primary') || lines[0];
   const venturiLine = lines.find(l => l.pump_role === 'venturi');
   const isFF = primaryLine?.is_foam_fractionator;
+  const primaryRoleName = primaryLine?.pump_role_name ||
+    (primaryLine?.circuit_type === 'Sand Filter' &&
+      (primaryLine.circuit_kind === 'loop' || primaryLine.circuit_kind === 'main_loop')
+      ? 'SFSP — Sand Filter Supply Pump'
+      : null);
 
   // Venturi question state — 'asking' until the user answers or a FFVP row exists.
   const [venturiChoice, setVenturiChoice] = useState<'asking' | 'yes' | 'no'>(
@@ -424,9 +429,9 @@ function CircuitGroup({
           {/* Primary (FFSP) line */}
           {primaryLine && (
             <div>
-              {isFF && (
+              {(isFF || (primaryRoleName && primaryRoleName !== primaryLine.circuit_name)) && (
                 <div className="flex items-center gap-2 border-b border-stone-100 bg-violet-50/60 px-5 py-2.5">
-                  <span className="text-xs font-bold text-violet-800">FFSP — Foam Fractionator Supply Pump</span>
+                  <span className="text-xs font-bold text-violet-800">{primaryRoleName}</span>
                   <span className={`ml-auto rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusStyle(primaryLine.status)}`}>
                     {primaryLine.status || 'unsaved'}
                   </span>

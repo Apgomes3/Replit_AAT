@@ -316,10 +316,12 @@ async function normalizeFractionatorAllocations(value, system, runner = db_1.que
             productIds.push(id);
             quantities.set(id, quantity);
         }
-        const catalog = productIds.length ? (await runner(`SELECT pm.id, pm.product_code, pm.product_name, pd.diameter_mm
+        const catalog = productIds.length ? (await runner(`SELECT pm.id, pm.product_code, pm.product_name, pd.diameter_mm,
+              ph.venturi_flow_m3h
        FROM product_masters pm
        JOIN product_families pf ON pf.id=pm.product_family_id
        LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
+       LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
        WHERE pm.id = ANY($1::uuid[]) AND pf.product_family_code='PFM-FF'`, [productIds])).rows : [];
         if (catalog.length !== productIds.length) {
             throw new Error(`Loop ${loopNumber} includes a product that is not a Foam Fractionator.`);
@@ -331,6 +333,7 @@ async function normalizeFractionatorAllocations(value, system, runner = db_1.que
                 product_code: product.product_code,
                 product_name: product.product_name,
                 diameter_mm: product.diameter_mm == null ? null : Number(product.diameter_mm),
+                venturi_flow_m3h: product.venturi_flow_m3h == null ? null : Number(product.venturi_flow_m3h),
                 quantity: quantities.get(id),
             };
         });
@@ -1598,10 +1601,12 @@ router.get('/systems/:id/fractionator-products', auth_1.authenticate, async (req
     const system = await (0, db_1.query)('SELECT id FROM systems WHERE id=$1', [req.params.id]);
     if (!system.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-    const result = await (0, db_1.query)(`SELECT pm.id, pm.product_code, pm.product_name, pm.standard_status, pd.diameter_mm
+    const result = await (0, db_1.query)(`SELECT pm.id, pm.product_code, pm.product_name, pm.standard_status, pd.diameter_mm,
+            ph.venturi_flow_m3h
      FROM product_masters pm
      JOIN product_families pf ON pf.id=pm.product_family_id
      LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      WHERE pf.product_family_code='PFM-FF' AND COALESCE(pm.status, 'Active')='Active'
      ORDER BY pm.product_code`);
     res.json({ items: result.rows });

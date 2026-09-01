@@ -5,6 +5,7 @@ import {
   calculatePumpSelection, evaluateSelectedPumpSuitability, PUMP_SELECTION_CALCULATION_VERSION,
   pumpSourceFingerprint, pumpCircuits, isFoamFractionatorCircuit, pumpLinesForCircuit,
   buildPumpLineItem, pumpSourcePayload, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, defaultPumpLineName,
+  isSandFilterCircuit,
 } from '../lib/pumpSelections';
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
@@ -252,7 +253,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   const equipCode = (input.equip_code || '').trim() || await generateEquipCode(
     book.project_id,
     pumpRole,
-    isFoamFractionatorCircuit(circuitLine),
+    circuitLine,
   );
   const description = (input.description || '').trim() || defaultPumpLineName(
     circuitLine || { circuit_name: circuitKey, circuit_type: null, circuit_kind: 'loop' },
@@ -305,8 +306,17 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       await client.query('ROLLBACK');
       return res.status(400).json({ error: { code: 'INVALID_CIRCUIT', message: 'Circuit key is not active in the saved Flow Route.' } });
     }
+    // Governed product hydraulics are the preferred seed. If the selected
+    // products do not expose a complete venturi duty, use the resolved FFSP
+    // Flow Route demand and persist it as the FFVP's explicit duty.
+    const positiveNumberOrNull = (value: any) => {
+      const number = numberOrNull(value);
+      return number != null && number > 0 ? number : null;
+    };
     const venturiFlow = pumpRole === PUMP_ROLE_VENTURI
-      ? (numberOrNull(input.venturi_flow_m3h) ?? numberOrNull(circuit.venturi_flow_m3h))
+      ? (positiveNumberOrNull(circuit.venturi_flow_m3h)
+        ?? positiveNumberOrNull(input.venturi_flow_m3h)
+        ?? positiveNumberOrNull(circuit.flow_m3h))
       : null;
     const source = pumpSourcePayload(circuit, pumpRole, pumpRole === PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h, {
       design_head_m: existingLine?.design_head_m ?? null,
@@ -423,9 +433,10 @@ router.delete('/systems/:id/pump-lines', requireRole('admin', 'engineer'), requi
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function generateEquipCode(projectId: string, role: string, foamFractionator: boolean): Promise<string> {
+async function generateEquipCode(projectId: string, role: string, circuit: any): Promise<string> {
   const prefix = role === PUMP_ROLE_VENTURI ? 'FFVP'
-    : foamFractionator && role === PUMP_ROLE_PRIMARY ? 'FFSP'
+    : isFoamFractionatorCircuit(circuit) && role === PUMP_ROLE_PRIMARY ? 'FFSP'
+    : isSandFilterCircuit(circuit) && role === PUMP_ROLE_PRIMARY ? 'SFSP'
     : 'PUMP';
   // Find a free sequential code.
   const existing = await query(

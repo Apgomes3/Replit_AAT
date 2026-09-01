@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   calculatePumpSelection, evaluateSelectedPumpSuitability, WATER_DENSITY_KG_M3,
   isFoamFractionatorCircuit, defaultPumpLineName, buildPumpLineItem, pumpLinesForCircuit,
-  pumpCircuits, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, FOAM_FRACTIONATION_CIRCUIT_TYPE,
+  isSandFilterCircuit, pumpCircuits, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI,
+  FOAM_FRACTIONATION_CIRCUIT_TYPE, SAND_FILTER_CIRCUIT_TYPE,
 } from './pumpSelections';
 
 describe('pump circuit intent', () => {
@@ -37,6 +38,19 @@ describe('pump circuit intent', () => {
       flow_m3h: 80,
       venturi_flow_m3h: 33,
     });
+  });
+
+  it('does not treat a non-positive product hydraulic as governed venturi duty', () => {
+    const circuits = pumpCircuits({
+      ...system,
+      loop1_filtration: FOAM_FRACTIONATION_CIRCUIT_TYPE,
+      fractionator_allocations: [{
+        parent_loop_number: 1,
+        products: [{ product_master_id: 'ff-1', quantity: 1, venturi_flow_m3h: 0 }],
+      }],
+    }, []);
+
+    expect((circuits[0] as any).venturi_flow_m3h).toBeNull();
   });
 });
 
@@ -102,9 +116,21 @@ describe('isFoamFractionatorCircuit', () => {
   });
 });
 
+describe('isSandFilterCircuit', () => {
+  it('recognises a Sand Filter main loop', () => {
+    expect(isSandFilterCircuit({ circuit_kind: 'loop', circuit_type: SAND_FILTER_CIRCUIT_TYPE })).toBe(true);
+  });
+  it('recognises the legacy main_loop descriptor', () => {
+    expect(isSandFilterCircuit({ circuit_kind: 'main_loop', circuit_type: SAND_FILTER_CIRCUIT_TYPE })).toBe(true);
+  });
+  it('does not label a Sand Filter side stream as the main-loop supply pump', () => {
+    expect(isSandFilterCircuit({ circuit_kind: 'side_stream', circuit_type: SAND_FILTER_CIRCUIT_TYPE })).toBe(false);
+  });
+});
+
 describe('defaultPumpLineName', () => {
   const ffCircuit = { circuit_name: 'Loop 1', circuit_kind: 'loop', circuit_type: FOAM_FRACTIONATION_CIRCUIT_TYPE };
-  const sandCircuit = { circuit_name: 'Sand Filter Loop', circuit_kind: 'loop', circuit_type: 'Sand Filter' };
+  const sandCircuit = { circuit_name: 'Sand Filter Loop', circuit_kind: 'loop', circuit_type: SAND_FILTER_CIRCUIT_TYPE };
 
   it('returns FFSP name for primary role on FF circuit', () => {
     expect(defaultPumpLineName(ffCircuit, PUMP_ROLE_PRIMARY)).toBe('FFSP — Foam Fractionator Supply Pump');
@@ -112,8 +138,11 @@ describe('defaultPumpLineName', () => {
   it('returns FFVP name for venturi role on FF circuit', () => {
     expect(defaultPumpLineName(ffCircuit, PUMP_ROLE_VENTURI)).toBe('FFVP — Foam Fractionator Venturi Pump');
   });
-  it('returns circuit name for non-FF circuit', () => {
-    expect(defaultPumpLineName(sandCircuit, PUMP_ROLE_PRIMARY)).toBe('Sand Filter Loop');
+  it('returns the SFSP name for a Sand Filter primary role', () => {
+    expect(defaultPumpLineName(sandCircuit, PUMP_ROLE_PRIMARY)).toBe('SFSP — Sand Filter Supply Pump');
+  });
+  it('returns circuit name for other non-FF roles', () => {
+    expect(defaultPumpLineName(sandCircuit, PUMP_ROLE_VENTURI)).toBe('Sand Filter Loop');
   });
 });
 

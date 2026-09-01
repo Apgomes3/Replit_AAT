@@ -3,10 +3,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PUMP_ROLE_VENTURI = exports.PUMP_ROLE_PRIMARY = exports.FOAM_FRACTIONATION_CIRCUIT_TYPE = exports.STANDARD_MOTOR_SIZES_KW = exports.GRAVITY_M_S2 = exports.WATER_DENSITY_KG_M3 = exports.PUMP_SELECTION_CALCULATION_VERSION = void 0;
+exports.PUMP_ROLE_VENTURI = exports.PUMP_ROLE_PRIMARY = exports.SAND_FILTER_CIRCUIT_TYPE = exports.FOAM_FRACTIONATION_CIRCUIT_TYPE = exports.STANDARD_MOTOR_SIZES_KW = exports.GRAVITY_M_S2 = exports.WATER_DENSITY_KG_M3 = exports.PUMP_SELECTION_CALCULATION_VERSION = void 0;
 exports.isFoamFractionatorCircuit = isFoamFractionatorCircuit;
+exports.isSandFilterCircuit = isSandFilterCircuit;
 exports.defaultPumpLineName = defaultPumpLineName;
 exports.pumpSourceFingerprint = pumpSourceFingerprint;
+exports.pumpSourcePayload = pumpSourcePayload;
 exports.pumpCircuits = pumpCircuits;
 exports.calculatePumpSelection = calculatePumpSelection;
 exports.evaluateSelectedPumpSuitability = evaluateSelectedPumpSuitability;
@@ -23,6 +25,8 @@ exports.STANDARD_MOTOR_SIZES_KW = [
 ];
 /** The exact circuit_type string used for Foam Fractionator loops in Flow Route. */
 exports.FOAM_FRACTIONATION_CIRCUIT_TYPE = 'Foam Fractionation';
+/** The exact circuit_type string used for Sand Filter main-loop circuits. */
+exports.SAND_FILTER_CIRCUIT_TYPE = 'Sand Filter';
 /** Stable role identifiers for pump lines within a single circuit. */
 exports.PUMP_ROLE_PRIMARY = 'primary';
 exports.PUMP_ROLE_VENTURI = 'venturi';
@@ -31,16 +35,24 @@ function isFoamFractionatorCircuit(circuit) {
     return (circuit.circuit_kind === 'loop' &&
         circuit.circuit_type === exports.FOAM_FRACTIONATION_CIRCUIT_TYPE);
 }
+/** True when the circuit is a main-loop Sand Filter duty. */
+function isSandFilterCircuit(circuit) {
+    return ((circuit.circuit_kind === 'loop' || circuit.circuit_kind === 'main_loop') &&
+        circuit.circuit_type === exports.SAND_FILTER_CIRCUIT_TYPE);
+}
 /**
  * Default display name for a pump role on a given circuit.
- * Non-FF circuits always use a generic label; FF circuits use the
- * well-known FFSP / FFVP designations.
+ * Sand Filter and Foam Fractionator main loops use their well-known project
+ * designations; other circuits retain their existing generic label.
  */
 function defaultPumpLineName(circuit, role) {
     if (isFoamFractionatorCircuit(circuit)) {
         if (role === exports.PUMP_ROLE_VENTURI)
             return 'FFVP — Foam Fractionator Venturi Pump';
         return 'FFSP — Foam Fractionator Supply Pump';
+    }
+    if (isSandFilterCircuit(circuit) && role === exports.PUMP_ROLE_PRIMARY) {
+        return 'SFSP — Sand Filter Supply Pump';
     }
     return circuit.circuit_name || 'Circuit Pump';
 }
@@ -57,6 +69,26 @@ function pumpSourceFingerprint(source) {
         : value);
     return crypto_1.default.createHash('sha256').update(canonical).digest('hex');
 }
+/**
+ * Build the persisted source used to decide whether pump sizing inputs are
+ * still current. Circuit labels are intentionally not included: a rename is
+ * a display-only change and must not invalidate saved sizing evidence.
+ */
+function pumpSourcePayload(circuit, role, effectiveFlow, inputs) {
+    return {
+        circuit: {
+            circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind,
+            circuit_type: circuit.circuit_type,
+            parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id,
+            flow_m3h: circuit.flow_m3h,
+        },
+        pump_role: role,
+        ...(role === exports.PUMP_ROLE_VENTURI ? { venturi_flow_m3h: effectiveFlow } : {}),
+        design_head_m: inputs.design_head_m ?? null,
+        pump_efficiency_pct: inputs.pump_efficiency_pct ?? null,
+        motor_efficiency_pct: inputs.motor_efficiency_pct ?? null,
+    };
+}
 /** Flow Route circuits use the Design Book's resolved system flow as input. */
 function pumpCircuits(system, sideStreams) {
     const baseFlow = nullableNumber(system.design_flow_m3h);
@@ -65,11 +97,22 @@ function pumpCircuits(system, sideStreams) {
     return [
         ...activeLoops.map(number => {
             const pct = nullableNumber(system[`loop${number}_flow_pct`]);
+            const fractionatorAllocation = (system.fractionator_allocations || []).find((allocation) => Number(allocation.parent_loop_number) === number);
+            const fractionatorProducts = fractionatorAllocation?.products || [];
+            const venturiFlows = fractionatorProducts.map((product) => {
+                const flow = positive(product.venturi_flow_m3h);
+                const quantity = positive(product.quantity);
+                return flow != null && quantity != null ? flow * quantity : null;
+            });
+            const venturiFlow = fractionatorProducts.length > 0 && venturiFlows.every((flow) => flow != null)
+                ? venturiFlows.reduce((sum, flow) => sum + Number(flow), 0)
+                : null;
             return {
                 circuit_key: `loop:${number}`, circuit_kind: 'loop', circuit_name: system[`loop${number}_name`] || `Loop ${number}`,
                 circuit_type: system[`loop${number}_filtration`] || system[`loop${number}_flow_source`] || null,
                 parent_loop_number: number, side_stream_id: null,
                 flow_m3h: baseFlow != null && pct != null ? baseFlow * pct / 100 : null,
+                venturi_flow_m3h: venturiFlow,
             };
         }),
         ...(sideStreams || []).filter(stream => stream.has_dedicated_pump !== false).map(stream => {
@@ -158,37 +201,37 @@ function evaluateSelectedPumpSuitability(input) {
  * Build a single pump-line item from a circuit descriptor and an optional
  * saved database row.  `role` is 'primary' or 'venturi'.
  *
- * For FFVP lines the effective sizing flow comes from `row.venturi_flow_m3h`
- * rather than the circuit's authoritative flow, because the venturi duty is
- * independently specified and must not silently fall back to the supply-pump
- * circuit flow.
+ * For FFVP lines the effective sizing flow comes from `row.venturi_flow_m3h`,
+ * initially seeded when the line is created from governed product hydraulics
+ * or, when those are unavailable, the authoritative circuit demand.
  */
 function buildPumpLineItem(circuit, row, role) {
     const isVenturi = role === exports.PUMP_ROLE_VENTURI;
     const isFF = isFoamFractionatorCircuit(circuit);
-    // The venturi line uses its own independently supplied flow; never fall back
-    // to the circuit supply flow when that would misrepresent the duty.
+    // A saved venturi duty is explicit evidence. The governed product duty is
+    // available for an unsaved/legacy line; creation persists the authoritative
+    // circuit-flow fallback before the line is returned to the UI.
     const effectiveFlow = isVenturi
-        ? (row?.venturi_flow_m3h != null ? Number(row.venturi_flow_m3h) : null)
+        ? (row?.venturi_flow_m3h != null
+            ? Number(row.venturi_flow_m3h)
+            : circuit.venturi_flow_m3h ?? null)
         : circuit.flow_m3h;
-    const sourcePayload = {
-        circuit: {
-            circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind,
-            circuit_name: circuit.circuit_name, circuit_type: circuit.circuit_type,
-            parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id,
-            flow_m3h: circuit.flow_m3h,
-        },
-        pump_role: role,
-        ...(isVenturi ? { venturi_flow_m3h: effectiveFlow } : {}),
+    const sourcePayload = pumpSourcePayload(circuit, role, effectiveFlow, {
         design_head_m: row?.design_head_m != null ? Number(row.design_head_m) : null,
         pump_efficiency_pct: row?.pump_efficiency_pct != null ? Number(row.pump_efficiency_pct) : null,
         motor_efficiency_pct: row?.motor_efficiency_pct != null ? Number(row.motor_efficiency_pct) : null,
-    };
+    });
     const fingerprint = pumpSourceFingerprint(sourcePayload);
+    // Rows saved before labels were removed from the source payload included the
+    // circuit name. Continue recognizing those rows when the name is unchanged.
+    const legacyNamedFingerprint = pumpSourceFingerprint({
+        ...sourcePayload,
+        circuit: { ...sourcePayload.circuit, circuit_name: circuit.circuit_name },
+    });
     // Rows saved before multi-role support used this payload shape. Preserve
     // their freshness until they are next explicitly recalculated.
     const legacyFingerprint = pumpSourceFingerprint({
-        circuit: sourcePayload.circuit,
+        circuit: { ...sourcePayload.circuit, circuit_name: circuit.circuit_name },
         design_head_m: sourcePayload.design_head_m,
         pump_efficiency_pct: sourcePayload.pump_efficiency_pct,
         motor_efficiency_pct: sourcePayload.motor_efficiency_pct,
@@ -210,8 +253,9 @@ function buildPumpLineItem(circuit, row, role) {
     // Real persisted rows always have a fingerprint (the column is NOT NULL).
     // Treat fingerprint-less legacy/test rows as incomplete rather than stale so
     // the actionable missing-duty message remains visible.
-    const sourceMatches = row?.source_fingerprint === fingerprint ||
-        (role === exports.PUMP_ROLE_PRIMARY && row?.source_fingerprint === legacyFingerprint);
+    const sourceMatches = row?.source_fingerprint === fingerprint
+        || row?.source_fingerprint === legacyNamedFingerprint
+        || (role === exports.PUMP_ROLE_PRIMARY && row?.source_fingerprint === legacyFingerprint);
     const stale = !!row && !!row.source_fingerprint && (!sourceMatches || versionStale);
     const venturiFlowMissing = isVenturi && effectiveFlow == null;
     const reasons = orphaned

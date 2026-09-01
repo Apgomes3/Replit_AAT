@@ -14,6 +14,35 @@ const pumpSelections_1 = require("./pumpSelections");
             'side_stream:yes',
         ]);
     });
+    (0, vitest_1.it)('derives FFVP duty from selected fractionator venturi flows and quantities', () => {
+        const circuits = (0, pumpSelections_1.pumpCircuits)({
+            ...system,
+            loop1_filtration: pumpSelections_1.FOAM_FRACTIONATION_CIRCUIT_TYPE,
+            fractionator_allocations: [{
+                    parent_loop_number: 1,
+                    products: [
+                        { product_master_id: 'ff-1', quantity: 2, venturi_flow_m3h: 12.5 },
+                        { product_master_id: 'ff-2', quantity: 1, venturi_flow_m3h: 8 },
+                    ],
+                }],
+        }, []);
+        (0, vitest_1.expect)(circuits[0]).toMatchObject({
+            circuit_key: 'loop:1',
+            flow_m3h: 80,
+            venturi_flow_m3h: 33,
+        });
+    });
+    (0, vitest_1.it)('does not treat a non-positive product hydraulic as governed venturi duty', () => {
+        const circuits = (0, pumpSelections_1.pumpCircuits)({
+            ...system,
+            loop1_filtration: pumpSelections_1.FOAM_FRACTIONATION_CIRCUIT_TYPE,
+            fractionator_allocations: [{
+                    parent_loop_number: 1,
+                    products: [{ product_master_id: 'ff-1', quantity: 1, venturi_flow_m3h: 0 }],
+                }],
+        }, []);
+        (0, vitest_1.expect)(circuits[0].venturi_flow_m3h).toBeNull();
+    });
 });
 (0, vitest_1.describe)('pump selection calculation', () => {
     (0, vitest_1.it)('calculates hydraulic, shaft, motor input and next standard motor', () => {
@@ -72,17 +101,31 @@ const pumpSelections_1 = require("./pumpSelections");
         (0, vitest_1.expect)((0, pumpSelections_1.isFoamFractionatorCircuit)({ circuit_kind: 'loop', circuit_type: null })).toBe(false);
     });
 });
+(0, vitest_1.describe)('isSandFilterCircuit', () => {
+    (0, vitest_1.it)('recognises a Sand Filter main loop', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.isSandFilterCircuit)({ circuit_kind: 'loop', circuit_type: pumpSelections_1.SAND_FILTER_CIRCUIT_TYPE })).toBe(true);
+    });
+    (0, vitest_1.it)('recognises the legacy main_loop descriptor', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.isSandFilterCircuit)({ circuit_kind: 'main_loop', circuit_type: pumpSelections_1.SAND_FILTER_CIRCUIT_TYPE })).toBe(true);
+    });
+    (0, vitest_1.it)('does not label a Sand Filter side stream as the main-loop supply pump', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.isSandFilterCircuit)({ circuit_kind: 'side_stream', circuit_type: pumpSelections_1.SAND_FILTER_CIRCUIT_TYPE })).toBe(false);
+    });
+});
 (0, vitest_1.describe)('defaultPumpLineName', () => {
     const ffCircuit = { circuit_name: 'Loop 1', circuit_kind: 'loop', circuit_type: pumpSelections_1.FOAM_FRACTIONATION_CIRCUIT_TYPE };
-    const sandCircuit = { circuit_name: 'Sand Filter Loop', circuit_kind: 'loop', circuit_type: 'Sand Filter' };
+    const sandCircuit = { circuit_name: 'Sand Filter Loop', circuit_kind: 'loop', circuit_type: pumpSelections_1.SAND_FILTER_CIRCUIT_TYPE };
     (0, vitest_1.it)('returns FFSP name for primary role on FF circuit', () => {
         (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(ffCircuit, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('FFSP — Foam Fractionator Supply Pump');
     });
     (0, vitest_1.it)('returns FFVP name for venturi role on FF circuit', () => {
         (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(ffCircuit, pumpSelections_1.PUMP_ROLE_VENTURI)).toBe('FFVP — Foam Fractionator Venturi Pump');
     });
-    (0, vitest_1.it)('returns circuit name for non-FF circuit', () => {
-        (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(sandCircuit, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('Sand Filter Loop');
+    (0, vitest_1.it)('returns the SFSP name for a Sand Filter primary role', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(sandCircuit, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('SFSP — Sand Filter Supply Pump');
+    });
+    (0, vitest_1.it)('returns circuit name for other non-FF roles', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(sandCircuit, pumpSelections_1.PUMP_ROLE_VENTURI)).toBe('Sand Filter Loop');
     });
 });
 (0, vitest_1.describe)('buildPumpLineItem', () => {
@@ -140,6 +183,29 @@ const pumpSelections_1 = require("./pumpSelections");
         const ffsp = (0, pumpSelections_1.buildPumpLineItem)(circuit, row, pumpSelections_1.PUMP_ROLE_PRIMARY);
         const ffvp = (0, pumpSelections_1.buildPumpLineItem)(circuit, row, pumpSelections_1.PUMP_ROLE_VENTURI);
         (0, vitest_1.expect)(ffsp.current_source_fingerprint).not.toBe(ffvp.current_source_fingerprint);
+    });
+    (0, vitest_1.it)('keeps saved pump sizing fresh when only the circuit display name changes', () => {
+        const savedRow = {
+            project_equipment_item_id: 'pump-1',
+            pump_snapshot: { id: 'pump-1', power_kw: 15 },
+            design_head_m: 10,
+            pump_efficiency_pct: 80,
+            motor_efficiency_pct: 90,
+            calculation_version: 'pump-selection-v1',
+        };
+        const original = (0, pumpSelections_1.buildPumpLineItem)({ ...circuit, circuit_name: 'Original Loop' }, savedRow, pumpSelections_1.PUMP_ROLE_PRIMARY);
+        const renamed = (0, pumpSelections_1.buildPumpLineItem)({ ...circuit, circuit_name: 'Renamed Loop' }, { ...savedRow, source_fingerprint: original.current_source_fingerprint }, pumpSelections_1.PUMP_ROLE_PRIMARY);
+        (0, vitest_1.expect)(renamed).toMatchObject({
+            circuit_key: 'loop:1',
+            circuit_name: 'Renamed Loop',
+            project_equipment_item_id: 'pump-1',
+            design_head_m: 10,
+            pump_efficiency_pct: 80,
+            motor_efficiency_pct: 90,
+            freshness: 'fresh',
+            status: 'ready',
+        });
+        (0, vitest_1.expect)(renamed.results).toEqual(original.results);
     });
 });
 (0, vitest_1.describe)('pumpLinesForCircuit', () => {

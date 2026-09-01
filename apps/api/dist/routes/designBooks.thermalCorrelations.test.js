@@ -170,4 +170,36 @@ const approvedRow = {
             status: 400,
         });
     });
+    (0, vitest_1.it)('uses a newly approved version for new calculations without changing captured evidence', async () => {
+        const originalRunner = vitest_1.vi.fn(async () => ({
+            rows: [{ ...approvedRow, version: '2026.1', coefficient_kg_m2_s_kpa: '0.000001' }],
+        }));
+        const originalInputs = await designBooks_1.thermalCorrelationTestUtils.resolveThermalCorrelationInputs(originalRunner, { agitation_correlation_id: 'correlation-1' }, '2026-08-31T00:00:00.000Z');
+        const capturedEvidence = structuredClone(originalInputs.agitation_correlation_snapshot);
+        const updatedRunner = vitest_1.vi.fn(async () => ({
+            rows: [{
+                    ...approvedRow,
+                    id: 'correlation-2',
+                    version: '2026.3',
+                    coefficient_kg_m2_s_kpa: '0.0000017',
+                }],
+        }));
+        const updatedInputs = await designBooks_1.thermalCorrelationTestUtils.resolveThermalCorrelationInputs(updatedRunner, { agitation_correlation_id: 'correlation-2' }, '2026-09-01T00:00:00.000Z');
+        (0, vitest_1.expect)(capturedEvidence).toMatchObject({
+            correlation_id: 'correlation-1',
+            version: '2026.1',
+            coefficient_kg_m2_s_kpa: 0.000001,
+        });
+        (0, vitest_1.expect)(originalInputs.agitation_correlation_snapshot).toEqual(capturedEvidence);
+        (0, vitest_1.expect)(updatedInputs).toMatchObject({
+            agitation_correlation_version: '2026.3',
+            evaporation_coefficient_kg_m2_s_kpa: 0.0000017,
+            agitation_correlation_snapshot: {
+                correlation_id: 'correlation-2',
+                version: '2026.3',
+                coefficient_kg_m2_s_kpa: 0.0000017,
+                approved: true,
+            },
+        });
+    });
 });

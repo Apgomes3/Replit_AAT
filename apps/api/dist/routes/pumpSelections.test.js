@@ -50,6 +50,7 @@ const state = vitest_1.vi.hoisted(() => ({
         loop1_name: 'Main return', loop1_flow_source: 'Bottom Drain', loop1_filtration: 'Sand Filter', loop1_flow_pct: '60',
     },
     sideStreams: [{ id: 'side-1', system_id: 'system-1', parent_loop_number: 1, name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0 }],
+    fractionatorAllocations: [],
     saved: [],
     candidates: [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }],
     exhibits: [], tanks: [], hydraulics: [], links: [],
@@ -75,6 +76,8 @@ vitest_1.vi.mock('../db', () => {
             return { rows: state.links };
         if (sql.includes('FROM system_flow_side_streams'))
             return { rows: state.sideStreams };
+        if (sql.includes('FROM system_flow_fractionator_allocations'))
+            return { rows: state.fractionatorAllocations };
         if (sql.includes('FROM system_pump_selections'))
             return { rows: state.saved };
         if (sql.startsWith('SELECT id FROM project_equipment_items'))
@@ -147,6 +150,7 @@ function request(app, method, path, body) {
         state.book = { id: 'book-1', project_id: 'project-1', status: 'Draft' };
         state.saved = [];
         state.candidates = [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }];
+        state.fractionatorAllocations = [];
         state.exhibits = [];
         state.tanks = [];
         state.hydraulics = [];
@@ -254,6 +258,86 @@ function request(app, method, path, body) {
         });
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
+    });
+    (0, vitest_1.it)('creates the first FFVP line from its active FFSP circuit', async () => {
+        state.system.design_flow_m3h = '224.15';
+        state.system.loop1_flow_pct = '100';
+        state.system.loop1_filtration = 'Foam Fractionation';
+        state.system.loop1_name = 'Foam Fractionator Loop';
+        state.candidates = [];
+        state.fractionatorAllocations = [{
+                system_id: 'system-1',
+                parent_loop_number: 1,
+                products: [{ product_master_id: 'ff-1', quantity: 2, venturi_flow_m3h: 21.25 }],
+            }];
+        const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+            design_book_id: 'book-1',
+            circuit_key: 'loop:1',
+            pump_role: 'venturi',
+            equip_code: 'FFVP-001',
+            description: 'FFVP — Foam Fractionator Venturi Pump',
+        });
+        (0, vitest_1.expect)(response.status).toBe(201);
+        (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
+            id: 'created-pump-1',
+            equip_code: 'FFVP-001',
+            description: 'FFVP — Foam Fractionator Venturi Pump',
+        });
+        (0, vitest_1.expect)(response.body.pump_line).toMatchObject({
+            circuit_key: 'loop:1',
+            pump_role: 'venturi',
+            pump_role_name: 'FFVP — Foam Fractionator Venturi Pump',
+            effective_flow_m3h: 42.5,
+            status: 'incomplete',
+        });
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('INSERT INTO system_pump_selections'))).toBe(true);
+    });
+    (0, vitest_1.it)('seeds and persists first FFVP duty from authoritative FFSP demand when products have no venturi hydraulics', async () => {
+        state.system.design_flow_m3h = '224.15';
+        state.system.loop1_flow_pct = '100';
+        state.system.loop1_filtration = 'Foam Fractionation';
+        state.system.loop1_name = 'Foam Fractionator Loop';
+        state.fractionatorAllocations = [{
+                system_id: 'system-1',
+                parent_loop_number: 1,
+                products: [{ product_master_id: 'ff-1', quantity: 2, venturi_flow_m3h: null }],
+            }];
+        state.candidates = [];
+        const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+            design_book_id: 'book-1',
+            circuit_key: 'loop:1',
+            pump_role: 'venturi',
+        });
+        (0, vitest_1.expect)(response.status).toBe(201);
+        (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
+            equip_code: 'FFVP-001',
+            description: 'FFVP — Foam Fractionator Venturi Pump',
+        });
+        (0, vitest_1.expect)(response.body.pump_line).toMatchObject({
+            pump_role: 'venturi',
+            venturi_flow_m3h: 224.15,
+            effective_flow_m3h: 224.15,
+        });
+        const insert = state.calls.find(call => call.sql.includes('INSERT INTO system_pump_selections'));
+        (0, vitest_1.expect)(insert?.params[12]).toBe(224.15);
+    });
+    (0, vitest_1.it)('creates Sand Filter supply equipment with the SFSP convention', async () => {
+        state.system.design_flow_m3h = '100';
+        state.system.loop1_flow_pct = '100';
+        state.system.loop1_filtration = 'Sand Filter';
+        state.system.loop1_name = 'Sand Filter Loop';
+        state.candidates = [];
+        const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+            design_book_id: 'book-1',
+            circuit_key: 'loop:1',
+            pump_role: 'primary',
+        });
+        (0, vitest_1.expect)(response.status).toBe(201);
+        (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
+            equip_code: 'SFSP-001',
+            description: 'SFSP — Sand Filter Supply Pump',
+        });
+        (0, vitest_1.expect)(response.body.pump_line.pump_role_name).toBe('SFSP — Sand Filter Supply Pump');
     });
     (0, vitest_1.it)('treats a repeated create request as idempotent without creating another equipment item', async () => {
         state.candidates = [];

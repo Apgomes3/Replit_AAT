@@ -246,6 +246,59 @@ describe('pump selection HTTP routes', () => {
     expect(state.calls.some(call => call.sql.includes('INSERT INTO system_pump_selections'))).toBe(true);
   });
 
+  it('seeds and persists first FFVP duty from authoritative FFSP demand when products have no venturi hydraulics', async () => {
+    state.system.design_flow_m3h = '224.15';
+    state.system.loop1_flow_pct = '100';
+    state.system.loop1_filtration = 'Foam Fractionation';
+    state.system.loop1_name = 'Foam Fractionator Loop';
+    state.fractionatorAllocations = [{
+      system_id: 'system-1',
+      parent_loop_number: 1,
+      products: [{ product_master_id: 'ff-1', quantity: 2, venturi_flow_m3h: null }],
+    }];
+    state.candidates = [];
+
+    const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'venturi',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.project_equipment_item).toMatchObject({
+      equip_code: 'FFVP-001',
+      description: 'FFVP — Foam Fractionator Venturi Pump',
+    });
+    expect(response.body.pump_line).toMatchObject({
+      pump_role: 'venturi',
+      venturi_flow_m3h: 224.15,
+      effective_flow_m3h: 224.15,
+    });
+    const insert = state.calls.find(call => call.sql.includes('INSERT INTO system_pump_selections'));
+    expect(insert?.params[12]).toBe(224.15);
+  });
+
+  it('creates Sand Filter supply equipment with the SFSP convention', async () => {
+    state.system.design_flow_m3h = '100';
+    state.system.loop1_flow_pct = '100';
+    state.system.loop1_filtration = 'Sand Filter';
+    state.system.loop1_name = 'Sand Filter Loop';
+    state.candidates = [];
+
+    const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'primary',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.project_equipment_item).toMatchObject({
+      equip_code: 'SFSP-001',
+      description: 'SFSP — Sand Filter Supply Pump',
+    });
+    expect(response.body.pump_line.pump_role_name).toBe('SFSP — Sand Filter Supply Pump');
+  });
+
   it('treats a repeated create request as idempotent without creating another equipment item', async () => {
     state.candidates = [];
     const body = {

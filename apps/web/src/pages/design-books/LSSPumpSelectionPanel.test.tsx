@@ -102,6 +102,13 @@ describe('LSSPumpSelectionPanel', () => {
     expect(await screen.findByRole('button', { name: 'Add pump' })).toBeInTheDocument();
   });
 
+  it('shows the Sand Filter supply-pump role label', async () => {
+    apiGet.mockResolvedValue({ data: response } as any);
+    renderPanel();
+
+    expect(await screen.findByText('SFSP — Sand Filter Supply Pump')).toBeInTheDocument();
+  });
+
   it('shows the venturi question for a Foam Fractionator and creates FFVP when Yes is chosen', async () => {
     const user = userEvent.setup();
     apiGet.mockResolvedValue({ data: {

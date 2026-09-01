@@ -15,11 +15,11 @@ The Design Book owns the project pump tag and the design values entered or calcu
 
 **How to apply:** Create the project pump tag first, validate sizing against the authoritative Flow Route basis, then allow a separate model-link action. Preserve the tag, design values, and selected-model snapshot in review/released Design Book packages.
 
-Pump lines are role-scoped within a circuit: the primary line uses the authoritative Flow Route duty, while an optional Foam Fractionator venturi line must carry its own explicit flow basis and never inherit the primary duty.
+Pump lines are role-scoped within a circuit: the primary line uses the authoritative Flow Route duty, while an optional Foam Fractionator venturi line carries its own persisted, explicit flow basis.
 
-**Why:** A venturi pump can serve a materially different duty from the supply pump. Reusing the primary flow would create plausible-looking but incorrect sizing evidence, and a single circuit-level uniqueness key cannot represent both roles.
+**Why:** A venturi pump can serve a materially different duty from the supply pump. When governed product hydraulics are unavailable, the authoritative supply demand is a usable initial seed only if it is persisted visibly for review and independent editing.
 
-**How to apply:** Enforce uniqueness on system, circuit, and role; keep FFSP and FFVP snapshots/fingerprints separate; require a positive FFVP flow before calculation or release.
+**How to apply:** Enforce uniqueness on system, circuit, and role; seed FFVP from governed product venturi flow first or authoritative FFSP demand second; persist the seed, then keep FFSP and FFVP sizing independent.
 
 Side-stream pump work is controlled by the explicit dedicated-pump decision saved in Flow Route. A No answer creates no active pump duty, while historical selections remain visible as stale/orphaned evidence.
 
