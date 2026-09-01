@@ -3553,7 +3553,7 @@ function ThermalTab({
 
           <div className="flex justify-end gap-2 border-t border-[#d8d4cb] pt-4">
             <button onClick={() => setSelected(null)} className="px-3 py-2 text-sm font-medium text-[#456b7d]">Close calculation</button>
-            {!readOnly && <Button onClick={save} disabled={saving || !form.agitation_correlation_id} className="border-[#b86843] bg-[#b86843] text-white hover:bg-[#9d5637]"><Calculator className="mr-1.5 h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</Button>}
+            {!readOnly && <Button onClick={save} variant="thermal" disabled={saving || !form.agitation_correlation_id}><Calculator className="mr-1.5 h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</Button>}
           </div>
           {readOnly && <p className="text-xs text-stone-500 text-right">This calculation is part of the frozen Design Book package and is read-only.</p>}
         </div>

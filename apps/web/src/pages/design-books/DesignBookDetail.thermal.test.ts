@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement, useState } from 'react';
 import { describe, expect, it } from 'vitest';
+import Button from '../../components/ui/Button';
 import {
   DESIGN_BOOK_TAB_ORDER,
   isDesignBookTab,
@@ -286,5 +287,29 @@ describe('Design Book Thermal numeric fields', () => {
     expect(screen.getByRole('spinbutton', { name: 'Ambient air temperature' })).toBe(input);
     expect(input).toHaveValue(123.45);
     expect(input).toHaveFocus();
+  });
+});
+
+describe('Design Book Thermal calculation action', () => {
+  it('keeps the copper action readable across normal and disabled states', () => {
+    render(
+      createElement(Button, {
+        variant: 'thermal',
+        disabled: true,
+        children: 'Save & recalculate',
+      }),
+    );
+
+    const button = screen.getByRole('button', { name: 'Save & recalculate' });
+    expect(button).toHaveClass(
+      'bg-[#9d5637]',
+      'text-white',
+      'hover:bg-[#7d442f]',
+      'disabled:bg-[#cbb9b0]',
+      'disabled:text-[#5c4439]',
+      'disabled:opacity-100',
+      'focus-visible:ring-[#b86843]',
+    );
+    expect(button).toBeDisabled();
   });
 });

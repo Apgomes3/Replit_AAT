@@ -4,7 +4,7 @@ import { ButtonHTMLAttributes, ReactNode } from 'react';
 interface ButtonProps extends Pick<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'aria-haspopup' | 'aria-expanded' | 'title'> {
   children: ReactNode;
   onClick?: () => void;
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'thermal';
   size?: 'sm' | 'md';
   type?: 'button' | 'submit';
   disabled?: boolean;
@@ -16,6 +16,7 @@ const variants = {
   secondary: 'bg-white text-stone-700 hover:bg-stone-50 border-stone-300',
   danger: 'bg-red-600 text-white hover:bg-red-700 border-transparent',
   ghost: 'bg-transparent text-stone-600 hover:bg-stone-100 border-transparent',
+  thermal: 'bg-[#9d5637] text-white hover:bg-[#7d442f] border-[#7d442f] disabled:bg-[#cbb9b0] disabled:text-[#5c4439] disabled:opacity-100 focus-visible:ring-2 focus-visible:ring-[#b86843] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fbfaf7]',
 };
 
 const sizes = {
