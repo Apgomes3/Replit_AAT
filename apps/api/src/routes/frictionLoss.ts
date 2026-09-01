@@ -17,6 +17,7 @@ import {
   loadPumpSelections,
 } from './designBooks';
 import { isLifeSupportSystem } from '../lib/lssSystems';
+import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -126,6 +127,10 @@ router.put(
       if (!system || !isLifeSupportSystem(system)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'INVALID_SYSTEM', message: 'Select a Life Support system from this Design Book project.' } });
+      }
+      if (isRetiredSystem(system)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: systemLifecycleError(system) });
       }
       const circuit = pumpCircuits(system, system.side_streams || [])
         .find(entry => entry.circuit_key === req.body.circuit_key);

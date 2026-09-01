@@ -7,4 +7,4 @@ Once a Design Book is submitted for review, reviewers, preflight checks, approva
 
 **Why:** Exhibits, tanks, LSS systems, links, and Flow Routes are shared project records. Reading them live during review would allow unrelated later project edits to silently change what a manager sees or releases.
 
-**How to apply:** Capture the package in one repeatable-read transaction at submission. Keep Draft/In Progress views live; use the frozen review package for For Review and Approved, then derive the immutable release snapshot from it. The release API must return `RELEASE_BLOCKED` whenever the frozen package has any blocker, even if a client sends legacy override fields.
+**How to apply:** Capture the package in one repeatable-read transaction at submission. Keep Draft/In Progress views live; use the frozen review package for For Review and Approved, then derive the immutable release snapshot from it. Later lifecycle changes, including LSS retirement or supersession, must not rewrite that frozen evidence. The release API must return `RELEASE_BLOCKED` whenever the frozen package has any blocker, even if a client sends legacy override fields.

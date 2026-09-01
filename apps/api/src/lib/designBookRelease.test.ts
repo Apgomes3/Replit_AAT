@@ -87,6 +87,22 @@ describe('Design Book release policy', () => {
     expect(checklist.every(check => check.status === 'pass')).toBe(true);
   });
 
+  it('blocks a current release package that includes a retired LSS', () => {
+    const context = readyContext();
+    context.systems![0].status = 'Superseded';
+
+    const lifecycle = buildDesignBookReleaseChecklist(context)
+      .find(check => check.key === 'lss_lifecycle');
+
+    expect(lifecycle).toMatchObject({
+      status: 'blocked',
+      severity: 'blocker',
+      affected_ids: ['system-1'],
+    });
+    expect(releaseBlockers(buildDesignBookReleaseChecklist(context)).map(check => check.key))
+      .toContain('lss_lifecycle');
+  });
+
   it('recognizes established LSS type names in engineering release checks', () => {
     const context = readyContext();
     context.systems![0].system_type = 'Single Exhibit LSS';

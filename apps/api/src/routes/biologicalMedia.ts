@@ -7,6 +7,7 @@ import {
   normalizeBiologicalMediaInput,
 } from '../lib/biologicalMediaCalculations';
 import { CONTROLLED_VALUE_TAN_PROFILE_CODE } from '../db/biologicalMediaSeed';
+import { RETIRED_SYSTEM_STATUSES } from '../lib/systemLifecycle';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -789,7 +790,7 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
   );
   if (!editable.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System or Design Book not found.' } });
   if (!['Draft', 'In Progress'].includes(editable.rows[0].book_status)
-      || ['For Review', 'Approved', 'Released'].includes(editable.rows[0].system_status)) {
+      || ['For Review', 'Approved', 'Released', ...RETIRED_SYSTEM_STATUSES].includes(editable.rows[0].system_status)) {
     return res.status(409).json({ error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Biological Media drafts are read-only for frozen Design Books or reviewed systems.' } });
   }
   const reactorType = text(req.body.reactor_type);
@@ -902,7 +903,7 @@ router.post('/systems/:id/biological-media/preview', requireModuleManage('design
   );
   if (!editable.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System or Design Book not found.' } });
   if (!['Draft', 'In Progress'].includes(editable.rows[0].book_status)
-      || ['For Review', 'Approved', 'Released'].includes(editable.rows[0].system_status)) {
+      || ['For Review', 'Approved', 'Released', ...RETIRED_SYSTEM_STATUSES].includes(editable.rows[0].system_status)) {
     return res.status(409).json({
       error: {
         code: 'DESIGN_BOOK_NOT_EDITABLE',
@@ -1026,7 +1027,7 @@ async function editableRunContext(systemId: string, designBookId: string, runner
   const row = result.rows[0];
   if (!row) return { error: { status: 404, code: 'NOT_FOUND', message: 'System or Design Book not found.' } };
   if (!['Draft', 'In Progress'].includes(row.book_status)
-      || ['For Review', 'Approved', 'Released'].includes(row.system_status)) {
+      || ['For Review', 'Approved', 'Released', ...RETIRED_SYSTEM_STATUSES].includes(row.system_status)) {
     return {
       error: {
         status: 409,

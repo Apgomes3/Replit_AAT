@@ -38,6 +38,7 @@ const db_1 = __importStar(require("../db"));
 const auth_1 = require("../middleware/auth");
 const pumpSelections_1 = require("../lib/pumpSelections");
 const designBooks_1 = require("./designBooks");
+const systemLifecycle_1 = require("../lib/systemLifecycle");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const numberOrNull = (value) => value === null || value === undefined || value === ''
@@ -112,6 +113,8 @@ router.get('/systems/:id/pump-selections', async (req, res) => {
     const system = context?.systems?.find((item) => item.id === req.params.id);
     if (!system)
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
+    if ((0, systemLifecycle_1.isRetiredSystem)(system))
+        return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system) });
     res.json({
         items: await liveItems(db_1.query, system),
         pump_candidates: await candidates(db_1.query, designBook.project_id, String(req.params.id)),
@@ -133,6 +136,8 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
     const system = context?.systems?.find((item) => item.id === req.params.id);
     if (!system)
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
+    if ((0, systemLifecycle_1.isRetiredSystem)(system))
+        return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system) });
     const allLines = await liveItems(db_1.query, system);
     const pumpRole = input.pump_role || pumpSelections_1.PUMP_ROLE_PRIMARY;
     if (!allowedPumpRoles.has(pumpRole)) {
@@ -230,6 +235,8 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
     const system = context?.systems?.find((item) => item.id === req.params.id);
     if (!system)
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
+    if ((0, systemLifecycle_1.isRetiredSystem)(system))
+        return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system) });
     const pumpRole = input.pump_role || pumpSelections_1.PUMP_ROLE_PRIMARY;
     if (!allowedPumpRoles.has(pumpRole)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'pump_role must be primary or venturi.' } });
@@ -358,6 +365,8 @@ router.delete('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'engin
     if (!system) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
     }
+    if ((0, systemLifecycle_1.isRetiredSystem)(system))
+        return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system) });
     const sideStreams = (await (0, db_1.query)('SELECT * FROM system_flow_side_streams WHERE system_id=$1 ORDER BY parent_loop_number, sort_order, created_at, id', [system.id])).rows;
     const circuit = (0, pumpSelections_1.pumpCircuits)(system, sideStreams).find(item => item.circuit_key === circuitKey);
     if (!circuit || !(0, pumpSelections_1.isFoamFractionatorCircuit)(circuit)) {

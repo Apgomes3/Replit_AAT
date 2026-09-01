@@ -47,6 +47,7 @@ const db_1 = __importStar(require("../db"));
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
 const biologicalMediaCalculations_1 = require("../lib/biologicalMediaCalculations");
 const biologicalMediaSeed_1 = require("../db/biologicalMediaSeed");
+const systemLifecycle_1 = require("../lib/systemLifecycle");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const PROFILE_STATUSES = ['Draft', 'In Review', 'Approved', 'Retired'];
@@ -816,7 +817,7 @@ router.put('/systems/:id/biological-media', (0, auth_1.requireModuleManage)('des
     if (!editable.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System or Design Book not found.' } });
     if (!['Draft', 'In Progress'].includes(editable.rows[0].book_status)
-        || ['For Review', 'Approved', 'Released'].includes(editable.rows[0].system_status)) {
+        || ['For Review', 'Approved', 'Released', ...systemLifecycle_1.RETIRED_SYSTEM_STATUSES].includes(editable.rows[0].system_status)) {
         return res.status(409).json({ error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Biological Media drafts are read-only for frozen Design Books or reviewed systems.' } });
     }
     const reactorType = text(req.body.reactor_type);
@@ -924,7 +925,7 @@ router.post('/systems/:id/biological-media/preview', (0, auth_1.requireModuleMan
     if (!editable.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System or Design Book not found.' } });
     if (!['Draft', 'In Progress'].includes(editable.rows[0].book_status)
-        || ['For Review', 'Approved', 'Released'].includes(editable.rows[0].system_status)) {
+        || ['For Review', 'Approved', 'Released', ...systemLifecycle_1.RETIRED_SYSTEM_STATUSES].includes(editable.rows[0].system_status)) {
         return res.status(409).json({
             error: {
                 code: 'DESIGN_BOOK_NOT_EDITABLE',
@@ -1039,7 +1040,7 @@ async function editableRunContext(systemId, designBookId, runner = db_1.query) {
     if (!row)
         return { error: { status: 404, code: 'NOT_FOUND', message: 'System or Design Book not found.' } };
     if (!['Draft', 'In Progress'].includes(row.book_status)
-        || ['For Review', 'Approved', 'Released'].includes(row.system_status)) {
+        || ['For Review', 'Approved', 'Released', ...systemLifecycle_1.RETIRED_SYSTEM_STATUSES].includes(row.system_status)) {
         return {
             error: {
                 status: 409,

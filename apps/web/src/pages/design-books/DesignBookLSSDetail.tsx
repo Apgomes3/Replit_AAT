@@ -9,7 +9,7 @@ import {
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
   Droplets, ArrowLeft, Route, FlaskConical, Wind,
   Layers, Package, ExternalLink, Zap, Weight, Maximize2, LockKeyhole,
-  MoreHorizontal, FileDown, GitCompare,
+  MoreHorizontal, FileDown, GitCompare, Archive,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -28,7 +28,14 @@ const SYSTEM_TYPES = [
   'Denitrification', 'Other',
 ];
 const WATER_TYPES = ['Marine', 'Freshwater', 'Brackish', 'Salt Water', 'Blackwater'];
-const STATUSES   = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released', 'Decommissioned'];
+const STATUSES   = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released'];
+const isLssType = (value: unknown) => {
+  const type = String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+  return type === 'lss'
+    || /(^|[^a-z])lss([^a-z]|$)/.test(type)
+    || type === 'life support'
+    || type.startsWith('life support ');
+};
 const LINK_TYPES = ['Primary', 'Secondary', 'Emergency', 'Backup', 'Observation', 'Redundant'];
 const FLOW_ROUTE_VIEW_STORAGE_KEY = 'lss-flow-route-view';
 type FlowViewMode = 'card' | 'list';
@@ -1213,6 +1220,10 @@ export default function DesignBookLSSDetail() {
   const qc = useQueryClient();
   const user = useAuthStore(state => state.user);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<'archive' | 'supersede' | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState('');
+  const [replacementSystemId, setReplacementSystemId] = useState('');
+  const [lifecycleSaving, setLifecycleSaving] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<LssTab, HTMLButtonElement>>>({});
   const tabParam = searchParams.get('tab');
@@ -2131,10 +2142,47 @@ export default function DesignBookLSSDetail() {
   const canManageProjects = user?.moduleAccess?.projects !== 'view'
     && user?.moduleAccess?.projects !== 'hidden';
   const canEdit = (user?.role === 'admin' || user?.role === 'engineer') && canManageProjects;
+  const retired = ['Archived', 'Decommissioned', 'Superseded'].includes(system.status);
   const readOnly = !canEdit
     || (!!book && !['Draft', 'In Progress'].includes(book.status))
-    || ['For Review', 'Approved', 'Released'].includes(system.status);
+    || ['For Review', 'Approved', 'Released'].includes(system.status)
+    || retired;
   const isConfigured = system.system_config === 'compact' || system.system_config === 'bespoke';
+  const replacementCandidates = (book?.systems || []).filter((candidate: any) =>
+    candidate.id !== system.id
+    && isLssType(candidate.system_type)
+    && !['Archived', 'Decommissioned', 'Superseded'].includes(candidate.status));
+
+  const closeLifecycleDialog = () => {
+    if (lifecycleSaving) return;
+    setLifecycleAction(null);
+    setLifecycleReason('');
+    setReplacementSystemId('');
+  };
+
+  const saveLifecycle = async () => {
+    if (!lifecycleAction || !lifecycleReason.trim()) return;
+    if (lifecycleAction === 'supersede' && !replacementSystemId) return;
+    setLifecycleSaving(true);
+    try {
+      await api.post(`/systems/${systemId}/${lifecycleAction}`, {
+        reason: lifecycleReason.trim(),
+        ...(lifecycleAction === 'supersede' ? { replacement_system_id: replacementSystemId } : {}),
+      });
+      toast.success(lifecycleAction === 'archive' ? 'LSS archived/decommissioned' : 'LSS superseded');
+      setLifecycleAction(null);
+      setLifecycleReason('');
+      setReplacementSystemId('');
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['system', systemId] }),
+        qc.invalidateQueries({ queryKey: ['design-book', bookId] }),
+      ]);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Lifecycle change failed');
+    } finally {
+      setLifecycleSaving(false);
+    }
+  };
 
   const systemCalculation = book?.engineering_calculations?.systems?.find(
     (calculation: any) => calculation.inputs?.system_id === system.id,
@@ -2195,9 +2243,32 @@ export default function DesignBookLSSDetail() {
         <span className="text-stone-800 font-medium">{system.system_code}</span>
       </nav>
       {readOnly && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 flex items-center gap-2">
+        <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
+          retired ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        }`}>
           <LockKeyhole className="w-4 h-4 shrink-0" />
-          Released revision — LSS configuration and Flow Route data are read-only.
+          <div>
+            <p className="font-medium">
+              {retired
+                ? `${system.status} LSS — historical record is read-only.`
+                : 'Released revision — LSS configuration and Flow Route data are read-only.'}
+            </p>
+            {retired && system.lifecycle_changed_at && (
+              <p className="mt-1 text-xs">
+                {new Date(system.lifecycle_changed_at).toLocaleString()}
+                {system.lifecycle_actor_name ? ` by ${system.lifecycle_actor_name}` : ''}
+                {system.lifecycle_reason ? ` — ${system.lifecycle_reason}` : ''}
+              </p>
+            )}
+            {system.status === 'Superseded' && system.superseded_by_system_id && (
+              <Link
+                to={`/design-books/${bookId}/lss/${system.superseded_by_system_id}`}
+                className="mt-1 inline-flex text-xs font-semibold underline"
+              >
+                Replacement: {system.replacement_system_code || system.replacement_system_name || 'View current LSS'}
+              </Link>
+            )}
+          </div>
         </div>
       )}
 
@@ -2245,6 +2316,30 @@ export default function DesignBookLSSDetail() {
                   >
                     <Settings2 className="w-4 h-4" />
                     Change System Configuration
+                  </button>
+                  <div className="my-1 border-t border-stone-100" />
+                </>
+              )}
+              {!retired && canEdit && book && ['Draft', 'In Progress'].includes(book.status) && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { setShowToolsMenu(false); setLifecycleAction('archive'); }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-amber-800 hover:bg-amber-50"
+                    role="menuitem"
+                  >
+                    <Archive className="w-4 h-4" />
+                    Archive / Decommission LSS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowToolsMenu(false); setLifecycleAction('supersede'); }}
+                    disabled={replacementCandidates.length === 0}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    role="menuitem"
+                  >
+                    <GitCompare className="w-4 h-4" />
+                    Supersede LSS
                   </button>
                   <div className="my-1 border-t border-stone-100" />
                 </>
@@ -4693,6 +4788,68 @@ export default function DesignBookLSSDetail() {
           onConfirm={handleConfigReset}
           onCancel={cancelConfigReset}
         />
+      )}
+      {lifecycleAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
+              <div>
+                <h2 className="font-semibold text-stone-900">
+                  {lifecycleAction === 'archive' ? 'Archive / Decommission LSS' : 'Supersede LSS'}
+                </h2>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  The historical system and all governed evidence remain readable.
+                </p>
+              </div>
+              <button type="button" onClick={closeLifecycleDialog} aria-label="Close lifecycle dialog">
+                <X className="h-5 w-5 text-stone-400" />
+              </button>
+            </div>
+            <div className="space-y-4 p-5">
+              {lifecycleAction === 'supersede' && (
+                <label className="block text-xs font-medium text-stone-600">
+                  Replacement LSS *
+                  <select
+                    value={replacementSystemId}
+                    onChange={event => setReplacementSystemId(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">Select the current replacement</option>
+                    {replacementCandidates.map((candidate: any) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.system_code} — {candidate.system_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="block text-xs font-medium text-stone-600">
+                Reason *
+                <textarea
+                  rows={4}
+                  value={lifecycleReason}
+                  onChange={event => setLifecycleReason(event.target.value)}
+                  placeholder="Record why this system is no longer current…"
+                  className="mt-1 w-full resize-none rounded-lg border border-stone-200 px-3 py-2 text-sm"
+                />
+              </label>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                This action makes the LSS read-only and excludes it from current selections. It does not migrate configuration to a replacement.
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-stone-200 bg-stone-50 px-5 py-4">
+              <button type="button" onClick={closeLifecycleDialog} className="px-4 py-2 text-sm text-stone-600">Cancel</button>
+              <button
+                type="button"
+                onClick={saveLifecycle}
+                disabled={lifecycleSaving || !lifecycleReason.trim() || (lifecycleAction === 'supersede' && !replacementSystemId)}
+                className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-40"
+              >
+                {lifecycleSaving ? 'Saving…' : lifecycleAction === 'archive' ? 'Confirm archive' : 'Confirm supersession'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

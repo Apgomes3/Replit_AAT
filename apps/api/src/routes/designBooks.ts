@@ -39,6 +39,7 @@ import {
   frictionSourceSnapshot,
 } from '../lib/frictionLossCalculations';
 import { isLifeSupportSystem } from '../lib/lssSystems';
+import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 import {
   calculateUVSelection,
   UV_CALCULATION_VERSION,
@@ -1726,6 +1727,13 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
         error: { code: 'INVALID_SYSTEM', message: 'The selected LSS system does not belong to this Design Book project.' },
       });
     }
+    const lifecycleSystem = (context.systems || []).find(
+      (candidate: any) => candidate.id === req.params.systemId,
+    );
+    if (isRetiredSystem(lifecycleSystem)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: systemLifecycleError(lifecycleSystem) });
+    }
     const requestedInputs = req.body?.inputs && typeof req.body.inputs === 'object'
       ? req.body.inputs
       : req.body || {};
@@ -2992,7 +3000,7 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
-const VERSION_SNAPSHOT_SCHEMA = 5;
+const VERSION_SNAPSHOT_SCHEMA = 6;
 const VERSION_REFERENCE_FIELDS = {
   project: ['id', 'project_code', 'project_name'],
   exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -3005,6 +3013,10 @@ const VERSION_REFERENCE_FIELDS = {
   systems: ['id', 'project_id', 'system_code', 'area_id', 'exhibit_id', 'system_name', 'system_type',
     'design_flow_m3h', 'turnover_rate_hr', 'water_type', 'status', 'primary_control_panel_code',
     'duty_description', 'redundancy_strategy', 'design_basis_reference', 'system_config', 'compact_unit_id',
+    'lifecycle_reason', 'lifecycle_changed_at', 'lifecycle_changed_by',
+    'superseded_by_system_id', 'supersedes_system_id',
+    'replacement_system_code', 'replacement_system_name',
+    'predecessor_system_code', 'predecessor_system_name', 'lifecycle_actor_name',
     'calculation_version', 'calculation_inputs', 'loop1_name', 'loop1_flow_source', 'loop1_filtration',
     'loop1_flow_pct', 'loop1_bio_degas_pct', 'loop1_bio_degas_m3h', 'loop1_link_bio_degas',
     'loop2_name', 'loop2_flow_source', 'loop2_filtration', 'loop2_flow_pct', 'loop2_bio_degas_pct',
@@ -3737,6 +3749,9 @@ router.post(
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
     }
     const system = systemResult.rows[0];
+    if (isRetiredSystem(system)) {
+      return res.status(409).json({ error: systemLifecycleError(system) });
+    }
 
     // Resolve design flow — manual_override uses the persisted design_flow_m3h;
     // linked_exhibits uses the aggregated exhibit hydraulic return flow.

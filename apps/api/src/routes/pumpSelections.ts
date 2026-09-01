@@ -7,6 +7,7 @@ import {
   buildPumpLineItem, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, defaultPumpLineName,
 } from '../lib/pumpSelections';
 import { loadReleaseContext } from './designBooks';
+import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -94,6 +95,7 @@ router.get('/systems/:id/pump-selections', async (req: AuthRequest, res: Respons
   const context = await loadReleaseContext(designBook.id, query, false, true);
   const system = context?.systems?.find((item: any) => item.id === req.params.id);
   if (!system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
+  if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
   res.json({
     items: await liveItems(query, system),
     pump_candidates: await candidates(query, designBook.project_id, String(req.params.id)),
@@ -114,6 +116,7 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
   const context = await loadReleaseContext(book.id, query, false, true);
   const system = context?.systems?.find((item: any) => item.id === req.params.id);
   if (!system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
+  if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
 
   const allLines = await liveItems(query, system);
   const pumpRole = input.pump_role || PUMP_ROLE_PRIMARY;
@@ -220,6 +223,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   const context = await loadReleaseContext(book.id, query, false, true);
   const system = context?.systems?.find((item: any) => item.id === req.params.id);
   if (!system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
+  if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
 
   const pumpRole = input.pump_role || PUMP_ROLE_PRIMARY;
   if (!allowedPumpRoles.has(pumpRole)) {
@@ -371,6 +375,7 @@ router.delete('/systems/:id/pump-lines', requireRole('admin', 'engineer'), requi
   if (!system) {
     return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
   }
+  if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
   const sideStreams = (await query(
     'SELECT * FROM system_flow_side_streams WHERE system_id=$1 ORDER BY parent_loop_number, sort_order, created_at, id',
     [system.id],

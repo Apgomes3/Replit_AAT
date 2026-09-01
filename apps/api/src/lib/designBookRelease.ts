@@ -3,6 +3,7 @@ import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits, isFoamFractionatorCir
 import { isApprovedThermalCorrelationSnapshot } from './thermalCalculations';
 import { FRICTION_LOSS_CALCULATION_VERSION } from './frictionLossCalculations';
 import { isLifeSupportSystem } from './lssSystems';
+import { isRetiredSystem } from './systemLifecycle';
 
 export type ReleaseSeverity = 'blocker' | 'warning';
 export type ReleaseCheckStatus = 'pass' | 'warning' | 'blocked';
@@ -125,6 +126,7 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
   const tanks = context.tanks || [];
   const systems = context.systems || [];
   const lifeSupportSystems = systems.filter(isLifeSupportSystem);
+  const retiredSystems = systems.filter(isRetiredSystem);
   const species = context.species || [];
   const hydraulics = context.hydraulics || [];
   const exhibitCalculations = context.engineering_calculations?.exhibits || [];
@@ -353,6 +355,19 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
           : 'Hydraulics data is present for every exhibit.',
       `/design-books/${context.id}?tab=exhibits`,
       exhibitsWithoutHydraulics.map(exhibit => exhibit.id),
+    ),
+    item(
+      'lss_lifecycle',
+      'Current LSS lifecycle',
+      hasLssScope ? 'blocker' : 'warning',
+      !hasLssScope || retiredSystems.length === 0,
+      !hasLssScope
+        ? 'LSS is not included in the project scope.'
+        : retiredSystems.length
+          ? `${retiredSystems.length} retired LSS record${retiredSystems.length === 1 ? ' is' : 's are'} included. Replace or remove retired systems from the current Design Book before release.`
+          : 'Every included LSS is current and lifecycle-eligible.',
+      `/design-books/${context.id}?tab=lss`,
+      retiredSystems.map(system => system.id).filter(Boolean),
     ),
     item(
       'lss_configuration',

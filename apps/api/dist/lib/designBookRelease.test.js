@@ -80,6 +80,19 @@ function readyContext() {
         (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)(checklist)).toEqual([]);
         (0, vitest_1.expect)(checklist.every(check => check.status === 'pass')).toBe(true);
     });
+    (0, vitest_1.it)('blocks a current release package that includes a retired LSS', () => {
+        const context = readyContext();
+        context.systems[0].status = 'Superseded';
+        const lifecycle = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(check => check.key === 'lss_lifecycle');
+        (0, vitest_1.expect)(lifecycle).toMatchObject({
+            status: 'blocked',
+            severity: 'blocker',
+            affected_ids: ['system-1'],
+        });
+        (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)((0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)).map(check => check.key))
+            .toContain('lss_lifecycle');
+    });
     (0, vitest_1.it)('recognizes established LSS type names in engineering release checks', () => {
         const context = readyContext();
         context.systems[0].system_type = 'Single Exhibit LSS';

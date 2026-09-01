@@ -65,6 +65,9 @@ function resultFor(sql, params = []) {
                 }],
         };
     }
+    if (sql.startsWith('select id, status from systems where id=$1')) {
+        return { rows: [{ id: 'system-1', status: 'Draft' }] };
+    }
     if (sql.startsWith('select e.exhibit_code'))
         return { rows: [] };
     if (sql.startsWith('select sel.exhibit_id'))
@@ -106,6 +109,9 @@ function resultFor(sql, params = []) {
                 }],
         };
     }
+    if (sql.startsWith('select system_id from project_equipment_items')) {
+        return { rows: [{ system_id: 'system-1' }] };
+    }
     if (sql.startsWith('delete from project_equipment_items'))
         return { rows: [{ id: 'equipment-item-1' }] };
     if (sql.startsWith('insert into equipment_instances')) {
@@ -131,6 +137,8 @@ function resultFor(sql, params = []) {
     }
     if (sql.startsWith('select status from systems'))
         return { rows: [{ status: 'Draft' }] };
+    if (sql.startsWith('select system_id from equipment_instances'))
+        return { rows: [{ system_id: null }] };
     if (sql.startsWith('insert into audit_logs')) {
         state.auditRows.push({
             entityType: String(params[0]),
@@ -172,6 +180,9 @@ vitest_1.vi.mock('../db', () => {
         }
         if (sql.startsWith('select id from systems'))
             return { rows: [{ id: 'system-1' }] };
+        if (sql.startsWith('select * from systems where id=$1 for update')) {
+            return { rows: [{ id: 'system-1', status: 'Draft' }] };
+        }
         if (sql.startsWith('select * from system_flow_side_streams where id=$1')) {
             return { rows: [{ id: 'stream-1', name: 'UV', parent_loop_number: 1, flow_pct: 20 }] };
         }

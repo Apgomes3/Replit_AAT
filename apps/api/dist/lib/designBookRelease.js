@@ -9,6 +9,7 @@ const pumpSelections_1 = require("./pumpSelections");
 const thermalCalculations_1 = require("./thermalCalculations");
 const frictionLossCalculations_1 = require("./frictionLossCalculations");
 const lssSystems_1 = require("./lssSystems");
+const systemLifecycle_1 = require("./systemLifecycle");
 const scopeMatches = (scopes, value) => scopes.some(scope => scope.toLowerCase().replace(/[\s_-]+/g, '') === value.toLowerCase().replace(/[\s_-]+/g, ''));
 function item(key, label, severity, ok, message, href, affected_ids) {
     return {
@@ -79,6 +80,7 @@ function buildDesignBookReleaseChecklist(context) {
     const tanks = context.tanks || [];
     const systems = context.systems || [];
     const lifeSupportSystems = systems.filter(lssSystems_1.isLifeSupportSystem);
+    const retiredSystems = systems.filter(systemLifecycle_1.isRetiredSystem);
     const species = context.species || [];
     const hydraulics = context.hydraulics || [];
     const exhibitCalculations = context.engineering_calculations?.exhibits || [];
@@ -251,6 +253,11 @@ function buildDesignBookReleaseChecklist(context) {
             : exhibitsWithoutHydraulics.length
                 ? `${exhibitsWithoutHydraulics.length} exhibit${exhibitsWithoutHydraulics.length === 1 ? ' is' : 's are'} missing hydraulics data.`
                 : 'Hydraulics data is present for every exhibit.', `/design-books/${context.id}?tab=exhibits`, exhibitsWithoutHydraulics.map(exhibit => exhibit.id)),
+        item('lss_lifecycle', 'Current LSS lifecycle', hasLssScope ? 'blocker' : 'warning', !hasLssScope || retiredSystems.length === 0, !hasLssScope
+            ? 'LSS is not included in the project scope.'
+            : retiredSystems.length
+                ? `${retiredSystems.length} retired LSS record${retiredSystems.length === 1 ? ' is' : 's are'} included. Replace or remove retired systems from the current Design Book before release.`
+                : 'Every included LSS is current and lifecycle-eligible.', `/design-books/${context.id}?tab=lss`, retiredSystems.map(system => system.id).filter(Boolean)),
         item('lss_configuration', 'LSS configuration', hasLssScope ? 'blocker' : 'warning', !hasLssScope || (systems.length > 0 && systemsWithoutConfiguration.length === 0), !hasLssScope
             ? 'LSS is not included in the project scope.'
             : systems.length === 0

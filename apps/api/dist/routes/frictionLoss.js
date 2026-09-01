@@ -40,6 +40,7 @@ const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
 const pumpSelections_1 = require("../lib/pumpSelections");
 const designBooks_1 = require("./designBooks");
 const lssSystems_1 = require("../lib/lssSystems");
+const systemLifecycle_1 = require("../lib/systemLifecycle");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const routeParam = (value) => Array.isArray(value) ? value[0] : value;
@@ -134,6 +135,10 @@ router.put('/design-books/:bookId/friction-loss/:systemId', (0, auth_1.requireRo
         if (!system || !(0, lssSystems_1.isLifeSupportSystem)(system)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: { code: 'INVALID_SYSTEM', message: 'Select a Life Support system from this Design Book project.' } });
+        }
+        if ((0, systemLifecycle_1.isRetiredSystem)(system)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system) });
         }
         const circuit = (0, pumpSelections_1.pumpCircuits)(system, system.side_streams || [])
             .find(entry => entry.circuit_key === req.body.circuit_key);

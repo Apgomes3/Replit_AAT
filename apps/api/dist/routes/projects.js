@@ -47,6 +47,8 @@ const crypto_1 = __importDefault(require("crypto"));
 const aquariumCalculations_1 = require("../lib/aquariumCalculations");
 const tankCalculations_1 = require("../lib/tankCalculations");
 const customFootprint_1 = require("../lib/customFootprint");
+const systemLifecycle_1 = require("../lib/systemLifecycle");
+const lssSystems_1 = require("../lib/lssSystems");
 const uploadsDir = path_1.default.join(__dirname, '../../uploads');
 if (!fs_1.default.existsSync(uploadsDir))
     fs_1.default.mkdirSync(uploadsDir, { recursive: true });
@@ -378,8 +380,9 @@ router.get('/projects/:id/systems', auth_1.authenticate, async (req, res) => {
      LEFT JOIN tanks t ON t.system_id=s.id
      LEFT JOIN product_masters pm ON t.product_master_id=pm.id
      WHERE s.project_id = $1
+       AND ($2::boolean OR s.status NOT IN ('Archived', 'Decommissioned', 'Superseded'))
      GROUP BY s.id, a.area_name, e.exhibit_name
-     ORDER BY s.sort_order, s.system_code`, [proj.rows[0].id]);
+     ORDER BY s.sort_order, s.system_code`, [proj.rows[0].id, req.query.include_historical === 'true']);
     res.json({ items: result.rows });
 });
 router.get('/projects/:id/equipment', auth_1.authenticate, async (req, res) => {
@@ -657,6 +660,13 @@ router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'eng
                     message: 'Use the protected PIM tank assignment workflow to link a library tank to an exhibit.',
                 },
             });
+        }
+        if (system_id) {
+            const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(system_id));
+            if (!editable.system)
+                return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+            if (editable.error)
+                return res.status(409).json({ error: editable.error });
         }
         if (product_master_id) {
             const access = await (0, db_1.query)(`SELECT rma.access_level
@@ -1217,6 +1227,16 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
                 });
             }
         }
+        const currentSystemLink = await (0, db_1.query)('SELECT system_id FROM tanks WHERE id=$1', [req.params.id]);
+        if (!currentSystemLink.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+        for (const linkedSystemId of new Set([currentSystemLink.rows[0].system_id, system_id].filter(Boolean))) {
+            const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(linkedSystemId));
+            if (!editable.system)
+                return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+            if (editable.error)
+                return res.status(409).json({ error: editable.error });
+        }
         const l = length_mm ? parseFloat(length_mm) : null;
         const w = width_mm ? parseFloat(width_mm) : null;
         const h = height_mm ? parseFloat(height_mm) : null;
@@ -1411,6 +1431,9 @@ router.get('/systems', auth_1.authenticate, async (req, res) => {
         params.push(req.query.status);
         filters.push(`s.status = $${params.length}`);
     }
+    if (req.query.include_historical !== 'true' && !req.query.status) {
+        filters.push(`s.status NOT IN ('Archived', 'Decommissioned', 'Superseded')`);
+    }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const countRes = await (0, db_1.query)(`SELECT COUNT(*) FROM systems s ${where}`, params);
     params.push(page_size, offset);
@@ -1421,7 +1444,20 @@ router.get('/systems', auth_1.authenticate, async (req, res) => {
     });
 });
 router.get('/systems/:id', auth_1.authenticate, async (req, res) => {
-    const result = await (0, db_1.query)('SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id WHERE s.id::text=$1 OR s.system_code=$1', [req.params.id]);
+    const result = await (0, db_1.query)(`SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name,
+            replacement.system_code AS replacement_system_code,
+            replacement.system_name AS replacement_system_name,
+            predecessor.system_code AS predecessor_system_code,
+            predecessor.system_name AS predecessor_system_name,
+            lifecycle_actor.first_name || ' ' || lifecycle_actor.last_name AS lifecycle_actor_name
+     FROM systems s
+     LEFT JOIN areas a ON s.area_id=a.id
+     LEFT JOIN exhibits e ON s.exhibit_id=e.id
+     JOIN projects p ON s.project_id=p.id
+     LEFT JOIN systems replacement ON replacement.id=s.superseded_by_system_id
+     LEFT JOIN systems predecessor ON predecessor.id=s.supersedes_system_id
+     LEFT JOIN users lifecycle_actor ON lifecycle_actor.id=s.lifecycle_changed_by
+     WHERE s.id::text=$1 OR s.system_code=$1`, [req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
     const sysId = result.rows[0].id;
@@ -1478,12 +1514,17 @@ router.get('/systems/:id/fractionator-products', auth_1.authenticate, async (req
      ORDER BY pm.product_code`);
     res.json({ items: result.rows });
 });
-router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const client = await db_1.default.connect();
     try {
         const { system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, design_flow_source, turnover_source, water_type, status, duty_description, redundancy_strategy, } = req.body;
         if (!system_code || !project_id || !system_name) {
             return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'system_code, project_id and system_name are required' } });
+        }
+        if (['Archived', 'Decommissioned', 'Superseded'].includes(status)) {
+            return res.status(400).json({
+                error: { code: 'INVALID_LIFECYCLE_STATUS', message: 'Create the LSS as a current record, then use the governed lifecycle actions when it is retired.' },
+            });
         }
         await client.query('BEGIN');
         if (exhibit_id) {
@@ -1559,7 +1600,7 @@ router.post('/systems', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'e
         client.release();
     }
 });
-router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     try {
         const { system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr, design_flow_source, turnover_source, water_type, status, duty_description, redundancy_strategy, loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct, loop1_bio_degas_m3h, loop1_link_bio_degas, loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct, loop2_bio_degas_m3h, loop2_link_bio_degas, loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct, loop3_bio_degas_m3h, loop3_link_bio_degas, loop1_name, loop2_name, loop3_name, side_streams, fractionator_allocations, system_config, compact_unit_id, design_book_id, } = req.body;
         let normalizedSideStreams = null;
@@ -1605,6 +1646,14 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         const currentResult = await (0, db_1.query)('SELECT * FROM systems WHERE id=$1', [req.params.id]);
         if (!currentResult.rows[0])
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        if ((0, systemLifecycle_1.isRetiredSystem)(currentResult.rows[0])) {
+            return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(currentResult.rows[0]) });
+        }
+        if (['Archived', 'Decommissioned', 'Superseded'].includes(status)) {
+            return res.status(400).json({
+                error: { code: 'GOVERNED_LIFECYCLE_REQUIRED', message: 'Use Archive / Decommission LSS or Supersede LSS so a reason and audit evidence are recorded.' },
+            });
+        }
         const currentCalculationInputs = currentResult.rows[0].calculation_inputs &&
             typeof currentResult.rows[0].calculation_inputs === 'object'
             ? currentResult.rows[0].calculation_inputs
@@ -1778,7 +1827,9 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         system_config=$28, compact_unit_id=$29,
         calculation_version=$30, last_calculated_at=NOW(), calculation_inputs=$31,
         updated_at=NOW()
-       WHERE id=$32 RETURNING *`, [
+       WHERE id=$32
+         AND status NOT IN ('Archived','Decommissioned','Superseded')
+       RETURNING *`, [
                 system_code || null, system_name, system_type,
                 resolvedDesignFlowSource === 'manual_override' ? design_flow_m3h || null : null,
                 resolvedTurnoverSource === 'manual_override' ? turnover_rate_hr || null : null,
@@ -1809,14 +1860,16 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
             ]);
             if (!result.rows[0]) {
                 await saveClient.query('ROLLBACK');
-                return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+                return res.status(409).json({ error: { code: 'SYSTEM_RETIRED', message: 'The LSS was retired while this edit was being saved. Refresh to view its historical record.' } });
             }
             namedSystem = result.rows[0];
             const sideStreamQuery = saveClient.query.bind(saveClient);
             existingSideStreams = await loadSystemSideStreams(String(req.params.id), sideStreamQuery);
             const namedResult = await saveClient.query(`UPDATE systems SET
            loop1_name=$2, loop2_name=$3, loop3_name=$4, updated_at=NOW()
-         WHERE id=$1 RETURNING *`, [
+         WHERE id=$1
+           AND status NOT IN ('Archived','Decommissioned','Superseded')
+         RETURNING *`, [
                 req.params.id,
                 loop1_name == null ? (currentSystem.loop1_name || 'Loop 1') : String(loop1_name).trim(),
                 loop2_name == null ? (currentSystem.loop2_name || 'Loop 2') : String(loop2_name).trim(),
@@ -1978,7 +2031,8 @@ router.post('/systems/:id/configuration-reset', auth_1.authenticate, (0, auth_1.
             });
         }
         if (!['Draft', 'In Progress'].includes(lockedDesignBook.status)
-            || ['For Review', 'Approved', 'Released'].includes(lockedSystem.status)) {
+            || ['For Review', 'Approved', 'Released'].includes(lockedSystem.status)
+            || (0, systemLifecycle_1.isRetiredSystem)(lockedSystem)) {
             await client.query('ROLLBACK');
             return res.status(409).json({
                 error: {
@@ -2054,7 +2108,7 @@ router.get('/systems/:id/side-streams', auth_1.authenticate, async (req, res) =>
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
     res.json({ items: await loadSystemSideStreams(String(req.params.id)), presets: FLOW_SIDE_STREAM_PRESETS });
 });
-router.post('/systems/:id/side-streams', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.post('/systems/:id/side-streams', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     let stream;
     try {
         stream = normalizeSideStreams([req.body])?.[0];
@@ -2066,10 +2120,14 @@ router.post('/systems/:id/side-streams', auth_1.authenticate, (0, auth_1.require
     let created;
     try {
         await client.query('BEGIN');
-        const system = await client.query('SELECT id FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
+        const system = await client.query('SELECT * FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
         if (!system.rows[0]) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        }
+        if ((0, systemLifecycle_1.isRetiredSystem)(system.rows[0])) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system.rows[0]) });
         }
         created = (await client.query(`INSERT INTO system_flow_side_streams
          (system_id, parent_loop_number, name, preset, flow_pct, notes, sort_order)
@@ -2090,7 +2148,7 @@ router.post('/systems/:id/side-streams', auth_1.authenticate, (0, auth_1.require
     });
     res.status(201).json(created);
 });
-router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     let stream;
     try {
         stream = normalizeSideStreams([req.body])?.[0];
@@ -2103,10 +2161,14 @@ router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, a
     let updated;
     try {
         await client.query('BEGIN');
-        const system = await client.query('SELECT id FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
+        const system = await client.query('SELECT * FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
         if (!system.rows[0]) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        }
+        if ((0, systemLifecycle_1.isRetiredSystem)(system.rows[0])) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system.rows[0]) });
         }
         const current = await client.query('SELECT * FROM system_flow_side_streams WHERE id=$1 AND system_id=$2', [req.params.sideStreamId, req.params.id]);
         if (!current.rows[0]) {
@@ -2154,7 +2216,12 @@ router.put('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, a
     });
     res.json(updated);
 });
-router.delete('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.delete('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(req.params.id));
+    if (!editable.system)
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    if (editable.error)
+        return res.status(409).json({ error: editable.error });
     const result = await (0, db_1.query)('DELETE FROM system_flow_side_streams WHERE id=$1 AND system_id=$2 RETURNING *', [req.params.sideStreamId, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Side stream not found' } });
@@ -2164,25 +2231,151 @@ router.delete('/systems/:id/side-streams/:sideStreamId', auth_1.authenticate, (0
     });
     res.json({ deleted: true, id: req.params.sideStreamId });
 });
-router.delete('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
-    try {
-        const result = await (0, db_1.query)('DELETE FROM systems WHERE id=$1 RETURNING id, system_code', [req.params.id]);
-        if (!result.rows[0])
-            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
-        res.json({ deleted: true, id: result.rows[0].id });
+router.delete('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (_req, res) => {
+    res.status(409).json({
+        error: {
+            code: 'PHYSICAL_DELETE_DISABLED',
+            message: 'Life Support Systems are governed records. Archive/decommission or supersede the system instead.',
+        },
+    });
+});
+router.post('/systems/:id/archive', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) {
+        return res.status(400).json({ error: { code: 'REASON_REQUIRED', message: 'A reason is required to archive/decommission an LSS.' } });
     }
-    catch (err) {
-        if (err.code === '23503') {
-            return res.status(409).json({ error: { code: 'CONFLICT', message: 'Cannot delete system — it has equipment or other items linked to it. Remove those first.' } });
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const current = await client.query('SELECT * FROM systems WHERE id=$1 FOR UPDATE', [req.params.id]);
+        const system = current.rows[0];
+        if (!system) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
         }
-        throw err;
+        if (!(0, lssSystems_1.isLifeSupportSystem)(system)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'INVALID_SYSTEM_TYPE', message: 'Only a Life Support System can use the LSS lifecycle workflow.' } });
+        }
+        if (['Archived', 'Decommissioned'].includes(system.status)) {
+            await client.query('COMMIT');
+            return res.json(system);
+        }
+        if (system.status === 'Superseded') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'INVALID_LIFECYCLE_TRANSITION', message: 'A superseded LSS cannot be archived without a governed restore workflow.' } });
+        }
+        const updated = await client.query(`UPDATE systems
+         SET status='Decommissioned', lifecycle_reason=$2,
+             lifecycle_changed_at=NOW(), lifecycle_changed_by=$3, updated_at=NOW()
+         WHERE id=$1 RETURNING *`, [req.params.id, reason, req.user.id]);
+        await client.query(`INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
+         VALUES ('system',$1,'ARCHIVE',$2,$3,$4)`, [req.params.id, req.user.id, {
+                summary: `LSS ${system.system_code} archived/decommissioned`,
+                reason,
+                previous_status: system.status,
+                new_status: 'Decommissioned',
+                replacement_system_id: null,
+            }, req.ip || null]);
+        await client.query('COMMIT');
+        res.json(updated.rows[0]);
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
     }
 });
-router.post('/systems/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.post('/systems/:id/supersede', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const reason = String(req.body?.reason || '').trim();
+    const replacementSystemId = String(req.body?.replacement_system_id || '').trim();
+    if (!reason) {
+        return res.status(400).json({ error: { code: 'REASON_REQUIRED', message: 'A reason is required to supersede an LSS.' } });
+    }
+    if (!replacementSystemId) {
+        return res.status(400).json({ error: { code: 'REPLACEMENT_REQUIRED', message: 'Select the replacement LSS.' } });
+    }
+    if (replacementSystemId === String(req.params.id)) {
+        return res.status(400).json({ error: { code: 'INVALID_REPLACEMENT', message: 'An LSS cannot supersede itself.' } });
+    }
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        const locked = await client.query('SELECT * FROM systems WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE', [[req.params.id, replacementSystemId]]);
+        const system = locked.rows.find((row) => String(row.id) === String(req.params.id));
+        const replacement = locked.rows.find((row) => String(row.id) === replacementSystemId);
+        if (!system || !replacement) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: !system ? 'System not found' : 'Replacement LSS not found' } });
+        }
+        if (!(0, lssSystems_1.isLifeSupportSystem)(system)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'INVALID_SYSTEM_TYPE', message: 'Only a Life Support System can use the LSS lifecycle workflow.' } });
+        }
+        if (system.status === 'Superseded' && String(system.superseded_by_system_id) === replacementSystemId) {
+            await client.query('COMMIT');
+            return res.json(system);
+        }
+        if ((0, systemLifecycle_1.isRetiredSystem)(system)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'INVALID_LIFECYCLE_TRANSITION', message: 'A retired LSS cannot be superseded without a governed restore workflow.' } });
+        }
+        if (String(system.project_id) !== String(replacement.project_id)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'REPLACEMENT_PROJECT_MISMATCH', message: 'The replacement LSS must belong to the same project.' } });
+        }
+        if ((0, systemLifecycle_1.isRetiredSystem)(replacement)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'INVALID_REPLACEMENT', message: 'The replacement LSS must be active and current.' } });
+        }
+        if (!(0, lssSystems_1.isLifeSupportSystem)(replacement)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'INVALID_REPLACEMENT_TYPE', message: 'The replacement must be a Life Support System.' } });
+        }
+        if (replacement.supersedes_system_id && String(replacement.supersedes_system_id) !== String(system.id)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: { code: 'REPLACEMENT_IN_USE', message: 'The replacement LSS already supersedes another system.' } });
+        }
+        const updated = await client.query(`UPDATE systems
+         SET status='Superseded', superseded_by_system_id=$2,
+             lifecycle_reason=$3, lifecycle_changed_at=NOW(),
+             lifecycle_changed_by=$4, updated_at=NOW()
+         WHERE id=$1 RETURNING *`, [req.params.id, replacementSystemId, reason, req.user.id]);
+        await client.query(`UPDATE systems SET supersedes_system_id=$1, updated_at=NOW()
+         WHERE id=$2`, [req.params.id, replacementSystemId]);
+        await client.query(`INSERT INTO audit_logs (entity_type, entity_id, action, actor_id, details, ip_address)
+         VALUES ('system',$1,'SUPERSEDE',$2,$3,$4)`, [req.params.id, req.user.id, {
+                summary: `LSS ${system.system_code} superseded by ${replacement.system_code}`,
+                reason,
+                previous_status: system.status,
+                new_status: 'Superseded',
+                replacement_system_id: replacementSystemId,
+            }, req.ip || null]);
+        await client.query('COMMIT');
+        res.json({
+            ...updated.rows[0],
+            replacement_system_code: replacement.system_code,
+            replacement_system_name: replacement.system_name,
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+});
+router.post('/systems/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const src = await (0, db_1.query)('SELECT * FROM systems WHERE id=$1', [req.params.id]);
     if (!src.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
     const s = src.rows[0];
+    if ((0, systemLifecycle_1.isRetiredSystem)(s)) {
+        return res.status(409).json({ error: { code: 'SYSTEM_RETIRED', message: 'Retired LSS records cannot be duplicated as current systems.' } });
+    }
     const newCode = `${s.system_code}-COPY`;
     const result = await (0, db_1.query)(`INSERT INTO systems (system_code, project_id, area_id, exhibit_id, system_name, system_type, design_flow_m3h, turnover_rate_hr, water_type, duty_description, redundancy_strategy)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [newCode, s.project_id, s.area_id, s.exhibit_id, `${s.system_name} (Copy)`, s.system_type, s.design_flow_m3h, s.turnover_rate_hr, s.water_type, s.duty_description, s.redundancy_strategy]);
@@ -2197,7 +2390,12 @@ router.get('/systems/:id/exhibit-links', auth_1.authenticate, async (req, res) =
      ORDER BY sel.sort_order, e.exhibit_code`, [req.params.id]);
     res.json(result.rows);
 });
-router.post('/systems/:id/exhibit-links', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.post('/systems/:id/exhibit-links', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(req.params.id));
+    if (!editable.system)
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    if (editable.error)
+        return res.status(409).json({ error: editable.error });
     const { exhibit_id, link_type, flow_allocation_m3h, notes, sort_order } = req.body;
     if (!exhibit_id)
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id is required' } });
@@ -2240,7 +2438,12 @@ router.post('/systems/:id/exhibit-links', auth_1.authenticate, (0, auth_1.requir
         throw err;
     }
 });
-router.put('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.put('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(req.params.id));
+    if (!editable.system)
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    if (editable.error)
+        return res.status(409).json({ error: editable.error });
     const { link_type, flow_allocation_m3h, notes } = req.body;
     if (flow_allocation_m3h != null &&
         (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
@@ -2258,17 +2461,29 @@ router.put('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1
      FROM system_exhibit_links sel JOIN exhibits e ON sel.exhibit_id = e.id WHERE sel.id = $1`, [result.rows[0].id]);
     res.json(enriched.rows[0]);
 });
-router.delete('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
+router.delete('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(req.params.id));
+    if (!editable.system)
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+    if (editable.error)
+        return res.status(409).json({ error: editable.error });
     const result = await (0, db_1.query)('DELETE FROM system_exhibit_links WHERE id=$1 AND system_id=$2 RETURNING id', [req.params.linkId, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Link not found' } });
     res.json({ deleted: true });
 });
 // EQUIPMENT ITEMS (direct product-to-project/system relationship)
-router.post('/equipment-items', auth_1.authenticate, async (req, res) => {
+router.post('/equipment-items', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const { equip_code, project_id, system_id, product_master_id, component_id, description, quantity, unit, notes, status } = req.body;
     if (!equip_code || !project_id)
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'equip_code and project_id are required' } });
+    if (system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(system_id));
+        if (!editable.system)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     try {
         const result = await (0, db_1.query)(`INSERT INTO project_equipment_items (equip_code, project_id, system_id, product_master_id, component_id, description, quantity, unit, notes, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`, [equip_code.trim().toUpperCase(), project_id, system_id || null, product_master_id || null,
@@ -2289,8 +2504,23 @@ router.post('/equipment-items', auth_1.authenticate, async (req, res) => {
         throw err;
     }
 });
-router.put('/equipment-items/:id', auth_1.authenticate, async (req, res) => {
+router.put('/equipment-items/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const { equip_code, system_id, product_master_id, component_id, description, quantity, unit, notes, status } = req.body;
+    const current = await (0, db_1.query)('SELECT system_id FROM project_equipment_items WHERE id=$1', [req.params.id]);
+    if (!current.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
+    if (current.rows[0].system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(current.rows[0].system_id));
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
+    if (system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(system_id));
+        if (!editable.system)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     const result = await (0, db_1.query)(`UPDATE project_equipment_items SET equip_code=COALESCE($1,equip_code), system_id=$2, product_master_id=$3,
      component_id=$4, description=$5, quantity=$6, unit=$7, notes=$8, status=$9, updated_at=NOW()
      WHERE id=$10 RETURNING *`, [equip_code ? equip_code.trim().toUpperCase() : null, system_id || null, product_master_id || null,
@@ -2307,9 +2537,14 @@ router.put('/equipment-items/:id', auth_1.authenticate, async (req, res) => {
         });
     res.json(result.rows[0]);
 });
-router.delete('/equipment-items/:id', auth_1.authenticate, async (req, res) => {
+router.delete('/equipment-items/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const existing = await (0, db_1.query)('SELECT * FROM project_equipment_items WHERE id=$1', [req.params.id]);
     const item = existing.rows[0];
+    if (item?.system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(item.system_id));
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     const result = await (0, db_1.query)('DELETE FROM project_equipment_items WHERE id=$1 RETURNING id', [req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
@@ -2359,8 +2594,15 @@ router.get('/equipment-instances/:id', auth_1.authenticate, async (req, res) => 
     const documents = await (0, db_1.query)(`SELECT d.*, u.first_name || ' ' || u.last_name as created_by_name FROM documents d LEFT JOIN users u ON d.created_by=u.id WHERE d.equipment_id=$1 ORDER BY d.document_type, d.document_code`, [result.rows[0].id]);
     res.json({ ...result.rows[0], documents: documents.rows });
 });
-router.post('/equipment-instances', auth_1.authenticate, async (req, res) => {
+router.post('/equipment-instances', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const { equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference, product_master_id } = req.body;
+    if (system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(system_id));
+        if (!editable.system)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     const result = await (0, db_1.query)('INSERT INTO equipment_instances (equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *', [equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference]);
     const eq = result.rows[0];
     if (product_master_id && eq?.id) {
@@ -2374,8 +2616,16 @@ router.post('/equipment-instances', auth_1.authenticate, async (req, res) => {
     });
     res.status(201).json(eq);
 });
-router.put('/equipment-instances/:id', auth_1.authenticate, async (req, res) => {
+router.put('/equipment-instances/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const { equipment_name, equipment_type, design_flow_m3h, design_head_m, power_kw, material_code, status, operational_duty, serial_number, installation_date, commissioning_date } = req.body;
+    const current = await (0, db_1.query)('SELECT system_id FROM equipment_instances WHERE id=$1', [req.params.id]);
+    if (!current.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
+    if (current.rows[0].system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(current.rows[0].system_id));
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     const result = await (0, db_1.query)('UPDATE equipment_instances SET equipment_name=$1, equipment_type=$2, design_flow_m3h=$3, design_head_m=$4, power_kw=$5, material_code=$6, status=$7, operational_duty=$8, serial_number=$9, installation_date=$10, commissioning_date=$11, updated_at=NOW() WHERE id=$12 RETURNING *', [equipment_name, equipment_type, design_flow_m3h, design_head_m, power_kw, material_code, status, operational_duty, serial_number, installation_date, commissioning_date, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
@@ -2454,24 +2704,52 @@ router.get('/projects/:id/piping', auth_1.authenticate, async (req, res) => {
      ORDER BY ppi.piping_code`, [req.params.id]);
     res.json({ items: result.rows });
 });
-router.post('/piping-items', auth_1.authenticate, async (req, res) => {
+router.post('/piping-items', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const { piping_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status } = req.body;
     if (!piping_code || !project_id)
         return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'piping_code and project_id are required' } });
+    if (system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(system_id));
+        if (!editable.system)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     const result = await (0, db_1.query)(`INSERT INTO project_piping_items (piping_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [piping_code.trim().toUpperCase(), project_id, system_id || null, product_master_id || null,
         description || null, quantity || 1, unit || 'EA', notes || null, status || 'Design']);
     res.status(201).json(result.rows[0]);
 });
-router.put('/piping-items/:id', auth_1.authenticate, async (req, res) => {
+router.put('/piping-items/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     const { description, quantity, unit, notes, status, system_id } = req.body;
+    const current = await (0, db_1.query)('SELECT system_id FROM project_piping_items WHERE id=$1', [req.params.id]);
+    if (!current.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Piping item not found' } });
+    if (current.rows[0].system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(current.rows[0].system_id));
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
+    if (system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(system_id));
+        if (!editable.system)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     const result = await (0, db_1.query)(`UPDATE project_piping_items SET description=$1, quantity=$2, unit=$3, notes=$4, status=$5, system_id=$6, updated_at=NOW()
      WHERE id=$7 RETURNING *`, [description || null, quantity || 1, unit || 'EA', notes || null, status, system_id || null, req.params.id]);
     if (!result.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Piping item not found' } });
     res.json(result.rows[0]);
 });
-router.delete('/piping-items/:id', auth_1.authenticate, async (req, res) => {
+router.delete('/piping-items/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
+    const current = await (0, db_1.query)('SELECT system_id FROM project_piping_items WHERE id=$1', [req.params.id]);
+    if (current.rows[0]?.system_id) {
+        const editable = await (0, systemLifecycle_1.loadEditableSystem)(db_1.query, String(current.rows[0].system_id));
+        if (editable.error)
+            return res.status(409).json({ error: editable.error });
+    }
     await (0, db_1.query)('DELETE FROM project_piping_items WHERE id=$1', [req.params.id]);
     res.json({ success: true });
 });

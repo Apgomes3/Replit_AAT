@@ -1526,6 +1526,20 @@ ALTER TABLE systems ADD COLUMN IF NOT EXISTS calculation_version VARCHAR(50);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS last_calculated_at TIMESTAMPTZ;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS calculation_inputs JSONB;
 
+-- SYSTEMS: governed archive/supersession lifecycle. Status remains the visible
+-- lifecycle label; these fields retain the accountable transition evidence.
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS lifecycle_reason TEXT;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS lifecycle_changed_at TIMESTAMPTZ;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS lifecycle_changed_by UUID REFERENCES users(id);
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS superseded_by_system_id UUID REFERENCES systems(id) ON DELETE RESTRICT;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS supersedes_system_id UUID REFERENCES systems(id) ON DELETE RESTRICT;
+CREATE INDEX IF NOT EXISTS idx_systems_active_project
+  ON systems(project_id, sort_order, system_code)
+  WHERE status NOT IN ('Archived', 'Decommissioned', 'Superseded');
+CREATE INDEX IF NOT EXISTS idx_systems_superseded_by
+  ON systems(superseded_by_system_id)
+  WHERE superseded_by_system_id IS NOT NULL;
+
 -- SYSTEMS: flow route loop configuration
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_name           VARCHAR(255) NOT NULL DEFAULT 'Loop 1';
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_flow_source    VARCHAR(50);

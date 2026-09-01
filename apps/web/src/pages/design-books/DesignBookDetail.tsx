@@ -732,7 +732,7 @@ const SYSTEM_TYPES_LIST = [
   'Ozone', 'Heating', 'Chilling', 'Skimming', 'Carbon Dosing', 'Denitrification', 'Other',
 ];
 
-const LSS_STATUSES = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released', 'Decommissioned'];
+const LSS_STATUSES = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released'];
 
 function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculations, onClose, onCreated }: {
   projectId: string;
@@ -990,6 +990,10 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
 function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () => void; readOnly?: boolean }) {
   const navigate = useNavigate();
   const systems: any[] = book.systems || [];
+  const [showHistorical, setShowHistorical] = useState(readOnly);
+  const isHistorical = (system: any) =>
+    ['Archived', 'Decommissioned', 'Superseded'].includes(system.status);
+  const displayedSystems = showHistorical ? systems : systems.filter(system => !isHistorical(system));
   const calculations: any[] = book.engineering_calculations?.systems || [];
   const calculationFor = (systemId: string) =>
     calculations.find((item: any) => item.inputs?.system_id === systemId) ?? null;
@@ -1004,13 +1008,24 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
     );
   }
 
-  if (systems.length === 0) {
+  if (displayedSystems.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-stone-200 py-16 text-center">
         <Activity className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-        <p className="text-stone-500 font-medium">No systems yet</p>
-        <p className="text-stone-400 text-sm mt-1 mb-5">Create a new Life Support System directly in this design book.</p>
+        <p className="text-stone-500 font-medium">{systems.length ? 'No current systems' : 'No systems yet'}</p>
+        <p className="text-stone-400 text-sm mt-1 mb-5">
+          {systems.length ? 'Historical systems are hidden. Use Show historical to review them.' : 'Create a new Life Support System directly in this design book.'}
+        </p>
         <div className="flex items-center justify-center gap-3">
+          {systems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHistorical(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 border border-stone-200 text-stone-700 text-sm font-medium rounded-lg hover:bg-stone-50"
+            >
+              Show historical
+            </button>
+          )}
           {!readOnly && (
             <button
               onClick={onNewLSS}
@@ -1031,7 +1046,7 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
   }
 
   // Aggregate stats
-  const totalFlow = systems.reduce((sum, system) => {
+  const totalFlow = displayedSystems.reduce((sum, system) => {
     const calculation = calculationFor(system.id);
     return sum + (Number(calculation?.results?.design_flow_m3h) || 0);
   }, 0);
@@ -1042,7 +1057,7 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
       {/* Stats strip */}
       <div className="grid grid-cols-2 gap-3">
         {[
-          { label: 'Systems', value: systems.length, icon: <GitBranch className="w-4 h-4 text-blue-500" /> },
+          { label: showHistorical ? 'Systems shown' : 'Current systems', value: displayedSystems.length, icon: <GitBranch className="w-4 h-4 text-blue-500" /> },
           { label: 'Total Design Flow', value: `${totalFlow.toFixed(1)} m³/h`, icon: <Gauge className="w-4 h-4 text-cyan-600" /> },
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
@@ -1061,9 +1076,19 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-blue-600" />
             <span className="text-sm font-semibold text-stone-700">Life Support Systems</span>
-            <span className="text-xs bg-blue-50 text-blue-700 rounded-full px-1.5 py-0.5">{systems.length}</span>
+            <span className="text-xs bg-blue-50 text-blue-700 rounded-full px-1.5 py-0.5">{displayedSystems.length}</span>
           </div>
           <div className="flex items-center gap-2">
+            {systems.some(isHistorical) && (
+              <label className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
+                <input
+                  type="checkbox"
+                  checked={showHistorical}
+                  onChange={event => setShowHistorical(event.target.checked)}
+                />
+                Show historical
+              </label>
+            )}
             {!readOnly && (
               <button
                 onClick={onNewLSS}
@@ -1096,7 +1121,7 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
               </tr>
             </thead>
             <tbody>
-              {systems.map((sys: any) => {
+              {displayedSystems.map((sys: any) => {
                 const calculation = calculationFor(sys.id);
                 const flow = calculation?.results?.design_flow_m3h ?? null;
                 const turnover = calculation?.results?.turnover_rate_cycles_per_hour ?? null;
@@ -1120,7 +1145,12 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-right">{fmtNum(turnover)}</td>
-                  <td className="px-4 py-2.5"><StatusBadge status={sys.status} /></td>
+                  <td className="px-4 py-2.5">
+                    <StatusBadge status={sys.status} />
+                    {sys.status === 'Superseded' && sys.superseded_by_system_id && (
+                      <span className="mt-1 block text-[10px] font-medium text-amber-700">Replacement recorded</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-right">
                     <ChevronRight className="w-3.5 h-3.5 text-stone-300 group-hover:text-blue-400 inline-block" />
                   </td>
@@ -1139,13 +1169,13 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
       </div>
 
       {/* Duty descriptions */}
-      {systems.some(s => s.duty_description) && (
+      {displayedSystems.some(s => s.duty_description) && (
         <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-stone-100 bg-stone-50/50">
             <span className="text-sm font-semibold text-stone-700">Duty Descriptions</span>
           </div>
           <div className="divide-y divide-stone-50">
-            {systems.filter(s => s.duty_description).map((sys: any) => (
+            {displayedSystems.filter(s => s.duty_description).map((sys: any) => (
               <div key={sys.id} className="px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">{sys.system_code}</span>
