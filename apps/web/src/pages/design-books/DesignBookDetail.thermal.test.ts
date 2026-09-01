@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { createElement } from 'react';
+import userEvent from '@testing-library/user-event';
+import { createElement, useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import {
   DESIGN_BOOK_TAB_ORDER,
@@ -12,6 +13,7 @@ import {
   thermalWallFormValues,
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
+  ThermalNumericField,
 } from './DesignBookDetail';
 
 describe('Design Book Life Support Systems list', () => {
@@ -259,5 +261,30 @@ describe('Design Book Thermal navigation', () => {
     expect(thermalWallReplacementIsValid({ ...valid, thickness_mm: 0 })).toBe(false);
     expect(thermalWallReplacementIsValid({ ...valid, conductivity_w_m_k: -0.1 })).toBe(false);
     expect(thermalWallReplacementIsValid({ ...valid, source_reference: '' })).toBe(false);
+  });
+});
+
+describe('Design Book Thermal numeric fields', () => {
+  it('preserves the input element and focus while typing multiple characters', async () => {
+    function ThermalFieldHarness() {
+      const [value, setValue] = useState('');
+      return createElement(ThermalNumericField, {
+        name: 'ambient_air_temperature_c',
+        label: 'Ambient air temperature',
+        unit: '°C',
+        value,
+        onChange: event => setValue(event.target.value),
+      });
+    }
+
+    const user = userEvent.setup();
+    render(createElement(ThermalFieldHarness));
+    const input = screen.getByRole('spinbutton', { name: 'Ambient air temperature' });
+
+    await user.type(input, '123.45');
+
+    expect(screen.getByRole('spinbutton', { name: 'Ambient air temperature' })).toBe(input);
+    expect(input).toHaveValue(123.45);
+    expect(input).toHaveFocus();
   });
 });

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
@@ -2146,6 +2146,43 @@ function thermalWallFormFrom(construction: any, preserveVersion = false): Therma
   };
 }
 
+const thermalFieldClass = 'w-full rounded-lg border border-stone-200 px-3 py-2 text-sm bg-white disabled:bg-stone-50 disabled:text-stone-500';
+const thermalLabelClass = 'block text-xs font-medium text-stone-600 mb-1';
+
+export function ThermalNumericField({
+  name,
+  label,
+  unit,
+  step = 'any',
+  value,
+  onChange,
+  disabled = false,
+}: {
+  name: string;
+  label: string;
+  unit?: string;
+  step?: string;
+  value: any;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label>
+      <span className={thermalLabelClass}>{label}{unit ? ` (${unit})` : ''}</span>
+      <input
+        aria-label={label}
+        name={name}
+        type="number"
+        step={step}
+        value={value ?? ''}
+        onChange={onChange}
+        disabled={disabled}
+        className={thermalFieldClass}
+      />
+    </label>
+  );
+}
+
 function thermalWallDate(value: unknown) {
   return value ? new Date(String(value)).toLocaleString() : '—';
 }
@@ -2898,15 +2935,8 @@ function ThermalTab({
     form.agitation_correlation_id,
   );
   const draftOverridesAllowed = !readOnly && book.status === 'Draft';
-  const fieldClass = 'w-full rounded-lg border border-stone-200 px-3 py-2 text-sm bg-white disabled:bg-stone-50 disabled:text-stone-500';
-  const labelClass = 'block text-xs font-medium text-stone-600 mb-1';
-  const Field = ({ name, label, unit, step = 'any' }: any) => (
-    <label>
-      <span className={labelClass}>{label}{unit ? ` (${unit})` : ''}</span>
-      <input aria-label={label} type="number" step={step} value={form[name] ?? ''}
-        onChange={event => update(name, event.target.value)} disabled={readOnly} className={fieldClass} />
-    </label>
-  );
+  const fieldClass = thermalFieldClass;
+  const labelClass = thermalLabelClass;
 
   return (
     <div className="space-y-4">
@@ -3216,10 +3246,14 @@ function ThermalTab({
           <section className="space-y-3">
             <h3 className="font-semibold text-stone-900">Environment and envelope</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Field name="ambient_air_temperature_c" label="Ambient air temperature" unit="°C" />
-              <Field name="relative_humidity_pct" label="Relative humidity" unit="%" />
-              <Field name="surrounding_surface_temperature_c" label="Surrounding-surface temperature" unit="°C" />
-              <Field name="atmospheric_pressure_kpa" label="Atmospheric pressure" unit="kPa" />
+              <ThermalNumericField name="ambient_air_temperature_c" label="Ambient air temperature" unit="°C"
+                value={form.ambient_air_temperature_c} onChange={event => update('ambient_air_temperature_c', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="relative_humidity_pct" label="Relative humidity" unit="%"
+                value={form.relative_humidity_pct} onChange={event => update('relative_humidity_pct', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="surrounding_surface_temperature_c" label="Surrounding-surface temperature" unit="°C"
+                value={form.surrounding_surface_temperature_c} onChange={event => update('surrounding_surface_temperature_c', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="atmospheric_pressure_kpa" label="Atmospheric pressure" unit="kPa"
+                value={form.atmospheric_pressure_kpa} onChange={event => update('atmospheric_pressure_kpa', event.target.value)} disabled={readOnly} />
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
                 <span className="block text-xs font-medium text-blue-800">Derived water temperature</span>
                 <div className="mt-1 font-mono text-sm font-semibold text-blue-950">
@@ -3229,7 +3263,8 @@ function ThermalTab({
                   Arithmetic average of the linked exhibit minimum and maximum.
                 </p>
               </div>
-              <Field name="reviewed_water_temperature_c" label="Reviewed water-temperature override (optional)" unit="°C" />
+              <ThermalNumericField name="reviewed_water_temperature_c" label="Reviewed water-temperature override (optional)" unit="°C"
+                value={form.reviewed_water_temperature_c} onChange={event => update('reviewed_water_temperature_c', event.target.value)} disabled={readOnly} />
               <label className="sm:col-span-2">
                 <span className={labelClass}>Surface-activity class (required)</span>
                 <select aria-label="Surface-activity class" value={form.agitation_class || ''}
@@ -3370,7 +3405,8 @@ function ThermalTab({
                     </p>
                   )}
                 </div>
-                <Field name="reviewed_u_value_w_m2_k" label="Reviewed custom wall U-value (optional)" unit="W/m²·K" />
+                <ThermalNumericField name="reviewed_u_value_w_m2_k" label="Reviewed custom wall U-value (optional)" unit="W/m²·K"
+                  value={form.reviewed_u_value_w_m2_k} onChange={event => update('reviewed_u_value_w_m2_k', event.target.value)} disabled={readOnly} />
                 <label>
                   <span className={labelClass}>Effective wall material{wallOverrideFlags.material ? ' · Override' : ''}</span>
                   <input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)}
@@ -3424,10 +3460,14 @@ function ThermalTab({
           <section className="space-y-3">
             <h3 className="font-semibold text-stone-900">Operational gains and capacity</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Field name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW" />
-              <Field name="lighting_power_kw" label="Lighting power" unit="kW" />
-              <Field name="lighting_coupling_pct" label="Lighting-to-water coupling" unit="%" />
-              <Field name="capacity_margin_pct" label="Capacity margin" unit="%" />
+              <ThermalNumericField name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW"
+                value={form.equipment_heat_gain_kw} onChange={event => update('equipment_heat_gain_kw', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="lighting_power_kw" label="Lighting power" unit="kW"
+                value={form.lighting_power_kw} onChange={event => update('lighting_power_kw', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="lighting_coupling_pct" label="Lighting-to-water coupling" unit="%"
+                value={form.lighting_coupling_pct} onChange={event => update('lighting_coupling_pct', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="capacity_margin_pct" label="Capacity margin" unit="%"
+                value={form.capacity_margin_pct} onChange={event => update('capacity_margin_pct', event.target.value)} disabled={readOnly} />
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={!!form.water_exchange_enabled} onChange={e => update('water_exchange_enabled', e.target.checked)} disabled={readOnly} />
@@ -3435,8 +3475,10 @@ function ThermalTab({
             </label>
             {form.water_exchange_enabled && (
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field name="water_exchange_flow_m3h" label="Water-exchange flow" unit="m³/h" />
-                <Field name="water_exchange_inlet_temperature_c" label="Exchange inlet temperature" unit="°C" />
+                <ThermalNumericField name="water_exchange_flow_m3h" label="Water-exchange flow" unit="m³/h"
+                  value={form.water_exchange_flow_m3h} onChange={event => update('water_exchange_flow_m3h', event.target.value)} disabled={readOnly} />
+                <ThermalNumericField name="water_exchange_inlet_temperature_c" label="Exchange inlet temperature" unit="°C"
+                  value={form.water_exchange_inlet_temperature_c} onChange={event => update('water_exchange_inlet_temperature_c', event.target.value)} disabled={readOnly} />
               </div>
             )}
             <label><span className={labelClass}>Deviation or override justification</span>
