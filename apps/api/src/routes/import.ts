@@ -7,31 +7,49 @@ import fs from 'fs';
 import path from 'path';
 
 const router = Router();
-const upload = multer({ dest: path.join(__dirname, '../../uploads/tmp/') });
-const componentUpload = multer({
-  dest: path.join(__dirname, '../../uploads/tmp/'),
-  limits: {
-    files: 1,
-    fileSize: 5 * 1024 * 1024,
-    fields: 1,
-    fieldSize: 16 * 1024,
-  },
+const csvUploadDestination = path.join(__dirname, '../../uploads/tmp/');
+/** Keep all disk-backed PIM CSV imports bounded before they reach the parser. */
+export const CSV_IMPORT_MAX_FILE_SIZE = 5 * 1024 * 1024;
+const csvUploadLimits = {
+  files: 1,
+  fileSize: CSV_IMPORT_MAX_FILE_SIZE,
+  fields: 1,
+  fieldSize: 16 * 1024,
+};
+const csvUpload = multer({
+  dest: csvUploadDestination,
+  limits: csvUploadLimits,
 });
 
-function uploadComponentCSV(req: AuthRequest, res: Response, next: NextFunction) {
-  componentUpload.single('file')(req, res, (error: any) => {
-    if (!error) return next();
-    const message = error?.code === 'LIMIT_FILE_SIZE'
-      ? 'Component CSV must be 5 MB or smaller'
-      : error?.message || 'Component CSV upload failed';
-    return res.status(400).json({
-      error: { code: 'INVALID_UPLOAD', message },
-      imported: 0,
-      skipped: 0,
-      errors: [message],
-      total: 0,
+function uploadCSV(destination: string) {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    csvUpload.single('file')(req, res, (error: any) => {
+      if (!error) return next();
+
+      const message = error?.code === 'LIMIT_FILE_SIZE'
+        ? `${destination} CSV must be 5 MB or smaller`
+        : error?.message || `${destination} CSV upload failed`;
+      const respond = () => res.status(400).json({
+        error: { code: 'INVALID_UPLOAD', message },
+        imported: 0,
+        skipped: 0,
+        errors: [message],
+        total: 0,
+      });
+
+      // Multer removes files it has accepted when it aborts. If a file was
+      // attached before another multipart limit failed, clean that path too.
+      if (req.file?.path) {
+        void fs.promises.unlink(req.file.path).catch(() => undefined).finally(respond);
+      } else {
+        respond();
+      }
     });
-  });
+  };
+}
+
+function uploadComponentCSV(req: AuthRequest, res: Response, next: NextFunction) {
+  uploadCSV('Component')(req, res, next);
 }
 
 export const COMPONENT_IMPORT_FIELDS = [
@@ -56,23 +74,12 @@ export const COMPONENT_IMPORT_FIELDS = [
 const REQUIRED_COMPONENT_IMPORT_FIELDS = ['component_code', 'component_name'] as const;
 const COMPONENT_IMPORT_FIELD_SET = new Set<string>(COMPONENT_IMPORT_FIELDS);
 
-function parseCSVFile(filePath: string): Promise<any[]> {
-  return new Promise((resolve, reject) => {
-    const results: any[] = [];
-    fs.createReadStream(filePath)
-      .pipe(csv())
-      .on('data', (row) => results.push(row))
-      .on('end', () => resolve(results))
-      .on('error', reject);
-  });
-}
-
-function parseCSVFileWithHeaders(filePath: string): Promise<{ rows: any[]; headers: string[] }> {
+function parseCSVFileWithHeaders(filePath: string, strict = false): Promise<{ rows: any[]; headers: string[] }> {
   return new Promise((resolve, reject) => {
     const rows: any[] = [];
     let headers: string[] = [];
     fs.createReadStream(filePath)
-      .pipe(csv())
+      .pipe(csv({ strict }))
       .on('headers', parsedHeaders => {
         headers = parsedHeaders.map((header: string) => header.replace(/^\uFEFF/, '').trim());
       })
@@ -86,6 +93,13 @@ function parseCSVFileWithHeaders(filePath: string): Promise<{ rows: any[]; heade
       .on('end', () => resolve({ rows, headers }))
       .on('error', reject);
   });
+}
+
+function requiredCSVHeaderErrors(headers: string[], requiredFields: string[], destination: string): string[] {
+  const normalizedHeaders = new Set(headers.map(header => header.replace(/^\uFEFF/, '').trim()));
+  return requiredFields
+    .filter(field => !normalizedHeaders.has(field))
+    .map(field => `Required ${destination} CSV column "${field}" is missing`);
 }
 
 function parseSelectedComponentFields(rawFields: unknown): { fields?: string[]; error?: string } {
@@ -171,32 +185,55 @@ function csvHeaderError(headers: string[], selectedFields: string[]): string[] {
  */
 router.use(authenticate, requireImportManage('pim'));
 
-router.post('/products', upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/products', uploadCSV('Product'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
-  const rows = await parseCSVFile(req.file.path);
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
 
-  for (const row of rows) {
-    const { product_code, product_name, product_family_code, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status } = row;
-    if (!product_code || !product_name) { results.skipped++; continue; }
-    try {
-      let family_id = null;
-      if (product_family_code) {
-        const fam = await query('SELECT id FROM product_families WHERE product_family_code=$1', [product_family_code]);
-        if (fam.rows[0]) family_id = fam.rows[0].id;
-      }
-      await query(
-        'INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (product_code) DO NOTHING',
-        [product_code, family_id, product_name, product_category, application_type, design_flow_m3h || null, power_kw || null, primary_material_code, standard_status || 'Concept']
-      );
-      results.imported++;
-    } catch (err: any) {
-      results.errors.push(`${product_code}: ${err.message}`);
+  try {
+    const { rows, headers } = await parseCSVFileWithHeaders(req.file.path, true);
+    const headerErrors = requiredCSVHeaderErrors(headers, ['product_code', 'product_name'], 'product');
+    if (headerErrors.length > 0) {
+      return res.status(400).json({
+        error: { code: 'INVALID_CSV', message: headerErrors.join('; '), details: headerErrors },
+        imported: 0,
+        skipped: 0,
+        errors: headerErrors,
+        total: rows.length,
+      });
     }
-  }
 
-  fs.unlinkSync(req.file.path);
-  res.json({ ...results, total: rows.length });
+    for (const row of rows) {
+      const { product_code, product_name, product_family_code, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status } = row;
+      if (!product_code || !product_name) { results.skipped++; continue; }
+      try {
+        let family_id = null;
+        if (product_family_code) {
+          const fam = await query('SELECT id FROM product_families WHERE product_family_code=$1', [product_family_code]);
+          if (fam.rows[0]) family_id = fam.rows[0].id;
+        }
+        await query(
+          'INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (product_code) DO NOTHING',
+          [product_code, family_id, product_name, product_category, application_type, design_flow_m3h || null, power_kw || null, primary_material_code, standard_status || 'Concept']
+        );
+        results.imported++;
+      } catch (err: any) {
+        results.errors.push(`${product_code}: ${err.message}`);
+      }
+    }
+
+    return res.json({ ...results, total: rows.length });
+  } catch (err: any) {
+    const message = `Unable to parse Product CSV: ${err?.message || 'invalid CSV data'}`;
+    return res.status(400).json({
+      error: { code: 'INVALID_CSV', message },
+      imported: 0,
+      skipped: 0,
+      errors: [message],
+      total: 0,
+    });
+  } finally {
+    await fs.promises.unlink(req.file.path).catch(() => undefined);
+  }
 });
 
 router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Response) => {
@@ -340,54 +377,100 @@ router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Res
   }
 });
 
-router.post('/equipment', upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/equipment', uploadCSV('Equipment'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
-  const rows = await parseCSVFile(req.file.path);
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
 
-  for (const row of rows) {
-    const { equipment_code, project_code, system_code, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code } = row;
-    if (!equipment_code || !equipment_name) { results.skipped++; continue; }
-    try {
-      const proj = await query('SELECT id FROM projects WHERE project_code=$1', [project_code]);
-      if (!proj.rows[0]) { results.errors.push(`${equipment_code}: project ${project_code} not found`); continue; }
-      const sys = system_code ? await query('SELECT id FROM systems WHERE system_code=$1 AND project_id=$2', [system_code, proj.rows[0].id]) : { rows: [] };
-      await query(
-        'INSERT INTO equipment_instances (equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (project_id, equipment_code) DO NOTHING',
-        [equipment_code, proj.rows[0].id, sys.rows[0]?.id || null, equipment_type, equipment_name, design_flow_m3h || null, power_kw || null, material_code]
-      );
-      results.imported++;
-    } catch (err: any) {
-      results.errors.push(`${equipment_code}: ${err.message}`);
+  try {
+    const { rows, headers } = await parseCSVFileWithHeaders(req.file.path, true);
+    const headerErrors = requiredCSVHeaderErrors(headers, ['equipment_code', 'equipment_name'], 'equipment');
+    if (headerErrors.length > 0) {
+      return res.status(400).json({
+        error: { code: 'INVALID_CSV', message: headerErrors.join('; '), details: headerErrors },
+        imported: 0,
+        skipped: 0,
+        errors: headerErrors,
+        total: rows.length,
+      });
     }
-  }
 
-  fs.unlinkSync(req.file.path);
-  res.json({ ...results, total: rows.length });
+    for (const row of rows) {
+      const { equipment_code, project_code, system_code, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code } = row;
+      if (!equipment_code || !equipment_name) { results.skipped++; continue; }
+      try {
+        const proj = await query('SELECT id FROM projects WHERE project_code=$1', [project_code]);
+        if (!proj.rows[0]) { results.errors.push(`${equipment_code}: project ${project_code} not found`); continue; }
+        const sys = system_code ? await query('SELECT id FROM systems WHERE system_code=$1 AND project_id=$2', [system_code, proj.rows[0].id]) : { rows: [] };
+        await query(
+          'INSERT INTO equipment_instances (equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (project_id, equipment_code) DO NOTHING',
+          [equipment_code, proj.rows[0].id, sys.rows[0]?.id || null, equipment_type, equipment_name, design_flow_m3h || null, power_kw || null, material_code]
+        );
+        results.imported++;
+      } catch (err: any) {
+        results.errors.push(`${equipment_code}: ${err.message}`);
+      }
+    }
+
+    return res.json({ ...results, total: rows.length });
+  } catch (err: any) {
+    const message = `Unable to parse Equipment CSV: ${err?.message || 'invalid CSV data'}`;
+    return res.status(400).json({
+      error: { code: 'INVALID_CSV', message },
+      imported: 0,
+      skipped: 0,
+      errors: [message],
+      total: 0,
+    });
+  } finally {
+    await fs.promises.unlink(req.file.path).catch(() => undefined);
+  }
 });
 
-router.post('/documents', upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/documents', uploadCSV('Document'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
-  const rows = await parseCSVFile(req.file.path);
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
 
-  for (const row of rows) {
-    const { document_code, document_title, document_type, discipline, project_code } = row;
-    if (!document_code || !document_title) { results.skipped++; continue; }
-    try {
-      const proj = project_code ? await query('SELECT id FROM projects WHERE project_code=$1', [project_code]) : { rows: [] };
-      await query(
-        'INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (document_code) DO NOTHING',
-        [document_code, document_title, document_type, discipline, proj.rows[0]?.id || null, req.user!.id]
-      );
-      results.imported++;
-    } catch (err: any) {
-      results.errors.push(`${document_code}: ${err.message}`);
+  try {
+    const { rows, headers } = await parseCSVFileWithHeaders(req.file.path, true);
+    const headerErrors = requiredCSVHeaderErrors(headers, ['document_code', 'document_title'], 'document');
+    if (headerErrors.length > 0) {
+      return res.status(400).json({
+        error: { code: 'INVALID_CSV', message: headerErrors.join('; '), details: headerErrors },
+        imported: 0,
+        skipped: 0,
+        errors: headerErrors,
+        total: rows.length,
+      });
     }
-  }
 
-  fs.unlinkSync(req.file.path);
-  res.json({ ...results, total: rows.length });
+    for (const row of rows) {
+      const { document_code, document_title, document_type, discipline, project_code } = row;
+      if (!document_code || !document_title) { results.skipped++; continue; }
+      try {
+        const proj = project_code ? await query('SELECT id FROM projects WHERE project_code=$1', [project_code]) : { rows: [] };
+        await query(
+          'INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (document_code) DO NOTHING',
+          [document_code, document_title, document_type, discipline, proj.rows[0]?.id || null, req.user!.id]
+        );
+        results.imported++;
+      } catch (err: any) {
+        results.errors.push(`${document_code}: ${err.message}`);
+      }
+    }
+
+    return res.json({ ...results, total: rows.length });
+  } catch (err: any) {
+    const message = `Unable to parse Document CSV: ${err?.message || 'invalid CSV data'}`;
+    return res.status(400).json({
+      error: { code: 'INVALID_CSV', message },
+      imported: 0,
+      skipped: 0,
+      errors: [message],
+      total: 0,
+    });
+  } finally {
+    await fs.promises.unlink(req.file.path).catch(() => undefined);
+  }
 });
 
 export default router;

@@ -2,6 +2,7 @@
 
 import http from 'node:http';
 import express, { Express } from 'express';
+import fs from 'node:fs';
 import jwt from 'jsonwebtoken';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ const testSecret = 'import-access-test-secret';
 
 const state = vi.hoisted(() => ({
   moduleAccessByUser: {} as Record<string, string>,
+  writes: [] as string[],
 }));
 
 vi.mock('../db', () => {
@@ -22,6 +24,10 @@ vi.mock('../db', () => {
       return { rows: [{ id: 'project-1' }] };
     }
     if (sql.startsWith('select id from components where upper(component_code)=upper($1)')) {
+      return { rows: [] };
+    }
+    if (sql.startsWith('insert into')) {
+      state.writes.push(sql);
       return { rows: [] };
     }
     return { rows: [] };
@@ -83,6 +89,8 @@ describe('CSV import access policy', () => {
   let viewerToken: string;
   let hiddenToken: string;
   let engineerToken: string;
+  let unlinkSpy: ReturnType<typeof vi.spyOn>;
+  let diskUnlinkSpy: ReturnType<typeof vi.spyOn>;
 
   beforeAll(async () => {
     process.env.JWT_SECRET = testSecret;
@@ -93,6 +101,8 @@ describe('CSV import access policy', () => {
     viewerToken = jwt.sign({ id: 'import-viewer', email: 'viewer@example.com', role: 'viewer' }, testSecret);
     hiddenToken = jwt.sign({ id: 'import-hidden', email: 'hidden@example.com', role: 'contractor' }, testSecret);
     engineerToken = jwt.sign({ id: 'import-engineer', email: 'engineer@example.com', role: 'engineer' }, testSecret);
+    unlinkSpy = vi.spyOn(fs.promises, 'unlink');
+    diskUnlinkSpy = vi.spyOn(fs, 'unlink');
   });
 
   beforeEach(() => {
@@ -101,9 +111,14 @@ describe('CSV import access policy', () => {
       'import-hidden': 'hidden',
       'import-engineer': 'manage',
     };
+    state.writes.length = 0;
+    unlinkSpy.mockClear();
+    diskUnlinkSpy.mockClear();
   });
 
   afterAll(() => {
+    unlinkSpy.mockRestore();
+    diskUnlinkSpy.mockRestore();
     delete process.env.JWT_SECRET;
   });
 
@@ -157,5 +172,52 @@ describe('CSV import access policy', () => {
       code: 'MODULE_HIDDEN',
       message: 'This module is hidden for your role.',
     });
+  });
+
+  it.each([
+    ['/products', 'product_code,product_name\nPM-CLEAN,Clean Product'],
+    ['/equipment', 'equipment_code,project_code,equipment_name\nEQ-CLEAN,PRJ-CLEAN,Clean Equipment'],
+    ['/documents', 'document_code,document_title\nDOC-CLEAN,Clean Document'],
+  ])('cleans up the temporary file after a successful %s import', async (path, csvText) => {
+    const response = await request(app, `/api/v1/import${path}`, csvText, adminToken);
+
+    expect(response.status).toBe(200);
+    expect(unlinkSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['/products', 'product_code,product_name\nPM-BAD'],
+    ['/equipment', 'equipment_code,project_code,equipment_name\nEQ-BAD,PRJ-BAD'],
+    ['/documents', 'document_code,document_title\nDOC-BAD'],
+  ])('rejects malformed %s uploads before writing and cleans up', async (path, csvText) => {
+    const response = await request(app, `/api/v1/import${path}`, csvText, adminToken);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({ code: 'INVALID_CSV' });
+    expect(response.body.error.message).toContain('Row length does not match headers');
+    expect(state.writes).toHaveLength(0);
+    expect(unlinkSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['/products', 'Product'],
+    ['/equipment', 'Equipment'],
+    ['/documents', 'Document'],
+  ])('rejects oversized %s uploads without leaving a temporary file', async (path, destination) => {
+    const oversizedCsv = `code,name\n${'X'.repeat(5 * 1024 * 1024)}`;
+    const response = await request(app, `/api/v1/import${path}`, oversizedCsv, adminToken);
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      imported: 0,
+      skipped: 0,
+      total: 0,
+      error: {
+        code: 'INVALID_UPLOAD',
+        message: `${destination} CSV must be 5 MB or smaller`,
+      },
+    });
+    expect(state.writes).toHaveLength(0);
+    expect(diskUnlinkSpy).toHaveBeenCalled();
   });
 });
