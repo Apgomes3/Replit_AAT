@@ -159,7 +159,9 @@ export default function ComponentsList() {
       sortable: true,
       filterable: true,
       filterValue: r => [r.primary_material_code, r.material_name].filter(Boolean).join(' '),
-      render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span>,
+      render: r => r.primary_material_code
+        ? <><EntityCode code={r.primary_material_code} />{r.material_name && <span className="ml-1 text-slate-500 text-xs">{r.material_name}</span>}</>
+        : <span className="text-slate-300">—</span>,
     },
     { key: 'standard_size', header: 'Size', sortable: true },
     { key: 'unit', header: 'Unit', sortable: true },

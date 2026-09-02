@@ -146,6 +146,9 @@ describe('core surface accessible names', () => {
     expect(screen.getByText('Stainless Pump')).toBeInTheDocument();
     expect(screen.getByText('PVC Valve')).toBeInTheDocument();
     expect(screen.getByText('Unspecified Fitting')).toBeInTheDocument();
+    expect(screen.getByText('Stainless Steel')).toBeInTheDocument();
+    expect(screen.getByText('PVC')).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
 
     fireEvent.change(materialFilter, { target: { value: 'ss-3' } });
     expect(screen.getByText('Stainless Pump')).toBeInTheDocument();
