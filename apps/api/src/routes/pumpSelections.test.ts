@@ -261,14 +261,14 @@ describe('pump selection HTTP routes', () => {
       design_book_id: 'book-1',
       circuit_key: 'loop:1',
       pump_role: 'venturi',
-      equip_code: 'FFVP-001',
+      equip_code: 'SYS-FFVP-01',
       description: 'FFVP — Foam Fractionator Venturi Pump',
     });
 
     expect(response.status).toBe(201);
     expect(response.body.project_equipment_item).toMatchObject({
       id: 'created-pump-1',
-      equip_code: 'FFVP-001',
+      equip_code: 'SYS-FFVP-01',
       description: 'FFVP — Foam Fractionator Venturi Pump',
     });
     expect(response.body.pump_line).toMatchObject({
@@ -301,7 +301,7 @@ describe('pump selection HTTP routes', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.project_equipment_item).toMatchObject({
-      equip_code: 'FFVP-001',
+      equip_code: 'SYS-FFVP-01',
       description: 'FFVP — Foam Fractionator Venturi Pump',
     });
     expect(response.body.pump_line).toMatchObject({
@@ -328,7 +328,7 @@ describe('pump selection HTTP routes', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.project_equipment_item).toMatchObject({
-      equip_code: 'SFSP-001',
+      equip_code: 'SYS-SFSP-01',
       description: 'SFSP — Sand Filter Supply Pump',
     });
     expect(response.body.pump_line.pump_role_name).toBe('SFSP — Sand Filter Supply Pump');

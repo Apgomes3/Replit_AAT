@@ -18,6 +18,22 @@ export const SAND_FILTER_CIRCUIT_TYPE = 'Sand Filter';
 export const PUMP_ROLE_PRIMARY = 'primary';
 export const PUMP_ROLE_VENTURI = 'venturi';
 
+export type PumpDutyType = {
+  id?: string | null;
+  tag: string;
+  pump_name: string;
+  is_active?: boolean;
+  sort_order?: number;
+};
+
+export const DEFAULT_PUMP_DUTY_TYPES: PumpDutyType[] = [
+  { tag: 'FFSP', pump_name: 'Foam Fractionator Supply Pump' },
+  { tag: 'FFVP', pump_name: 'Foam Fractionator Venturi Pump' },
+  { tag: 'SFSP', pump_name: 'Sand Filter Supply Pump' },
+  { tag: 'CIRCP', pump_name: 'Circulation Pump' },
+  { tag: 'VACP', pump_name: 'Vacuum Pump' },
+];
+
 /** True when the circuit belongs to a Foam Fractionator loop. */
 export function isFoamFractionatorCircuit(circuit: {
   circuit_kind?: string | null;
@@ -40,6 +56,42 @@ export function isSandFilterCircuit(circuit: {
   );
 }
 
+export function pumpDutyTag(
+  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
+  role: string,
+) {
+  if (role === PUMP_ROLE_VENTURI && isFoamFractionatorCircuit(circuit)) return 'FFVP';
+  if (isFoamFractionatorCircuit(circuit)) return 'FFSP';
+  if (isSandFilterCircuit(circuit)) return 'SFSP';
+  const vacuumText = `${circuit.circuit_name || ''} ${circuit.circuit_type || ''}`.toLowerCase();
+  if (vacuumText.includes('vacuum')) return 'VACP';
+  return 'CIRCP';
+}
+
+export function resolvePumpDutyType(
+  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
+  role: string,
+  dutyTypes: PumpDutyType[] = DEFAULT_PUMP_DUTY_TYPES,
+) {
+  const tag = pumpDutyTag(circuit, role);
+  return dutyTypes.find(item => item.tag === tag)
+    || DEFAULT_PUMP_DUTY_TYPES.find(item => item.tag === tag)!;
+}
+
+export function systemNumberToken(systemCode: unknown) {
+  const code = String(systemCode || '').trim().toUpperCase();
+  const trailingNumber = code.match(/(\d+)(?!.*\d)/)?.[1];
+  if (trailingNumber) return trailingNumber.padStart(2, '0');
+  return code.replace(/[^A-Z0-9]/g, '') || 'SYS';
+}
+
+export function buildPumpTags(systemCode: unknown, dutyTag: string, quantity: unknown) {
+  const count = Math.max(1, Math.min(99, Math.trunc(Number(quantity) || 1)));
+  const systemNumber = systemNumberToken(systemCode);
+  return Array.from({ length: count }, (_, index) =>
+    `${systemNumber}-${dutyTag}-${String(index + 1).padStart(2, '0')}`);
+}
+
 /**
  * Default display name for a pump role on a given circuit.
  * Sand Filter and Foam Fractionator main loops use their well-known project
@@ -48,15 +100,10 @@ export function isSandFilterCircuit(circuit: {
 export function defaultPumpLineName(
   circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
   role: string,
+  dutyTypes: PumpDutyType[] = DEFAULT_PUMP_DUTY_TYPES,
 ): string {
-  if (isFoamFractionatorCircuit(circuit)) {
-    if (role === PUMP_ROLE_VENTURI) return 'FFVP — Foam Fractionator Venturi Pump';
-    return 'FFSP — Foam Fractionator Supply Pump';
-  }
-  if (isSandFilterCircuit(circuit) && role === PUMP_ROLE_PRIMARY) {
-    return 'SFSP — Sand Filter Supply Pump';
-  }
-  return circuit.circuit_name || 'Circuit Pump';
+  const duty = resolvePumpDutyType(circuit, role, dutyTypes);
+  return `${duty.tag} — ${duty.pump_name}`;
 }
 
 const positive = (value: unknown) => {
@@ -115,7 +162,7 @@ export function pumpSourcePayload(
 }
 
 /** Flow Route circuits use the Design Book's resolved system flow as input. */
-export function pumpCircuits(system: any, sideStreams: any[]) {
+export function pumpCircuits(system: any, sideStreams: any[]): any[] {
   const baseFlow = nullableNumber(system.design_flow_m3h);
   const activeLoops = [1, 2, 3].filter(n =>
     system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] || system[`loop${n}_flow_pct`] != null ||
@@ -136,6 +183,7 @@ export function pumpCircuits(system: any, sideStreams: any[]) {
         ? venturiFlows.reduce((sum: number, flow: number | null) => sum + Number(flow), 0)
         : null;
       return {
+        system_code: system.system_code,
         circuit_key: `loop:${number}`, circuit_kind: 'loop', circuit_name: system[`loop${number}_name`] || `Loop ${number}`,
         circuit_type: system[`loop${number}_filtration`] || system[`loop${number}_flow_source`] || null,
         parent_loop_number: number, side_stream_id: null,
@@ -147,6 +195,7 @@ export function pumpCircuits(system: any, sideStreams: any[]) {
       const pct = nullableNumber(system[`loop${stream.parent_loop_number}_flow_pct`]);
       const branch = nullableNumber(stream.flow_pct);
       return {
+        system_code: system.system_code,
         circuit_key: `side_stream:${stream.id}`, circuit_kind: 'side_stream', circuit_name: stream.name,
         circuit_type: stream.preset || 'Custom', parent_loop_number: stream.parent_loop_number, side_stream_id: stream.id,
         flow_m3h: baseFlow != null && pct != null && branch != null ? baseFlow * pct / 100 * branch / 100 : null,
@@ -246,10 +295,13 @@ export function buildPumpLineItem(
   },
   row: any | null,
   role: string,
+  dutyTypes: PumpDutyType[] = DEFAULT_PUMP_DUTY_TYPES,
 ) {
   const isVenturi = role === PUMP_ROLE_VENTURI;
   const isFF = isFoamFractionatorCircuit(circuit);
   const pumpQuantity = positive(row?.pump_quantity) || 1;
+  const currentDuty = resolvePumpDutyType(circuit, role, dutyTypes);
+  const duty = row?.pump_duty_snapshot?.tag ? row.pump_duty_snapshot : currentDuty;
 
   // A saved venturi duty is explicit evidence. The governed product duty is
   // available for an unsaved/legacy line; creation persists the authoritative
@@ -321,7 +373,11 @@ export function buildPumpLineItem(
   return {
     ...circuit,
     pump_role: role,
-    pump_role_name: defaultPumpLineName(circuit, role),
+    pump_role_name: `${duty.tag} — ${duty.pump_name}`,
+    pump_duty_type_id: row?.pump_duty_type_id || currentDuty.id || null,
+    pump_duty_tag: duty.tag,
+    pump_duty_name: duty.pump_name,
+    pump_tags: buildPumpTags((circuit as any).system_code, duty.tag, pumpQuantity),
     is_foam_fractionator: isFF,
     ...(isVenturi ? { venturi_flow_m3h: row?.venturi_flow_m3h != null ? Number(row.venturi_flow_m3h) : null } : {}),
     pump_quantity: pumpQuantity,
@@ -351,7 +407,7 @@ export function buildPumpLineItem(
  * Foam Fractionator circuits: always one FFSP line; add FFVP line only when
  * a venturi row is already saved — the UI manages the Yes/No question.
  */
-export function pumpLinesForCircuit(circuit: any, savedRows: any[]): any[] {
+export function pumpLinesForCircuit(circuit: any, savedRows: any[], dutyTypes: PumpDutyType[] = DEFAULT_PUMP_DUTY_TYPES): any[] {
   const circuitRows = savedRows.filter(
     row => row.circuit_key === circuit.circuit_key,
   );
@@ -359,13 +415,13 @@ export function pumpLinesForCircuit(circuit: any, savedRows: any[]): any[] {
 
   if (!isFF) {
     const row = circuitRows.find(r => (r.pump_role || PUMP_ROLE_PRIMARY) === PUMP_ROLE_PRIMARY) || null;
-    return [buildPumpLineItem(circuit, row, PUMP_ROLE_PRIMARY)];
+    return [buildPumpLineItem(circuit, row, PUMP_ROLE_PRIMARY, dutyTypes)];
   }
 
   // Foam Fractionator: FFSP is always present; FFVP only if a venturi row was saved.
   const primaryRow = circuitRows.find(r => (r.pump_role || PUMP_ROLE_PRIMARY) === PUMP_ROLE_PRIMARY) || null;
   const venturiRow = circuitRows.find(r => r.pump_role === PUMP_ROLE_VENTURI) || null;
-  const lines = [buildPumpLineItem(circuit, primaryRow, PUMP_ROLE_PRIMARY)];
-  if (venturiRow) lines.push(buildPumpLineItem(circuit, venturiRow, PUMP_ROLE_VENTURI));
+  const lines = [buildPumpLineItem(circuit, primaryRow, PUMP_ROLE_PRIMARY, dutyTypes)];
+  if (venturiRow) lines.push(buildPumpLineItem(circuit, venturiRow, PUMP_ROLE_VENTURI, dutyTypes));
   return lines;
 }

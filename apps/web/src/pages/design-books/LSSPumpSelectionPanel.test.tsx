@@ -89,7 +89,30 @@ describe('LSSPumpSelectionPanel', () => {
       pump_efficiency_pct: 76,
       motor_efficiency_pct: 92,
       pump_quantity: 3,
+      pump_duty_type_id: null,
     }));
+  });
+
+  it('uses the active Platform Admin pump duties as selectable relationships', async () => {
+    apiGet.mockResolvedValue({ data: {
+      ...response,
+      items: [{ ...response.items[0], pump_duty_type_id: 'duty-sfsp' }],
+      pump_duty_types: [
+        { id: 'duty-sfsp', tag: 'SFSP', pump_name: 'Sand Filter Supply Pump' },
+        { id: 'duty-vacp', tag: 'VACP', pump_name: 'Vacuum Pump' },
+      ],
+    } } as any);
+    const user = userEvent.setup();
+    renderPanel();
+
+    const selector = await screen.findByLabelText('Pump duty type for Sand Filter Loop');
+    expect(screen.getByRole('option', { name: 'SFSP — Sand Filter Supply Pump' })).toBeInTheDocument();
+    await user.selectOptions(selector, 'duty-vacp');
+    await user.click(screen.getByRole('button', { name: 'Save & calculate' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1/pump-selections',
+      expect.objectContaining({ pump_duty_type_id: 'duty-vacp' }),
+    ));
   });
 
   it('keeps a frozen pump-selection package read-only', async () => {
@@ -112,6 +135,7 @@ describe('LSSPumpSelectionPanel', () => {
       design_book_id: 'book-1',
       circuit_key: 'loop:1',
       pump_role: 'primary',
+      pump_quantity: 1,
       description: 'Custom backwash pump',
     }));
   });
@@ -160,6 +184,7 @@ describe('LSSPumpSelectionPanel', () => {
       design_book_id: 'book-1',
       circuit_key: 'loop:1',
       pump_role: 'venturi',
+      pump_quantity: 1,
     }));
   });
 

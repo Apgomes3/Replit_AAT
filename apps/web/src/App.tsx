@@ -39,6 +39,7 @@ import AdminTankCostRates from './pages/admin/AdminTankCostRates';
 import AdminBiologicalMediaProfiles from './pages/admin/AdminBiologicalMediaProfiles';
 import AdminUVEngineering from './pages/admin/AdminUVEngineering';
 import AdminThermalWallConstructions from './pages/admin/AdminThermalWallConstructions';
+import AdminPumpDutyTypes from './pages/admin/AdminPumpDutyTypes';
 import PurchaseOrdersList from './pages/procurement/PurchaseOrdersList';
 import PurchaseOrderDetail from './pages/procurement/PurchaseOrderDetail';
 import PIMDashboard from './pages/pim/PIMDashboard';
@@ -128,6 +129,7 @@ export default function App() {
             <Route path="admin/biological-media-profiles" element={<AdminGuard><AdminBiologicalMediaProfiles /></AdminGuard>} />
             <Route path="admin/uv-engineering" element={<AdminGuard><AdminUVEngineering /></AdminGuard>} />
              <Route path="admin/thermal-wall-constructions" element={<EngineeringAdminGuard><AdminThermalWallConstructions /></EngineeringAdminGuard>} />
+            <Route path="admin/pump-duty-types" element={<AdminGuard><AdminPumpDutyTypes /></AdminGuard>} />
             <Route path="purchase-orders" element={<ModuleGuard moduleKey="orders"><PurchaseOrdersList /></ModuleGuard>} />
             <Route path="purchase-orders/:id" element={<ModuleGuard moduleKey="orders"><PurchaseOrderDetail /></ModuleGuard>} />
             <Route path="design-book-engine" element={<ModuleGuard moduleKey="design_books"><DesignBookEngineDashboard /></ModuleGuard>} />

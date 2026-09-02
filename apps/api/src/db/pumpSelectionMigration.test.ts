@@ -27,4 +27,12 @@ describe('pump selection migration', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS pump_quantity INTEGER NOT NULL DEFAULT 1');
     expect(migration).toContain('CHECK (pump_quantity > 0 AND pump_quantity <= 99)');
   });
+
+  it('creates and seeds the governed pump duty relationship table', () => {
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS pump_duty_types');
+    for (const tag of ['FFSP', 'FFVP', 'SFSP', 'CIRCP', 'VACP']) {
+      expect(migration).toContain(`('${tag}'`);
+    }
+    expect(migration).toContain('pump_duty_snapshot JSONB');
+  });
 });

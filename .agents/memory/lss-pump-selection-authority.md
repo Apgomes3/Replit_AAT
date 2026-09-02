@@ -32,3 +32,9 @@ Pump quantity is part of the saved duty evidence, and identical pumps share the 
 **Why:** Sizing every pump against the full loop flow overstates each unit when designers intentionally use two or more parallel pumps.
 
 **How to apply:** Preserve total Flow Route duty, validate quantity as a positive whole number, calculate and display total flow divided by quantity, and include quantity in freshness evidence.
+
+Pump duty tags and names come from the Platform Admin relationship registry, while each saved selection freezes the chosen relationship.
+
+**Why:** Central administration keeps FFSP, FFVP, SFSP, CIRCP, and VACP terminology consistent without allowing later label edits to rewrite historical Design Book evidence.
+
+**How to apply:** Offer active relationships for new selections, retain inactive relationships in saved snapshots, and generate one `<system number>-<duty tag>-<sequence>` tag per configured pump.

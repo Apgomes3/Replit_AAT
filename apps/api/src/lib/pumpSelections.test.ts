@@ -3,6 +3,7 @@ import {
   calculatePumpSelection, evaluateSelectedPumpSuitability, WATER_DENSITY_KG_M3,
   isFoamFractionatorCircuit, defaultPumpLineName, buildPumpLineItem, pumpLinesForCircuit,
   isSandFilterCircuit, pumpCircuits, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI,
+  pumpDutyTag, buildPumpTags, systemNumberToken,
   FOAM_FRACTIONATION_CIRCUIT_TYPE, SAND_FILTER_CIRCUIT_TYPE,
 } from './pumpSelections';
 
@@ -141,8 +142,25 @@ describe('defaultPumpLineName', () => {
   it('returns the SFSP name for a Sand Filter primary role', () => {
     expect(defaultPumpLineName(sandCircuit, PUMP_ROLE_PRIMARY)).toBe('SFSP — Sand Filter Supply Pump');
   });
-  it('returns circuit name for other non-FF roles', () => {
-    expect(defaultPumpLineName(sandCircuit, PUMP_ROLE_VENTURI)).toBe('Sand Filter Loop');
+  it('returns the governed Sand Filter duty for Sand Filter circuits', () => {
+    expect(defaultPumpLineName(sandCircuit, PUMP_ROLE_VENTURI)).toBe('SFSP — Sand Filter Supply Pump');
+  });
+});
+
+describe('governed pump duty tags', () => {
+  it('maps standard and vacuum duties to their governed tags', () => {
+    const ffCircuit = { circuit_name: 'Loop 1', circuit_kind: 'loop', circuit_type: FOAM_FRACTIONATION_CIRCUIT_TYPE };
+    const sandCircuit = { circuit_name: 'Sand Filter Loop', circuit_kind: 'loop', circuit_type: SAND_FILTER_CIRCUIT_TYPE };
+    expect(pumpDutyTag(ffCircuit, PUMP_ROLE_PRIMARY)).toBe('FFSP');
+    expect(pumpDutyTag(ffCircuit, PUMP_ROLE_VENTURI)).toBe('FFVP');
+    expect(pumpDutyTag(sandCircuit, PUMP_ROLE_PRIMARY)).toBe('SFSP');
+    expect(pumpDutyTag({ circuit_kind: 'side_stream', circuit_name: 'Vacuum cleaning' }, PUMP_ROLE_PRIMARY)).toBe('VACP');
+    expect(pumpDutyTag({ circuit_kind: 'loop', circuit_name: 'Life support loop' }, PUMP_ROLE_PRIMARY)).toBe('CIRCP');
+  });
+
+  it('builds one system-numbered tag per configured pump quantity', () => {
+    expect(systemNumberToken('LSS-01')).toBe('01');
+    expect(buildPumpTags('LSS-01', 'FFSP', 2)).toEqual(['01-FFSP-01', '01-FFSP-02']);
   });
 });
 
