@@ -1307,7 +1307,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     ));
   });
 
-  it('uses scan-friendly list columns for linked exhibits and source summaries', async () => {
+  it('uses scan-friendly list columns with a plain flow source value', async () => {
     const user = userEvent.setup();
     renderFlowRoute(
       { ...baseSystem, loop1_flow_source: 'Surface Skim', loop1_link_bio_degas: true },
@@ -1332,7 +1332,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(table.getByText('EX-01 — Main Exhibit')).toBeInTheDocument();
     expect(table.getByText('Primary')).toBeInTheDocument();
     expect(table.getByText('Surface Skim')).toBeInTheDocument();
-    expect(table.getByText('Surface Skim: 36% · 45.0 m³/h')).toBeInTheDocument();
+    expect(table.queryByText('Surface Skim: 36% · 45.0 m³/h')).not.toBeInTheDocument();
     expect(table.getByText('25% of loop')).toBeInTheDocument();
     expect(route.queryByTestId('flow-route-source-reference')).not.toBeInTheDocument();
   });
@@ -1354,9 +1354,11 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     await user.click(route.getByRole('button', { name: 'List' }));
     const table = within(route.getByTestId('flow-route-list-table'));
-    expect(table.getByText('Surface Skim: 36% · 45.0 m³/h')).toBeInTheDocument();
-    expect(table.getByText('Bottom Drain: 64% · 80.0 m³/h')).toBeInTheDocument();
-    expect(table.getByText('Combined: 125.0 m³/h')).toBeInTheDocument();
+    expect(table.getByText('Both Integrated')).toBeInTheDocument();
+    expect(table.queryByText('Surface Skim')).not.toBeInTheDocument();
+    expect(table.queryByText('Bottom Drain')).not.toBeInTheDocument();
+    expect(table.queryByText('Surface Skim: 36% · 45.0 m³/h')).not.toBeInTheDocument();
+    expect(table.queryByText('Bottom Drain: 64% · 80.0 m³/h')).not.toBeInTheDocument();
     expect(route.queryByTestId('flow-route-source-reference')).not.toBeInTheDocument();
   });
 
@@ -1373,9 +1375,9 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
 
     await user.click(route.getByRole('button', { name: 'List' }));
-    expect(within(route.getByTestId('flow-route-list-table')).getByText(
-      /Exhibit split unavailable: No primary linked exhibit is configured/,
-    )).toBeInTheDocument();
+    const table = within(route.getByTestId('flow-route-list-table'));
+    expect(table.getByText('Bottom Drain')).toBeInTheDocument();
+    expect(table.queryByText(/Exhibit split unavailable: No primary linked exhibit is configured/)).not.toBeInTheDocument();
     expect(route.queryByTestId('flow-route-source-reference')).not.toBeInTheDocument();
   });
 

@@ -4680,7 +4680,6 @@ export default function DesignBookLSSDetail() {
                                   <span className="flex items-center gap-1.5 text-stone-700">
                                     <Droplets className="h-3 w-3 shrink-0 text-cyan-500" /> {src}
                                   </span>
-                                  <SourceSplitSummary source={src} />
                                   {matched && <span className={`mt-1 block text-[10px] ${resolvedFlow.reason ? 'text-amber-700' : 'text-blue-700'}`}>
                                     Non-allocating · {matchDescription(displayedSource, n)}
                                   </span>}
