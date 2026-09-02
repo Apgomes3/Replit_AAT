@@ -50,12 +50,16 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
     setSaving(true);
     try {
       const payload = {
-        ...form,
         ...(revising ? { source_revision_id: revision.id } : {}),
         effective_reactor_volume_l: numeric(form.effective_reactor_volume_l),
         irradiance_85t_mw_cm2: numeric(form.irradiance_85t_mw_cm2),
         irradiance_95t_mw_cm2: numeric(form.irradiance_95t_mw_cm2),
+        compatibility: form.compatibility ?? null,
+        arrangement: form.arrangement ?? null,
+        source_evidence: form.source_evidence,
+        source_basis: form.source_basis,
         approved_per_lamp_flow_exception_m3h: numeric(form.approved_per_lamp_flow_exception_m3h),
+        notes: form.notes,
       };
       if (!revision?.id || revising) {
         await api.post(`/admin/uv-engineering/${product.id}/revisions`, payload);

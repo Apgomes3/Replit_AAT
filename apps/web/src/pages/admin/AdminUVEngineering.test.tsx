@@ -95,5 +95,8 @@ describe('UV engineering administration', () => {
         approved_per_lamp_flow_exception_m3h: 40,
       }),
     );
+    const payload = vi.mocked(api.put).mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('lamp_count');
+    expect(payload).not.toHaveProperty('lamp_power_w');
   });
 });

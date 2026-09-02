@@ -276,7 +276,6 @@ export default function ProductMasterDetail() {
     design_flow_m3h: product.design_flow_m3h,
     design_head_m: product.design_head_m,
     power_kw: product.power_kw,
-    lamp_count: product.lamp_count,
     primary_material_code: product.primary_material_code,
     standard_status: product.standard_status,
     image_url: product.image_url,
@@ -486,12 +485,25 @@ export default function ProductMasterDetail() {
   };
 
   const handleSaveElectrical = async () => {
+    const rawLampCount = electricalForm.lamp_count;
+    if (rawLampCount !== null && rawLampCount !== undefined && String(rawLampCount).trim() !== '') {
+      const lampCount = Number(rawLampCount);
+      if (!Number.isInteger(lampCount) || lampCount <= 0) {
+        toast.error('Lamp Count must be a positive whole number');
+        return;
+      }
+    }
     setElectricalSaving(true);
     try {
-      await api.put(`/product-masters/${id}/electrical`, electricalForm);
+      await api.put(`/product-masters/${id}/electrical`, {
+        ...electricalForm,
+        lamp_count: String(rawLampCount ?? '').trim() === '' ? null : Number(rawLampCount),
+      });
       toast.success('Electrical data saved');
       setEditingElectrical(false);
       refetchElectrical();
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+      queryClient.invalidateQueries({ queryKey: ['uv-engineering'] });
     } catch { toast.error('Failed to save electrical data'); }
     finally { setElectricalSaving(false); }
   };
@@ -1029,11 +1041,6 @@ export default function ProductMasterDetail() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Lamp Count</label>
-                  <input type="number" min="1" step="1" value={editForm.lamp_count ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, lamp_count: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                </div>
                 <div className="col-span-2">
                   {(() => {
                     const shape = (editingDimensions ? tankSpecsForm.shape_type : product.shape_type) || 'Rectangular';
@@ -1512,13 +1519,13 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" />Electrical</span>
                   {!editingElectrical
-                   ? <button onClick={() => { setElectricalForm({ ...electricalData, rated_power_kw: electricalData?.rated_power_kw ?? product.power_kw ?? '' }); setEditingElectrical(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                   ? <button onClick={() => { setElectricalForm({ ...electricalData, rated_power_kw: electricalData?.rated_power_kw ?? product.power_kw ?? '', lamp_count: product.lamp_count ?? '' }); setEditingElectrical(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
                   : <div className="flex gap-2"><button onClick={() => setEditingElectrical(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveElectrical} disabled={electricalSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{electricalSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
               {editingElectrical ? (
                 <div className="p-3 grid grid-cols-2 gap-2">
-                  {[['rated_power_kw','Rated Power (kW)'],['voltage_v','Voltage (V)'],['frequency_hz','Frequency (Hz)'],['full_load_current_a','Full Load Current (A)'],['rated_speed_rpm','Rated Speed (RPM)']].map(([k,l]) => (
-                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
+                  {[['rated_power_kw','Rated Power (kW)'],['lamp_count','Lamp Count'],['voltage_v','Voltage (V)'],['frequency_hz','Frequency (Hz)'],['full_load_current_a','Full Load Current (A)'],['rated_speed_rpm','Rated Speed (RPM)']].map(([k,l]) => (
+                    <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" min={k === 'lamp_count' ? 1 : undefined} step={k === 'lamp_count' ? 1 : 'any'} value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
                   ))}
                   <div><label className="block text-xs text-slate-500 mb-0.5">Phases</label><select value={electricalForm.phases ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,phases:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"><option value="">—</option><option value="1">1-Phase</option><option value="3">3-Phase</option></select></div>
                   {[['motor_type','Motor Type'],['insulation_class','Insulation Class'],['protection_class','Protection Class (IP)'],['efficiency_class','Efficiency Class']].map(([k,l]) => (
@@ -1528,10 +1535,10 @@ export default function ProductMasterDetail() {
                 </div>
               ) : (
                 <div className="p-3">
-                  {[['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW'],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                  {[['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW'],['Lamp Count',product.lamp_count,''],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
                     ? <p className="text-xs text-slate-300 text-center py-2">No electrical data recorded — click Edit to add</p>
                     : <div className="space-y-1">
-                        {[['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW'],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                        {[['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW'],['Lamp Count',product.lamp_count,''],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
                           <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
                         ))}
                       </div>}
