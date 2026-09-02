@@ -252,7 +252,8 @@ describe('POST /design-books/:id/uv/:systemId PostgreSQL integration', () => {
     });
 
     const persisted = (await client.query(
-      `SELECT input_snapshot,result_snapshot,calculation_version,freshness,calculated_by
+      `SELECT id,input_snapshot,result_snapshot,calculation_version,freshness,calculated_by,
+              calculated_at,updated_at
          FROM design_book_uv_selections
         WHERE design_book_id=$1 AND system_id=$2`,
       [ids.book, ids.system],
@@ -273,5 +274,74 @@ describe('POST /design-books/:id/uv/:systemId PostgreSQL integration', () => {
       freshness: 'fresh',
       calculated_by: ids.user,
     });
+    expect(persisted.calculated_at).toBeDefined();
+    expect(persisted.updated_at).toBeDefined();
+
+    const staleTimestamps = (await client.query(
+      `UPDATE design_book_uv_selections
+          SET calculated_at=calculated_at - INTERVAL '1 minute',
+              updated_at=updated_at - INTERVAL '1 minute'
+        WHERE design_book_id=$1 AND system_id=$2
+      RETURNING calculated_at,updated_at`,
+      [ids.book, ids.system],
+    )).rows[0];
+
+    await client.query(
+      `UPDATE design_book_exhibit_hydraulics
+          SET target_turnover_rate=3
+        WHERE design_book_id=$1 AND exhibit_id=$2`,
+      [ids.book, ids.exhibit],
+    );
+    const recalculatedResponse = await request(
+      'POST',
+      `/api/v1/design-books/${ids.book}/uv/${ids.system}`,
+      token,
+      { target_fluence_mj_cm2: 50 },
+    );
+
+    expect(recalculatedResponse.status, JSON.stringify(recalculatedResponse.body)).toBe(200);
+    expect(recalculatedResponse.body.result).toMatchObject({
+      target_fluence_mj_cm2: 50,
+      water_type: 'Freshwater',
+      streams: [{
+        side_stream_id: ids.stream,
+        flow_m3h: 15,
+        uv_revision_id: ids.revision,
+      }],
+    });
+    expect(recalculatedResponse.body.result).not.toEqual(response.body.result);
+
+    const recalculated = (await client.query(
+      `SELECT id,input_snapshot,result_snapshot,calculation_version,freshness,calculated_by,
+              calculated_at,updated_at
+         FROM design_book_uv_selections
+        WHERE design_book_id=$1 AND system_id=$2`,
+      [ids.book, ids.system],
+    )).rows[0];
+    expect(recalculated.id).toBe(persisted.id);
+    expect(recalculated.input_snapshot).toMatchObject({
+      target_fluence_mj_cm2: 50,
+      design_flow_m3h: 30,
+      water_type: 'Freshwater',
+      streams: [{
+        side_stream_id: ids.stream,
+        flow_m3h: 15,
+        uv_revision_id: ids.revision,
+      }],
+    });
+    expect(recalculated.result_snapshot).toEqual(recalculatedResponse.body.result);
+    expect(recalculated).toMatchObject({
+      calculation_version: 'UV_SEL_V2.0',
+      freshness: 'fresh',
+      calculated_by: ids.user,
+    });
+    expect(new Date(recalculated.calculated_at).getTime())
+      .toBeGreaterThan(new Date(staleTimestamps.calculated_at).getTime());
+    expect(new Date(recalculated.updated_at).getTime())
+      .toBeGreaterThan(new Date(staleTimestamps.updated_at).getTime());
+    expect(new Date(recalculated.calculated_at).toISOString())
+      .toBe(recalculatedResponse.body.saved.calculated_at);
+    expect(new Date(recalculated.updated_at).toISOString())
+      .toBe(recalculatedResponse.body.saved.updated_at);
   });
 });
