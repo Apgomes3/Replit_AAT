@@ -57,6 +57,83 @@ const LSS_TABS: Array<{ id: LssTab; label: string }> = [
   { id: 'other', label: 'Other Equipment' },
 ];
 
+const FLOW_SOURCE_GROUPS = [
+  {
+    label: 'Exhibit intake',
+    options: [
+      { value: 'Bottom Drain', label: 'Bottom Drain', description: 'Water enters from the exhibit bottom drain.' },
+      { value: 'Surface Skim', label: 'Surface Skim', description: 'Water enters through the surface skimmer.' },
+      { value: 'Both Integrated', label: 'Both Integrated', description: 'A combined bottom-drain and surface-skimmer return.' },
+    ],
+  },
+  {
+    label: 'Dedicated equipment',
+    options: [
+      { value: 'Vacuum Port', label: 'Vacuum Port', description: 'A dedicated vacuum-service connection.' },
+    ],
+  },
+  {
+    label: 'Circulation connections',
+    options: [
+      { value: 'Break Tank', label: 'Break Tank', description: 'A break-tank circulation connection.' },
+      { value: 'Plenum Tank', label: 'Plenum Tank', description: 'A plenum-tank circulation connection.' },
+    ],
+  },
+] as const;
+const FLOW_SOURCES = FLOW_SOURCE_GROUPS.flatMap(group => group.options.map(option => option.value));
+const CIRCULATION_SOURCES = new Set(['Break Tank', 'Plenum Tank']);
+
+function FlowSourcePicker({
+  value,
+  onChange,
+  disabled = false,
+  id,
+  compact = false,
+  ariaLabel = 'Flow Source',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  id: string;
+  compact?: boolean;
+  ariaLabel?: string;
+}) {
+  const selected = FLOW_SOURCE_GROUPS
+    .flatMap(group => group.options)
+    .find(option => option.value === value);
+  return (
+    <div className={compact ? 'space-y-1' : 'space-y-1.5'}>
+      <label htmlFor={id} className="block text-xs font-medium text-stone-500">
+        Flow Source
+      </label>
+      <select
+        id={id}
+        aria-label={ariaLabel}
+        value={value}
+        disabled={disabled}
+        onChange={event => onChange(event.target.value)}
+        className={`w-full rounded-lg border border-stone-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/40 ${
+          compact ? 'px-2 py-1 text-xs' : 'px-3 py-2'
+        }`}
+      >
+        <option value="">— Choose a source —</option>
+        {FLOW_SOURCE_GROUPS.map(group => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </optgroup>
+        ))}
+        {/* Keep previously saved values visible and editable if they predate the governed list. */}
+        {value && !FLOW_SOURCES.includes(value as any) && (
+          <option value={value}>{value} (saved value)</option>
+        )}
+      </select>
+      {selected && <p className="text-[10px] leading-snug text-stone-400">{selected.description}</p>}
+    </div>
+  );
+}
+
 function isLssTab(value: string | null): value is LssTab {
   return LSS_TABS.some(tab => tab.id === value);
 }
@@ -3103,8 +3180,6 @@ export default function DesignBookLSSDetail() {
       {/* Flow Route panel */}
       {(() => {
         const isSaltwater = system.water_type === 'Marine' || system.water_type === 'Salt Water';
-        const FLOW_SOURCES = ['Bottom Drain', 'Surface Skim', 'Both Integrated', 'Break Tank', 'Plenum Tank'] as const;
-        const CIRCULATION_SOURCES = new Set(['Break Tank', 'Plenum Tank']);
         const FILTRATION_OPTS = [
           { label: 'Foam Fractionation',     value: 'Foam Fractionation',     saltwaterOnly: true  },
           { label: 'Pressurized Bag Filter', value: 'Pressurized Bag Filter', saltwaterOnly: false },
@@ -3985,24 +4060,20 @@ export default function DesignBookLSSDetail() {
           return (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1.5">Flow Source</label>
-                <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
-                  {FLOW_SOURCES.map(s => (
-                    <button key={s} type="button" onClick={() => {
-                      const nextSource = curSrc === s ? '' : s;
-                      setFF(srcKey, nextSource);
-                      if (CIRCULATION_SOURCES.has(nextSource)) {
-                        setFF(modeKey, 'matched');
-                      } else {
-                        setFF(modeKey, 'allocated');
-                        setFF(matchKey, '');
-                      }
-                    }}
-                      className={`flex-1 px-2 py-1.5 transition-colors text-center leading-tight ${curSrc === s ? 'bg-cyan-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                <FlowSourcePicker
+                  id={`loop-${n}-flow-source`}
+                  ariaLabel={`Loop ${n} Flow Source`}
+                  value={curSrc || ''}
+                  onChange={nextSource => {
+                    setFF(srcKey, nextSource);
+                    if (CIRCULATION_SOURCES.has(nextSource)) {
+                      setFF(modeKey, 'matched');
+                    } else {
+                      setFF(modeKey, 'allocated');
+                      setFF(matchKey, '');
+                    }
+                  }}
+                />
               </div>
               {curSrc && <SourceSplitReference source={curSrc} />}
               {isCirculation && (
@@ -4522,20 +4593,21 @@ export default function DesignBookLSSDetail() {
                               </td>
                               <td className="px-3 py-2 align-top"><LinkedExhibitsSummary /></td>
                               <td className="px-3 py-2 align-top">
-                                <select value={listRowForm.flow_source} onChange={e => {
-                                  const nextSource = e.target.value;
-                                  setLRF('flow_source', nextSource);
-                                  if (CIRCULATION_SOURCES.has(nextSource)) {
-                                    setLRF('flow_mode', 'matched');
-                                  } else {
-                                    setLRF('flow_mode', 'allocated');
-                                    setLRF('match_loop_number', '');
-                                  }
-                                }}
-                                  className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
-                                  <option value="">— None —</option>
-                                  {FLOW_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
+                                <FlowSourcePicker
+                                  id={`loop-${n}-list-flow-source`}
+                                  ariaLabel={`Loop ${n} Flow Source`}
+                                  compact
+                                  value={listRowForm.flow_source || ''}
+                                  onChange={nextSource => {
+                                    setLRF('flow_source', nextSource);
+                                    if (CIRCULATION_SOURCES.has(nextSource)) {
+                                      setLRF('flow_mode', 'matched');
+                                    } else {
+                                      setLRF('flow_mode', 'allocated');
+                                      setLRF('match_loop_number', '');
+                                    }
+                                  }}
+                                />
                                 {listRowForm.flow_source && <SourceSplitSummary source={listRowForm.flow_source} />}
                                 {CIRCULATION_SOURCES.has(listRowForm.flow_source) && (
                                   <div className="mt-2 rounded border border-blue-200 bg-blue-50 p-2">

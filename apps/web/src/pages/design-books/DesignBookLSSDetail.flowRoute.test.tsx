@@ -1284,7 +1284,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getByText(/loop allocation remains an independent percentage/)).toBeInTheDocument();
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
-    await user.click(route.getByRole('button', { name: 'Surface Skim' }));
+    await user.selectOptions(route.getByRole('combobox', { name: 'Loop 1 Flow Source' }), 'Surface Skim');
     expect(route.getByText('(Surface Skimmer Box)')).toBeInTheDocument();
     expect(route.getByText('36% · 45.0 m³/h')).toBeInTheDocument();
     expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(40);
@@ -1303,6 +1303,28 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
         loop1_flow_source: 'Surface Skim',
         loop1_flow_pct: 40,
         loop1_bio_degas_pct: 25,
+      }),
+    ));
+  });
+
+  it('offers Vacuum Port in the grouped source picker and saves it as an allocated source', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const source = route.getByRole('combobox', { name: 'Loop 1 Flow Source' });
+    expect(within(source).getByRole('option', { name: 'Vacuum Port' })).toBeInTheDocument();
+    await user.selectOptions(source, 'Vacuum Port');
+
+    expect(route.getByText('A dedicated vacuum-service connection.')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop1_flow_source: 'Vacuum Port',
+        loop1_flow_mode: 'allocated',
       }),
     ));
   });
@@ -1962,7 +1984,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
     await user.click(route.getByRole('button', { name: 'Add Loop 2' }));
-    await user.click(route.getAllByRole('button', { name: 'Break Tank' })[1]);
+    await user.selectOptions(route.getByRole('combobox', { name: 'Loop 2 Flow Source' }), 'Break Tank');
     expect(route.getByText('Circulation source — non-allocating')).toBeInTheDocument();
     const match = route.getByRole('combobox', { name: 'Loop 2 matched loop' });
     await user.selectOptions(match, '1');
@@ -2019,7 +2041,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
-    await user.click(route.getAllByRole('button', { name: 'Surface Skim' })[1]);
+    await user.selectOptions(route.getByRole('combobox', { name: 'Loop 2 Flow Source' }), 'Surface Skim');
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
     await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
       '/systems/system-1',
