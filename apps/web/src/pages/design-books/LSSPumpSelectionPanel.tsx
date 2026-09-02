@@ -134,16 +134,6 @@ function PumpLineCard({
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
-  const [showCreatePump, setShowCreatePump] = useState(false);
-  const [newPumpForm, setNewPumpForm] = useState({
-    product_code: '',
-    product_name: '',
-    manufacturer: '',
-    model: '',
-    design_flow_m3h: '',
-    design_head_m: '',
-    power_kw: '',
-  });
   const pumpRole = line.pump_role || 'primary';
   const isVenturi = pumpRole === 'venturi';
 
@@ -195,6 +185,45 @@ function PumpLineCard({
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Unable to create draft pump');
       return null;
+    } finally {
+      setCreatingDraft(false);
+    }
+  };
+
+  const addDraftPumpImmediately = async () => {
+    if (creatingDraft) return;
+    setCreatingDraft(true);
+    const dutyToken = String(line.pump_duty_tag || pumpRole || 'PUMP')
+      .replace(/[^A-Z0-9]+/gi, '-')
+      .replace(/^-|-$/g, '')
+      .toUpperCase();
+    const circuitToken = String(line.circuit_key || 'DUTY')
+      .replace(/[^A-Z0-9]+/gi, '-')
+      .replace(/^-|-$/g, '')
+      .toUpperCase();
+    const productCode = `PUMP-${dutyToken}-${circuitToken}-${Date.now().toString(36).toUpperCase()}`;
+    const productName = `Draft ${line.pump_role_name || line.circuit_name || 'Pump'}`;
+    try {
+      const created = await api.post('/product-masters', {
+        product_code: productCode,
+        product_name: productName,
+        product_category: 'Pumping',
+        application_type: 'Pump',
+        design_flow_m3h: perPumpFlow == null ? null : Number(perPumpFlow),
+        design_head_m: requiredHead == null ? null : Number(requiredHead),
+        standard_status: 'Draft',
+      });
+      const productMasterId = created.data?.id;
+      if (!productMasterId) {
+        throw new Error('The draft pump product was not returned by the server');
+      }
+      const projectEquipmentItemId = await allocatePumpProduct(productMasterId);
+      if (!projectEquipmentItemId) return;
+      setForm(current => ({ ...current, project_equipment_item_id: projectEquipmentItemId }));
+      await queryClient.invalidateQueries({ queryKey: ['product-masters'] });
+      toast.success(`${productCode} added. Edit the remaining pump details in PIM when ready.`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Unable to add draft pump');
     } finally {
       setCreatingDraft(false);
     }
@@ -387,23 +416,12 @@ function PumpLineCard({
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setNewPumpForm({
-                      product_code: '',
-                      product_name: '',
-                      manufacturer: '',
-                      model: '',
-                      design_flow_m3h: perPumpFlow == null ? '' : String(Number(perPumpFlow.toFixed(2))),
-                      design_head_m: requiredHead == null ? '' : String(Number(requiredHead.toFixed(2))),
-                      power_kw: '',
-                    });
-                    setShowCreatePump(true);
-                  }}
+                  onClick={addDraftPumpImmediately}
                   disabled={creatingDraft}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  {creatingDraft ? 'Creating…' : 'Create draft pump'}
+                  {creatingDraft ? 'Adding…' : 'Add a pump'}
                 </button>
               </div>
             </div>
@@ -507,139 +525,6 @@ function PumpLineCard({
         </div>
       </div>
 
-      {showCreatePump && !readOnly && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl">
-            <div className="border-b border-stone-100 px-5 py-4">
-              <h3 className="font-semibold text-stone-900">Create draft pump product</h3>
-              <p className="mt-1 text-xs text-stone-500">
-                The product will be added to PIM in the Pumping category with Draft status, then linked to this system pump.
-              </p>
-            </div>
-            <div className="grid gap-4 p-5 sm:grid-cols-2">
-              <label>
-                <span className="mb-1 block text-xs font-medium text-stone-600">Product code <span className="text-red-600">*</span></span>
-                <input
-                  aria-label="New pump product code"
-                  value={newPumpForm.product_code}
-                  onChange={event => setNewPumpForm(current => ({ ...current, product_code: event.target.value.toUpperCase() }))}
-                  className={inputClass}
-                  placeholder="PUMP-0001"
-                />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium text-stone-600">Product name <span className="text-red-600">*</span></span>
-                <input
-                  aria-label="New pump product name"
-                  value={newPumpForm.product_name}
-                  onChange={event => setNewPumpForm(current => ({ ...current, product_name: event.target.value }))}
-                  className={inputClass}
-                  placeholder="Duty pump"
-                />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium text-stone-600">Manufacturer</span>
-                <input
-                  aria-label="New pump manufacturer"
-                  value={newPumpForm.manufacturer}
-                  onChange={event => setNewPumpForm(current => ({ ...current, manufacturer: event.target.value }))}
-                  className={inputClass}
-                />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium text-stone-600">Model</span>
-                <input
-                  aria-label="New pump model"
-                  value={newPumpForm.model}
-                  onChange={event => setNewPumpForm(current => ({ ...current, model: event.target.value }))}
-                  className={inputClass}
-                />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium text-stone-600">Rated design flow (m³/h) <span className="text-red-600">*</span></span>
-                <input
-                  aria-label="New pump rated design flow"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={newPumpForm.design_flow_m3h}
-                  onChange={event => setNewPumpForm(current => ({ ...current, design_flow_m3h: event.target.value }))}
-                  className={inputClass}
-                />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium text-stone-600">Rated design head (m) <span className="text-red-600">*</span></span>
-                <input
-                  aria-label="New pump rated design head"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={newPumpForm.design_head_m}
-                  onChange={event => setNewPumpForm(current => ({ ...current, design_head_m: event.target.value }))}
-                  className={inputClass}
-                />
-              </label>
-              <label className="sm:col-span-2">
-                <span className="mb-1 block text-xs font-medium text-stone-600">Rated power (kW)</span>
-                <input
-                  aria-label="New pump rated power"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={newPumpForm.power_kw}
-                  onChange={event => setNewPumpForm(current => ({ ...current, power_kw: event.target.value }))}
-                  className={inputClass}
-                />
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-stone-100 px-5 py-4">
-              <button
-                type="button"
-                onClick={() => setShowCreatePump(false)}
-                disabled={creatingDraft}
-                className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={creatingDraft || !newPumpForm.product_code.trim() || !newPumpForm.product_name.trim()
-                  || !positiveNumber(newPumpForm.design_flow_m3h) || !positiveNumber(newPumpForm.design_head_m)}
-                onClick={async () => {
-                  setCreatingDraft(true);
-                  try {
-                    const created = await api.post('/product-masters', {
-                      product_code: newPumpForm.product_code.trim().toUpperCase(),
-                      product_name: newPumpForm.product_name.trim(),
-                      product_category: 'Pumping',
-                      application_type: 'Pump',
-                      manufacturer: newPumpForm.manufacturer.trim() || null,
-                      model: newPumpForm.model.trim() || null,
-                      design_flow_m3h: Number(newPumpForm.design_flow_m3h),
-                      design_head_m: Number(newPumpForm.design_head_m),
-                      power_kw: newPumpForm.power_kw === '' ? null : Number(newPumpForm.power_kw),
-                      standard_status: 'Draft',
-                    });
-                    const projectEquipmentItemId = await allocatePumpProduct(created.data.id);
-                    if (!projectEquipmentItemId) return;
-                    setForm(current => ({ ...current, project_equipment_item_id: projectEquipmentItemId }));
-                    setShowCreatePump(false);
-                    await queryClient.invalidateQueries({ queryKey: ['product-masters'] });
-                    toast.success('Draft pump product created and linked');
-                  } catch (error: any) {
-                    toast.error(error?.response?.data?.error?.message || 'Unable to create draft pump product');
-                  } finally {
-                    setCreatingDraft(false);
-                  }
-                }}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-              >
-                <Plus className="h-4 w-4" /> {creatingDraft ? 'Creating…' : 'Create & link'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

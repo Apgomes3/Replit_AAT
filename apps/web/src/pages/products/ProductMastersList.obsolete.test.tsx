@@ -8,6 +8,7 @@ import ProductMastersList from './ProductMastersList';
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  delete: vi.fn(),
   exportCsv: vi.fn(),
 }));
 
@@ -17,7 +18,7 @@ vi.mock('../../lib/api', () => ({
     post: mocks.post,
     put: vi.fn(),
     patch: vi.fn(),
-    delete: vi.fn(),
+    delete: mocks.delete,
   },
 }));
 
@@ -84,7 +85,9 @@ describe('ProductMastersList obsolete visibility', () => {
     mocks.exportCsv.mockReset();
     mocks.get.mockReset();
     mocks.post.mockReset();
+    mocks.delete.mockReset();
     mocks.post.mockResolvedValue({ data: {} });
+    mocks.delete.mockResolvedValue({ data: { deleted: true } });
     mocks.get.mockImplementation(async (url: string) => {
       if (url.startsWith('/product-masters?')) {
         const params = new URLSearchParams(url.split('?')[1]);
@@ -185,7 +188,7 @@ describe('ProductMastersList obsolete visibility', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Mode' }));
     await user.type(screen.getByLabelText('Quick product code'), 'PM-QUICK-1');
     await user.type(screen.getByLabelText('Quick product name'), 'Quick entry product');
-    await user.click(screen.getByRole('button', { name: 'Add Product' }));
+    await user.click(screen.getByRole('button', { name: 'Show obsoleted' }));
 
     await waitFor(() => {
       expect(mocks.post).toHaveBeenCalledWith('/product-masters', {
@@ -197,7 +200,22 @@ describe('ProductMastersList obsolete visibility', () => {
       });
     });
     expect(screen.getByRole('button', { name: 'Edit P-ACTIVE' })).toBeInTheDocument();
-    expect(screen.getByText('Enter the code and name now. Use Edit on the new row to complete the remaining details.')).toBeInTheDocument();
+    expect(screen.getByText('Enter the code and name. Click outside this area to save, or use Add Product.')).toBeInTheDocument();
+  });
+
+  it('allows temporary product deletion from edit mode', async () => {
+    const user = userEvent.setup();
+    renderList();
+    await screen.findByText('Active pump');
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mode' }));
+    await user.click(screen.getByRole('button', { name: 'Delete P-ACTIVE' }));
+    expect(screen.getByRole('heading', { name: 'Delete product?' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete', exact: true }));
+
+    await waitFor(() => {
+      expect(mocks.delete).toHaveBeenCalledWith('/product-masters/active-1');
+    });
   });
 
   it('opens Material Management with the unfinished product draft preserved', async () => {

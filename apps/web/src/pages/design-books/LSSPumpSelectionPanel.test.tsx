@@ -184,7 +184,7 @@ describe('LSSPumpSelectionPanel', () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 
-  it('creates a draft PIM pump product and links it when no catalog product fits the duty', async () => {
+  it('creates and links a minimal draft pump immediately when no catalog product fits the duty', async () => {
     const user = userEvent.setup();
     apiPost.mockImplementation(async (url: string) => {
       if (url === '/product-masters') return { data: { id: 'new-pump-product' } } as any;
@@ -195,15 +195,11 @@ describe('LSSPumpSelectionPanel', () => {
 
     await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '30');
     expect(screen.getByText('No linked Pump-category product is rated for at least 90.00 m³/h at 30.00 m.')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Create draft pump' }));
-
-    await user.type(screen.getByLabelText('New pump product code'), 'pump-new');
-    await user.type(screen.getByLabelText('New pump product name'), 'New duty pump');
-    await user.click(screen.getByRole('button', { name: 'Create & link' }));
+    await user.click(screen.getByRole('button', { name: 'Add a pump' }));
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/product-masters', expect.objectContaining({
-      product_code: 'PUMP-NEW',
-      product_name: 'New duty pump',
+      product_code: expect.stringMatching(/^PUMP-SFSP-LOOP-1-/),
+      product_name: 'Draft Sand Filter Loop',
       product_category: 'Pumping',
       design_flow_m3h: 90,
       design_head_m: 30,
@@ -216,6 +212,7 @@ describe('LSSPumpSelectionPanel', () => {
       pump_quantity: 1,
       product_master_id: 'new-pump-product',
     }));
+    expect(screen.queryByText('Create draft pump product')).not.toBeInTheDocument();
   });
 
   it('shows the Sand Filter supply-pump role label', async () => {
