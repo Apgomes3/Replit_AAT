@@ -2542,6 +2542,11 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const flowAllocation = route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' });
     const capacityHeading = route.getByText('Foam Fractionator capacity');
     expect(flowAllocation.compareDocumentPosition(capacityHeading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(route.queryByText('Add Foam Fractionator model')).not.toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Remove FF-500' }));
+    const foamModelPicker = route.getByText('Add Foam Fractionator model');
+    expect(foamModelPicker).toBeInTheDocument();
+    await user.selectOptions(within(foamModelPicker.parentElement!).getByRole('combobox'), 'ff-500');
     const slider = route.getByRole('slider', { name: 'AAT process rate slider for Loop 1' });
     const rateInput = route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' });
 
@@ -2759,6 +2764,11 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     });
     await user.selectOptions(sandOption.closest('select')!, 'sf-900');
     expect(route.getByRole('region', { name: 'Sand Filter PM-SF-900' })).toBeInTheDocument();
+    expect(route.queryByText('Add Sand Filter model')).not.toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Remove PM-SF-900' }));
+    const sandModelPicker = route.getByText('Add Sand Filter model');
+    expect(sandModelPicker).toBeInTheDocument();
+    await user.selectOptions(within(sandModelPicker.parentElement!).getByRole('combobox'), 'sf-900');
     expect(route.queryByText(/Add fractionator model/i)).not.toBeInTheDocument();
 
     await user.type(route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' }), '6');

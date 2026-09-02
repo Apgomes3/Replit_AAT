@@ -3596,7 +3596,7 @@ export default function DesignBookLSSDetail() {
                 <span className="text-xs font-semibold">{equipmentLabel} capacity</span>
                 <span className="text-[10px] font-semibold">{statusLabel}</span>
               </div>
-              {editable && (
+              {editable && selectedProducts.length === 0 && (
                 <div className="space-y-3 mb-3">
                   <div>
                     <label className="block text-[10px] font-medium mb-1">Add {equipmentLabel} model</label>
