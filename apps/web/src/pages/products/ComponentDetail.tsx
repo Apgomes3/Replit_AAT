@@ -90,6 +90,7 @@ export default function ComponentDetail() {
   const [variantSearch, setVariantSearch] = useState('');
   const [variantTarget, setVariantTarget] = useState<any>(null);
   const [variantSubmitting, setVariantSubmitting] = useState(false);
+  const [synonymInput, setSynonymInput] = useState('');
 
   const { data: component, isLoading, isError, refetch } = useQuery({
     queryKey: ['component', id],
@@ -127,8 +128,6 @@ export default function ComponentDetail() {
   const drawings = documents.filter(d => DRAWING_TYPE_VALUES.has(d.document_type));
   const nonDrawingDocs = documents.filter(d => !DRAWING_TYPE_VALUES.has(d.document_type));
   const usedIn = component.used_in || [];
-
-  const [synonymInput, setSynonymInput] = useState('');
 
   const startEdit = () => {
     setForm({
