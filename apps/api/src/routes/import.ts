@@ -102,6 +102,114 @@ function requiredCSVHeaderErrors(headers: string[], requiredFields: string[], de
     .map(field => `Required ${destination} CSV column "${field}" is missing`);
 }
 
+function rowValue(row: Record<string, unknown>, field: string): string {
+  return String(row[field] ?? '').trim();
+}
+
+function normalizeCSVRows(rows: Record<string, unknown>[]): Record<string, string>[] {
+  return rows.map(row => Object.fromEntries(
+    Object.entries(row).map(([field, value]) => [field, String(value ?? '').trim()]),
+  ));
+}
+
+function validateUnpaddedFields(
+  rows: Record<string, unknown>[],
+  destination: string,
+  fields: string[],
+): string[] {
+  const errors: string[] = [];
+
+  rows.forEach((row, index) => {
+    fields.forEach(field => {
+      const rawValue = String(row[field] ?? '');
+      if (rawValue && rawValue !== rawValue.trim()) {
+        errors.push(
+          `${destination} CSV row ${index + 2} field "${field}" must not have leading or trailing whitespace`,
+        );
+      }
+    });
+  });
+
+  return errors;
+}
+
+function validateCSVRows(
+  rows: Record<string, unknown>[],
+  destination: string,
+  requiredFields: string[],
+  numericFields: string[] = [],
+): string[] {
+  const errors: string[] = [];
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 2;
+    requiredFields.forEach(field => {
+      if (!rowValue(row, field)) {
+        errors.push(`${destination} CSV row ${rowNumber} field "${field}" is required`);
+      }
+    });
+    numericFields.forEach(field => {
+      const value = rowValue(row, field);
+      if (value && !Number.isFinite(Number(value))) {
+        errors.push(`${destination} CSV row ${rowNumber} field "${field}" must be a valid number`);
+      }
+    });
+  });
+
+  return errors;
+}
+
+function csvRowValidationResponse(
+  res: Response,
+  destination: string,
+  errors: string[],
+  total: number,
+) {
+  return res.status(400).json({
+    error: {
+      code: 'INVALID_CSV',
+      message: `${destination} CSV row validation failed: ${errors.join('; ')}`,
+      details: errors,
+    },
+    imported: 0,
+    skipped: 0,
+    errors,
+    total,
+  });
+}
+
+async function validateProjectReferences(
+  rows: Record<string, unknown>[],
+  destination: string,
+): Promise<string[]> {
+  const errors: string[] = [];
+  const projectCodes = new Set<string>();
+
+  for (const row of rows) {
+    const projectCode = rowValue(row, 'project_code');
+    if (projectCode) projectCodes.add(projectCode);
+  }
+
+  const knownProjects = new Set<string>();
+  for (const projectCode of projectCodes) {
+    const project = await query('SELECT id FROM projects WHERE project_code=$1', [projectCode]);
+    if (project.rows[0]) {
+      knownProjects.add(projectCode);
+    }
+  }
+
+  rows.forEach((row, index) => {
+    const projectCode = rowValue(row, 'project_code');
+    if (projectCode && !knownProjects.has(projectCode)) {
+      errors.push(
+        `${destination} CSV row ${index + 2} field "project_code": project "${projectCode}" was not found`,
+      );
+    }
+  });
+
+  return errors;
+}
+
 function parseSelectedComponentFields(rawFields: unknown): { fields?: string[]; error?: string } {
   if (rawFields === undefined || rawFields === null || rawFields === '') {
     return { fields: [...COMPONENT_IMPORT_FIELDS] };
@@ -202,9 +310,19 @@ router.post('/products', uploadCSV('Product'), async (req: AuthRequest, res: Res
       });
     }
 
-    for (const row of rows) {
+    const normalizedRows = normalizeCSVRows(rows);
+    const rowErrors = validateCSVRows(
+      normalizedRows,
+      'Product',
+      ['product_code', 'product_name'],
+      ['design_flow_m3h', 'power_kw'],
+    );
+    if (rowErrors.length > 0) {
+      return csvRowValidationResponse(res, 'Product', rowErrors, rows.length);
+    }
+
+    for (const row of normalizedRows) {
       const { product_code, product_name, product_family_code, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status } = row;
-      if (!product_code || !product_name) { results.skipped++; continue; }
       try {
         let family_id = null;
         if (product_family_code) {
@@ -383,7 +501,7 @@ router.post('/equipment', uploadCSV('Equipment'), async (req: AuthRequest, res: 
 
   try {
     const { rows, headers } = await parseCSVFileWithHeaders(req.file.path, true);
-    const headerErrors = requiredCSVHeaderErrors(headers, ['equipment_code', 'equipment_name'], 'equipment');
+    const headerErrors = requiredCSVHeaderErrors(headers, ['equipment_code', 'project_code', 'equipment_name'], 'equipment');
     if (headerErrors.length > 0) {
       return res.status(400).json({
         error: { code: 'INVALID_CSV', message: headerErrors.join('; '), details: headerErrors },
@@ -394,9 +512,24 @@ router.post('/equipment', uploadCSV('Equipment'), async (req: AuthRequest, res: 
       });
     }
 
-    for (const row of rows) {
+    const normalizedRows = normalizeCSVRows(rows);
+    const rowErrors = [
+      ...validateCSVRows(
+        normalizedRows,
+        'Equipment',
+        ['equipment_code', 'project_code', 'equipment_name'],
+        ['design_flow_m3h', 'power_kw'],
+      ),
+      ...validateUnpaddedFields(rows, 'Equipment', ['project_code']),
+    ];
+    const referenceErrors = await validateProjectReferences(normalizedRows, 'Equipment');
+    const validationErrors = [...rowErrors, ...referenceErrors];
+    if (validationErrors.length > 0) {
+      return csvRowValidationResponse(res, 'Equipment', validationErrors, rows.length);
+    }
+
+    for (const row of normalizedRows) {
       const { equipment_code, project_code, system_code, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code } = row;
-      if (!equipment_code || !equipment_name) { results.skipped++; continue; }
       try {
         const proj = await query('SELECT id FROM projects WHERE project_code=$1', [project_code]);
         if (!proj.rows[0]) { results.errors.push(`${equipment_code}: project ${project_code} not found`); continue; }
@@ -443,9 +576,23 @@ router.post('/documents', uploadCSV('Document'), async (req: AuthRequest, res: R
       });
     }
 
-    for (const row of rows) {
+    const normalizedRows = normalizeCSVRows(rows);
+    const rowErrors = validateCSVRows(
+      normalizedRows,
+      'Document',
+      ['document_code', 'document_title'],
+    );
+    if (rowErrors.length > 0) {
+      return csvRowValidationResponse(res, 'Document', rowErrors, rows.length);
+    }
+
+    const referenceErrors = await validateProjectReferences(normalizedRows, 'Document');
+    if (referenceErrors.length > 0) {
+      return csvRowValidationResponse(res, 'Document', referenceErrors, rows.length);
+    }
+
+    for (const row of normalizedRows) {
       const { document_code, document_title, document_type, discipline, project_code } = row;
-      if (!document_code || !document_title) { results.skipped++; continue; }
       try {
         const proj = project_code ? await query('SELECT id FROM projects WHERE project_code=$1', [project_code]) : { rows: [] };
         await query(

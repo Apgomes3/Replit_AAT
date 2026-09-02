@@ -10,6 +10,7 @@ const testSecret = 'import-access-test-secret';
 
 const state = vi.hoisted(() => ({
   moduleAccessByUser: {} as Record<string, string>,
+  missingProjects: new Set<string>(),
   writes: [] as string[],
 }));
 
@@ -21,6 +22,7 @@ vi.mock('../db', () => {
       return { rows: accessLevel ? [{ access_level: accessLevel }] : [] };
     }
     if (sql.includes('select id from projects where project_code=$1')) {
+      if (state.missingProjects.has(String(params[0]))) return { rows: [] };
       return { rows: [{ id: 'project-1' }] };
     }
     if (sql.startsWith('select id from components where upper(component_code)=upper($1)')) {
@@ -111,6 +113,7 @@ describe('CSV import access policy', () => {
       'import-hidden': 'hidden',
       'import-engineer': 'manage',
     };
+    state.missingProjects.clear();
     state.writes.length = 0;
     unlinkSpy.mockClear();
     diskUnlinkSpy.mockClear();
@@ -197,6 +200,83 @@ describe('CSV import access policy', () => {
     expect(response.body.error.message).toContain('Row length does not match headers');
     expect(state.writes).toHaveLength(0);
     expect(unlinkSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      '/products',
+      'product_code,product_name\nPM-ROW-1,\n,Second Product',
+      ['Product CSV row 2 field "product_name" is required', 'Product CSV row 3 field "product_code" is required'],
+    ],
+    [
+      '/equipment',
+      'equipment_code,project_code,equipment_name\nEQ-ROW-1,PRJ-ROW-1,\n,PRJ-ROW-2,Second Equipment',
+      ['Equipment CSV row 2 field "equipment_name" is required', 'Equipment CSV row 3 field "equipment_code" is required'],
+    ],
+    [
+      '/documents',
+      'document_code,document_title\nDOC-ROW-1,\n,Second Document',
+      ['Document CSV row 2 field "document_title" is required', 'Document CSV row 3 field "document_code" is required'],
+    ],
+  ])('reports all row validation errors before mutating %s', async (path, csvText, expectedErrors) => {
+    const response = await request(app, `/api/v1/import${path}`, csvText, adminToken);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({ code: 'INVALID_CSV' });
+    expect(response.body.errors).toEqual(expectedErrors);
+    expect(response.body.error.details).toEqual(expectedErrors);
+    expect(response.body.imported).toBe(0);
+    expect(response.body.total).toBe(2);
+    expect(state.writes).toHaveLength(0);
+  });
+
+  it('validates all equipment project references before importing any rows', async () => {
+    state.missingProjects.add('PRJ-MISSING');
+
+    const response = await request(
+      app,
+      '/api/v1/import/equipment',
+      'equipment_code,project_code,equipment_name\nEQ-VALID,PRJ-VALID,Valid Equipment\nEQ-MISSING,PRJ-MISSING,Missing Project',
+      adminToken,
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toEqual([
+      'Equipment CSV row 3 field "project_code": project "PRJ-MISSING" was not found',
+    ]);
+    expect(state.writes).toHaveLength(0);
+  });
+
+  it('rejects a blank equipment project reference before importing earlier rows', async () => {
+    const response = await request(
+      app,
+      '/api/v1/import/equipment',
+      'equipment_code,project_code,equipment_name\nEQ-VALID,PRJ-VALID,Valid Equipment\nEQ-BLANK,,Blank Project',
+      adminToken,
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toEqual([
+      'Equipment CSV row 3 field "project_code" is required',
+    ]);
+    expect(response.body.imported).toBe(0);
+    expect(state.writes).toHaveLength(0);
+  });
+
+  it('rejects a padded equipment project reference before importing earlier rows', async () => {
+    const response = await request(
+      app,
+      '/api/v1/import/equipment',
+      'equipment_code,project_code,equipment_name\nEQ-VALID,PRJ-VALID,Valid Equipment\nEQ-PADDED, PRJ-PADDED ,Padded Project',
+      adminToken,
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toEqual([
+      'Equipment CSV row 3 field "project_code" must not have leading or trailing whitespace',
+    ]);
+    expect(response.body.imported).toBe(0);
+    expect(state.writes).toHaveLength(0);
   });
 
   it.each([
