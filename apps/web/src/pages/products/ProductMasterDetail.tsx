@@ -152,7 +152,6 @@ export default function ProductMasterDetail() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
-  const [productFlowResolution, setProductFlowResolution] = useState<'product_master' | ''>('');
   const [duplicating, setDuplicating] = useState(false);
   const [generatingTds, setGeneratingTds] = useState(false);
 
@@ -303,14 +302,11 @@ export default function ProductMasterDetail() {
   });
 
   const startEdit = () => {
-    setProductFlowResolution('');
     setEditForm({
       product_code: product.product_code || '',
       product_name: product.product_name || '',
       standard_status: product.standard_status || 'Concept',
       application_type: product.application_type || '',
-      design_flow_m3h: (hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) != null ? String(hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) : '',
-      design_head_m: product.design_head_m != null ? String(product.design_head_m) : '',
       primary_material_code: product.primary_material_code || '',
       lamp_count: product.lamp_count != null ? String(product.lamp_count) : '',
       notes: product.notes || '',
@@ -326,10 +322,6 @@ export default function ProductMasterDetail() {
 
   const handleSave = async () => {
     if (!editForm.product_code?.trim()) { toast.error('Product code is required'); return; }
-    if (product.design_flow_sync_status === 'conflict' && productFlowResolution !== 'product_master') {
-      toast.error('Choose which stored Design Flow to keep before saving');
-      return;
-    }
     setSaving(true);
     try {
       const { data: updated } = await api.put(`/product-masters/${id}`, productPutPayload({
@@ -337,9 +329,6 @@ export default function ProductMasterDetail() {
         product_name: editForm.product_name,
         standard_status: editForm.standard_status,
         application_type: editForm.application_type || null,
-        design_flow_m3h: editForm.design_flow_m3h ? parseFloat(editForm.design_flow_m3h) : null,
-        design_flow_conflict_resolution: productFlowResolution || undefined,
-        design_head_m: editForm.design_head_m ? parseFloat(editForm.design_head_m) : null,
         primary_material_code: editForm.primary_material_code || null,
         lamp_count: editForm.lamp_count ? parseInt(editForm.lamp_count, 10) : null,
         notes: editForm.notes || null,
@@ -1028,27 +1017,6 @@ export default function ProductMasterDetail() {
                     </select>
                   </div>
                 )}
-                {!isPiping && !isTank && (<>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
-                    <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                    {product.design_flow_sync_status === 'conflict' && (
-                      <label className="mt-2 flex items-start gap-2 text-xs text-amber-800">
-                        <input type="radio" checked={productFlowResolution === 'product_master'} onChange={() => {
-                          setProductFlowResolution('product_master');
-                          setEditForm((f: any) => ({ ...f, design_flow_m3h: String(product.product_design_flow_m3h) }));
-                        }} />
-                        Keep Product Master value ({product.product_design_flow_m3h} m³/h); Hydraulic currently has {product.hydraulic_design_flow_m3h} m³/h
-                      </label>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
-                    <input type="number" value={editForm.design_head_m} onChange={e => setEditForm((f: any) => ({ ...f, design_head_m: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                  </div>
-                </>)}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
                   <select value={editForm.primary_material_code ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value || null }))}
@@ -1165,27 +1133,6 @@ export default function ProductMasterDetail() {
                   <input value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
-                {!isPiping && (<>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Flow (m³/h)</label>
-                    <input type="number" value={editForm.design_flow_m3h} onChange={e => setEditForm((f: any) => ({ ...f, design_flow_m3h: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                    {product.design_flow_sync_status === 'conflict' && (
-                      <label className="mt-2 flex items-start gap-2 text-xs text-amber-800">
-                        <input type="radio" checked={productFlowResolution === 'product_master'} onChange={() => {
-                          setProductFlowResolution('product_master');
-                          setEditForm((f: any) => ({ ...f, design_flow_m3h: String(product.product_design_flow_m3h) }));
-                        }} />
-                        Keep Product Master value ({product.product_design_flow_m3h} m³/h); Hydraulic currently has {product.hydraulic_design_flow_m3h} m³/h
-                      </label>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Design Head (m)</label>
-                    <input type="number" value={editForm.design_head_m} onChange={e => setEditForm((f: any) => ({ ...f, design_head_m: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                  </div>
-                </>)}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
                   <select value={editForm.primary_material_code ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value || null }))}

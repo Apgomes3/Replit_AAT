@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Link, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductMasterDetail from './ProductMasterDetail';
@@ -19,12 +20,21 @@ vi.mock('../../lib/api', () => ({
 }));
 
 vi.mock('../../components/ui/PageHeader', () => ({
-  default: ({ crumbs }: { crumbs: { label: string; href?: string }[] }) => (
-    <nav aria-label="Breadcrumb">
-      {crumbs.map(crumb => crumb.href
-        ? <Link key={crumb.label} to={crumb.href}>{crumb.label}</Link>
-        : <span key={crumb.label}>{crumb.label}</span>)}
-    </nav>
+  default: ({
+    crumbs,
+    actions,
+  }: {
+    crumbs: { label: string; href?: string }[];
+    actions?: React.ReactNode;
+  }) => (
+    <>
+      <nav aria-label="Breadcrumb">
+        {crumbs.map(crumb => crumb.href
+          ? <Link key={crumb.label} to={crumb.href}>{crumb.label}</Link>
+          : <span key={crumb.label}>{crumb.label}</span>)}
+      </nav>
+      {actions}
+    </>
   ),
 }));
 
@@ -97,5 +107,17 @@ describe('ProductMasterDetail family breadcrumb', () => {
     expect(await screen.findByText('P-UNASSIGNED')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Pumps / North' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Products' })).toHaveAttribute('href', '/products/masters');
+  });
+
+  it('keeps Design Flow and Design Head editable only in the Hydraulic card', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await screen.findByText('P-ASSIGNED');
+    await user.click(screen.getAllByRole('button', { name: 'Edit', exact: true })[0]);
+
+    expect(screen.queryByText('Design Flow (m³/h)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Design Head (m)')).not.toBeInTheDocument();
+    expect(screen.getByText('Hydraulic')).toBeInTheDocument();
   });
 });
