@@ -325,12 +325,46 @@ router.post('/product-families', authenticate, async (req: AuthRequest, res: Res
 });
 
 router.put('/product-families/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { product_family_name, category_code, description, status } = req.body;
-  const result = await query(
-    'UPDATE product_families SET product_family_name=$1, category_code=$2, description=$3, status=COALESCE($4, status), updated_at=NOW() WHERE id::text=$5 RETURNING *',
-    [product_family_name, category_code, description, status || null, req.params.id]);
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Family not found' } });
-  res.json(result.rows[0]);
+  const { product_family_code, product_family_name, category_code, description, status } = req.body;
+  if (!product_family_code?.trim() || !product_family_name?.trim()) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Family code and name are required' } });
+  }
+  try {
+    const result = await query(
+      'UPDATE product_families SET product_family_code=$1, product_family_name=$2, category_code=$3, description=$4, status=COALESCE($5, status), updated_at=NOW() WHERE id::text=$6 RETURNING *',
+      [product_family_code.trim().toUpperCase(), product_family_name.trim(), category_code || null, description || null, status || null, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Family not found' } });
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'A family with that code already exists' } });
+    throw err;
+  }
+});
+
+router.delete('/product-families/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const existing = await query(
+    `SELECT pf.id, pf.product_family_code, COUNT(pm.id)::int AS product_count
+     FROM product_families pf
+     LEFT JOIN product_masters pm ON pm.product_family_id=pf.id
+     WHERE pf.id::text=$1 OR pf.product_family_code=$1
+     GROUP BY pf.id`,
+    [req.params.id],
+  );
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Family not found' } });
+  if (existing.rows[0].product_count > 0) {
+    return res.status(409).json({
+      error: {
+        code: 'IN_USE',
+        message: `Cannot delete ${existing.rows[0].product_family_code} because ${existing.rows[0].product_count} product${existing.rows[0].product_count === 1 ? '' : 's'} still belong to it. Reassign the products first.`,
+      },
+    });
+  }
+  const deleted = await query(
+    'DELETE FROM product_families WHERE id=$1 RETURNING id, product_family_code',
+    [existing.rows[0].id],
+  );
+  if (!deleted.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Family not found' } });
+  res.json({ deleted: true, ...deleted.rows[0] });
 });
 
 // TANK FAMILIES

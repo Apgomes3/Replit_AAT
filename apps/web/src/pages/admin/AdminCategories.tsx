@@ -120,14 +120,15 @@ export default function AdminCategories() {
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Description</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Order</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-24">Type</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-24">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={5} className="text-center py-12 text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={6} className="text-center py-12 text-slate-400">Loading...</td></tr>
               )}
               {!isLoading && categories.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-12 text-slate-400">No categories yet</td></tr>
+                <tr><td colSpan={6} className="text-center py-12 text-slate-400">No categories yet</td></tr>
               )}
               {categories.map(cat => (
                 <tr
@@ -143,6 +144,29 @@ export default function AdminCategories() {
                     {cat.is_system
                       ? <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
                       : <span className="text-xs text-slate-400">Custom</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${cat.name}`}
+                        title={`Edit ${cat.name}`}
+                        onClick={() => openEdit(cat)}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${cat.name}`}
+                        title={cat.is_system ? 'Built-in categories cannot be deleted' : `Delete ${cat.name}`}
+                        onClick={() => void handleDelete(cat)}
+                        disabled={cat.is_system}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-35"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
