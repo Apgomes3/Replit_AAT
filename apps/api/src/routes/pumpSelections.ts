@@ -56,7 +56,7 @@ async function candidates(runner: any, projectId: string, systemId: string) {
 
 async function activeDutyTypes(runner: any) {
   return (await runner(
-    'SELECT id, tag, pump_name, sort_order, is_active FROM pump_duty_types WHERE is_active=true ORDER BY sort_order, tag',
+    'SELECT id, tag, pump_name, flow_route_role, sort_order, is_active FROM pump_duty_types WHERE is_active=true ORDER BY sort_order, tag',
   )).rows;
 }
 
@@ -182,7 +182,7 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
     : inferPumpDutyType(circuit, pumpRole, await activeDutyTypes(query));
   if (!dutyType) {
     return res.status(400).json({
-      error: { code: 'PUMP_ORIGIN_REQUIRED', message: 'Confirm the pump origin and write a new system pump name before saving sizing.' },
+      error: { code: 'PUMP_RELATIONSHIP_REQUIRED', message: 'No active Platform Admin pump duty relationship matches this Flow Route circuit.' },
     });
   }
   const sourcePayload = pumpSourcePayload(circuit, pumpRole, effectiveFlow, {
@@ -298,7 +298,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   }
   if (!dutyType) {
     return res.status(400).json({
-      error: { code: 'PUMP_ORIGIN_REQUIRED', message: 'Select the pump origin before creating this new system pump.' },
+      error: { code: 'PUMP_RELATIONSHIP_REQUIRED', message: 'No active Platform Admin pump duty relationship matches this Flow Route circuit.' },
     });
   }
   const pumpTags = buildPumpTags(system.system_code, dutyType.tag, pumpQuantity);
@@ -331,21 +331,47 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       [system.id, circuitKey, pumpRole],
     )).rows[0];
     if (lockedSelection?.project_equipment_item_id) {
+      const refreshedEquipment = (await client.query(
+        `UPDATE project_equipment_items
+         SET quantity=$1, description=$2, updated_at=NOW()
+         WHERE id=$3 RETURNING *`,
+        [pumpQuantity, `${dutyType.tag} — ${dutyType.pump_name}`, lockedSelection.project_equipment_item_id],
+      )).rows[0] || lockedSelection.pump_snapshot;
+      await client.query(
+        `UPDATE system_pump_selections
+         SET pump_quantity=$1,pump_snapshot=$2::jsonb,pump_duty_type_id=$3,pump_duty_snapshot=$4::jsonb,updated_at=NOW()
+         WHERE system_id=$5 AND circuit_key=$6 AND pump_role=$7`,
+        [
+          pumpQuantity,
+          JSON.stringify({ ...refreshedEquipment, project_equipment_item_id: refreshedEquipment.id }),
+          dutyType.id || null,
+          JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
+          system.id,
+          circuitKey,
+          pumpRole,
+        ],
+      );
       await client.query('COMMIT');
       const circuit = allLines.find(item =>
         item.circuit_key === circuitKey && item.pump_role === PUMP_ROLE_PRIMARY)!;
       return res.status(200).json({
-        project_equipment_item: lockedSelection.pump_snapshot,
-        pump_line: buildPumpLineItem(circuit, lockedSelection, pumpRole),
+        project_equipment_item: refreshedEquipment,
+        pump_line: buildPumpLineItem(circuit, {
+          ...lockedSelection,
+          pump_quantity: pumpQuantity,
+          pump_snapshot: { ...refreshedEquipment, project_equipment_item_id: refreshedEquipment.id },
+          pump_duty_type_id: dutyType.id || null,
+          pump_duty_snapshot: { tag: dutyType.tag, pump_name: dutyType.pump_name },
+        }, pumpRole),
         idempotent: true,
       });
     }
     const result = await client.query(
       `INSERT INTO project_equipment_items
          (equip_code, project_id, system_id, description, quantity, unit, status)
-       VALUES ($1,$2,$3,$4,1,'EA','Design')
+       VALUES ($1,$2,$3,$4,$5,'EA','Design')
        RETURNING *`,
-      [equipCode, book.project_id, system.id, description],
+      [equipCode, book.project_id, system.id, description, pumpQuantity],
     );
     const pei = result.rows[0];
     const circuit = allLines.find(item =>

@@ -1797,18 +1797,36 @@ CREATE TABLE IF NOT EXISTS pump_duty_types (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tag VARCHAR(10) NOT NULL UNIQUE CHECK (tag = UPPER(tag) AND tag ~ '^[A-Z0-9]+$'),
   pump_name VARCHAR(255) NOT NULL,
+  flow_route_role VARCHAR(80),
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-INSERT INTO pump_duty_types (tag, pump_name, sort_order) VALUES
-  ('FFSP', 'Foam Fractionator Supply Pump', 10),
-  ('FFVP', 'Foam Fractionator Venturi Pump', 20),
-  ('SFSP', 'Sand Filter Supply Pump', 30),
-  ('CIRCP', 'Circulation Pump', 40),
-  ('VACP', 'Vacuum Pump', 50)
+ALTER TABLE pump_duty_types ADD COLUMN IF NOT EXISTS flow_route_role VARCHAR(80);
+INSERT INTO pump_duty_types (tag, pump_name, flow_route_role, sort_order) VALUES
+  ('FFSP', 'Foam Fractionator Supply Pump', 'foam_fractionator_supply', 10),
+  ('FFVP', 'Foam Fractionator Venturi Pump', 'foam_fractionator_venturi', 20),
+  ('SFSP', 'Sand Filter Supply Pump', 'sand_filter_supply', 30),
+  ('CIRCP', 'Circulation Pump', 'circulation', 40),
+  ('VACP', 'Vacuum Pump', 'vacuum', 50)
 ON CONFLICT (tag) DO NOTHING;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pump_duty_types WHERE flow_route_role IS NOT NULL) THEN
+    UPDATE pump_duty_types
+    SET flow_route_role = CASE tag
+      WHEN 'FFSP' THEN 'foam_fractionator_supply'
+      WHEN 'FFVP' THEN 'foam_fractionator_venturi'
+      WHEN 'SFSP' THEN 'sand_filter_supply'
+      WHEN 'CIRCP' THEN 'circulation'
+      WHEN 'VACP' THEN 'vacuum'
+      ELSE NULL
+    END;
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pump_duty_types_flow_route_role
+  ON pump_duty_types(flow_route_role) WHERE flow_route_role IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS system_flow_fractionator_allocations (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),

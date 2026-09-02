@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Gauge, LayoutGrid, List, Plus, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Gauge, LayoutGrid, List, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 
@@ -82,22 +82,16 @@ function statusStyle(status?: string | null) {
 // ---------------------------------------------------------------------------
 function PumpLineCard({
   line,
-  candidates,
-  dutyTypes,
   readOnly,
   systemId,
   bookId,
   onRemoveVenturi,
-  onCreatePump,
 }: {
   line: PumpLine;
-  candidates: PumpCandidate[];
   readOnly: boolean;
   systemId: string;
   bookId: string;
   onRemoveVenturi?: () => void;
-  onCreatePump?: (description: string, quantity: number, pumpDutyTypeId: string) => Promise<void>;
-  dutyTypes: PumpDutyType[];
 }) {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
@@ -112,10 +106,6 @@ function PumpLineCard({
     venturi_flow_m3h: line.venturi_flow_m3h ?? '',
     pump_quantity: line.pump_quantity ?? 1,
   });
-  const [newPumpName, setNewPumpName] = useState('');
-  const [newPumpDutyTypeId, setNewPumpDutyTypeId] = useState('');
-  const [creatingPump, setCreatingPump] = useState(false);
-
   useEffect(() => {
     setForm({
       project_equipment_item_id: line.project_equipment_item_id || '',
@@ -135,11 +125,23 @@ function PumpLineCard({
   const save = async () => {
     setSaving(true);
     try {
+      const allocation = await api.post(`/systems/${systemId}/pump-lines`, {
+        design_book_id: bookId,
+        circuit_key: line.circuit_key,
+        pump_role: pumpRole,
+        pump_quantity: Number(form.pump_quantity),
+        ...(isVenturi && form.venturi_flow_m3h !== ''
+          ? { venturi_flow_m3h: Number(form.venturi_flow_m3h) }
+          : {}),
+      });
+      const projectEquipmentItemId = allocation.data?.project_equipment_item?.id
+        || allocation.data?.project_equipment_item?.project_equipment_item_id
+        || line.project_equipment_item_id;
       await api.put(`/systems/${systemId}/pump-selections`, {
         design_book_id: bookId,
         circuit_key: line.circuit_key,
         pump_role: pumpRole,
-        project_equipment_item_id: form.project_equipment_item_id || null,
+        project_equipment_item_id: projectEquipmentItemId || null,
         design_head_m: form.design_head_m === '' ? null : Number(form.design_head_m),
         pump_efficiency_pct: form.pump_efficiency_pct === '' ? null : Number(form.pump_efficiency_pct),
         motor_efficiency_pct: form.motor_efficiency_pct === '' ? null : Number(form.motor_efficiency_pct),
@@ -157,7 +159,6 @@ function PumpLineCard({
   };
 
   const results = line.results || {};
-  const selected = line.selected_pump || candidates.find(c => c.id === form.project_equipment_item_id);
   const stale = line.freshness === 'stale';
   const status = stale ? 'stale' : line.status;
 
@@ -165,19 +166,10 @@ function PumpLineCard({
   const displayFlow = isVenturi ? form.venturi_flow_m3h : line.flow_m3h;
   const pumpQuantity = Math.max(1, Number(form.pump_quantity) || 1);
   const perPumpFlow = Number.isFinite(Number(displayFlow)) ? Number(displayFlow) / pumpQuantity : null;
-
-  const createNamedPump = async () => {
-    const description = newPumpName.trim();
-    if (!description || !onCreatePump || (line.requires_pump_origin && !newPumpDutyTypeId)) return;
-    setCreatingPump(true);
-    try {
-      await onCreatePump(description, pumpQuantity, newPumpDutyTypeId);
-      setNewPumpName('');
-      setNewPumpDutyTypeId('');
-    } finally {
-      setCreatingPump(false);
-    }
-  };
+  const tagPrefix = line.pump_tags?.[0]?.replace(/-\d{2}$/, '') || line.pump_duty_tag || '';
+  const displayedPumpTags = tagPrefix
+    ? Array.from({ length: pumpQuantity }, (_, index) => `${tagPrefix}-${String(index + 1).padStart(2, '0')}`)
+    : [];
 
   return (
     <div className="space-y-3 p-3 sm:p-4">
@@ -230,8 +222,8 @@ function PumpLineCard({
             className={inputClass}
           />
           <p className="mt-1 text-xs text-stone-500">Identical pumps sharing this duty.</p>
-          {!!line.pump_tags?.length && (
-            <p className="mt-1 font-mono text-[11px] text-blue-700">{line.pump_tags.join(' · ')}</p>
+          {!!displayedPumpTags.length && (
+            <p className="mt-1 font-mono text-[11px] text-blue-700">{displayedPumpTags.join(' · ')}</p>
           )}
         </label>
         <label>
@@ -261,63 +253,21 @@ function PumpLineCard({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label>
-          <span className="mb-1 block text-xs font-medium text-stone-600">Selected system pump</span>
-          <select
-            aria-label={`Selected pump for ${line.pump_role_name || line.circuit_name}`}
-            value={form.project_equipment_item_id}
-            onChange={e => setForm(current => ({ ...current, project_equipment_item_id: e.target.value }))}
-            disabled={readOnly}
-            className={inputClass}
-          >
-            <option value="">— Select assigned pump —</option>
-            {candidates.map(candidate => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.equip_code || 'Untagged'} — {candidate.product_code || candidate.product_name || candidate.description || 'Pump'}
-              </option>
-            ))}
-          </select>
-          {selected && (
-            <p className="mt-1 text-xs text-stone-500">
-              {selected.product_code || selected.equip_code} · {selected.product_name || selected.description}
-              {selected.power_kw != null ? ` · ${selected.power_kw} kW catalog rating` : ''}
-            </p>
-          )}
-          {!readOnly && onCreatePump && (
-            <div className="mt-2 space-y-2">
-              {line.requires_pump_origin && (
-                <select
-                  aria-label={`Pump origin for ${line.circuit_name}`}
-                  value={newPumpDutyTypeId}
-                  onChange={event => setNewPumpDutyTypeId(event.target.value)}
-                  className={inputClass}
-                  disabled={creatingPump}
-                >
-                  <option value="">— Confirm pump origin —</option>
-                  {dutyTypes.map(duty => <option key={duty.id} value={duty.id}>{duty.tag} — {duty.pump_name}</option>)}
-                </select>
-              )}
-              <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                aria-label={`New pump name for ${line.pump_role_name || line.circuit_name}`}
-                value={newPumpName}
-                onChange={event => setNewPumpName(event.target.value)}
-                className={inputClass}
-                placeholder="Write a new pump name"
-                disabled={creatingPump}
-              />
-              <button
-                type="button"
-                onClick={() => void createNamedPump()}
-                disabled={creatingPump || !newPumpName.trim() || (line.requires_pump_origin && !newPumpDutyTypeId)}
-                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-              >
-                <Plus className="h-3.5 w-3.5" /> {creatingPump ? 'Creating…' : 'Create & use'}
-              </button>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-stone-600">System pump</span>
+          <div className="min-h-[42px] rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+            {displayedPumpTags.length ? (
+              <div className="space-y-1">
+                {displayedPumpTags.map(tag => <div key={tag} className="font-mono text-sm font-semibold text-blue-800">{tag}</div>)}
               </div>
-            </div>
-          )}
-        </label>
+            ) : (
+              <span className="text-sm text-amber-800">No Platform Admin relationship matches this circuit.</span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-stone-500">
+            Defined automatically from the Flow Route loop and governed pump duty relationship.
+          </p>
+        </div>
         <label>
           <span className="mb-1 block text-xs font-medium text-stone-600">Pump hydraulic efficiency (%)</span>
           <input
@@ -410,16 +360,12 @@ function PumpLineCard({
 function CircuitGroup({
   circuitKey,
   lines,
-  candidates,
-  dutyTypes,
   readOnly,
   systemId,
   bookId,
 }: {
   circuitKey: string;
   lines: PumpLine[];
-  candidates: PumpCandidate[];
-  dutyTypes: PumpDutyType[];
   readOnly: boolean;
   systemId: string;
   bookId: string;
@@ -447,7 +393,7 @@ function CircuitGroup({
     if (venturiLine && venturiChoice !== 'yes') setVenturiChoice('yes');
   }, [!!venturiLine]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const createPump = async (pumpRole: 'primary' | 'venturi', description?: string, quantity = 1, pumpDutyTypeId = '') => {
+  const createPump = async (pumpRole: 'primary' | 'venturi', quantity = 1) => {
     if (creatingRole) return;
     setCreatingRole(pumpRole);
     try {
@@ -456,8 +402,6 @@ function CircuitGroup({
         circuit_key: circuitKey,
         pump_role: pumpRole,
         pump_quantity: quantity,
-        ...(pumpDutyTypeId ? { pump_duty_type_id: pumpDutyTypeId } : {}),
-        ...(description ? { description } : {}),
       });
       await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
       await queryClient.invalidateQueries({ queryKey: ['design-book', bookId] });
@@ -538,12 +482,9 @@ function CircuitGroup({
               )}
               <PumpLineCard
                 line={primaryLine}
-                candidates={candidates}
-                dutyTypes={dutyTypes}
                 readOnly={readOnly || primaryLine.circuit_kind === 'orphaned'}
                 systemId={systemId}
                 bookId={bookId}
-                onCreatePump={async (description, quantity, dutyTypeId) => { await createPump('primary', description, quantity, dutyTypeId); }}
               />
             </div>
           )}
@@ -600,13 +541,10 @@ function CircuitGroup({
               </div>
               <PumpLineCard
                 line={venturiLine}
-                candidates={candidates}
-                dutyTypes={dutyTypes}
                 readOnly={readOnly}
                 systemId={systemId}
                 bookId={bookId}
                 onRemoveVenturi={!readOnly ? removeVenturi : undefined}
-                onCreatePump={async (description, quantity, dutyTypeId) => { await createPump('venturi', description, quantity, dutyTypeId); }}
               />
             </div>
           )}
@@ -722,8 +660,6 @@ export default function LSSPumpSelectionPanel({
   const items: PumpLine[] = data?.frozen
     ? (sourcePackage?.items || data.items || [])
     : (data?.items || sourcePackage?.items || []);
-  const candidates: PumpCandidate[] = data?.pump_candidates || [];
-  const dutyTypes: PumpDutyType[] = data?.pump_duty_types || [];
 
   if (!items.length) {
     return (
@@ -750,16 +686,11 @@ export default function LSSPumpSelectionPanel({
         <div className="flex items-start gap-2">
           <Zap className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            Circuit flow is read-only and stays linked to Flow Route. Enter the initial head and separate pump/motor efficiencies to estimate motor power, then select a pump assigned to this LSS.
+            Circuit flow is read-only and stays linked to Flow Route. The loop definition and Platform Admin duty relationship generate the system pump automatically. Enter quantity, initial head, and pump/motor efficiencies to estimate motor power.
             Foam Fractionator loops can have a separate venturi pump (FFVP) with its own independently specified flow and duty.
           </p>
         </div>
       </div>
-      {!candidates.length && !readOnly && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          No eligible pump equipment is assigned to this LSS system yet. Select one from the system pump list or write a new pump name in the card view.
-        </div>
-      )}
       {data?.frozen && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           This pump-selection package is frozen with the Design Book revision.
@@ -802,8 +733,6 @@ export default function LSSPumpSelectionPanel({
               key={circuitKey}
               circuitKey={circuitKey}
               lines={lines}
-              candidates={candidates}
-              dutyTypes={dutyTypes}
               readOnly={readOnly || !!data?.frozen}
               systemId={systemId}
               bookId={bookId}
