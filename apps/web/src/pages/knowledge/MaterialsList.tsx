@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../../lib/api';
 import { Material } from '../../types';
@@ -12,8 +13,21 @@ import toast from 'react-hot-toast';
 import { Plus, Pencil } from 'lucide-react';
 
 export default function MaterialsList() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const qc = useQueryClient();
-  const [showNew, setShowNew] = useState(false);
+  const returnContext = (location.state as any)?.returnContext?.type === 'product-create'
+    ? (location.state as any).returnContext
+    : null;
+  const returnTo = typeof (location.state as any)?.returnTo === 'string'
+    && (location.state as any).returnTo.startsWith('/')
+    ? (location.state as any).returnTo
+    : '/products/masters';
+  const [showNew, setShowNew] = useState(Boolean(returnContext?.materialName));
+  const [newInitialValues, setNewInitialValues] = useState<Record<string, any> | undefined>(
+    returnContext?.materialName ? { material_name: returnContext.materialName } : undefined,
+  );
+  const [createdForReturn, setCreatedForReturn] = useState<Material | null>(null);
   const [selected, setSelected] = useState<Material | null>(null);
   const [editRow, setEditRow] = useState<Material | null>(null);
 
@@ -38,12 +52,35 @@ export default function MaterialsList() {
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
 
+  const returnToProduct = (material?: Material | null) => {
+    navigate(returnTo, {
+      replace: true,
+      state: {
+        resumeProductCreate: {
+          draft: returnContext?.draft || {},
+          material: material
+            ? { material_code: material.material_code, material_name: material.material_name }
+            : undefined,
+        },
+      },
+    });
+  };
+
   return (
     <div className="flex h-full">
       <div className="flex-1 flex flex-col min-w-0">
         <PageHeader title="Materials" subtitle="Engineering material definitions"
-          actions={<Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Material</Button>}
+          actions={<div className="flex flex-wrap items-center gap-2">
+            {returnContext && <Button variant="ghost" onClick={() => returnToProduct(createdForReturn)}>&larr; Return to product</Button>}
+            <Button variant="primary" onClick={() => { setNewInitialValues(undefined); setShowNew(true); }}><Plus className="w-4 h-4" />New Material</Button>
+          </div>}
         />
+        {returnContext && (
+          <div className="flex items-center justify-between gap-3 border-b border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <span>Add the missing material here, then return to finish creating your product.</span>
+            {createdForReturn && <Button variant="primary" onClick={() => returnToProduct(createdForReturn)}>Use {createdForReturn.material_code}</Button>}
+          </div>
+        )}
         <div className="flex-1 bg-white overflow-auto">
           <DataTable
             columns={columns} data={data?.items || []} loading={isLoading}
@@ -90,7 +127,7 @@ export default function MaterialsList() {
       )}
 
       {showNew && (
-        <NewEntityModal title="New Material" onClose={() => setShowNew(false)}
+        <NewEntityModal title="New Material" initialValues={newInitialValues} onClose={() => { setShowNew(false); setNewInitialValues(undefined); }}
           fields={[
             { name: 'material_code', label: 'Material Code', required: true, placeholder: 'MAT-XX-YY' },
             { name: 'material_name', label: 'Material Name', required: true },
@@ -100,10 +137,12 @@ export default function MaterialsList() {
             { name: 'chemical_resistance', label: 'Chemical Resistance' },
           ]}
           onSubmit={async (data) => {
-            await api.post('/materials', data);
+            const created = await api.post('/materials', data);
             toast.success('Material created');
             refetch();
             setShowNew(false);
+            setNewInitialValues(undefined);
+            if (returnContext) setCreatedForReturn(created.data);
           }}
         />
       )}

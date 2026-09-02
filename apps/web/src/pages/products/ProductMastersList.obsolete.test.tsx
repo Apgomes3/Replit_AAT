@@ -7,13 +7,14 @@ import ProductMastersList from './ProductMastersList';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
   exportCsv: vi.fn(),
 }));
 
 vi.mock('../../lib/api', () => ({
   default: {
     get: mocks.get,
-    post: vi.fn(),
+    post: mocks.post,
     put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
@@ -54,7 +55,11 @@ const products = [
 
 function LocationProbe() {
   const location = useLocation();
-  return <output data-testid="location-search">{location.search}</output>;
+  return <>
+    <output data-testid="location-search">{location.search}</output>
+    <output data-testid="location-path">{location.pathname}</output>
+    <output data-testid="location-state">{JSON.stringify(location.state)}</output>
+  </>;
 }
 
 function renderList(initialEntries = ['/products/masters']) {
@@ -78,6 +83,8 @@ describe('ProductMastersList obsolete visibility', () => {
   beforeEach(() => {
     mocks.exportCsv.mockReset();
     mocks.get.mockReset();
+    mocks.post.mockReset();
+    mocks.post.mockResolvedValue({ data: {} });
     mocks.get.mockImplementation(async (url: string) => {
       if (url.startsWith('/product-masters?')) {
         const params = new URLSearchParams(url.split('?')[1]);
@@ -168,5 +175,30 @@ describe('ProductMastersList obsolete visibility', () => {
     expect(screen.getByRole('heading', { name: 'Products' })).toBeInTheDocument();
     expect(screen.getByTestId('location-search')).toHaveTextContent('');
     expect(screen.getByText('Unassigned product')).toBeInTheDocument();
+  });
+
+  it('opens Material Management with the unfinished product draft preserved', async () => {
+    const user = userEvent.setup();
+    renderList();
+    await screen.findByText('Active pump');
+
+    await user.click(screen.getByRole('button', { name: 'New Product' }));
+    await user.type(screen.getByLabelText('Product Code*'), 'PM-NEW-1');
+    await user.type(screen.getByLabelText('Product Name*'), 'New circulation pump');
+    await user.selectOptions(screen.getByLabelText('Primary Material'), '__CREATE_NEW__');
+    await user.type(screen.getByPlaceholderText('New Primary Material name…'), 'Titanium Grade 2');
+    await user.click(screen.getAllByRole('button', { name: 'Create' })[0]);
+
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/knowledge/materials');
+    const state = JSON.parse(screen.getByTestId('location-state').textContent || '{}');
+    expect(state.returnTo).toBe('/products/masters');
+    expect(state.returnContext).toMatchObject({
+      type: 'product-create',
+      materialName: 'Titanium Grade 2',
+      draft: {
+        product_code: 'PM-NEW-1',
+        product_name: 'New circulation pump',
+      },
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
 import api from '../../lib/api';
 import { ProductMaster } from '../../types';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -24,12 +24,14 @@ function deriveCode(name: string): string {
 
 export default function ProductMastersList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const selectedFamilyId = searchParams.get('family');
   const [showObsolete, setShowObsolete] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [newProductInitialValues, setNewProductInitialValues] = useState<Record<string, any> | undefined>();
   const [editRow, setEditRow] = useState<ProductMaster | null>(null);
   const [editForm, setEditForm] = useState<any>(null);
   const [editSaving, setEditSaving] = useState(false);
@@ -39,6 +41,21 @@ export default function ProductMastersList() {
   const [creatingEditCategory, setCreatingEditCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryLoading, setNewCategoryLoading] = useState(false);
+  const currentPath = `${location.pathname}${location.search}${location.hash}`;
+
+  useEffect(() => {
+    const resume = (location.state as any)?.resumeProductCreate;
+    if (!resume?.draft) return;
+    const material = resume.material;
+    setNewProductInitialValues({
+      ...resume.draft,
+      ...(material?.material_code
+        ? { primary_material_code: `${material.material_code} — ${material.material_name}` }
+        : {}),
+    });
+    setShowNew(true);
+    navigate(currentPath, { replace: true, state: null });
+  }, [location.state, currentPath, navigate]);
 
   const selectFamily = (familyId: string | null) => {
     setSearchParams(previous => {
@@ -111,6 +128,20 @@ export default function ProductMastersList() {
     await api.post('/admin/categories', { name, code });
     await qc.invalidateQueries({ queryKey: ['product-categories'] });
     toast.success(`Category "${name}" created`);
+    return name;
+  }
+
+  async function openMaterialManagement(name: string, currentValues?: Record<string, any>): Promise<string> {
+    navigate('/knowledge/materials', {
+      state: {
+        returnTo: currentPath,
+        returnContext: {
+          type: 'product-create',
+          draft: currentValues || {},
+          materialName: name,
+        },
+      },
+    });
     return name;
   }
 
@@ -236,7 +267,7 @@ export default function ProductMastersList() {
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
-            <Button variant="primary" onClick={() => setShowNew(true)}><Plus className="w-4 h-4" />New Product</Button>
+            <Button variant="primary" onClick={() => { setNewProductInitialValues(undefined); setShowNew(true); }}><Plus className="w-4 h-4" />New Product</Button>
           </div>
         }
       />
@@ -372,7 +403,10 @@ export default function ProductMastersList() {
       )}
 
       {showNew && (
-        <NewEntityModal title="New Product Master" onClose={() => setShowNew(false)}
+        <NewEntityModal
+          title="New Product Master"
+          initialValues={newProductInitialValues}
+          onClose={() => { setShowNew(false); setNewProductInitialValues(undefined); }}
           fields={[
             { name: 'product_code', label: 'Product Code', required: true, placeholder: 'PM-XX-000' },
             { name: 'product_name', label: 'Product Name', required: true },
@@ -382,7 +416,7 @@ export default function ProductMastersList() {
             { name: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Grundfos' },
             { name: 'model', label: 'Model', placeholder: 'e.g. CR 5-10' },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
-            { name: 'primary_material_code', label: 'Primary Material', options: materialOptions },
+            { name: 'primary_material_code', label: 'Primary Material', options: materialOptions, onCreateOption: openMaterialManagement },
             { name: 'standard_status', label: 'Status', options: STATUSES },
           ]}
           onSubmit={async (formData) => {
@@ -394,6 +428,7 @@ export default function ProductMastersList() {
             toast.success('Product master created');
             refetch();
             setShowNew(false);
+            setNewProductInitialValues(undefined);
           }}
         />
       )}

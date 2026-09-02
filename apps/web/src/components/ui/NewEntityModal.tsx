@@ -10,7 +10,7 @@ interface Field {
   required?: boolean;
   placeholder?: string;
   options?: string[];
-  onCreateOption?: (label: string) => Promise<string>;
+  onCreateOption?: (label: string, currentValues?: Record<string, any>) => Promise<string>;
 }
 
 interface NewEntityModalProps {
@@ -60,7 +60,7 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
     if (!createInput.trim() || !field.onCreateOption) return;
     setCreateLoading(true);
     try {
-      const newValue = await field.onCreateOption(createInput.trim());
+      const newValue = await field.onCreateOption(createInput.trim(), values);
       setValues(v => ({ ...v, [field.name]: newValue }));
       setCreatingFor(null);
       setCreateInput('');
@@ -79,13 +79,14 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {fields.map(field => (
             <div key={field.name}>
-              <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
+              <label htmlFor={`new-entity-${field.name}`} className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
                 {field.label}{field.required && <span className="text-red-400 ml-1">*</span>}
               </label>
               {field.options ? (
                 creatingFor === field.name ? (
                   <div className="space-y-1.5">
                     <input
+                      id={`new-entity-${field.name}`}
                       autoFocus
                       type="text"
                       value={createInput}
@@ -115,6 +116,7 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
                   </div>
                 ) : (
                   <select
+                    id={`new-entity-${field.name}`}
                     value={values[field.name] || ''}
                     onChange={e => handleSelectChange(field, e.target.value)}
                     required={field.required}
@@ -129,6 +131,7 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
                 )
               ) : (
                 <input
+                  id={`new-entity-${field.name}`}
                   type={field.type || 'text'}
                   value={values[field.name] || ''}
                   onChange={e => setValues(v => ({ ...v, [field.name]: e.target.value }))}
