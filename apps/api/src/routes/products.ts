@@ -1167,25 +1167,38 @@ router.post('/components', authenticate, async (req: AuthRequest, res: Response)
 });
 
 router.put('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const { component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, cost, sell_price, manufacturer, model } = req.body;
-  const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
-  const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
-  const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
-  const result = await query(
-    'UPDATE components SET component_name=$1, component_type=$2, component_category=$3, description=$4, primary_material_code=$5, standard_size=$6, weight_kg=$7, unit=$8, status=$9, notes=$10, synonyms=$11, cost=$12, sell_price=$13, manufacturer=$14, model=$15, updated_at=NOW() WHERE id=$16 RETURNING *',
-    [component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, manufacturer || null, model || null, req.params.id]);
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
-  await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', {
-    summary: 'Component details updated',
-    component_name,
-    component_type,
-    status,
-    manufacturer: manufacturer || null,
-    model: model || null,
-    cost: costVal,
-    primary_material_code: primary_material_code || null,
-  });
-  res.json(result.rows[0]);
+  try {
+    const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, cost, sell_price, manufacturer, model } = req.body;
+    const componentCode = component_code === undefined || component_code === null
+      ? null
+      : String(component_code).trim().toUpperCase();
+    if (component_code !== undefined && !componentCode) {
+      return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'component_code cannot be blank' } });
+    }
+    const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
+    const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
+    const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
+    const result = await query(
+      'UPDATE components SET component_code=COALESCE($1, component_code), component_name=$2, component_type=$3, component_category=$4, description=$5, primary_material_code=$6, standard_size=$7, weight_kg=$8, unit=$9, status=$10, notes=$11, synonyms=$12, cost=$13, sell_price=$14, manufacturer=$15, model=$16, updated_at=NOW() WHERE id=$17 RETURNING *',
+      [componentCode, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, manufacturer || null, model || null, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
+    await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', {
+      summary: 'Component details updated',
+      component_code: result.rows[0].component_code,
+      component_name,
+      component_type,
+      status,
+      manufacturer: manufacturer || null,
+      model: model || null,
+      cost: costVal,
+      primary_material_code: primary_material_code || null,
+    });
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    if (err?.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE', message: 'Component code already exists' } });
+    console.error('[PUT /components/:id] error:', err?.message || err);
+    res.status(500).json({ error: { code: 'SERVER_ERROR', message: err?.message || 'Failed to update component' } });
+  }
 });
 
 router.patch('/product-masters/:id/status', authenticate, async (req: AuthRequest, res: Response) => {

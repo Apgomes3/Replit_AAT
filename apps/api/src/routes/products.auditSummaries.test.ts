@@ -80,11 +80,11 @@ vi.mock('../db', () => {
     if (sql.startsWith('update components set status')) {
       return { rows: [{ id: 'component-1', status: params[0] }] };
     }
-    if (sql.startsWith('update components set component_name')) {
+    if (sql.startsWith('update components set component_code')) {
       return {
         rows: [{
           id: 'component-1',
-          component_code: 'C-100',
+          component_code: params[0] || 'C-100',
           component_name: 'Updated Component',
           status: 'Active',
         }],
@@ -249,12 +249,21 @@ describe('persisted audit summaries for product mutations', () => {
     })).status).toBe(201);
     expectSummary('component', 'component-1', 'CREATE', 'Component C-100 created');
 
-    expect((await request(app, 'PUT', '/api/v1/components/component-1', token, {
+    const updateResponse = await request(app, 'PUT', '/api/v1/components/component-1', token, {
+      component_code: 'C-100-RENAMED',
       component_name: 'Updated Component',
       component_type: 'Valve',
       status: 'Active',
-    })).status).toBe(200);
+    });
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.component_code).toBe('C-100-RENAMED');
     expectSummary('component', 'component-1', 'UPDATE', 'Component details updated');
+
+    const blankCodeResponse = await request(app, 'PUT', '/api/v1/components/component-1', token, {
+      component_code: '   ',
+      component_name: 'Updated Component',
+    });
+    expect(blankCodeResponse.status).toBe(400);
 
     expect((await request(app, 'PATCH', '/api/v1/components/component-1/status', token, {
       status: 'Obsolete',

@@ -131,6 +131,7 @@ export default function ComponentDetail() {
 
   const startEdit = () => {
     setForm({
+      component_code: component.component_code,
       component_name: component.component_name,
       component_type: component.component_type || 'Vessel',
       component_category: component.component_category || 'Mechanical',
@@ -309,6 +310,12 @@ export default function ComponentDetail() {
                 <div className="bg-white border border-slate-200 rounded-lg p-4">
                   <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Edit Specifications</div>
                   <div className="grid grid-cols-2 gap-3">
+                     <div>
+                       <label className="block text-xs font-medium text-slate-600 mb-1">Code</label>
+                       <input aria-label="Component code" value={form.component_code} onChange={e => setForm((f: any) => ({ ...f, component_code: e.target.value.toUpperCase() }))}
+                         placeholder="e.g. COMP-PUMP-001"
+                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                     </div>
                     <div className="col-span-2">
                       <label className="block text-xs font-medium text-slate-600 mb-1">Name</label>
                       <input value={form.component_name} onChange={e => setForm((f: any) => ({ ...f, component_name: e.target.value }))}
