@@ -168,6 +168,16 @@ describe('ProductMasterDetail family breadcrumb', () => {
     expect(mocks.put.mock.calls[0][1]).not.toHaveProperty('lamp_count');
   });
 
+  it('shows UV controls for a UV-coded product when the family code is unavailable', async () => {
+    product = { ...assignedProduct, product_code: 'AAT-LPUV-900-SS316', product_family_code: undefined };
+    renderDetail();
+
+    const uvControlPanel = (await screen.findByText('UV Installation & Control')).closest('.rounded-lg') as HTMLElement;
+    await userEvent.click(within(uvControlPanel).getByRole('button', { name: 'Edit' }));
+    expect(screen.getByText('Configuration')).toBeVisible();
+    expect(screen.getByText('Signal Type')).toBeVisible();
+  });
+
   it('maintains the PIM-owned Lamp Count from the Electrical card', async () => {
     const user = userEvent.setup();
     renderDetail();

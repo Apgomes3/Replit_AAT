@@ -706,7 +706,11 @@ export default function ProductMasterDetail() {
   const isPiping = product.product_category === 'Piping';
   const isTank = product.product_category === 'Tank';
   const isPneumatic = String(product.product_category || '').toLowerCase() === 'pneumatic';
-  const isUvProduct = String(product.product_family_code || '').trim().toUpperCase() === 'PFM-UV';
+  const productFamilyCode = String(product.product_family_code || '').trim().toUpperCase();
+  const productCode = String(product.product_code || '').trim().toUpperCase();
+  const isUvProduct = productFamilyCode === 'PFM-UV'
+    || productCode.includes('UV')
+    || String(product.product_category || '').trim().toLowerCase() === 'disinfection';
   const bom = product.boms?.[0];
   const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
