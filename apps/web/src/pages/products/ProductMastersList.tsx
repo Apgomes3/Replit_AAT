@@ -30,6 +30,15 @@ export default function ProductMastersList() {
   const [search, setSearch] = useState('');
   const selectedFamilyId = searchParams.get('family');
   const [showObsolete, setShowObsolete] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [quickAddForm, setQuickAddForm] = useState({
+    product_code: '',
+    product_name: '',
+    product_family_id: selectedFamilyId || '',
+    product_category: '',
+    standard_status: 'Concept',
+  });
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [newProductInitialValues, setNewProductInitialValues] = useState<Record<string, any> | undefined>();
   const [editRow, setEditRow] = useState<ProductMaster | null>(null);
@@ -146,6 +155,50 @@ export default function ProductMastersList() {
     return name;
   }
 
+  const enterEditMode = () => {
+    setQuickAddForm({
+      product_code: '',
+      product_name: '',
+      product_family_id: selectedFamilyId || '',
+      product_category: '',
+      standard_status: 'Concept',
+    });
+    setEditMode(true);
+  };
+
+  const handleQuickAdd = async () => {
+    const productCode = quickAddForm.product_code.trim().toUpperCase();
+    const productName = quickAddForm.product_name.trim();
+    if (!productCode || !productName) {
+      toast.error('Product code and product name are required');
+      return;
+    }
+    setQuickAddSaving(true);
+    try {
+      const created = await api.post('/product-masters', {
+        product_code: productCode,
+        product_name: productName,
+        product_family_id: quickAddForm.product_family_id || null,
+        product_category: quickAddForm.product_category || null,
+        standard_status: quickAddForm.standard_status || 'Concept',
+      });
+      toast.success(`Product ${productCode} added`);
+      setQuickAddForm({
+        product_code: '',
+        product_name: '',
+        product_family_id: selectedFamilyId || '',
+        product_category: '',
+        standard_status: 'Concept',
+      });
+      await refetch();
+      if (created.data?.id) openEdit(created.data);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Product could not be added');
+    } finally {
+      setQuickAddSaving(false);
+    }
+  };
+
   async function handleCreateEditCategory() {
     if (!newCategoryName.trim()) return;
     setNewCategoryLoading(true);
@@ -228,6 +281,21 @@ export default function ProductMastersList() {
         }}
       />
     ) },
+    ...(editMode ? [{
+      key: 'edit',
+      header: 'Edit',
+      className: 'w-20',
+      render: (r: ProductMaster) => (
+        <button
+          type="button"
+          aria-label={`Edit ${r.product_code}`}
+          onClick={event => { event.stopPropagation(); openEdit(r); }}
+          className="inline-flex items-center gap-1 rounded border border-blue-200 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+        >
+          <Pencil className="h-3 w-3" /> Edit
+        </button>
+      ),
+    }] : []),
   ];
 
   return (
@@ -268,10 +336,71 @@ export default function ProductMastersList() {
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
-            <Button variant="primary" onClick={() => { setNewProductInitialValues(undefined); setShowNew(true); }}><Plus className="w-4 h-4" />New Product</Button>
+            <Button
+              variant={editMode ? 'primary' : 'secondary'}
+              onClick={() => editMode ? setEditMode(false) : enterEditMode()}
+            >
+              <Pencil className="w-4 h-4" />{editMode ? 'Done Editing' : 'Edit Mode'}
+            </Button>
+            {!editMode && (
+              <Button variant="primary" onClick={() => { setNewProductInitialValues(undefined); setShowNew(true); }}>
+                <Plus className="w-4 h-4" />New Product
+              </Button>
+            )}
           </div>
         }
       />
+
+      {editMode && (
+        <section className="border-b border-blue-100 bg-blue-50/60 px-6 py-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Quick add product</h2>
+              <p className="text-xs text-slate-500">Enter the code and name now. Use Edit on the new row to complete the remaining details.</p>
+            </div>
+            <span className="text-xs font-medium text-blue-700">Edit mode</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_1.5fr_1.25fr_1fr_auto]">
+            <input
+              aria-label="Quick product code"
+              value={quickAddForm.product_code}
+              onChange={event => setQuickAddForm(form => ({ ...form, product_code: event.target.value.toUpperCase() }))}
+              placeholder="Product code *"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none"
+            />
+            <input
+              aria-label="Quick product name"
+              value={quickAddForm.product_name}
+              onChange={event => setQuickAddForm(form => ({ ...form, product_name: event.target.value }))}
+              placeholder="Product name *"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            />
+            <select
+              aria-label="Quick product family"
+              value={quickAddForm.product_family_id}
+              onChange={event => setQuickAddForm(form => ({ ...form, product_family_id: event.target.value }))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">Family (optional)</option>
+              {families.map((family: any) => (
+                <option key={family.id} value={family.id}>{family.product_family_code} — {family.product_family_name}</option>
+              ))}
+            </select>
+            <select
+              aria-label="Quick product category"
+              value={quickAddForm.product_category}
+              onChange={event => setQuickAddForm(form => ({ ...form, product_category: event.target.value }))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">Category (optional)</option>
+              {categoryOptions.map(category => <option key={category}>{category}</option>)}
+            </select>
+            <Button variant="primary" onClick={handleQuickAdd} disabled={quickAddSaving}>
+              <Plus className="h-4 w-4" />{quickAddSaving ? 'Adding…' : 'Add Product'}
+            </Button>
+          </div>
+        </section>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         {/* Family sidebar */}

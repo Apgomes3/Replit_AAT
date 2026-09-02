@@ -177,6 +177,29 @@ describe('ProductMastersList obsolete visibility', () => {
     expect(screen.getByText('Unassigned product')).toBeInTheDocument();
   });
 
+  it('quick-adds a sparse product in edit mode and exposes row editing', async () => {
+    const user = userEvent.setup();
+    renderList();
+    await screen.findByText('Active pump');
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mode' }));
+    await user.type(screen.getByLabelText('Quick product code'), 'PM-QUICK-1');
+    await user.type(screen.getByLabelText('Quick product name'), 'Quick entry product');
+    await user.click(screen.getByRole('button', { name: 'Add Product' }));
+
+    await waitFor(() => {
+      expect(mocks.post).toHaveBeenCalledWith('/product-masters', {
+        product_code: 'PM-QUICK-1',
+        product_name: 'Quick entry product',
+        product_family_id: null,
+        product_category: null,
+        standard_status: 'Concept',
+      });
+    });
+    expect(screen.getByRole('button', { name: 'Edit P-ACTIVE' })).toBeInTheDocument();
+    expect(screen.getByText('Enter the code and name now. Use Edit on the new row to complete the remaining details.')).toBeInTheDocument();
+  });
+
   it('opens Material Management with the unfinished product draft preserved', async () => {
     const user = userEvent.setup();
     renderList();
