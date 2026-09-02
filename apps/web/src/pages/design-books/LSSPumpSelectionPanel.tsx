@@ -70,6 +70,14 @@ function numberText(value: unknown, digits = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(digits) : '—';
 }
 
+function pumpTagsForLine(line: PumpLine, quantity = Number(line.pump_quantity) || 1) {
+  const existingTags = line.pump_tags?.filter(Boolean) || [];
+  if (!existingTags.length) return [];
+  const prefix = existingTags[0].replace(/-\d{2}$/, '');
+  return Array.from({ length: Math.max(1, quantity) }, (_, index) =>
+    `${prefix}-${String(index + 1).padStart(2, '0')}`);
+}
+
 function statusStyle(status?: string | null) {
   if (status === 'ready' || status === 'valid') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
   if (status === 'stale') return 'border-amber-200 bg-amber-50 text-amber-800';
@@ -584,6 +592,7 @@ function PumpListView({
               const totalFlow = line.pump_role === 'venturi' ? line.venturi_flow_m3h : line.flow_m3h;
               const quantity = Number(line.pump_quantity) || 1;
               const pump = line.selected_pump;
+              const displayedPumpTags = pumpTagsForLine(line, quantity);
               return (
                 <tr key={`${line.circuit_key}-${line.pump_role}`} className="align-middle hover:bg-stone-50/70">
                   <td className="px-4 py-3">
@@ -595,7 +604,7 @@ function PumpListView({
                   <td className="px-4 py-3 font-mono text-stone-700">{quantity}</td>
                   <td className="px-4 py-3 font-mono text-stone-700">{numberText(line.effective_flow_m3h ?? (Number(totalFlow) / quantity))} m³/h</td>
                   <td className="px-4 py-3 text-stone-600">
-                    {line.pump_tags?.length ? line.pump_tags.join(', ') : pump ? `${pump.equip_code || 'Untagged'}${pump.product_name ? ` — ${pump.product_name}` : ''}` : 'Not selected'}
+                    {displayedPumpTags.length ? displayedPumpTags.join(', ') : pump ? `${pump.equip_code || 'Untagged'}${pump.product_name ? ` — ${pump.product_name}` : ''}` : 'Not selected'}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusStyle(line.status)}`}>

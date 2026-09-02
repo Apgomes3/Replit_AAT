@@ -45,7 +45,9 @@ const response = {
     motor_efficiency_pct: null,
     freshness: 'fresh',
     status: 'incomplete',
-    reasons: ['Select a pump.'],
+    reasons: ['Save and calculate to create the governed system pump.'],
+    pump_duty_tag: 'SFSP',
+    pump_tags: ['03-SFSP-01'],
     results: null,
   }],
   pump_candidates: [{
@@ -72,7 +74,6 @@ describe('LSSPumpSelectionPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('90.00 m³/h')).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Selected pump for Sand Filter Loop'), 'equipment-1');
     await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
     await user.type(screen.getByLabelText('Pump efficiency for Sand Filter Loop'), '76');
     await user.type(screen.getByLabelText('Motor efficiency for Sand Filter Loop'), '92');
@@ -80,16 +81,22 @@ describe('LSSPumpSelectionPanel', () => {
     await user.type(screen.getByLabelText('Pump quantity for Sand Filter Loop'), '3');
     await user.click(screen.getByRole('button', { name: 'Save & calculate' }));
 
-    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/systems/system-1/pump-selections', {
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
       design_book_id: 'book-1',
       circuit_key: 'loop:1',
       pump_role: 'primary',
-      project_equipment_item_id: 'equipment-1',
+      pump_quantity: 3,
+    }));
+    expect(apiPut).toHaveBeenCalledWith('/systems/system-1/pump-selections', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'primary',
+      project_equipment_item_id: 'created-pump',
       design_head_m: 18,
       pump_efficiency_pct: 76,
       motor_efficiency_pct: 92,
       pump_quantity: 3,
-    }));
+    });
   });
 
   it('does not expose an origin selector for a known Sand Filter duty', async () => {
@@ -110,10 +117,10 @@ describe('LSSPumpSelectionPanel', () => {
 
     expect(await screen.findByText('SFSP — Sand Filter Supply Pump')).toBeInTheDocument();
     expect(screen.queryByLabelText(/Pump duty type/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Pump origin/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Pump origin for /)).not.toBeInTheDocument();
   });
 
-  it('prompts for origin only when creating a pump for an unknown loop', async () => {
+  it('does not expose manual origin or pump-name controls for an unknown loop', async () => {
     apiGet.mockResolvedValue({ data: {
       ...response,
       items: [{
@@ -121,6 +128,8 @@ describe('LSSPumpSelectionPanel', () => {
         circuit_name: 'New treatment loop',
         circuit_type: 'Pumped',
         pump_role_name: 'Pump origin required',
+        pump_duty_tag: null,
+        pump_tags: [],
         requires_pump_origin: true,
       }],
       pump_duty_types: [
@@ -128,21 +137,12 @@ describe('LSSPumpSelectionPanel', () => {
         { id: 'duty-vacp', tag: 'VACP', pump_name: 'Vacuum Pump' },
       ],
     } } as any);
-    const user = userEvent.setup();
     renderPanel();
 
-    const origin = await screen.findByLabelText('Pump origin for New treatment loop');
-    await user.selectOptions(origin, 'duty-vacp');
-    await user.type(screen.getByLabelText('New pump name for Pump origin required'), 'Vacuum service pump');
-    await user.click(screen.getByRole('button', { name: 'Create & use' }));
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
-      design_book_id: 'book-1',
-      circuit_key: 'loop:1',
-      pump_role: 'primary',
-      pump_quantity: 1,
-      pump_duty_type_id: 'duty-vacp',
-      description: 'Vacuum service pump',
-    }));
+    expect(await screen.findByText('No Platform Admin relationship matches this circuit.')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Pump origin for /)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/New pump name/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create & use' })).not.toBeInTheDocument();
   });
 
   it('keeps a frozen pump-selection package read-only', async () => {
@@ -150,24 +150,16 @@ describe('LSSPumpSelectionPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('This pump-selection package is frozen with the Design Book revision.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Selected pump for Sand Filter Loop')).toBeDisabled();
+    expect(screen.getByLabelText('Pump quantity for Sand Filter Loop')).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Save & calculate' })).not.toBeInTheDocument();
   });
 
-  it('uses one selector and a written name to create a new system pump', async () => {
-    const user = userEvent.setup();
+  it('does not expose a pump selector or manual pump creation flow', async () => {
     renderPanel();
-    expect(await screen.findByLabelText('Selected pump for Sand Filter Loop')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add pump' })).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText('New pump name for Sand Filter Loop'), 'Custom backwash pump');
-    await user.click(screen.getByRole('button', { name: 'Create & use' }));
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
-      design_book_id: 'book-1',
-      circuit_key: 'loop:1',
-      pump_role: 'primary',
-      pump_quantity: 1,
-      description: 'Custom backwash pump',
-    }));
+    expect(await screen.findByText('SFSP — Sand Filter Supply Pump')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Selected pump/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/New pump name/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create & use' })).not.toBeInTheDocument();
   });
 
   it('shows the Sand Filter supply-pump role label', async () => {
@@ -181,14 +173,33 @@ describe('LSSPumpSelectionPanel', () => {
     const user = userEvent.setup();
     apiGet.mockResolvedValue({ data: {
       ...response,
-      items: [{ ...response.items[0], pump_quantity: 3, effective_flow_m3h: 30 }],
+       items: [{
+         ...response.items[0],
+         pump_quantity: 3,
+         effective_flow_m3h: 30,
+         pump_tags: ['03-SFSP-01', '03-SFSP-02', '03-SFSP-03'],
+       }],
     } } as any);
     renderPanel();
 
     await user.click(await screen.findByRole('button', { name: 'List' }));
     expect(screen.getByRole('columnheader', { name: 'Qty' })).toBeInTheDocument();
     expect(screen.getByText('30.00 m³/h')).toBeInTheDocument();
+    expect(screen.getByText('03-SFSP-01, 03-SFSP-02, 03-SFSP-03')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit card' })).toBeInTheDocument();
+  });
+
+  it('shows every generated tag in the card when quantity changes before saving', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByText('SFSP — Sand Filter Supply Pump');
+    const quantity = screen.getByLabelText('Pump quantity for Sand Filter Loop');
+    await user.clear(quantity);
+    await user.type(quantity, '3');
+
+    expect(screen.getByText('03-SFSP-01 · 03-SFSP-02 · 03-SFSP-03')).toBeInTheDocument();
+    expect(screen.getByText('30.00 m³/h per pump')).toBeInTheDocument();
   });
 
   it('shows the venturi question for a Foam Fractionator and creates FFVP when Yes is chosen', async () => {
