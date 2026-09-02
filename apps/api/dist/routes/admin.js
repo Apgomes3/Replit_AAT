@@ -796,6 +796,61 @@ router.delete('/system-types/:id', auth_1.authenticate, (0, auth_1.requireRole)(
     await (0, db_1.query)('DELETE FROM system_types WHERE id::text=$1', [req.params.id]);
     res.status(204).end();
 });
+// ── PUMP DUTY TYPES ──────────────────────────────────────────────────────────
+router.get('/pump-duty-types', auth_1.authenticate, async (_req, res) => {
+    const result = await (0, db_1.query)('SELECT * FROM pump_duty_types ORDER BY sort_order, tag');
+    res.json({ items: result.rows });
+});
+const pumpDutyInput = (body) => ({
+    tag: String(body?.tag || '').trim().toUpperCase(),
+    pump_name: String(body?.pump_name || '').trim(),
+    sort_order: Number.isInteger(Number(body?.sort_order)) ? Number(body.sort_order) : 0,
+    is_active: body?.is_active !== false,
+});
+router.post('/pump-duty-types', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const input = pumpDutyInput(req.body);
+    if (!/^[A-Z0-9]+$/.test(input.tag) || !input.pump_name) {
+        return res.status(400).json({ error: { code: 'INVALID', message: 'Tag and pump name are required; tags may only contain letters and numbers.' } });
+    }
+    try {
+        const result = await (0, db_1.query)(`INSERT INTO pump_duty_types (tag,pump_name,sort_order,is_active)
+       VALUES ($1,$2,$3,$4) RETURNING *`, [input.tag, input.pump_name, input.sort_order, input.is_active]);
+        res.status(201).json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23505')
+            return res.status(409).json({ error: { code: 'DUPLICATE', message: `Pump tag ${input.tag} already exists.` } });
+        throw error;
+    }
+});
+router.put('/pump-duty-types/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const input = pumpDutyInput(req.body);
+    if (!/^[A-Z0-9]+$/.test(input.tag) || !input.pump_name) {
+        return res.status(400).json({ error: { code: 'INVALID', message: 'Tag and pump name are required; tags may only contain letters and numbers.' } });
+    }
+    try {
+        const result = await (0, db_1.query)(`UPDATE pump_duty_types SET tag=$1,pump_name=$2,sort_order=$3,is_active=$4,updated_at=NOW()
+       WHERE id::text=$5 RETURNING *`, [input.tag, input.pump_name, input.sort_order, input.is_active, req.params.id]);
+        if (!result.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pump duty type not found.' } });
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23505')
+            return res.status(409).json({ error: { code: 'DUPLICATE', message: `Pump tag ${input.tag} already exists.` } });
+        throw error;
+    }
+});
+router.delete('/pump-duty-types/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const used = await (0, db_1.query)('SELECT 1 FROM system_pump_selections WHERE pump_duty_type_id::text=$1 LIMIT 1', [req.params.id]);
+    if (used.rows[0]) {
+        return res.status(409).json({ error: { code: 'IN_USE', message: 'This pump duty is referenced by a pump selection. Deactivate it instead.' } });
+    }
+    const result = await (0, db_1.query)('DELETE FROM pump_duty_types WHERE id::text=$1 RETURNING id', [req.params.id]);
+    if (!result.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pump duty type not found.' } });
+    res.status(204).end();
+});
 // ── Tank Cost Rates ──────────────────────────────────────────────────────────
 router.get('/tank-cost-rates', auth_1.authenticate, async (_req, res) => {
     const result = await (0, db_1.query)('SELECT * FROM tank_cost_rates ORDER BY material_code NULLS LAST, label');

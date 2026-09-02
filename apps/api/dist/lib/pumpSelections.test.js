@@ -124,8 +124,28 @@ const pumpSelections_1 = require("./pumpSelections");
     (0, vitest_1.it)('returns the SFSP name for a Sand Filter primary role', () => {
         (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(sandCircuit, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('SFSP — Sand Filter Supply Pump');
     });
-    (0, vitest_1.it)('returns circuit name for other non-FF roles', () => {
-        (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(sandCircuit, pumpSelections_1.PUMP_ROLE_VENTURI)).toBe('Sand Filter Loop');
+    (0, vitest_1.it)('returns the governed Sand Filter duty for Sand Filter circuits', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.defaultPumpLineName)(sandCircuit, pumpSelections_1.PUMP_ROLE_VENTURI)).toBe('SFSP — Sand Filter Supply Pump');
+    });
+});
+(0, vitest_1.describe)('governed pump duty tags', () => {
+    (0, vitest_1.it)('maps standard and vacuum duties to their governed tags', () => {
+        const ffCircuit = { circuit_name: 'Loop 1', circuit_kind: 'loop', circuit_type: pumpSelections_1.FOAM_FRACTIONATION_CIRCUIT_TYPE };
+        const sandCircuit = { circuit_name: 'Sand Filter Loop', circuit_kind: 'loop', circuit_type: pumpSelections_1.SAND_FILTER_CIRCUIT_TYPE };
+        (0, vitest_1.expect)((0, pumpSelections_1.pumpDutyTag)(ffCircuit, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('FFSP');
+        (0, vitest_1.expect)((0, pumpSelections_1.pumpDutyTag)(ffCircuit, pumpSelections_1.PUMP_ROLE_VENTURI)).toBe('FFVP');
+        (0, vitest_1.expect)((0, pumpSelections_1.pumpDutyTag)(sandCircuit, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('SFSP');
+        (0, vitest_1.expect)((0, pumpSelections_1.pumpDutyTag)({ circuit_kind: 'side_stream', circuit_name: 'Vacuum cleaning' }, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('VACP');
+        (0, vitest_1.expect)((0, pumpSelections_1.pumpDutyTag)({ circuit_kind: 'loop', circuit_name: 'Life support loop' }, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('CIRCP');
+    });
+    (0, vitest_1.it)('only infers duties when Flow Route or the pump role defines the origin', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.inferredPumpDutyTag)({ circuit_kind: 'loop', circuit_name: 'Foam loop', circuit_type: pumpSelections_1.FOAM_FRACTIONATION_CIRCUIT_TYPE }, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBe('FFSP');
+        (0, vitest_1.expect)((0, pumpSelections_1.inferredPumpDutyTag)({ circuit_kind: 'loop', circuit_name: 'Foam loop', circuit_type: pumpSelections_1.FOAM_FRACTIONATION_CIRCUIT_TYPE }, pumpSelections_1.PUMP_ROLE_VENTURI)).toBe('FFVP');
+        (0, vitest_1.expect)((0, pumpSelections_1.inferredPumpDutyTag)({ circuit_kind: 'loop', circuit_name: 'New treatment loop', circuit_type: 'Pumped' }, pumpSelections_1.PUMP_ROLE_PRIMARY)).toBeNull();
+    });
+    (0, vitest_1.it)('builds one system-numbered tag per configured pump quantity', () => {
+        (0, vitest_1.expect)((0, pumpSelections_1.systemNumberToken)('LSS-01')).toBe('01');
+        (0, vitest_1.expect)((0, pumpSelections_1.buildPumpTags)('LSS-01', 'FFSP', 2)).toEqual(['01-FFSP-01', '01-FFSP-02']);
     });
 });
 (0, vitest_1.describe)('buildPumpLineItem', () => {
@@ -141,6 +161,20 @@ const pumpSelections_1 = require("./pumpSelections");
         (0, vitest_1.expect)(line.pump_role).toBe(pumpSelections_1.PUMP_ROLE_PRIMARY);
         (0, vitest_1.expect)(line.pump_role_name).toBe('FFSP — Foam Fractionator Supply Pump');
         (0, vitest_1.expect)(line.is_foam_fractionator).toBe(true);
+        (0, vitest_1.expect)(line.pump_quantity).toBe(1);
+    });
+    (0, vitest_1.it)('splits total circuit duty evenly across the saved pump quantity', () => {
+        const row = {
+            pump_quantity: 4,
+            design_head_m: 10,
+            pump_efficiency_pct: 80,
+            motor_efficiency_pct: 90,
+        };
+        const line = (0, pumpSelections_1.buildPumpLineItem)(circuit, row, pumpSelections_1.PUMP_ROLE_PRIMARY);
+        (0, vitest_1.expect)(line.pump_quantity).toBe(4);
+        (0, vitest_1.expect)(line.flow_m3h).toBe(224.15);
+        (0, vitest_1.expect)(line.effective_flow_m3h).toBeCloseTo(56.0375);
+        (0, vitest_1.expect)(line.current_source_fingerprint).not.toBe((0, pumpSelections_1.buildPumpLineItem)(circuit, { ...row, pump_quantity: 2 }, pumpSelections_1.PUMP_ROLE_PRIMARY).current_source_fingerprint);
     });
     (0, vitest_1.it)('FFSP unsaved line has status incomplete (no pump selected)', () => {
         const line = (0, pumpSelections_1.buildPumpLineItem)(circuit, null, pumpSelections_1.PUMP_ROLE_PRIMARY);

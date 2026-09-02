@@ -44,6 +44,12 @@ router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'))
 const numberOrNull = (value) => value === null || value === undefined || value === ''
     ? null
     : Number.isFinite(Number(value)) ? Number(value) : null;
+const pumpQuantityOrNull = (value) => {
+    if (value === null || value === undefined || value === '')
+        return 1;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 1 && parsed <= 99 ? parsed : null;
+};
 const allowedPumpRoles = new Set([pumpSelections_1.PUMP_ROLE_PRIMARY, pumpSelections_1.PUMP_ROLE_VENTURI]);
 async function candidates(runner, projectId, systemId) {
     return (await runner(`SELECT pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.quantity, pei.description,
@@ -71,9 +77,13 @@ async function candidates(runner, projectId, systemId) {
        )
      ORDER BY pei.equip_code`, [projectId, systemId])).rows;
 }
+async function activeDutyTypes(runner) {
+    return (await runner('SELECT id, tag, pump_name, sort_order, is_active FROM pump_duty_types WHERE is_active=true ORDER BY sort_order, tag')).rows;
+}
 async function liveItems(runner, system) {
     const sideStreams = (await runner('SELECT * FROM system_flow_side_streams WHERE system_id=$1 ORDER BY parent_loop_number, sort_order, created_at, id', [system.id])).rows;
     const saved = (await runner('SELECT * FROM system_pump_selections WHERE system_id=$1', [system.id])).rows;
+    const dutyTypes = await activeDutyTypes(runner);
     const circuitMap = new Map((0, pumpSelections_1.pumpCircuits)(system, sideStreams).map(item => [item.circuit_key, item]));
     // Retain orphaned saved rows so stale evidence remains auditable.
     saved.forEach(row => {
@@ -83,7 +93,7 @@ async function liveItems(runner, system) {
                 circuit_type: null, parent_loop_number: null, side_stream_id: null, flow_m3h: null,
             });
     });
-    return [...circuitMap.values()].flatMap(circuit => (0, pumpSelections_1.pumpLinesForCircuit)(circuit, saved));
+    return [...circuitMap.values()].flatMap(circuit => (0, pumpSelections_1.pumpLinesForCircuit)(circuit, saved, dutyTypes));
 }
 // ---------------------------------------------------------------------------
 // GET /systems/:id/pump-selections
@@ -118,6 +128,7 @@ router.get('/systems/:id/pump-selections', async (req, res) => {
     res.json({
         items: await liveItems(db_1.query, system),
         pump_candidates: await candidates(db_1.query, designBook.project_id, String(req.params.id)),
+        pump_duty_types: await activeDutyTypes(db_1.query),
         frozen: false,
     });
 });
@@ -147,12 +158,17 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
     if (!line || line.circuit_kind === 'orphaned') {
         return res.status(400).json({ error: { code: 'INVALID_CIRCUIT', message: 'Circuit key or pump role is not active in the saved Flow Route.' } });
     }
+    const pumpQuantity = pumpQuantityOrNull(input.pump_quantity);
+    if (pumpQuantity == null) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
+    }
     // For FFVP lines the flow basis comes from the explicit venturi_flow_m3h input.
     const isVenturi = pumpRole === pumpSelections_1.PUMP_ROLE_VENTURI;
-    const effectiveFlow = isVenturi
+    const totalFlow = isVenturi
         ? numberOrNull(input.venturi_flow_m3h)
         : line.flow_m3h;
-    if (isVenturi && (effectiveFlow == null || effectiveFlow <= 0)) {
+    const effectiveFlow = totalFlow == null ? null : Number(totalFlow) / pumpQuantity;
+    if (isVenturi && (totalFlow == null || totalFlow <= 0)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Venturi duty flow is required and must be greater than zero.' } });
     }
     const calculation = (0, pumpSelections_1.calculatePumpSelection)({
@@ -173,17 +189,26 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
     // Build a label-independent fingerprint source. Circuit names are display
     // labels and must not make saved pump sizing stale when they are renamed.
     const circuit = line;
+    const dutyType = line.pump_duty_tag
+        ? { id: line.pump_duty_type_id, tag: line.pump_duty_tag, pump_name: line.pump_duty_name }
+        : (0, pumpSelections_1.inferPumpDutyType)(circuit, pumpRole, await activeDutyTypes(db_1.query));
+    if (!dutyType) {
+        return res.status(400).json({
+            error: { code: 'PUMP_ORIGIN_REQUIRED', message: 'Confirm the pump origin and write a new system pump name before saving sizing.' },
+        });
+    }
     const sourcePayload = (0, pumpSelections_1.pumpSourcePayload)(circuit, pumpRole, effectiveFlow, {
         design_head_m: numberOrNull(input.design_head_m),
         pump_efficiency_pct: numberOrNull(input.pump_efficiency_pct),
         motor_efficiency_pct: numberOrNull(input.motor_efficiency_pct),
+        pump_quantity: pumpQuantity,
     });
     await (0, db_1.query)(`INSERT INTO system_pump_selections
        (system_id,circuit_key,project_equipment_item_id,
         design_head_m,pump_efficiency_pct,motor_efficiency_pct,
         source_fingerprint,pump_snapshot,calculation_version,result_snapshot,updated_by,
-        pump_role,venturi_flow_m3h)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13)
+         pump_role,venturi_flow_m3h,pump_quantity,pump_duty_type_id,pump_duty_snapshot)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14,$15,$16::jsonb)
      ON CONFLICT (system_id,circuit_key,pump_role) DO UPDATE SET
        project_equipment_item_id=EXCLUDED.project_equipment_item_id,
        design_head_m=EXCLUDED.design_head_m,
@@ -195,6 +220,9 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
        calculation_version=EXCLUDED.calculation_version,
        result_snapshot=EXCLUDED.result_snapshot,
        updated_by=EXCLUDED.updated_by,
+        pump_quantity=EXCLUDED.pump_quantity,
+        pump_duty_type_id=EXCLUDED.pump_duty_type_id,
+        pump_duty_snapshot=EXCLUDED.pump_duty_snapshot,
        updated_at=NOW()`, [
         system.id, input.circuit_key, selected?.project_equipment_item_id || null,
         input.design_head_m, input.pump_efficiency_pct, input.motor_efficiency_pct,
@@ -204,7 +232,10 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
         JSON.stringify(calculation),
         req.user.id,
         pumpRole,
-        isVenturi ? effectiveFlow : null,
+        isVenturi ? totalFlow : null,
+        pumpQuantity,
+        dutyType.id || null,
+        JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
     ]);
     const updatedLines = await liveItems(db_1.query, system);
     const item = updatedLines.find(value => value.circuit_key === input.circuit_key && value.pump_role === pumpRole);
@@ -259,7 +290,25 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
         }
     }
     // Generate a default equip_code if none supplied.
-    const equipCode = (input.equip_code || '').trim() || await generateEquipCode(book.project_id, pumpRole, circuitLine);
+    const pumpQuantity = pumpQuantityOrNull(input.pump_quantity);
+    if (pumpQuantity == null) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
+    }
+    let dutyType = (0, pumpSelections_1.inferPumpDutyType)(circuitLine, pumpRole, await activeDutyTypes(db_1.query));
+    if (!dutyType && input.pump_duty_type_id) {
+        const requestedDuty = (await activeDutyTypes(db_1.query)).find((item) => item.id === input.pump_duty_type_id);
+        if (!requestedDuty) {
+            return res.status(400).json({ error: { code: 'INVALID_PUMP_DUTY', message: 'Select an active pump duty type.' } });
+        }
+        dutyType = requestedDuty;
+    }
+    if (!dutyType) {
+        return res.status(400).json({
+            error: { code: 'PUMP_ORIGIN_REQUIRED', message: 'Select the pump origin before creating this new system pump.' },
+        });
+    }
+    const pumpTags = (0, pumpSelections_1.buildPumpTags)(system.system_code, dutyType.tag, pumpQuantity);
+    const equipCode = (input.equip_code || '').trim() || pumpTags[0];
     const description = (input.description || '').trim() || (0, pumpSelections_1.defaultPumpLineName)(circuitLine || { circuit_name: circuitKey, circuit_type: null, circuit_kind: 'loop' }, pumpRole);
     // Check equip_code uniqueness.
     const existing = await (0, db_1.query)('SELECT id FROM project_equipment_items WHERE project_id=$1 AND equip_code=$2', [book.project_id, equipCode]);
@@ -304,13 +353,16 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
                 ?? positiveNumberOrNull(input.venturi_flow_m3h)
                 ?? positiveNumberOrNull(circuit.flow_m3h))
             : null;
-        const source = (0, pumpSelections_1.pumpSourcePayload)(circuit, pumpRole, pumpRole === pumpSelections_1.PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h, {
+        const totalFlow = pumpRole === pumpSelections_1.PUMP_ROLE_VENTURI ? venturiFlow : numberOrNull(circuit.flow_m3h);
+        const effectiveFlow = totalFlow == null ? null : totalFlow / pumpQuantity;
+        const source = (0, pumpSelections_1.pumpSourcePayload)(circuit, pumpRole, effectiveFlow, {
             design_head_m: existingLine?.design_head_m ?? null,
             pump_efficiency_pct: existingLine?.pump_efficiency_pct ?? null,
             motor_efficiency_pct: existingLine?.motor_efficiency_pct ?? null,
+            pump_quantity: pumpQuantity,
         });
         const calculation = (0, pumpSelections_1.calculatePumpSelection)({
-            flow_m3h: pumpRole === pumpSelections_1.PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h,
+            flow_m3h: effectiveFlow,
             design_head_m: existingLine?.design_head_m,
             pump_efficiency_pct: existingLine?.pump_efficiency_pct,
             motor_efficiency_pct: existingLine?.motor_efficiency_pct,
@@ -323,8 +375,9 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
         await client.query(`INSERT INTO system_pump_selections
          (system_id,circuit_key,project_equipment_item_id,design_head_m,
            pump_efficiency_pct,motor_efficiency_pct,source_fingerprint,pump_snapshot,
-          calculation_version,result_snapshot,updated_by,pump_role,venturi_flow_m3h)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13)
+           calculation_version,result_snapshot,updated_by,pump_role,venturi_flow_m3h,pump_quantity,
+           pump_duty_type_id,pump_duty_snapshot)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14,$15,$16::jsonb)
         ON CONFLICT (system_id,circuit_key,pump_role) DO UPDATE SET
           project_equipment_item_id=EXCLUDED.project_equipment_item_id,
           design_head_m=EXCLUDED.design_head_m,
@@ -336,6 +389,9 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
           result_snapshot=EXCLUDED.result_snapshot,
           updated_by=EXCLUDED.updated_by,
           venturi_flow_m3h=EXCLUDED.venturi_flow_m3h,
+           pump_quantity=EXCLUDED.pump_quantity,
+          pump_duty_type_id=EXCLUDED.pump_duty_type_id,
+          pump_duty_snapshot=EXCLUDED.pump_duty_snapshot,
           updated_at=NOW()`, [
             system.id, circuitKey, pei.id,
             existingLine?.design_head_m ?? null,
@@ -343,7 +399,8 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
             existingLine?.motor_efficiency_pct ?? null,
             (0, pumpSelections_1.pumpSourceFingerprint)(source), JSON.stringify(snapshot),
             pumpSelections_1.PUMP_SELECTION_CALCULATION_VERSION, JSON.stringify(calculation),
-            req.user.id, pumpRole, venturiFlow,
+            req.user.id, pumpRole, venturiFlow, pumpQuantity,
+            dutyType.id || null, JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
         ]);
         await client.query('COMMIT');
         res.status(201).json({ project_equipment_item: pei, pump_line: (0, pumpSelections_1.buildPumpLineItem)(circuit, {
@@ -354,6 +411,9 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
                 result_snapshot: calculation,
                 pump_role: pumpRole,
                 venturi_flow_m3h: venturiFlow,
+                pump_quantity: pumpQuantity,
+                pump_duty_type_id: dutyType.id || null,
+                pump_duty_snapshot: { tag: dutyType.tag, pump_name: dutyType.pump_name },
             }, pumpRole) });
     }
     catch (error) {
@@ -408,20 +468,4 @@ router.delete('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'engin
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-async function generateEquipCode(projectId, role, circuit) {
-    const prefix = role === pumpSelections_1.PUMP_ROLE_VENTURI ? 'FFVP'
-        : (0, pumpSelections_1.isFoamFractionatorCircuit)(circuit) && role === pumpSelections_1.PUMP_ROLE_PRIMARY ? 'FFSP'
-            : (0, pumpSelections_1.isSandFilterCircuit)(circuit) && role === pumpSelections_1.PUMP_ROLE_PRIMARY ? 'SFSP'
-                : 'PUMP';
-    // Find a free sequential code.
-    const existing = await (0, db_1.query)(`SELECT equip_code FROM project_equipment_items WHERE project_id=$1 AND equip_code LIKE $2 ORDER BY equip_code`, [projectId, `${prefix}-%`]);
-    const usedNumbers = new Set(existing.rows.map((row) => {
-        const match = String(row.equip_code).match(/-(\d+)$/);
-        return match ? parseInt(match[1], 10) : null;
-    }).filter(Boolean));
-    let seq = 1;
-    while (usedNumbers.has(seq))
-        seq++;
-    return `${prefix}-${String(seq).padStart(3, '0')}`;
-}
 exports.default = router;

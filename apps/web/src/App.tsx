@@ -118,7 +118,7 @@ export default function App() {
             <Route path="search" element={<SearchPage />} />
             <Route path="admin/users" element={<AdminUsers />} />
              <Route path="admin" element={<Navigate to="/admin/users" replace />} />
-            <Route path="admin/import" element={<AdminImport />} />
+            <Route path="admin/import" element={<AdminGuard><AdminImport /></AdminGuard>} />
             <Route path="admin/categories" element={<AdminCategories />} />
             <Route path="admin/roles" element={<AdminRoles />} />
             <Route path="admin/tank-families" element={<AdminTankFamilies />} />

@@ -1784,6 +1784,24 @@ CREATE TABLE IF NOT EXISTS system_pump_selections (
 );
 CREATE INDEX IF NOT EXISTS idx_system_pump_selections_system ON system_pump_selections(system_id);
 
+-- Governed relationship between pump duty tags and their display names.
+CREATE TABLE IF NOT EXISTS pump_duty_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tag VARCHAR(10) NOT NULL UNIQUE CHECK (tag = UPPER(tag) AND tag ~ '^[A-Z0-9]+$'),
+  pump_name VARCHAR(255) NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO pump_duty_types (tag, pump_name, sort_order) VALUES
+  ('FFSP', 'Foam Fractionator Supply Pump', 10),
+  ('FFVP', 'Foam Fractionator Venturi Pump', 20),
+  ('SFSP', 'Sand Filter Supply Pump', 30),
+  ('CIRCP', 'Circulation Pump', 40),
+  ('VACP', 'Vacuum Pump', 50)
+ON CONFLICT (tag) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS system_flow_fractionator_allocations (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   system_id          UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
@@ -2633,6 +2651,12 @@ ALTER TABLE system_flow_side_streams
 -- to the supply-pump circuit flow, which would silently misrepresent the venturi duty.
 ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_role VARCHAR(50) NOT NULL DEFAULT 'primary';
 ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS venturi_flow_m3h NUMERIC;
+ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_quantity INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_duty_type_id UUID REFERENCES pump_duty_types(id) ON DELETE SET NULL;
+ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_duty_snapshot JSONB;
+ALTER TABLE system_pump_selections DROP CONSTRAINT IF EXISTS chk_system_pump_selections_quantity;
+ALTER TABLE system_pump_selections
+  ADD CONSTRAINT chk_system_pump_selections_quantity CHECK (pump_quantity > 0 AND pump_quantity <= 99);
 -- A newly allocated pump line exists before sizing inputs are known.
 ALTER TABLE system_pump_selections ALTER COLUMN design_head_m DROP NOT NULL;
 ALTER TABLE system_pump_selections ALTER COLUMN pump_efficiency_pct DROP NOT NULL;

@@ -103,6 +103,7 @@ vitest_1.vi.mock('../db', () => {
                 motor_efficiency_pct: params[5] == null ? null : String(params[5]),
                 source_fingerprint: params[6], pump_snapshot: JSON.parse(params[7]), calculation_version: params[8],
                 result_snapshot: JSON.parse(params[9]), pump_role: params[11], venturi_flow_m3h: params[12],
+                pump_quantity: params[13] ?? 1,
             };
             state.saved = state.saved.filter(row => !(row.system_id === saved.system_id && row.circuit_key === saved.circuit_key &&
                 (row.pump_role || 'primary') === (saved.pump_role || 'primary')));
@@ -217,6 +218,37 @@ function request(app, method, path, body) {
         const insert = state.calls.find(call => call.sql.includes('INSERT INTO system_pump_selections'));
         (0, vitest_1.expect)(insert?.params.slice(0, 3)).toEqual(['system-1', 'loop:1', 'pump-item-1']);
     });
+    (0, vitest_1.it)('persists pump quantity and sizes each pump on its share of total flow', async () => {
+        const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+            design_book_id: 'book-1', circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+            design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90, pump_quantity: 3,
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body).toMatchObject({
+            circuit_key: 'loop:1',
+            pump_quantity: 3,
+            effective_flow_m3h: 20,
+        });
+        (0, vitest_1.expect)(state.saved[0].pump_quantity).toBe(3);
+    });
+    (0, vitest_1.it)('rejects pump quantities above the supported limit', async () => {
+        const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+            design_book_id: 'book-1', circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+            design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90, pump_quantity: 100,
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.message).toContain('between 1 and 99');
+    });
+    (0, vitest_1.it)('rejects zero and fractional pump quantities', async () => {
+        for (const pump_quantity of [0, 1.5]) {
+            const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+                design_book_id: 'book-1', circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+                design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90, pump_quantity,
+            });
+            (0, vitest_1.expect)(response.status).toBe(400);
+            (0, vitest_1.expect)(response.body.error.message).toContain('between 1 and 99');
+        }
+    });
     (0, vitest_1.it)('persists an eligible underpowered pump but returns it as incompatible', async () => {
         state.candidates[0].power_kw = '1.1';
         const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
@@ -274,13 +306,13 @@ function request(app, method, path, body) {
             design_book_id: 'book-1',
             circuit_key: 'loop:1',
             pump_role: 'venturi',
-            equip_code: 'FFVP-001',
+            equip_code: 'SYS-FFVP-01',
             description: 'FFVP — Foam Fractionator Venturi Pump',
         });
         (0, vitest_1.expect)(response.status).toBe(201);
         (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
             id: 'created-pump-1',
-            equip_code: 'FFVP-001',
+            equip_code: 'SYS-FFVP-01',
             description: 'FFVP — Foam Fractionator Venturi Pump',
         });
         (0, vitest_1.expect)(response.body.pump_line).toMatchObject({
@@ -310,7 +342,7 @@ function request(app, method, path, body) {
         });
         (0, vitest_1.expect)(response.status).toBe(201);
         (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
-            equip_code: 'FFVP-001',
+            equip_code: 'SYS-FFVP-01',
             description: 'FFVP — Foam Fractionator Venturi Pump',
         });
         (0, vitest_1.expect)(response.body.pump_line).toMatchObject({
@@ -334,7 +366,7 @@ function request(app, method, path, body) {
         });
         (0, vitest_1.expect)(response.status).toBe(201);
         (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
-            equip_code: 'SFSP-001',
+            equip_code: 'SYS-SFSP-01',
             description: 'SFSP — Sand Filter Supply Pump',
         });
         (0, vitest_1.expect)(response.body.pump_line.pump_role_name).toBe('SFSP — Sand Filter Supply Pump');
