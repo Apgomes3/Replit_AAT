@@ -149,7 +149,14 @@ export default function ComponentsList() {
       ? <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[r.component_type] || 'bg-slate-100 text-slate-600'}`}>{r.component_type}</span>
       : null },
     { key: 'component_category', header: 'Category', sortable: true, filterable: true, render: r => r.component_category ? <span className="text-xs text-slate-500">{r.component_category}</span> : null },
-    { key: 'primary_material_code', header: 'Material', sortable: true, render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span> },
+    {
+      key: 'primary_material_code',
+      header: 'Material',
+      sortable: true,
+      filterable: true,
+      filterValue: r => [r.primary_material_code, r.material_name].filter(Boolean).join(' '),
+      render: r => r.primary_material_code ? <EntityCode code={r.primary_material_code} /> : <span className="text-slate-300">—</span>,
+    },
     { key: 'standard_size', header: 'Size', sortable: true },
     { key: 'unit', header: 'Unit', sortable: true },
     { key: 'cost', header: 'Cost', sortable: true, sortValue: r => (r as any).cost ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
