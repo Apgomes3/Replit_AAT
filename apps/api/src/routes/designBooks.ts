@@ -4473,22 +4473,10 @@ router.post(
     const systemResult = await query(
       `SELECT s.*,
               s.calculation_inputs->>'design_flow_source' AS design_flow_source,
-              se.design_flow_m3h AS exhibit_flow_m3h,
               s.loop1_flow_pct, s.loop2_flow_pct, s.loop3_flow_pct
          FROM systems s
-         LEFT JOIN LATERAL (
-           SELECT SUM(COALESCE(sel.flow_allocation_m3h, calc.total_return_flow_m3h)) AS design_flow_m3h
-           FROM system_exhibit_links sel
-           LEFT JOIN LATERAL (
-             SELECT results->>'total_return_flow_m3h' AS total_return_flow_m3h
-             FROM design_book_exhibit_hydraulics dbeh
-             WHERE dbeh.exhibit_id=sel.exhibit_id AND dbeh.design_book_id=$2
-             ORDER BY dbeh.updated_at DESC LIMIT 1
-           ) calc ON true
-           WHERE sel.system_id=s.id AND sel.link_type='Primary'
-         ) se ON true
         WHERE s.id=$1`,
-      [systemId, bookId],
+      [systemId],
     );
     if (!systemResult.rows[0]) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
@@ -4498,12 +4486,45 @@ router.post(
       return res.status(409).json({ error: systemLifecycleError(system) });
     }
 
-    // Resolve design flow — manual_override uses the persisted design_flow_m3h;
-    // linked_exhibits uses the aggregated exhibit hydraulic return flow.
-    const designFlowSource = system.design_flow_source || 'linked_exhibits';
-    const designFlowM3h = designFlowSource === 'manual_override'
-      ? (system.design_flow_m3h != null ? Number(system.design_flow_m3h) : null)
-      : (system.exhibit_flow_m3h != null ? Number(system.exhibit_flow_m3h) : null);
+    // Resolve the same authoritative system flow shown by the Flow Route.
+    // Exhibit hydraulic rows store inputs, not a result JSON column, so derive
+    // current exhibit flows through the shared engineering calculator.
+    const linksResult = await query(
+      `SELECT sel.*, e.exhibit_code
+         FROM system_exhibit_links sel
+         LEFT JOIN exhibits e ON e.id=sel.exhibit_id
+        WHERE sel.system_id=$1`,
+      [systemId],
+    );
+    const links = linksResult.rows;
+    const exhibitIds = links.map(link => link.exhibit_id).filter(Boolean);
+    const [exhibitsResult, tanksResult, hydraulicsResult, substrateResult] = exhibitIds.length
+      ? await Promise.all([
+        query('SELECT * FROM exhibits WHERE id=ANY($1::uuid[])', [exhibitIds]),
+        query('SELECT * FROM tanks WHERE exhibit_id=ANY($1::uuid[])', [exhibitIds]),
+        query('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1 AND exhibit_id=ANY($2::uuid[])', [bookId, exhibitIds]),
+        query('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1 AND exhibit_id=ANY($2::uuid[])', [bookId, exhibitIds]),
+      ])
+      : [{ rows: [] }, { rows: [] }, { rows: [] }, { rows: [] }];
+    const calculatedAt = new Date().toISOString();
+    const exhibitCalculations = exhibitsResult.rows.map(exhibit => calculateExhibitHydraulics(
+      exhibit,
+      tanksResult.rows.filter(tank => tank.exhibit_id === exhibit.id),
+      hydraulicsResult.rows.find(record => record.exhibit_id === exhibit.id),
+      substrateResult.rows.find(record => record.exhibit_id === exhibit.id),
+      calculatedAt,
+    ));
+    const systemCalculation = calculateSystemEngineering(
+      system,
+      links,
+      exhibitCalculations,
+      null,
+      calculatedAt,
+    );
+    const designFlowSource = systemCalculation.inputs.design_flow_source || 'linked_exhibits';
+    const designFlowM3h = systemCalculation.results.design_flow_m3h != null
+      ? Number(systemCalculation.results.design_flow_m3h)
+      : null;
 
     // Load UV side streams with revision details
     const streamsResult = await query(
