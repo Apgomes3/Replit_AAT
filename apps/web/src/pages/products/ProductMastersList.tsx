@@ -263,7 +263,10 @@ export default function ProductMastersList() {
       });
       toast.success('Product updated');
       setEditRow(null);
-      refetch();
+      await Promise.all([
+        refetch(),
+        qc.invalidateQueries({ queryKey: ['pump-selections'] }),
+      ]);
     } catch {
       toast.error('Failed to save changes');
     } finally {

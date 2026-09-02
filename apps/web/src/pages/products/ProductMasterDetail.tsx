@@ -356,6 +356,7 @@ export default function ProductMasterDetail() {
       queryClient.invalidateQueries({ queryKey: ['product-master', id] });
       queryClient.invalidateQueries({ queryKey: ['product-masters'] });
       queryClient.invalidateQueries({ queryKey: ['product-hydraulic', id] });
+      queryClient.invalidateQueries({ queryKey: ['pump-selections'] });
     } catch {
       toast.error('Failed to save changes');
     } finally {
@@ -552,6 +553,7 @@ export default function ProductMasterDetail() {
       refetchHydraulic();
       queryClient.invalidateQueries({ queryKey: ['product-master', id] });
       queryClient.invalidateQueries({ queryKey: ['product-masters'] });
+      queryClient.invalidateQueries({ queryKey: ['pump-selections'] });
     } catch { toast.error('Failed to save hydraulic data'); }
     finally { setHydraulicSaving(false); }
   };

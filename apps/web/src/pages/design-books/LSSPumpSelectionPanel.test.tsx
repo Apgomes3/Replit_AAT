@@ -155,15 +155,45 @@ describe('LSSPumpSelectionPanel', () => {
 
   it('filters Pump-category products against per-pump flow and design head', async () => {
     const user = userEvent.setup();
+    apiGet.mockResolvedValue({ data: {
+      ...response,
+      pump_candidates: [
+        response.pump_candidates[0],
+        {
+          id: 'equipment-2',
+          project_equipment_item_id: 'equipment-2',
+          product_code: 'PM-PUMP-50-40',
+          product_name: 'High-head Pump',
+          design_flow_m3h: 50,
+          design_head_m: 40,
+          power_kw: 15,
+        },
+      ],
+    } } as any);
     renderPanel();
     expect(await screen.findByText('SFSP — Sand Filter Supply Pump')).toBeInTheDocument();
     const selector = screen.getByLabelText('Pump product for Sand Filter Loop');
-    expect(selector).toHaveDisplayValue('Enter design head to find compatible pumps');
+    expect(selector).toHaveDisplayValue('Select a pump from the catalogue');
 
     await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
 
     expect(screen.getByRole('option', { name: /PM-PUMP-CIR-22.*120\.00 m³\/h.*24\.00 m head/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /PM-PUMP-50-40/ })).not.toBeInTheDocument();
     expect(screen.getByText('1 compatible pump rated for at least 90.00 m³/h at 18.00 m.')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Pump quantity for Sand Filter Loop'));
+    await user.type(screen.getByLabelText('Pump quantity for Sand Filter Loop'), '2');
+
+    expect(screen.getByRole('option', { name: /PM-PUMP-CIR-22/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /PM-PUMP-50-40/ })).toBeInTheDocument();
+    expect(screen.getByText('2 compatible pumps rated for at least 45.00 m³/h at 18.00 m.')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Initial design head for Sand Filter Loop'));
+    await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '30');
+
+    expect(screen.queryByRole('option', { name: /PM-PUMP-CIR-22/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /PM-PUMP-50-40/ })).toBeInTheDocument();
+    expect(screen.getByText('1 compatible pump rated for at least 45.00 m³/h at 30.00 m.')).toBeInTheDocument();
   });
 
   it('saves a compatible selected pump without creating a duplicate draft item', async () => {

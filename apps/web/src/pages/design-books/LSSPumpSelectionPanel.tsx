@@ -392,9 +392,7 @@ function PumpLineCard({
                 onChange={event => setForm(current => ({ ...current, project_equipment_item_id: event.target.value }))}
                 className={inputClass}
               >
-                <option value="">
-                  {requiredHead == null ? 'Enter design head to find compatible pumps' : '— Select a compatible pump —'}
-                </option>
+                <option value="">Select a pump from the catalogue</option>
                 {selectableCandidates.map(candidate => {
                   const id = pumpCandidateValue(candidate);
                   const isCurrentOutsideDuty = currentCandidate?.id === candidate.id
