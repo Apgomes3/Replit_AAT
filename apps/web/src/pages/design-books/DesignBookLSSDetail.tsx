@@ -57,7 +57,16 @@ const LSS_TABS: Array<{ id: LssTab; label: string }> = [
   { id: 'other', label: 'Other Equipment' },
 ];
 
-const FLOW_SOURCE_GROUPS = [
+type FlowSourceOption = {
+  value: string;
+  label: string;
+  description: string;
+};
+
+const FLOW_SOURCE_GROUPS: ReadonlyArray<{
+  label: string;
+  options: ReadonlyArray<FlowSourceOption>;
+}> = [
   {
     label: 'Exhibit intake',
     options: [

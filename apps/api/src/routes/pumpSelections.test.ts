@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
   sideStreams: [{ id: 'side-1', system_id: 'system-1', parent_loop_number: 1, name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0 }] as any[],
   fractionatorAllocations: [] as any[],
   saved: [] as any[],
-  candidates: [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }],
+  candidates: [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }] as any[],
   exhibits: [] as any[], tanks: [] as any[], hydraulics: [] as any[], links: [] as any[],
 }));
 
@@ -36,11 +36,16 @@ vi.mock('../db', () => {
     if (sql.startsWith('SELECT id FROM project_equipment_items')) return { rows: [] };
     if (sql.includes('SELECT equip_code FROM project_equipment_items')) return { rows: [] };
     if (sql.includes('FROM project_equipment_items')) return { rows: state.candidates };
+    if (sql.includes('FROM product_masters pm') && sql.includes('pm.id=$1')) {
+      const candidate = state.candidates.find(item => item.product_master_id === params[0]);
+      return { rows: candidate ? [candidate] : [] };
+    }
     if (sql.includes('INSERT INTO project_equipment_items')) {
       const created = {
         id: 'created-pump-1', project_equipment_item_id: 'created-pump-1',
         equip_code: params[0], project_id: params[1], system_id: params[2],
-        description: params[3], quantity: 1, unit: 'EA', status: 'Design',
+        description: params[3], quantity: params[4], unit: 'EA', status: 'Draft',
+        product_master_id: params[5] || null,
       };
       state.candidates.push(created as any);
       return { rows: [created] };
@@ -243,6 +248,44 @@ describe('pump selection HTTP routes', () => {
     });
     expect(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
     expect(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
+  });
+
+  it('links an eligible PIM Pump product when creating the project pump', async () => {
+    state.system.design_flow_m3h = '100';
+    state.system.loop1_flow_pct = '100';
+    state.system.loop1_filtration = 'Sand Filter';
+    state.candidates = [{
+      id: 'pump-product-1',
+      project_equipment_item_id: null,
+      product_master_id: 'pump-product-1',
+      product_code: 'PUMP-100',
+      product_name: 'Catalog duty pump',
+      product_category: 'Pumping',
+      design_flow_m3h: '120',
+      design_head_m: '20',
+      power_kw: '11',
+    }];
+
+    const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'primary',
+      pump_quantity: 1,
+      product_master_id: 'pump-product-1',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.project_equipment_item).toMatchObject({
+      product_master_id: 'pump-product-1',
+      status: 'Draft',
+    });
+    expect(response.body.pump_line.selected_pump).toMatchObject({
+      product_master_id: 'pump-product-1',
+      product_code: 'PUMP-100',
+      product_name: 'Catalog duty pump',
+    });
+    const insert = state.calls.find(call => call.sql.includes('INSERT INTO project_equipment_items'));
+    expect(insert?.params[5]).toBe('pump-product-1');
   });
 
   it('creates the first FFVP line from its active FFSP circuit', async () => {

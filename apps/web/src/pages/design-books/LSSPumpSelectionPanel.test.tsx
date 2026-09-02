@@ -52,9 +52,12 @@ const response = {
   }],
   pump_candidates: [{
     id: 'equipment-1',
+    project_equipment_item_id: 'equipment-1',
     equip_code: 'P-101',
     product_code: 'PM-PUMP-CIR-22',
     product_name: 'Circulation Pump 22kW',
+    design_flow_m3h: 120,
+    design_head_m: 24,
     power_kw: 22,
   }],
   frozen: false,
@@ -77,21 +80,17 @@ describe('LSSPumpSelectionPanel', () => {
     await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
     await user.type(screen.getByLabelText('Pump efficiency for Sand Filter Loop'), '76');
     await user.type(screen.getByLabelText('Motor efficiency for Sand Filter Loop'), '92');
+    await user.selectOptions(screen.getByLabelText('Pump product for Sand Filter Loop'), 'equipment-1');
     await user.clear(screen.getByLabelText('Pump quantity for Sand Filter Loop'));
     await user.type(screen.getByLabelText('Pump quantity for Sand Filter Loop'), '3');
     await user.click(screen.getByRole('button', { name: 'Save & calculate' }));
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
-      design_book_id: 'book-1',
-      circuit_key: 'loop:1',
-      pump_role: 'primary',
-      pump_quantity: 3,
-    }));
+    expect(apiPost).not.toHaveBeenCalled();
     expect(apiPut).toHaveBeenCalledWith('/systems/system-1/pump-selections', {
       design_book_id: 'book-1',
       circuit_key: 'loop:1',
       pump_role: 'primary',
-      project_equipment_item_id: 'created-pump',
+      project_equipment_item_id: 'equipment-1',
       design_head_m: 18,
       pump_efficiency_pct: 76,
       motor_efficiency_pct: 92,
@@ -154,12 +153,69 @@ describe('LSSPumpSelectionPanel', () => {
     expect(screen.queryByRole('button', { name: 'Save & calculate' })).not.toBeInTheDocument();
   });
 
-  it('does not expose a pump selector or manual pump creation flow', async () => {
+  it('filters Pump-category products against per-pump flow and design head', async () => {
+    const user = userEvent.setup();
     renderPanel();
     expect(await screen.findByText('SFSP — Sand Filter Supply Pump')).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Selected pump/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/New pump name/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create & use' })).not.toBeInTheDocument();
+    const selector = screen.getByLabelText('Pump product for Sand Filter Loop');
+    expect(selector).toHaveDisplayValue('Enter design head to find compatible pumps');
+
+    await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
+
+    expect(screen.getByRole('option', { name: /PM-PUMP-CIR-22.*120\.00 m³\/h.*24\.00 m head/ })).toBeInTheDocument();
+    expect(screen.getByText('1 compatible pump rated for at least 90.00 m³/h at 18.00 m.')).toBeInTheDocument();
+  });
+
+  it('saves a compatible selected pump without creating a duplicate draft item', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText('SFSP — Sand Filter Supply Pump');
+
+    await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
+    await user.type(screen.getByLabelText('Pump efficiency for Sand Filter Loop'), '76');
+    await user.type(screen.getByLabelText('Motor efficiency for Sand Filter Loop'), '92');
+    await user.selectOptions(screen.getByLabelText('Pump product for Sand Filter Loop'), 'equipment-1');
+    await user.click(screen.getByRole('button', { name: 'Save & calculate' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/systems/system-1/pump-selections', expect.objectContaining({
+      project_equipment_item_id: 'equipment-1',
+      design_head_m: 18,
+    })));
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it('creates a draft PIM pump product and links it when no catalog product fits the duty', async () => {
+    const user = userEvent.setup();
+    apiPost.mockImplementation(async (url: string) => {
+      if (url === '/product-masters') return { data: { id: 'new-pump-product' } } as any;
+      return { data: { project_equipment_item: { id: 'created-pump' } } } as any;
+    });
+    renderPanel();
+    await screen.findByText('SFSP — Sand Filter Supply Pump');
+
+    await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '30');
+    expect(screen.getByText('No linked Pump-category product is rated for at least 90.00 m³/h at 30.00 m.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create draft pump' }));
+
+    await user.type(screen.getByLabelText('New pump product code'), 'pump-new');
+    await user.type(screen.getByLabelText('New pump product name'), 'New duty pump');
+    await user.click(screen.getByRole('button', { name: 'Create & link' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/product-masters', expect.objectContaining({
+      product_code: 'PUMP-NEW',
+      product_name: 'New duty pump',
+      product_category: 'Pumping',
+      design_flow_m3h: 90,
+      design_head_m: 30,
+      standard_status: 'Draft',
+    })));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'primary',
+      pump_quantity: 1,
+      product_master_id: 'new-pump-product',
+    }));
   });
 
   it('shows the Sand Filter supply-pump role label', async () => {

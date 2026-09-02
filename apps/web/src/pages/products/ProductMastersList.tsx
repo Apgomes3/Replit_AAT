@@ -16,7 +16,7 @@ import { exportCsv } from '../../lib/exportCsv';
 import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
 
-const STATUSES = ['Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'];
+const STATUSES = ['Draft', 'Concept', 'Development', 'ApprovedStandard', 'Active', 'Deprecated', 'Obsolete'];
 
 function deriveCode(name: string): string {
   return name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');

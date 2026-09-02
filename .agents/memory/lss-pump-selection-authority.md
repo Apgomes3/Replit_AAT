@@ -38,3 +38,9 @@ Pump duty tags and names come from the Platform Admin relationship registry, whi
 **Why:** Central administration keeps FFSP, FFVP, SFSP, CIRCP, and VACP terminology consistent without allowing later label edits to rewrite historical Design Book evidence.
 
 **How to apply:** Derive FFSP, FFVP, and SFSP from saved Flow Route intent and known roles without a card selector. Prompt for an active origin only when creating a named pump for a new unknown loop; retain saved snapshots and generate one `<system number>-<duty tag>-<sequence>` tag per pump.
+
+Pump model suggestions come from active PIM Pump-category products and must meet the saved per-pump flow and design-head duty. If none fit, create a Draft PIM pump product and link it through a project equipment item.
+
+**Why:** Designers need a governed manufacturer/model choice without confusing the reusable PIM model with the project-specific pump tag. A draft fallback keeps missing catalog work visible and reviewable instead of hiding it in an unclassified equipment row.
+
+**How to apply:** Filter suggestions only after quantity and head establish a duty point. Require rated flow and head at or above that duty, preserve an out-of-range current selection for visibility, and snapshot the linked product when sizing is saved.

@@ -26,32 +26,76 @@ const allowedPumpRoles = new Set([PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI]);
 
 async function candidates(runner: any, projectId: string, systemId: string) {
   return (await runner(
-    `SELECT pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.quantity, pei.description,
+    `/* pump-selection-candidates */
+     SELECT COALESCE(pei.id, pm.id) AS id,
+            pei.id AS project_equipment_item_id, pei.equip_code, pei.quantity, pei.description,
             pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
-            pm.design_flow_m3h, pm.design_head_m,
-             COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
-             pf.product_family_code, pm.product_category, pm.application_type
-     FROM project_equipment_items pei
-     LEFT JOIN product_masters pm ON pm.id=pei.product_master_id
+            COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
+            COALESCE(ph.design_head_m, pm.design_head_m) AS design_head_m,
+            COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
+            pf.product_family_code, pm.product_category, pm.application_type,
+            COALESCE(pei.status, pm.standard_status) AS status
+     FROM product_masters pm
      LEFT JOIN product_families pf ON pf.id=pm.product_family_id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
-     WHERE pei.project_id=$1 AND pei.system_id=$2
-       AND (pm.id IS NULL OR pm.status IS NULL OR pm.status='Active')
+     LEFT JOIN LATERAL (
+       SELECT item.*
+       FROM project_equipment_items item
+       WHERE item.project_id=$1 AND item.system_id=$2 AND item.product_master_id=pm.id
+       ORDER BY item.updated_at DESC, item.created_at DESC
+       LIMIT 1
+     ) pei ON TRUE
+     WHERE (pm.status IS NULL OR pm.status='Active')
+       AND LOWER(BTRIM(COALESCE(pm.standard_status,''))) <> 'obsolete'
        AND (
-         pm.id IS NULL
-         OR UPPER(COALESCE(pm.product_category,'')) IN ('PUMP','PUMPS','PUMPING')
+         UPPER(COALESCE(pm.product_category,'')) IN ('PUMP','PUMPS','PUMPING')
          OR UPPER(COALESCE(pf.category_code,'')) IN ('PUMP','PUMPS','PUMPING')
          OR UPPER(COALESCE(pf.product_family_code,'')) IN ('PUMP','PUMPS','PUMPING')
-         OR UPPER(COALESCE(pei.description,'')) LIKE '%PUMP%'
          /* Compatibility only for legacy unclassified catalog rows. */
          OR ((pm.product_category IS NULL OR BTRIM(pm.product_category)='')
              AND (pf.category_code IS NULL OR BTRIM(pf.category_code)='')
              AND (UPPER(COALESCE(pm.application_type,'')) LIKE '%PUMP%'
                   OR UPPER(pm.product_name) LIKE '%PUMP%'))
        )
-     ORDER BY pei.equip_code`,
+     UNION ALL
+     SELECT pei.id, pei.id, pei.equip_code, pei.quantity, pei.description,
+            NULL, NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL, NULL, NULL, pei.status
+     FROM project_equipment_items pei
+     WHERE pei.project_id=$1 AND pei.system_id=$2
+       AND pei.product_master_id IS NULL
+       AND UPPER(COALESCE(pei.description,'')) LIKE '%PUMP%'
+     ORDER BY product_code NULLS LAST, equip_code NULLS LAST`,
     [projectId, systemId],
   )).rows;
+}
+
+async function eligiblePumpProduct(runner: any, productMasterId: string) {
+  return (await runner(
+    `SELECT pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
+            COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
+            COALESCE(ph.design_head_m, pm.design_head_m) AS design_head_m,
+            COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
+            pm.product_category, pm.application_type, pm.standard_status
+     FROM product_masters pm
+     LEFT JOIN product_families pf ON pf.id=pm.product_family_id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
+     LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
+     WHERE pm.id=$1
+       AND (pm.status IS NULL OR pm.status='Active')
+       AND LOWER(BTRIM(COALESCE(pm.standard_status,''))) <> 'obsolete'
+       AND (
+         UPPER(COALESCE(pm.product_category,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR UPPER(COALESCE(pf.category_code,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR UPPER(COALESCE(pf.product_family_code,'')) IN ('PUMP','PUMPS','PUMPING')
+         OR ((pm.product_category IS NULL OR BTRIM(pm.product_category)='')
+             AND (pf.category_code IS NULL OR BTRIM(pf.category_code)='')
+             AND (UPPER(COALESCE(pm.application_type,'')) LIKE '%PUMP%'
+                  OR UPPER(pm.product_name) LIKE '%PUMP%'))
+       )`,
+    [productMasterId],
+  )).rows[0] || null;
 }
 
 async function activeDutyTypes(runner: any) {
@@ -146,7 +190,6 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
   if (pumpQuantity == null) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
   }
-
   // For FFVP lines the flow basis comes from the explicit venturi_flow_m3h input.
   const isVenturi = pumpRole === PUMP_ROLE_VENTURI;
   const totalFlow = isVenturi
@@ -288,6 +331,14 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   if (pumpQuantity == null) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
   }
+  const requestedProduct = input.product_master_id
+    ? await eligiblePumpProduct(query, String(input.product_master_id))
+    : null;
+  if (input.product_master_id && !requestedProduct) {
+    return res.status(400).json({
+      error: { code: 'INELIGIBLE_PUMP_PRODUCT', message: 'Select an active product from the PIM Pump category.' },
+    });
+  }
   let dutyType = inferPumpDutyType(circuitLine, pumpRole, await activeDutyTypes(query));
   if (!dutyType && input.pump_duty_type_id) {
     const requestedDuty = (await activeDutyTypes(query)).find((item: any) => item.id === input.pump_duty_type_id);
@@ -333,17 +384,25 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     if (lockedSelection?.project_equipment_item_id) {
       const refreshedEquipment = (await client.query(
         `UPDATE project_equipment_items
-         SET quantity=$1, description=$2, updated_at=NOW()
-         WHERE id=$3 RETURNING *`,
-        [pumpQuantity, `${dutyType.tag} — ${dutyType.pump_name}`, lockedSelection.project_equipment_item_id],
+          SET quantity=$1, description=$2,
+              product_master_id=COALESCE($3,product_master_id),
+              status=CASE WHEN $3::uuid IS NOT NULL THEN 'Draft' ELSE status END,
+              updated_at=NOW()
+          WHERE id=$4 RETURNING *`,
+        [pumpQuantity, `${dutyType.tag} — ${dutyType.pump_name}`, requestedProduct?.product_master_id || null, lockedSelection.project_equipment_item_id],
       )).rows[0] || lockedSelection.pump_snapshot;
+      const refreshedSnapshot = {
+        ...refreshedEquipment,
+        ...(requestedProduct || {}),
+        project_equipment_item_id: refreshedEquipment.id || lockedSelection.project_equipment_item_id,
+      };
       await client.query(
         `UPDATE system_pump_selections
          SET pump_quantity=$1,pump_snapshot=$2::jsonb,pump_duty_type_id=$3,pump_duty_snapshot=$4::jsonb,updated_at=NOW()
          WHERE system_id=$5 AND circuit_key=$6 AND pump_role=$7`,
         [
           pumpQuantity,
-          JSON.stringify({ ...refreshedEquipment, project_equipment_item_id: refreshedEquipment.id }),
+            JSON.stringify(refreshedSnapshot),
           dutyType.id || null,
           JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
           system.id,
@@ -359,7 +418,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
         pump_line: buildPumpLineItem(circuit, {
           ...lockedSelection,
           pump_quantity: pumpQuantity,
-          pump_snapshot: { ...refreshedEquipment, project_equipment_item_id: refreshedEquipment.id },
+          pump_snapshot: refreshedSnapshot,
           pump_duty_type_id: dutyType.id || null,
           pump_duty_snapshot: { tag: dutyType.tag, pump_name: dutyType.pump_name },
         }, pumpRole),
@@ -368,10 +427,10 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     }
     const result = await client.query(
       `INSERT INTO project_equipment_items
-         (equip_code, project_id, system_id, description, quantity, unit, status)
-       VALUES ($1,$2,$3,$4,$5,'EA','Design')
+         (equip_code, project_id, system_id, description, quantity, unit, status, product_master_id)
+       VALUES ($1,$2,$3,$4,$5,'EA','Draft',$6)
        RETURNING *`,
-      [equipCode, book.project_id, system.id, description, pumpQuantity],
+      [equipCode, book.project_id, system.id, description, pumpQuantity, requestedProduct?.product_master_id || null],
     );
     const pei = result.rows[0];
     const circuit = allLines.find(item =>
@@ -408,6 +467,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     });
     const snapshot = {
       ...pei,
+      ...(requestedProduct || {}),
       id: pei.id,
       project_equipment_item_id: pei.id,
     };

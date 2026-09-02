@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Gauge, LayoutGrid, List, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Gauge, LayoutGrid, List, Plus, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 
 type PumpCandidate = {
   id: string;
+  project_equipment_item_id?: string | null;
+  product_master_id?: string | null;
   equip_code?: string | null;
   description?: string | null;
   product_code?: string | null;
   product_name?: string | null;
   manufacturer?: string | null;
   model?: string | null;
+  design_flow_m3h?: number | string | null;
+  design_head_m?: number | string | null;
   power_kw?: number | string | null;
+  status?: string | null;
 };
 
 type PumpLine = {
@@ -70,6 +75,29 @@ function numberText(value: unknown, digits = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(digits) : '—';
 }
 
+function positiveNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function pumpCandidateLabel(candidate: PumpCandidate) {
+  const name = candidate.product_name || candidate.description || 'Draft pump';
+  const identity = candidate.product_code || candidate.equip_code || 'Untagged';
+  const flow = positiveNumber(candidate.design_flow_m3h);
+  const head = positiveNumber(candidate.design_head_m);
+  const power = positiveNumber(candidate.power_kw);
+  const ratings = [
+    flow != null ? `${numberText(flow)} m³/h` : null,
+    head != null ? `${numberText(head)} m head` : null,
+    power != null ? `${numberText(power)} kW` : null,
+  ].filter(Boolean).join(' · ');
+  return `${identity} — ${name}${ratings ? ` · ${ratings}` : ''}`;
+}
+
+function pumpCandidateValue(candidate: PumpCandidate) {
+  return candidate.project_equipment_item_id || candidate.product_master_id || candidate.id;
+}
+
 function pumpTagsForLine(line: PumpLine, quantity = Number(line.pump_quantity) || 1) {
   const existingTags = line.pump_tags?.filter(Boolean) || [];
   if (!existingTags.length) return [];
@@ -90,12 +118,14 @@ function statusStyle(status?: string | null) {
 // ---------------------------------------------------------------------------
 function PumpLineCard({
   line,
+  pumpCandidates,
   readOnly,
   systemId,
   bookId,
   onRemoveVenturi,
 }: {
   line: PumpLine;
+  pumpCandidates: PumpCandidate[];
   readOnly: boolean;
   systemId: string;
   bookId: string;
@@ -103,6 +133,17 @@ function PumpLineCard({
 }) {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const [creatingDraft, setCreatingDraft] = useState(false);
+  const [showCreatePump, setShowCreatePump] = useState(false);
+  const [newPumpForm, setNewPumpForm] = useState({
+    product_code: '',
+    product_name: '',
+    manufacturer: '',
+    model: '',
+    design_flow_m3h: '',
+    design_head_m: '',
+    power_kw: '',
+  });
   const pumpRole = line.pump_role || 'primary';
   const isVenturi = pumpRole === 'venturi';
 
@@ -130,21 +171,48 @@ function PumpLineCard({
     line.venturi_flow_m3h, line.pump_quantity,
   ]);
 
-  const save = async () => {
-    setSaving(true);
+  const allocatePumpProduct = async (productMasterId: string) => {
+    setCreatingDraft(true);
     try {
       const allocation = await api.post(`/systems/${systemId}/pump-lines`, {
         design_book_id: bookId,
         circuit_key: line.circuit_key,
         pump_role: pumpRole,
         pump_quantity: Number(form.pump_quantity),
+        product_master_id: productMasterId,
         ...(isVenturi && form.venturi_flow_m3h !== ''
           ? { venturi_flow_m3h: Number(form.venturi_flow_m3h) }
           : {}),
       });
       const projectEquipmentItemId = allocation.data?.project_equipment_item?.id
-        || allocation.data?.project_equipment_item?.project_equipment_item_id
-        || line.project_equipment_item_id;
+        || allocation.data?.project_equipment_item?.project_equipment_item_id;
+      if (projectEquipmentItemId) {
+        setForm(current => ({ ...current, project_equipment_item_id: projectEquipmentItemId }));
+      }
+      await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
+      toast.success('Pump product linked to the system pump');
+      return projectEquipmentItemId || null;
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Unable to create draft pump');
+      return null;
+    } finally {
+      setCreatingDraft(false);
+    }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      let projectEquipmentItemId = selectedCandidate
+        ? selectedCandidate.project_equipment_item_id || null
+        : form.project_equipment_item_id || null;
+      if (!projectEquipmentItemId && selectedCandidate?.product_master_id) {
+        projectEquipmentItemId = await allocatePumpProduct(selectedCandidate.product_master_id);
+      }
+      if (!projectEquipmentItemId) {
+        toast.error('Select a compatible pump product or create a new draft pump first.');
+        return;
+      }
       await api.put(`/systems/${systemId}/pump-selections`, {
         design_book_id: bookId,
         circuit_key: line.circuit_key,
@@ -178,6 +246,23 @@ function PumpLineCard({
   const displayedPumpTags = tagPrefix
     ? Array.from({ length: pumpQuantity }, (_, index) => `${tagPrefix}-${String(index + 1).padStart(2, '0')}`)
     : [];
+  const requiredHead = positiveNumber(form.design_head_m);
+  const compatibleCandidates = requiredHead == null || perPumpFlow == null
+    ? []
+    : pumpCandidates.filter(candidate => {
+      const availableFlow = positiveNumber(candidate.design_flow_m3h);
+      const availableHead = positiveNumber(candidate.design_head_m);
+      return availableFlow != null && availableHead != null
+        && availableFlow >= perPumpFlow
+        && availableHead >= requiredHead;
+    });
+  const selectedCandidate = pumpCandidates.find(candidate =>
+    pumpCandidateValue(candidate) === form.project_equipment_item_id);
+  const currentCandidate = selectedCandidate || pumpCandidates.find(candidate =>
+    candidate.project_equipment_item_id === line.project_equipment_item_id);
+  const selectableCandidates = currentCandidate && !compatibleCandidates.some(candidate => candidate.id === currentCandidate.id)
+    ? [currentCandidate, ...compatibleCandidates]
+    : compatibleCandidates;
 
   return (
     <div className="space-y-3 p-3 sm:p-4">
@@ -260,7 +345,70 @@ function PumpLineCard({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="lg:col-span-2">
+          <label htmlFor={`pump-product-${line.circuit_key}-${pumpRole}`} className="mb-1 block text-xs font-medium text-stone-600">
+            Pump product
+          </label>
+          {readOnly ? (
+            <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+              {line.selected_pump ? pumpCandidateLabel(line.selected_pump) : 'No pump product selected'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <select
+                id={`pump-product-${line.circuit_key}-${pumpRole}`}
+                aria-label={`Pump product for ${line.pump_role_name || line.circuit_name}`}
+                value={form.project_equipment_item_id}
+                onChange={event => setForm(current => ({ ...current, project_equipment_item_id: event.target.value }))}
+                className={inputClass}
+              >
+                <option value="">
+                  {requiredHead == null ? 'Enter design head to find compatible pumps' : '— Select a compatible pump —'}
+                </option>
+                {selectableCandidates.map(candidate => {
+                  const id = pumpCandidateValue(candidate);
+                  const isCurrentOutsideDuty = currentCandidate?.id === candidate.id
+                    && !compatibleCandidates.some(item => item.id === candidate.id);
+                  return (
+                    <option key={id} value={id}>
+                      {pumpCandidateLabel(candidate)}{isCurrentOutsideDuty ? ' · current selection outside duty' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-stone-500">
+                  {requiredHead == null || perPumpFlow == null
+                    ? 'Enter quantity and initial head to filter Pump-category products by their rated duty.'
+                    : compatibleCandidates.length
+                      ? `${compatibleCandidates.length} compatible pump${compatibleCandidates.length === 1 ? '' : 's'} rated for at least ${numberText(perPumpFlow)} m³/h at ${numberText(requiredHead)} m.`
+                      : `No linked Pump-category product is rated for at least ${numberText(perPumpFlow)} m³/h at ${numberText(requiredHead)} m.`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewPumpForm({
+                      product_code: '',
+                      product_name: '',
+                      manufacturer: '',
+                      model: '',
+                      design_flow_m3h: perPumpFlow == null ? '' : String(Number(perPumpFlow.toFixed(2))),
+                      design_head_m: requiredHead == null ? '' : String(Number(requiredHead.toFixed(2))),
+                      power_kw: '',
+                    });
+                    setShowCreatePump(true);
+                  }}
+                  disabled={creatingDraft}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {creatingDraft ? 'Creating…' : 'Create draft pump'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <div>
           <span className="mb-1 block text-xs font-medium text-stone-600">System pump</span>
           <div className="min-h-[42px] rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
@@ -358,6 +506,140 @@ function PumpLineCard({
           )}
         </div>
       </div>
+
+      {showCreatePump && !readOnly && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl">
+            <div className="border-b border-stone-100 px-5 py-4">
+              <h3 className="font-semibold text-stone-900">Create draft pump product</h3>
+              <p className="mt-1 text-xs text-stone-500">
+                The product will be added to PIM in the Pumping category with Draft status, then linked to this system pump.
+              </p>
+            </div>
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              <label>
+                <span className="mb-1 block text-xs font-medium text-stone-600">Product code <span className="text-red-600">*</span></span>
+                <input
+                  aria-label="New pump product code"
+                  value={newPumpForm.product_code}
+                  onChange={event => setNewPumpForm(current => ({ ...current, product_code: event.target.value.toUpperCase() }))}
+                  className={inputClass}
+                  placeholder="PUMP-0001"
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium text-stone-600">Product name <span className="text-red-600">*</span></span>
+                <input
+                  aria-label="New pump product name"
+                  value={newPumpForm.product_name}
+                  onChange={event => setNewPumpForm(current => ({ ...current, product_name: event.target.value }))}
+                  className={inputClass}
+                  placeholder="Duty pump"
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium text-stone-600">Manufacturer</span>
+                <input
+                  aria-label="New pump manufacturer"
+                  value={newPumpForm.manufacturer}
+                  onChange={event => setNewPumpForm(current => ({ ...current, manufacturer: event.target.value }))}
+                  className={inputClass}
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium text-stone-600">Model</span>
+                <input
+                  aria-label="New pump model"
+                  value={newPumpForm.model}
+                  onChange={event => setNewPumpForm(current => ({ ...current, model: event.target.value }))}
+                  className={inputClass}
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium text-stone-600">Rated design flow (m³/h) <span className="text-red-600">*</span></span>
+                <input
+                  aria-label="New pump rated design flow"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={newPumpForm.design_flow_m3h}
+                  onChange={event => setNewPumpForm(current => ({ ...current, design_flow_m3h: event.target.value }))}
+                  className={inputClass}
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium text-stone-600">Rated design head (m) <span className="text-red-600">*</span></span>
+                <input
+                  aria-label="New pump rated design head"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={newPumpForm.design_head_m}
+                  onChange={event => setNewPumpForm(current => ({ ...current, design_head_m: event.target.value }))}
+                  className={inputClass}
+                />
+              </label>
+              <label className="sm:col-span-2">
+                <span className="mb-1 block text-xs font-medium text-stone-600">Rated power (kW)</span>
+                <input
+                  aria-label="New pump rated power"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newPumpForm.power_kw}
+                  onChange={event => setNewPumpForm(current => ({ ...current, power_kw: event.target.value }))}
+                  className={inputClass}
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-stone-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setShowCreatePump(false)}
+                disabled={creatingDraft}
+                className="rounded-lg border border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={creatingDraft || !newPumpForm.product_code.trim() || !newPumpForm.product_name.trim()
+                  || !positiveNumber(newPumpForm.design_flow_m3h) || !positiveNumber(newPumpForm.design_head_m)}
+                onClick={async () => {
+                  setCreatingDraft(true);
+                  try {
+                    const created = await api.post('/product-masters', {
+                      product_code: newPumpForm.product_code.trim().toUpperCase(),
+                      product_name: newPumpForm.product_name.trim(),
+                      product_category: 'Pumping',
+                      application_type: 'Pump',
+                      manufacturer: newPumpForm.manufacturer.trim() || null,
+                      model: newPumpForm.model.trim() || null,
+                      design_flow_m3h: Number(newPumpForm.design_flow_m3h),
+                      design_head_m: Number(newPumpForm.design_head_m),
+                      power_kw: newPumpForm.power_kw === '' ? null : Number(newPumpForm.power_kw),
+                      standard_status: 'Draft',
+                    });
+                    const projectEquipmentItemId = await allocatePumpProduct(created.data.id);
+                    if (!projectEquipmentItemId) return;
+                    setForm(current => ({ ...current, project_equipment_item_id: projectEquipmentItemId }));
+                    setShowCreatePump(false);
+                    await queryClient.invalidateQueries({ queryKey: ['product-masters'] });
+                    toast.success('Draft pump product created and linked');
+                  } catch (error: any) {
+                    toast.error(error?.response?.data?.error?.message || 'Unable to create draft pump product');
+                  } finally {
+                    setCreatingDraft(false);
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                <Plus className="h-4 w-4" /> {creatingDraft ? 'Creating…' : 'Create & link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -368,12 +650,14 @@ function PumpLineCard({
 function CircuitGroup({
   circuitKey,
   lines,
+  pumpCandidates,
   readOnly,
   systemId,
   bookId,
 }: {
   circuitKey: string;
   lines: PumpLine[];
+  pumpCandidates: PumpCandidate[];
   readOnly: boolean;
   systemId: string;
   bookId: string;
@@ -490,6 +774,7 @@ function CircuitGroup({
               )}
               <PumpLineCard
                 line={primaryLine}
+                pumpCandidates={pumpCandidates}
                 readOnly={readOnly || primaryLine.circuit_kind === 'orphaned'}
                 systemId={systemId}
                 bookId={bookId}
@@ -549,6 +834,7 @@ function CircuitGroup({
               </div>
               <PumpLineCard
                 line={venturiLine}
+                pumpCandidates={pumpCandidates}
                 readOnly={readOnly}
                 systemId={systemId}
                 bookId={bookId}
@@ -742,6 +1028,7 @@ export default function LSSPumpSelectionPanel({
               key={circuitKey}
               circuitKey={circuitKey}
               lines={lines}
+              pumpCandidates={data?.pump_candidates || []}
               readOnly={readOnly || !!data?.frozen}
               systemId={systemId}
               bookId={bookId}
