@@ -44,6 +44,10 @@ const product = {
   product_name: 'UV Reactor 100',
   manufacturer: 'AAT',
   primary_material_code: 'SS316',
+  configuration: 'Wall mounted',
+  control_type: 'PLC interlock',
+  signal_type: 'Modbus',
+  control_type_optional: true,
   rated_power_kw: 0.17,
   pim_status: 'Active',
   product_family_code: 'PFM-UV',
@@ -83,6 +87,10 @@ describe('UV engineering administration', () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(screen.getByText('Wall mounted')).toBeVisible();
+    expect(screen.getByText('PLC interlock')).toBeVisible();
+    expect(screen.getByText('Modbus')).toBeVisible();
+    expect(screen.getByText('Optional').nextElementSibling).toHaveTextContent('Yes');
     expect(screen.getByLabelText('Effective reactor volume (L) *')).toHaveValue(120);
     expect(screen.getByLabelText('Irradiance at 85%T (mW/cm²) *')).toHaveValue(1.2);
     await user.click(screen.getByRole('button', { name: 'Save draft' }));

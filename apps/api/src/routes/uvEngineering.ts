@@ -49,7 +49,8 @@ function engineeringPayloadError(payload: any, fields = EDITABLE_FIELDS) {
 }
 
 const catalogSelect = `SELECT c.*, pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status,
-  pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type, pm.power_kw AS rated_power_kw,
+  pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type, pm.signal_type,
+  pm.control_type_optional, pm.power_kw AS rated_power_kw,
   pm.lamp_count AS pim_lamp_count,
   pf.product_family_code, pf.product_family_name,
   row_to_json(latest) AS latest_revision,
@@ -280,7 +281,8 @@ adminRouter.patch('/revisions/:id/status', async (req: AuthRequest, res: Respons
 consumerRouter.use(authenticate, requireModuleAccess('pim'));
 consumerRouter.get('/uv-engineering/selectable', async (_req: AuthRequest, res: Response) => {
   const result = await query(`SELECT c.*, pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status,
-      pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type, pm.power_kw AS rated_power_kw,
+      pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type, pm.signal_type,
+      pm.control_type_optional, pm.power_kw AS rated_power_kw,
       pm.lamp_count,
       pf.product_family_code, pf.product_family_name, row_to_json(r) AS latest_revision,
       row_to_json(r) AS selected_revision, true AS calculation_enabled

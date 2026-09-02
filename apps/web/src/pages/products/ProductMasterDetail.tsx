@@ -304,6 +304,10 @@ export default function ProductMasterDetail() {
     synonyms: product.synonyms || [],
     manufacturer: (product as any).manufacturer || null,
     model: (product as any).model || null,
+    configuration: (product as any).configuration || null,
+    control_type: (product as any).control_type || null,
+    signal_type: (product as any).signal_type || null,
+    control_type_optional: Boolean((product as any).control_type_optional),
     cost: (product as any).cost ?? null,
     sell_price: (product as any).sell_price ?? null,
     currency: (product as any).currency || 'USD',
@@ -316,6 +320,10 @@ export default function ProductMasterDetail() {
       product_name: product.product_name || '',
       standard_status: product.standard_status || 'Concept',
       application_type: product.application_type || '',
+      configuration: product.configuration || '',
+      control_type: product.control_type || '',
+      signal_type: product.signal_type || '',
+      control_type_optional: Boolean(product.control_type_optional),
       primary_material_code: product.primary_material_code || '',
       notes: product.notes || '',
       tank_family_id: (product as any).tank_family_id || '',
@@ -338,7 +346,10 @@ export default function ProductMasterDetail() {
         standard_status: editForm.standard_status,
         application_type: editForm.application_type || null,
         primary_material_code: editForm.primary_material_code || null,
-        lamp_count: editForm.lamp_count ? parseInt(editForm.lamp_count, 10) : null,
+        configuration: isUvProduct ? editForm.configuration || null : product.configuration || null,
+        control_type: isUvProduct ? editForm.control_type || null : product.control_type || null,
+        signal_type: isUvProduct ? editForm.signal_type || null : product.signal_type || null,
+        control_type_optional: isUvProduct ? Boolean(editForm.control_type_optional) : Boolean(product.control_type_optional),
         notes: editForm.notes || null,
         tank_family_id: editForm.tank_family_id || null,
         cost: editForm.cost !== '' ? parseFloat(editForm.cost) : null,
@@ -1130,6 +1141,12 @@ export default function ProductMasterDetail() {
               { label: 'Manufacturer', value: (product as any).manufacturer },
               { label: 'Model', value: (product as any).model },
               ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
+               ...(isUvProduct ? [
+                 { label: 'Configuration', value: product.configuration },
+                 { label: 'Control Type', value: product.control_type },
+                 { label: 'Signal Type', value: product.signal_type },
+                 { label: 'Optional', value: product.control_type_optional ? 'Yes' : 'No' },
+               ] : []),
               ...(!isPiping ? [{ label: 'Design Flow', value: (hydraulicData?.design_flow_m3h ?? product.design_flow_m3h) != null ? `${hydraulicData?.design_flow_m3h ?? product.design_flow_m3h} m³/h` : null }] : []),
               ...(!isPiping ? [{ label: 'Design Head', value: product.design_head_m ? `${product.design_head_m} m` : null }] : []),
               { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
@@ -1163,6 +1180,35 @@ export default function ProductMasterDetail() {
                   <input value={editForm.application_type} onChange={e => setEditForm((f: any) => ({ ...f, application_type: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
+                {isUvProduct && <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Configuration</label>
+                    <select value={editForm.configuration ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, configuration: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white">
+                      <option value="">— Select configuration —</option>
+                      <option value="Wall mounted">Wall mounted</option>
+                      <option value="Stand">Stand</option>
+                      <option value="No stand">No stand</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Control Type</label>
+                    <input value={editForm.control_type ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, control_type: e.target.value }))}
+                      placeholder="e.g. Local, PLC interlock"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Signal Type</label>
+                    <input value={editForm.signal_type ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, signal_type: e.target.value }))}
+                      placeholder="e.g. On/off, 0–10 V, Modbus"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                  </div>
+                  <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-600">
+                    <input type="checkbox" checked={Boolean(editForm.control_type_optional)} onChange={e => setEditForm((f: any) => ({ ...f, control_type_optional: e.target.checked }))}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600" />
+                    Optional control arrangement
+                  </label>
+                </>}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Primary Material</label>
                   <select value={editForm.primary_material_code ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, primary_material_code: e.target.value || null }))}

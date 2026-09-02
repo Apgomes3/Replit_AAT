@@ -48,6 +48,10 @@ const assignedProduct = {
   product_family_id: 'family/north',
   product_family_name: 'Pumps / North',
   product_family_code: 'PFM-UV',
+  configuration: 'Wall mounted',
+  control_type: 'PLC interlock',
+  signal_type: 'Modbus',
+  control_type_optional: true,
   lamp_count: 2,
   power_kw: 0.9,
   boms: [],
@@ -126,6 +130,38 @@ describe('ProductMasterDetail family breadcrumb', () => {
     expect(screen.queryByText('Design Flow (m³/h)')).not.toBeInTheDocument();
     expect(screen.queryByText('Design Head (m)')).not.toBeInTheDocument();
     expect(screen.getByText('Hydraulic')).toBeInTheDocument();
+  });
+
+  it('maintains the PIM-owned UV configuration and control fields', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+
+    await screen.findByText('P-ASSIGNED');
+    await user.click(screen.getAllByRole('button', { name: 'Edit', exact: true })[0]);
+    const configuration = screen.getByText('Configuration').nextElementSibling as HTMLSelectElement;
+    const controlType = screen.getByText('Control Type').nextElementSibling as HTMLInputElement;
+    const signalType = screen.getByText('Signal Type').nextElementSibling as HTMLInputElement;
+    expect(configuration).toHaveValue('Wall mounted');
+    expect(controlType).toHaveValue('PLC interlock');
+    expect(signalType).toHaveValue('Modbus');
+    expect(screen.getByRole('checkbox', { name: 'Optional control arrangement' })).toBeChecked();
+
+    await user.selectOptions(configuration, 'No stand');
+    await user.clear(signalType);
+    await user.type(signalType, '0–10 V');
+    await user.click(screen.getByRole('checkbox', { name: 'Optional control arrangement' }));
+    await user.click(screen.getAllByRole('button', { name: 'Save', exact: true })[0]);
+
+    expect(mocks.put).toHaveBeenCalledWith(
+      `/product-masters/${assignedProduct.id}`,
+      expect.objectContaining({
+        configuration: 'No stand',
+        control_type: 'PLC interlock',
+        signal_type: '0–10 V',
+        control_type_optional: false,
+      }),
+    );
+    expect(mocks.put.mock.calls[0][1]).not.toHaveProperty('lamp_count');
   });
 
   it('maintains the PIM-owned Lamp Count from the Electrical card', async () => {

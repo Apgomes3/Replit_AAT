@@ -640,6 +640,8 @@ ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS model VARCHAR(255);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS configuration VARCHAR(255);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS control_type VARCHAR(255);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS signal_type VARCHAR(255);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS control_type_optional BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE components ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
 ALTER TABLE components ADD COLUMN IF NOT EXISTS model VARCHAR(255);
 
@@ -2584,6 +2586,7 @@ RETURNS jsonb LANGUAGE sql STABLE AS $$
     'manufacturer', p.manufacturer, 'status', p.status,
     'category', p.product_category, 'material', p.primary_material_code,
     'configuration', p.configuration, 'control_type', p.control_type,
+    'signal_type', p.signal_type, 'control_type_optional', p.control_type_optional,
     'rated_power_kw', p.power_kw, 'lamp_count', p.lamp_count
   )
 $$;
@@ -2626,6 +2629,8 @@ BEGIN
     OR OLD.primary_material_code IS DISTINCT FROM NEW.primary_material_code
     OR OLD.configuration IS DISTINCT FROM NEW.configuration
     OR OLD.control_type IS DISTINCT FROM NEW.control_type
+    OR OLD.signal_type IS DISTINCT FROM NEW.signal_type
+    OR OLD.control_type_optional IS DISTINCT FROM NEW.control_type_optional
     OR OLD.power_kw IS DISTINCT FROM NEW.power_kw
     OR OLD.lamp_count IS DISTINCT FROM NEW.lamp_count;
   IF changed THEN

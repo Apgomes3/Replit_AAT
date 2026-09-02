@@ -96,6 +96,8 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
           ['Material', product.primary_material_code || 'Not set'],
           ['Configuration', product.configuration || product.application_type || 'Not set'],
           ['Control type', product.control_type || 'Not set'],
+          ['Signal type', product.signal_type || 'Not set'],
+          ['Optional', product.control_type_optional ? 'Yes' : 'No'],
           ['Rated power', product.rated_power_kw != null ? `${product.rated_power_kw} kW` : 'Not set'],
           ['Lamp count', product.pim_lamp_count ?? product.lamp_count ?? 'Not set'],
           ['PIM status', product.pim_status || 'Not set'],

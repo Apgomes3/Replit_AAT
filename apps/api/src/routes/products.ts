@@ -720,7 +720,7 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
     product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
     design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
     shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3,
-     manufacturer, model, configuration, control_type, lamp_count,
+     manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count,
   } = req.body;
   if (!product_code || !product_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_code and product_name required' } });
   const surfaceAreaM2 = calculateWaterSurfaceAreaM2(
@@ -737,8 +737,8 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
           (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
            design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
            shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, surface_area_m2, cost,
-            manufacturer, model, configuration, control_type, lamp_count)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
+             manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
         [
           product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
           linkedFlow, design_pressure_bar || null, design_head_m || null, power_kw || null,
@@ -746,7 +746,8 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
           shape_type || null, length_mm || null, width_mm || null, height_mm || null,
           design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, surfaceAreaM2, 0,
           manufacturer || null, model || null, configuration || null, control_type || null,
-          lamp_count == null || lamp_count === '' ? null : Number(lamp_count),
+           signal_type || null, Boolean(control_type_optional),
+           lamp_count == null || lamp_count === '' ? null : Number(lamp_count),
         ]);
       await client.query(
         'INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, friction_loss_mh2o, updated_at) VALUES ($1,$2,$3,NOW())',
@@ -800,7 +801,7 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, status, lamp_count } = req.body;
+  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, signal_type, control_type_optional, status, lamp_count } = req.body;
   const hasPowerKw = Object.prototype.hasOwnProperty.call(req.body, 'power_kw');
   const hasLampCount = Object.prototype.hasOwnProperty.call(req.body, 'lamp_count');
   const lampCountValue = lamp_count == null || lamp_count === '' ? null : Number(lamp_count);
@@ -858,6 +859,21 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
       const result = await client.query(
         `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=CASE WHEN $33 THEN $6 ELSE power_kw END, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), lamp_count=CASE WHEN $34 THEN $35 ELSE lamp_count END, updated_at=NOW() WHERE id=$31 RETURNING *`,
         [product_name, product_category, application_type, linkedDesignFlow, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, configuration || null, control_type || null, status || null, req.params.id, newCode, hasPowerKw, hasLampCount, lampCountValue]);
+      const metadataResult = await client.query(
+        `UPDATE product_masters
+         SET signal_type=CASE WHEN $2 THEN $3 ELSE signal_type END,
+             control_type_optional=CASE WHEN $4 THEN $5 ELSE control_type_optional END,
+             updated_at=NOW()
+         WHERE id=$1
+         RETURNING *`,
+        [
+          req.params.id,
+          Object.prototype.hasOwnProperty.call(req.body, 'signal_type'),
+          signal_type || null,
+          Object.prototype.hasOwnProperty.call(req.body, 'control_type_optional'),
+          Boolean(control_type_optional),
+        ],
+      );
       if (!result.rows[0]) {
         const error: any = new Error('Product not found');
         error.status = 404;
@@ -883,7 +899,7 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
         await insertAuditTx(client, req.user!.id, 'product', String(req.params.id), 'LINKED_DESIGN_FLOW_UPDATE',
           designFlowAuditDetails('product_master', linkedDesignFlow ?? null, previousProductFlow, previousHydraulicFlow));
       }
-      return { ...result.rows[0], design_flow_m3h: linkedDesignFlow, design_flow_sync_status: linkedDesignFlow == null ? 'empty' : 'synchronized' };
+      return { ...(metadataResult.rows[0] || result.rows[0]), design_flow_m3h: linkedDesignFlow, design_flow_sync_status: linkedDesignFlow == null ? 'empty' : 'synchronized' };
     });
   } catch (error) {
     return next(error);
@@ -934,9 +950,9 @@ router.post('/product-masters/:id/duplicate', authenticate, requireModuleManage(
     const applyAatFrictionDefault = isAatSandFilter({ manufacturer: src.manufacturer, product_name: src.product_name, model: src.model });
     const created = await withProductTransaction(async client => {
       const result = await client.query(
-        `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
-        [newCode, newFamilyId, newName, src.product_category, src.application_type, linkedFlow, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null, src.configuration || null, src.control_type || null]);
+        `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type, signal_type, control_type_optional)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
+        [newCode, newFamilyId, newName, src.product_category, src.application_type, linkedFlow, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null, src.configuration || null, src.control_type || null, src.signal_type || null, Boolean(src.control_type_optional)]);
       await client.query(
         `INSERT INTO product_hydraulic
            (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h,
