@@ -5,7 +5,7 @@ import {
   calculatePumpSelection, evaluateSelectedPumpSuitability, PUMP_SELECTION_CALCULATION_VERSION,
   pumpSourceFingerprint, pumpCircuits, isFoamFractionatorCircuit, pumpLinesForCircuit,
   buildPumpLineItem, pumpSourcePayload, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI, defaultPumpLineName,
-  resolvePumpDutyType, buildPumpTags,
+  inferPumpDutyType, buildPumpTags,
 } from '../lib/pumpSelections';
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
@@ -177,15 +177,13 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
   // Build a label-independent fingerprint source. Circuit names are display
   // labels and must not make saved pump sizing stale when they are renamed.
   const circuit = line;
-  let dutyType = resolvePumpDutyType(circuit, pumpRole, [{
-    id: line.pump_duty_type_id, tag: line.pump_duty_tag, pump_name: line.pump_duty_name,
-  }]);
-  if (input.pump_duty_type_id) {
-    const requestedDuty = (await activeDutyTypes(query)).find((item: any) => item.id === input.pump_duty_type_id);
-    if (!requestedDuty) {
-      return res.status(400).json({ error: { code: 'INVALID_PUMP_DUTY', message: 'Select an active pump duty type.' } });
-    }
-    dutyType = requestedDuty;
+  const dutyType = line.pump_duty_tag
+    ? { id: line.pump_duty_type_id, tag: line.pump_duty_tag, pump_name: line.pump_duty_name }
+    : inferPumpDutyType(circuit, pumpRole, await activeDutyTypes(query));
+  if (!dutyType) {
+    return res.status(400).json({
+      error: { code: 'PUMP_ORIGIN_REQUIRED', message: 'Confirm the pump origin and write a new system pump name before saving sizing.' },
+    });
   }
   const sourcePayload = pumpSourcePayload(circuit, pumpRole, effectiveFlow, {
     design_head_m: numberOrNull(input.design_head_m),
@@ -290,15 +288,18 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
   if (pumpQuantity == null) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
   }
-  let dutyType = resolvePumpDutyType(circuitLine, pumpRole, [{
-    id: circuitLine.pump_duty_type_id, tag: circuitLine.pump_duty_tag, pump_name: circuitLine.pump_duty_name,
-  }]);
-  if (input.pump_duty_type_id) {
+  let dutyType = inferPumpDutyType(circuitLine, pumpRole, await activeDutyTypes(query));
+  if (!dutyType && input.pump_duty_type_id) {
     const requestedDuty = (await activeDutyTypes(query)).find((item: any) => item.id === input.pump_duty_type_id);
     if (!requestedDuty) {
       return res.status(400).json({ error: { code: 'INVALID_PUMP_DUTY', message: 'Select an active pump duty type.' } });
     }
     dutyType = requestedDuty;
+  }
+  if (!dutyType) {
+    return res.status(400).json({
+      error: { code: 'PUMP_ORIGIN_REQUIRED', message: 'Select the pump origin before creating this new system pump.' },
+    });
   }
   const pumpTags = buildPumpTags(system.system_code, dutyType.tag, pumpQuantity);
   const equipCode = (input.equip_code || '').trim() || pumpTags[0];

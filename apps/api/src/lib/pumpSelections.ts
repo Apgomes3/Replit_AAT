@@ -68,6 +68,33 @@ export function pumpDutyTag(
   return 'CIRCP';
 }
 
+export function inferredPumpDutyTag(
+  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
+  role: string,
+) {
+  if (role === PUMP_ROLE_VENTURI) {
+    return isFoamFractionatorCircuit(circuit) ? 'FFVP' : null;
+  }
+  if (isFoamFractionatorCircuit(circuit)) return 'FFSP';
+  if (isSandFilterCircuit(circuit)) return 'SFSP';
+  const originText = `${circuit.circuit_name || ''} ${circuit.circuit_type || ''}`.toLowerCase();
+  if (originText.includes('vacuum')) return 'VACP';
+  if (circuit.circuit_kind === 'side_stream' || originText.includes('circulation')) return 'CIRCP';
+  return null;
+}
+
+export function inferPumpDutyType(
+  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
+  role: string,
+  dutyTypes: PumpDutyType[] = DEFAULT_PUMP_DUTY_TYPES,
+) {
+  const tag = inferredPumpDutyTag(circuit, role);
+  if (!tag) return null;
+  return dutyTypes.find(item => item.tag === tag)
+    || DEFAULT_PUMP_DUTY_TYPES.find(item => item.tag === tag)
+    || null;
+}
+
 export function resolvePumpDutyType(
   circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
   role: string,
@@ -300,8 +327,14 @@ export function buildPumpLineItem(
   const isVenturi = role === PUMP_ROLE_VENTURI;
   const isFF = isFoamFractionatorCircuit(circuit);
   const pumpQuantity = positive(row?.pump_quantity) || 1;
-  const currentDuty = resolvePumpDutyType(circuit, role, dutyTypes);
-  const duty = row?.pump_duty_snapshot?.tag ? row.pump_duty_snapshot : currentDuty;
+  const currentDuty = inferPumpDutyType(circuit, role, dutyTypes);
+  // Saved rows from before governed duty snapshots existed used CIRCP for
+  // otherwise unclassified duties. Preserve that historical interpretation,
+  // while requiring an explicit origin for new unsaved unknown loops.
+  const legacySavedDuty = row && !row.pump_duty_snapshot && !currentDuty
+    ? resolvePumpDutyType(circuit, role, dutyTypes)
+    : null;
+  const duty = row?.pump_duty_snapshot?.tag ? row.pump_duty_snapshot : (currentDuty || legacySavedDuty);
 
   // A saved venturi duty is explicit evidence. The governed product duty is
   // available for an unsaved/legacy line; creation persists the authoritative
@@ -365,6 +398,7 @@ export function buildPumpLineItem(
         ...(venturiFlowMissing ? ['Venturi duty flow is required and must be greater than zero. Enter the venturi pump flow before saving.'] : []),
         ...(row && row.source_fingerprint && !sourceMatches ? ['Flow Route or sizing inputs changed after this pump calculation was saved. Save and calculate again.'] : []),
         ...(versionStale ? [`Pump sizing calculation version ${row.calculation_version} is outdated; recalculate using ${PUMP_SELECTION_CALCULATION_VERSION}.`] : []),
+        ...(!duty ? ['Confirm the pump origin and write a new system pump name.'] : []),
         ...(row?.project_equipment_item_id && row?.pump_snapshot ? [] : ['Select a pump assigned to this LSS system.']),
         ...calculation.reasons.filter(r => !venturiFlowMissing || !r.includes('Circuit flow')),
         ...suitability.reasons,
@@ -373,11 +407,12 @@ export function buildPumpLineItem(
   return {
     ...circuit,
     pump_role: role,
-    pump_role_name: `${duty.tag} — ${duty.pump_name}`,
-    pump_duty_type_id: row?.pump_duty_type_id || currentDuty.id || null,
-    pump_duty_tag: duty.tag,
-    pump_duty_name: duty.pump_name,
-    pump_tags: buildPumpTags((circuit as any).system_code, duty.tag, pumpQuantity),
+    pump_role_name: duty ? `${duty.tag} — ${duty.pump_name}` : 'Pump origin required',
+    pump_duty_type_id: row?.pump_duty_type_id || currentDuty?.id || null,
+    pump_duty_tag: duty?.tag || null,
+    pump_duty_name: duty?.pump_name || null,
+    pump_tags: duty ? buildPumpTags((circuit as any).system_code, duty.tag, pumpQuantity) : [],
+    requires_pump_origin: !duty,
     is_foam_fractionator: isFF,
     ...(isVenturi ? { venturi_flow_m3h: row?.venturi_flow_m3h != null ? Number(row.venturi_flow_m3h) : null } : {}),
     pump_quantity: pumpQuantity,

@@ -89,30 +89,60 @@ describe('LSSPumpSelectionPanel', () => {
       pump_efficiency_pct: 76,
       motor_efficiency_pct: 92,
       pump_quantity: 3,
-      pump_duty_type_id: null,
     }));
   });
 
-  it('uses the active Platform Admin pump duties as selectable relationships', async () => {
+  it('does not expose an origin selector for a known Sand Filter duty', async () => {
     apiGet.mockResolvedValue({ data: {
       ...response,
-      items: [{ ...response.items[0], pump_duty_type_id: 'duty-sfsp' }],
+      items: [{
+        ...response.items[0],
+        pump_duty_type_id: 'duty-sfsp',
+        pump_role_name: 'SFSP — Sand Filter Supply Pump',
+        requires_pump_origin: false,
+      }],
       pump_duty_types: [
         { id: 'duty-sfsp', tag: 'SFSP', pump_name: 'Sand Filter Supply Pump' },
+        { id: 'duty-vacp', tag: 'VACP', pump_name: 'Vacuum Pump' },
+      ],
+    } } as any);
+    renderPanel();
+
+    expect(await screen.findByText('SFSP — Sand Filter Supply Pump')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Pump duty type/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Pump origin/)).not.toBeInTheDocument();
+  });
+
+  it('prompts for origin only when creating a pump for an unknown loop', async () => {
+    apiGet.mockResolvedValue({ data: {
+      ...response,
+      items: [{
+        ...response.items[0],
+        circuit_name: 'New treatment loop',
+        circuit_type: 'Pumped',
+        pump_role_name: 'Pump origin required',
+        requires_pump_origin: true,
+      }],
+      pump_duty_types: [
+        { id: 'duty-circp', tag: 'CIRCP', pump_name: 'Circulation Pump' },
         { id: 'duty-vacp', tag: 'VACP', pump_name: 'Vacuum Pump' },
       ],
     } } as any);
     const user = userEvent.setup();
     renderPanel();
 
-    const selector = await screen.findByLabelText('Pump duty type for Sand Filter Loop');
-    expect(screen.getByRole('option', { name: 'SFSP — Sand Filter Supply Pump' })).toBeInTheDocument();
-    await user.selectOptions(selector, 'duty-vacp');
-    await user.click(screen.getByRole('button', { name: 'Save & calculate' }));
-    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
-      '/systems/system-1/pump-selections',
-      expect.objectContaining({ pump_duty_type_id: 'duty-vacp' }),
-    ));
+    const origin = await screen.findByLabelText('Pump origin for New treatment loop');
+    await user.selectOptions(origin, 'duty-vacp');
+    await user.type(screen.getByLabelText('New pump name for Pump origin required'), 'Vacuum service pump');
+    await user.click(screen.getByRole('button', { name: 'Create & use' }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'primary',
+      pump_quantity: 1,
+      pump_duty_type_id: 'duty-vacp',
+      description: 'Vacuum service pump',
+    }));
   });
 
   it('keeps a frozen pump-selection package read-only', async () => {

@@ -3,7 +3,7 @@ import {
   calculatePumpSelection, evaluateSelectedPumpSuitability, WATER_DENSITY_KG_M3,
   isFoamFractionatorCircuit, defaultPumpLineName, buildPumpLineItem, pumpLinesForCircuit,
   isSandFilterCircuit, pumpCircuits, PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI,
-  pumpDutyTag, buildPumpTags, systemNumberToken,
+  pumpDutyTag, inferredPumpDutyTag, buildPumpTags, systemNumberToken,
   FOAM_FRACTIONATION_CIRCUIT_TYPE, SAND_FILTER_CIRCUIT_TYPE,
 } from './pumpSelections';
 
@@ -156,6 +156,21 @@ describe('governed pump duty tags', () => {
     expect(pumpDutyTag(sandCircuit, PUMP_ROLE_PRIMARY)).toBe('SFSP');
     expect(pumpDutyTag({ circuit_kind: 'side_stream', circuit_name: 'Vacuum cleaning' }, PUMP_ROLE_PRIMARY)).toBe('VACP');
     expect(pumpDutyTag({ circuit_kind: 'loop', circuit_name: 'Life support loop' }, PUMP_ROLE_PRIMARY)).toBe('CIRCP');
+  });
+
+  it('only infers duties when Flow Route or the pump role defines the origin', () => {
+    expect(inferredPumpDutyTag(
+      { circuit_kind: 'loop', circuit_name: 'Foam loop', circuit_type: FOAM_FRACTIONATION_CIRCUIT_TYPE },
+      PUMP_ROLE_PRIMARY,
+    )).toBe('FFSP');
+    expect(inferredPumpDutyTag(
+      { circuit_kind: 'loop', circuit_name: 'Foam loop', circuit_type: FOAM_FRACTIONATION_CIRCUIT_TYPE },
+      PUMP_ROLE_VENTURI,
+    )).toBe('FFVP');
+    expect(inferredPumpDutyTag(
+      { circuit_kind: 'loop', circuit_name: 'New treatment loop', circuit_type: 'Pumped' },
+      PUMP_ROLE_PRIMARY,
+    )).toBeNull();
   });
 
   it('builds one system-numbered tag per configured pump quantity', () => {

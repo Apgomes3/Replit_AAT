@@ -37,4 +37,4 @@ Pump duty tags and names come from the Platform Admin relationship registry, whi
 
 **Why:** Central administration keeps FFSP, FFVP, SFSP, CIRCP, and VACP terminology consistent without allowing later label edits to rewrite historical Design Book evidence.
 
-**How to apply:** Offer active relationships for new selections, retain inactive relationships in saved snapshots, and generate one `<system number>-<duty tag>-<sequence>` tag per configured pump.
+**How to apply:** Derive FFSP, FFVP, and SFSP from saved Flow Route intent and known roles without a card selector. Prompt for an active origin only when creating a named pump for a new unknown loop; retain saved snapshots and generate one `<system number>-<duty tag>-<sequence>` tag per pump.

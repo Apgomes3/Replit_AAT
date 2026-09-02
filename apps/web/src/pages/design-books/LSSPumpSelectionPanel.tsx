@@ -45,7 +45,9 @@ type PumpLine = {
   } | null;
   pump_duty_tag?: string | null;
   pump_duty_name?: string | null;
+  pump_duty_type_id?: string | null;
   pump_tags?: string[];
+  requires_pump_origin?: boolean;
 };
 
 type PumpSelectionResponse = {
@@ -109,9 +111,9 @@ function PumpLineCard({
     motor_efficiency_pct: line.motor_efficiency_pct ?? '',
     venturi_flow_m3h: line.venturi_flow_m3h ?? '',
     pump_quantity: line.pump_quantity ?? 1,
-    pump_duty_type_id: line.pump_duty_type_id || '',
   });
   const [newPumpName, setNewPumpName] = useState('');
+  const [newPumpDutyTypeId, setNewPumpDutyTypeId] = useState('');
   const [creatingPump, setCreatingPump] = useState(false);
 
   useEffect(() => {
@@ -122,13 +124,12 @@ function PumpLineCard({
       motor_efficiency_pct: line.motor_efficiency_pct ?? '',
       venturi_flow_m3h: line.venturi_flow_m3h ?? '',
       pump_quantity: line.pump_quantity ?? 1,
-      pump_duty_type_id: line.pump_duty_type_id || '',
     });
   }, [
     line.circuit_key, line.pump_role,
     line.project_equipment_item_id,
     line.design_head_m, line.pump_efficiency_pct, line.motor_efficiency_pct,
-    line.venturi_flow_m3h, line.pump_quantity, line.pump_duty_type_id,
+    line.venturi_flow_m3h, line.pump_quantity,
   ]);
 
   const save = async () => {
@@ -143,7 +144,6 @@ function PumpLineCard({
         pump_efficiency_pct: form.pump_efficiency_pct === '' ? null : Number(form.pump_efficiency_pct),
         motor_efficiency_pct: form.motor_efficiency_pct === '' ? null : Number(form.motor_efficiency_pct),
         pump_quantity: Number(form.pump_quantity),
-        pump_duty_type_id: form.pump_duty_type_id || null,
         ...(isVenturi ? { venturi_flow_m3h: form.venturi_flow_m3h === '' ? null : Number(form.venturi_flow_m3h) } : {}),
       });
       await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
@@ -168,11 +168,12 @@ function PumpLineCard({
 
   const createNamedPump = async () => {
     const description = newPumpName.trim();
-    if (!description || !onCreatePump) return;
+    if (!description || !onCreatePump || (line.requires_pump_origin && !newPumpDutyTypeId)) return;
     setCreatingPump(true);
     try {
-      await onCreatePump(description, pumpQuantity, String(form.pump_duty_type_id || ''));
+      await onCreatePump(description, pumpQuantity, newPumpDutyTypeId);
       setNewPumpName('');
+      setNewPumpDutyTypeId('');
     } finally {
       setCreatingPump(false);
     }
@@ -259,20 +260,7 @@ function PumpLineCard({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label>
-          <span className="mb-1 block text-xs font-medium text-stone-600">Pump duty type</span>
-          <select
-            aria-label={`Pump duty type for ${line.pump_role_name || line.circuit_name}`}
-            value={form.pump_duty_type_id}
-            onChange={event => setForm(current => ({ ...current, pump_duty_type_id: event.target.value }))}
-            disabled={readOnly}
-            className={inputClass}
-          >
-            {!form.pump_duty_type_id && <option value="">{line.pump_role_name || 'Select pump duty'}</option>}
-            {dutyTypes.map(duty => <option key={duty.id} value={duty.id}>{duty.tag} — {duty.pump_name}</option>)}
-          </select>
-        </label>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label>
           <span className="mb-1 block text-xs font-medium text-stone-600">Selected system pump</span>
           <select
@@ -296,7 +284,20 @@ function PumpLineCard({
             </p>
           )}
           {!readOnly && onCreatePump && (
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-2 space-y-2">
+              {line.requires_pump_origin && (
+                <select
+                  aria-label={`Pump origin for ${line.circuit_name}`}
+                  value={newPumpDutyTypeId}
+                  onChange={event => setNewPumpDutyTypeId(event.target.value)}
+                  className={inputClass}
+                  disabled={creatingPump}
+                >
+                  <option value="">— Confirm pump origin —</option>
+                  {dutyTypes.map(duty => <option key={duty.id} value={duty.id}>{duty.tag} — {duty.pump_name}</option>)}
+                </select>
+              )}
+              <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 aria-label={`New pump name for ${line.pump_role_name || line.circuit_name}`}
                 value={newPumpName}
@@ -308,11 +309,12 @@ function PumpLineCard({
               <button
                 type="button"
                 onClick={() => void createNamedPump()}
-                disabled={creatingPump || !newPumpName.trim()}
+                disabled={creatingPump || !newPumpName.trim() || (line.requires_pump_origin && !newPumpDutyTypeId)}
                 className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
               >
                 <Plus className="h-3.5 w-3.5" /> {creatingPump ? 'Creating…' : 'Create & use'}
               </button>
+              </div>
             </div>
           )}
         </label>
