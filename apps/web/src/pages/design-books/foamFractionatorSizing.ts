@@ -5,6 +5,23 @@ export const SAND_FILTER_RECOMMENDED_PROCESS_RATE_LS_M2 = 6;
 export const SAND_FILTER_PROCESS_RATE_SLIDER_MIN = 1;
 export const SAND_FILTER_PROCESS_RATE_SLIDER_MAX = 12;
 
+/**
+ * Sand filters are normally operated as a backwash-capable bank. One unit is
+ * valid for small duties, while larger recommendations use complete banks of
+ * three or four. Quantities remain editable so an engineer can intentionally
+ * override the bank recommendation.
+ */
+export function recommendSandFilterBankQuantity(requiredQuantity: number): number {
+  const minimumQuantity = Math.max(1, Math.ceil(requiredQuantity));
+  if (minimumQuantity === 1) return 1;
+  if (minimumQuantity <= 3) return 3;
+  if (minimumQuantity <= 4) return 4;
+
+  const nextMultipleOfThree = Math.ceil(minimumQuantity / 3) * 3;
+  const nextMultipleOfFour = Math.ceil(minimumQuantity / 4) * 4;
+  return Math.min(nextMultipleOfThree, nextMultipleOfFour);
+}
+
 export function calculateFoamFractionatorSizingRecommendation(
   parentLoopFlowM3h: unknown,
   products: any[],
@@ -88,6 +105,7 @@ export function calculateSandFilterSizingRecommendation(
     'Set the parent loop allocation above zero to size the Sand Filter.',
     'Select an AAT Sand Filter to see sizing guidance.',
     'A selected Sand Filter has no valid saved diameter.',
+    recommendSandFilterBankQuantity,
   );
   return result;
 }
@@ -100,6 +118,7 @@ function calculateEquipmentSizingRecommendation(
   flowReason: string,
   selectionReason: string,
   diameterReason: string,
+  quantityRecommendation: (requiredQuantity: number) => number = value => Math.max(1, Math.ceil(value)),
 ) {
   const parentFlow = Number(parentLoopFlowM3h);
   if (!Number.isFinite(parentFlow) || parentFlow <= 0) return { status: 'incomplete' as const, reason: flowReason };
@@ -108,8 +127,13 @@ function calculateEquipmentSizingRecommendation(
     const diameter = Number(product.diameter_mm);
     const area = diameter > 0 ? Math.PI * Math.pow(diameter / 2000, 2) : null;
     const quantity = Number(product.quantity);
+    const requiredQuantity = area
+      ? (parentFlow / 3.6) / (recommendedRate * area)
+      : null;
     return { ...product, unitAreaM2: area, quantity,
-      suggestedQuantity: area ? Math.max(1, Math.ceil((parentFlow / 3.6) / (recommendedRate * area))) : null };
+      requiredQuantity: requiredQuantity == null ? null : Math.max(1, Math.ceil(requiredQuantity)),
+      suggestedQuantity: requiredQuantity == null ? null : quantityRecommendation(requiredQuantity),
+    };
   });
   if (recommendations.some(product => !product.unitAreaM2)) {
     return { status: 'incomplete' as const, reason: diameterReason, products: recommendations };

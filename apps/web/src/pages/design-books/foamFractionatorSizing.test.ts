@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateFoamFractionatorSizingRecommendation,
   calculateSandFilterSizingRecommendation,
+  recommendSandFilterBankQuantity,
 } from './foamFractionatorSizing';
 
 const product = (id: string, diameterMm: number | null, quantity: number) => ({
@@ -55,6 +56,19 @@ describe('Foam Fractionator sizing guidance', () => {
 });
 
 describe('Sand Filter sizing guidance', () => {
+  it.each([
+    [1, 1],
+    [2, 3],
+    [3, 3],
+    [4, 4],
+    [5, 6],
+    [7, 8],
+    [9, 9],
+    [10, 12],
+  ])('recommends %s required units as a valid bank quantity of %s', (required, expected) => {
+    expect(recommendSandFilterBankQuantity(required)).toBe(expected);
+  });
+
   it('uses 6 L/s/m² and rounds suggested quantities up', () => {
     const result = calculateSandFilterSizingRecommendation(
       36,
@@ -64,6 +78,18 @@ describe('Sand Filter sizing guidance', () => {
     expect(result.status).toBe('ready');
     if (result.status !== 'ready') return;
     expect(result.recommendedRateLsM2).toBe(6);
+    expect(result.products[0].suggestedQuantity).toBe(3);
+  });
+
+  it('prefers a complete bank when the minimum area requires two units', () => {
+    const result = calculateSandFilterSizingRecommendation(
+      33.9,
+      [product('SF-1000', 1000, 1)],
+      6,
+    );
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') return;
+    expect(result.products[0].requiredQuantity).toBe(2);
     expect(result.products[0].suggestedQuantity).toBe(3);
   });
 

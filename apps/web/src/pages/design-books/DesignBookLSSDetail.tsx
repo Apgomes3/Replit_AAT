@@ -3798,6 +3798,13 @@ export default function DesignBookLSSDetail() {
                             <strong> {recommendation.recommendedRateLsM2} L/s/m²</strong> rate, the required area is
                             <strong> {recommendation.requiredAreaM2.toFixed(4)} m²</strong>.
                           </p>
+                          {isSandFilter && (
+                            <p className="mt-1.5 text-cyan-900/80">
+                              Bank guidance uses <strong>1 unit</strong> for a single-filter duty, then prefers
+                              <strong> banks of 3 or 4</strong>. Above 4 units it recommends the next multiple of 3 or 4.
+                              Edit Quantity to apply a manual override when needed.
+                            </p>
+                          )}
                           <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-2">
                             <span>Selected area</span>
                             <strong>{recommendation.selectedAreaM2.toFixed(4)} m²</strong>
@@ -3814,7 +3821,7 @@ export default function DesignBookLSSDetail() {
                                   <span>Ø{product.diameter_mm} mm</span>
                                 </div>
                                 <div className="flex items-center justify-between gap-2 mt-0.5">
-                                  <span>Suggested standalone quantity</span>
+                                  <span>{isSandFilter ? 'Suggested bank quantity' : 'Suggested standalone quantity'}</span>
                                   <strong>{product.suggestedQuantity} unit{product.suggestedQuantity === 1 ? '' : 's'}</strong>
                                 </div>
                                 {recommendation.products.length > 1 && (
@@ -3834,7 +3841,7 @@ export default function DesignBookLSSDetail() {
                             {recommendation.products.length === 1 && (
                               <button type="button" onClick={() => applyRecommendedSizing()}
                                 className="rounded border border-cyan-300 bg-cyan-700 px-2 py-1 font-semibold text-white hover:bg-cyan-800">
-                                Apply rate + quantity
+                                {isSandFilter ? 'Apply rate + bank quantity' : 'Apply rate + quantity'}
                               </button>
                             )}
                           </div>

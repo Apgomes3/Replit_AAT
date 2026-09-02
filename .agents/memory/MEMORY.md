@@ -13,6 +13,7 @@
 - [Flow Route side streams](flow-route-side-streams.md) — each side stream is an independent 0–100% branch; sibling percentages are never summed.
 - [Flow Route matched circulation](flow-route-matched-circulation.md) — matched Break/Plenum loops are distinct non-allocating circuits resolved through one canonical flow graph.
 - [Flow Route fractionator controls](flow-route-fractionator-controls.md) — show loop and Bio/Degas context before sizing; model details are disclosures, never draft mutations.
+- [Sand filter bank sizing](sand-filter-bank-sizing.md) — recommend 1 for single duty, then 3/4-unit banks; above 4 use multiples while keeping manual quantities available.
 - [LSS configuration reset](lss-configuration-reset.md) — reset LSS-owned inputs atomically while preserving project tanks, exhibits, hydraulics, and PIM sources.
 - [Biological Media preview basis](biological-media-preview-basis.md) — preview sizing stays on TAN-N, applies approved overall VTR and safety factor once, and never presents mutable previews as certification.
 - [Compact-unit PIM snapshots](compact-unit-pim-snapshots.md) — Product Master specs seed editable compact-unit values once; edits and future PIM changes never overwrite saved LSS values implicitly.
