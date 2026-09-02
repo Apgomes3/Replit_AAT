@@ -43,4 +43,4 @@ Pump model suggestions come from active PIM Pump-category products and must meet
 
 **Why:** Designers need a governed manufacturer/model choice without confusing the reusable PIM model with the project-specific pump tag. A draft fallback keeps missing catalog work visible and reviewable instead of hiding it in an unclassified equipment row.
 
-**How to apply:** Filter suggestions only after quantity and head establish a duty point. Require rated flow and head at or above that duty, preserve an out-of-range current selection for visibility, and snapshot the linked product when sizing is saved.
+**How to apply:** Filter suggestions only after quantity and head establish a duty point. Show only catalogue pumps with rated flow and head at or above that duty; do not carry an out-of-range current selection into the recommendation selector or submit it as a hidden value. Snapshot the linked product when sizing is saved.

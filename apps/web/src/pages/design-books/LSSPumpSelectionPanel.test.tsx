@@ -196,6 +196,23 @@ describe('LSSPumpSelectionPanel', () => {
     expect(screen.getByText('1 compatible pump rated for at least 45.00 m³/h at 30.00 m.')).toBeInTheDocument();
   });
 
+  it('does not show an existing out-of-duty selection as a catalogue recommendation', async () => {
+    apiGet.mockResolvedValue({ data: {
+      ...response,
+      items: [{
+        ...response.items[0],
+        project_equipment_item_id: 'equipment-1',
+        design_head_m: 30,
+      }],
+    } } as any);
+    renderPanel();
+
+    const selector = await screen.findByLabelText('Pump product for Sand Filter Loop');
+    expect(selector).toHaveDisplayValue('Select a pump from the catalogue');
+    expect(screen.queryByRole('option', { name: /current selection outside duty/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /PM-PUMP-CIR-22/ })).not.toBeInTheDocument();
+  });
+
   it('saves a compatible selected pump without creating a duplicate draft item', async () => {
     const user = userEvent.setup();
     renderPanel();

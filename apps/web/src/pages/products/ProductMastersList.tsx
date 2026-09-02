@@ -179,7 +179,7 @@ export default function ProductMastersList() {
     quickAddInFlight.current = true;
     setQuickAddSaving(true);
     try {
-      const created = await api.post('/product-masters', {
+      await api.post('/product-masters', {
         product_code: productCode,
         product_name: productName,
         product_family_id: quickAddForm.product_family_id || null,
@@ -195,7 +195,6 @@ export default function ProductMastersList() {
         standard_status: 'Concept',
       });
       await refetch();
-      if (created.data?.id) openEdit(created.data);
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Product could not be added');
     } finally {

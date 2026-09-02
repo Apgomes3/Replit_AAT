@@ -185,6 +185,7 @@ describe('ProductMastersList obsolete visibility', () => {
     renderList();
     await screen.findByText('Active pump');
 
+    mocks.post.mockResolvedValueOnce({ data: { id: 'quick-product' } });
     await user.click(screen.getByRole('button', { name: 'Edit Mode' }));
     await user.type(screen.getByLabelText('Quick product code'), 'PM-QUICK-1');
     await user.type(screen.getByLabelText('Quick product name'), 'Quick entry product');
@@ -201,6 +202,7 @@ describe('ProductMastersList obsolete visibility', () => {
     });
     expect(screen.getByRole('button', { name: 'Edit P-ACTIVE' })).toBeInTheDocument();
     expect(screen.getByText('Enter the code and name. Click outside this area to save, or use Add Product.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Edit Product' })).not.toBeInTheDocument();
   });
 
   it('allows temporary product deletion from edit mode', async () => {

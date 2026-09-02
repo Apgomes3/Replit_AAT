@@ -232,9 +232,7 @@ function PumpLineCard({
   const save = async () => {
     setSaving(true);
     try {
-      let projectEquipmentItemId = selectedCandidate
-        ? selectedCandidate.project_equipment_item_id || null
-        : form.project_equipment_item_id || null;
+      let projectEquipmentItemId = selectedCandidate?.project_equipment_item_id || null;
       if (!projectEquipmentItemId && selectedCandidate?.product_master_id) {
         projectEquipmentItemId = await allocatePumpProduct(selectedCandidate.product_master_id);
       }
@@ -279,19 +277,15 @@ function PumpLineCard({
   const compatibleCandidates = requiredHead == null || perPumpFlow == null
     ? []
     : pumpCandidates.filter(candidate => {
+      if (!candidate.product_master_id && !candidate.product_code) return false;
       const availableFlow = positiveNumber(candidate.design_flow_m3h);
       const availableHead = positiveNumber(candidate.design_head_m);
       return availableFlow != null && availableHead != null
         && availableFlow >= perPumpFlow
         && availableHead >= requiredHead;
     });
-  const selectedCandidate = pumpCandidates.find(candidate =>
+  const selectedCandidate = compatibleCandidates.find(candidate =>
     pumpCandidateValue(candidate) === form.project_equipment_item_id);
-  const currentCandidate = selectedCandidate || pumpCandidates.find(candidate =>
-    candidate.project_equipment_item_id === line.project_equipment_item_id);
-  const selectableCandidates = currentCandidate && !compatibleCandidates.some(candidate => candidate.id === currentCandidate.id)
-    ? [currentCandidate, ...compatibleCandidates]
-    : compatibleCandidates;
 
   return (
     <div className="space-y-3 p-3 sm:p-4">
@@ -393,13 +387,11 @@ function PumpLineCard({
                 className={inputClass}
               >
                 <option value="">Select a pump from the catalogue</option>
-                {selectableCandidates.map(candidate => {
+                {compatibleCandidates.map(candidate => {
                   const id = pumpCandidateValue(candidate);
-                  const isCurrentOutsideDuty = currentCandidate?.id === candidate.id
-                    && !compatibleCandidates.some(item => item.id === candidate.id);
                   return (
                     <option key={id} value={id}>
-                      {pumpCandidateLabel(candidate)}{isCurrentOutsideDuty ? ' · current selection outside duty' : ''}
+                      {pumpCandidateLabel(candidate)}
                     </option>
                   );
                 })}
