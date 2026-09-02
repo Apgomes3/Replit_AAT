@@ -53,6 +53,20 @@ describe('pump circuit intent', () => {
 
     expect((circuits[0] as any).venturi_flow_m3h).toBeNull();
   });
+
+  it('keeps a matched Break Tank loop as a distinct circulation circuit without allocating flow twice', () => {
+    const circuits = pumpCircuits({
+      design_flow_m3h: 100,
+      loop1_flow_source: 'Exhibit return',
+      loop1_flow_pct: 100,
+      loop2_flow_source: 'Break Tank',
+      loop2_flow_mode: 'matched',
+      loop2_match_loop_number: 1,
+    }, []);
+    expect(circuits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ circuit_key: 'loop:2', flow_m3h: 100, flow_mode: 'matched' }),
+    ]));
+  });
 });
 
 describe('pump selection calculation', () => {

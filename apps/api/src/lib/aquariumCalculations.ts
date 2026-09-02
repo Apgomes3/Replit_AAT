@@ -5,6 +5,7 @@
  * render the inputs, formula and rounding rules without having to recreate
  * any engineering logic of its own.
  */
+import { resolveLoopFlows } from './flowRoute';
 
 export const AQUARIUM_CALCULATION_VERSION = 'aquarium-hydraulics-v1';
 export const TURNOVER_UNIT = 'cycles_per_hour';
@@ -727,14 +728,24 @@ export function calculateSystemEngineering(
         reasons: ['Bespoke system selected; no compact catalog limits apply.'],
       };
   if (system?.system_config === 'compact') reasons.push(...unitResult.reasons);
+  // Resolve matched loops after reading the complete route. This deliberately
+  // uses loop flow, not its allocation percent, so a chain always follows the
+  // current authoritative source flow.
+  const resolvedLoopFlows = resolveLoopFlows(system, designFlow);
+  for (const resolved of resolvedLoopFlows) {
+    if (resolved.flow_mode === 'matched' && resolved.unavailable_reason) reasons.push(resolved.unavailable_reason);
+  }
   const flowRoute = [1, 2, 3].map(loopNumber => {
     const allocationPct = numberOrNull(system?.[`loop${loopNumber}_flow_pct`]);
-    const parentFlow = designFlow != null && designFlow > 0 && allocationPct != null
-      ? roundEngineering(designFlow * allocationPct / 100, FLOW_DECIMALS)
-      : null;
+    const resolved = resolvedLoopFlows[loopNumber - 1];
+    const flowMode = resolved.flow_mode;
+    const matchLoopNumber = resolved.match_loop_number;
+    const parentFlow = resolved.flow_m3h;
     return {
       loop_number: loopNumber,
       name: String(system?.[`loop${loopNumber}_name`] || `Loop ${loopNumber}`),
+      flow_mode: flowMode,
+      match_loop_number: matchLoopNumber,
       allocation_pct: allocationPct,
       flow_m3h: parentFlow,
       side_streams: sideStreams
@@ -742,11 +753,12 @@ export function calculateSystemEngineering(
         .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0))
         .map(stream => ({
           ...stream,
-          flow_m3h: calculateSideStreamFlow(designFlow, allocationPct, stream.flow_pct),
+          flow_m3h: parentFlow != null && numberOrNull(stream.flow_pct) != null
+            ? roundEngineering(parentFlow * Number(stream.flow_pct) / 100, FLOW_DECIMALS)
+            : null,
           flow_available: parentFlow != null,
           flow_unavailable_reason: parentFlow == null
-            ? 'Parent loop allocation is unavailable.'
-            : null,
+            ? (resolved.unavailable_reason || 'Parent loop allocation is unavailable.') : null,
         })),
       foam_fractionation: String(system?.[`loop${loopNumber}_filtration`] || '') === 'Foam Fractionation'
         ? (() => {

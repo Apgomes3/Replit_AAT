@@ -221,6 +221,71 @@ describe('Foam Fractionator release readiness', () => {
   });
 });
 
+describe('matched Flow Route loops', () => {
+  it('uses its target loop live flow without adding another allocation', () => {
+    const result = calculateSystemEngineering({
+      id: 'matched-loop-system',
+      design_flow_m3h: 100,
+      calculation_inputs: { design_flow_source: 'manual_override' },
+      loop1_flow_source: 'Exhibit return',
+      loop1_flow_pct: 100,
+      loop2_flow_source: 'Break Tank',
+      loop2_flow_mode: 'matched',
+      loop2_match_loop_number: 1,
+    }, [], [], null);
+    expect(result.flow_route.loops[0].flow_m3h).toBe(100);
+    expect(result.flow_route.loops[1]).toMatchObject({
+      flow_mode: 'matched', match_loop_number: 1, flow_m3h: 100,
+    });
+  });
+
+  it('marks malformed matched-loop graphs invalid with an actionable reason', () => {
+    const result = calculateSystemEngineering({
+      id: 'cyclic-loop-system',
+      design_flow_m3h: 100,
+      calculation_inputs: { design_flow_source: 'manual_override' },
+      loop1_flow_source: 'Break Tank',
+      loop1_flow_mode: 'matched',
+      loop1_match_loop_number: 2,
+      loop2_flow_source: 'Plenum Tank',
+      loop2_flow_mode: 'matched',
+      loop2_match_loop_number: 1,
+    }, [], [], null);
+    expect(result.status).toBe('invalid');
+    expect(result.reasons.join(' ')).toContain('circular flow match');
+  });
+
+  it('marks a matched loop with a non-circulation source invalid', () => {
+    const result = calculateSystemEngineering({
+      id: 'invalid-matched-source-system',
+      design_flow_m3h: 100,
+      calculation_inputs: { design_flow_source: 'manual_override' },
+      loop1_flow_source: 'Exhibit return',
+      loop1_flow_pct: 100,
+      loop2_flow_source: 'Exhibit return',
+      loop2_flow_mode: 'matched',
+      loop2_match_loop_number: 1,
+    }, [], [], null);
+
+    expect(result.status).toBe('invalid');
+    expect(result.reasons.join(' ')).toContain('requires Break Tank or Plenum Tank');
+  });
+
+  it('marks a matched loop with an unconfigured target invalid', () => {
+    const result = calculateSystemEngineering({
+      id: 'unconfigured-matched-target-system',
+      design_flow_m3h: 100,
+      calculation_inputs: { design_flow_source: 'manual_override' },
+      loop1_flow_source: 'Break Tank',
+      loop1_flow_mode: 'matched',
+      loop1_match_loop_number: 2,
+    }, [], [], null);
+
+    expect(result.status).toBe('invalid');
+    expect(result.reasons.join(' ')).toContain('target Loop 2 is not configured');
+  });
+});
+
 const exhibit = { id: 'ex-1', water_type: 'Marine' };
 const tank = {
   id: 'tank-1',

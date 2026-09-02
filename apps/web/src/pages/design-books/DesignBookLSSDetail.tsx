@@ -900,6 +900,8 @@ function FlowEquipmentProductCard({
 const FLOW_LOOP_FIELDS = [
   'name',
   'flow_source',
+  'flow_mode',
+  'match_loop_number',
   'filtration',
   'flow_pct',
   'bio_degas_pct',
@@ -913,6 +915,9 @@ function createFlowDraft(system: any) {
   for (const n of [1, 2, 3]) {
     draft[`loop${n}_name`] = system[`loop${n}_name`] || `Loop ${n}`;
     draft[`loop${n}_flow_source`] = system[`loop${n}_flow_source`] || '';
+    draft[`loop${n}_flow_mode`] = system[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated';
+    draft[`loop${n}_match_loop_number`] =
+      system[`loop${n}_match_loop_number`] != null ? String(system[`loop${n}_match_loop_number`]) : '';
     draft[`loop${n}_filtration`] = system[`loop${n}_filtration`] || '';
     draft[`loop${n}_flow_pct`] =
       system[`loop${n}_flow_pct`] != null ? String(system[`loop${n}_flow_pct`]) : '';
@@ -946,6 +951,8 @@ function createFlowDraft(system: any) {
 function flowDraftLoopHasData(draft: Record<string, any>, n: number) {
   return !!(
     draft[`loop${n}_flow_source`] ||
+    draft[`loop${n}_flow_mode`] === 'matched' ||
+    (draft[`loop${n}_match_loop_number`] != null && draft[`loop${n}_match_loop_number`] !== '') ||
     draft[`loop${n}_filtration`] ||
     (draft[`loop${n}_flow_pct`] != null && draft[`loop${n}_flow_pct`] !== '') ||
     (draft[`loop${n}_bio_degas_pct`] != null && draft[`loop${n}_bio_degas_pct`] !== '') ||
@@ -963,6 +970,11 @@ function flowDraftMatchesSystem(draft: Record<string, any>, system: any) {
   const loopsMatch = [1, 2, 3].every(n => (
     (draft[`loop${n}_name`] || `Loop ${n}`) === (system[`loop${n}_name`] || `Loop ${n}`) &&
     (draft[`loop${n}_flow_source`] || '') === (system[`loop${n}_flow_source`] || '') &&
+    (draft[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated') ===
+      (system[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated') &&
+    (draft[`loop${n}_match_loop_number`] || '') === (
+      system[`loop${n}_match_loop_number`] != null ? String(system[`loop${n}_match_loop_number`]) : ''
+    ) &&
     (draft[`loop${n}_filtration`] || '') === (system[`loop${n}_filtration`] || '') &&
     (draft[`loop${n}_flow_pct`] || '') === (
       system[`loop${n}_flow_pct`] != null ? String(system[`loop${n}_flow_pct`]) : ''
@@ -1010,6 +1022,10 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
     const cleared = n === clearedLoop;
     fields[`loop${n}_name`] = cleared ? `Loop ${n}` : (String(draft[`loop${n}_name`] || '').trim() || `Loop ${n}`);
     fields[`loop${n}_flow_source`] = cleared ? null : (draft[`loop${n}_flow_source`] || null);
+    fields[`loop${n}_flow_mode`] = cleared ? 'allocated' :
+      (draft[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated');
+    fields[`loop${n}_match_loop_number`] = cleared ? null :
+      (fields[`loop${n}_flow_mode`] === 'matched' ? nullableNumber(draft[`loop${n}_match_loop_number`]) : null);
     fields[`loop${n}_filtration`] = cleared ? null : (draft[`loop${n}_filtration`] || null);
     fields[`loop${n}_flow_pct`] = cleared ? null : nullableNumber(draft[`loop${n}_flow_pct`]);
     fields[`loop${n}_bio_degas_pct`] = cleared ? null : nullableNumber(draft[`loop${n}_bio_degas_pct`]);
@@ -1059,11 +1075,13 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
 function flowAllocationError(draft: Record<string, any>): string | null {
   let total = 0;
   for (const n of [1, 2, 3]) {
+    const isMatched = draft[`loop${n}_flow_mode`] === 'matched';
     for (const [key, label] of [
       [`loop${n}_flow_pct`, `Loop ${n} allocation`],
       [`loop${n}_bio_degas_pct`, `Loop ${n} Bio/Degas allocation`],
     ] as const) {
       const raw = draft[key];
+      if (isMatched && key === `loop${n}_flow_pct`) continue;
       if (raw === undefined || raw === null || raw === '') continue;
       const value = Number(raw);
       if (!Number.isFinite(value) || value < 0 || value > 100) {
@@ -1071,7 +1089,7 @@ function flowAllocationError(draft: Record<string, any>): string | null {
       }
     }
     const flowPct = nullableNumber(draft[`loop${n}_flow_pct`]);
-    if (flowPct != null) total += flowPct;
+    if (!isMatched && flowPct != null) total += flowPct;
   }
   for (const loopNumber of [1, 2, 3]) {
     const streams = (draft.side_streams || [])
@@ -1944,6 +1962,8 @@ export default function DesignBookLSSDetail() {
   const getFlowDraftRow = (draft: any, n: number) => ({
     name: draft[`loop${n}_name`] || `Loop ${n}`,
     flow_source: draft[`loop${n}_flow_source`] || '',
+    flow_mode: draft[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated',
+    match_loop_number: draft[`loop${n}_match_loop_number`] != null ? draft[`loop${n}_match_loop_number`] : '',
     filtration: draft[`loop${n}_filtration`] || '',
     flow_pct: draft[`loop${n}_flow_pct`] != null ? draft[`loop${n}_flow_pct`] : '',
     bio_degas_pct: draft[`loop${n}_bio_degas_pct`] != null ? draft[`loop${n}_bio_degas_pct`] : '',
@@ -3083,7 +3103,8 @@ export default function DesignBookLSSDetail() {
       {/* Flow Route panel */}
       {(() => {
         const isSaltwater = system.water_type === 'Marine' || system.water_type === 'Salt Water';
-        const FLOW_SOURCES = ['Bottom Drain', 'Surface Skim', 'Both Integrated'] as const;
+        const FLOW_SOURCES = ['Bottom Drain', 'Surface Skim', 'Both Integrated', 'Break Tank', 'Plenum Tank'] as const;
+        const CIRCULATION_SOURCES = new Set(['Break Tank', 'Plenum Tank']);
         const FILTRATION_OPTS = [
           { label: 'Foam Fractionation',     value: 'Foam Fractionation',     saltwaterOnly: true  },
           { label: 'Pressurized Bag Filter', value: 'Pressurized Bag Filter', saltwaterOnly: false },
@@ -3373,6 +3394,7 @@ export default function DesignBookLSSDetail() {
         const loopHasData = (n: number) =>
           !!((system[`loop${n}_name`] && system[`loop${n}_name`] !== `Loop ${n}`) ||
              system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] ||
+              system[`loop${n}_flow_mode`] === 'matched' || system[`loop${n}_match_loop_number`] != null ||
              system[`loop${n}_flow_pct`] != null || system[`loop${n}_bio_degas_pct`] != null ||
              system[`loop${n}_bio_degas_m3h`] != null || system[`loop${n}_link_bio_degas`] ||
              (system.side_streams || []).some((stream: any) => Number(stream.parent_loop_number) === n));
@@ -3385,16 +3407,47 @@ export default function DesignBookLSSDetail() {
           const pct = nullableNumber(percentage);
           return pct != null && systemFlow > 0 ? systemFlow * pct / 100 : null;
         };
+        const loopMode = (source: any, n: number) =>
+          source?.[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated';
+        const hasLoopConfiguration = (source: any, n: number) => !!(
+          source?.[`loop${n}_flow_source`] || source?.[`loop${n}_filtration`] ||
+          nullableNumber(source?.[`loop${n}_flow_pct`]) != null ||
+          loopMode(source, n) === 'matched'
+        );
+        const resolveLoopFlow = (source: any, n: number, path: number[] = []): {
+          flow: number | null; reason?: string; target?: number; chain?: number[];
+        } => {
+          if (path.includes(n)) return { flow: null, reason: 'Match cycle detected', chain: [...path, n] };
+          if (loopMode(source, n) !== 'matched') return { flow: flowForPercentage(source?.[`loop${n}_flow_pct`]), chain: [...path, n] };
+          const target = nullableNumber(source?.[`loop${n}_match_loop_number`]);
+          if (!Number.isInteger(target) || target! < 1 || target! > 3 || !hasLoopConfiguration(source, target!)) {
+            return { flow: null, reason: 'Matched loop is unavailable', target: target ?? undefined, chain: [...path, n] };
+          }
+          if (target === n) return { flow: null, reason: 'A loop cannot match itself', target, chain: [...path, n] };
+          const resolved = resolveLoopFlow(source, target!, [...path, n]);
+          return { ...resolved, target, chain: resolved.chain };
+        };
+        const matchDescription = (source: any, n: number) => {
+          const resolved = resolveLoopFlow(source, n);
+          const target = nullableNumber(source?.[`loop${n}_match_loop_number`]);
+          if (resolved.reason) return `Unavailable — ${resolved.reason}`;
+          return target != null
+            ? `Matches Loop ${target} — ${loopName(source, target)} · ${fmtFlow(resolved.flow ?? 0)}`
+            : 'Unavailable — choose another loop';
+        };
         const allocationSource = flowForm || system;
         const allocationLoops = [1, 2, 3].filter(n =>
+          loopMode(allocationSource, n) !== 'matched' &&
           !!(allocationSource[`loop${n}_flow_source`] ||
             allocationSource[`loop${n}_filtration`] ||
+            allocationSource[`loop${n}_flow_mode`] === 'matched' ||
+            allocationSource[`loop${n}_match_loop_number`] != null ||
             allocationSource[`loop${n}_flow_pct`] != null ||
             allocationSource[`loop${n}_bio_degas_pct`] != null ||
             allocationSource[`loop${n}_bio_degas_m3h`] != null ||
             allocationSource[`loop${n}_link_bio_degas`]));
         const allocationTotal = [1, 2, 3].reduce(
-          (sum, n) => sum + (nullableNumber(allocationSource[`loop${n}_flow_pct`]) ?? 0),
+          (sum, n) => sum + (loopMode(allocationSource, n) === 'matched' ? 0 : (nullableNumber(allocationSource[`loop${n}_flow_pct`]) ?? 0)),
           0,
         );
         const allocationPending = allocationLoops.filter(
@@ -3738,12 +3791,14 @@ export default function DesignBookLSSDetail() {
           const loopPct = nullableNumber(system[`loop${n}_flow_pct`]);
           const bioPct = nullableNumber(system[`loop${n}_bio_degas_pct`]);
           const linked = !!system[`loop${n}_link_bio_degas`];
-          const loopFlow = flowForPercentage(loopPct);
+          const matched = loopMode(system, n) === 'matched';
+          const resolvedFlow = resolveLoopFlow(system, n);
+          const loopFlow = resolvedFlow.flow;
           const bioFlow = loopFlow != null && bioPct != null
             ? loopFlow * bioPct / 100
             : nullableNumber(bio);
           const sideStreams = sideStreamsFor(system, n);
-          if (!src && !filt && loopPct == null && bio == null && bioPct == null && !linked && sideStreams.length === 0)
+          if (!src && !filt && !matched && loopPct == null && bio == null && bioPct == null && !linked && sideStreams.length === 0)
             return <div className="text-xs text-stone-300 italic py-2">Not configured</div>;
           return (
             <div className="space-y-2">
@@ -3754,7 +3809,13 @@ export default function DesignBookLSSDetail() {
                   <span className="font-medium text-stone-800">{src}</span>
                 </div>
               ) : <div className="text-xs text-stone-300 italic">No source set</div>}
-              {src && <SourceSplitReference source={src} />}
+               {src && <SourceSplitReference source={src} />}
+               {matched && (
+                 <div className={`rounded-md border px-2.5 py-2 text-xs ${resolvedFlow.reason ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>
+                   <span className="font-semibold">Non-allocating circulation flow</span>
+                   <span className="block mt-0.5">{matchDescription(system, n)}</span>
+                 </div>
+               )}
               {filt && (
                 <div className="flex items-center gap-2 text-sm">
                   <FlaskConical className="w-3.5 h-3.5 text-violet-500 shrink-0" />
@@ -3808,7 +3869,7 @@ export default function DesignBookLSSDetail() {
                   {fmtFlow(loopFlow ?? 0)}
                 </span>
                 <span className="text-stone-400 text-xs">
-                  · {allocationStatus(loopPct, 'system')}
+                   · {matched ? 'matched flow (not allocated)' : allocationStatus(loopPct, 'system')}
                 </span>
               </div>
               {linked && (
@@ -3883,15 +3944,23 @@ export default function DesignBookLSSDetail() {
           const srcKey  = `loop${n}_flow_source`;
           const filtKey = `loop${n}_filtration`;
           const pctKey  = `loop${n}_flow_pct`;
+          const modeKey = `loop${n}_flow_mode`;
+          const matchKey = `loop${n}_match_loop_number`;
           const bioPctKey = `loop${n}_bio_degas_pct`;
           const lnkKey  = `loop${n}_link_bio_degas`;
           const linked: boolean = !!flowForm[lnkKey];
           const curSrc  = flowForm[srcKey]  as string;
           const curFilt = flowForm[filtKey] as string;
+          const isCirculation = CIRCULATION_SOURCES.has(curSrc);
+          const matched = loopMode(flowForm, n) === 'matched';
           const loopPct = nullableNumber(flowForm[pctKey]);
           const bioPct = nullableNumber(flowForm[bioPctKey]);
-          const loopFlow = flowForPercentage(loopPct);
+          const resolvedFlow = resolveLoopFlow(flowForm, n);
+          const loopFlow = resolvedFlow.flow;
           const bioFlow = loopFlow != null && bioPct != null ? loopFlow * bioPct / 100 : null;
+          const eligibleMatchTargets = [1, 2, 3].filter(target =>
+            target !== n && hasLoopConfiguration(flowForm, target) &&
+            !resolveLoopFlow(flowForm, target, [n]).reason);
           const sideStreams = sideStreamsFor(flowForm, n);
           const updateSideStream = (id: string, field: string, value: any) => {
             setFlowSideStreams(streams => streams.map(stream =>
@@ -3919,7 +3988,16 @@ export default function DesignBookLSSDetail() {
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">Flow Source</label>
                 <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
                   {FLOW_SOURCES.map(s => (
-                    <button key={s} type="button" onClick={() => setFF(srcKey, curSrc === s ? '' : s)}
+                    <button key={s} type="button" onClick={() => {
+                      const nextSource = curSrc === s ? '' : s;
+                      setFF(srcKey, nextSource);
+                      if (CIRCULATION_SOURCES.has(nextSource)) {
+                        setFF(modeKey, 'matched');
+                      } else {
+                        setFF(modeKey, 'allocated');
+                        setFF(matchKey, '');
+                      }
+                    }}
                       className={`flex-1 px-2 py-1.5 transition-colors text-center leading-tight ${curSrc === s ? 'bg-cyan-600 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}>
                       {s}
                     </button>
@@ -3927,6 +4005,35 @@ export default function DesignBookLSSDetail() {
                 </div>
               </div>
               {curSrc && <SourceSplitReference source={curSrc} />}
+              {isCirculation && (
+                <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
+                  <div className="text-xs font-semibold text-blue-800">
+                    {matched ? 'Circulation source — non-allocating' : 'Circulation source — allocated (legacy mode)'}
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-blue-700">
+                    {matched
+                      ? 'This loop is excluded from system allocation totals and warnings. Match its flow to another loop.'
+                      : 'This persisted loop remains percentage-allocated. Enable matching to make it non-allocating.'}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-xs text-blue-800">
+                      <input type="radio" checked={matched} onChange={() => setFF(modeKey, 'matched')} />
+                      Match another loop
+                    </label>
+                    <select value={flowForm[matchKey] || ''} disabled={!matched}
+                      aria-label={`Loop ${n} matched loop`}
+                      onChange={event => setFF(matchKey, event.target.value)}
+                      className={`${inputCls} mt-0 max-w-56 bg-white`}>
+                      <option value="">— Select eligible loop —</option>
+                      {eligibleMatchTargets.map(target => <option key={target} value={target}>Loop {target} — {loopName(flowForm, target)}</option>)}
+                      {flowForm[matchKey] && !eligibleMatchTargets.includes(Number(flowForm[matchKey])) && (
+                        <option value={flowForm[matchKey]}>Loop {flowForm[matchKey]} — unavailable</option>
+                      )}
+                    </select>
+                  </div>
+                  <p className={`mt-2 text-[10px] ${resolvedFlow.reason ? 'text-amber-700' : 'text-blue-800'}`}>{matchDescription(flowForm, n)}</p>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1.5">Filtration Type</label>
                 <div className="flex rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
@@ -3948,21 +4055,25 @@ export default function DesignBookLSSDetail() {
                 <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-cyan-800">
                   <Gauge className="h-3.5 w-3.5" /> Flow context
                 </div>
-                <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1.5">
-                  Loop Flow Allocation (% of total system flow)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input type="number" step="0.1" min="0" max="100" placeholder="e.g. 60"
-                    aria-label={`Loop ${n} flow allocation percentage`}
-                    value={flowForm[pctKey]} onChange={e => setFF(pctKey, e.target.value)}
-                    className={`${inputCls} max-w-32`} />
-                  <span className="text-xs text-stone-400">%</span>
-                  <span className="text-xs text-stone-500">
-                    = <strong className="font-mono text-stone-700">{fmtFlow(loopFlow ?? 0)}</strong>
-                  </span>
-                </div>
-                {loopPct == null && (
+                {!matched && (
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1.5">
+                      Loop Flow Allocation (% of total system flow)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input type="number" step="0.1" min="0" max="100" placeholder="e.g. 60"
+                        aria-label={`Loop ${n} flow allocation percentage`}
+                        value={flowForm[pctKey]} onChange={e => setFF(pctKey, e.target.value)}
+                        className={`${inputCls} max-w-32`} />
+                      <span className="text-xs text-stone-400">%</span>
+                      <span className="text-xs text-stone-500">
+                        = <strong className="font-mono text-stone-700">{fmtFlow(loopFlow ?? 0)}</strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {matched && <p className="text-xs text-blue-800">Flow is resolved live from the matched loop and is not an allocation.</p>}
+                {!matched && loopPct == null && (
                   <p className="text-[10px] text-stone-400 mt-1">Leave blank until this loop allocation is reviewed.</p>
                 )}
               </div>
@@ -3994,7 +4105,6 @@ export default function DesignBookLSSDetail() {
                 ) : (
                   <p className="text-xs text-stone-400">Not connected. Enable the link to define the Bio/Degas branch percentage.</p>
                 )}
-              </div>
               </div>
               {curFilt === 'Foam Fractionation' && (
                 <FlowEquipmentSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
@@ -4245,6 +4355,8 @@ export default function DesignBookLSSDetail() {
                             {n > 1 && (
                               <button type="button" onClick={() => {
                                 setFF(`loop${n}_flow_source`, '');
+                                 setFF(`loop${n}_flow_mode`, 'allocated');
+                                 setFF(`loop${n}_match_loop_number`, '');
                                 setFF(`loop${n}_filtration`, '');
                                 setFF(`loop${n}_flow_pct`, '');
                                 setFF(`loop${n}_bio_degas_pct`, '');
@@ -4386,7 +4498,12 @@ export default function DesignBookLSSDetail() {
 
                         if (isEditing && listRowForm) {
                           const linked: boolean = !!listRowForm.link_bio_degas;
-                          const rowLoopFlow = flowForPercentage(listRowForm.flow_pct);
+                          const rowSource = { ...(flowForm || system), ...Object.fromEntries(
+                            FLOW_LOOP_FIELDS.map(key => [`loop${n}_${key}`, listRowForm[key]]),
+                          ) };
+                          const rowMatched = loopMode(rowSource, n) === 'matched';
+                          const rowResolvedFlow = resolveLoopFlow(rowSource, n);
+                          const rowLoopFlow = rowResolvedFlow.flow;
                           const rowBioPct = nullableNumber(listRowForm.bio_degas_pct);
                           const rowBioFlow = rowLoopFlow != null && rowBioPct != null
                             ? rowLoopFlow * rowBioPct / 100
@@ -4405,21 +4522,52 @@ export default function DesignBookLSSDetail() {
                               </td>
                               <td className="px-3 py-2 align-top"><LinkedExhibitsSummary /></td>
                               <td className="px-3 py-2 align-top">
-                                <select value={listRowForm.flow_source} onChange={e => setLRF('flow_source', e.target.value)}
+                                <select value={listRowForm.flow_source} onChange={e => {
+                                  const nextSource = e.target.value;
+                                  setLRF('flow_source', nextSource);
+                                  if (CIRCULATION_SOURCES.has(nextSource)) {
+                                    setLRF('flow_mode', 'matched');
+                                  } else {
+                                    setLRF('flow_mode', 'allocated');
+                                    setLRF('match_loop_number', '');
+                                  }
+                                }}
                                   className="w-full border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40 bg-white">
                                   <option value="">— None —</option>
                                   {FLOW_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                                 {listRowForm.flow_source && <SourceSplitSummary source={listRowForm.flow_source} />}
+                                {CIRCULATION_SOURCES.has(listRowForm.flow_source) && (
+                                  <div className="mt-2 rounded border border-blue-200 bg-blue-50 p-2">
+                                    <div className="text-[10px] font-semibold text-blue-800">
+                                      {rowMatched ? 'Non-allocating circulation flow' : 'Allocated circulation flow (legacy mode)'}
+                                    </div>
+                                    <label className="mt-1 flex items-center gap-1 text-[10px] text-blue-800">
+                                      <input type="checkbox" checked={listRowForm.flow_mode === 'matched'}
+                                        onChange={event => setLRF('flow_mode', event.target.checked ? 'matched' : 'allocated')} />
+                                      Match another loop
+                                    </label>
+                                    <select value={listRowForm.match_loop_number || ''} disabled={listRowForm.flow_mode !== 'matched'}
+                                      aria-label={`Loop ${n} matched loop`}
+                                      onChange={event => setLRF('match_loop_number', event.target.value)}
+                                      className="mt-1 w-full rounded border border-stone-200 bg-white px-1 py-1 text-[10px]">
+                                      <option value="">— Select eligible loop —</option>
+                                      {[1, 2, 3].filter(target => target !== n && hasLoopConfiguration(rowSource, target) &&
+                                        !resolveLoopFlow(rowSource, target, [n]).reason).map(target =>
+                                        <option key={target} value={target}>Loop {target} — {loopName(rowSource, target)}</option>)}
+                                    </select>
+                                    <div className={`mt-1 text-[10px] ${rowResolvedFlow.reason ? 'text-amber-700' : 'text-blue-800'}`}>{matchDescription(rowSource, n)}</div>
+                                  </div>
+                                )}
                               </td>
                               <td className="px-3 py-2 align-top font-mono text-xs">
-                                <input type="number" step="0.1" min="0" max="100" placeholder="%"
+                                {!rowMatched && <input type="number" step="0.1" min="0" max="100" placeholder="%"
                                   aria-label={`Loop ${n} flow allocation percentage`}
                                   value={listRowForm.flow_pct}
                                   onChange={e => setLRF('flow_pct', e.target.value)}
-                                  className="w-20 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
+                                  className="w-20 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />}
                                 <div className="mt-1 text-stone-800">{fmtFlow(rowLoopFlow ?? 0)}</div>
-                                <div className="font-sans text-[10px] text-stone-400">{allocationStatus(nullableNumber(listRowForm.flow_pct), 'system')}</div>
+                                <div className="font-sans text-[10px] text-stone-400">{rowMatched ? 'matched flow (not allocated)' : allocationStatus(nullableNumber(listRowForm.flow_pct), 'system')}</div>
                               </td>
                               <td className="px-3 py-2 align-top">
                                 <select value={listRowForm.filtration} onChange={e => setLRF('filtration', e.target.value)}
@@ -4511,7 +4659,9 @@ export default function DesignBookLSSDetail() {
                         const linked = flowForm ? !!flowForm[`loop${n}_link_bio_degas`] : !!system[`loop${n}_link_bio_degas`];
                         const displayedSource = flowForm || system;
                         const displayedSideStreams = sideStreamsFor(displayedSource, n);
-                        const loopFlow = flowForPercentage(loopPct);
+                        const matched = loopMode(displayedSource, n) === 'matched';
+                        const resolvedFlow = resolveLoopFlow(displayedSource, n);
+                        const loopFlow = resolvedFlow.flow;
                         const bioFlow = loopFlow != null && bioPct != null
                           ? loopFlow * bioPct / 100
                           : nullableNumber(bio);
@@ -4531,13 +4681,16 @@ export default function DesignBookLSSDetail() {
                                     <Droplets className="h-3 w-3 shrink-0 text-cyan-500" /> {src}
                                   </span>
                                   <SourceSplitSummary source={src} />
+                                  {matched && <span className={`mt-1 block text-[10px] ${resolvedFlow.reason ? 'text-amber-700' : 'text-blue-700'}`}>
+                                    Non-allocating · {matchDescription(displayedSource, n)}
+                                  </span>}
                                 </>
                               ) : <span className="text-xs italic text-stone-400">No source set</span>}
                             </td>
                             <td className="px-3 py-3 align-top font-mono text-xs">
                               <span className="text-stone-800">{fmtFlow(loopFlow ?? 0)}</span>
                               <span className="block font-sans text-[10px] text-stone-400">
-                                {allocationStatus(loopPct, 'system')}
+                                 {matched ? 'matched flow (not allocated)' : allocationStatus(loopPct, 'system')}
                               </span>
                             </td>
                             <td className="px-3 py-3 align-top">

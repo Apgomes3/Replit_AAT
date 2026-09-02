@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { resolveLoopFlows } from './flowRoute';
 
 /** Initial sizing uses fresh water at 20 °C (998.2 kg/m³), not a silent 1000 kg/m³ assumption. */
 export const PUMP_SELECTION_CALCULATION_VERSION = 'pump-selection-v1';
@@ -57,10 +58,12 @@ export function isSandFilterCircuit(circuit: {
 }
 
 export function pumpDutyTag(
-  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
+  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null; flow_source?: string | null },
   role: string,
 ) {
   if (role === PUMP_ROLE_VENTURI && isFoamFractionatorCircuit(circuit)) return 'FFVP';
+  if (/break tank|plenum tank/.test(String(circuit.flow_source || '')) ||
+      (circuit as any).flow_mode === 'matched') return 'CIRCP';
   if (isFoamFractionatorCircuit(circuit)) return 'FFSP';
   if (isSandFilterCircuit(circuit)) return 'SFSP';
   const vacuumText = `${circuit.circuit_name || ''} ${circuit.circuit_type || ''}`.toLowerCase();
@@ -69,17 +72,21 @@ export function pumpDutyTag(
 }
 
 export function inferredPumpDutyTag(
-  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null },
+  circuit: { circuit_name?: string | null; circuit_type?: string | null; circuit_kind?: string | null; flow_source?: string | null },
   role: string,
 ) {
   if (role === PUMP_ROLE_VENTURI) {
     return isFoamFractionatorCircuit(circuit) ? 'FFVP' : null;
   }
+  if (/break tank|plenum tank/.test(String(circuit.flow_source || '')) ||
+      (circuit as any).flow_mode === 'matched') return 'CIRCP';
   if (isFoamFractionatorCircuit(circuit)) return 'FFSP';
   if (isSandFilterCircuit(circuit)) return 'SFSP';
-  const originText = `${circuit.circuit_name || ''} ${circuit.circuit_type || ''}`.toLowerCase();
+  const originText = `${circuit.circuit_name || ''} ${circuit.circuit_type || ''} ${circuit.flow_source || ''}`.toLowerCase();
   if (originText.includes('vacuum')) return 'VACP';
-  if (circuit.circuit_kind === 'side_stream' || originText.includes('circulation')) return 'CIRCP';
+  if (circuit.circuit_kind === 'side_stream' || originText.includes('circulation') ||
+      (circuit as any).flow_mode === 'matched' ||
+      /break tank|plenum tank/.test(originText)) return 'CIRCP';
   return null;
 }
 
@@ -160,7 +167,7 @@ export function pumpSourcePayload(
   circuit: {
     circuit_key: string; circuit_kind: string; circuit_type?: string | null;
     parent_loop_number?: number | null; side_stream_id?: string | null;
-    flow_m3h?: number | null;
+    flow_m3h?: number | null; flow_mode?: string | null; match_loop_number?: number | null;
   },
   role: string,
   effectiveFlow: number | null,
@@ -177,7 +184,10 @@ export function pumpSourcePayload(
       circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind,
       circuit_type: circuit.circuit_type,
       parent_loop_number: circuit.parent_loop_number, side_stream_id: circuit.side_stream_id,
-      flow_m3h: circuit.flow_m3h,
+       flow_m3h: circuit.flow_m3h,
+       ...(circuit.flow_mode === 'matched'
+         ? { flow_mode: 'matched', match_loop_number: circuit.match_loop_number ?? null }
+         : {}),
     },
     pump_role: role,
     ...(role === PUMP_ROLE_VENTURI ? { venturi_flow_m3h: effectiveFlow } : {}),
@@ -191,12 +201,14 @@ export function pumpSourcePayload(
 /** Flow Route circuits use the Design Book's resolved system flow as input. */
 export function pumpCircuits(system: any, sideStreams: any[]): any[] {
   const baseFlow = nullableNumber(system.design_flow_m3h);
+  const resolvedLoops = resolveLoopFlows(system, baseFlow);
+  const loopFlow = (number: number) => resolvedLoops[number - 1]?.flow_m3h ?? null;
+  const flowMode = (number: number) => resolvedLoops[number - 1]?.flow_mode || 'allocated';
   const activeLoops = [1, 2, 3].filter(n =>
     system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] || system[`loop${n}_flow_pct`] != null ||
     (sideStreams || []).some(stream => Number(stream.parent_loop_number) === n));
   return [
     ...activeLoops.map(number => {
-      const pct = nullableNumber(system[`loop${number}_flow_pct`]);
       const fractionatorAllocation = (system.fractionator_allocations || []).find(
         (allocation: any) => Number(allocation.parent_loop_number) === number,
       );
@@ -213,19 +225,22 @@ export function pumpCircuits(system: any, sideStreams: any[]): any[] {
         system_code: system.system_code,
         circuit_key: `loop:${number}`, circuit_kind: 'loop', circuit_name: system[`loop${number}_name`] || `Loop ${number}`,
         circuit_type: system[`loop${number}_filtration`] || system[`loop${number}_flow_source`] || null,
+         flow_source: system[`loop${number}_flow_source`] || null,
         parent_loop_number: number, side_stream_id: null,
-        flow_m3h: baseFlow != null && pct != null ? baseFlow * pct / 100 : null,
+         flow_m3h: loopFlow(number),
+         flow_mode: flowMode(number),
+         match_loop_number: resolvedLoops[number - 1]?.match_loop_number ?? null,
         venturi_flow_m3h: venturiFlow,
       };
     }),
     ...(sideStreams || []).filter(stream => stream.has_dedicated_pump !== false).map(stream => {
-      const pct = nullableNumber(system[`loop${stream.parent_loop_number}_flow_pct`]);
       const branch = nullableNumber(stream.flow_pct);
       return {
         system_code: system.system_code,
         circuit_key: `side_stream:${stream.id}`, circuit_kind: 'side_stream', circuit_name: stream.name,
         circuit_type: stream.preset || 'Custom', parent_loop_number: stream.parent_loop_number, side_stream_id: stream.id,
-        flow_m3h: baseFlow != null && pct != null && branch != null ? baseFlow * pct / 100 * branch / 100 : null,
+         flow_m3h: loopFlow(Number(stream.parent_loop_number)) != null && branch != null
+           ? Number(loopFlow(Number(stream.parent_loop_number))) * branch / 100 : null,
       };
     }),
   ];

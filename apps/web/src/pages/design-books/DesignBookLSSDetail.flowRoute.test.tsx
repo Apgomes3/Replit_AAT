@@ -1952,6 +1952,109 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     ));
   });
 
+  it('persists a Break Tank circulation loop as a non-allocating match', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(baseSystem);
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    await user.click(route.getByRole('button', { name: 'Add Loop 2' }));
+    await user.click(route.getAllByRole('button', { name: 'Break Tank' })[1]);
+    expect(route.getByText('Circulation source — non-allocating')).toBeInTheDocument();
+    const match = route.getByRole('combobox', { name: 'Loop 2 matched loop' });
+    await user.selectOptions(match, '1');
+    expect(route.getByText(/Matches Loop 1.*40\.0 m³\/h/)).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop2_flow_source: 'Break Tank',
+        loop2_flow_mode: 'matched',
+        loop2_match_loop_number: 1,
+      }),
+    ));
+  });
+
+  it('keeps a legacy Break Tank row percentage-allocated when flow mode is absent', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({
+      ...baseSystem,
+      loop1_flow_source: 'Break Tank',
+      loop1_flow_pct: 40,
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    expect(route.getAllByText('40.0 m³/h')).not.toHaveLength(0);
+    expect(route.getByText((_, element) => element?.textContent?.trim() === '· 40% of system')).toBeInTheDocument();
+    expect(route.queryByText('Non-allocating circulation flow')).not.toBeInTheDocument();
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    expect(route.getByText('Circulation source — allocated (legacy mode)')).toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop1_flow_source: 'Break Tank',
+        loop1_flow_mode: 'allocated',
+        loop1_match_loop_number: null,
+        loop1_flow_pct: 40,
+      }),
+    ));
+  });
+
+  it('resets a matched circulation card to allocated when its source becomes non-circulation', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({
+      ...baseSystem,
+      loop2_flow_source: 'Break Tank',
+      loop2_flow_mode: 'matched',
+      loop2_match_loop_number: 1,
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    await user.click(route.getAllByRole('button', { name: 'Surface Skim' })[1]);
+    await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop2_flow_source: 'Surface Skim',
+        loop2_flow_mode: 'allocated',
+        loop2_match_loop_number: null,
+      }),
+    ));
+  });
+
+  it('resets a matched circulation list row to allocated when its source is cleared', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute({
+      ...baseSystem,
+      loop2_flow_source: 'Plenum Tank',
+      loop2_flow_mode: 'matched',
+      loop2_match_loop_number: 1,
+    });
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+
+    await user.click(route.getByRole('button', { name: 'List' }));
+    const row = route.getByText('Loop 2').closest('tr')!;
+    await user.click(within(row).getByRole('button', { name: 'Edit' }));
+    await user.selectOptions(within(row).getAllByRole('combobox')[0], '');
+    await user.click(within(row).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
+      '/systems/system-1',
+      expect.objectContaining({
+        loop2_flow_source: null,
+        loop2_flow_mode: 'allocated',
+        loop2_match_loop_number: null,
+      }),
+    ));
+  });
+
   it('refreshes saved UV side streams before switching from Flow Route to UV Selection', async () => {
     const user = userEvent.setup();
     let persistedSystem: any = baseSystem;

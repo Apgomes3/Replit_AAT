@@ -26,6 +26,7 @@ import {
   systemLifecycleError,
 } from '../lib/systemLifecycle';
 import { isLifeSupportSystem } from '../lib/lssSystems';
+import { resolveLoopFlows } from '../lib/flowRoute';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -276,9 +277,7 @@ async function normalizeSandFilterAllocations(
         quantity: quantities.get(id),
       };
     });
-    const flowPct = system?.[`loop${loopNumber}_flow_pct`];
-    const parentFlow = flowPct == null || system?.design_flow_m3h == null
-      ? null : Number(system.design_flow_m3h) * Number(flowPct) / 100;
+    const parentFlow = resolveLoopFlows(system)[loopNumber - 1]?.flow_m3h ?? null;
     const calculation = calculateSandFilterCapacity(parentFlow, rate, products);
     normalized.push({
       parent_loop_number: loopNumber, process_rate_ls_m2: rate, notes, products,
@@ -349,9 +348,7 @@ async function normalizeFractionatorAllocations(
         quantity: quantities.get(id),
       };
     });
-    const flowPct = system?.[`loop${loopNumber}_flow_pct`];
-    const parentFlow = flowPct == null || system?.design_flow_m3h == null
-      ? null : Number(system.design_flow_m3h) * Number(flowPct) / 100;
+    const parentFlow = resolveLoopFlows(system)[loopNumber - 1]?.flow_m3h ?? null;
     const calculation = calculateFoamFractionatorCapacity(parentFlow, rate, products);
     normalized.push({
       parent_loop_number: loopNumber,
@@ -1863,11 +1860,11 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
       system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr,
       design_flow_source, turnover_source,
       water_type, status, duty_description, redundancy_strategy,
-      loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct,
+      loop1_flow_source, loop1_filtration, loop1_flow_pct, loop1_bio_degas_pct, loop1_flow_mode, loop1_match_loop_number,
       loop1_bio_degas_m3h, loop1_link_bio_degas,
-      loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct,
+      loop2_flow_source, loop2_filtration, loop2_flow_pct, loop2_bio_degas_pct, loop2_flow_mode, loop2_match_loop_number,
       loop2_bio_degas_m3h, loop2_link_bio_degas,
-      loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct,
+      loop3_flow_source, loop3_filtration, loop3_flow_pct, loop3_bio_degas_pct, loop3_flow_mode, loop3_match_loop_number,
       loop3_bio_degas_m3h, loop3_link_bio_degas,
       loop1_name, loop2_name, loop3_name, side_streams,
       fractionator_allocations, sand_filter_allocations,
@@ -1951,6 +1948,11 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
       : hasSystemConfig && resolvedSystemConfig !== 'compact'
         ? null
         : (currentSystem.compact_unit_id || null);
+    const resolvedFlowSources = [loop1_flow_source, loop2_flow_source, loop3_flow_source]
+      .map((value, index) => Object.prototype.hasOwnProperty.call(req.body, `loop${index + 1}_flow_source`)
+        ? (value || null)
+        : (currentSystem[`loop${index + 1}_flow_source`] || null));
+    const circulationSources = new Set(['Break Tank', 'Plenum Tank']);
     const resolvedPercentage = (field: string, value: any) =>
       Object.prototype.hasOwnProperty.call(req.body, field)
         ? (value === '' || value == null ? null : Number(value))
@@ -1961,18 +1963,95 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
     const resolvedLoop2BioPct = resolvedPercentage('loop2_bio_degas_pct', loop2_bio_degas_pct);
     const resolvedLoop3FlowPct = resolvedPercentage('loop3_flow_pct', loop3_flow_pct);
     const resolvedLoop3BioPct = resolvedPercentage('loop3_bio_degas_pct', loop3_bio_degas_pct);
+    const resolvedLoopMode = (loopNumber: number, value: any) => {
+      const field = `loop${loopNumber}_flow_mode`;
+      const requestedMode = Object.prototype.hasOwnProperty.call(req.body, field)
+        ? (value == null || value === '' ? 'allocated' : String(value))
+        : (currentSystem[field] || 'allocated');
+      const sourceIsCirculation = circulationSources.has(resolvedFlowSources[loopNumber - 1]);
+      const mode = requestedMode;
+      if (mode !== 'allocated' && mode !== 'matched') {
+        throw new Error(`Loop ${loopNumber} flow mode must be allocated or matched.`);
+      }
+      if (mode === 'matched' && !sourceIsCirculation) {
+        throw new Error(`Loop ${loopNumber} can only match another loop when its Flow Source is Break Tank or Plenum Tank.`);
+      }
+      return mode;
+    };
+    let resolvedLoop1FlowMode: string, resolvedLoop2FlowMode: string, resolvedLoop3FlowMode: string;
+    try {
+      resolvedLoop1FlowMode = resolvedLoopMode(1, loop1_flow_mode);
+      resolvedLoop2FlowMode = resolvedLoopMode(2, loop2_flow_mode);
+      resolvedLoop3FlowMode = resolvedLoopMode(3, loop3_flow_mode);
+    } catch (error: any) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
+    const resolvedLoopModes = [resolvedLoop1FlowMode, resolvedLoop2FlowMode, resolvedLoop3FlowMode];
+    let resolvedMatchTargets: Array<number | null> = [];
+    try {
+      resolvedMatchTargets = [loop1_match_loop_number, loop2_match_loop_number, loop3_match_loop_number]
+        .map((value, index) => {
+        const loopNumber = index + 1;
+        const field = `loop${loopNumber}_match_loop_number`;
+        const raw = Object.prototype.hasOwnProperty.call(req.body, field) ? value : currentSystem[field];
+        if (resolvedLoopModes[index] !== 'matched') return null;
+        const target = Number(raw);
+        if (!Number.isInteger(target) || target < 1 || target > 3 || target === loopNumber) {
+          throw new Error(`Loop ${loopNumber} must match a different configured loop (1–3).`);
+        }
+        return target;
+        });
+      const targetFor = (loop: number) => resolvedLoopModes[loop - 1] === 'matched'
+        ? resolvedMatchTargets[loop - 1] : null;
+      for (let loop = 1; loop <= 3; loop++) {
+        const seen = new Set<number>();
+        let cursor: number | null = loop;
+        while (cursor != null && targetFor(cursor) != null) {
+          if (seen.has(cursor)) throw new Error(`Loop ${loop} match target creates a circular flow match.`);
+          seen.add(cursor);
+          cursor = targetFor(cursor);
+        }
+      }
+    } catch (error: any) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
+    }
     const intendedSystem = {
       ...currentSystem,
       design_flow_m3h: Object.prototype.hasOwnProperty.call(req.body, 'design_flow_m3h')
         ? (design_flow_m3h === '' || design_flow_m3h == null ? null : Number(design_flow_m3h))
         : currentSystem.design_flow_m3h,
+      loop1_flow_source: resolvedFlowSources[0],
+      loop2_flow_source: resolvedFlowSources[1],
+      loop3_flow_source: resolvedFlowSources[2],
       loop1_filtration: Object.prototype.hasOwnProperty.call(req.body, 'loop1_filtration') ? loop1_filtration : currentSystem.loop1_filtration,
       loop2_filtration: Object.prototype.hasOwnProperty.call(req.body, 'loop2_filtration') ? loop2_filtration : currentSystem.loop2_filtration,
       loop3_filtration: Object.prototype.hasOwnProperty.call(req.body, 'loop3_filtration') ? loop3_filtration : currentSystem.loop3_filtration,
       loop1_flow_pct: resolvedLoop1FlowPct,
       loop2_flow_pct: resolvedLoop2FlowPct,
       loop3_flow_pct: resolvedLoop3FlowPct,
+      loop1_flow_mode: resolvedLoop1FlowMode,
+      loop2_flow_mode: resolvedLoop2FlowMode,
+      loop3_flow_mode: resolvedLoop3FlowMode,
+      loop1_match_loop_number: resolvedMatchTargets[0],
+      loop2_match_loop_number: resolvedMatchTargets[1],
+      loop3_match_loop_number: resolvedMatchTargets[2],
     };
+    for (const [index, target] of resolvedMatchTargets.entries()) {
+      if (target != null && !intendedSystem[`loop${target}_flow_source`] &&
+          !intendedSystem[`loop${target}_filtration`]) {
+        return res.status(400).json({
+          error: { code: 'VALIDATION', message: `Loop ${index + 1} must match a configured Loop ${target}.` },
+        });
+      }
+    }
+    for (let loopNumber = 1; loopNumber <= 3; loopNumber++) {
+      if (resolvedLoopModes[loopNumber - 1] === 'matched' &&
+          !['Break Tank', 'Plenum Tank'].includes(String(intendedSystem[`loop${loopNumber}_flow_source`] || ''))) {
+        return res.status(400).json({
+          error: { code: 'VALIDATION', message: `Loop ${loopNumber} matched flow requires Break Tank or Plenum Tank as its flow source.` },
+        });
+      }
+    }
     let normalizedFractionators: Awaited<ReturnType<typeof normalizeFractionatorAllocations>> = null;
     let normalizedSandFilters: Awaited<ReturnType<typeof normalizeSandFilterAllocations>> = null;
     try {
@@ -1995,11 +2074,14 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
     } catch (error: any) {
       return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
     }
-    const loopAllocationTotal = [
-      resolvedLoop1FlowPct,
-      resolvedLoop2FlowPct,
-      resolvedLoop3FlowPct,
-    ].reduce((sum: number, value: number | null) => sum + (value ?? 0), 0);
+    const loopAllocationTotal = ([
+      [resolvedLoop1FlowPct, resolvedLoop1FlowMode],
+      [resolvedLoop2FlowPct, resolvedLoop2FlowMode],
+      [resolvedLoop3FlowPct, resolvedLoop3FlowMode],
+    ] as Array<[number | null, string]>).reduce(
+      (sum, [value, mode]) => sum + (mode === 'allocated' ? (value ?? 0) : 0),
+      0,
+    );
     if (loopAllocationTotal > 100.000001) {
       return res.status(400).json({
         error: {
@@ -2181,6 +2263,19 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
         return res.status(409).json({ error: { code: 'SYSTEM_RETIRED', message: 'The LSS was retired while this edit was being saved. Refresh to view its historical record.' } });
       }
       namedSystem = result.rows[0];
+       // Kept as a separate update so legacy SQL parameter positions remain
+       // stable for integrations while persisting the new route semantics.
+       const modeResult = await saveClient.query(
+         `UPDATE systems SET
+            loop1_flow_mode=$2, loop1_match_loop_number=$3,
+            loop2_flow_mode=$4, loop2_match_loop_number=$5,
+            loop3_flow_mode=$6, loop3_match_loop_number=$7
+          WHERE id=$1 RETURNING *`,
+         [req.params.id, resolvedLoop1FlowMode, resolvedMatchTargets[0],
+           resolvedLoop2FlowMode, resolvedMatchTargets[1],
+           resolvedLoop3FlowMode, resolvedMatchTargets[2]],
+       );
+       namedSystem = modeResult.rows[0] || namedSystem;
       const sideStreamQuery = saveClient.query.bind(saveClient);
       existingSideStreams = await loadSystemSideStreams(String(req.params.id), sideStreamQuery);
       const namedResult = await saveClient.query(
@@ -2334,6 +2429,11 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
         namedSystem.loop2_name || currentSystem.loop2_name || 'Loop 2',
         namedSystem.loop3_name || currentSystem.loop3_name || 'Loop 3',
       ],
+       loop_flow_modes: [1, 2, 3].map(loopNumber => ({
+         loop_number: loopNumber,
+         flow_mode: namedSystem[`loop${loopNumber}_flow_mode`] || 'allocated',
+         match_loop_number: namedSystem[`loop${loopNumber}_match_loop_number`] || null,
+       })),
       side_stream_count: savedSideStreams.length,
       fractionator_allocation_count: savedFractionators.length,
       sand_filter_allocation_count: savedSandFilters.length,
@@ -2433,13 +2533,13 @@ router.post(
          calculation_inputs=NULL,
          loop1_name='Loop 1', loop1_flow_source=NULL, loop1_filtration=NULL,
          loop1_flow_pct=NULL, loop1_bio_degas_pct=NULL, loop1_bio_degas_m3h=NULL,
-         loop1_link_bio_degas=false,
+          loop1_link_bio_degas=false, loop1_flow_mode='allocated', loop1_match_loop_number=NULL,
          loop2_name='Loop 2', loop2_flow_source=NULL, loop2_filtration=NULL,
          loop2_flow_pct=NULL, loop2_bio_degas_pct=NULL, loop2_bio_degas_m3h=NULL,
-         loop2_link_bio_degas=false,
+          loop2_link_bio_degas=false, loop2_flow_mode='allocated', loop2_match_loop_number=NULL,
          loop3_name='Loop 3', loop3_flow_source=NULL, loop3_filtration=NULL,
          loop3_flow_pct=NULL, loop3_bio_degas_pct=NULL, loop3_bio_degas_m3h=NULL,
-         loop3_link_bio_degas=false,
+          loop3_link_bio_degas=false, loop3_flow_mode='allocated', loop3_match_loop_number=NULL,
          updated_at=NOW()
        WHERE id=$1
        RETURNING *`,

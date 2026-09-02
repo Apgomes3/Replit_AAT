@@ -43,6 +43,8 @@ const baseContext = () => ({
     system_name: 'Primary LSS',
     loop1_name: 'Main Filtration',
     loop1_flow_source: 'Calculated',
+    loop1_flow_mode: 'allocated',
+    loop1_match_loop_number: null,
     loop1_flow_pct: '55',
     loop1_bio_degas_pct: '30',
     loop1_bio_degas_m3h: '12.5',
@@ -301,7 +303,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(8);
+    expect(snapshot.schema_version).toBe(9);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -356,6 +358,8 @@ describe('Design Book version snapshots', () => {
       id: 'system-1',
       loop1_name: 'Main Filtration',
       loop1_flow_source: 'Calculated',
+       loop1_flow_mode: 'allocated',
+       loop1_match_loop_number: null,
       loop1_flow_pct: '55',
       side_streams: [
         expect.objectContaining({
@@ -424,7 +428,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(8);
+    expect(insertParams[6]).toBe(9);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 
