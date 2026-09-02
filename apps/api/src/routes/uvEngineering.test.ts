@@ -183,6 +183,8 @@ describe('UV engineering lifecycle', () => {
     );
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INCOMPLETE_REVISION');
+    expect(response.body.error.message).toContain('PIM lamp count');
+    expect(response.body.error.message).toContain('positive effective reactor volume');
   });
 
   it('keeps approved revision values immutable', async () => {

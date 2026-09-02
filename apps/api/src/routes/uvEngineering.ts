@@ -16,23 +16,30 @@ const EDITABLE_FIELDS = [
 ];
 const CREATE_REVISION_FIELDS = [...EDITABLE_FIELDS, 'source_basis_verified'];
 
-function complete(row: any) {
+function approvalMissingItems(row: any): string[] {
   const governed = row.governance_loaded === true;
   const lampCount = row.pim_lamp_count ?? row.lamp_count;
   const ratedPower = row.pim_rated_power_kw ?? row.lamp_power_w;
   const hasCompatibilityMapping = row.material_compatibility_count == null
     ? !!String(row.compatibility || '').trim()
     : Number(row.material_compatibility_count) > 0;
-  return !!String(row.product_code || 'known').trim()
-    && !!String(row.product_name || 'known').trim()
-    && (!governed || !!String(row.primary_material_code || '').trim())
-    && Number.isInteger(Number(lampCount)) && Number(lampCount) > 0
-    && ratedPower != null && Number(ratedPower) > 0
-    && row.effective_reactor_volume_l != null && Number(row.effective_reactor_volume_l) > 0
-    && row.irradiance_85t_mw_cm2 != null && Number(row.irradiance_85t_mw_cm2) > 0
-    && row.irradiance_95t_mw_cm2 != null && Number(row.irradiance_95t_mw_cm2) > 0
-    && hasCompatibilityMapping
-    && !!String(row.source_basis || row.source_evidence || '').trim();
+  const missing: string[] = [];
+  if (governed && !String(row.product_code || '').trim()) missing.push('PIM product code');
+  if (governed && !String(row.product_name || '').trim()) missing.push('PIM product name');
+  if (governed && !String(row.primary_material_code || '').trim()) missing.push('PIM primary material');
+  if (!Number.isInteger(Number(lampCount)) || Number(lampCount) <= 0) missing.push('PIM lamp count');
+  if (ratedPower == null || Number(ratedPower) <= 0) missing.push('PIM rated power');
+  if (row.effective_reactor_volume_l == null || Number(row.effective_reactor_volume_l) <= 0) missing.push('positive effective reactor volume');
+  if (row.irradiance_85t_mw_cm2 == null || Number(row.irradiance_85t_mw_cm2) <= 0) missing.push('positive irradiance at 85%T');
+  if (row.irradiance_95t_mw_cm2 == null || Number(row.irradiance_95t_mw_cm2) <= 0) missing.push('positive irradiance at 95%T');
+  if (!hasCompatibilityMapping) {
+    missing.push(governed && row.primary_material_code
+      ? `allowed material compatibility mapping for ${row.primary_material_code}`
+      : 'governed material compatibility');
+  }
+  if (!String(row.source_basis || row.source_evidence || '').trim()) missing.push('controlled source evidence');
+  if (governed && row.source_basis !== 'AAT Foundations') missing.push('AAT Foundations source basis');
+  return missing;
 }
 
 function engineeringPayloadError(payload: any, fields = EDITABLE_FIELDS) {
@@ -243,11 +250,13 @@ adminRouter.patch('/revisions/:id/status', async (req: AuthRequest, res: Respons
     const candidate = governance.rows[0]
       ? { ...existing.rows[0], ...governance.rows[0] }
       : existing.rows[0];
-    if (!complete(candidate)) {
+    const missingItems = approvalMissingItems(candidate);
+    if (missingItems.length > 0) {
       return res.status(400).json({
         error: {
           code: 'INCOMPLETE_REVISION',
-          message: 'Approval requires complete PIM identity, material, rated power and lamp count, governed material compatibility, positive reactor/irradiance values, and the AAT Foundations source.',
+          message: `Approval blocked. Missing: ${missingItems.join('; ')}.`,
+          missing: missingItems,
         },
       });
     }
