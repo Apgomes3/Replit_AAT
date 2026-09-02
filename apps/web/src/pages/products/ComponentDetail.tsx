@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useState, useRef, useMemo } from 'react';
 import api from '../../lib/api';
@@ -11,7 +11,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import Button from '../../components/ui/Button';
 import toast from 'react-hot-toast';
-import { Pencil, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus, Tag, Link2, Unlink } from 'lucide-react';
+import { Pencil, Copy, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus, Tag, Link2, Unlink } from 'lucide-react';
 import ActivityLog from '../../components/ui/ActivityLog';
 import { Document } from '../../types';
 
@@ -72,6 +72,7 @@ const docTypeIcon = (type: string) => {
 
 export default function ComponentDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -79,6 +80,7 @@ export default function ComponentDetail() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   const [showDocModal, setShowDocModal] = useState(false);
   const [docModalContext, setDocModalContext] = useState<'documents' | 'drawings'>('drawings');
@@ -173,6 +175,21 @@ export default function ComponentDetail() {
     }
   };
 
+  const handleDuplicate = async () => {
+    if (duplicating) return;
+    setDuplicating(true);
+    try {
+      const res = await api.post(`/components/${component.id}/duplicate`, {});
+      toast.success('Component duplicated');
+      qc.invalidateQueries({ queryKey: ['components'] });
+      navigate(`/products/components/${res.data.id}`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Duplicate failed');
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   const handleAddDocument = async () => {
     if (!docForm.document_title) { toast.error('Title is required'); return; }
     setDocSubmitting(true);
@@ -257,17 +274,30 @@ export default function ComponentDetail() {
         ) : undefined}
         crumbs={[
           { label: 'PIM', href: '/pim' },
-          { label: 'Components', href: '/products/components' },
+           {
+             label: component.component_category ? `${component.component_category} Components` : 'Components',
+             href: component.component_category
+               ? `/products/components?category=${encodeURIComponent(component.component_category)}`
+               : '/products/components',
+           },
           { label: component.component_code },
         ]}
         actions={
           editing ? (
             <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={duplicating}>
+                <Copy className="w-3.5 h-3.5" /> {duplicating ? 'Duplicating...' : 'Duplicate'}
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setEditing(false)}><X className="w-3.5 h-3.5" /> Cancel</Button>
               <Button size="sm" onClick={handleSave} disabled={saving}><Check className="w-3.5 h-3.5" />{saving ? 'Saving...' : 'Save'}</Button>
             </div>
           ) : (
-            <Button size="sm" onClick={startEdit}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={handleDuplicate} disabled={duplicating}>
+                <Copy className="w-3.5 h-3.5" /> {duplicating ? 'Duplicating...' : 'Duplicate'}
+              </Button>
+              <Button size="sm" onClick={startEdit}><Pencil className="w-3.5 h-3.5" /> Edit</Button>
+            </div>
           )
         }
       />

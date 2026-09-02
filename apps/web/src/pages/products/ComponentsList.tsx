@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -34,9 +34,13 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function ComponentsList() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(() => {
+    const category = searchParams.get('category');
+    return category && CATEGORIES.includes(category) ? category : null;
+  });
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
     component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical',
