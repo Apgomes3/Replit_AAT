@@ -2464,6 +2464,44 @@ CREATE TABLE IF NOT EXISTS material_water_compatibility (
 CREATE INDEX IF NOT EXISTS idx_material_water_compatibility_lookup
   ON material_water_compatibility(material_code, water_type);
 
+CREATE TABLE IF NOT EXISTS uv_engineering_revision_compatibility (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  revision_id UUID NOT NULL REFERENCES uv_engineering_revisions(id) ON DELETE CASCADE,
+  water_type VARCHAR(50) NOT NULL
+    CHECK (water_type IN ('Saltwater', 'Seawater', 'Freshwater', 'Brackish water')),
+  allowed BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(revision_id, water_type)
+);
+CREATE INDEX IF NOT EXISTS idx_uv_revision_compatibility_revision
+  ON uv_engineering_revision_compatibility(revision_id);
+
+-- Governed starter compatibility values. Existing decisions are preserved.
+INSERT INTO material_water_compatibility (material_code, water_type, allowed, source, notes)
+SELECT defaults.material_code, defaults.water_type, defaults.allowed, 'AAT Foundations',
+       'Governed default compatibility for the material catalogue.'
+FROM (VALUES
+  ('MAT-TI', 'Saltwater', true),
+  ('MAT-TI', 'Seawater', true),
+  ('MAT-TI', 'Freshwater', true),
+  ('MAT-TI', 'Brackish water', true),
+  ('MAT-SS304', 'Saltwater', false),
+  ('MAT-SS304', 'Seawater', false),
+  ('MAT-SS304', 'Freshwater', true),
+  ('MAT-SS304', 'Brackish water', false),
+  ('MAT-SS316', 'Saltwater', true),
+  ('MAT-SS316', 'Seawater', false),
+  ('MAT-SS316', 'Freshwater', false),
+  ('MAT-SS316', 'Brackish water', true),
+  ('MAT-PVC', 'Saltwater', true),
+  ('MAT-PVC', 'Seawater', true),
+  ('MAT-PVC', 'Freshwater', true),
+  ('MAT-PVC', 'Brackish water', true)
+) AS defaults(material_code, water_type, allowed)
+JOIN materials m ON m.material_code=defaults.material_code
+ON CONFLICT (material_code, water_type) DO NOTHING;
+
 -- Pre-governance approvals retain their historical evidence but cannot be
 -- represented as reviewed AAT Foundations data until an administrator creates
 -- and approves a new revision.

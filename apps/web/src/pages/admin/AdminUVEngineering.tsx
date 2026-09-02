@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:bg-stone-50 disabled:text-stone-500';
+const WATER_COMPATIBILITY_TYPES = ['Saltwater', 'Seawater', 'Freshwater', 'Brackish water'];
 
 const emptyForm = {
   effective_reactor_volume_l: '',
@@ -31,6 +32,7 @@ function statusClass(status: string) {
 
 function EngineeringForm({ product, revision, onClose, onSaved }: any) {
   const [form, setForm] = useState<any>(emptyForm);
+  const [compatibilityModes, setCompatibilityModes] = useState<Record<string, 'default' | 'allowed' | 'not_allowed'>>({});
   const [saving, setSaving] = useState(false);
   const revising = revision?.status === 'Approved' || revision?.status === 'Retired' || revision?.status === 'Disabled';
 
@@ -43,7 +45,11 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
       irradiance_95t_mw_cm2: revision?.irradiance_95t_mw_cm2 ?? '',
       approved_per_lamp_flow_exception_m3h: revision?.approved_per_lamp_flow_exception_m3h ?? '',
     });
-  }, [revision?.id]);
+    setCompatibilityModes(Object.fromEntries(WATER_COMPATIBILITY_TYPES.map(waterType => {
+      const option = (product.compatibility_options || []).find((item: any) => item.water_type === waterType);
+      return [waterType, option?.is_override ? (option.allowed ? 'allowed' : 'not_allowed') : 'default'];
+    })));
+  }, [revision?.id, product.id]);
 
   const set = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
   const save = async () => {
@@ -60,6 +66,10 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
         source_basis: form.source_basis,
         approved_per_lamp_flow_exception_m3h: numeric(form.approved_per_lamp_flow_exception_m3h),
         notes: form.notes,
+        compatibility_overrides: WATER_COMPATIBILITY_TYPES.flatMap(waterType => {
+          const mode = compatibilityModes[waterType] || 'default';
+          return mode === 'default' ? [] : [{ water_type: waterType, allowed: mode === 'allowed' }];
+        }),
       };
       if (!revision?.id || revising) {
         await api.post(`/admin/uv-engineering/${product.id}/revisions`, payload);
@@ -116,8 +126,51 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
             <input type="number" min="0" step={step} className={inputClass} value={form[key]} onChange={event => set(key, event.target.value)} />
           </label>
         ))}
-        <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600 md:col-span-3">
-          Material compatibility is governed from the material library. Reviewed source: <strong>AAT Foundations</strong>.
+        <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4 md:col-span-3">
+          <div>
+            <h3 className="text-sm font-semibold text-stone-800">Water compatibility</h3>
+            <p className="mt-1 text-xs text-stone-500">
+              Defaults come from material <strong>{product.primary_material_code || 'not set'}</strong> in the governed material library.
+              An override is saved with this UV engineering revision.
+            </p>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {WATER_COMPATIBILITY_TYPES.map(waterType => {
+              const option = (product.compatibility_options || []).find((item: any) => item.water_type === waterType) || {};
+              const mode = compatibilityModes[waterType] || 'default';
+              const effectiveAllowed = mode === 'default' ? option.default_allowed === true : mode === 'allowed';
+              const defaultLabel = option.default_allowed == null ? 'Not defined' : option.default_allowed ? 'Allowed' : 'Not allowed';
+              return (
+                <div key={waterType} className="rounded-lg border border-stone-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-stone-700">{waterType}</div>
+                      <div className="mt-0.5 text-[11px] text-stone-400">Material default: {defaultLabel}</div>
+                    </div>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${effectiveAllowed ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-100 text-stone-500'}`}>
+                      {effectiveAllowed ? 'Allowed' : 'Not allowed'}
+                    </span>
+                  </div>
+                  <label className="mt-2 block text-[11px] font-medium text-stone-500">Revision setting
+                    <select
+                      aria-label={`${waterType} compatibility`}
+                      className={inputClass}
+                      value={mode}
+                      onChange={event => setCompatibilityModes(current => ({
+                        ...current,
+                        [waterType]: event.target.value as 'default' | 'allowed' | 'not_allowed',
+                      }))}
+                    >
+                      <option value="default">Use material default</option>
+                      <option value="allowed">Override: Allowed</option>
+                      <option value="not_allowed">Override: Not allowed</option>
+                    </select>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-stone-400">Governed source: <strong>AAT Foundations</strong>.</p>
         </div>
         <label className="text-xs font-medium text-stone-500 md:col-span-3">Controlled source evidence *
           <input className={inputClass} value={form.source_evidence} onChange={event => set('source_evidence', event.target.value)} placeholder="Manufacturer datasheet, test report or controlled engineering document" />

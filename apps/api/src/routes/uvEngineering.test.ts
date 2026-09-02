@@ -173,6 +173,33 @@ describe('UV engineering lifecycle', () => {
     expect(state.queries.some(sql => sql.startsWith('update uv_engineering_revisions set lamp_count='))).toBe(false);
   });
 
+  it('stores explicit water compatibility overrides on a draft revision', async () => {
+    const response = await request(
+      app,
+      'PUT',
+      '/api/v1/admin/uv-engineering/revisions/revision-1',
+      token,
+      { compatibility_overrides: [{ water_type: 'Seawater', allowed: true }] },
+    );
+    expect(response.status).toBe(200);
+    expect(state.calls).toContainEqual(expect.objectContaining({
+      sql: expect.stringContaining('insert into uv_engineering_revision_compatibility'),
+      params: ['revision-1', 'Seawater', true],
+    }));
+  });
+
+  it('rejects unknown water compatibility types', async () => {
+    const response = await request(
+      app,
+      'PUT',
+      '/api/v1/admin/uv-engineering/revisions/revision-1',
+      token,
+      { compatibility_overrides: [{ water_type: 'Pool water', allowed: true }] },
+    );
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION');
+  });
+
   it('does not approve incomplete UV engineering evidence', async () => {
     const response = await request(
       app,

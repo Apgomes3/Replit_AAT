@@ -6,6 +6,7 @@ import { authenticate, requireModuleAccess, requireModuleManage, requireRole, Au
 const adminRouter = Router();
 const consumerRouter = Router();
 const STATUSES = ['Draft', 'In Review', 'Approved', 'Retired', 'Disabled'];
+const WATER_COMPATIBILITY_TYPES = ['Saltwater', 'Seawater', 'Freshwater', 'Brackish water'];
 const EDITABLE_FIELDS = [
   // lamp_count, material, rated power, and identity are PIM-owned. The legacy
   // compatibility/arrangement columns remain readable for old snapshots only.
@@ -55,6 +56,43 @@ function engineeringPayloadError(payload: any, fields = EDITABLE_FIELDS) {
   return null;
 }
 
+function parseCompatibilityOverrides(value: unknown) {
+  if (value === undefined) return { provided: false, rows: [] as Array<{ water_type: string; allowed: boolean }> };
+  if (!Array.isArray(value)) return { provided: true, error: 'Compatibility overrides must be an array.' };
+  const seen = new Set<string>();
+  const rows: Array<{ water_type: string; allowed: boolean }> = [];
+  for (const item of value) {
+    if (!item || !WATER_COMPATIBILITY_TYPES.includes(item.water_type) || typeof item.allowed !== 'boolean') {
+      return { provided: true, error: 'Compatibility overrides must contain a valid water type and boolean allowed value.' };
+    }
+    if (seen.has(item.water_type)) {
+      return { provided: true, error: `Compatibility override for ${item.water_type} was supplied more than once.` };
+    }
+    seen.add(item.water_type);
+    rows.push({ water_type: item.water_type, allowed: item.allowed });
+  }
+  return { provided: true, rows };
+}
+
+// The four controlled water types are always shown. A null default means
+// the material library has no entry yet; the effective value is false until
+// an explicit revision override is saved.
+const compatibilityOptionsJoin = `LEFT JOIN LATERAL (
+  SELECT json_agg(json_build_object(
+    'water_type', water_types.water_type,
+    'default_allowed', mwc.allowed,
+    'allowed', COALESCE(override.allowed, mwc.allowed, false),
+    'is_override', override.id IS NOT NULL,
+    'source', mwc.source,
+    'notes', mwc.notes
+  ) ORDER BY water_types.sort_order) AS compatibility_options
+  FROM (VALUES (1, 'Saltwater'), (2, 'Seawater'), (3, 'Freshwater'), (4, 'Brackish water')) water_types(sort_order, water_type)
+  LEFT JOIN material_water_compatibility mwc
+    ON mwc.material_code=pm.primary_material_code AND mwc.water_type=water_types.water_type
+  LEFT JOIN uv_engineering_revision_compatibility override
+    ON override.revision_id=latest.id AND override.water_type=water_types.water_type
+) compatibility_options ON true`;
+
 const catalogSelect = `SELECT c.*, pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status,
   pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type, pm.signal_type,
   pm.control_type_optional, pm.power_kw AS rated_power_kw,
@@ -64,6 +102,7 @@ const catalogSelect = `SELECT c.*, pm.product_code, pm.product_name, pm.manufact
   COALESCE(pm.lamp_count, latest.lamp_count) AS lamp_count,
   COALESCE(pm.power_kw, latest.lamp_power_w) AS effective_rated_power_kw,
   COALESCE(compatibility.material_compatibility_count, 0) AS material_compatibility_count,
+  COALESCE(compatibility_options.compatibility_options, '[]'::json) AS compatibility_options,
   CASE WHEN c.needs_review THEN 'Needs Review' ELSE 'Current' END AS sync_status,
   CASE WHEN c.needs_review THEN false
        WHEN pm.status <> 'Active' OR pf.product_family_code <> 'PFM-UV' THEN false
@@ -106,13 +145,16 @@ const catalogSelect = `SELECT c.*, pm.product_code, pm.product_name, pm.manufact
    LIMIT 1
   ) latest ON true
   LEFT JOIN LATERAL (
-    SELECT COUNT(*)::int AS material_compatibility_count
-    FROM material_water_compatibility mwc
-    WHERE mwc.material_code=pm.primary_material_code
-      AND mwc.allowed=true
-  ) compatibility ON true`;
+     SELECT COUNT(*) FILTER (WHERE COALESCE(override.allowed, mwc.allowed, false))::int AS material_compatibility_count
+     FROM (VALUES ('Saltwater'), ('Seawater'), ('Freshwater'), ('Brackish water')) water_types(water_type)
+     LEFT JOIN material_water_compatibility mwc
+       ON mwc.material_code=pm.primary_material_code AND mwc.water_type=water_types.water_type
+     LEFT JOIN uv_engineering_revision_compatibility override
+       ON override.revision_id=latest.id AND override.water_type=water_types.water_type
+   ) compatibility ON true
+  ${compatibilityOptionsJoin}`;
 
-adminRouter.use(authenticate, requireModuleManage('pim'), requireRole('admin'));
+adminRouter.use(authenticate, requireModuleManage('pim'), requireRole('admin', 'engineer'));
 
 adminRouter.get('/', async (req: AuthRequest, res: Response) => {
   const result = await query(`${catalogSelect} ORDER BY pm.product_code`);
@@ -160,6 +202,10 @@ adminRouter.post('/', async (req: AuthRequest, res: Response) => {
 adminRouter.post('/:id/revisions', async (req: AuthRequest, res: Response) => {
   const payloadError = engineeringPayloadError(req.body);
   if (payloadError) return res.status(400).json({ error: { code: 'VALIDATION', message: payloadError } });
+  const compatibilityOverrides = parseCompatibilityOverrides(req.body.compatibility_overrides);
+  if (compatibilityOverrides.error) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: compatibilityOverrides.error } });
+  }
   const client = await pool.connect();
   let created: any;
   try {
@@ -198,6 +244,16 @@ adminRouter.post('/:id/revisions', async (req: AuthRequest, res: Response) => {
       VALUES ($1,$2,'Draft',${CREATE_REVISION_FIELDS.map((_, i) => `$${i + 3}`).join(',')},$${CREATE_REVISION_FIELDS.length + 3},$${CREATE_REVISION_FIELDS.length + 4}) RETURNING *`,
       [req.params.id, revisionNumber, ...values, source?.id || null, req.user!.id]);
     created = result.rows[0];
+    if (compatibilityOverrides.provided) {
+      for (const override of compatibilityOverrides.rows || []) {
+        await client.query(`INSERT INTO uv_engineering_revision_compatibility (revision_id, water_type, allowed)
+          VALUES ($1,$2,$3)`, [created.id, override.water_type, override.allowed]);
+      }
+    } else if (source?.id) {
+      await client.query(`INSERT INTO uv_engineering_revision_compatibility (revision_id, water_type, allowed)
+        SELECT $1, water_type, allowed FROM uv_engineering_revision_compatibility WHERE revision_id=$2`,
+      [created.id, source.id]);
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -218,13 +274,42 @@ adminRouter.put('/revisions/:id', async (req: AuthRequest, res: Response) => {
     if (payloadError) return res.status(400).json({ error: { code: 'VALIDATION', message: payloadError } });
     return res.status(400).json({ error: { code: 'PIM_OWNED_FIELD', message: 'Lamp count is owned by the linked Product Master.' } });
   }
+  const compatibilityOverrides = parseCompatibilityOverrides(req.body.compatibility_overrides);
+  if (compatibilityOverrides.error) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: compatibilityOverrides.error } });
+  }
   const fields = EDITABLE_FIELDS.filter(field => Object.prototype.hasOwnProperty.call(req.body, field));
-  if (!fields.length) return res.status(400).json({ error: { code: 'VALIDATION', message: 'No editable engineering fields supplied.' } });
+  if (!fields.length && !compatibilityOverrides.provided) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'No editable engineering fields supplied.' } });
+  }
   const payloadError = engineeringPayloadError(req.body, fields);
   if (payloadError) return res.status(400).json({ error: { code: 'VALIDATION', message: payloadError } });
-  const result = await query(`UPDATE uv_engineering_revisions SET ${fields.map((field, i) => `${field}=$${i + 1}`).join(', ')}, updated_at=NOW() WHERE id=$${fields.length + 1} RETURNING *`,
-    [...fields.map(field => req.body[field] === '' ? null : req.body[field]), req.params.id]);
-  await logAudit(req.user!.id, 'uv_engineering_revision', String(req.params.id), 'UPDATE', { summary: 'UV engineering draft updated', fields });
+  const result = fields.length
+    ? await query(`UPDATE uv_engineering_revisions SET ${fields.map((field, i) => `${field}=$${i + 1}`).join(', ')}, updated_at=NOW() WHERE id=$${fields.length + 1} RETURNING *`,
+      [...fields.map(field => req.body[field] === '' ? null : req.body[field]), req.params.id])
+    : { rows: [existing.rows[0]] };
+  if (compatibilityOverrides.provided) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM uv_engineering_revision_compatibility WHERE revision_id=$1', [req.params.id]);
+      for (const override of compatibilityOverrides.rows || []) {
+        await client.query(`INSERT INTO uv_engineering_revision_compatibility (revision_id, water_type, allowed)
+          VALUES ($1,$2,$3)`, [req.params.id, override.water_type, override.allowed]);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  await logAudit(req.user!.id, 'uv_engineering_revision', String(req.params.id), 'UPDATE', {
+    summary: 'UV engineering draft updated',
+    fields,
+    compatibility_overrides: compatibilityOverrides.provided ? compatibilityOverrides.rows : undefined,
+  });
   res.json(result.rows[0]);
 });
 
@@ -240,12 +325,17 @@ adminRouter.patch('/revisions/:id/status', async (req: AuthRequest, res: Respons
       `SELECT true AS governance_loaded, pm.product_code, pm.product_name,
               pm.primary_material_code, pm.power_kw AS pim_rated_power_kw,
               pm.lamp_count AS pim_lamp_count,
-              (SELECT COUNT(*)::int FROM material_water_compatibility mwc
-                WHERE mwc.material_code=pm.primary_material_code AND mwc.allowed=true) AS material_compatibility_count
+              (SELECT COUNT(*) FILTER (WHERE COALESCE(override.allowed, mwc.allowed, false))::int
+                 FROM (VALUES ('Saltwater'), ('Seawater'), ('Freshwater'), ('Brackish water')) water_types(water_type)
+                 LEFT JOIN material_water_compatibility mwc
+                   ON mwc.material_code=pm.primary_material_code AND mwc.water_type=water_types.water_type
+                 LEFT JOIN uv_engineering_revision_compatibility override
+                   ON override.revision_id=$2 AND override.water_type=water_types.water_type
+              ) AS material_compatibility_count
          FROM uv_engineering_catalogs c
          JOIN product_masters pm ON pm.id=c.product_master_id
         WHERE c.id=$1`,
-      [existing.rows[0].catalog_id],
+      [existing.rows[0].catalog_id, existing.rows[0].id],
     );
     const candidate = governance.rows[0]
       ? { ...existing.rows[0], ...governance.rows[0] }
@@ -312,8 +402,15 @@ consumerRouter.get('/uv-engineering/selectable', async (_req: AuthRequest, res: 
       AND pm.power_kw > 0 AND pm.lamp_count > 0 AND r.effective_reactor_volume_l > 0
       AND r.irradiance_85t_mw_cm2 > 0 AND r.irradiance_95t_mw_cm2 > 0
       AND r.source_basis='AAT Foundations' AND r.source_basis_verified=true
-      AND EXISTS (SELECT 1 FROM material_water_compatibility mwc
-                  WHERE mwc.material_code=pm.primary_material_code AND mwc.allowed=true)
+      AND EXISTS (
+        SELECT 1
+        FROM (VALUES ('Saltwater'), ('Seawater'), ('Freshwater'), ('Brackish water')) water_types(water_type)
+        LEFT JOIN material_water_compatibility mwc
+          ON mwc.material_code=pm.primary_material_code AND mwc.water_type=water_types.water_type
+        LEFT JOIN uv_engineering_revision_compatibility override
+          ON override.revision_id=r.id AND override.water_type=water_types.water_type
+        WHERE COALESCE(override.allowed, mwc.allowed, false)
+      )
     ORDER BY pm.product_code`);
   res.json({ items: result.rows });
 });

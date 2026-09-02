@@ -43,7 +43,7 @@ const product = {
   product_code: 'UV-100',
   product_name: 'UV Reactor 100',
   manufacturer: 'AAT',
-  primary_material_code: 'SS316',
+  primary_material_code: 'MAT-SS316',
   configuration: 'Wall mounted',
   control_type: 'PLC interlock',
   signal_type: 'Modbus',
@@ -52,6 +52,12 @@ const product = {
   pim_status: 'Active',
   product_family_code: 'PFM-UV',
   latest_revision: revision,
+  compatibility_options: [
+    { water_type: 'Saltwater', default_allowed: true, allowed: true, is_override: false },
+    { water_type: 'Seawater', default_allowed: false, allowed: false, is_override: false },
+    { water_type: 'Freshwater', default_allowed: false, allowed: false, is_override: false },
+    { water_type: 'Brackish water', default_allowed: true, allowed: true, is_override: false },
+  ],
   sync_status: 'Current',
   calculation_enabled: false,
   completeness_message: 'Engineering revision is not approved',
@@ -93,6 +99,9 @@ describe('UV engineering administration', () => {
     expect(screen.getByText('Optional').nextElementSibling).toHaveTextContent('Yes');
     expect(screen.getByLabelText('Effective reactor volume (L) *')).toHaveValue(120);
     expect(screen.getByLabelText('Irradiance at 85%T (mW/cm²) *')).toHaveValue(1.2);
+    expect(screen.getByLabelText('Saltwater compatibility')).toHaveValue('default');
+    expect(screen.getByLabelText('Seawater compatibility')).toHaveValue('default');
+    await user.selectOptions(screen.getByLabelText('Seawater compatibility'), 'allowed');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(api.put).toHaveBeenCalledWith(
       '/admin/uv-engineering/revisions/revision-2',
@@ -101,6 +110,7 @@ describe('UV engineering administration', () => {
         irradiance_85t_mw_cm2: 1.2,
         irradiance_95t_mw_cm2: 1.6,
         approved_per_lamp_flow_exception_m3h: 40,
+        compatibility_overrides: [{ water_type: 'Seawater', allowed: true }],
       }),
     );
     const payload = vi.mocked(api.put).mock.calls[0][1] as Record<string, unknown>;

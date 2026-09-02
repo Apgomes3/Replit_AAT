@@ -29,4 +29,5 @@
 - [UV fluence parity precision](uv-fluence-parity-precision.md) — parity expectations use full-precision workbook flow, not the four-decimal flow displayed in the specification.
 - [UV revision continuation](uv-revision-continuation.md) — released UV evidence stays frozen; revision creation returns designers to the same system and uses live approved choices.
 - [UV control metadata](uv-product-control-metadata.md) — installation and control attributes are PIM-owned, displayed read-only in UV Engineering, and reviewed when changed.
+- [UV water compatibility](uv-water-compatibility.md) — material defaults seed each revision; explicit revision overrides govern approval and Design Book use.
 - [Exhibit lighting snapshots](exhibit-lighting-snapshots.md) — PIM lights freeze source identity and physical kW load; W/kW changes are display conversions only.

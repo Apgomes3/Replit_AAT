@@ -4515,7 +4515,14 @@ router.post(
               r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
               pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
               pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw,
-              mwc.allowed AS compatibility_allowed, mwc.water_type AS mapped_water_type
+              COALESCE(uvc.allowed, mwc.allowed) AS compatibility_allowed,
+              CASE
+                WHEN $2='Marine' THEN 'Seawater'
+                WHEN $2='Salt Water' THEN 'Saltwater'
+                WHEN $2='Brackish' THEN 'Brackish water'
+                WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+                ELSE $2
+              END AS mapped_water_type
          FROM system_flow_side_streams s
          LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
          LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
@@ -4523,10 +4530,21 @@ router.post(
          LEFT JOIN material_water_compatibility mwc
            ON mwc.material_code=pm.primary_material_code
           AND mwc.water_type=CASE
-            WHEN $2 IN ('Marine', 'Salt Water', 'Brackish') THEN CASE WHEN $2='Marine' THEN 'Marine' ELSE 'Salt Water' END
-            WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
-            ELSE $2
-          END
+                WHEN $2='Marine' THEN 'Seawater'
+                WHEN $2='Salt Water' THEN 'Saltwater'
+                WHEN $2='Brackish' THEN 'Brackish water'
+                WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+                ELSE $2
+              END
+          LEFT JOIN uv_engineering_revision_compatibility uvc
+            ON uvc.revision_id=r.id
+           AND uvc.water_type=CASE
+                WHEN $2='Marine' THEN 'Seawater'
+                WHEN $2='Salt Water' THEN 'Saltwater'
+                WHEN $2='Brackish' THEN 'Brackish water'
+                WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+                ELSE $2
+              END
         WHERE s.system_id=$1 AND s.preset='UV'
         ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`,
       [systemId, system.water_type],
