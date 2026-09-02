@@ -160,6 +160,23 @@ describe('buildPumpLineItem', () => {
     expect(line.pump_role).toBe(PUMP_ROLE_PRIMARY);
     expect(line.pump_role_name).toBe('FFSP — Foam Fractionator Supply Pump');
     expect(line.is_foam_fractionator).toBe(true);
+    expect(line.pump_quantity).toBe(1);
+  });
+
+  it('splits total circuit duty evenly across the saved pump quantity', () => {
+    const row = {
+      pump_quantity: 4,
+      design_head_m: 10,
+      pump_efficiency_pct: 80,
+      motor_efficiency_pct: 90,
+    };
+    const line = buildPumpLineItem(circuit, row, PUMP_ROLE_PRIMARY);
+    expect(line.pump_quantity).toBe(4);
+    expect(line.flow_m3h).toBe(224.15);
+    expect(line.effective_flow_m3h).toBeCloseTo(56.0375);
+    expect(line.current_source_fingerprint).not.toBe(
+      buildPumpLineItem(circuit, { ...row, pump_quantity: 2 }, PUMP_ROLE_PRIMARY).current_source_fingerprint,
+    );
   });
 
   it('FFSP unsaved line has status incomplete (no pump selected)', () => {

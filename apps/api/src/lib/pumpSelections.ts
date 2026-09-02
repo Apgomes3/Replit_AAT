@@ -94,8 +94,10 @@ export function pumpSourcePayload(
     design_head_m?: number | null;
     pump_efficiency_pct?: number | null;
     motor_efficiency_pct?: number | null;
+    pump_quantity?: number | null;
   },
 ) {
+  const quantity = positive(inputs.pump_quantity) || 1;
   return {
     circuit: {
       circuit_key: circuit.circuit_key, circuit_kind: circuit.circuit_kind,
@@ -108,6 +110,7 @@ export function pumpSourcePayload(
     design_head_m: inputs.design_head_m ?? null,
     pump_efficiency_pct: inputs.pump_efficiency_pct ?? null,
     motor_efficiency_pct: inputs.motor_efficiency_pct ?? null,
+    ...(quantity > 1 ? { pump_quantity: quantity, flow_per_pump_m3h: effectiveFlow } : {}),
   };
 }
 
@@ -246,20 +249,23 @@ export function buildPumpLineItem(
 ) {
   const isVenturi = role === PUMP_ROLE_VENTURI;
   const isFF = isFoamFractionatorCircuit(circuit);
+  const pumpQuantity = positive(row?.pump_quantity) || 1;
 
   // A saved venturi duty is explicit evidence. The governed product duty is
   // available for an unsaved/legacy line; creation persists the authoritative
   // circuit-flow fallback before the line is returned to the UI.
-  const effectiveFlow = isVenturi
+  const totalFlow = isVenturi
     ? (row?.venturi_flow_m3h != null
         ? Number(row.venturi_flow_m3h)
         : circuit.venturi_flow_m3h ?? null)
     : circuit.flow_m3h;
+  const effectiveFlow = totalFlow == null ? null : totalFlow / pumpQuantity;
 
   const sourcePayload = pumpSourcePayload(circuit, role, effectiveFlow, {
     design_head_m: row?.design_head_m != null ? Number(row.design_head_m) : null,
     pump_efficiency_pct: row?.pump_efficiency_pct != null ? Number(row.pump_efficiency_pct) : null,
     motor_efficiency_pct: row?.motor_efficiency_pct != null ? Number(row.motor_efficiency_pct) : null,
+    pump_quantity: pumpQuantity,
   });
 
   const fingerprint = pumpSourceFingerprint(sourcePayload);
@@ -318,6 +324,7 @@ export function buildPumpLineItem(
     pump_role_name: defaultPumpLineName(circuit, role),
     is_foam_fractionator: isFF,
     ...(isVenturi ? { venturi_flow_m3h: row?.venturi_flow_m3h != null ? Number(row.venturi_flow_m3h) : null } : {}),
+    pump_quantity: pumpQuantity,
     effective_flow_m3h: effectiveFlow,
     project_equipment_item_id: row?.project_equipment_item_id || null,
     selected_pump: row?.pump_snapshot || null,

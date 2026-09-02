@@ -2629,6 +2629,10 @@ ALTER TABLE system_flow_side_streams
 -- to the supply-pump circuit flow, which would silently misrepresent the venturi duty.
 ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_role VARCHAR(50) NOT NULL DEFAULT 'primary';
 ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS venturi_flow_m3h NUMERIC;
+ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_quantity INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE system_pump_selections DROP CONSTRAINT IF EXISTS chk_system_pump_selections_quantity;
+ALTER TABLE system_pump_selections
+  ADD CONSTRAINT chk_system_pump_selections_quantity CHECK (pump_quantity > 0 AND pump_quantity <= 99);
 -- A newly allocated pump line exists before sizing inputs are known.
 ALTER TABLE system_pump_selections ALTER COLUMN design_head_m DROP NOT NULL;
 ALTER TABLE system_pump_selections ALTER COLUMN pump_efficiency_pct DROP NOT NULL;

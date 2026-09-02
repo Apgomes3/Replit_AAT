@@ -17,6 +17,11 @@ const numberOrNull = (value: any) =>
   value === null || value === undefined || value === ''
     ? null
     : Number.isFinite(Number(value)) ? Number(value) : null;
+const pumpQuantityOrNull = (value: any) => {
+  if (value === null || value === undefined || value === '') return 1;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 99 ? parsed : null;
+};
 const allowedPumpRoles = new Set([PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI]);
 
 async function candidates(runner: any, projectId: string, systemId: string) {
@@ -129,13 +134,19 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
     return res.status(400).json({ error: { code: 'INVALID_CIRCUIT', message: 'Circuit key or pump role is not active in the saved Flow Route.' } });
   }
 
+  const pumpQuantity = pumpQuantityOrNull(input.pump_quantity);
+  if (pumpQuantity == null) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
+  }
+
   // For FFVP lines the flow basis comes from the explicit venturi_flow_m3h input.
   const isVenturi = pumpRole === PUMP_ROLE_VENTURI;
-  const effectiveFlow = isVenturi
+  const totalFlow = isVenturi
     ? numberOrNull(input.venturi_flow_m3h)
     : line.flow_m3h;
+  const effectiveFlow = totalFlow == null ? null : Number(totalFlow) / pumpQuantity;
 
-  if (isVenturi && (effectiveFlow == null || effectiveFlow <= 0)) {
+  if (isVenturi && (totalFlow == null || totalFlow <= 0)) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Venturi duty flow is required and must be greater than zero.' } });
   }
 
@@ -162,6 +173,7 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
     design_head_m: numberOrNull(input.design_head_m),
     pump_efficiency_pct: numberOrNull(input.pump_efficiency_pct),
     motor_efficiency_pct: numberOrNull(input.motor_efficiency_pct),
+    pump_quantity: pumpQuantity,
   });
 
   await query(
@@ -169,8 +181,8 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
        (system_id,circuit_key,project_equipment_item_id,
         design_head_m,pump_efficiency_pct,motor_efficiency_pct,
         source_fingerprint,pump_snapshot,calculation_version,result_snapshot,updated_by,
-        pump_role,venturi_flow_m3h)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13)
+         pump_role,venturi_flow_m3h,pump_quantity)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14)
      ON CONFLICT (system_id,circuit_key,pump_role) DO UPDATE SET
        project_equipment_item_id=EXCLUDED.project_equipment_item_id,
        design_head_m=EXCLUDED.design_head_m,
@@ -182,6 +194,7 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
        calculation_version=EXCLUDED.calculation_version,
        result_snapshot=EXCLUDED.result_snapshot,
        updated_by=EXCLUDED.updated_by,
+        pump_quantity=EXCLUDED.pump_quantity,
        updated_at=NOW()`,
     [
       system.id, input.circuit_key, selected?.project_equipment_item_id || null,
@@ -192,7 +205,8 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
       JSON.stringify(calculation),
       req.user!.id,
       pumpRole,
-      isVenturi ? effectiveFlow : null,
+      isVenturi ? totalFlow : null,
+      pumpQuantity,
     ],
   );
 
@@ -318,13 +332,21 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
         ?? positiveNumberOrNull(input.venturi_flow_m3h)
         ?? positiveNumberOrNull(circuit.flow_m3h))
       : null;
-    const source = pumpSourcePayload(circuit, pumpRole, pumpRole === PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h, {
+    const pumpQuantity = pumpQuantityOrNull(input.pump_quantity);
+    if (pumpQuantity == null) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
+    }
+    const totalFlow = pumpRole === PUMP_ROLE_VENTURI ? venturiFlow : numberOrNull(circuit.flow_m3h);
+    const effectiveFlow = totalFlow == null ? null : totalFlow / pumpQuantity;
+    const source = pumpSourcePayload(circuit, pumpRole, effectiveFlow, {
       design_head_m: existingLine?.design_head_m ?? null,
       pump_efficiency_pct: existingLine?.pump_efficiency_pct ?? null,
       motor_efficiency_pct: existingLine?.motor_efficiency_pct ?? null,
+      pump_quantity: pumpQuantity,
     });
     const calculation = calculatePumpSelection({
-      flow_m3h: pumpRole === PUMP_ROLE_VENTURI ? venturiFlow : circuit.flow_m3h,
+      flow_m3h: effectiveFlow,
       design_head_m: existingLine?.design_head_m,
       pump_efficiency_pct: existingLine?.pump_efficiency_pct,
       motor_efficiency_pct: existingLine?.motor_efficiency_pct,
@@ -338,8 +360,8 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       `INSERT INTO system_pump_selections
          (system_id,circuit_key,project_equipment_item_id,design_head_m,
            pump_efficiency_pct,motor_efficiency_pct,source_fingerprint,pump_snapshot,
-          calculation_version,result_snapshot,updated_by,pump_role,venturi_flow_m3h)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13)
+           calculation_version,result_snapshot,updated_by,pump_role,venturi_flow_m3h,pump_quantity)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14)
         ON CONFLICT (system_id,circuit_key,pump_role) DO UPDATE SET
           project_equipment_item_id=EXCLUDED.project_equipment_item_id,
           design_head_m=EXCLUDED.design_head_m,
@@ -351,6 +373,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
           result_snapshot=EXCLUDED.result_snapshot,
           updated_by=EXCLUDED.updated_by,
           venturi_flow_m3h=EXCLUDED.venturi_flow_m3h,
+           pump_quantity=EXCLUDED.pump_quantity,
           updated_at=NOW()`,
       [
         system.id, circuitKey, pei.id,
@@ -359,7 +382,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
         existingLine?.motor_efficiency_pct ?? null,
         pumpSourceFingerprint(source), JSON.stringify(snapshot),
         PUMP_SELECTION_CALCULATION_VERSION, JSON.stringify(calculation),
-        req.user!.id, pumpRole, venturiFlow,
+        req.user!.id, pumpRole, venturiFlow, pumpQuantity,
       ],
     );
     await client.query('COMMIT');
@@ -371,6 +394,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       result_snapshot: calculation,
       pump_role: pumpRole,
       venturi_flow_m3h: venturiFlow,
+      pump_quantity: pumpQuantity,
     }, pumpRole) });
   } catch (error: any) {
     await client.query('ROLLBACK');

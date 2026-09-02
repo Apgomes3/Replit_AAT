@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Gauge, Plus, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Gauge, LayoutGrid, List, Plus, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 
@@ -24,6 +24,7 @@ type PumpLine = {
   flow_m3h?: number | string | null;
   pump_role: string;
   pump_role_name?: string | null;
+  pump_quantity?: number | string | null;
   is_foam_fractionator?: boolean;
   venturi_flow_m3h?: number | string | null;
   effective_flow_m3h?: number | string | null;
@@ -74,6 +75,7 @@ function PumpLineCard({
   systemId,
   bookId,
   onRemoveVenturi,
+  onCreatePump,
 }: {
   line: PumpLine;
   candidates: PumpCandidate[];
@@ -81,6 +83,7 @@ function PumpLineCard({
   systemId: string;
   bookId: string;
   onRemoveVenturi?: () => void;
+  onCreatePump?: (description: string) => Promise<void>;
 }) {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
@@ -93,7 +96,10 @@ function PumpLineCard({
     pump_efficiency_pct: line.pump_efficiency_pct ?? '',
     motor_efficiency_pct: line.motor_efficiency_pct ?? '',
     venturi_flow_m3h: line.venturi_flow_m3h ?? '',
+    pump_quantity: line.pump_quantity ?? 1,
   });
+  const [newPumpName, setNewPumpName] = useState('');
+  const [creatingPump, setCreatingPump] = useState(false);
 
   useEffect(() => {
     setForm({
@@ -102,12 +108,13 @@ function PumpLineCard({
       pump_efficiency_pct: line.pump_efficiency_pct ?? '',
       motor_efficiency_pct: line.motor_efficiency_pct ?? '',
       venturi_flow_m3h: line.venturi_flow_m3h ?? '',
+      pump_quantity: line.pump_quantity ?? 1,
     });
   }, [
     line.circuit_key, line.pump_role,
     line.project_equipment_item_id,
     line.design_head_m, line.pump_efficiency_pct, line.motor_efficiency_pct,
-    line.venturi_flow_m3h,
+    line.venturi_flow_m3h, line.pump_quantity,
   ]);
 
   const save = async () => {
@@ -121,6 +128,7 @@ function PumpLineCard({
         design_head_m: form.design_head_m === '' ? null : Number(form.design_head_m),
         pump_efficiency_pct: form.pump_efficiency_pct === '' ? null : Number(form.pump_efficiency_pct),
         motor_efficiency_pct: form.motor_efficiency_pct === '' ? null : Number(form.motor_efficiency_pct),
+        pump_quantity: Number(form.pump_quantity),
         ...(isVenturi ? { venturi_flow_m3h: form.venturi_flow_m3h === '' ? null : Number(form.venturi_flow_m3h) } : {}),
       });
       await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
@@ -140,11 +148,25 @@ function PumpLineCard({
 
   // The effective flow shown to the user.
   const displayFlow = isVenturi ? form.venturi_flow_m3h : line.flow_m3h;
+  const pumpQuantity = Math.max(1, Number(form.pump_quantity) || 1);
+  const perPumpFlow = Number.isFinite(Number(displayFlow)) ? Number(displayFlow) / pumpQuantity : null;
+
+  const createNamedPump = async () => {
+    const description = newPumpName.trim();
+    if (!description || !onCreatePump) return;
+    setCreatingPump(true);
+    try {
+      await onCreatePump(description);
+      setNewPumpName('');
+    } finally {
+      setCreatingPump(false);
+    }
+  };
 
   return (
     <div className="space-y-3 p-3 sm:p-4">
       {/* Flow display — read-only for FFSP; editable for FFVP */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {isVenturi ? (
           <label className="lg:col-span-2">
             <span className="mb-1 block text-xs font-medium text-stone-600">
@@ -162,7 +184,8 @@ function PumpLineCard({
               placeholder="Enter venturi pump flow"
             />
             <p className="mt-1 text-xs text-stone-500">
-              Venturi duty flow is independent of the supply-pump circuit flow. Enter the actual venturi pump flow.
+              Venturi duty flow is independent of the supply-pump circuit flow. Enter the total duty; quantity divides it evenly.
+              {numberText(perPumpFlow, 2)} m³/h per pump.
             </p>
           </label>
         ) : (
@@ -172,8 +195,26 @@ function PumpLineCard({
               <span className="font-mono text-lg font-bold text-cyan-700">{numberText(line.flow_m3h, 2)} m³/h</span>
               <span className="text-xs text-stone-400">(read-only from Flow Route)</span>
             </div>
+            <p className="mt-1 text-xs text-stone-500">
+              {numberText(perPumpFlow, 2)} m³/h per pump
+            </p>
           </div>
         )}
+        <label>
+          <span className="mb-1 block text-xs font-medium text-stone-600">Pump quantity</span>
+          <input
+            aria-label={`Pump quantity for ${line.pump_role_name || line.circuit_name}`}
+            type="number"
+            min="1"
+            max="99"
+            step="1"
+            value={form.pump_quantity}
+            onChange={event => setForm(current => ({ ...current, pump_quantity: event.target.value }))}
+            disabled={readOnly}
+            className={inputClass}
+          />
+          <p className="mt-1 text-xs text-stone-500">Identical pumps sharing this duty.</p>
+        </label>
         <label>
           <span className="mb-1 block text-xs font-medium text-stone-600">Initial design head (m)</span>
           <input
@@ -222,6 +263,26 @@ function PumpLineCard({
               {selected.product_code || selected.equip_code} · {selected.product_name || selected.description}
               {selected.power_kw != null ? ` · ${selected.power_kw} kW catalog rating` : ''}
             </p>
+          )}
+          {!readOnly && onCreatePump && (
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              <input
+                aria-label={`New pump name for ${line.pump_role_name || line.circuit_name}`}
+                value={newPumpName}
+                onChange={event => setNewPumpName(event.target.value)}
+                className={inputClass}
+                placeholder="Write a new pump name"
+                disabled={creatingPump}
+              />
+              <button
+                type="button"
+                onClick={() => void createNamedPump()}
+                disabled={creatingPump || !newPumpName.trim()}
+                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+              >
+                <Plus className="h-3.5 w-3.5" /> {creatingPump ? 'Creating…' : 'Create & use'}
+              </button>
+            </div>
           )}
         </label>
         <label>
@@ -351,7 +412,7 @@ function CircuitGroup({
     if (venturiLine && venturiChoice !== 'yes') setVenturiChoice('yes');
   }, [!!venturiLine]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const createPump = async (pumpRole: 'primary' | 'venturi') => {
+  const createPump = async (pumpRole: 'primary' | 'venturi', description?: string) => {
     if (creatingRole) return;
     setCreatingRole(pumpRole);
     try {
@@ -359,6 +420,7 @@ function CircuitGroup({
         design_book_id: bookId,
         circuit_key: circuitKey,
         pump_role: pumpRole,
+        ...(description ? { description } : {}),
       });
       await queryClient.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
       await queryClient.invalidateQueries({ queryKey: ['design-book', bookId] });
@@ -437,25 +499,13 @@ function CircuitGroup({
                   </span>
                 </div>
               )}
-              {!readOnly && primaryLine.circuit_kind !== 'orphaned' && !primaryLine.project_equipment_item_id && (
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 bg-amber-50 px-4 py-2">
-                  <span className="text-xs text-amber-800">No pump allocated.</span>
-                  <button
-                    type="button"
-                    onClick={() => createPump('primary')}
-                    disabled={!!creatingRole}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> {creatingRole === 'primary' ? 'Creating…' : 'Add pump'}
-                  </button>
-                </div>
-              )}
               <PumpLineCard
                 line={primaryLine}
                 candidates={candidates}
                 readOnly={readOnly || primaryLine.circuit_kind === 'orphaned'}
                 systemId={systemId}
                 bookId={bookId}
+                onCreatePump={async description => { await createPump('primary', description); }}
               />
             </div>
           )}
@@ -517,12 +567,80 @@ function CircuitGroup({
                 systemId={systemId}
                 bookId={bookId}
                 onRemoveVenturi={!readOnly ? removeVenturi : undefined}
+                onCreatePump={async description => { await createPump('venturi', description); }}
               />
             </div>
           )}
         </div>
       )}
     </article>
+  );
+}
+
+function PumpListView({
+  items,
+  readOnly,
+  onEdit,
+}: {
+  items: PumpLine[];
+  readOnly: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="overflow-x-auto">
+        <table className="min-w-[900px] w-full text-left text-sm">
+          <thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
+            <tr>
+              <th className="px-4 py-3 font-semibold">Circuit</th>
+              <th className="px-4 py-3 font-semibold">Pump duty</th>
+              <th className="px-4 py-3 font-semibold">Total flow</th>
+              <th className="px-4 py-3 font-semibold">Qty</th>
+              <th className="px-4 py-3 font-semibold">Flow / pump</th>
+              <th className="px-4 py-3 font-semibold">System pump</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-100">
+            {items.map(line => {
+              const totalFlow = line.pump_role === 'venturi' ? line.venturi_flow_m3h : line.flow_m3h;
+              const quantity = Number(line.pump_quantity) || 1;
+              const pump = line.selected_pump;
+              return (
+                <tr key={`${line.circuit_key}-${line.pump_role}`} className="align-middle hover:bg-stone-50/70">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-stone-800">{line.circuit_name}</div>
+                    <div className="font-mono text-[11px] text-stone-400">{line.circuit_key}</div>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-stone-700">{line.pump_role_name || 'Pump duty'}</td>
+                  <td className="px-4 py-3 font-mono text-stone-700">{numberText(totalFlow)} m³/h</td>
+                  <td className="px-4 py-3 font-mono text-stone-700">{quantity}</td>
+                  <td className="px-4 py-3 font-mono text-stone-700">{numberText(line.effective_flow_m3h ?? (Number(totalFlow) / quantity))} m³/h</td>
+                  <td className="px-4 py-3 text-stone-600">
+                    {pump ? `${pump.equip_code || 'Untagged'}${pump.product_name ? ` — ${pump.product_name}` : ''}` : 'Not selected'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusStyle(line.status)}`}>
+                      {line.status || 'incomplete'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={onEdit}
+                      className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 hover:bg-stone-50"
+                    >
+                      {readOnly ? 'View card' : 'Edit card'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -547,6 +665,7 @@ export default function LSSPumpSelectionPanel({
     }).then(response => response.data),
     enabled: !!systemId && !!bookId,
   });
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
 
   if (isLoading) {
     return <div className="rounded-2xl border border-stone-200 bg-white py-16 text-center text-sm text-stone-500">Loading pump circuits…</div>;
@@ -598,7 +717,7 @@ export default function LSSPumpSelectionPanel({
       </div>
       {!candidates.length && !readOnly && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          No eligible pump equipment is assigned to this LSS system yet. Use "Create project equipment pump" within a circuit, or assign a pump from the project equipment list.
+          No eligible pump equipment is assigned to this LSS system yet. Select one from the system pump list or write a new pump name in the card view.
         </div>
       )}
       {data?.frozen && (
@@ -606,19 +725,51 @@ export default function LSSPumpSelectionPanel({
           This pump-selection package is frozen with the Design Book revision.
         </div>
       )}
-      <div className="space-y-2">
-        {groupedByCircuit.map(({ circuitKey, lines }) => (
-          <CircuitGroup
-            key={circuitKey}
-            circuitKey={circuitKey}
-            lines={lines}
-            candidates={candidates}
-            readOnly={readOnly || !!data?.frozen}
-            systemId={systemId}
-            bookId={bookId}
-          />
-        ))}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-stone-800">Pump duties</h2>
+          <p className="text-xs text-stone-500">{items.length} duty line{items.length === 1 ? '' : 's'}</p>
+        </div>
+        <div className="inline-flex rounded-lg border border-stone-200 bg-white p-1" role="group" aria-label="Pump selection view">
+          <button
+            type="button"
+            aria-pressed={viewMode === 'cards'}
+            onClick={() => setViewMode('cards')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold ${viewMode === 'cards' ? 'bg-stone-900 text-white' : 'text-stone-500 hover:bg-stone-50'}`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" /> Cards
+          </button>
+          <button
+            type="button"
+            aria-pressed={viewMode === 'list'}
+            onClick={() => setViewMode('list')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold ${viewMode === 'list' ? 'bg-stone-900 text-white' : 'text-stone-500 hover:bg-stone-50'}`}
+          >
+            <List className="h-3.5 w-3.5" /> List
+          </button>
+        </div>
       </div>
+      {viewMode === 'list' ? (
+        <PumpListView
+          items={items}
+          readOnly={readOnly || !!data?.frozen}
+          onEdit={() => setViewMode('cards')}
+        />
+      ) : (
+        <div className="space-y-2">
+          {groupedByCircuit.map(({ circuitKey, lines }) => (
+            <CircuitGroup
+              key={circuitKey}
+              circuitKey={circuitKey}
+              lines={lines}
+              candidates={candidates}
+              readOnly={readOnly || !!data?.frozen}
+              systemId={systemId}
+              bookId={bookId}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

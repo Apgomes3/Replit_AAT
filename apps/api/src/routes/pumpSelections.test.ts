@@ -53,6 +53,7 @@ vi.mock('../db', () => {
         motor_efficiency_pct: params[5] == null ? null : String(params[5]),
         source_fingerprint: params[6], pump_snapshot: JSON.parse(params[7]), calculation_version: params[8],
         result_snapshot: JSON.parse(params[9]), pump_role: params[11], venturi_flow_m3h: params[12],
+        pump_quantity: params[13] ?? 1,
       };
       state.saved = state.saved.filter(row =>
         !(row.system_id === saved.system_id && row.circuit_key === saved.circuit_key &&
@@ -162,6 +163,40 @@ describe('pump selection HTTP routes', () => {
     expect(response.body.results.recommended_motor_kw).toBe(3);
     const insert = state.calls.find(call => call.sql.includes('INSERT INTO system_pump_selections'));
     expect(insert?.params.slice(0, 3)).toEqual(['system-1', 'loop:1', 'pump-item-1']);
+  });
+
+  it('persists pump quantity and sizes each pump on its share of total flow', async () => {
+    const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+      design_book_id: 'book-1', circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+      design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90, pump_quantity: 3,
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      circuit_key: 'loop:1',
+      pump_quantity: 3,
+      effective_flow_m3h: 20,
+    });
+    expect(state.saved[0].pump_quantity).toBe(3);
+  });
+
+  it('rejects pump quantities above the supported limit', async () => {
+    const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+      design_book_id: 'book-1', circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+      design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90, pump_quantity: 100,
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toContain('between 1 and 99');
+  });
+
+  it('rejects zero and fractional pump quantities', async () => {
+    for (const pump_quantity of [0, 1.5]) {
+      const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
+        design_book_id: 'book-1', circuit_key: 'loop:1', project_equipment_item_id: 'pump-item-1',
+        design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90, pump_quantity,
+      });
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('between 1 and 99');
+    }
   });
 
   it('persists an eligible underpowered pump but returns it as incompatible', async () => {

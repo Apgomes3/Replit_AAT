@@ -38,6 +38,7 @@ const response = {
     circuit_type: 'Sand Filter',
     pump_role: 'primary',
     flow_m3h: 90,
+    pump_quantity: 1,
     project_equipment_item_id: null,
     design_head_m: null,
     pump_efficiency_pct: null,
@@ -75,6 +76,8 @@ describe('LSSPumpSelectionPanel', () => {
     await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
     await user.type(screen.getByLabelText('Pump efficiency for Sand Filter Loop'), '76');
     await user.type(screen.getByLabelText('Motor efficiency for Sand Filter Loop'), '92');
+    await user.clear(screen.getByLabelText('Pump quantity for Sand Filter Loop'));
+    await user.type(screen.getByLabelText('Pump quantity for Sand Filter Loop'), '3');
     await user.click(screen.getByRole('button', { name: 'Save & calculate' }));
 
     await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/systems/system-1/pump-selections', {
@@ -85,6 +88,7 @@ describe('LSSPumpSelectionPanel', () => {
       design_head_m: 18,
       pump_efficiency_pct: 76,
       motor_efficiency_pct: 92,
+      pump_quantity: 3,
     }));
   });
 
@@ -97,9 +101,19 @@ describe('LSSPumpSelectionPanel', () => {
     expect(screen.queryByRole('button', { name: 'Save & calculate' })).not.toBeInTheDocument();
   });
 
-  it('offers Add pump when a circuit has no allocation', async () => {
+  it('uses one selector and a written name to create a new system pump', async () => {
+    const user = userEvent.setup();
     renderPanel();
-    expect(await screen.findByRole('button', { name: 'Add pump' })).toBeInTheDocument();
+    expect(await screen.findByLabelText('Selected pump for Sand Filter Loop')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add pump' })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('New pump name for Sand Filter Loop'), 'Custom backwash pump');
+    await user.click(screen.getByRole('button', { name: 'Create & use' }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'primary',
+      description: 'Custom backwash pump',
+    }));
   });
 
   it('shows the Sand Filter supply-pump role label', async () => {
@@ -107,6 +121,20 @@ describe('LSSPumpSelectionPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('SFSP — Sand Filter Supply Pump')).toBeInTheDocument();
+  });
+
+  it('switches between card and list views with quantity visible in the list', async () => {
+    const user = userEvent.setup();
+    apiGet.mockResolvedValue({ data: {
+      ...response,
+      items: [{ ...response.items[0], pump_quantity: 3, effective_flow_m3h: 30 }],
+    } } as any);
+    renderPanel();
+
+    await user.click(await screen.findByRole('button', { name: 'List' }));
+    expect(screen.getByRole('columnheader', { name: 'Qty' })).toBeInTheDocument();
+    expect(screen.getByText('30.00 m³/h')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit card' })).toBeInTheDocument();
   });
 
   it('shows the venturi question for a Foam Fractionator and creates FFVP when Yes is chosen', async () => {

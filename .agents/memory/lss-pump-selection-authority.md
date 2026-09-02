@@ -26,3 +26,9 @@ Side-stream pump work is controlled by the explicit dedicated-pump decision save
 **Why:** Parallel branches do not always have their own pump, and forcing one creates false readiness blockers. Existing engineering evidence must still remain auditable after the decision changes.
 
 **How to apply:** Filter active pump and friction duties from saved side-stream intent, but never delete or detach prior selection snapshots merely because a branch is changed to No.
+
+Pump quantity is part of the saved duty evidence, and identical pumps share the authoritative total duty evenly for per-pump sizing.
+
+**Why:** Sizing every pump against the full loop flow overstates each unit when designers intentionally use two or more parallel pumps.
+
+**How to apply:** Preserve total Flow Route duty, validate quantity as a positive whole number, calculate and display total flow divided by quantity, and include quantity in freshness evidence.

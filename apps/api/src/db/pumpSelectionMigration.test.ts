@@ -22,4 +22,9 @@ describe('pump selection migration', () => {
     expect(migration).toContain('SET has_dedicated_pump=true');
     expect(migration).toContain('ALTER COLUMN has_dedicated_pump SET NOT NULL');
   });
+
+  it('adds a bounded pump quantity with a safe default', () => {
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS pump_quantity INTEGER NOT NULL DEFAULT 1');
+    expect(migration).toContain('CHECK (pump_quantity > 0 AND pump_quantity <= 99)');
+  });
 });
