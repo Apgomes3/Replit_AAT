@@ -1414,28 +1414,53 @@ router.put('/product-masters/:id/electrical', authenticate, async (req: AuthRequ
   const { rated_power_kw, voltage_v, phases, frequency_hz, full_load_current_a, rated_speed_rpm, motor_type, insulation_class, protection_class, efficiency_class, notes, lamp_count } = body;
   const hasRatedPower = Object.prototype.hasOwnProperty.call(body, 'rated_power_kw');
   const hasLampCount = Object.prototype.hasOwnProperty.call(body, 'lamp_count');
+  const hasLampPower = Object.prototype.hasOwnProperty.call(body, 'lamp_power_w');
   const ratedPowerValue = rated_power_kw == null || rated_power_kw === '' ? null : Number(rated_power_kw);
   const lampCountValue = lamp_count == null || lamp_count === '' ? null : Number(lamp_count);
+  const lampPowerValue = body.lamp_power_w == null || body.lamp_power_w === '' ? null : Number(body.lamp_power_w);
   if (ratedPowerValue != null && (!Number.isFinite(ratedPowerValue) || ratedPowerValue <= 0)) {
     return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'rated_power_kw must be a number greater than zero or blank' } });
   }
   if (lampCountValue != null && (!Number.isInteger(lampCountValue) || lampCountValue <= 0)) {
     return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'lamp_count must be a positive integer or blank' } });
   }
+  if (lampPowerValue != null && (!Number.isFinite(lampPowerValue) || lampPowerValue <= 0)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'lamp_power_w must be a number greater than zero or blank' } });
+  }
   const saved = await withProductTransaction(async client => {
+    const current = await client.query(
+      `SELECT pm.lamp_count, pm.power_kw, pe.lamp_power_w
+       FROM product_masters pm
+       LEFT JOIN product_electrical pe ON pe.product_master_id=pm.id
+       WHERE pm.id=$1
+       FOR UPDATE OF pm`,
+      [pid],
+    );
+    const currentProduct = current.rows[0] || {};
+    const effectiveLampCount = hasLampCount ? lampCountValue : currentProduct.lamp_count;
+    const effectiveLampPower = hasLampPower ? lampPowerValue : currentProduct.lamp_power_w;
+    const hasLampInputs = hasLampCount || hasLampPower;
+    const calculatedRatedPower = effectiveLampCount != null && effectiveLampPower != null
+      ? Number(effectiveLampCount) * Number(effectiveLampPower) / 1000
+      : null;
+    const effectiveRatedPower = hasLampInputs
+      ? calculatedRatedPower
+      : hasRatedPower
+        ? ratedPowerValue
+        : currentProduct.power_kw;
     const electrical = await client.query(`
-      INSERT INTO product_electrical (product_master_id, rated_power_kw, voltage_v, phases, frequency_hz, full_load_current_a, rated_speed_rpm, motor_type, insulation_class, protection_class, efficiency_class, notes, updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+      INSERT INTO product_electrical (product_master_id, rated_power_kw, lamp_power_w, voltage_v, phases, frequency_hz, full_load_current_a, rated_speed_rpm, motor_type, insulation_class, protection_class, efficiency_class, notes, updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
       ON CONFLICT (product_master_id) DO UPDATE SET
-        rated_power_kw=$2, voltage_v=$3, phases=$4, frequency_hz=$5, full_load_current_a=$6, rated_speed_rpm=$7, motor_type=$8, insulation_class=$9, protection_class=$10, efficiency_class=$11, notes=$12, updated_at=NOW()
-      RETURNING *`, [pid, ratedPowerValue, voltage_v||null, phases||null, frequency_hz||null, full_load_current_a||null, rated_speed_rpm||null, motor_type||null, insulation_class||null, protection_class||null, efficiency_class||null, notes||null]);
+        rated_power_kw=$2, lamp_power_w=$3, voltage_v=$4, phases=$5, frequency_hz=$6, full_load_current_a=$7, rated_speed_rpm=$8, motor_type=$9, insulation_class=$10, protection_class=$11, efficiency_class=$12, notes=$13, updated_at=NOW()
+      RETURNING *`, [pid, effectiveRatedPower, effectiveLampPower, voltage_v||null, phases||null, frequency_hz||null, full_load_current_a||null, rated_speed_rpm||null, motor_type||null, insulation_class||null, protection_class||null, efficiency_class||null, notes||null]);
     await client.query(
       `UPDATE product_masters
        SET power_kw=CASE WHEN $2 THEN $3 ELSE power_kw END,
            lamp_count=CASE WHEN $4 THEN $5 ELSE lamp_count END,
            updated_at=NOW()
        WHERE id=$1`,
-      [pid, hasRatedPower, ratedPowerValue, hasLampCount, lampCountValue],
+      [pid, hasRatedPower || hasLampInputs, effectiveRatedPower, hasLampCount, lampCountValue],
     );
     return electrical.rows[0];
   });

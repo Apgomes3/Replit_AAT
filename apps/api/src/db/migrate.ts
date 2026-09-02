@@ -739,11 +739,12 @@ ALTER TABLE product_dimensions ADD COLUMN IF NOT EXISTS sand_media_per_filter_kg
 CREATE TABLE IF NOT EXISTS product_electrical (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
-  rated_power_kw NUMERIC, voltage_v NUMERIC, phases INTEGER, frequency_hz NUMERIC,
+  rated_power_kw NUMERIC, lamp_power_w NUMERIC, voltage_v NUMERIC, phases INTEGER, frequency_hz NUMERIC,
   full_load_current_a NUMERIC, rated_speed_rpm NUMERIC, motor_type VARCHAR(100),
   insulation_class VARCHAR(20), protection_class VARCHAR(20), efficiency_class VARCHAR(20),
   notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE product_electrical ADD COLUMN IF NOT EXISTS lamp_power_w NUMERIC;
 CREATE TABLE IF NOT EXISTS product_hydraulic (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,

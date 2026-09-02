@@ -73,6 +73,16 @@ function calcEstCostFromRates(shape: string, l: number, w: number, h: number, ma
   return { cost: +(sa_m2 * Number(matchingRate.cost_per_sqm_usd)).toFixed(0), rate: matchingRate };
 }
 
+function calculateLampRatedPowerKw(lampCount: unknown, lampPowerW: unknown): number | null {
+  if (lampCount === null || lampCount === undefined || String(lampCount).trim() === ''
+    || lampPowerW === null || lampPowerW === undefined || String(lampPowerW).trim() === '') return null;
+  const count = Number(lampCount);
+  const power = Number(lampPowerW);
+  return Number.isInteger(count) && count > 0 && Number.isFinite(power) && power > 0
+    ? +(count * power / 1000).toFixed(6)
+    : null;
+}
+
 const docTypeIcon = (type: string) => {
   switch (type) {
     case 'Technical Data Sheet': return <FileSearch className="w-4 h-4 text-blue-500" />;
@@ -307,7 +317,6 @@ export default function ProductMasterDetail() {
       standard_status: product.standard_status || 'Concept',
       application_type: product.application_type || '',
       primary_material_code: product.primary_material_code || '',
-      lamp_count: product.lamp_count != null ? String(product.lamp_count) : '',
       notes: product.notes || '',
       tank_family_id: (product as any).tank_family_id || '',
       cost: (product as any).cost != null ? String((product as any).cost) : '',
@@ -485,19 +494,32 @@ export default function ProductMasterDetail() {
   };
 
   const handleSaveElectrical = async () => {
-    const rawLampCount = electricalForm.lamp_count;
-    if (rawLampCount !== null && rawLampCount !== undefined && String(rawLampCount).trim() !== '') {
+    const rawLampCount = isUvProduct ? electricalForm.lamp_count : undefined;
+    if (isUvProduct && rawLampCount !== null && rawLampCount !== undefined && String(rawLampCount).trim() !== '') {
       const lampCount = Number(rawLampCount);
       if (!Number.isInteger(lampCount) || lampCount <= 0) {
         toast.error('Lamp Count must be a positive whole number');
         return;
       }
     }
+    const rawLampPower = isUvProduct ? electricalForm.lamp_power_w : undefined;
+    if (isUvProduct && rawLampPower !== null && rawLampPower !== undefined && String(rawLampPower).trim() !== '') {
+      const lampPower = Number(rawLampPower);
+      if (!Number.isFinite(lampPower) || lampPower <= 0) {
+        toast.error('Lamp Power must be greater than zero');
+        return;
+      }
+    }
     setElectricalSaving(true);
     try {
+      const electricalPayload = { ...electricalForm };
+      if (isUvProduct) {
+        delete electricalPayload.rated_power_kw;
+        electricalPayload.lamp_count = String(rawLampCount ?? '').trim() === '' ? null : Number(rawLampCount);
+        electricalPayload.lamp_power_w = String(rawLampPower ?? '').trim() === '' ? null : Number(rawLampPower);
+      }
       await api.put(`/product-masters/${id}/electrical`, {
-        ...electricalForm,
-        lamp_count: String(rawLampCount ?? '').trim() === '' ? null : Number(rawLampCount),
+        ...electricalPayload,
       });
       toast.success('Electrical data saved');
       setEditingElectrical(false);
@@ -673,6 +695,7 @@ export default function ProductMasterDetail() {
   const isPiping = product.product_category === 'Piping';
   const isTank = product.product_category === 'Tank';
   const isPneumatic = String(product.product_category || '').toLowerCase() === 'pneumatic';
+  const isUvProduct = product.product_family_code === 'PFM-UV';
   const bom = product.boms?.[0];
   const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
@@ -1519,14 +1542,20 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" />Electrical</span>
                   {!editingElectrical
-                   ? <button onClick={() => { setElectricalForm({ ...electricalData, rated_power_kw: electricalData?.rated_power_kw ?? product.power_kw ?? '', lamp_count: product.lamp_count ?? '' }); setEditingElectrical(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                   ? <button onClick={() => { setElectricalForm({ ...electricalData, ...(!isUvProduct ? { rated_power_kw: electricalData?.rated_power_kw ?? product.power_kw ?? '' } : {}), ...(isUvProduct ? { lamp_count: product.lamp_count ?? '', lamp_power_w: electricalData?.lamp_power_w ?? '' } : {}) }); setEditingElectrical(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
                   : <div className="flex gap-2"><button onClick={() => setEditingElectrical(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveElectrical} disabled={electricalSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{electricalSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
               {editingElectrical ? (
                 <div className="p-3 grid grid-cols-2 gap-2">
-                  {[['rated_power_kw','Rated Power (kW)'],['lamp_count','Lamp Count'],['voltage_v','Voltage (V)'],['frequency_hz','Frequency (Hz)'],['full_load_current_a','Full Load Current (A)'],['rated_speed_rpm','Rated Speed (RPM)']].map(([k,l]) => (
+                  {[...(isUvProduct ? [['lamp_count','Lamp Count'],['lamp_power_w','Lamp Power (W)']] : [['rated_power_kw','Rated Power (kW)']]), ['voltage_v','Voltage (V)'],['frequency_hz','Frequency (Hz)'],['full_load_current_a','Full Load Current (A)'],['rated_speed_rpm','Rated Speed (RPM)']].map(([k,l]) => (
                     <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" min={k === 'lamp_count' ? 1 : undefined} step={k === 'lamp_count' ? 1 : 'any'} value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
                   ))}
+                  {isUvProduct && <div className="col-span-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    <span className="font-medium">Total Rated Power (calculated)</span>
+                    <strong className="ml-2">{calculateLampRatedPowerKw(electricalForm.lamp_count, electricalForm.lamp_power_w) != null
+                      ? `${calculateLampRatedPowerKw(electricalForm.lamp_count, electricalForm.lamp_power_w)} kW`
+                      : 'Enter Lamp Count and Lamp Power'}</strong>
+                  </div>}
                   <div><label className="block text-xs text-slate-500 mb-0.5">Phases</label><select value={electricalForm.phases ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,phases:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600"><option value="">—</option><option value="1">1-Phase</option><option value="3">3-Phase</option></select></div>
                   {[['motor_type','Motor Type'],['insulation_class','Insulation Class'],['protection_class','Protection Class (IP)'],['efficiency_class','Efficiency Class']].map(([k,l]) => (
                     <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input value={electricalForm[k] ?? ''} onChange={e => setElectricalForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
@@ -1535,10 +1564,10 @@ export default function ProductMasterDetail() {
                 </div>
               ) : (
                 <div className="p-3">
-                  {[['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW'],['Lamp Count',product.lamp_count,''],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                  {[...(isUvProduct ? [['Total Rated Power',product.power_kw,'kW'],['Lamp Count',product.lamp_count,''],['Lamp Power',electricalData?.lamp_power_w,'W']] : [['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW']]), ['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
                     ? <p className="text-xs text-slate-300 text-center py-2">No electrical data recorded — click Edit to add</p>
                     : <div className="space-y-1">
-                        {[['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW'],['Lamp Count',product.lamp_count,''],['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                        {[...(isUvProduct ? [['Total Rated Power',product.power_kw,'kW'],['Lamp Count',product.lamp_count,''],['Lamp Power',electricalData?.lamp_power_w,'W']] : [['Rated Power',electricalData?.rated_power_kw ?? product.power_kw,'kW']]), ['Voltage',electricalData?.voltage_v,'V'],['Phases',electricalData?.phases ? (electricalData.phases === 1 || electricalData.phases === '1' ? '1-Phase' : '3-Phase') : null,''],['Frequency',electricalData?.frequency_hz,'Hz'],['Full Load Current',electricalData?.full_load_current_a,'A'],['Rated Speed',electricalData?.rated_speed_rpm,'RPM'],['Motor Type',electricalData?.motor_type,''],['Insulation Class',electricalData?.insulation_class,''],['Protection Class',electricalData?.protection_class,''],['Efficiency Class',electricalData?.efficiency_class,''],['Notes',electricalData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
                           <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
                         ))}
                       </div>}

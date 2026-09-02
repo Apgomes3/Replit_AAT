@@ -47,6 +47,7 @@ const assignedProduct = {
   standard_status: 'Active',
   product_family_id: 'family/north',
   product_family_name: 'Pumps / North',
+  product_family_code: 'PFM-UV',
   lamp_count: 2,
   power_kw: 0.9,
   boms: [],
@@ -93,6 +94,7 @@ describe('ProductMasterDetail family breadcrumb', () => {
     mocks.put.mockResolvedValue({ data: {} });
     mocks.get.mockImplementation(async (url: string) => {
       if (url === `/product-masters/${product.id}`) return { data: product };
+      if (url === `/product-masters/${product.id}/electrical`) return { data: { lamp_power_w: 450 } };
       return { data: { items: [] } };
     });
   });
@@ -133,7 +135,10 @@ describe('ProductMasterDetail family breadcrumb', () => {
     const electricalCard = (await screen.findByText('Electrical')).closest('.bg-white') as HTMLElement;
     await user.click(within(electricalCard).getByRole('button', { name: 'Edit' }));
     const lampCountInput = within(electricalCard).getByText('Lamp Count').nextElementSibling as HTMLInputElement;
+    const lampPowerInput = within(electricalCard).getByText('Lamp Power (W)').nextElementSibling as HTMLInputElement;
     expect(lampCountInput).toHaveValue(2);
+    expect(lampPowerInput).toHaveValue(450);
+    expect(within(electricalCard).getByText(/0.9 kW/)).toBeInTheDocument();
 
     await user.clear(lampCountInput);
     await user.type(lampCountInput, '4');
@@ -141,7 +146,8 @@ describe('ProductMasterDetail family breadcrumb', () => {
 
     expect(mocks.put).toHaveBeenCalledWith(
       `/product-masters/${assignedProduct.id}/electrical`,
-      expect.objectContaining({ lamp_count: 4, rated_power_kw: 0.9 }),
+      expect.objectContaining({ lamp_count: 4, lamp_power_w: 450 }),
     );
+    expect(mocks.put.mock.calls[0][1]).not.toHaveProperty('rated_power_kw');
   });
 });
