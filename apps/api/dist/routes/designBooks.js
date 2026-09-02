@@ -54,6 +54,7 @@ const speciesAllocations_1 = require("../lib/speciesAllocations");
 const pumpSelections_1 = require("../lib/pumpSelections");
 const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
 const lssSystems_1 = require("../lib/lssSystems");
+const flowRoute_1 = require("../lib/flowRoute");
 const systemLifecycle_1 = require("../lib/systemLifecycle");
 const uvCalculations_1 = require("../lib/uvCalculations");
 const router = (0, express_1.Router)();
@@ -3075,7 +3076,7 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
     }
 });
 // ─── Versions ────────────────────────────────────────────────────────────────
-const VERSION_SNAPSHOT_SCHEMA = 8;
+const VERSION_SNAPSHOT_SCHEMA = 9;
 const VERSION_REFERENCE_FIELDS = {
     project: ['id', 'project_code', 'project_name'],
     exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -3092,10 +3093,10 @@ const VERSION_REFERENCE_FIELDS = {
         'superseded_by_system_id', 'supersedes_system_id',
         'replacement_system_code', 'replacement_system_name',
         'predecessor_system_code', 'predecessor_system_name', 'lifecycle_actor_name',
-        'calculation_version', 'calculation_inputs', 'loop1_name', 'loop1_flow_source', 'loop1_filtration',
+        'calculation_version', 'calculation_inputs', 'loop1_name', 'loop1_flow_source', 'loop1_filtration', 'loop1_flow_mode', 'loop1_match_loop_number',
         'loop1_flow_pct', 'loop1_bio_degas_pct', 'loop1_bio_degas_m3h', 'loop1_link_bio_degas',
-        'loop2_name', 'loop2_flow_source', 'loop2_filtration', 'loop2_flow_pct', 'loop2_bio_degas_pct',
-        'loop2_bio_degas_m3h', 'loop2_link_bio_degas', 'loop3_name', 'loop3_flow_source', 'loop3_filtration',
+        'loop2_name', 'loop2_flow_source', 'loop2_filtration', 'loop2_flow_mode', 'loop2_match_loop_number', 'loop2_flow_pct', 'loop2_bio_degas_pct',
+        'loop2_bio_degas_m3h', 'loop2_link_bio_degas', 'loop3_name', 'loop3_flow_source', 'loop3_filtration', 'loop3_flow_mode', 'loop3_match_loop_number',
         'loop3_flow_pct', 'loop3_bio_degas_pct', 'loop3_bio_degas_m3h', 'loop3_link_bio_degas',
         'side_streams'],
     system_links: ['id', 'system_id', 'exhibit_id', 'link_type', 'flow_allocation_m3h', 'notes',
@@ -3817,13 +3818,10 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
         WHERE s.system_id=$1 AND s.preset='UV'
         ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`, [systemId, system.water_type]);
     // Build UVStreamInput objects
+    const resolvedLoopFlows = (0, flowRoute_1.resolveLoopFlows)(system, designFlowM3h);
     const streamInputs = streamsResult.rows.map(row => {
-        const loopPct = row.parent_loop_number != null
-            ? Number(system[`loop${row.parent_loop_number}_flow_pct`])
-            : null;
-        const loopFlowM3h = designFlowM3h != null && Number.isFinite(loopPct)
-            ? designFlowM3h * loopPct / 100
-            : null;
+        const loopFlowM3h = row.parent_loop_number != null
+            ? resolvedLoopFlows[Number(row.parent_loop_number) - 1]?.flow_m3h ?? null : null;
         const streamPct = row.flow_pct != null ? Number(row.flow_pct) : null;
         const streamFlowM3h = loopFlowM3h != null && streamPct != null
             ? loopFlowM3h * streamPct / 100

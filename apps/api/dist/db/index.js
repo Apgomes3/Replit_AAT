@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.query = void 0;
+exports.withTransaction = withTransaction;
 const pg_1 = require("pg");
 const pool = new pg_1.Pool({
     connectionString: process.env.DATABASE_URL,
@@ -8,4 +9,25 @@ const pool = new pg_1.Pool({
 });
 const query = (text, params) => pool.query(text, params);
 exports.query = query;
+async function withTransaction(work) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const result = await work(client);
+        await client.query('COMMIT');
+        return result;
+    }
+    catch (error) {
+        try {
+            await client.query('ROLLBACK');
+        }
+        catch {
+            // Preserve the original failure; the connection is released below.
+        }
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+}
 exports.default = pool;

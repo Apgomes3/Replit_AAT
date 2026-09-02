@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -6,5 +6,24 @@ const pool = new Pool({
 });
 
 export const query = (text: string, params?: any[]) => pool.query(text, params);
+
+export async function withTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Preserve the original failure; the connection is released below.
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 export default pool;

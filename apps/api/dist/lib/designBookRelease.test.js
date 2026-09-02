@@ -289,6 +289,46 @@ function readyContext() {
         (0, vitest_1.expect)(checklist.find(check => check.key === 'flow_route_allocations')?.message).toMatch(/0%/);
         (0, vitest_1.expect)(checklist.find(check => check.key === 'bio_degas_allocations')?.message).toMatch(/intentional/);
     });
+    (0, vitest_1.it)('does not warn that a valid matched circulation loop lacks an allocation percentage', () => {
+        const context = readyContext();
+        context.systems[0] = {
+            ...context.systems[0],
+            loop2_flow_source: 'Break Tank',
+            loop2_filtration: 'Pressurized Bag Filter',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 1,
+            loop2_flow_pct: null,
+        };
+        const checklist = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context);
+        (0, vitest_1.expect)(checklist.find(check => check.key === 'flow_route')?.status).toBe('pass');
+        (0, vitest_1.expect)(checklist.find(check => check.key === 'flow_route_allocations')?.status).toBe('pass');
+    });
+    (0, vitest_1.it)('blocks release when a matched circulation target is missing', () => {
+        const context = readyContext();
+        context.systems[0] = {
+            ...context.systems[0],
+            loop2_flow_source: 'Plenum Tank',
+            loop2_filtration: 'Pressurized Bag Filter',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 3,
+        };
+        const flowRoute = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(check => check.key === 'flow_route');
+        (0, vitest_1.expect)(flowRoute).toMatchObject({ status: 'blocked', severity: 'blocker' });
+    });
+    (0, vitest_1.it)('blocks release when persisted matched flow uses a non-circulation source', () => {
+        const context = readyContext();
+        context.systems[0] = {
+            ...context.systems[0],
+            loop2_flow_source: 'Exhibit return',
+            loop2_filtration: 'Pressurized Bag Filter',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 1,
+        };
+        const flowRoute = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(check => check.key === 'flow_route');
+        (0, vitest_1.expect)(flowRoute).toMatchObject({ status: 'blocked', severity: 'blocker' });
+    });
     (0, vitest_1.it)('blocks release until every Biological Media case has a current approved run', () => {
         const context = readyContext();
         context.system_links = [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }];

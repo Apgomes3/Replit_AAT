@@ -1,5 +1,5 @@
 import { NextFunction, Router, Response } from 'express';
-import { query } from '../db';
+import { query, withTransaction } from '../db';
 import { authenticate, AuthRequest, requireImportManage } from '../middleware/auth';
 import multer from 'multer';
 import csv from 'csv-parser';
@@ -178,6 +178,24 @@ function csvRowValidationResponse(
   });
 }
 
+function csvImportFailureResponse(
+  res: Response,
+  destination: string,
+  error: any,
+  total: number,
+  results: { imported: number; skipped: number; errors: string[] },
+) {
+  const reason = error?.message || 'database write failed';
+  const message = `${destination} CSV import failed; no rows were imported. Please retry the upload. ${reason}`;
+  return res.status(500).json({
+    error: { code: 'IMPORT_FAILED', message, details: [reason] },
+    imported: 0,
+    skipped: results.skipped,
+    errors: [...results.errors, message],
+    total,
+  });
+}
+
 async function validateProjectReferences(
   rows: Record<string, unknown>[],
   destination: string,
@@ -296,9 +314,12 @@ router.use(authenticate, requireImportManage('pim'));
 router.post('/products', uploadCSV('Product'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
+  let writePhaseStarted = false;
+  let totalRows = 0;
 
   try {
     const { rows, headers } = await parseCSVFileWithHeaders(req.file.path, true);
+    totalRows = rows.length;
     const headerErrors = requiredCSVHeaderErrors(headers, ['product_code', 'product_name'], 'product');
     if (headerErrors.length > 0) {
       return res.status(400).json({
@@ -321,26 +342,28 @@ router.post('/products', uploadCSV('Product'), async (req: AuthRequest, res: Res
       return csvRowValidationResponse(res, 'Product', rowErrors, rows.length);
     }
 
-    for (const row of normalizedRows) {
-      const { product_code, product_name, product_family_code, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status } = row;
-      try {
+    writePhaseStarted = true;
+    await withTransaction(async client => {
+      for (const row of normalizedRows) {
+        const { product_code, product_name, product_family_code, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status } = row;
         let family_id = null;
         if (product_family_code) {
-          const fam = await query('SELECT id FROM product_families WHERE product_family_code=$1', [product_family_code]);
+          const fam = await client.query('SELECT id FROM product_families WHERE product_family_code=$1', [product_family_code]);
           if (fam.rows[0]) family_id = fam.rows[0].id;
         }
-        await query(
+        await client.query(
           'INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, power_kw, primary_material_code, standard_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (product_code) DO NOTHING',
           [product_code, family_id, product_name, product_category, application_type, design_flow_m3h || null, power_kw || null, primary_material_code, standard_status || 'Concept']
         );
         results.imported++;
-      } catch (err: any) {
-        results.errors.push(`${product_code}: ${err.message}`);
       }
-    }
+    });
 
     return res.json({ ...results, total: rows.length });
   } catch (err: any) {
+    if (writePhaseStarted) {
+      return csvImportFailureResponse(res, 'Product', err, totalRows, results);
+    }
     const message = `Unable to parse Product CSV: ${err?.message || 'invalid CSV data'}`;
     return res.status(400).json({
       error: { code: 'INVALID_CSV', message },
@@ -358,6 +381,8 @@ router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Res
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
 
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
+  let writePhaseStarted = false;
+  let totalRows = 0;
   try {
     const selected = parseSelectedComponentFields(req.body?.fields);
     if (selected.error) {
@@ -371,6 +396,7 @@ router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Res
     }
 
     const { rows, headers } = await parseCSVFileWithHeaders(req.file.path);
+    totalRows = rows.length;
     const headerErrors = csvHeaderError(headers, selected.fields!);
     if (headerErrors.length > 0) {
       return res.status(400).json({
@@ -384,66 +410,67 @@ router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Res
 
     const selectedFields = new Set(selected.fields);
     const fileCodes = new Set<string>();
-    for (const [index, row] of rows.entries()) {
-      const rowNumber = index + 2;
-      const componentCode = String(row.component_code ?? '').trim().toUpperCase();
-      const componentName = String(row.component_name ?? '').trim();
-      if (!componentCode || !componentName) {
-        results.skipped++;
-        results.errors.push(`Row ${rowNumber}: component_code and component_name are required`);
-        continue;
-      }
-      if (fileCodes.has(componentCode)) {
-        results.skipped++;
-        results.errors.push(`Row ${rowNumber}: component code ${componentCode} is duplicated in this file; row skipped`);
-        continue;
-      }
-      fileCodes.add(componentCode);
-
-      const existing = await query('SELECT id FROM components WHERE UPPER(component_code)=UPPER($1) LIMIT 1', [componentCode]);
-      if (existing.rows[0]) {
-        results.skipped++;
-        results.errors.push(`Row ${rowNumber}: component code ${componentCode} already exists; row skipped`);
-        continue;
-      }
-
-      const weight = parseNullableNumber(selectedFields.has('weight_kg') ? row.weight_kg : undefined, 'weight_kg', rowNumber);
-      const cost = parseNullableNumber(selectedFields.has('cost') ? row.cost : undefined, 'cost', rowNumber);
-      const sellPrice = parseNullableNumber(selectedFields.has('sell_price') ? row.sell_price : undefined, 'sell_price', rowNumber);
-      const numericError = weight.error || cost.error || sellPrice.error;
-      if (numericError) {
-        results.skipped++;
-        results.errors.push(numericError);
-        continue;
-      }
-
-      const primaryMaterialCode = selectedFields.has('primary_material_code')
-        ? String(row.primary_material_code ?? '').trim() || null
-        : null;
-      if (primaryMaterialCode) {
-        const material = await query('SELECT material_code FROM materials WHERE material_code=$1', [primaryMaterialCode]);
-        if (!material.rows[0]) {
+    writePhaseStarted = true;
+    await withTransaction(async client => {
+      for (const [index, row] of rows.entries()) {
+        const rowNumber = index + 2;
+        const componentCode = String(row.component_code ?? '').trim().toUpperCase();
+        const componentName = String(row.component_name ?? '').trim();
+        if (!componentCode || !componentName) {
           results.skipped++;
-          results.errors.push(`Row ${rowNumber}: primary_material_code "${primaryMaterialCode}" was not found in materials`);
+          results.errors.push(`Row ${rowNumber}: component_code and component_name are required`);
           continue;
         }
-      }
+        if (fileCodes.has(componentCode)) {
+          results.skipped++;
+          results.errors.push(`Row ${rowNumber}: component code ${componentCode} is duplicated in this file; row skipped`);
+          continue;
+        }
+        fileCodes.add(componentCode);
 
-      const values = {
-        componentType: selectedFields.has('component_type') ? String(row.component_type ?? '').trim() || 'Vessel' : 'Vessel',
-        componentCategory: selectedFields.has('component_category') ? String(row.component_category ?? '').trim() || 'Mechanical' : 'Mechanical',
-        description: selectedFields.has('description') ? String(row.description ?? '').trim() || null : null,
-        standardSize: selectedFields.has('standard_size') ? String(row.standard_size ?? '').trim() || null : null,
-        unit: selectedFields.has('unit') ? String(row.unit ?? '').trim() || 'EA' : 'EA',
-        status: selectedFields.has('status') ? String(row.status ?? '').trim() || 'Active' : 'Active',
-        notes: selectedFields.has('notes') ? String(row.notes ?? '').trim() || null : null,
-        synonyms: selectedFields.has('synonyms') ? parseSynonyms(row.synonyms) : [],
-        manufacturer: selectedFields.has('manufacturer') ? String(row.manufacturer ?? '').trim() || null : null,
-        model: selectedFields.has('model') ? String(row.model ?? '').trim() || null : null,
-      };
+        const existing = await client.query('SELECT id FROM components WHERE UPPER(component_code)=UPPER($1) LIMIT 1', [componentCode]);
+        if (existing.rows[0]) {
+          results.skipped++;
+          results.errors.push(`Row ${rowNumber}: component code ${componentCode} already exists; row skipped`);
+          continue;
+        }
 
-      try {
-        await query(
+        const weight = parseNullableNumber(selectedFields.has('weight_kg') ? row.weight_kg : undefined, 'weight_kg', rowNumber);
+        const cost = parseNullableNumber(selectedFields.has('cost') ? row.cost : undefined, 'cost', rowNumber);
+        const sellPrice = parseNullableNumber(selectedFields.has('sell_price') ? row.sell_price : undefined, 'sell_price', rowNumber);
+        const numericError = weight.error || cost.error || sellPrice.error;
+        if (numericError) {
+          results.skipped++;
+          results.errors.push(numericError);
+          continue;
+        }
+
+        const primaryMaterialCode = selectedFields.has('primary_material_code')
+          ? String(row.primary_material_code ?? '').trim() || null
+          : null;
+        if (primaryMaterialCode) {
+          const material = await client.query('SELECT material_code FROM materials WHERE material_code=$1', [primaryMaterialCode]);
+          if (!material.rows[0]) {
+            results.skipped++;
+            results.errors.push(`Row ${rowNumber}: primary_material_code "${primaryMaterialCode}" was not found in materials`);
+            continue;
+          }
+        }
+
+        const values = {
+          componentType: selectedFields.has('component_type') ? String(row.component_type ?? '').trim() || 'Vessel' : 'Vessel',
+          componentCategory: selectedFields.has('component_category') ? String(row.component_category ?? '').trim() || 'Mechanical' : 'Mechanical',
+          description: selectedFields.has('description') ? String(row.description ?? '').trim() || null : null,
+          standardSize: selectedFields.has('standard_size') ? String(row.standard_size ?? '').trim() || null : null,
+          unit: selectedFields.has('unit') ? String(row.unit ?? '').trim() || 'EA' : 'EA',
+          status: selectedFields.has('status') ? String(row.status ?? '').trim() || 'Active' : 'Active',
+          notes: selectedFields.has('notes') ? String(row.notes ?? '').trim() || null : null,
+          synonyms: selectedFields.has('synonyms') ? parseSynonyms(row.synonyms) : [],
+          manufacturer: selectedFields.has('manufacturer') ? String(row.manufacturer ?? '').trim() || null : null,
+          model: selectedFields.has('model') ? String(row.model ?? '').trim() || null : null,
+        };
+
+        await client.query(
           `INSERT INTO components
            (component_code, component_name, component_type, component_category, description,
             primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms,
@@ -470,18 +497,14 @@ router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Res
           ],
         );
         results.imported++;
-      } catch (err: any) {
-        results.skipped++;
-        if (err?.code === '23505') {
-          results.errors.push(`Row ${rowNumber}: component code ${componentCode} already exists; row skipped`);
-        } else {
-          results.errors.push(`Row ${rowNumber} (${componentCode}): ${err?.message || 'component could not be imported'}`);
-        }
       }
-    }
+    });
 
     return res.json({ ...results, total: rows.length });
   } catch (err: any) {
+    if (writePhaseStarted) {
+      return csvImportFailureResponse(res, 'Component', err, totalRows, results);
+    }
     console.error('[POST /import/components] error:', err?.message || err);
     return res.status(400).json({
       error: { code: 'INVALID_CSV', message: err?.message || 'Unable to parse component CSV' },
@@ -498,9 +521,12 @@ router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Res
 router.post('/equipment', uploadCSV('Equipment'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
+  let writePhaseStarted = false;
+  let totalRows = 0;
 
   try {
     const { rows, headers } = await parseCSVFileWithHeaders(req.file.path, true);
+    totalRows = rows.length;
     const headerErrors = requiredCSVHeaderErrors(headers, ['equipment_code', 'project_code', 'equipment_name'], 'equipment');
     if (headerErrors.length > 0) {
       return res.status(400).json({
@@ -528,24 +554,26 @@ router.post('/equipment', uploadCSV('Equipment'), async (req: AuthRequest, res: 
       return csvRowValidationResponse(res, 'Equipment', validationErrors, rows.length);
     }
 
-    for (const row of normalizedRows) {
-      const { equipment_code, project_code, system_code, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code } = row;
-      try {
-        const proj = await query('SELECT id FROM projects WHERE project_code=$1', [project_code]);
-        if (!proj.rows[0]) { results.errors.push(`${equipment_code}: project ${project_code} not found`); continue; }
-        const sys = system_code ? await query('SELECT id FROM systems WHERE system_code=$1 AND project_id=$2', [system_code, proj.rows[0].id]) : { rows: [] };
-        await query(
+    writePhaseStarted = true;
+    await withTransaction(async client => {
+      for (const row of normalizedRows) {
+        const { equipment_code, project_code, system_code, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code } = row;
+        const proj = await client.query('SELECT id FROM projects WHERE project_code=$1', [project_code]);
+        if (!proj.rows[0]) throw new Error(`Equipment ${equipment_code}: project ${project_code} was not found during import`);
+        const sys = system_code ? await client.query('SELECT id FROM systems WHERE system_code=$1 AND project_id=$2', [system_code, proj.rows[0].id]) : { rows: [] };
+        await client.query(
           'INSERT INTO equipment_instances (equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, power_kw, material_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (project_id, equipment_code) DO NOTHING',
           [equipment_code, proj.rows[0].id, sys.rows[0]?.id || null, equipment_type, equipment_name, design_flow_m3h || null, power_kw || null, material_code]
         );
         results.imported++;
-      } catch (err: any) {
-        results.errors.push(`${equipment_code}: ${err.message}`);
       }
-    }
+    });
 
     return res.json({ ...results, total: rows.length });
   } catch (err: any) {
+    if (writePhaseStarted) {
+      return csvImportFailureResponse(res, 'Equipment', err, totalRows, results);
+    }
     const message = `Unable to parse Equipment CSV: ${err?.message || 'invalid CSV data'}`;
     return res.status(400).json({
       error: { code: 'INVALID_CSV', message },
@@ -562,9 +590,12 @@ router.post('/equipment', uploadCSV('Equipment'), async (req: AuthRequest, res: 
 router.post('/documents', uploadCSV('Document'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
+  let writePhaseStarted = false;
+  let totalRows = 0;
 
   try {
     const { rows, headers } = await parseCSVFileWithHeaders(req.file.path, true);
+    totalRows = rows.length;
     const headerErrors = requiredCSVHeaderErrors(headers, ['document_code', 'document_title'], 'document');
     if (headerErrors.length > 0) {
       return res.status(400).json({
@@ -591,22 +622,24 @@ router.post('/documents', uploadCSV('Document'), async (req: AuthRequest, res: R
       return csvRowValidationResponse(res, 'Document', referenceErrors, rows.length);
     }
 
-    for (const row of normalizedRows) {
-      const { document_code, document_title, document_type, discipline, project_code } = row;
-      try {
-        const proj = project_code ? await query('SELECT id FROM projects WHERE project_code=$1', [project_code]) : { rows: [] };
-        await query(
+    writePhaseStarted = true;
+    await withTransaction(async client => {
+      for (const row of normalizedRows) {
+        const { document_code, document_title, document_type, discipline, project_code } = row;
+        const proj = project_code ? await client.query('SELECT id FROM projects WHERE project_code=$1', [project_code]) : { rows: [] };
+        await client.query(
           'INSERT INTO documents (document_code, document_title, document_type, discipline, project_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (document_code) DO NOTHING',
           [document_code, document_title, document_type, discipline, proj.rows[0]?.id || null, req.user!.id]
         );
         results.imported++;
-      } catch (err: any) {
-        results.errors.push(`${document_code}: ${err.message}`);
       }
-    }
+    });
 
     return res.json({ ...results, total: rows.length });
   } catch (err: any) {
+    if (writePhaseStarted) {
+      return csvImportFailureResponse(res, 'Document', err, totalRows, results);
+    }
     const message = `Unable to parse Document CSV: ${err?.message || 'invalid CSV data'}`;
     return res.status(400).json({
       error: { code: 'INVALID_CSV', message },

@@ -181,6 +181,11 @@ const basePayload = {
         state.currentSystem.loop2_flow_pct = null;
         state.currentSystem.loop2_bio_degas_pct = null;
         state.currentSystem.loop1_filtration = 'Sand Filter';
+        state.currentSystem.loop1_flow_source = 'Bottom Drain';
+        state.currentSystem.loop2_flow_source = 'Surface Skim';
+        delete state.currentSystem.loop1_flow_mode;
+        delete state.currentSystem.loop2_flow_mode;
+        delete state.currentSystem.loop3_flow_mode;
         state.currentSystem.system_config = 'bespoke';
         state.currentSystem.compact_unit_id = null;
         state.fractionatorCatalog = [];
@@ -202,6 +207,71 @@ const basePayload = {
         (0, vitest_1.expect)(response.body.error.code).toBe('FLOW_ALLOCATION_EXCEEDS_100');
         (0, vitest_1.expect)(response.body.error.message).toContain('110.0%');
         (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(false);
+    });
+    (0, vitest_1.it)('keeps legacy explicit Break Tank allocations allocated and rejects matching another source', async () => {
+        const allocated = await request(app, {
+            ...basePayload,
+            loop1_flow_pct: 40,
+            loop2_flow_source: 'Break Tank',
+            loop2_flow_mode: 'allocated',
+            loop2_flow_pct: 60,
+        });
+        (0, vitest_1.expect)(allocated.status, JSON.stringify(allocated.body)).toBe(200);
+        const invalid = await request(app, {
+            ...basePayload,
+            loop2_flow_source: 'Surface Skim',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 1,
+        });
+        (0, vitest_1.expect)(invalid.status).toBe(400);
+        (0, vitest_1.expect)(invalid.body.error.message).toContain('Break Tank or Plenum Tank');
+    });
+    (0, vitest_1.it)('excludes a matched Break Tank loop from the shared allocation total', async () => {
+        const response = await request(app, {
+            ...basePayload,
+            loop1_flow_pct: 100,
+            loop2_flow_source: 'Break Tank',
+            loop2_filtration: 'Pressurized Bag Filter',
+            loop2_flow_pct: 100,
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 1,
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        const modeUpdate = state.calls.find(call => call.sql.includes('loop1_flow_mode=$2'));
+        (0, vitest_1.expect)(modeUpdate?.params.slice(1)).toEqual([
+            'allocated', null, 'matched', 1, 'allocated', null,
+        ]);
+    });
+    (0, vitest_1.it)('rejects self matches and circular match chains', async () => {
+        const selfMatch = await request(app, {
+            ...basePayload,
+            loop2_flow_source: 'Break Tank',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 2,
+        });
+        (0, vitest_1.expect)(selfMatch.status).toBe(400);
+        (0, vitest_1.expect)(selfMatch.body.error.message).toContain('different configured loop');
+        const cycle = await request(app, {
+            ...basePayload,
+            loop1_flow_source: 'Break Tank',
+            loop1_flow_mode: 'matched',
+            loop1_match_loop_number: 2,
+            loop2_flow_source: 'Plenum Tank',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 1,
+        });
+        (0, vitest_1.expect)(cycle.status).toBe(400);
+        (0, vitest_1.expect)(cycle.body.error.message).toContain('circular');
+    });
+    (0, vitest_1.it)('requires matched mode to use a circulation source', async () => {
+        const response = await request(app, {
+            ...basePayload,
+            loop2_flow_source: 'Surface Skim',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 1,
+        });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.message).toContain('Break Tank or Plenum Tank');
     });
     (0, vitest_1.it)('persists nullable loop and branch percentages independently', async () => {
         const response = await request(app, {

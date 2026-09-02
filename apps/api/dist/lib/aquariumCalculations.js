@@ -1,11 +1,4 @@
 "use strict";
-/**
- * Approved aquarium engineering calculation definitions.
- *
- * Keep the values returned by this module deliberately explicit.  The UI can
- * render the inputs, formula and rounding rules without having to recreate
- * any engineering logic of its own.
- */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculateAATRecommendedFlow = exports.roundEngineering = exports.AAT_TURNOVER_DECIMALS = exports.AAT_TIME_MINUTES_DECIMALS = exports.AAT_TARGET_TIME_DECIMALS = exports.SAND_FILTER_MATCH_TOLERANCE_PCT = exports.FOAM_FRACTIONATOR_MATCH_TOLERANCE_PCT = exports.FLOW_DECIMALS = exports.VOLUME_DECIMALS = exports.ALLOCATION_TOLERANCE_PCT = exports.FLOW_UNIT = exports.TURNOVER_UNIT = exports.AQUARIUM_CALCULATION_VERSION = void 0;
 exports.calculateAatRecommendedFlow = calculateAatRecommendedFlow;
@@ -17,6 +10,14 @@ exports.calculateTankOperatingVolume = calculateTankOperatingVolume;
 exports.calculateExhibitHydraulics = calculateExhibitHydraulics;
 exports.evaluateCompactUnit = evaluateCompactUnit;
 exports.calculateSystemEngineering = calculateSystemEngineering;
+/**
+ * Approved aquarium engineering calculation definitions.
+ *
+ * Keep the values returned by this module deliberately explicit.  The UI can
+ * render the inputs, formula and rounding rules without having to recreate
+ * any engineering logic of its own.
+ */
+const flowRoute_1 = require("./flowRoute");
 exports.AQUARIUM_CALCULATION_VERSION = 'aquarium-hydraulics-v1';
 exports.TURNOVER_UNIT = 'cycles_per_hour';
 exports.FLOW_UNIT = 'm3_per_hour';
@@ -677,14 +678,25 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
         };
     if (system?.system_config === 'compact')
         reasons.push(...unitResult.reasons);
+    // Resolve matched loops after reading the complete route. This deliberately
+    // uses loop flow, not its allocation percent, so a chain always follows the
+    // current authoritative source flow.
+    const resolvedLoopFlows = (0, flowRoute_1.resolveLoopFlows)(system, designFlow);
+    for (const resolved of resolvedLoopFlows) {
+        if (resolved.flow_mode === 'matched' && resolved.unavailable_reason)
+            reasons.push(resolved.unavailable_reason);
+    }
     const flowRoute = [1, 2, 3].map(loopNumber => {
         const allocationPct = numberOrNull(system?.[`loop${loopNumber}_flow_pct`]);
-        const parentFlow = designFlow != null && designFlow > 0 && allocationPct != null
-            ? (0, exports.roundEngineering)(designFlow * allocationPct / 100, exports.FLOW_DECIMALS)
-            : null;
+        const resolved = resolvedLoopFlows[loopNumber - 1];
+        const flowMode = resolved.flow_mode;
+        const matchLoopNumber = resolved.match_loop_number;
+        const parentFlow = resolved.flow_m3h;
         return {
             loop_number: loopNumber,
             name: String(system?.[`loop${loopNumber}_name`] || `Loop ${loopNumber}`),
+            flow_mode: flowMode,
+            match_loop_number: matchLoopNumber,
             allocation_pct: allocationPct,
             flow_m3h: parentFlow,
             side_streams: sideStreams
@@ -692,11 +704,12 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
                 .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0))
                 .map(stream => ({
                 ...stream,
-                flow_m3h: calculateSideStreamFlow(designFlow, allocationPct, stream.flow_pct),
+                flow_m3h: parentFlow != null && numberOrNull(stream.flow_pct) != null
+                    ? (0, exports.roundEngineering)(parentFlow * Number(stream.flow_pct) / 100, exports.FLOW_DECIMALS)
+                    : null,
                 flow_available: parentFlow != null,
                 flow_unavailable_reason: parentFlow == null
-                    ? 'Parent loop allocation is unavailable.'
-                    : null,
+                    ? (resolved.unavailable_reason || 'Parent loop allocation is unavailable.') : null,
             })),
             foam_fractionation: String(system?.[`loop${loopNumber}_filtration`] || '') === 'Foam Fractionation'
                 ? (() => {

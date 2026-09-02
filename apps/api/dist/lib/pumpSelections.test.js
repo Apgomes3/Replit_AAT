@@ -43,6 +43,19 @@ const pumpSelections_1 = require("./pumpSelections");
         }, []);
         (0, vitest_1.expect)(circuits[0].venturi_flow_m3h).toBeNull();
     });
+    (0, vitest_1.it)('keeps a matched Break Tank loop as a distinct circulation circuit without allocating flow twice', () => {
+        const circuits = (0, pumpSelections_1.pumpCircuits)({
+            design_flow_m3h: 100,
+            loop1_flow_source: 'Exhibit return',
+            loop1_flow_pct: 100,
+            loop2_flow_source: 'Break Tank',
+            loop2_flow_mode: 'matched',
+            loop2_match_loop_number: 1,
+        }, []);
+        (0, vitest_1.expect)(circuits).toEqual(vitest_1.expect.arrayContaining([
+            vitest_1.expect.objectContaining({ circuit_key: 'loop:2', flow_m3h: 100, flow_mode: 'matched' }),
+        ]));
+    });
 });
 (0, vitest_1.describe)('pump selection calculation', () => {
     (0, vitest_1.it)('calculates hydraulic, shaft, motor input and next standard motor', () => {

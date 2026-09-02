@@ -10,6 +10,7 @@ const thermalCalculations_1 = require("./thermalCalculations");
 const frictionLossCalculations_1 = require("./frictionLossCalculations");
 const lssSystems_1 = require("./lssSystems");
 const systemLifecycle_1 = require("./systemLifecycle");
+const flowRoute_1 = require("./flowRoute");
 const scopeMatches = (scopes, value) => scopes.some(scope => scope.toLowerCase().replace(/[\s_-]+/g, '') === value.toLowerCase().replace(/[\s_-]+/g, ''));
 function item(key, label, severity, ok, message, href, affected_ids) {
     return {
@@ -26,6 +27,8 @@ function flowRouteFields(system) {
     return [1, 2, 3].map(loop => ({
         source: system?.[`loop${loop}_flow_source`],
         filtration: system?.[`loop${loop}_filtration`],
+        flowMode: system?.[`loop${loop}_flow_mode`] === 'matched' ? 'matched' : 'allocated',
+        matchLoopNumber: system?.[`loop${loop}_match_loop_number`] ?? null,
         bioDegas: system?.[`loop${loop}_bio_degas_m3h`],
         flowPct: system?.[`loop${loop}_flow_pct`],
         bioDegasPct: system?.[`loop${loop}_bio_degas_pct`],
@@ -119,13 +122,17 @@ function buildDesignBookReleaseChecklist(context) {
         return !loops.some(loop => flowLoopIsConfigured(loop));
     });
     const systemsWithIncompleteFlowRoute = systems.filter(system => {
-        const loops = flowRouteFields(system).filter(loop => flowLoopIsConfigured(loop));
-        return loops.length > 0 && loops.some(loop => !loop.source || !loop.filtration);
+        const allLoops = flowRouteFields(system);
+        const loops = allLoops.filter(loop => flowLoopIsConfigured(loop));
+        const hasIncompleteRoute = loops.some(loop => !loop.source || !loop.filtration);
+        const hasMalformedMatch = (0, flowRoute_1.resolveLoopFlows)(system).some(loop => loop.flow_mode === 'matched' &&
+            ['invalid_source', 'invalid_target', 'circular_match'].includes(loop.unavailable_kind || ''));
+        return loops.length > 0 && (hasIncompleteRoute || hasMalformedMatch);
     });
     const configuredFlowLoops = (hasLssScope ? systems : []).flatMap(system => flowRouteFields(system)
         .map((loop, index) => ({ system, loop, label: flowLoopLabel(system, index + 1) }))
         .filter(({ loop }) => flowLoopIsConfigured(loop)));
-    const unreviewedFlowLoops = configuredFlowLoops.filter(({ loop }) => loop.flowPct == null);
+    const unreviewedFlowLoops = configuredFlowLoops.filter(({ loop }) => loop.flowMode === 'allocated' && loop.flowPct == null);
     const unreviewedBioDegasBranches = configuredFlowLoops.filter(({ loop }) => loop.linked && loop.bioDegasPct == null);
     const biologicalMediaCasesWithoutApprovedRun = biologicalMediaCases.filter(mediaCase => {
         const latestRun = biologicalMediaRuns

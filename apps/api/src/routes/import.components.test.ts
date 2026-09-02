@@ -13,12 +13,31 @@ const state = vi.hoisted(() => ({
   existingCodes: new Set<string>(),
   materialCodes: new Set<string>(),
   inserts: [] as any[][],
+  pendingInserts: [] as any[][],
+  failOnInsertCode: undefined as string | undefined,
+  transactionActive: false,
   moduleAccessByUser: {} as Record<string, string>,
 }));
 
 vi.mock('../db', () => {
   const query = vi.fn(async (text: string, params: any[] = []) => {
     const sql = text.replace(/\s+/g, ' ').trim().toLowerCase();
+    if (sql === 'begin') {
+      state.transactionActive = true;
+      state.pendingInserts.length = 0;
+      return { rows: [] };
+    }
+    if (sql === 'commit') {
+      state.inserts.push(...state.pendingInserts);
+      state.pendingInserts.length = 0;
+      state.transactionActive = false;
+      return { rows: [] };
+    }
+    if (sql === 'rollback') {
+      state.pendingInserts.length = 0;
+      state.transactionActive = false;
+      return { rows: [] };
+    }
     if (sql.startsWith('select rma.access_level')) {
       const accessLevel = state.moduleAccessByUser[String(params[0])];
       return { rows: accessLevel ? [{ access_level: accessLevel }] : [] };
@@ -32,13 +51,31 @@ vi.mock('../db', () => {
       return { rows: state.materialCodes.has(String(params[0])) ? [{ material_code: params[0] }] : [] };
     }
     if (sql.startsWith('insert into components')) {
-      state.inserts.push(params);
+      if (state.failOnInsertCode && String(params[0]) === state.failOnInsertCode) {
+        throw new Error(`simulated insert failure for ${state.failOnInsertCode}`);
+      }
+      if (state.transactionActive) {
+        state.pendingInserts.push(params);
+      } else {
+        state.inserts.push(params);
+      }
       state.existingCodes.add(String(params[0]));
       return { rows: [] };
     }
     return { rows: [] };
   });
-  return { query, default: { query } };
+  const withTransaction = vi.fn(async (work: (client: { query: typeof query }) => Promise<unknown>) => {
+    await query('BEGIN');
+    try {
+      const result = await work({ query });
+      await query('COMMIT');
+      return result;
+    } catch (error) {
+      await query('ROLLBACK');
+      throw error;
+    }
+  });
+  return { query, withTransaction, default: { query } };
 });
 
 function multipartBody(csvText: string, fields?: string[]) {
@@ -117,6 +154,9 @@ describe('component CSV import', () => {
     state.existingCodes.clear();
     state.materialCodes.clear();
     state.inserts.length = 0;
+    state.pendingInserts.length = 0;
+    state.failOnInsertCode = undefined;
+    state.transactionActive = false;
     state.moduleAccessByUser = {};
     unlinkSpy.mockClear();
   });
@@ -198,6 +238,27 @@ describe('component CSV import', () => {
       expect.stringContaining('CMP-NEW is duplicated in this file'),
     ]);
     expect(state.inserts).toHaveLength(1);
+  });
+
+  it('rolls back earlier component rows when a later insert fails', async () => {
+    state.failOnInsertCode = 'CMP-FAIL';
+    const response = await request(
+      app,
+      'component_code,component_name\nCMP-FIRST,First\nCMP-FAIL,Failed',
+      token,
+      ['component_code', 'component_name'],
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.body).toMatchObject({
+      imported: 0,
+      error: { code: 'IMPORT_FAILED' },
+    });
+    expect(response.body.error.message).toContain('Component CSV import failed; no rows were imported');
+    expect(response.body.error.message).toContain('simulated insert failure');
+    expect(state.inserts).toHaveLength(0);
+    expect(state.pendingInserts).toHaveLength(0);
+    expect(state.transactionActive).toBe(false);
   });
 
   it('rejects unknown and unselected headers before any database write', async () => {

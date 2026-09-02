@@ -1726,6 +1726,18 @@ ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_flow_pct       NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_bio_degas_pct  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_bio_degas_m3h  NUMERIC;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_link_bio_degas BOOLEAN DEFAULT false;
+-- A matched loop is a distinct circulation circuit which follows another
+-- loop's live flow; it does not consume the system's shared allocation.
+-- Existing Flow Route records predate this distinction and remain allocated.
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_flow_mode VARCHAR(20) NOT NULL DEFAULT 'allocated';
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop1_match_loop_number INTEGER;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_flow_mode VARCHAR(20) NOT NULL DEFAULT 'allocated';
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop2_match_loop_number INTEGER;
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_flow_mode VARCHAR(20) NOT NULL DEFAULT 'allocated';
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS loop3_match_loop_number INTEGER;
+UPDATE systems SET loop1_flow_mode='allocated' WHERE loop1_flow_mode IS NULL;
+UPDATE systems SET loop2_flow_mode='allocated' WHERE loop2_flow_mode IS NULL;
+UPDATE systems SET loop3_flow_mode='allocated' WHERE loop3_flow_mode IS NULL;
 
 CREATE TABLE IF NOT EXISTS system_flow_side_streams (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2525,7 +2537,10 @@ FOR EACH ROW EXECUTE FUNCTION mark_uv_calculations_stale();
 
 DROP TRIGGER IF EXISTS trg_uv_system_calculation_stale ON systems;
 CREATE TRIGGER trg_uv_system_calculation_stale
-AFTER UPDATE OF design_flow_m3h, water_type, calculation_inputs, loop1_flow_pct, loop2_flow_pct, loop3_flow_pct ON systems
+AFTER UPDATE OF design_flow_m3h, water_type, calculation_inputs,
+  loop1_flow_pct, loop2_flow_pct, loop3_flow_pct,
+  loop1_flow_mode, loop2_flow_mode, loop3_flow_mode,
+  loop1_match_loop_number, loop2_match_loop_number, loop3_match_loop_number ON systems
 FOR EACH ROW EXECUTE FUNCTION mark_uv_calculations_stale();
 
 DROP TRIGGER IF EXISTS trg_uv_system_link_calculation_stale ON system_exhibit_links;

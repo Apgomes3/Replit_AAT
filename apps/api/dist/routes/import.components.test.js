@@ -48,10 +48,34 @@ const state = vitest_1.vi.hoisted(() => ({
     existingCodes: new Set(),
     materialCodes: new Set(),
     inserts: [],
+    pendingInserts: [],
+    failOnInsertCode: undefined,
+    transactionActive: false,
+    moduleAccessByUser: {},
 }));
 vitest_1.vi.mock('../db', () => {
     const query = vitest_1.vi.fn(async (text, params = []) => {
         const sql = text.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (sql === 'begin') {
+            state.transactionActive = true;
+            state.pendingInserts.length = 0;
+            return { rows: [] };
+        }
+        if (sql === 'commit') {
+            state.inserts.push(...state.pendingInserts);
+            state.pendingInserts.length = 0;
+            state.transactionActive = false;
+            return { rows: [] };
+        }
+        if (sql === 'rollback') {
+            state.pendingInserts.length = 0;
+            state.transactionActive = false;
+            return { rows: [] };
+        }
+        if (sql.startsWith('select rma.access_level')) {
+            const accessLevel = state.moduleAccessByUser[String(params[0])];
+            return { rows: accessLevel ? [{ access_level: accessLevel }] : [] };
+        }
         if (sql.startsWith('select id from components where upper(component_code)=upper($1)')) {
             const requestedCode = String(params[0]).toUpperCase();
             const exists = [...state.existingCodes].some(code => code.toUpperCase() === requestedCode);
@@ -61,13 +85,33 @@ vitest_1.vi.mock('../db', () => {
             return { rows: state.materialCodes.has(String(params[0])) ? [{ material_code: params[0] }] : [] };
         }
         if (sql.startsWith('insert into components')) {
-            state.inserts.push(params);
+            if (state.failOnInsertCode && String(params[0]) === state.failOnInsertCode) {
+                throw new Error(`simulated insert failure for ${state.failOnInsertCode}`);
+            }
+            if (state.transactionActive) {
+                state.pendingInserts.push(params);
+            }
+            else {
+                state.inserts.push(params);
+            }
             state.existingCodes.add(String(params[0]));
             return { rows: [] };
         }
         return { rows: [] };
     });
-    return { query, default: { query } };
+    const withTransaction = vitest_1.vi.fn(async (work) => {
+        await query('BEGIN');
+        try {
+            const result = await work({ query });
+            await query('COMMIT');
+            return result;
+        }
+        catch (error) {
+            await query('ROLLBACK');
+            throw error;
+        }
+    });
+    return { query, withTransaction, default: { query } };
 });
 function multipartBody(csvText, fields) {
     const boundary = '----component-import-test-boundary';
@@ -136,6 +180,10 @@ function request(app, csvText, token, fields) {
         state.existingCodes.clear();
         state.materialCodes.clear();
         state.inserts.length = 0;
+        state.pendingInserts.length = 0;
+        state.failOnInsertCode = undefined;
+        state.transactionActive = false;
+        state.moduleAccessByUser = {};
         unlinkSpy.mockClear();
     });
     (0, vitest_1.afterAll)(() => {
@@ -193,6 +241,20 @@ function request(app, csvText, token, fields) {
         ]);
         (0, vitest_1.expect)(state.inserts).toHaveLength(1);
     });
+    (0, vitest_1.it)('rolls back earlier component rows when a later insert fails', async () => {
+        state.failOnInsertCode = 'CMP-FAIL';
+        const response = await request(app, 'component_code,component_name\nCMP-FIRST,First\nCMP-FAIL,Failed', token, ['component_code', 'component_name']);
+        (0, vitest_1.expect)(response.status).toBe(500);
+        (0, vitest_1.expect)(response.body).toMatchObject({
+            imported: 0,
+            error: { code: 'IMPORT_FAILED' },
+        });
+        (0, vitest_1.expect)(response.body.error.message).toContain('Component CSV import failed; no rows were imported');
+        (0, vitest_1.expect)(response.body.error.message).toContain('simulated insert failure');
+        (0, vitest_1.expect)(state.inserts).toHaveLength(0);
+        (0, vitest_1.expect)(state.pendingInserts).toHaveLength(0);
+        (0, vitest_1.expect)(state.transactionActive).toBe(false);
+    });
     (0, vitest_1.it)('rejects unknown and unselected headers before any database write', async () => {
         const unknown = await request(app, 'component_code,component_name,created_by\nCMP-1,One,other-user', token, ['component_code', 'component_name']);
         (0, vitest_1.expect)(unknown.status).toBe(400);
@@ -210,12 +272,13 @@ function request(app, csvText, token, fields) {
     });
     (0, vitest_1.it)('rejects authenticated non-admin users before accepting an upload', async () => {
         const viewerId = 'component-import-viewer';
+        state.moduleAccessByUser[viewerId] = 'view';
         const viewerToken = jsonwebtoken_1.default.sign({ id: viewerId, email: 'viewer@example.com', role: 'viewer' }, testSecret);
         const response = await request(app, 'component_code,component_name\nCMP-1,One', viewerToken, ['component_code', 'component_name']);
         (0, vitest_1.expect)(response.status).toBe(403);
         (0, vitest_1.expect)(response.body.error).toMatchObject({
-            code: 'FORBIDDEN',
-            message: 'Insufficient permissions',
+            code: 'MODULE_READ_ONLY',
+            message: 'Manage access is required for this module.',
         });
         (0, vitest_1.expect)(state.inserts).toHaveLength(0);
         (0, vitest_1.expect)(unlinkSpy).not.toHaveBeenCalled();
