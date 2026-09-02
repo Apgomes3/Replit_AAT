@@ -13,11 +13,16 @@ const state = vi.hoisted(() => ({
   existingCodes: new Set<string>(),
   materialCodes: new Set<string>(),
   inserts: [] as any[][],
+  moduleAccessByUser: {} as Record<string, string>,
 }));
 
 vi.mock('../db', () => {
   const query = vi.fn(async (text: string, params: any[] = []) => {
     const sql = text.replace(/\s+/g, ' ').trim().toLowerCase();
+    if (sql.startsWith('select rma.access_level')) {
+      const accessLevel = state.moduleAccessByUser[String(params[0])];
+      return { rows: accessLevel ? [{ access_level: accessLevel }] : [] };
+    }
     if (sql.startsWith('select id from components where upper(component_code)=upper($1)')) {
       const requestedCode = String(params[0]).toUpperCase();
       const exists = [...state.existingCodes].some(code => code.toUpperCase() === requestedCode);
@@ -112,6 +117,7 @@ describe('component CSV import', () => {
     state.existingCodes.clear();
     state.materialCodes.clear();
     state.inserts.length = 0;
+    state.moduleAccessByUser = {};
     unlinkSpy.mockClear();
   });
 
@@ -224,6 +230,7 @@ describe('component CSV import', () => {
 
   it('rejects authenticated non-admin users before accepting an upload', async () => {
     const viewerId = 'component-import-viewer';
+    state.moduleAccessByUser[viewerId] = 'view';
     const viewerToken = jwt.sign({ id: viewerId, email: 'viewer@example.com', role: 'viewer' }, testSecret);
     const response = await request(
       app,
@@ -234,8 +241,8 @@ describe('component CSV import', () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatchObject({
-      code: 'FORBIDDEN',
-      message: 'Insufficient permissions',
+      code: 'MODULE_READ_ONLY',
+      message: 'Manage access is required for this module.',
     });
     expect(state.inserts).toHaveLength(0);
     expect(unlinkSpy).not.toHaveBeenCalled();

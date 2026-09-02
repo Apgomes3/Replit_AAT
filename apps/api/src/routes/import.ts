@@ -1,6 +1,6 @@
 import { NextFunction, Router, Response } from 'express';
 import { query } from '../db';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth';
+import { authenticate, AuthRequest, requireImportManage } from '../middleware/auth';
 import multer from 'multer';
 import csv from 'csv-parser';
 import fs from 'fs';
@@ -164,7 +164,14 @@ function csvHeaderError(headers: string[], selectedFields: string[]): string[] {
   return errors;
 }
 
-router.post('/products', authenticate, upload.single('file'), async (req: AuthRequest, res: Response) => {
+/**
+ * CSV imports are high-impact PIM mutations. Keep this guard on the router so
+ * every current and future import destination requires the same admin/manage
+ * permission before multer accepts an upload or a handler can write data.
+ */
+router.use(authenticate, requireImportManage('pim'));
+
+router.post('/products', upload.single('file'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
   const rows = await parseCSVFile(req.file.path);
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
@@ -192,7 +199,7 @@ router.post('/products', authenticate, upload.single('file'), async (req: AuthRe
   res.json({ ...results, total: rows.length });
 });
 
-router.post('/components', authenticate, requireRole('admin'), uploadComponentCSV, async (req: AuthRequest, res: Response) => {
+router.post('/components', uploadComponentCSV, async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
 
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
@@ -333,7 +340,7 @@ router.post('/components', authenticate, requireRole('admin'), uploadComponentCS
   }
 });
 
-router.post('/equipment', authenticate, upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/equipment', upload.single('file'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
   const rows = await parseCSVFile(req.file.path);
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
@@ -359,7 +366,7 @@ router.post('/equipment', authenticate, upload.single('file'), async (req: AuthR
   res.json({ ...results, total: rows.length });
 });
 
-router.post('/documents', authenticate, upload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/documents', upload.single('file'), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'CSV file required' } });
   const rows = await parseCSVFile(req.file.path);
   const results = { imported: 0, skipped: 0, errors: [] as string[] };

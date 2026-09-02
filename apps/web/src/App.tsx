@@ -75,6 +75,13 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ImportGuard({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore(state => state.user);
+  const canImport = user?.role === 'admin' || user?.moduleAccess?.pim === 'manage';
+  if (!canImport) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 function EngineeringAdminGuard({ children }: { children: React.ReactNode }) {
   const user = useAuthStore(state => state.user);
   if (user?.role !== 'admin' && user?.role !== 'engineer') return <Navigate to="/" replace />;
@@ -118,7 +125,7 @@ export default function App() {
             <Route path="search" element={<SearchPage />} />
             <Route path="admin/users" element={<AdminUsers />} />
              <Route path="admin" element={<Navigate to="/admin/users" replace />} />
-            <Route path="admin/import" element={<AdminGuard><AdminImport /></AdminGuard>} />
+            <Route path="admin/import" element={<ImportGuard><AdminImport /></ImportGuard>} />
             <Route path="admin/categories" element={<AdminCategories />} />
             <Route path="admin/roles" element={<AdminRoles />} />
             <Route path="admin/tank-families" element={<AdminTankFamilies />} />

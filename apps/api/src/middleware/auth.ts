@@ -77,4 +77,40 @@ export const requireModuleManage = (moduleKey: ModuleAccessKey) => async (req: A
   }
 };
 
+/**
+ * Bulk imports are available to platform administrators or roles with manage
+ * access to the governing module. Unlike legacy mutation guards, this returns
+ * distinct errors for read-only and hidden roles before an upload is accepted.
+ */
+export const requireImportManage = (moduleKey: ModuleAccessKey) => async (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user?.role === 'admin') {
+    return next();
+  }
+
+  try {
+    const result = await query(
+      `SELECT rma.access_level
+       FROM users u
+       LEFT JOIN roles r ON r.name=u.role
+       LEFT JOIN role_module_access rma ON rma.role_id=r.id AND rma.module_key=$2
+       WHERE u.id=$1`,
+      [req.user!.id, moduleKey],
+    );
+    const accessLevel = result.rows[0]?.access_level;
+    if (accessLevel === 'hidden') {
+      return res.status(403).json({
+        error: { code: 'MODULE_HIDDEN', message: 'This module is hidden for your role.' },
+      });
+    }
+    if (accessLevel && accessLevel !== 'manage') {
+      return res.status(403).json({
+        error: { code: 'MODULE_READ_ONLY', message: 'Manage access is required for this module.' },
+      });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 export { JWT_SECRET };
