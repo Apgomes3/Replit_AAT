@@ -706,7 +706,7 @@ export default function ProductMasterDetail() {
   const isPiping = product.product_category === 'Piping';
   const isTank = product.product_category === 'Tank';
   const isPneumatic = String(product.product_category || '').toLowerCase() === 'pneumatic';
-  const isUvProduct = product.product_family_code === 'PFM-UV';
+  const isUvProduct = String(product.product_family_code || '').trim().toUpperCase() === 'PFM-UV';
   const bom = product.boms?.[0];
   const bomLines: BOMLine[] = bomDetail?.lines || bom?.lines || [];
   const documents: Document[] = product.documents || [];
@@ -1133,6 +1133,7 @@ export default function ProductMasterDetail() {
             ) : (
             <>
             {!editing ? (
+            <>
             <MetadataPanel fields={[
               { label: 'Family', value: product.product_family_name,
                 action: <button onClick={() => setShowFamilyPicker(true)} disabled={familySaving}
@@ -1154,6 +1155,29 @@ export default function ProductMasterDetail() {
               ...((product as any).sell_price != null ? [{ label: 'Sell Price', value: `${Number((product as any).sell_price).toFixed(2)} ${(product as any).currency || 'USD'}` }] : []),
               { label: 'Notes', value: product.notes },
             ]} />
+            {isUvProduct && <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/40 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-900">UV Installation &amp; Control</div>
+                  <p className="mt-0.5 text-xs text-slate-500">PIM-owned equipment configuration and control metadata</p>
+                </div>
+                <button onClick={startEdit} className="text-xs font-semibold text-blue-700 hover:underline">Edit</button>
+              </div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-2 md:grid-cols-4">
+                {[
+                  ['Configuration', product.configuration || 'Not set'],
+                  ['Control Type', product.control_type || 'Not set'],
+                  ['Signal Type', product.signal_type || 'Not set'],
+                  ['Optional', product.control_type_optional ? 'Yes' : 'No'],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+                    <div className="mt-1 text-sm font-medium text-slate-700">{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>}
+            </>
             ) : (
             <div className="bg-white border border-slate-200 rounded-lg p-4">
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Edit Details</div>

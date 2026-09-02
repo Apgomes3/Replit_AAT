@@ -137,7 +137,11 @@ describe('ProductMasterDetail family breadcrumb', () => {
     renderDetail();
 
     await screen.findByText('P-ASSIGNED');
-    await user.click(screen.getAllByRole('button', { name: 'Edit', exact: true })[0]);
+    const uvControlPanel = screen.getByText('UV Installation & Control').closest('.rounded-lg') as HTMLElement;
+    expect(within(uvControlPanel).getByText('Wall mounted')).toBeVisible();
+    expect(within(uvControlPanel).getByText('PLC interlock')).toBeVisible();
+    expect(within(uvControlPanel).getByText('Modbus')).toBeVisible();
+    await user.click(within(uvControlPanel).getByRole('button', { name: 'Edit' }));
     const configuration = screen.getByText('Configuration').nextElementSibling as HTMLSelectElement;
     const controlType = screen.getByText('Control Type').nextElementSibling as HTMLInputElement;
     const signalType = screen.getByText('Signal Type').nextElementSibling as HTMLInputElement;
