@@ -28,7 +28,8 @@ function LocationProbe() {
 
 function renderMaterials() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  queryClient.setQueryData(['materials-list'], { items: [] });
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[{
         pathname: '/knowledge/materials',
@@ -50,6 +51,7 @@ function renderMaterials() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...rendered, queryClient };
 }
 
 describe('MaterialsList product-create return flow', () => {
@@ -69,7 +71,7 @@ describe('MaterialsList product-create return flow', () => {
 
   it('returns to the unfinished product with the created material selected', async () => {
     const user = userEvent.setup();
-    renderMaterials();
+    const { queryClient } = renderMaterials();
 
     expect(screen.getByLabelText('Material Name*')).toHaveValue('Titanium Grade 2');
     await user.type(screen.getByLabelText('Material Code*'), 'MAT-TI-G2');
@@ -77,6 +79,7 @@ describe('MaterialsList product-create return flow', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Use MAT-TI-G2' }));
 
+    expect(queryClient.getQueryState(['materials-list'])?.isInvalidated).toBe(true);
     expect(screen.getByTestId('location-path')).toHaveTextContent('/products/masters');
     const state = JSON.parse(screen.getByTestId('location-state').textContent || '{}');
     expect(state.resumeProductCreate).toMatchObject({

@@ -46,6 +46,7 @@ export default function ProductMastersList() {
   useEffect(() => {
     const resume = (location.state as any)?.resumeProductCreate;
     if (!resume?.draft) return;
+    void qc.invalidateQueries({ queryKey: ['materials-list'] });
     const material = resume.material;
     setNewProductInitialValues({
       ...resume.draft,
@@ -55,7 +56,7 @@ export default function ProductMastersList() {
     });
     setShowNew(true);
     navigate(currentPath, { replace: true, state: null });
-  }, [location.state, currentPath, navigate]);
+  }, [location.state, currentPath, navigate, qc]);
 
   const selectFamily = (familyId: string | null) => {
     setSearchParams(previous => {

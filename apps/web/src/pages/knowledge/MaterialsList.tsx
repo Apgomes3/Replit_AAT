@@ -139,7 +139,8 @@ export default function MaterialsList() {
           onSubmit={async (data) => {
             const created = await api.post('/materials', data);
             toast.success('Material created');
-            refetch();
+            await refetch();
+            await qc.invalidateQueries({ queryKey: ['materials-list'] });
             setShowNew(false);
             setNewInitialValues(undefined);
             if (returnContext) setCreatedForReturn(created.data);
