@@ -219,8 +219,56 @@ describe('AAT thermal calculation', () => {
       heat_basis: 'Pump shaft power transferred to water',
     });
     expect(source.equipment_heat_sources[2]).toMatchObject({
-      side_stream_id: 'uv-stream', power_basis: 'rated_power_kw', water_heat_fraction_pct: 100,
+      side_stream_id: 'uv-stream',
+      power_basis: 'saved_uv_rated_power_kw',
+      heat_basis: 'Full saved UV Selection rated power',
+      water_heat_fraction_pct: 100,
     });
+  });
+
+  it('uses frozen UV Selection power without revalidating or recalculating UV performance', () => {
+    const source = buildThermalSourceContext({
+      system: { id: 'system-1', system_code: 'LSS-1' },
+      links: [], exhibits: [], tanks: [],
+      uvSelections: [{
+        system_id: 'system-1',
+        freshness: 'stale',
+        input_snapshot: { streams: [{
+          side_stream_id: 'uv-stream',
+          side_stream_name: 'UV sidestream',
+          uv_unit_quantity: 9,
+          rated_power_kw: 99,
+          product_code: 'UV-OLD',
+        }] },
+        result_snapshot: {
+          overall_status: 'fail',
+          streams: [{
+            side_stream_id: 'uv-stream',
+            side_stream_name: 'UV sidestream',
+            unit_quantity: 2,
+            rated_power_kw: 2.5,
+            product_code: 'UV-SAVED',
+            product_name: 'Saved UV model',
+          }],
+        },
+      }],
+    });
+
+    expect(source.equipment_heat_sources).toEqual([
+      expect.objectContaining({
+        equipment_type: 'UV',
+        equipment_code: 'UV-SAVED',
+        equipment_name: 'Saved UV model',
+        quantity: 2,
+        input_power_kw_per_unit: 2.5,
+        heat_gain_kw: 5,
+        power_basis: 'saved_uv_rated_power_kw',
+        heat_basis: 'Full saved UV Selection rated power',
+        status: 'ready',
+        reasons: [],
+      }),
+    ]);
+    expect(source.equipment_heat_gain_kw).toBe(5);
   });
 
   it('does not revalidate pump compatibility while consuming saved Thermal heat input', () => {

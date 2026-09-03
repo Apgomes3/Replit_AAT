@@ -455,24 +455,35 @@ export function buildThermalSourceContext(args: {
     };
   });
   const seenUvStreams = new Set<string>();
-  const uvHeatSources = uvSelections.flatMap((selection: any) =>
-    (selection?.input_snapshot?.streams || []).map((stream: any) => ({
-      selection,
+  const uvHeatSources = uvSelections.flatMap((selection: any) => {
+    const inputStreams = Array.isArray(selection?.input_snapshot?.streams)
+      ? selection.input_snapshot.streams
+      : [];
+    const inputById = new Map<string, any>(inputStreams.map((stream: any) => [
+      String(stream?.side_stream_id || stream?.id || ''),
       stream,
-    }))).filter(({ stream }: any) => {
+    ]));
+    const resultStreams = Array.isArray(selection?.result_snapshot?.streams)
+      ? selection.result_snapshot.streams
+      : [];
+    const savedStreams = resultStreams.length > 0
+      ? resultStreams.map((stream: any) => ({
+          ...(inputById.get(String(stream?.side_stream_id || stream?.id || '')) || {}),
+          ...stream,
+        }))
+      : inputStreams;
+    return savedStreams.map((stream: any) => ({ selection, stream }));
+  }).filter(({ stream }: any) => {
     const identity = String(stream?.side_stream_id || stream?.id || '');
     if (!identity || seenUvStreams.has(identity)) return false;
     seenUvStreams.add(identity);
     return true;
   }).map(({ selection, stream }: any) => {
-    const quantity = positive(stream.uv_unit_quantity ?? stream.unit_quantity);
-    const perUnit = positive(stream.uv_revision?.rated_power_kw ?? stream.rated_power_kw);
-    const ready = selection?.freshness === 'fresh' &&
-      ['pass', 'ready'].includes(String(selection?.result_snapshot?.overall_status || selection?.result_snapshot?.status || '').toLowerCase());
+    const quantity = positive(stream.unit_quantity ?? stream.uv_unit_quantity);
+    const perUnit = positive(stream.rated_power_kw ?? stream.uv_revision?.rated_power_kw);
     const incompleteReasons = [
-      ...(ready ? [] : ['UV selection must be saved, fresh, and ready.']),
       ...(quantity != null ? [] : ['UV unit quantity is required.']),
-      ...(perUnit != null ? [] : ['UV rated power is required.']),
+      ...(perUnit != null ? [] : ['Saved UV Selection rated power is required.']),
     ];
     return {
       equipment_type: 'UV',
@@ -482,15 +493,15 @@ export function buildThermalSourceContext(args: {
       equipment_code: stream.uv_revision?.product_code || stream.product_code || null,
       equipment_name: stream.uv_revision?.product_name || stream.product_name || null,
       quantity,
-      installation_location: 'in_water_stream',
+      installation_location: 'UV Selection',
       input_power_kw_per_unit: perUnit,
       heat_gain_kw_per_unit: perUnit,
       heat_gain_kw: perUnit != null && quantity != null ? perUnit * quantity : null,
-      heat_basis: '100% of UV rated electrical power transferred to water',
-      power_basis: 'rated_power_kw',
+      heat_basis: 'Full saved UV Selection rated power',
+      power_basis: 'saved_uv_rated_power_kw',
       water_heat_fraction_pct: 100,
       freshness: selection?.freshness || 'unsaved',
-      status: selection?.result_snapshot?.overall_status || selection?.result_snapshot?.status || 'incomplete',
+      status: incompleteReasons.length > 0 ? 'incomplete' : 'ready',
       reasons: incompleteReasons,
     };
   });
