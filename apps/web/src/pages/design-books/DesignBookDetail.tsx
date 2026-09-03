@@ -2229,6 +2229,68 @@ export function MassTransferCoefficientControl({
   );
 }
 
+export function WallUValueControl({
+  governedValue,
+  overrideValue,
+  canOverride,
+  onChange,
+  onOverride,
+  onReset,
+  info,
+}: {
+  governedValue?: number | string | null;
+  overrideValue?: number | string | null;
+  canOverride: boolean;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onOverride: () => void;
+  onReset: () => void;
+  info?: string;
+}) {
+  const hasStoredOverride = overrideValue !== '' && overrideValue != null;
+  const [overrideActive, setOverrideActive] = useState(hasStoredOverride);
+  const effectiveValue = overrideActive ? overrideValue ?? '' : governedValue;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <span className={thermalLabelClass}>Wall U-value (W/m²·K)</span>
+        {overrideActive && canOverride && (
+          <span className="text-xs font-medium text-[#9d5637]">Override</span>
+        )}
+      </div>
+      <input
+        aria-label="Wall U-value"
+        type="number"
+        min="0"
+        step="any"
+        value={effectiveValue ?? ''}
+        onChange={onChange}
+        disabled={!canOverride || !overrideActive}
+        className={thermalFieldClass}
+      />
+      {info && <span className="mt-1 block text-[11px] text-stone-500">{info}</span>}
+      {canOverride && (
+        <button
+          type="button"
+          aria-label={overrideActive ? 'Reset wall U-value override' : 'Override wall U-value'}
+          className="mt-1 text-xs font-medium text-[#9d5637] underline underline-offset-2 hover:text-[#7d442f]"
+          onClick={() => {
+            if (overrideActive) {
+              setOverrideActive(false);
+              onReset();
+            } else {
+              setOverrideActive(true);
+              onOverride();
+            }
+          }}
+        >
+          {overrideActive ? 'Reset to governed default' : 'Override'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function WaterTemperatureOverrideControl({
   average,
   overrideValue,
@@ -3190,6 +3252,15 @@ function ThermalTab({
     form.adjacent_upper_coefficient,
   ].some(value => value !== '' && value != null);
   const draftOverridesAllowed = !readOnly && book.status === 'Draft';
+  const hasWallUValueOverride = form.reviewed_u_value_w_m2_k !== '' &&
+    form.reviewed_u_value_w_m2_k != null;
+  const governedWallUValue = selectedConstructionDefault?.u_value_w_m2_k ??
+    evidenceBasis.wall?.u_value_w_m2_k ?? '';
+  const wallUValueOverrideAllowed = draftOverridesAllowed &&
+    (governedWallUValue !== '' || hasWallUValueOverride);
+  const wallThicknessInfo = selectedConstructionDefault?.thickness_mm != null
+    ? `${selectedConstructionDefault.material || 'Default wall'} thickness: ${thermalNumber(selectedConstructionDefault.thickness_mm, 2)} mm`
+    : undefined;
   const mainCorrelationOverrideAllowed = draftOverridesAllowed && !!form.agitation_correlation_id;
   const fieldClass = thermalFieldClass;
   const labelClass = thermalLabelClass;
@@ -3597,35 +3668,16 @@ function ThermalTab({
                       )}
                   </select>
                 </label>
-                <div className="rounded-lg border border-[#e6c8b8] bg-[#f7eee8] px-3 py-2 sm:col-span-1 lg:col-span-2">
-                  <span className="block text-xs font-semibold uppercase tracking-wide text-[#b86843]">
-                    Governed / reviewed effective basis
-                  </span>
-                  <div className="mt-1 text-sm font-medium text-[#263746]">
-                    {selectedConstructionDefault
-                      ? `${selectedConstructionDefault.label}: ${selectedConstructionDefault.material} · ${thermalNumber(selectedConstructionDefault.thickness_mm, 2)} ${selectedConstructionDefault.thickness_units} · k ${thermalNumber(selectedConstructionDefault.conductivity_w_m_k, 3)} ${selectedConstructionDefault.conductivity_units}`
-                      : evidenceBasis.wall?.label
-                        ? `${evidenceBasis.wall.label}: ${thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} ${evidenceBasis.wall.units}`
-                        : 'Select a standard construction or use a reviewed custom basis.'}
-                  </div>
-                  <p className="mt-1 text-xs text-[#9d6337]">
-                    {selectedConstructionDefault?.assumption_label ||
-                      evidenceBasis.wall?.assumption_label ||
-                      'No default assumption selected.'}
-                    {(selectedConstructionDefault?.basis_version || evidenceBasis.wall?.basis_version) &&
-                      ` · ${selectedConstructionDefault?.basis_version || evidenceBasis.wall?.basis_version}`}
-                  </p>
-                  {selectedConstructionDefault?.approval && (
-                    <p className="mt-1 text-xs text-[#9d6337]">
-                      Approval: {selectedConstructionDefault.approval.status}
-                      {selectedConstructionDefault.approval.approved_at
-                        ? ` · ${new Date(selectedConstructionDefault.approval.approved_at).toLocaleDateString()}`
-                        : ''}
-                    </p>
-                  )}
-                </div>
-                <ThermalNumericField name="reviewed_u_value_w_m2_k" label="Reviewed custom wall U-value (optional)" unit="W/m²·K"
-                  value={form.reviewed_u_value_w_m2_k} onChange={event => update('reviewed_u_value_w_m2_k', event.target.value)} disabled={readOnly} />
+                <WallUValueControl
+                  key={`${selected.system_id}:${form.tank_construction_type || 'custom'}`}
+                  governedValue={governedWallUValue}
+                  overrideValue={form.reviewed_u_value_w_m2_k}
+                  canOverride={wallUValueOverrideAllowed}
+                  onChange={event => update('reviewed_u_value_w_m2_k', event.target.value)}
+                  onOverride={() => update('reviewed_u_value_w_m2_k', governedWallUValue)}
+                  onReset={() => update('reviewed_u_value_w_m2_k', '')}
+                  info={wallThicknessInfo}
+                />
                 <label>
                   <span className={labelClass}>Effective wall material{wallOverrideFlags.material ? ' · Override' : ''}</span>
                   <input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)}

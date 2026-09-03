@@ -16,6 +16,7 @@ import {
   thermalWallReplacementIsValid,
   ThermalNumericField,
   MassTransferCoefficientControl,
+  WallUValueControl,
   WaterTemperatureOverrideControl,
   EffectiveRadiantSurroundingsTemperature,
   SurfaceActivityGuidance,
@@ -425,6 +426,45 @@ describe('Mass-transfer coefficient override', () => {
     expect(input).toBeDisabled();
     expect(input).toHaveValue(0.000001);
     expect(screen.getByRole('button', { name: 'Override mass-transfer coefficient' })).toBeInTheDocument();
+  });
+});
+
+describe('Wall U-value override', () => {
+  function WallUValueHarness() {
+    const [override, setOverride] = useState<string | number>('');
+    const governedValue = 3.7061118335500645;
+    return createElement(WallUValueControl, {
+      governedValue,
+      overrideValue: override,
+      canOverride: true,
+      info: 'Acrylic / PMMA thickness: 12.00 mm',
+      onChange: event => setOverride(event.target.value),
+      onOverride: () => setOverride(governedValue),
+      onReset: () => setOverride(''),
+    });
+  }
+
+  it('shows the governed value and acrylic thickness until a reviewed override is requested', async () => {
+    const user = userEvent.setup();
+    render(createElement(WallUValueHarness));
+    const input = screen.getByRole('spinbutton', { name: 'Wall U-value' });
+
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue(3.7061118335500645);
+    expect(screen.getByText('Acrylic / PMMA thickness: 12.00 mm')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Override wall U-value' }));
+    expect(input).toBeEnabled();
+
+    await user.clear(input);
+    await user.type(input, '2.75');
+    expect(input).toHaveValue('2.75');
+
+    await user.click(screen.getByRole('button', { name: 'Reset wall U-value override' }));
+
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue(3.7061118335500645);
+    expect(screen.getByRole('button', { name: 'Override wall U-value' })).toBeInTheDocument();
   });
 });
 
