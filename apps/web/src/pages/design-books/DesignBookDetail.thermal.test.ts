@@ -13,8 +13,10 @@ import {
   thermalCorrelationDefaults,
   thermalCorrelationVersionsForClass,
   normalizeThermalWallConstruction,
+  thermalExhibitTankConstruction,
   thermalExhibitTankWallBasis,
   thermalExhibitTankWallBases,
+  thermalWallConstructionForMaterial,
   thermalLinkedFreeSurfaceArea,
   thermalWallBasesAreMixed,
   thermalWallFormValues,
@@ -241,6 +243,34 @@ describe('Design Book Thermal navigation', () => {
 });
 
 describe('Exhibit tank wall basis', () => {
+  it('resolves the selector construction from the exhibit material before wall evidence is complete', () => {
+    expect(thermalExhibitTankConstruction({
+      linked_tanks: [{
+        tank_code: 'TK-RC-01',
+        wall_material: 'Reinforced Concrete',
+      }],
+    }, [{
+      code: 'concrete',
+      label: 'Reinforced concrete',
+      material: 'Reinforced concrete',
+      thickness_mm: 200,
+      conductivity_w_m_k: 1.4,
+    }])).toMatchObject({
+      code: 'concrete',
+      label: 'Reinforced concrete',
+    });
+  });
+
+  it('recognizes reinforced concrete as the governed concrete construction', () => {
+    expect(thermalWallConstructionForMaterial([{
+      code: 'concrete',
+      label: 'Reinforced concrete',
+    }], 'RC / Reinforced Concrete')).toMatchObject({
+      code: 'concrete',
+      label: 'Reinforced concrete',
+    });
+  });
+
   it('calculates material resistance and overall U-value from the tank thickness', () => {
     const basis = thermalExhibitTankWallBasis({
       linked_tanks: [{

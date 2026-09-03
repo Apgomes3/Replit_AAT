@@ -563,13 +563,13 @@ function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: 
   const [footprintPromptOpen, setFootprintPromptOpen] = useState(false);
   const [footprintEditorOpen, setFootprintEditorOpen] = useState(false);
 
-  const { data: matData } = useQuery({
-    queryKey: ['materials-list'],
-    queryFn: () => api.get('/materials').then(r => r.data),
+  const { data: thermalConstructionData } = useQuery({
+    queryKey: ['thermal-wall-constructions'],
+    queryFn: () => api.get('/thermal-wall-constructions').then(r => r.data),
     staleTime: 300_000,
     enabled: editing,
   });
-  const materials: any[] = matData?.items || [];
+  const thermalConstructions: any[] = thermalConstructionData?.items || [];
 
   const startEdit = () => {
     setForm({
@@ -577,8 +577,8 @@ function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: 
       tank_name:             tank.tank_name || '',
       tank_type:             tank.tank_type || '',
       shape_type:            tank.shape_type || '',
-      material_id:           tank.material_id || '',
-      primary_material:      tank.primary_material || '',
+      material_id:           '',
+      primary_material:      tank.primary_material || tank.material_name || tank.eff_primary_material || '',
       wall_thickness_mm:     tank.wall_thickness_mm ?? '',
       length_mm:             tank.length_mm ?? '',
       width_mm:              tank.width_mm  ?? '',
@@ -946,16 +946,17 @@ function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: 
           </div>
           <div>
             <label className="block text-xs font-medium text-stone-500 mb-1">Material</label>
-            <select value={form.material_id}
+            <select value={form.primary_material}
               onChange={e => {
-                const mat = materials.find((m: any) => m.id === e.target.value);
-                setF('material_id', e.target.value);
-                setF('primary_material', mat ? mat.material_name : '');
+                setF('material_id', '');
+                setF('primary_material', e.target.value);
               }}
               className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
               <option value="">{tank.product_master_id ? `Use PIM default (${tank.eff_primary_material || 'not set'})` : '— Select material —'}</option>
-              {materials.map((m: any) => (
-                <option key={m.id} value={m.id}>{m.material_code} — {m.material_name}</option>
+              {thermalConstructions.map((construction: any) => (
+                <option key={construction.code} value={construction.material}>
+                  {construction.label}
+                </option>
               ))}
             </select>
           </div>
@@ -1225,13 +1226,13 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [showAddPanel, assignedTanks.length, footprintPromptOpen, footprintEditorOpen]);
 
-  const { data: matData } = useQuery({
-    queryKey: ['materials-list'],
-    queryFn: () => api.get('/materials').then(r => r.data),
+  const { data: thermalConstructionData } = useQuery({
+    queryKey: ['thermal-wall-constructions'],
+    queryFn: () => api.get('/thermal-wall-constructions').then(r => r.data),
     staleTime: 300_000,
     enabled: mode === 'new',
   });
-  const newMaterials: any[] = matData?.items || [];
+  const thermalConstructions: any[] = thermalConstructionData?.items || [];
   const { data: pimFamiliesData } = useQuery({
     queryKey: ['tank-families'],
     queryFn: () => api.get('/tank-families').then(r => r.data),
@@ -1753,20 +1754,19 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
               <label htmlFor="new-tank-material" className="block text-xs text-stone-500 mb-1">Material</label>
               <select
                 id="new-tank-material"
-                value={newForm.material_id}
+                value={newForm.primary_material}
                 onChange={e => {
-                  const mat = newMaterials.find((m: any) => m.id === e.target.value);
-                  setF('material_id', e.target.value);
-                  setF('primary_material', mat ? mat.material_name : '');
+                  setF('material_id', '');
+                  setF('primary_material', e.target.value);
                 }}
                 aria-invalid={!!newFieldErrors.material_id}
                 aria-describedby={newFieldErrors.material_id ? 'new-tank-material_id-error' : undefined}
                 className={newInputClass('material_id', 'bg-white')}
               >
                 <option value="">— Select material —</option>
-                {newMaterials.map((m: any) => (
-                  <option key={m.id} value={m.id}>
-                    {m.material_code} — {m.material_name}
+                {thermalConstructions.map((construction: any) => (
+                  <option key={construction.code} value={construction.material}>
+                    {construction.label}
                   </option>
                 ))}
               </select>

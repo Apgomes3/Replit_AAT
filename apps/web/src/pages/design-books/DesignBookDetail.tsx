@@ -2062,6 +2062,17 @@ export function thermalWallConstructionForMaterial(constructions: any[], materia
   return constructions.find(item => item.code === code) || null;
 }
 
+export function thermalExhibitTankConstruction(source: any, constructions: any[]) {
+  const tankConstructions = (source?.linked_tanks || [])
+    .map((tank: any) => thermalWallConstructionForMaterial(constructions, tank.wall_material))
+    .filter(Boolean);
+  const constructionCodes = [...new Set(
+    tankConstructions.map((construction: any) => construction.code),
+  )];
+  if (constructionCodes.length !== 1) return null;
+  return tankConstructions.find((construction: any) => construction.code === constructionCodes[0]) || null;
+}
+
 export function thermalExhibitTankWallBases(source: any, constructions: any[]) {
   return (source?.linked_tanks || []).map((tank: any) => {
     const construction = thermalWallConstructionForMaterial(constructions, tank.wall_material);
@@ -2941,14 +2952,20 @@ function LegacyThermalTab({
       calculation?.inputs ||
       {};
     const wallEvidence = thermalEvidenceBasis(item).wall || {};
+    const sourceTankConstruction = thermalExhibitTankConstruction(item.source, constructionDefaults);
     const sourceTankWallBasis = thermalExhibitTankWallBasis(item.source, constructionDefaults);
     const savedWallHasOverride = existing.reviewed_u_value_w_m2_k != null ||
       Object.values(wallEvidence.layer_override_flags || {}).some(Boolean);
-    const constructionType = existing.tank_construction_type ??
-      existing.tank_construction ??
-      sourceTankWallBasis?.code ??
-      wallEvidence.construction_type ??
-      '';
+    const savedCustomConstruction = existing.tank_construction_type === '' ||
+      existing.tank_construction === '';
+    const constructionType = savedCustomConstruction
+      ? ''
+      : existing.tank_construction_type ||
+        existing.tank_construction ||
+        sourceTankConstruction?.code ||
+        sourceTankWallBasis?.code ||
+        wallEvidence.construction_type ||
+        '';
     const currentConstructionDefault = constructionDefaults.find(
       (candidate: any) => candidate.code === constructionType,
     );
@@ -3305,7 +3322,9 @@ function LegacyThermalTab({
           } : {}),
         },
         reviewed_u_value_w_m2_k: numericOrNull(form.reviewed_u_value_w_m2_k),
-        tank_construction_type: form.tank_construction_type || null,
+        tank_construction_type: form.tank_construction_type === ''
+          ? ''
+          : form.tank_construction_type || null,
         tank_wall_layers: wallLayers,
         tank_wall_override_justification: form.tank_wall_override_justification || '',
         equipment_heat_gain_kw: numericOrNull(form.equipment_heat_gain_kw),
@@ -3979,19 +3998,25 @@ function ThermalTab({
       calculation?.inputs ||
       {};
     const wallEvidence = thermalEvidenceBasis(item).wall || {};
+    const sourceTankConstruction = thermalExhibitTankConstruction(item.source, constructionDefaults);
     const sourceTankWallBases = thermalExhibitTankWallBases(item.source, constructionDefaults);
     const sourceHasMixedWalls = thermalWallBasesAreMixed(sourceTankWallBases);
     const sourceTankWallBasis = sourceHasMixedWalls ? null : sourceTankWallBases[0];
     setSelectedWallTankId(sourceTankWallBases[0]?.tank_id || null);
     const savedWallHasOverride = existing.reviewed_u_value_w_m2_k != null ||
       Object.values(wallEvidence.layer_override_flags || {}).some(Boolean);
+    const savedCustomConstruction = existing.tank_construction_type === '' ||
+      existing.tank_construction === '';
     const constructionType = sourceHasMixedWalls
       ? ''
-      : existing.tank_construction_type ??
-        existing.tank_construction ??
-        sourceTankWallBasis?.code ??
-        wallEvidence.construction_type ??
-        '';
+      : savedCustomConstruction
+        ? ''
+        : existing.tank_construction_type ||
+          existing.tank_construction ||
+          sourceTankConstruction?.code ||
+          sourceTankWallBasis?.code ||
+          wallEvidence.construction_type ||
+          '';
     const currentConstructionDefault = constructionDefaults.find(
       (candidate: any) => candidate.code === constructionType,
     );
@@ -4349,7 +4374,9 @@ function ThermalTab({
           } : {}),
         },
         reviewed_u_value_w_m2_k: numericOrNull(form.reviewed_u_value_w_m2_k),
-        tank_construction_type: form.tank_construction_type || null,
+        tank_construction_type: form.tank_construction_type === ''
+          ? ''
+          : form.tank_construction_type || null,
         tank_wall_layers: wallLayers,
         tank_wall_override_justification: form.tank_wall_override_justification || '',
         equipment_heat_gain_kw: numericOrNull(form.equipment_heat_gain_kw),
