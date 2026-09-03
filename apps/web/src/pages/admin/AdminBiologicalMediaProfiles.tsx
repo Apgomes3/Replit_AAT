@@ -251,7 +251,7 @@ function ProfilesTable({ id, title, profiles, kind, onStatus, onEdit, onRevise, 
       {profiles.length === 0 ? <p className="p-6 text-sm text-stone-400">No controlled revisions have been created.</p> : (
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-stone-50 text-left text-[10px] uppercase tracking-wide text-stone-400">
-            <tr><th className="px-4 py-2">Profile</th><th className="px-4 py-2">Revision</th><th className="px-4 py-2">Status</th>{kind === 'tan' && <><th className="px-4 py-2">Coefficient</th><th className="px-4 py-2">Unit</th><th className="px-4 py-2">Recommended application</th></>}{kind === 'media' && <><th className="px-4 py-2">Overall VTR</th><th className="px-4 py-2">Qualification / use</th></>}{kind === 'max-tan' && <th className="px-4 py-2">Maximum TAN</th>}<th className="px-4 py-2">Engineering basis</th><th className="px-4 py-2 text-right">Actions</th></tr>
+            <tr><th className="px-4 py-2">Profile</th><th className="px-4 py-2">Revision</th><th className="px-4 py-2">Status</th>{kind === 'tan' && <><th className="px-4 py-2">Coefficient</th><th className="px-4 py-2">Unit</th><th className="px-4 py-2">Recommended application</th></>}{kind === 'media' && <th className="px-4 py-2">Overall VTR</th>}{kind === 'max-tan' && <th className="px-4 py-2">Maximum TAN</th>}<th className="px-4 py-2">Engineering basis</th><th className="px-4 py-2 text-right">Actions</th></tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
             {profiles.map((profile: any) => <tr key={profile.id}>
@@ -268,10 +268,6 @@ function ProfilesTable({ id, title, profiles, kind, onStatus, onEdit, onRevise, 
                   {profile.overall_vtr_g_tan_n_m3_d == null
                     ? 'Not specified'
                     : <>{profile.overall_vtr_g_tan_n_m3_d} <span className="font-sans text-stone-500">{profile.capacity_basis_unit}</span></>}
-                </td>
-                <td className="max-w-md px-4 py-3 text-xs text-stone-500">
-                  {profile.provisional_label && <div className="mb-1 font-semibold text-amber-700">{profile.provisional_label}</div>}
-                  <div>{profile.notes || 'No qualification recorded'}</div>
                 </td>
               </>}
               {kind === 'max-tan' && <td className="px-4 py-3 font-mono text-xs">{profile.max_tan_mg_n_l} mg N/L{profile.is_default && <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 font-sans font-semibold text-blue-700">Default</span>}</td>}

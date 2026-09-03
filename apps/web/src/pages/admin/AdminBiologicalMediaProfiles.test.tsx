@@ -59,6 +59,7 @@ const mediaProfiles = [
     provisional_label: 'Preliminary engineering reference — administrator review required',
     notes: 'Approximate study-condition reference only; do not treat this maximum-rate study result as universal design capacity.',
     evidence_reference: null,
+    is_provisional: true,
     status: 'Draft',
   },
 ];
@@ -175,16 +176,16 @@ describe('TAN generation profile administration', () => {
     }
   });
 
-  it('shows Overall VTR and its preliminary use qualification in the media listing', async () => {
+  it('shows Overall VTR without listing qualification details', async () => {
     renderPage('media');
 
     expect(await screen.findByText('Cold freshwater moving bed — 850 m²/m³ media')).toBeVisible();
     expect(screen.getByRole('columnheader', { name: 'Overall VTR' })).toBeVisible();
-    expect(screen.getByRole('columnheader', { name: 'Qualification / use' })).toBeVisible();
+    expect(screen.queryByRole('columnheader', { name: 'Qualification / use' })).not.toBeInTheDocument();
     expect(screen.getByText('231')).toBeVisible();
     expect(screen.getByText('g TAN-N/m³ media/day')).toBeVisible();
-    expect(screen.getByText('Preliminary engineering reference — administrator review required')).toBeVisible();
-    expect(screen.getByText(/maximum-rate study result as universal design capacity/)).toBeVisible();
+    expect(screen.queryByText('Preliminary engineering reference — administrator review required')).not.toBeInTheDocument();
+    expect(screen.queryByText(/maximum-rate study result as universal design capacity/)).not.toBeInTheDocument();
     expect(screen.getByText('Review required before approval')).toBeVisible();
   });
 
@@ -197,8 +198,14 @@ describe('TAN generation profile administration', () => {
     const profileCode = screen.getByLabelText('Profile code *');
     expect(profileCode).toBeDisabled();
     expect(profileCode).toHaveValue('FW_MB_8C_850');
+    expect(screen.getByLabelText('Explicit provisional label *')).toHaveValue('Preliminary engineering reference — administrator review required');
+    expect(screen.getByLabelText('Revision notes')).toHaveValue('Approximate study-condition reference only; do not treat this maximum-rate study result as universal design capacity.');
 
     await user.type(screen.getByLabelText(/Evidence reference/), 'ENG-VTR-204');
+    await user.clear(screen.getByLabelText('Explicit provisional label *'));
+    await user.type(screen.getByLabelText('Explicit provisional label *'), 'Updated provisional basis');
+    await user.clear(screen.getByLabelText('Revision notes'));
+    await user.type(screen.getByLabelText('Revision notes'), 'Updated review notes');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
 
     expect(api.patch).toHaveBeenCalledWith(
@@ -207,6 +214,8 @@ describe('TAN generation profile administration', () => {
         profile_code: 'FW_MB_8C_850',
         evidence_reference: 'ENG-VTR-204',
         overall_vtr_g_tan_n_m3_d: 231,
+        provisional_label: 'Updated provisional basis',
+        notes: 'Updated review notes',
       }),
     );
     expect(api.post).not.toHaveBeenCalled();
