@@ -3640,9 +3640,6 @@ export default function DesignBookLSSDetail() {
             allocationSource[`loop${n}_bio_degas_m3h`] != null ||
             allocationSource[`loop${n}_link_bio_degas`]));
         const allocationTotal = totalSystemAllocationPctFor(allocationSource) ?? 0;
-        const totalAllocatedFlow = systemFlow != null && systemFlow > 0
-          ? systemFlow * allocationTotal / 100
-          : null;
         const allocationPending = allocationLoops.filter(
           n => nullableNumber(allocationSource[`loop${n}_flow_pct`]) == null,
         ).length;
@@ -3727,9 +3724,9 @@ export default function DesignBookLSSDetail() {
           const equipmentFlow = isSandFilter
             ? loopFlow
             : exhibitSourceFlowContext('Surface Skim').flow;
-          const equipmentShareOfAllocatedFlow = equipmentFlow != null &&
-            totalAllocatedFlow != null && totalAllocatedFlow > 0
-            ? equipmentFlow / totalAllocatedFlow * 100
+          const equipmentShareOfSystemFlow = equipmentFlow != null &&
+            systemFlow != null && systemFlow > 0
+            ? equipmentFlow / systemFlow * 100
             : null;
           const calculation: any = flowEquipmentCalculation(source, n, equipmentFlow);
           const statusStyle = calculation.status === 'matched'
@@ -3801,18 +3798,18 @@ export default function DesignBookLSSDetail() {
               <div className="mb-3 rounded-md border border-current/15 bg-white/55 px-2.5 py-2">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-[10px] font-medium">
-                    {isSandFilter ? 'SF' : 'FF'} share of total allocated flow
+                    {isSandFilter ? 'SF' : 'FF'} share of total system flow
                   </span>
                   <strong className="font-mono text-sm">
-                    {equipmentShareOfAllocatedFlow != null
-                      ? `${equipmentShareOfAllocatedFlow.toFixed(1)}%`
+                    {equipmentShareOfSystemFlow != null
+                      ? `${equipmentShareOfSystemFlow.toFixed(1)}%`
                       : 'Unavailable'}
                   </strong>
                 </div>
                 <p className="mt-0.5 text-[9px] opacity-75">
-                  {equipmentFlow != null && totalAllocatedFlow != null && totalAllocatedFlow > 0
-                    ? `${fmtReferenceFlow(equipmentFlow)} ÷ ${fmtReferenceFlow(totalAllocatedFlow)} total allocated flow`
-                    : 'Requires current equipment flow and total allocated loop flow.'}
+                  {equipmentFlow != null && systemFlow != null && systemFlow > 0
+                    ? `${fmtReferenceFlow(equipmentFlow)} ÷ ${fmtReferenceFlow(systemFlow)} total system flow`
+                    : 'Requires current equipment flow and total system flow.'}
                 </p>
               </div>
               {editable && selectedProducts.length === 0 && (
@@ -4716,6 +4713,9 @@ export default function DesignBookLSSDetail() {
                           Loop Flow <span className="font-normal text-stone-400">({UNIT_LABELS[flowUnit]})</span>
                         </th>
                         <th className="min-w-48 px-3 py-2.5 text-left text-xs font-medium text-stone-500">Filtration</th>
+                        <th className="min-w-44 px-3 py-2.5 text-left text-xs font-medium text-stone-500">
+                          Equipment share <span className="font-normal text-stone-400">(of total system flow)</span>
+                        </th>
                         <th aria-label="Bio / Degas" className="min-w-44 px-3 py-2.5 text-left text-xs font-medium text-stone-500">
                           Bio / Degas <span className="font-normal text-stone-400">({UNIT_LABELS[flowUnit]})</span>
                         </th>
@@ -4749,6 +4749,15 @@ export default function DesignBookLSSDetail() {
                           const rowBioFlow = rowLoopFlow != null && rowBioPct != null
                             ? rowLoopFlow * rowBioPct / 100
                             : null;
+                           const rowEquipmentFlow = listRowForm.filtration === 'Sand Filter'
+                             ? rowLoopFlow
+                             : listRowForm.filtration === 'Foam Fractionation'
+                               ? exhibitSourceFlowContext('Surface Skim').flow
+                               : null;
+                           const rowEquipmentShare = rowEquipmentFlow != null &&
+                             systemFlow != null && systemFlow > 0
+                             ? rowEquipmentFlow / systemFlow * 100
+                             : null;
                           const rowSideStreams = sideStreamsFor(flowForm || system, n);
                           return (
                             <tr key={n} className="bg-blue-50/20">
@@ -4808,7 +4817,6 @@ export default function DesignBookLSSDetail() {
                                   onChange={e => setLRF('flow_pct', e.target.value)}
                                   className="w-20 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />}
                                 <div className="mt-1 text-stone-800">{fmtFlow(rowLoopFlow ?? 0)}</div>
-                                <div className="font-sans text-[10px] text-stone-400">{rowMatched ? 'matched flow (not allocated)' : allocationStatus(nullableNumber(listRowForm.flow_pct), 'total system flow')}</div>
                               </td>
                               <td className="px-3 py-2 align-top">
                                 <select value={listRowForm.filtration} onChange={e => setLRF('filtration', e.target.value)}
@@ -4821,6 +4829,16 @@ export default function DesignBookLSSDetail() {
                                   ))}
                                 </select>
                               </td>
+                               <td className="px-3 py-2 align-top font-mono text-xs">
+                                 {rowEquipmentShare != null ? (
+                                   <>
+                                     <span className="font-semibold text-cyan-800">{rowEquipmentShare.toFixed(1)}%</span>
+                                     <span className="mt-1 block font-sans text-[10px] text-stone-400">
+                                       {listRowForm.filtration === 'Foam Fractionation' ? 'FF flow' : 'SF flow'} ÷ total system flow
+                                     </span>
+                                   </>
+                                 ) : <span className="text-xs text-stone-300">—</span>}
+                               </td>
                               <td className="px-3 py-2 align-top font-mono text-xs">
                                 <label className="mb-1 flex items-center gap-1 font-sans text-[10px] text-stone-500">
                                   <input type="checkbox" checked={linked} onChange={e => setLRF('link_bio_degas', e.target.checked)}
@@ -4903,6 +4921,15 @@ export default function DesignBookLSSDetail() {
                         const matched = loopMode(displayedSource, n) === 'matched';
                         const resolvedFlow = resolveLoopFlow(displayedSource, n);
                         const loopFlow = resolvedFlow.flow;
+                         const equipmentFlow = filt === 'Sand Filter'
+                           ? loopFlow
+                           : filt === 'Foam Fractionation'
+                             ? exhibitSourceFlowContext('Surface Skim').flow
+                             : null;
+                         const equipmentShare = equipmentFlow != null &&
+                           systemFlow != null && systemFlow > 0
+                           ? equipmentFlow / systemFlow * 100
+                           : null;
                         const bioFlow = loopFlow != null && bioPct != null
                           ? loopFlow * bioPct / 100
                           : nullableNumber(bio);
@@ -4928,9 +4955,6 @@ export default function DesignBookLSSDetail() {
                             </td>
                             <td className="px-3 py-3 align-top font-mono text-xs">
                               <span className="text-stone-800">{fmtFlow(loopFlow ?? 0)}</span>
-                              <span className="block font-sans text-[10px] text-stone-400">
-                                 {matched ? 'matched flow (not allocated)' : allocationStatus(loopPct, 'total system flow')}
-                              </span>
                             </td>
                             <td className="px-3 py-3 align-top">
                               {filt ? (
@@ -4939,6 +4963,16 @@ export default function DesignBookLSSDetail() {
                                 </span>
                               ) : <span className="text-xs italic text-stone-400">—</span>}
                             </td>
+                             <td className="px-3 py-3 align-top font-mono text-xs">
+                               {equipmentShare != null ? (
+                                 <>
+                                   <span className="font-semibold text-cyan-800">{equipmentShare.toFixed(1)}%</span>
+                                   <span className="mt-1 block font-sans text-[10px] text-stone-400">
+                                     {filt === 'Foam Fractionation' ? 'FF flow' : 'SF flow'} ÷ total system flow
+                                   </span>
+                                 </>
+                               ) : <span className="text-xs text-stone-300">—</span>}
+                             </td>
                             <td className="px-3 py-3 align-top font-mono text-xs">
                               {linked ? (
                                 <span className="flex flex-wrap items-center gap-1.5">

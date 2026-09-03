@@ -1269,7 +1269,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getByText('Sand Filter')).toBeInTheDocument();
     expect(route.getAllByText('40.0 m³/h').length).toBeGreaterThan(0);
     expect(document.querySelector('#flow-route')).toHaveTextContent('40% of total system flow');
-    expect(route.getByText('SF share of total allocated flow').parentElement).toHaveTextContent('100.0%');
+    expect(route.getByText('SF share of total system flow').parentElement).toHaveTextContent('40.0%');
     expect(route.queryByText('Bio/Degas:')).not.toBeInTheDocument();
     expect(route.getByText('60.0%')).toBeInTheDocument();
 
@@ -1357,6 +1357,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
       'Flow Source',
       'Loop Flow',
       'Filtration',
+      'Equipment share (of total system flow)',
       'Bio / Degas',
       'Side Streams',
       'Actions',
@@ -2091,9 +2092,12 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     expect(route.getAllByText('40.0 m³/h')).not.toHaveLength(0);
-    expect(route.getByText((_, element) => element?.textContent?.trim() === '· 40% of total system flow')).toBeInTheDocument();
     expect(route.queryByText('Non-allocating circulation flow')).not.toBeInTheDocument();
+    await user.click(route.getByRole('button', { name: 'List' }));
+    const table = within(route.getByTestId('flow-route-list-table'));
+    expect(table.queryByText((_, element) => element?.textContent?.trim() === '· 40% of total system flow')).not.toBeInTheDocument();
 
+    await user.click(route.getByRole('button', { name: 'Card' }));
     await user.click(route.getByRole('button', { name: 'Edit' }));
     expect(route.getByText('Circulation source — allocated (legacy mode)')).toBeInTheDocument();
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
@@ -2454,7 +2458,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const card = within(cardElement);
     expect(cardElement.parentElement).toHaveClass('grid-cols-1');
     expect(card.getByText('FF-500')).toBeInTheDocument();
-    expect(route.getByText('FF share of total allocated flow').parentElement).toHaveTextContent('140.6%');
+    expect(route.getByText('FF share of total system flow').parentElement).toHaveTextContent('45.0%');
     expect(card.getByText('1 unit')).toBeInTheDocument();
     expect(card.getAllByText('Ø500 mm').length).toBeGreaterThan(0);
     expect(card.getAllByText('Required flow above capacity')).toHaveLength(1);
