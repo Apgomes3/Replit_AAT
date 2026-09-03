@@ -1874,6 +1874,14 @@ function thermalNumber(value: any, decimals = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
 }
 
+export function thermalLinkedFreeSurfaceArea(source: any) {
+  const tanks = Array.isArray(source?.linked_tanks) ? source.linked_tanks : [];
+  if (!tanks.length) return null;
+  const areas = tanks.map((tank: any) => Number(tank?.free_surface_area_m2));
+  if (areas.some((area: number) => !Number.isFinite(area) || area <= 0)) return null;
+  return areas.reduce((sum: number, area: number) => sum + area, 0);
+}
+
 function customTankWallAreaDefault(tank: any) {
   const dimensions = tank?.dimensions || tank;
   const length = Number(dimensions?.inner_length_mm);
@@ -3535,7 +3543,10 @@ function ThermalTab({
             <div className="grid gap-3 md:grid-cols-4">
               {[
                 ['Effective volume', `${thermalNumber(detail?.results?.effective_water_volume_m3, 3)} m³`],
-                ['Free surface', `${thermalNumber(detail?.results?.free_surface_area_m2)} m²`],
+                ['Free surface', `${thermalNumber(
+                  thermalLinkedFreeSurfaceArea(selected.source) ??
+                  detail?.results?.free_surface_area_m2,
+                )} m²`],
                 ['Exposed wall', `${thermalNumber(detail?.results?.exposed_wall_area_m2)} m²`],
                 ['LSS circulation (reference)', `${thermalNumber(selected.source?.lss_circulation_flow_m3h)} m³/h`],
               ].map(([label, value]) => (

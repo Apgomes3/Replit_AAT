@@ -12,6 +12,7 @@ import {
   thermalCorrelationVersionsForClass,
   normalizeThermalWallConstruction,
   thermalExhibitTankWallBasis,
+  thermalLinkedFreeSurfaceArea,
   thermalWallFormValues,
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
@@ -40,6 +41,17 @@ describe('Design Book Life Support Systems list', () => {
 });
 
 describe('Design Book Thermal navigation', () => {
+  it('uses current linked tank free-surface values, including custom tanks', () => {
+    expect(thermalLinkedFreeSurfaceArea({
+      linked_tanks: [
+        { tank_id: 'custom-1', shape: 'custom', free_surface_area_m2: 12.5 },
+        { tank_id: 'custom-2', shape: 'custom', free_surface_area_m2: 3.25 },
+      ],
+    })).toBe(15.75);
+    expect(thermalLinkedFreeSurfaceArea({
+      linked_tanks: [{ tank_id: 'custom-1', shape: 'custom', free_surface_area_m2: null }],
+    })).toBeNull();
+  });
   it('places Thermal immediately after Life Support Systems', () => {
     expect(DESIGN_BOOK_TAB_ORDER).toEqual([
       'exhibits',
