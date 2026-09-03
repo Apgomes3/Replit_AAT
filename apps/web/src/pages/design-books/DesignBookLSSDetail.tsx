@@ -5214,10 +5214,7 @@ export default function DesignBookLSSDetail() {
                                   <option value="">— Select approved UV product —</option>
                                   {selectableRevisions.map((rev: any) => (
                                     <option key={rev.revision_id} value={rev.revision_id}>
-                                      {rev.product_code} — {rev.product_name}
-                                      {rev.manufacturer ? ` (${rev.manufacturer})` : ''}
-                                      {' '}· Rev {rev.revision_number}
-                                      {' '}· {rev.lamp_count}L × {Number(rev.effective_reactor_volume_l).toFixed(1)}L
+                                      {rev.product_name}
                                     </option>
                                   ))}
                                 </select>

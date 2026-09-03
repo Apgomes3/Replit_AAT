@@ -462,7 +462,9 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const panel = within(await screen.findByRole('tabpanel', { name: 'UV Selection' }));
     const productSelect = await panel.findByRole('combobox', { name: 'UV product revision for UV branch' });
     expect(apiGet).toHaveBeenCalledWith('/design-books/book-1/uv/system-1');
-    expect(panel.getByRole('option', { name: /UV-200 — Current Approved Reactor/ })).toBeInTheDocument();
+    const productOption = panel.getByRole('option', { name: 'Current Approved Reactor' });
+    expect(productOption).toBeInTheDocument();
+    expect(productOption).not.toHaveTextContent(/UV-200|Aquatic Systems|Rev 4|6L|30L/);
     await user.selectOptions(productSelect, 'uv-revision-2');
     await user.clear(panel.getByRole('spinbutton', { name: 'Unit quantity for UV branch' }));
     await user.type(panel.getByRole('spinbutton', { name: 'Unit quantity for UV branch' }), '2');
