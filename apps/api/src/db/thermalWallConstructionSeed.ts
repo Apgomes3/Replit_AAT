@@ -24,7 +24,7 @@ export async function seedThermalWallConstructions(
          (construction_code, construction_label, material,
           conductivity_w_m_k, conductivity_units, version,
           source_basis, source_reference, notes, status, approved_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved',$11)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approved',$10)
        ON CONFLICT (construction_code, version) DO NOTHING
        RETURNING id`,
       [
