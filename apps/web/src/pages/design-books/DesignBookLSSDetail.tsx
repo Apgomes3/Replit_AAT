@@ -5147,10 +5147,42 @@ export default function DesignBookLSSDetail() {
             || 'UV Selection data could not be loaded. Try again.';
           const systemFlowM3h = systemFlow ?? null;
 
-          const loopFlowM3h = (loopNumber: number): number | null => {
-            if (systemFlowM3h == null) return null;
+          const uvSourceFlowM3h = (source: unknown): number | null => {
+            const normalized = String(source || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+            const resultKeys = normalized === 'surfaceskim' || normalized === 'surfaceskimmerbox'
+              ? ['surface_skim_flow_m3h']
+              : normalized === 'bottomdrain'
+                ? ['bottom_drain_flow_m3h']
+                : normalized === 'bothintegrated'
+                  ? ['surface_skim_flow_m3h', 'bottom_drain_flow_m3h']
+                  : null;
+            if (!resultKeys) return systemFlowM3h;
+            if ((links as any[]).length === 0) return null;
+            const calculations = (links as any[]).map(link => exhibitCalculations.find(
+              (candidate: any) => String(candidate.inputs?.exhibit_id) === String(link.exhibit_id),
+            ));
+            if (calculations.some((calculation: any) =>
+              !calculation || calculation.status !== 'valid' ||
+              calculation.is_stale === true || calculation.freshness === 'stale' ||
+              resultKeys.some(key => nullableNumber(calculation.results?.[key]) == null),
+            )) return null;
+            return calculations.reduce((total: number, calculation: any) =>
+              total + resultKeys.reduce((subtotal, key) =>
+                subtotal + Number(calculation.results[key]), 0), 0);
+          };
+
+          const loopFlowM3h = (loopNumber: number, path: number[] = []): number | null => {
+            if (path.includes(loopNumber)) return null;
+            if (system[`loop${loopNumber}_flow_mode`] === 'matched') {
+              const target = nullableNumber(system[`loop${loopNumber}_match_loop_number`]);
+              return Number.isInteger(target) && target! >= 1 && target! <= 3
+                ? loopFlowM3h(target!, [...path, loopNumber])
+                : null;
+            }
             const pct = nullableNumber(system[`loop${loopNumber}_flow_pct`]);
-            return pct != null ? systemFlowM3h * pct / 100 : null;
+            const source = system[`loop${loopNumber}_flow_source`];
+            const basisFlow = uvSourceFlowM3h(source);
+            return pct != null && basisFlow != null ? basisFlow * pct / 100 : null;
           };
 
           const streamFlowM3h = (stream: any): number | null => {

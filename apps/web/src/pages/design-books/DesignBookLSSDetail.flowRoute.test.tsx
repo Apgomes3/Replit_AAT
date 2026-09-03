@@ -2209,6 +2209,50 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(uvPanel.queryByText('No UV side streams configured')).not.toBeInTheDocument();
   });
 
+  it('sizes a UV side stream from the resolved source-based parent-loop flow', async () => {
+    renderFlowRoute(
+      {
+        ...baseSystem,
+        loop1_flow_source: 'Surface Skim',
+        loop1_flow_pct: 100,
+        side_streams: [{
+          id: 'uv-stream-1',
+          parent_loop_number: 1,
+          name: 'UV',
+          preset: 'UV',
+          flow_pct: 100,
+          sort_order: 0,
+        }],
+      },
+      bookWithPrimarySplit,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=uv',
+      null,
+      [],
+      [],
+      [],
+      {
+        streams: [{
+          id: 'uv-stream-1',
+          parent_loop_number: 1,
+          name: 'UV',
+          preset: 'UV',
+          flow_pct: 100,
+          sort_order: 0,
+        }],
+        selectable_revisions: [],
+        saved: null,
+      },
+    );
+
+    const uvPanel = within(await screen.findByRole('tabpanel', { name: 'UV Selection' }));
+    expect(await uvPanel.findByText((_, element) =>
+      element?.textContent?.trim() === '100.0% of loop · Flow: 45.00 m³/h · 12.500 L/s',
+    )).toBeInTheDocument();
+    expect(uvPanel.queryByText(/Flow: 100\.00 m³\/h/)).not.toBeInTheDocument();
+  });
+
   it('shows a UV request failure instead of the valid no-streams state', async () => {
     const user = userEvent.setup();
     renderFlowRoute(baseSystem);

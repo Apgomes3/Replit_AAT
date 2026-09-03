@@ -4763,7 +4763,27 @@ router.post(
     );
 
     // Build UVStreamInput objects
-    const resolvedLoopFlows = resolveLoopFlows(system, designFlowM3h);
+    const uvSourceFlows: Record<string, number | null> = {};
+    if (links.length > 0) {
+      const aggregateUvSourceFlow = (resultKey: string): number | null => {
+        const linkedCalculations = links.map(link => exhibitCalculations.find(
+          calculation => calculation.inputs.exhibit_id === link.exhibit_id,
+        ));
+        if (linkedCalculations.some(calculation =>
+          !calculation || calculation.status !== 'valid' ||
+          calculation.is_stale === true || calculation.freshness === 'stale' ||
+          calculation.results?.[resultKey] == null,
+        )) return null;
+        return linkedCalculations.reduce(
+          (total, calculation) => total + Number(calculation!.results[resultKey]),
+          0,
+        );
+      };
+      uvSourceFlows['Surface Skim'] = aggregateUvSourceFlow('surface_skim_flow_m3h');
+      uvSourceFlows['Bottom Drain'] = aggregateUvSourceFlow('bottom_drain_flow_m3h');
+      uvSourceFlows['Both Integrated'] = aggregateUvSourceFlow('total_return_flow_m3h');
+    }
+    const resolvedLoopFlows = resolveLoopFlows(system, designFlowM3h, uvSourceFlows);
     const streamInputs: UVStreamInput[] = streamsResult.rows.map(row => {
       const loopFlowM3h = row.parent_loop_number != null
         ? resolvedLoopFlows[Number(row.parent_loop_number) - 1]?.flow_m3h ?? null : null;
