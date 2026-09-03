@@ -181,7 +181,7 @@ export function calculateFoamFractionatorCapacity(
     };
   }) : [];
   const reasons: string[] = [];
-  if (parentFlowM3h == null || parentFlowM3h < 0) reasons.push('Parent loop allocation is unavailable.');
+  if (parentFlowM3h == null || parentFlowM3h < 0) reasons.push('Required Foam Fractionator flow is unavailable.');
   if (!selectedProducts.length) reasons.push('Select at least one Foam Fractionator.');
   if (selectedProducts.some(product => product.quantity <= 0)) reasons.push('Every selected fractionator requires a positive whole-number quantity.');
   if (selectedProducts.some(product => product.diameter_mm == null)) reasons.push('Every selected fractionator requires a valid saved diameter.');
@@ -756,7 +756,13 @@ export function calculateSystemEngineering(
   // Resolve matched loops after reading the complete route. This deliberately
   // uses loop flow, not its allocation percent, so a chain always follows the
   // current authoritative source flow.
-  const resolvedLoopFlows = resolveLoopFlows(system, designFlow, sourceFlows);
+  const foamLoops = [1, 2, 3].filter(
+    loopNumber => String(system?.[`loop${loopNumber}_filtration`] || '') === 'Foam Fractionation',
+  );
+  if (foamLoops.length > 1) {
+    reasons.push('Only one Flow Route loop may use Foam Fractionation.');
+  }
+  const resolvedLoopFlows = resolveLoopFlows(system, designFlow);
   for (const resolved of resolvedLoopFlows) {
     if (resolved.flow_mode === 'matched' && resolved.unavailable_reason) reasons.push(resolved.unavailable_reason);
   }
@@ -793,10 +799,12 @@ export function calculateSystemEngineering(
               allocation_id: allocation?.id || null,
               notes: allocation?.notes || null,
               ...calculateFoamFractionatorCapacity(
-                parentFlow,
+                sourceFlows['Surface Skim'] ?? null,
                 allocation?.process_rate_ls_m2,
                 allocation?.products || [],
               ),
+              flow_basis: 'aggregate_surface_skim',
+              required_flow_m3h: sourceFlows['Surface Skim'] ?? null,
             };
           })()
         : null,

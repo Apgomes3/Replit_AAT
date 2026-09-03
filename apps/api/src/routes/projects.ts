@@ -2072,6 +2072,14 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
       loop2_match_loop_number: resolvedMatchTargets[1],
       loop3_match_loop_number: resolvedMatchTargets[2],
     };
+    const foamFractionationLoops = [1, 2, 3].filter(
+      loopNumber => intendedSystem[`loop${loopNumber}_filtration`] === 'Foam Fractionation',
+    );
+    if (foamFractionationLoops.length > 1) {
+      return res.status(400).json({
+        error: { code: 'VALIDATION', message: 'Only one Flow Route loop may use Foam Fractionation.' },
+      });
+    }
     for (const [index, target] of resolvedMatchTargets.entries()) {
       if (target != null && !intendedSystem[`loop${target}_flow_source`] &&
           !intendedSystem[`loop${target}_filtration`]) {

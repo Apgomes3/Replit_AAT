@@ -1295,8 +1295,8 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await user.selectOptions(route.getByRole('combobox', { name: 'Loop 1 Flow Source' }), 'Surface Skim');
     expect(route.getByText('(Surface Skimmer Box)')).toBeInTheDocument();
     expect(route.getByText('36% · 45.0 m³/h')).toBeInTheDocument();
-    expect(route.getByText('Loop Flow Allocation (% of Surface Skim flow)')).toBeInTheDocument();
-    expect(route.getByText('18.0 m³/h')).toBeInTheDocument();
+    expect(route.getByText('Loop Flow Allocation (% of total system flow)')).toBeInTheDocument();
+    expect(route.getAllByText('40.0 m³/h').length).toBeGreaterThan(0);
     expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(40);
 
     await user.click(route.getByRole('button', { name: 'L/s' }));
@@ -2410,7 +2410,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
           quantity: 1,
         }],
       }],
-    }, baseBook, [], [product]);
+    }, bookWithLinkedExhibits, [primaryLink], [product]);
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
     const context = route.getByLabelText('Foam Fractionator flow context for Loop 1');
@@ -2419,6 +2419,8 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(context.compareDocumentPosition(capacity)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(within(context).getByText('40% of total system flow')).toBeInTheDocument();
     expect(within(context).getByText('40.0 m³/h')).toBeInTheDocument();
+    expect(within(context).getByText('45.0 m³/h')).toBeInTheDocument();
+    expect(within(context).getByText('aggregate Surface Skim flow')).toBeInTheDocument();
     expect(within(context).getByText('25% of loop')).toBeInTheDocument();
     expect(within(context).getByText('10.0 m³/h derived branch flow')).toBeInTheDocument();
 
@@ -2468,7 +2470,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
           quantity: 1,
         }],
       }],
-    }, baseBook, [], [product]);
+    }, bookWithLinkedExhibits, [primaryLink], [product]);
     await screen.findByRole('heading', { name: 'Primary Life Support' });
 
     const route = within(document.querySelector('#flow-route')!);
@@ -2613,7 +2615,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
           quantity: 1,
         }],
       }],
-    }, baseBook, [], [product]);
+    }, bookWithLinkedExhibits, [primaryLink], [product]);
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
@@ -2632,7 +2634,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(slider).toHaveValue('19');
     expect(rateInput).toHaveValue(19);
     expect(route.getByText('Suggested standalone quantity')).toBeInTheDocument();
-    expect(route.getByText('3 units')).toBeInTheDocument();
+    expect(route.getByText('4 units')).toBeInTheDocument();
     expect(rateInput).toHaveValue(19);
 
     fireEvent.change(rateInput, { target: { value: '24' } });
@@ -2644,7 +2646,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await user.click(route.getByRole('button', { name: 'Apply rate + quantity' }));
     expect(route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' })).toHaveValue(20);
     await user.click(route.getByRole('button', { name: 'Details' }));
-    expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(3);
+    expect(route.getByRole('spinbutton', { name: 'FF-500 quantity' })).toHaveValue(4);
 
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
     await waitFor(() => expect(apiPut).toHaveBeenCalledWith(
@@ -2655,7 +2657,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
           process_rate_ls_m2: 20,
           products: [expect.objectContaining({
             product_master_id: 'ff-500',
-            quantity: 3,
+            quantity: 4,
           })],
         })],
       }),

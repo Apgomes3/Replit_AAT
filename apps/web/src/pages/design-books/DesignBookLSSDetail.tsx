@@ -1159,6 +1159,12 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
 }
 
 function flowAllocationError(draft: Record<string, any>): string | null {
+  const foamFractionationLoops = [1, 2, 3].filter(
+    n => draft[`loop${n}_filtration`] === 'Foam Fractionation',
+  );
+  if (foamFractionationLoops.length > 1) {
+    return 'Only one Flow Route loop may use Foam Fractionation.';
+  }
   let total = 0;
   for (const n of [1, 2, 3]) {
     const isMatched = draft[`loop${n}_flow_mode`] === 'matched';
@@ -3512,26 +3518,21 @@ export default function DesignBookLSSDetail() {
         const nextLoopToAdd: number | undefined = [1, 2, 3].find(n =>
           !loopHasData(n) && (n === 1 || loopHasData(n - 1)));
         const canAddNext = nextLoopToAdd != null && nextLoopToAdd <= 3;
-        const sourceFlowContext = (source: unknown): {
+        const exhibitSourceFlowContext = (source: unknown): {
           flow: number | null;
           basisLabel: string;
+          unavailableReason?: string;
         } => {
           const reference = sourceReferenceFor(source);
-          // With no linked-exhibit context, preserve the legacy system-flow
-          // basis. Once linked exhibits exist, a recognized exhibit source
-          // must use its complete aggregated flow or remain unavailable.
-          if (!reference || (reference.exhibitCount === 0 && reference.unavailableReason)) {
-            return { flow: systemFlow, basisLabel: 'total system flow' };
-          }
           return {
-            flow: reference.combinedFlowM3h,
-            basisLabel: `${String(source).trim()} flow`,
+            flow: reference?.unavailableReason ? null : (reference?.combinedFlowM3h ?? null),
+            basisLabel: `aggregate ${String(source).trim()} flow`,
+            unavailableReason: reference?.unavailableReason,
           };
         };
-        const flowForPercentage = (percentage: unknown, source: unknown): number | null => {
+        const flowForPercentage = (percentage: unknown): number | null => {
           const pct = nullableNumber(percentage);
-          const basisFlow = sourceFlowContext(source).flow;
-          return pct != null && basisFlow != null && basisFlow > 0 ? basisFlow * pct / 100 : null;
+          return pct != null && systemFlow != null && systemFlow > 0 ? systemFlow * pct / 100 : null;
         };
         const loopMode = (source: any, n: number) =>
           source?.[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated';
@@ -3546,10 +3547,7 @@ export default function DesignBookLSSDetail() {
           if (path.includes(n)) return { flow: null, reason: 'Match cycle detected', chain: [...path, n] };
           if (loopMode(source, n) !== 'matched') {
             return {
-              flow: flowForPercentage(
-                source?.[`loop${n}_flow_pct`],
-                source?.[`loop${n}_flow_source`],
-              ),
+              flow: flowForPercentage(source?.[`loop${n}_flow_pct`]),
               chain: [...path, n],
             };
           }
@@ -3622,7 +3620,9 @@ export default function DesignBookLSSDetail() {
           if (!Number.isFinite(loopFlow) || !(Number(loopFlow) > 0)) {
             return {
               status: 'incomplete',
-              reason: `Enter a positive parent-loop allocation to calculate ${equipmentLabel} capacity.`,
+              reason: isSandFilter
+                ? 'Enter a positive parent-loop allocation to calculate Sand Filter capacity.'
+                : 'A current aggregate Surface Skim flow is required to calculate Foam Fractionator capacity.',
             };
           }
           if (!products.length) return { status: 'incomplete', reason: `Select at least one ${isSandFilter ? 'AAT Sand Filter' : 'Foam Fractionator'}.` };
@@ -3663,7 +3663,10 @@ export default function DesignBookLSSDetail() {
           const isSandFilter = source?.[`loop${n}_filtration`] === 'Sand Filter';
           const equipmentLabel = isSandFilter ? 'Sand Filter' : 'Foam Fractionator';
           const catalogProducts = isSandFilter ? sandFilterProducts : fractionatorProducts;
-          const calculation: any = flowEquipmentCalculation(source, n, loopFlow);
+          const equipmentFlow = isSandFilter
+            ? loopFlow
+            : exhibitSourceFlowContext('Surface Skim').flow;
+          const calculation: any = flowEquipmentCalculation(source, n, equipmentFlow);
           const statusStyle = calculation.status === 'matched'
             ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
             : calculation.status === 'required_above_capacity'
@@ -3686,7 +3689,7 @@ export default function DesignBookLSSDetail() {
           const recommendation: any = (isSandFilter
             ? calculateSandFilterSizingRecommendation
             : calculateFoamFractionatorSizingRecommendation)(
-            loopFlow,
+             equipmentFlow,
             selectedProducts,
             allocation.process_rate_ls_m2,
           );
@@ -3769,7 +3772,7 @@ export default function DesignBookLSSDetail() {
                           product={product}
                           loopNumber={n}
                           calculation={calculation}
-                          loopFlow={loopFlow}
+                           loopFlow={equipmentFlow}
                           currentRate={currentRate}
                           statusLabel={statusLabel}
                           notes={allocation.notes}
@@ -3933,7 +3936,8 @@ export default function DesignBookLSSDetail() {
           const bioPct = nullableNumber(system[`loop${n}_bio_degas_pct`]);
           const linked = !!system[`loop${n}_link_bio_degas`];
           const matched = loopMode(system, n) === 'matched';
-          const flowContext = sourceFlowContext(src);
+          const flowContext = { flow: systemFlow, basisLabel: 'total system flow' };
+          const foamFlowContext = exhibitSourceFlowContext('Surface Skim');
           const resolvedFlow = resolveLoopFlow(system, n);
           const loopFlow = resolvedFlow.flow;
           const bioFlow = loopFlow != null && bioPct != null
@@ -3973,8 +3977,15 @@ export default function DesignBookLSSDetail() {
                   <div className="mb-2 flex items-center gap-2 font-semibold uppercase tracking-wide text-cyan-800">
                     <Gauge className="h-3.5 w-3.5" /> Flow context
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="grid gap-2 sm:grid-cols-4">
                     <div>
+                       <span className="block text-cyan-900/60">Required FF flow</span>
+                       <strong className="block font-mono text-cyan-950">
+                         {foamFlowContext.flow != null ? fmtFlow(foamFlowContext.flow) : 'Unavailable'}
+                       </strong>
+                       <span className="text-cyan-900/70">{foamFlowContext.basisLabel}</span>
+                     </div>
+                     <div>
                       <span className="block text-cyan-900/60">Loop allocation</span>
                        <span className="block text-cyan-900/70">{flowContext.basisLabel}</span>
                        <strong className="text-cyan-950">{allocationStatus(loopPct, flowContext.basisLabel)}</strong>
@@ -4098,7 +4109,7 @@ export default function DesignBookLSSDetail() {
           const matched = loopMode(flowForm, n) === 'matched';
           const loopPct = nullableNumber(flowForm[pctKey]);
           const bioPct = nullableNumber(flowForm[bioPctKey]);
-          const flowContext = sourceFlowContext(curSrc);
+          const flowContext = { flow: systemFlow, basisLabel: 'total system flow' };
           const resolvedFlow = resolveLoopFlow(flowForm, n);
           const loopFlow = resolvedFlow.flow;
           const bioFlow = loopFlow != null && bioPct != null ? loopFlow * bioPct / 100 : null;
@@ -4715,7 +4726,7 @@ export default function DesignBookLSSDetail() {
                                   onChange={e => setLRF('flow_pct', e.target.value)}
                                   className="w-20 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />}
                                 <div className="mt-1 text-stone-800">{fmtFlow(rowLoopFlow ?? 0)}</div>
-                                <div className="font-sans text-[10px] text-stone-400">{rowMatched ? 'matched flow (not allocated)' : allocationStatus(nullableNumber(listRowForm.flow_pct), 'system')}</div>
+                                <div className="font-sans text-[10px] text-stone-400">{rowMatched ? 'matched flow (not allocated)' : allocationStatus(nullableNumber(listRowForm.flow_pct), 'total system flow')}</div>
                               </td>
                               <td className="px-3 py-2 align-top">
                                 <select value={listRowForm.filtration} onChange={e => setLRF('filtration', e.target.value)}
@@ -4836,7 +4847,7 @@ export default function DesignBookLSSDetail() {
                             <td className="px-3 py-3 align-top font-mono text-xs">
                               <span className="text-stone-800">{fmtFlow(loopFlow ?? 0)}</span>
                               <span className="block font-sans text-[10px] text-stone-400">
-                                 {matched ? 'matched flow (not allocated)' : allocationStatus(loopPct, 'system')}
+                                 {matched ? 'matched flow (not allocated)' : allocationStatus(loopPct, 'total system flow')}
                               </span>
                             </td>
                             <td className="px-3 py-3 align-top">

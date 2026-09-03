@@ -151,7 +151,7 @@ describe('Foam Fractionator capacity', () => {
   });
 
   it.each([
-    { flow: null, rate: 20, products: [model('FF-500', 500, 1)], reason: 'Parent loop' },
+    { flow: null, rate: 20, products: [model('FF-500', 500, 1)], reason: 'Required Foam Fractionator flow' },
     { flow: 18, rate: 20, products: [], reason: 'Select at least one' },
     { flow: 18, rate: 20, products: [model('FF-500', null, 1)], reason: 'saved diameter' },
   ])('returns an incomplete result when required inputs are unavailable', ({ flow, rate, products, reason }) => {
@@ -162,6 +162,23 @@ describe('Foam Fractionator capacity', () => {
 });
 
 describe('Foam Fractionator release readiness', () => {
+  const foamLinks = [{ id: 'foam-link', exhibit_id: 'foam-exhibit', link_type: 'Primary' }];
+  const foamExhibitCalculations = [{
+    status: 'valid',
+    is_stale: false,
+    freshness: 'current',
+    inputs: {
+      exhibit_id: 'foam-exhibit',
+      target_turnover_rate_cycles_per_hour: 2,
+      water_type: 'Marine',
+    },
+    results: {
+      total_return_flow_m3h: 100,
+      surface_skim_flow_m3h: 30,
+      bottom_drain_flow_m3h: 70,
+      operating_volume_m3: 50,
+    },
+  }];
   const baseSystem = {
     id: 'system-foam',
     design_flow_m3h: 100,
@@ -175,7 +192,7 @@ describe('Foam Fractionator release readiness', () => {
 
   it('makes incomplete Foam Fractionator inputs invalidate the system calculation', () => {
     const result = calculateSystemEngineering(
-      baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [],
+      baseSystem, foamLinks, foamExhibitCalculations, null, '2026-08-28T00:00:00.000Z', [],
       [{ parent_loop_number: 1, process_rate_ls_m2: null, products: [] }],
     );
     expect(result.status).toBe('invalid');
@@ -184,7 +201,7 @@ describe('Foam Fractionator release readiness', () => {
 
   it('makes insufficient Foam Fractionator capacity invalidate the system calculation', () => {
     const result = calculateSystemEngineering(
-      baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [],
+      baseSystem, foamLinks, foamExhibitCalculations, null, '2026-08-28T00:00:00.000Z', [],
       [{
         parent_loop_number: 1,
         process_rate_ls_m2: 18,
@@ -203,7 +220,7 @@ describe('Foam Fractionator release readiness', () => {
 
   it('does not invalidate a system with adequate Foam Fractionator capacity', () => {
     const result = calculateSystemEngineering(
-      baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [],
+      baseSystem, foamLinks, foamExhibitCalculations, null, '2026-08-28T00:00:00.000Z', [],
       [{
         parent_loop_number: 1,
         process_rate_ls_m2: 20,
@@ -218,6 +235,21 @@ describe('Foam Fractionator release readiness', () => {
     );
     expect(result.flow_route.loops[0].foam_fractionation.match_status).toBe('capacity_above_required');
     expect(result.reasons.some(reason => reason.includes('Foam Fractionator'))).toBe(false);
+  });
+
+  it('rejects more than one Foam Fractionation loop', () => {
+    const result = calculateSystemEngineering(
+      {
+        ...baseSystem,
+        loop2_filtration: 'Foam Fractionation',
+        loop2_flow_pct: 50,
+      },
+      foamLinks,
+      foamExhibitCalculations,
+      null,
+    );
+    expect(result.status).toBe('invalid');
+    expect(result.reasons).toContain('Only one Flow Route loop may use Foam Fractionation.');
   });
 });
 
@@ -526,9 +558,9 @@ describe('aquarium engineering calculations', () => {
       allocated_flow_m3h: 320.221,
     });
     expect(system.flow_route.loops[0].foam_fractionation).toMatchObject({
-      match_status: 'matched',
+      match_status: 'capacity_above_required',
       inputs: {
-        parent_loop_flow_m3h: 224.155,
+        parent_loop_flow_m3h: 96.066,
       },
       results: {
         capacity_m3h: 224.357,
@@ -857,7 +889,7 @@ describe('aquarium engineering calculations', () => {
     expect(system.results.turnover_rate_cycles_per_hour).toBe(2);
     expect(system.results.flow_override_m3h).toBeNull();
     expect(system.inputs.source_flows_m3h['Surface Skim']).toBe(18.24);
-    expect(system.flow_route.loops[0].flow_m3h).toBe(9.12);
+    expect(system.flow_route.loops[0].flow_m3h).toBe(30.4);
   });
 
   it('reports linked system flow as unavailable when any exhibit hydraulics are incomplete', () => {
