@@ -219,7 +219,7 @@ export function pumpSourcePayload(
 /** Flow Route circuits use the Design Book's resolved system flow as input. */
 export function pumpCircuits(system: any, sideStreams: any[]): any[] {
   const baseFlow = nullableNumber(system.design_flow_m3h);
-  const resolvedLoops = resolveLoopFlows(system, baseFlow);
+  const resolvedLoops = resolveLoopFlows(system, baseFlow, system.source_flows_m3h || {});
   const loopFlow = (number: number) => resolvedLoops[number - 1]?.flow_m3h ?? null;
   const flowMode = (number: number) => resolvedLoops[number - 1]?.flow_mode || 'allocated';
   const activeLoops = [1, 2, 3].filter(n =>

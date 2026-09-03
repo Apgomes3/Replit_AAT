@@ -1592,6 +1592,7 @@ export async function loadReleaseContext(
       stored_design_flow_m3h: system.design_flow_m3h,
       design_flow_m3h: calculation?.results.design_flow_m3h ?? null,
       design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
+      source_flows_m3h: calculation?.inputs.source_flows_m3h || {},
     };
   });
   const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);

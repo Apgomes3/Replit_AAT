@@ -79,7 +79,11 @@ vi.mock('../db', () => {
 function request(app: Express, method: string, path: string, body?: any) {
   return new Promise<{ status: number; body: any }>((resolve, reject) => {
     const server = app.listen(0, '127.0.0.1', () => {
-      const payload = body === undefined ? '' : JSON.stringify(body);
+      const normalizedBody = body !== undefined && method === 'PUT' &&
+        path.includes('/pump-selections') && body.installation_location === undefined
+        ? { ...body, installation_location: 'external' }
+        : body;
+      const payload = normalizedBody === undefined ? '' : JSON.stringify(normalizedBody);
       const token = jwt.sign({ id: 'engineer-1', email: 'engineer@example.com', role: 'engineer' }, secret);
       const req = http.request({ host: '127.0.0.1', port: (server.address() as any).port, method, path,
         headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }) } }, res => {
@@ -103,6 +107,10 @@ describe('pump selection HTTP routes', () => {
     state.saved = []; state.candidates = [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }];
     state.fractionatorAllocations = [];
     state.exhibits = []; state.tanks = []; state.hydraulics = []; state.links = [];
+    state.sideStreams = [{
+      id: 'side-1', system_id: 'system-1', parent_loop_number: 1,
+      name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0,
+    }];
     state.system.calculation_inputs = { design_flow_source: 'manual_override' }; state.system.design_flow_m3h = '100';
     state.system.loop1_name = 'Main return';
     state.system.loop1_flow_source = 'Bottom Drain';
@@ -154,8 +162,9 @@ describe('pump selection HTTP routes', () => {
     state.links = [{ id: 'link-1', system_id: 'system-1', exhibit_id: 'ex-1', exhibit_code: 'EX-1', link_type: 'Primary' }];
     const response = await request(app, 'GET', '/api/v1/systems/system-1/pump-selections?design_book_id=book-1');
     expect(response.status).toBe(200);
-    // 20 m³ × 2/h = 40 m³/h resolved Design Book system flow; loop is 60%.
-    expect(response.body.items.find((item: any) => item.circuit_key === 'loop:1').flow_m3h).toBe(24);
+    // Bottom Drain is 70% of 40 m³/h, then the Sand Filter loop takes 60%.
+    expect(response.body.items.find((item: any) => item.circuit_key === 'loop:1').flow_m3h).toBe(16.8);
+    expect(response.body.items.find((item: any) => item.circuit_key === 'side_stream:side-1').flow_m3h).toBe(4.2);
   });
 
   it('persists an eligible same-system pump and returns ready sizing', async () => {

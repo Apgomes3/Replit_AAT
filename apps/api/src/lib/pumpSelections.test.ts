@@ -21,6 +21,28 @@ describe('pump circuit intent', () => {
     ]);
   });
 
+  it('uses the resolved source flow for a Sand Filter loop and its side stream', () => {
+    const circuits = pumpCircuits({
+      ...system,
+      design_flow_m3h: 323.2,
+      loop1_flow_source: 'Bottom Drain',
+      loop1_flow_pct: 100,
+      source_flows_m3h: { 'Bottom Drain': 227 },
+    }, streams);
+
+    expect(circuits).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        circuit_key: 'loop:1',
+        circuit_type: 'Sand Filter',
+        flow_m3h: 227,
+      }),
+      expect.objectContaining({
+        circuit_key: 'side_stream:yes',
+        flow_m3h: 56.75,
+      }),
+    ]));
+  });
+
   it('derives FFVP duty from selected fractionator venturi flows and quantities', () => {
     const circuits = pumpCircuits({
       ...system,
