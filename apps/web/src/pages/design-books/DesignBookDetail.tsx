@@ -3916,6 +3916,11 @@ function ThermalTab({
     .filter(Boolean);
   const [selected, setSelected] = useState<any>(null);
   const [selectedWallTankId, setSelectedWallTankId] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState({
+    environment: false,
+    linkedSource: false,
+    operational: false,
+  });
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -4679,7 +4684,19 @@ function ThermalTab({
 
           <div className="flex flex-col gap-6">
           <section className="order-2">
-            <h3 className="mb-3 font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">02</span>Linked source and geometry</h3>
+             <h3 className="mb-3 font-semibold text-[#263746]">
+               <button
+                 type="button"
+                 className="flex w-full items-center justify-between gap-3 text-left"
+                 aria-expanded={!collapsedSections.linkedSource}
+                 aria-controls="thermal-linked-source-panel"
+                 onClick={() => setCollapsedSections(current => ({ ...current, linkedSource: !current.linkedSource }))}
+               >
+                 <span><span className="mr-2 text-[#9aa8af]">02</span>Linked source and geometry</span>
+                 <ChevronDown className={`h-4 w-4 shrink-0 text-[#71808a] transition-transform ${collapsedSections.linkedSource ? '' : 'rotate-180'}`} />
+               </button>
+             </h3>
+             {!collapsedSections.linkedSource && <div id="thermal-linked-source-panel" className="space-y-3">
             {displayedTankWallBases.length > 0 && (
               <div
                 role="tablist"
@@ -4785,11 +4802,24 @@ function ThermalTab({
                 ))}
               </div>
             </div>
+             </div>}
           </section>
 
           <section className="contents">
             <div className="order-1 space-y-3">
-            <h3 className="font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">01</span>Environment and effective values</h3>
+             <h3 className="font-semibold text-[#263746]">
+               <button
+                 type="button"
+                 className="flex w-full items-center justify-between gap-3 text-left"
+                 aria-expanded={!collapsedSections.environment}
+                 aria-controls="thermal-environment-panel"
+                 onClick={() => setCollapsedSections(current => ({ ...current, environment: !current.environment }))}
+               >
+                 <span><span className="mr-2 text-[#9aa8af]">01</span>Environment and effective values</span>
+                 <ChevronDown className={`h-4 w-4 shrink-0 text-[#71808a] transition-transform ${collapsedSections.environment ? '' : 'rotate-180'}`} />
+               </button>
+             </h3>
+             {!collapsedSections.environment && <div id="thermal-environment-panel" className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <ThermalNumericField name="ambient_air_temperature_c" label="Ambient air temperature" unit="°C"
                 value={form.ambient_air_temperature_c} onChange={event => update('ambient_air_temperature_c', event.target.value)} disabled={readOnly} />
@@ -4866,6 +4896,7 @@ function ThermalTab({
                 </label>
               </div>
             )}
+             </div>}
             </div>
             <div className="order-3 space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
               <div>
@@ -5054,7 +5085,19 @@ function ThermalTab({
           </section>
 
           <section className="order-5 space-y-3">
-            <h3 className="font-semibold text-stone-900">Operational gains and capacity</h3>
+             <h3 className="font-semibold text-stone-900">
+               <button
+                 type="button"
+                 className="flex w-full items-center justify-between gap-3 text-left"
+                 aria-expanded={!collapsedSections.operational}
+                 aria-controls="thermal-operational-panel"
+                 onClick={() => setCollapsedSections(current => ({ ...current, operational: !current.operational }))}
+               >
+                 <span><span className="mr-2 text-stone-400">03</span>Operational gains and capacity</span>
+                 <ChevronDown className={`h-4 w-4 shrink-0 text-stone-500 transition-transform ${collapsedSections.operational ? '' : 'rotate-180'}`} />
+               </button>
+             </h3>
+             {!collapsedSections.operational && <div id="thermal-operational-panel" className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <ThermalNumericField name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW"
                 value={form.equipment_heat_gain_kw} onChange={event => update('equipment_heat_gain_kw', event.target.value)} disabled={readOnly} />
@@ -5088,6 +5131,7 @@ function ThermalTab({
               <textarea rows={2} value={form.deviation_justification || ''} onChange={e => update('deviation_justification', e.target.value)}
                 disabled={readOnly} className={`${fieldClass} resize-none`} />
             </label>
+             </div>}
           </section>
 
           {detail?.reasons?.length > 0 && (
