@@ -3322,8 +3322,8 @@ function LegacyThermalTab({
       toast.success(response.data.calculation?.status === 'Ready'
         ? 'Thermal calculation saved and Ready'
         : 'Thermal inputs saved with blockers');
+      await onRefresh();
       setSelected(response.data);
-      onRefresh();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Unable to save thermal calculation');
     } finally {
@@ -4359,8 +4359,8 @@ function ThermalTab({
       toast.success(response.data.calculation?.status === 'Ready'
         ? 'Thermal calculation saved and Ready'
         : 'Thermal inputs saved with blockers');
+      await onRefresh();
       setSelected(response.data);
-      onRefresh();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Unable to save thermal calculation');
     } finally {
@@ -4948,6 +4948,51 @@ function ThermalTab({
           </section>
 
           <section className="space-y-3">
+            <div>
+              <h3 className="font-semibold text-[#263746]">Wall calculations by exhibit tank</h3>
+              <p className="mt-1 text-xs text-[#71808a]">
+                Each linked tank is calculated separately from its exhibit material, thickness, governed conductivity, exposed area, and quantity.
+              </p>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
+              <table className="w-full min-w-[980px] text-left text-xs">
+                <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-500">
+                  <tr>
+                    <th className="px-3 py-2">Exhibit / tank</th>
+                    <th className="px-3 py-2">Material</th>
+                    <th className="px-3 py-2 text-right">Thickness</th>
+                    <th className="px-3 py-2 text-right">k</th>
+                    <th className="px-3 py-2 text-right">R material</th>
+                    <th className="px-3 py-2 text-right">U material</th>
+                    <th className="px-3 py-2 text-right">U overall</th>
+                    <th className="px-3 py-2 text-right">Wall load</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {(detail?.results?.tank_wall_calculations || []).map((wall: any) => (
+                    <tr key={wall.tank_id || `${wall.exhibit_id}-${wall.tank_code}`}>
+                      <td className="px-3 py-3">
+                        <div className="font-semibold text-stone-800">{wall.exhibit_code || wall.exhibit_id || 'Unassigned exhibit'}</div>
+                        <div className="mt-0.5 font-mono text-[11px] text-stone-500">{wall.tank_code || wall.tank_id}</div>
+                      </td>
+                      <td className="px-3 py-3 text-stone-700">{wall.material || 'Missing'}</td>
+                      <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.thickness_mm, 2)} mm</td>
+                      <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.conductivity_w_m_k, 3)} W/m·K</td>
+                      <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.material_resistance_m2_k_w, 4)} m²K/W</td>
+                      <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.material_u_value_w_m2_k, 2)} W/m²K</td>
+                      <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.overall_u_value_w_m2_k, 2)} W/m²K</td>
+                      <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.wall_conduction_kw, 2)} kW</td>
+                    </tr>
+                  ))}
+                  {!(detail?.results?.tank_wall_calculations || []).length && (
+                    <tr><td colSpan={8} className="px-3 py-6 text-center text-stone-500">Save the calculation to resolve each linked tank wall.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="space-y-3">
             <h3 className="font-semibold text-stone-900">Operational gains and capacity</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <ThermalNumericField name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW"
@@ -5068,9 +5113,11 @@ export default function DesignBookDetail() {
   });
   const projects: any[] = projectsData?.items || [];
 
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['design-book', id] });
-    qc.invalidateQueries({ queryKey: ['design-book-release-preflight', id] });
+  const refresh = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['design-book', id] }),
+      qc.invalidateQueries({ queryKey: ['design-book-release-preflight', id] }),
+    ]);
   };
 
   const handleTabChange = (nextTab: Tab) => {
