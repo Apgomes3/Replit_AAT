@@ -225,7 +225,7 @@ function sumNumber(values: Array<number | null>) {
 
 function tankGeometry(tank: any) {
   const shape = String(tank?.eff_shape || tank?.shape_type || '').toLowerCase();
-  const freeSurface = positive(
+  let freeSurface = positive(
     tank?.free_surface_area_m2 ?? tank?.water_surface_area_m2 ?? tank?.surface_area_m2,
   );
   const quantity = Math.max(1, Number.parseInt(String(tank?.quantity ?? 1), 10) || 1);
@@ -235,6 +235,18 @@ function tankGeometry(tank: any) {
     tank?.water_depth_mm ?? tank?.eff_water_level_mm ?? tank?.design_water_level_mm ??
     tank?.inner_height_mm ?? tank?.eff_height_mm ?? tank?.height_mm,
   );
+  let freeSurfaceSource = freeSurface != null
+    ? (tank?.free_surface_area_m2 != null || tank?.water_surface_area_m2 != null
+      ? 'tank saved free-surface area'
+      : 'tank saved water-surface area')
+    : 'missing';
+  if (freeSurface == null && shape === 'cylindrical' && width != null) {
+    freeSurface = Math.PI * Math.pow(width / 2, 2) / 1e6;
+    freeSurfaceSource = 'cylindrical diameter footprint';
+  } else if (freeSurface == null && shape !== 'custom' && length != null && width != null) {
+    freeSurface = length * width / 1e6;
+    freeSurfaceSource = 'rectangular length × width footprint';
+  }
   let wallArea = positive(tank?.exposed_wall_area_m2 ?? tank?.wall_area_m2);
   let wallSource = wallArea != null ? 'tank saved exposed wall area' : null;
   if (wallArea == null && shape === 'cylindrical' && width != null && waterHeight != null) {
@@ -264,10 +276,7 @@ function tankGeometry(tank: any) {
     volume_source: tank?.effective_operating_volume_m3 != null
       ? 'effective exhibit operating volume'
       : volume != null ? 'tank operating volume' : 'missing',
-    free_surface_source: freeSurface != null
-      ? (tank?.free_surface_area_m2 != null || tank?.water_surface_area_m2 != null
-        ? 'tank saved free-surface area' : 'tank saved water-surface area')
-      : 'missing',
+    free_surface_source: freeSurfaceSource,
     exposed_wall_source: wallSource || (shape === 'custom' ? 'custom geometry requires reviewed wall area' : 'missing'),
     wall_material: String(
       tank?.material_name ?? tank?.eff_primary_material ??

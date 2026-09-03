@@ -8,7 +8,7 @@ import {
   THERMAL_CONSTRUCTION_DEFAULTS,
 } from './thermalCalculations';
 
-function readySource(shapeType = 'Rectangular') {
+function readySource(shapeType = 'Rectangular', surfaceAreaM2: number | null = 10) {
   return buildThermalSourceContext({
     system: { id: 'system-1', system_code: 'LSS-1', design_flow_m3h: 120 },
     links: [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }],
@@ -24,7 +24,7 @@ function readySource(shapeType = 'Rectangular') {
       exhibit_id: 'exhibit-1',
       quantity: 1,
       shape_type: shapeType,
-      surface_area_m2: 10,
+      surface_area_m2: surfaceAreaM2,
       inner_length_mm: 5000,
       inner_width_mm: 2000,
       design_water_level_mm: 1500,
@@ -97,6 +97,16 @@ describe('AAT thermal calculation', () => {
       reviewed_override_used: false,
     });
     expect(result.inputs.water_temperature_basis).toEqual(result.water_temperature_basis);
+  });
+
+  it('derives free surface from linked rectangular tank dimensions when no saved area exists', () => {
+    const source = readySource('Rectangular', null);
+    const result = calculateThermalCalculation(source, readyInputs());
+
+    expect(result.status).toBe('Ready');
+    expect(result.results.free_surface_area_m2).toBeCloseTo(10, 12);
+    expect(source.linked_tanks[0].free_surface_source)
+      .toBe('rectangular length × width footprint');
   });
 
   it.each(THERMAL_CONSTRUCTION_DEFAULTS)(

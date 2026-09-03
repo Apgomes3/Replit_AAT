@@ -1262,8 +1262,8 @@ export async function loadReleaseContext(
          COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
          COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
          COALESCE(
-           t.surface_area_m2,
-           pm.surface_area_m2,
+           NULLIF(t.surface_area_m2, 0),
+           NULLIF(pm.surface_area_m2, 0),
            CASE
              WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                   AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
@@ -2329,9 +2329,9 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
           END,
           t.operating_volume_m3, pm.operating_volume_m3
         ) as design_volume_m3,
-        COALESCE(
-          t.surface_area_m2,
-          pm.surface_area_m2,
+         COALESCE(
+           NULLIF(t.surface_area_m2, 0),
+           NULLIF(pm.surface_area_m2, 0),
           CASE
             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
