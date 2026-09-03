@@ -109,6 +109,16 @@ describe('AAT thermal calculation', () => {
       .toBe('rectangular length × width footprint');
   });
 
+  it('uses rectangular dimensions as the temporary free-surface default for custom tanks', () => {
+    const source = readySource('Custom', null);
+    const result = calculateThermalCalculation(source, readyInputs());
+
+    expect(result.status).toBe('Ready');
+    expect(result.results.free_surface_area_m2).toBeCloseTo(10, 12);
+    expect(source.linked_tanks[0].free_surface_source)
+      .toBe('rectangular length × width footprint (custom default)');
+  });
+
   it.each(THERMAL_CONSTRUCTION_DEFAULTS)(
     'applies and freezes the governed $label construction default',
     construction => {

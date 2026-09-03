@@ -243,9 +243,11 @@ function tankGeometry(tank: any) {
   if (freeSurface == null && shape === 'cylindrical' && width != null) {
     freeSurface = Math.PI * Math.pow(width / 2, 2) / 1e6;
     freeSurfaceSource = 'cylindrical diameter footprint';
-  } else if (freeSurface == null && shape !== 'custom' && length != null && width != null) {
+  } else if (freeSurface == null && length != null && width != null) {
     freeSurface = length * width / 1e6;
-    freeSurfaceSource = 'rectangular length × width footprint';
+    freeSurfaceSource = shape === 'custom'
+      ? 'rectangular length × width footprint (custom default)'
+      : 'rectangular length × width footprint';
   }
   let wallArea = positive(tank?.exposed_wall_area_m2 ?? tank?.wall_area_m2);
   let wallSource = wallArea != null ? 'tank saved exposed wall area' : null;
