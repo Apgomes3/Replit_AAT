@@ -4412,6 +4412,9 @@ function ThermalTab({
   const selectedExhibitTanks = (selected?.source?.linked_tanks || [])
     .filter((tank: any) =>
       (tank.exhibit_id || tank.exhibit_code || 'unassigned') === selectedWallExhibitKey);
+  const lightingSchedulePower = selected?.source?.lighting_power_kw;
+  const lightingScheduleIsAvailable = selected?.source &&
+    Object.prototype.hasOwnProperty.call(selected.source, 'lighting_power_kw');
   const selectedConstructionDefault = normalizeThermalWallConstruction(
     form.tank_wall_default_basis ||
     constructionDefaults.find(item => item.code === form.tank_construction_type) ||
@@ -5056,7 +5059,14 @@ function ThermalTab({
               <ThermalNumericField name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW"
                 value={form.equipment_heat_gain_kw} onChange={event => update('equipment_heat_gain_kw', event.target.value)} disabled={readOnly} />
               <ThermalNumericField name="lighting_power_kw" label="Lighting power" unit="kW"
-                value={form.lighting_power_kw} onChange={event => update('lighting_power_kw', event.target.value)} disabled={readOnly} />
+                value={lightingScheduleIsAvailable ? lightingSchedulePower : form.lighting_power_kw}
+                onChange={event => update('lighting_power_kw', event.target.value)}
+                disabled={readOnly || lightingScheduleIsAvailable} />
+              {lightingScheduleIsAvailable && (
+                <p className="sm:col-span-2 lg:col-span-4 -mt-2 text-xs text-[#71808a]">
+                  Total of the captured lighting schedule across all linked exhibits; edit the lighting schedule on each exhibit.
+                </p>
+              )}
               <ThermalNumericField name="lighting_coupling_pct" label="Lighting-to-water coupling" unit="%"
                 value={form.lighting_coupling_pct} onChange={event => update('lighting_coupling_pct', event.target.value)} disabled={readOnly} />
               <ThermalNumericField name="capacity_margin_pct" label="Capacity margin" unit="%"

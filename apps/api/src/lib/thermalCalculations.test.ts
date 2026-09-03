@@ -38,6 +38,11 @@ function readySource(shapeType = 'Rectangular', surfaceAreaM2: number | null = 1
       inputs: { exhibit_id: 'exhibit-1' },
       results: { operating_volume_m3: 14 },
     }],
+    lights: [{
+      exhibit_id: 'exhibit-1',
+      power_kw: 1,
+      quantity: 1,
+    }],
   });
 }
 
@@ -97,6 +102,42 @@ describe('AAT thermal calculation', () => {
       reviewed_override_used: false,
     });
     expect(result.inputs.water_temperature_basis).toEqual(result.water_temperature_basis);
+  });
+
+  it('sums captured lighting power across linked exhibits and quantities', () => {
+    const source = buildThermalSourceContext({
+      system: { id: 'system-1', system_code: 'LSS-1' },
+      links: [
+        { system_id: 'system-1', exhibit_id: 'exhibit-1' },
+        { system_id: 'system-1', exhibit_id: 'exhibit-2' },
+      ],
+      exhibits: [
+        { id: 'exhibit-1', exhibit_code: 'EX-1', design_temperature_min: 24, design_temperature_max: 26 },
+        { id: 'exhibit-2', exhibit_code: 'EX-2', design_temperature_min: 24, design_temperature_max: 26 },
+      ],
+      tanks: [
+        { id: 'tank-1', tank_code: 'TK-1', exhibit_id: 'exhibit-1', quantity: 1, shape_type: 'Rectangular', surface_area_m2: 10, operating_volume_m3: 15, primary_material: 'Acrylic', wall_thickness_mm: 12 },
+        { id: 'tank-2', tank_code: 'TK-2', exhibit_id: 'exhibit-2', quantity: 1, shape_type: 'Rectangular', surface_area_m2: 10, operating_volume_m3: 15, primary_material: 'Acrylic', wall_thickness_mm: 12 },
+      ],
+      exhibitCalculations: [
+        { status: 'valid', freshness: 'fresh', inputs: { exhibit_id: 'exhibit-1' }, results: { operating_volume_m3: 14 } },
+        { status: 'valid', freshness: 'fresh', inputs: { exhibit_id: 'exhibit-2' }, results: { operating_volume_m3: 14 } },
+      ],
+      lights: [
+        { exhibit_id: 'exhibit-1', power_kw: 0.2, quantity: 2 },
+        { exhibit_id: 'exhibit-2', power_kw: 0.5, quantity: 1 },
+        { exhibit_id: 'unlinked', power_kw: 99, quantity: 1 },
+      ],
+    });
+
+    expect(source.lighting_power_kw).toBeCloseTo(0.9, 12);
+    expect(source.lighting_sources).toEqual([
+      expect.objectContaining({ exhibit_id: 'exhibit-1', lighting_power_kw: 0.4, light_count: 1 }),
+      expect.objectContaining({ exhibit_id: 'exhibit-2', lighting_power_kw: 0.5, light_count: 1 }),
+    ]);
+    const result = calculateThermalCalculation(source, readyInputs());
+    expect(result.contributions.lighting_kw).toBeCloseTo(0.765, 12);
+    expect(result.formula_inputs.lighting_power_kw).toBeCloseTo(0.9, 12);
   });
 
   it('derives free surface from linked rectangular tank dimensions when no saved area exists', () => {

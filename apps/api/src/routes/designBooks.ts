@@ -404,6 +404,7 @@ async function loadThermalCalculations(
   tanks: any[],
   exhibitCalculations: any[],
   wallConstructions: any[],
+  lights: any[] = [],
 ) {
   const savedRows = systems.length
     ? (await runner(
@@ -418,6 +419,7 @@ async function loadThermalCalculations(
       exhibits,
       tanks,
       exhibitCalculations,
+      lights,
       wallConstructions,
     });
     const saved = savedRows.find(row => row.system_id === system.id) || null;
@@ -1594,6 +1596,7 @@ export async function loadReleaseContext(
     tanks,
     exhibitCalculations,
     thermalConstructionDefaults,
+    lights,
   );
   const pumpSelections = await loadPumpSelections(runner, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
@@ -2644,6 +2647,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     tanks,
     exhibitCalculations,
     thermalConstructionDefaults,
+    lights,
   );
   const pumpSelections = await loadPumpSelections(query, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(

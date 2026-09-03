@@ -307,6 +307,7 @@ export function buildThermalSourceContext(args: {
   exhibits: any[];
   tanks: any[];
   exhibitCalculations?: any[];
+  lights?: any[];
   wallConstructions?: any[];
 }) {
   const {
@@ -315,6 +316,7 @@ export function buildThermalSourceContext(args: {
     exhibits = [],
     tanks = [],
     exhibitCalculations = [],
+    lights = [],
     wallConstructions = [],
   } = args;
   const governedWallConstructions = wallConstructions.length
@@ -367,6 +369,22 @@ export function buildThermalSourceContext(args: {
       source: 'Design Book exhibit effective operating-volume calculation',
     };
   });
+  const lightingSources = linkedExhibitIds.map(exhibitId => {
+    const exhibitLights = lights.filter(light => light.exhibit_id === exhibitId);
+    const powerKw = exhibitLights.reduce((total, light) => {
+      const unitPowerKw = finite(light.power_kw);
+      const quantity = finite(light.quantity) ?? 1;
+      return total + (unitPowerKw || 0) * quantity;
+    }, 0);
+    const exhibit = linkedExhibits.find(item => item.id === exhibitId);
+    return {
+      exhibit_id: exhibitId,
+      exhibit_code: exhibit?.exhibit_code || null,
+      lighting_power_kw: powerKw,
+      light_count: exhibitLights.length,
+      source: 'Design Book exhibit lighting schedule',
+    };
+  });
   const source = {
     system_id: system?.id || null,
     system_code: system?.system_code || null,
@@ -375,6 +393,8 @@ export function buildThermalSourceContext(args: {
     linked_tanks: linkedTanks,
     water_temperature_sources: exhibitTemperatures,
     effective_volume_sources: effectiveVolumeSources,
+    lighting_sources: lightingSources,
+    lighting_power_kw: lightingSources.reduce((total, item) => total + item.lighting_power_kw, 0),
     circulation_flows: circulationFlows,
     lss_circulation_flow_m3h: finite(system?.design_flow_m3h),
     duplicate_exhibit_ids: duplicateExhibitIds,
@@ -1135,11 +1155,17 @@ function validateCommonInputs(source: any, inputs: any, reasons: string[]) {
       reasons.push('Provide a deviation justification for the non-standard evaporation correlation.');
     }
   }
-  const lightingPower = nonNegative(inputs.lighting_power_kw);
+  const sourceHasLightingSchedule = Object.prototype.hasOwnProperty.call(source || {}, 'lighting_power_kw');
+  const scheduledLightingPower = sourceHasLightingSchedule
+    ? nonNegative(source.lighting_power_kw)
+    : null;
+  const lightingPower = scheduledLightingPower ?? nonNegative(inputs.lighting_power_kw);
   const equipment = nonNegative(inputs.equipment_heat_gain_kw);
   const margin = nonNegative(inputs.capacity_margin_pct);
   if (inputs.equipment_heat_gain_kw != null && equipment == null) reasons.push('Equipment heat gain must be a non-negative finite value.');
-  if (inputs.lighting_power_kw != null && lightingPower == null) reasons.push('Lighting power must be non-negative.');
+  if (!sourceHasLightingSchedule && inputs.lighting_power_kw != null && lightingPower == null) {
+    reasons.push('Lighting power must be non-negative.');
+  }
   if (margin == null) reasons.push('Capacity margin must be a non-negative percentage.');
   if (inputs.water_exchange_enabled) {
     if (positive(inputs.water_exchange_flow_m3h) == null) reasons.push('Enabled water exchange requires a positive exchange flow.');
@@ -1154,6 +1180,9 @@ function validateCommonInputs(source: any, inputs: any, reasons: string[]) {
     correlation,
     agitation,
     lightingPower: lightingPower || 0,
+    lightingPowerSource: scheduledLightingPower != null
+      ? 'Design Book exhibit lighting schedule'
+      : 'Thermal input',
     equipment: equipment || 0,
     margin: margin || 0,
   };
