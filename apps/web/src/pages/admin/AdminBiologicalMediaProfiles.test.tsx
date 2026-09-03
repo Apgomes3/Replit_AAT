@@ -221,6 +221,27 @@ describe('TAN generation profile administration', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
+  it('copies qualification details into a new media revision and submits them unchanged', async () => {
+    const user = userEvent.setup();
+    renderPage('media');
+
+    await user.click(await screen.findByRole('button', { name: 'New revision' }));
+    expect(screen.getByRole('heading', { name: 'Revise media profile revision' })).toBeVisible();
+    expect(screen.getByLabelText('Explicit provisional label *')).toHaveValue('Preliminary engineering reference — administrator review required');
+    expect(screen.getByLabelText('Revision notes')).toHaveValue('Approximate study-condition reference only; do not treat this maximum-rate study result as universal design capacity.');
+
+    await user.click(screen.getByRole('button', { name: 'Save new draft revision' }));
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/admin/biological-media/media-profiles/media-moving-cold/revisions',
+      expect.objectContaining({
+        provisional_label: 'Preliminary engineering reference — administrator review required',
+        notes: 'Approximate study-condition reference only; do not treat this maximum-rate study result as universal design capacity.',
+      }),
+    );
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
   it('uses controlled multi-selects for media water and reactor compatibility', async () => {
     const user = userEvent.setup();
     renderPage('media');
