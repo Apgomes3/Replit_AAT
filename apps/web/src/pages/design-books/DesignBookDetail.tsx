@@ -2183,6 +2183,67 @@ export function ThermalNumericField({
   );
 }
 
+export function EffectiveWaterTemperatureField({
+  average,
+  overrideValue,
+  onOverrideChange,
+  disabled = false,
+}: {
+  average?: number | string | null;
+  overrideValue?: number | string | null;
+  onOverrideChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  disabled?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const hasOverride = overrideValue !== '' && overrideValue != null;
+  const displayValue = editing || hasOverride ? overrideValue ?? '' : average ?? '';
+
+  return (
+    <div className="rounded-lg border border-[#c7d8df] bg-[#edf3f4] px-3 py-2">
+      <span className="block text-xs font-medium text-[#456b7d]">Effective water temperature</span>
+      <input
+        aria-label="Effective water temperature"
+        type="number"
+        min="-100"
+        step="any"
+        value={displayValue}
+        onFocus={() => {
+          setEditing(true);
+          if (!hasOverride && average != null) {
+            onOverrideChange({
+              target: { value: String(average) },
+              currentTarget: { value: String(average) },
+            } as ChangeEvent<HTMLInputElement>);
+          }
+        }}
+        onChange={onOverrideChange}
+        onBlur={() => setEditing(false)}
+        disabled={disabled}
+        className="mt-1 w-full rounded border border-[#c7d1d4] bg-[#fbfaf7] px-2 py-1 font-mono text-sm font-semibold text-[#263746] outline-none transition focus:border-[#b86843] focus:ring-2 focus:ring-[#b86843]/25 disabled:bg-[#f3efe8] disabled:text-[#71808a]"
+      />
+      <p className="mt-1 text-xs text-[#718894]">
+        {hasOverride
+          ? 'Reviewed override. Reset to restore the linked arithmetic average.'
+          : 'Arithmetic average of the linked exhibit minimum and maximum.'}
+      </p>
+      <button
+        type="button"
+        className="mt-1 text-xs font-medium text-[#9d5637] underline underline-offset-2 hover:text-[#7d442f] disabled:cursor-not-allowed disabled:text-[#9aa8af] disabled:no-underline"
+        onClick={() => {
+          setEditing(false);
+          onOverrideChange({
+            target: { value: '' },
+            currentTarget: { value: '' },
+          } as ChangeEvent<HTMLInputElement>);
+        }}
+        disabled={disabled || !hasOverride}
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+
 function thermalWallDate(value: unknown) {
   return value ? new Date(String(value)).toLocaleString() : '—';
 }
@@ -3314,17 +3375,12 @@ function ThermalTab({
                 value={form.surrounding_surface_temperature_c} onChange={event => update('surrounding_surface_temperature_c', event.target.value)} disabled={readOnly} />
               <ThermalNumericField name="atmospheric_pressure_kpa" label="Atmospheric pressure" unit="kPa"
                 value={form.atmospheric_pressure_kpa} onChange={event => update('atmospheric_pressure_kpa', event.target.value)} disabled={readOnly} />
-              <div className="rounded-lg border border-[#c7d8df] bg-[#edf3f4] px-3 py-2">
-                <span className="block text-xs font-medium text-[#456b7d]">Effective water temperature</span>
-                <div className="mt-1 font-mono text-sm font-semibold text-[#263746]">
-                  {thermalNumber(evidenceBasis.temperature?.average_c, 1)} °C
-                </div>
-                <p className="mt-1 text-xs text-[#718894]">
-                  Arithmetic average of the linked exhibit minimum and maximum.
-                </p>
-              </div>
-              <ThermalNumericField name="reviewed_water_temperature_c" label="Reviewed water-temperature override (optional)" unit="°C"
-                value={form.reviewed_water_temperature_c} onChange={event => update('reviewed_water_temperature_c', event.target.value)} disabled={readOnly} />
+               <EffectiveWaterTemperatureField
+                 average={evidenceBasis.temperature?.average_c}
+                 overrideValue={form.reviewed_water_temperature_c}
+                 onOverrideChange={event => update('reviewed_water_temperature_c', event.target.value)}
+                 disabled={readOnly}
+               />
               <label className="sm:col-span-2">
                 <span className={labelClass}>Surface-activity class (required)</span>
                 <select aria-label="Surface-activity class" value={form.agitation_class || ''}

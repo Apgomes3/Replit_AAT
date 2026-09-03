@@ -15,6 +15,7 @@ import {
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
   ThermalNumericField,
+  EffectiveWaterTemperatureField,
   SurfaceActivityGuidance,
 } from './DesignBookDetail';
 
@@ -307,6 +308,41 @@ describe('Surface-activity guidance', () => {
     expect(screen.getByText('Typical operating circulation with ordinary surface movement.')).toBeInTheDocument();
     expect(screen.getByText('Choose for normal filtration circulation without sustained aeration.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('Effective water temperature', () => {
+  function TemperatureHarness() {
+    const [override, setOverride] = useState<string | number>('');
+    return createElement(EffectiveWaterTemperatureField, {
+      average: 25,
+      overrideValue: override,
+      onOverrideChange: event => setOverride(event.target.value),
+    });
+  }
+
+  it('allows an override and resets it to the arithmetic average', async () => {
+    const user = userEvent.setup();
+    render(createElement(TemperatureHarness));
+    const input = screen.getByRole('spinbutton', { name: 'Effective water temperature' });
+
+    expect(input).toHaveValue(25);
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
+
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, '27');
+    await user.tab();
+
+    expect(input).toHaveValue(27);
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled();
+    expect(screen.getByText(/Reviewed override/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+
+    expect(input).toHaveValue(25);
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
+    expect(screen.getByText(/Arithmetic average/)).toBeInTheDocument();
   });
 });
 
