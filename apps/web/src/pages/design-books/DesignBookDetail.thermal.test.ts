@@ -10,6 +10,7 @@ import {
   thermalEvidenceBasis,
   thermalWallBasisChange,
   ThermalWallBasisChangeNotice,
+  ThermalFreshnessDiagnostics,
   thermalCorrelationDefaults,
   thermalCorrelationVersionsForClass,
   normalizeThermalWallConstruction,
@@ -764,5 +765,66 @@ describe('Design Book Thermal calculation action', () => {
     );
     expect(contrastRatio(THERMAL_BUTTON_COLORS.disabledForeground, THERMAL_BUTTON_COLORS.disabledBackground)).toBeGreaterThanOrEqual(4.5);
     expect(loadingButton).toBeDisabled();
+  });
+});
+
+describe('Thermal freshness diagnostics', () => {
+  it('expands the exact source category that changed for a multi-exhibit system', async () => {
+    const user = userEvent.setup();
+    render(createElement(ThermalFreshnessDiagnostics, {
+      item: {
+        saved: {
+          source_fingerprint: 'saved-fingerprint',
+          calculation_version: 'aat-thermal-load-v8',
+          source_snapshot: {
+            linked_exhibits: [{ id: 'exhibit-11', exhibit_code: '11' }],
+            linked_tanks: [{ tank_id: 'tank-11', tank_code: 'TK-11' }],
+          },
+        },
+        source_fingerprint: 'current-fingerprint',
+        source: {
+          fingerprint: 'current-fingerprint',
+          linked_exhibits: [
+            { id: 'exhibit-11', exhibit_code: '11' },
+            { id: 'exhibit-13', exhibit_code: '13' },
+          ],
+          linked_tanks: [{ tank_id: 'tank-11', tank_code: 'TK-11' }],
+        },
+        current_preview: { calculation_version: 'aat-thermal-load-v8' },
+      },
+    }));
+
+    await user.click(screen.getByText(/Show freshness diagnostics/));
+    expect(screen.getByText('Linked exhibits')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Linked exhibits'));
+    expect(screen.getByText(/exhibit-13/)).toBeInTheDocument();
+    expect(screen.getByText(/current-fingerprint/)).toBeInTheDocument();
+  });
+
+  it('explains when matching fingerprints indicate stale browser state', async () => {
+    const user = userEvent.setup();
+    const source = {
+      linked_exhibits: [
+        { id: 'exhibit-11', exhibit_code: '11' },
+        { id: 'exhibit-13', exhibit_code: '13' },
+      ],
+    };
+    render(createElement(ThermalFreshnessDiagnostics, {
+      item: {
+        saved: {
+          source_fingerprint: 'matching-fingerprint',
+          calculation_version: 'aat-thermal-load-v8',
+          source_snapshot: source,
+        },
+        source_fingerprint: 'matching-fingerprint',
+        source: { ...source, fingerprint: 'matching-fingerprint' },
+        current_preview: { calculation_version: 'aat-thermal-load-v8' },
+      },
+    }));
+
+    await user.click(screen.getByText('Show freshness diagnostics'));
+    expect(screen.getByText(/likely stale browser state/)).toBeInTheDocument();
+    expect(screen.getByText(/No saved-versus-current source category differs/)).toBeInTheDocument();
   });
 });

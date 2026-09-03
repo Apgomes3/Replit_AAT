@@ -3970,6 +3970,7 @@ function LegacyThermalTab({
                   <li key={`${selected?.system_id || 'system'}:${index}:${reason}`}>{reason}</li>
                 ))}
               </ul>
+               <ThermalFreshnessDiagnostics item={selected} />
             </div>
           )}
 
@@ -5110,6 +5111,7 @@ function ThermalTab({
                    <li key={`${selected?.system_id || 'system'}:${index}:${reason}`}>{reason}</li>
                  ))}
                </ul>
+               <ThermalFreshnessDiagnostics item={selected} />
              </div>
            )}
            </>)}
@@ -5747,5 +5749,135 @@ export function ThermalWallBasisChangeNotice({ change }: { change: any }) {
         {renderBasis('Current approved basis', change.current, 'border-[#b9c9d0] bg-[#e8f0f2] text-[#263746]')}
       </div>
     </div>
+  );
+}
+
+const THERMAL_SOURCE_DIAGNOSTIC_LABELS: Record<string, string> = {
+  linked_exhibits: 'Linked exhibits',
+  linked_tanks: 'Linked tanks and geometry',
+  water_temperature_sources: 'Exhibit water temperatures',
+  effective_volume_sources: 'Effective water volumes',
+  circulation_flows: 'Exhibit circulation flows',
+  lighting_sources: 'Exhibit lighting',
+  lighting_power_kw: 'Total lighting power',
+  equipment_heat_sources: 'Pump and UV heat sources',
+  equipment_heat_gain_kw: 'Total equipment heat',
+  lss_circulation_flow_m3h: 'LSS design circulation flow',
+  duplicate_exhibit_ids: 'Duplicate exhibit relationships',
+  wall_construction_defaults: 'Governed wall construction defaults',
+};
+
+function stableThermalDiagnosticValue(value: any): any {
+  if (Array.isArray(value)) return value.map(stableThermalDiagnosticValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.keys(value).sort().reduce((normalized: Record<string, any>, key) => {
+    normalized[key] = stableThermalDiagnosticValue(value[key]);
+    return normalized;
+  }, {});
+}
+
+function thermalSourceDiagnosticChanges(savedSource: any, currentSource: any) {
+  if (!savedSource || !currentSource) return [];
+  const keys = [...new Set([
+    ...Object.keys(savedSource),
+    ...Object.keys(currentSource),
+  ])].filter(key => key !== 'fingerprint').sort();
+  return keys.filter(key =>
+    JSON.stringify(stableThermalDiagnosticValue(savedSource[key])) !==
+    JSON.stringify(stableThermalDiagnosticValue(currentSource[key])));
+}
+
+function thermalDiagnosticJson(value: any) {
+  if (value === undefined) return 'Not present';
+  return JSON.stringify(stableThermalDiagnosticValue(value), null, 2);
+}
+
+export function ThermalFreshnessDiagnostics({ item }: { item: any }) {
+  const savedSource = item?.saved?.source_snapshot ||
+    item?.calculation?.source_snapshot ||
+    item?.result_snapshot?.source_snapshot ||
+    null;
+  const currentSource = item?.source || null;
+  const savedFingerprint = item?.saved?.source_fingerprint ||
+    item?.calculation?.source_fingerprint ||
+    item?.result_snapshot?.source_fingerprint ||
+    null;
+  const currentFingerprint = item?.source?.fingerprint ||
+    item?.source_fingerprint ||
+    null;
+  const savedVersion = item?.saved?.calculation_version ||
+    item?.calculation?.calculation_version ||
+    item?.result_snapshot?.calculation_version ||
+    null;
+  const currentVersion = item?.current_preview?.calculation_version || null;
+  const changedKeys = thermalSourceDiagnosticChanges(savedSource, currentSource);
+  const fingerprintsMatch = !!savedFingerprint && !!currentFingerprint &&
+    savedFingerprint === currentFingerprint;
+  const versionsMatch = !!savedVersion && !!currentVersion && savedVersion === currentVersion;
+
+  return (
+    <details className="mt-3 rounded-lg border border-red-200 bg-white/70">
+      <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-red-800">
+        Show freshness diagnostics
+        {changedKeys.length > 0 ? ` (${changedKeys.length} changed source ${changedKeys.length === 1 ? 'category' : 'categories'})` : ''}
+      </summary>
+      <div className="space-y-3 border-t border-red-200 px-3 py-3 text-xs text-stone-700">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="rounded-md border border-stone-200 bg-white p-2">
+            <span className="block font-semibold text-stone-600">Saved fingerprint</span>
+            <code className="break-all">{savedFingerprint || 'Unavailable'}</code>
+          </div>
+          <div className="rounded-md border border-stone-200 bg-white p-2">
+            <span className="block font-semibold text-stone-600">Current fingerprint</span>
+            <code className="break-all">{currentFingerprint || 'Unavailable'}</code>
+          </div>
+          <div className="rounded-md border border-stone-200 bg-white p-2">
+            <span className="block font-semibold text-stone-600">Saved calculation version</span>
+            <code>{savedVersion || 'Unavailable'}</code>
+          </div>
+          <div className="rounded-md border border-stone-200 bg-white p-2">
+            <span className="block font-semibold text-stone-600">Current calculation version</span>
+            <code>{currentVersion || 'Unavailable'}</code>
+          </div>
+        </div>
+
+        {fingerprintsMatch && versionsMatch && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
+            The saved and current fingerprints and calculation versions match. This warning is likely stale browser state rather than a current engineering-source change.
+          </p>
+        )}
+
+        {!savedSource || !currentSource ? (
+          <p className="rounded-md border border-red-200 bg-red-50 p-2 text-red-800">
+            The saved or current source snapshot is unavailable, so the changed category cannot be identified.
+          </p>
+        ) : changedKeys.length === 0 ? (
+          <p className="rounded-md border border-stone-200 bg-stone-50 p-2">
+            No saved-versus-current source category differs. Check the calculation-version values above.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <p className="font-semibold text-red-800">Changed source categories</p>
+            {changedKeys.map(key => (
+              <details key={key} className="rounded-md border border-stone-200 bg-white">
+                <summary className="cursor-pointer px-3 py-2 font-semibold text-stone-800">
+                  {THERMAL_SOURCE_DIAGNOSTIC_LABELS[key] || key.replace(/_/g, ' ')}
+                </summary>
+                <div className="grid gap-2 border-t border-stone-200 p-2 lg:grid-cols-2">
+                  <div>
+                    <p className="mb-1 font-semibold text-stone-500">Saved</p>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(savedSource[key])}</pre>
+                  </div>
+                  <div>
+                    <p className="mb-1 font-semibold text-stone-500">Current</p>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(currentSource[key])}</pre>
+                  </div>
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
