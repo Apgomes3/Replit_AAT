@@ -3371,8 +3371,6 @@ function ThermalTab({
                 value={form.ambient_air_temperature_c} onChange={event => update('ambient_air_temperature_c', event.target.value)} disabled={readOnly} />
               <ThermalNumericField name="relative_humidity_pct" label="Relative humidity" unit="%"
                 value={form.relative_humidity_pct} onChange={event => update('relative_humidity_pct', event.target.value)} disabled={readOnly} />
-              <ThermalNumericField name="surrounding_surface_temperature_c" label="Surrounding-surface temperature" unit="°C"
-                value={form.surrounding_surface_temperature_c} onChange={event => update('surrounding_surface_temperature_c', event.target.value)} disabled={readOnly} />
               <ThermalNumericField name="atmospheric_pressure_kpa" label="Atmospheric pressure" unit="kPa"
                 value={form.atmospheric_pressure_kpa} onChange={event => update('atmospheric_pressure_kpa', event.target.value)} disabled={readOnly} />
                <EffectiveWaterTemperatureField
@@ -3392,6 +3390,18 @@ function ThermalTab({
                     <option key={item.id} value={item.class_code}>{item.class_name}</option>
                   ))}
                 </select>
+                 <p className="mt-2 text-xs text-[#718894]">
+                   Surrounding-surface temperature:{' '}
+                   <span className="font-mono font-medium text-[#456b7d]">
+                     {thermalNumber(
+                       form.surrounding_surface_temperature_c !== '' &&
+                         form.surrounding_surface_temperature_c != null
+                         ? form.surrounding_surface_temperature_c
+                         : form.ambient_air_temperature_c,
+                       1,
+                     )} °C
+                   </span>
+                 </p>
                 <SurfaceActivityGuidance
                   key={form.agitation_class || 'no-surface-activity'}
                   selectedAgitationClass={selectedAgitationClass}
