@@ -4882,16 +4882,6 @@ function ThermalTab({
                       aria-labelledby={`thermal-wall-tab-${selectedWallTankBasis.tank_id || 'selected'}`}
                       className="grid gap-2 rounded-lg border border-[#c7d8df] bg-[#edf3f4] p-3 sm:grid-cols-2 lg:grid-cols-4"
                     >
-                      {[
-                        ['Thickness', `${thermalNumber(selectedWallTankBasis.thickness_mm, 2)} mm`],
-                        ['Conductivity', `${thermalNumber(selectedWallTankBasis.conductivity_w_m_k, 3)} W/m·K`],
-                        ['Exposed wall', `${thermalNumber(selectedWallTankBasis.exposed_wall_area_m2, 2)} m²`],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-md bg-white/75 px-2.5 py-2">
-                          <div className="text-[10px] uppercase tracking-wide text-[#71808a]">{label}</div>
-                          <div className="mt-0.5 text-xs font-semibold text-[#263746]">{value}</div>
-                        </div>
-                      ))}
                       <div className="col-span-full mt-1 border-t border-[#c7d8df] pt-3">
                         <div className={`grid gap-3 sm:grid-cols-2 ${sourceHasMixedWalls ? '' : 'lg:grid-cols-4'}`}>
                           {!sourceHasMixedWalls && (
