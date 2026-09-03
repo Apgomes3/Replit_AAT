@@ -28,7 +28,6 @@ import {
   calculateThermalCalculation,
   isApprovedThermalCorrelationSnapshot,
   THERMAL_CALCULATION_VERSION,
-  THERMAL_CONSTANTS,
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
 import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits, pumpLinesForCircuit } from '../lib/pumpSelections';
@@ -630,11 +629,7 @@ function thermalWallExpectedCurrentMatches(current: any, expectedCurrentId: stri
 function thermalWallConstructionDefaultRow(row: any) {
   const thicknessMm = Number(row.thickness_mm);
   const conductivity = Number(row.conductivity_w_m_k);
-  const uValue = 1 / (
-    1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
-    thicknessMm / 1000 / conductivity +
-    1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
-  );
+  const uValue = conductivity / (thicknessMm / 1000);
   return {
     id: row.id || null,
     code: row.construction_code || row.code,
@@ -2289,6 +2284,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
          tf.name as pim_tank_family_name,
          COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
          COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+          COALESCE(t.wall_thickness_mm, pm.wall_thickness_mm) as eff_wall_thickness_mm,
          COALESCE(t.notes, pm.notes) as eff_notes,
         promoted_pm.id as promoted_product_master_id,
         promoted_pm.product_code as promoted_product_code,

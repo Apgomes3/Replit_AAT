@@ -11,6 +11,7 @@ import {
   thermalCorrelationDefaults,
   thermalCorrelationVersionsForClass,
   normalizeThermalWallConstruction,
+  thermalExhibitTankWallBasis,
   thermalWallFormValues,
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
@@ -267,6 +268,33 @@ describe('Design Book Thermal navigation', () => {
     expect(thermalWallReplacementIsValid({ ...valid, thickness_mm: 0 })).toBe(false);
     expect(thermalWallReplacementIsValid({ ...valid, conductivity_w_m_k: -0.1 })).toBe(false);
     expect(thermalWallReplacementIsValid({ ...valid, source_reference: '' })).toBe(false);
+  });
+});
+
+describe('Exhibit tank wall basis', () => {
+  it('calculates the material-only U-value from the tank thickness', () => {
+    const basis = thermalExhibitTankWallBasis({
+      linked_tanks: [{
+        tank_code: 'TK-ACR-01',
+        wall_material: 'Acrylic',
+        wall_thickness_mm: 12,
+      }],
+    }, [{
+      code: 'acrylic',
+      label: 'Acrylic',
+      material: 'Acrylic / PMMA',
+      thickness_mm: 12,
+      conductivity_w_m_k: 0.19,
+    }]);
+
+    expect(basis).toMatchObject({
+      code: 'acrylic',
+      material: 'Acrylic',
+      thickness_mm: 12,
+      conductivity_w_m_k: 0.19,
+      source_basis: 'Linked exhibit tank with governed material conductivity',
+    });
+    expect(basis.u_value_w_m2_k).toBeCloseTo(15.8333333333, 8);
   });
 });
 

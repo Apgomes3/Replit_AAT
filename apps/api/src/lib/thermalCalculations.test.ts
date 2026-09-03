@@ -108,14 +108,16 @@ describe('AAT thermal calculation', () => {
       });
 
       expect(result.status).toBe('Ready');
-      expect(result.results.wall_u_value_w_m2_k).toBe(construction.u_value_w_m2_k);
+      expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(
+        construction.conductivity_w_m_k / (construction.thickness_mm / 1000),
+        10,
+      );
       expect(result.wall_construction_basis).toMatchObject({
         construction_type: construction.code,
         construction_label: construction.label,
         material: construction.material,
         thickness_mm: construction.thickness_mm,
         conductivity_w_m_k: construction.conductivity_w_m_k,
-        u_value_w_m2_k: construction.u_value_w_m2_k,
         units: 'W/m²·K',
         thickness_units: 'mm',
         conductivity_units: 'W/m·K',
@@ -125,6 +127,10 @@ describe('AAT thermal calculation', () => {
         basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
         source_reference: construction.source_reference,
       });
+      expect(result.wall_construction_basis.u_value_w_m2_k).toBeCloseTo(
+        construction.conductivity_w_m_k / (construction.thickness_mm / 1000),
+        10,
+      );
       expect(result.inputs.wall_construction_basis).toEqual(result.wall_construction_basis);
       expect(result.wall_construction_basis).toMatchObject({
         default_layers: [{
@@ -184,11 +190,7 @@ describe('AAT thermal calculation', () => {
       }],
       tank_wall_override_justification: 'Reviewed project wall schedule.',
     });
-    const expected = 1 / (
-      1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
-      0.02 / 0.2 +
-      1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
-    );
+    const expected = 0.2 / 0.02;
 
     expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(expected, 12);
     expect(result.wall_construction_basis).toMatchObject({
@@ -197,6 +199,30 @@ describe('AAT thermal calculation', () => {
       effective_layers: [{ material: 'Project acrylic', thickness_m: 0.02, conductivity_w_m_k: 0.2 }],
       layer_override_flags: { material: true, thickness_mm: true, conductivity_w_m_k: true },
       layer_override_justification: 'Reviewed project wall schedule.',
+    });
+  });
+
+  it('uses linked exhibit tank material and thickness with governed conductivity', () => {
+    const source = readySource();
+    source.linked_tanks[0] = {
+      ...source.linked_tanks[0],
+      tank_code: 'TK-ACR-01',
+      wall_material: 'Acrylic',
+      wall_thickness_mm: 12,
+    };
+    const inputs = readyInputs();
+    delete (inputs as any).reviewed_u_value_w_m2_k;
+    delete (inputs as any).tank_wall_layers;
+
+    const result = calculateThermalCalculation(source, inputs);
+
+    expect(result.status).toBe('Ready');
+    expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(0.19 / 0.012, 12);
+    expect(result.wall_construction_basis).toMatchObject({
+      material: 'Acrylic',
+      thickness_mm: 12,
+      conductivity_w_m_k: 0.19,
+      source: 'exhibit tank wall with governed material conductivity',
     });
   });
 
@@ -234,7 +260,7 @@ describe('AAT thermal calculation', () => {
     expect(result.status).toBe('Ready');
     expect(result.wall_construction_basis).toMatchObject({
       construction_type: null,
-      source: 'film coefficients plus wall-layer resistance',
+      source: 'material-only wall-layer resistance',
       reviewed: true,
       layers: [{
         material: 'Insulated panel',

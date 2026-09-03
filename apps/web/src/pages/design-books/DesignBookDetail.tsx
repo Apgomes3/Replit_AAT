@@ -2018,6 +2018,40 @@ export function thermalWallFormValues(construction: any) {
   };
 }
 
+export function thermalWallConstructionForMaterial(constructions: any[], materialValue: any) {
+  const material = String(materialValue ?? '').trim().toLowerCase();
+  if (!material) return null;
+  const code = material.includes('acrylic') || material.includes('pmma')
+    ? 'acrylic'
+    : material.includes('concrete')
+      ? 'concrete'
+      : material.includes('frp') || material.includes('grp') || material.includes('fiberglass')
+        ? 'frp'
+        : material.includes('steel')
+          ? 'steel'
+          : '';
+  return constructions.find(item => item.code === code) || null;
+}
+
+export function thermalExhibitTankWallBasis(source: any, constructions: any[]) {
+  const tank = source?.linked_tanks?.find((item: any) =>
+    Number(item?.wall_thickness_mm) > 0 && String(item?.wall_material || '').trim());
+  if (!tank) return null;
+  const construction = thermalWallConstructionForMaterial(constructions, tank.wall_material);
+  const conductivity = Number(construction?.conductivity_w_m_k);
+  const thicknessMm = Number(tank.wall_thickness_mm);
+  if (!construction || !(conductivity > 0) || !(thicknessMm > 0)) return null;
+  return normalizeThermalWallConstruction({
+    ...construction,
+    material: tank.wall_material,
+    thickness_mm: thicknessMm,
+    u_value_w_m2_k: conductivity / (thicknessMm / 1000),
+    assumption_label: `Exhibit tank wall — ${tank.wall_material}, ${thicknessMm} mm`,
+    source_basis: 'Linked exhibit tank with governed material conductivity',
+    source_reference: tank.tank_code || tank.tank_id || construction.source_reference,
+  });
+}
+
 export function thermalWallOverrideFlags(form: any, construction: any) {
   const normalized = normalizeThermalWallConstruction(construction);
   if (!normalized) return {};
@@ -2833,19 +2867,25 @@ function ThermalTab({
       calculation?.inputs ||
       {};
     const wallEvidence = thermalEvidenceBasis(item).wall || {};
+    const sourceTankWallBasis = thermalExhibitTankWallBasis(item.source, constructionDefaults);
+    const savedWallHasOverride = existing.reviewed_u_value_w_m2_k != null ||
+      Object.values(wallEvidence.layer_override_flags || {}).some(Boolean);
     const constructionType = existing.tank_construction_type ??
       existing.tank_construction ??
+      sourceTankWallBasis?.code ??
       wallEvidence.construction_type ??
       '';
     const currentConstructionDefault = constructionDefaults.find(
       (candidate: any) => candidate.code === constructionType,
     );
     const constructionDefault = normalizeThermalWallConstruction(
+      (savedWallHasOverride ? existing.tank_wall_default_basis : sourceTankWallBasis) ||
       existing.tank_wall_default_basis ||
       wallEvidence.default_basis ||
       currentConstructionDefault,
     );
-    const effectiveWallLayer = existing.tank_wall_layers?.[0] ||
+    const effectiveWallLayer = (savedWallHasOverride ? existing.tank_wall_layers?.[0] : sourceTankWallBasis) ||
+      existing.tank_wall_layers?.[0] ||
       wallEvidence.effective_layers?.[0] ||
       wallEvidence.layers?.[0];
     const effectiveWallValues = thermalWallFormValues(
@@ -3254,12 +3294,16 @@ function ThermalTab({
   const draftOverridesAllowed = !readOnly && book.status === 'Draft';
   const hasWallUValueOverride = form.reviewed_u_value_w_m2_k !== '' &&
     form.reviewed_u_value_w_m2_k != null;
-  const governedWallUValue = selectedConstructionDefault?.u_value_w_m2_k ??
-    evidenceBasis.wall?.u_value_w_m2_k ?? '';
+  const wallThicknessMm = Number(form.wall_thickness_mm);
+  const wallConductivity = Number(form.wall_conductivity_w_m_k);
+  const governedWallUValue = wallThicknessMm > 0 && wallConductivity > 0
+    ? wallConductivity / (wallThicknessMm / 1000)
+    : selectedConstructionDefault?.u_value_w_m2_k ??
+      evidenceBasis.wall?.u_value_w_m2_k ?? '';
   const wallUValueOverrideAllowed = draftOverridesAllowed &&
     (governedWallUValue !== '' || hasWallUValueOverride);
-  const wallThicknessInfo = selectedConstructionDefault?.thickness_mm != null
-    ? `${selectedConstructionDefault.material || 'Default wall'} thickness: ${thermalNumber(selectedConstructionDefault.thickness_mm, 2)} mm`
+  const wallThicknessInfo = wallThicknessMm > 0
+    ? `${form.wall_material || selectedConstructionDefault?.material || 'Wall'} thickness: ${thermalNumber(wallThicknessMm, 2)} mm · k ${thermalNumber(wallConductivity, 3)} W/m·K`
     : undefined;
   const mainCorrelationOverrideAllowed = draftOverridesAllowed && !!form.agitation_correlation_id;
   const fieldClass = thermalFieldClass;
