@@ -2889,7 +2889,6 @@ function LegacyThermalTab({
     .map(normalizeThermalWallConstruction)
     .filter(Boolean);
   const [selected, setSelected] = useState<any>(null);
-  const [selectedWallTankId, setSelectedWallTankId] = useState<string | null>(null);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -3916,6 +3915,7 @@ function ThermalTab({
     .map(normalizeThermalWallConstruction)
     .filter(Boolean);
   const [selected, setSelected] = useState<any>(null);
+  const [selectedWallTankId, setSelectedWallTankId] = useState<string | null>(null);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
