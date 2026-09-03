@@ -27,6 +27,10 @@ import { summarizeFiltration } from './LSSCompactUnitsCatalog';
 import LSSPumpSelectionPanel from './LSSPumpSelectionPanel';
 import LSSThermalSelectionPanel from './LSSThermalSelectionPanel';
 import NewRevisionModal from './NewRevisionModal';
+import {
+  BIOLOGICAL_MEDIA_REACTOR_TYPES,
+  normalizeBiologicalMediaWaterType,
+} from '../../lib/biologicalMediaOptions';
 
 const SYSTEM_TYPES = [
   'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
@@ -477,12 +481,12 @@ export function BiologicalMediaCalculatorPanel({
   const context = data?.context;
   const preview = data?.preview;
   const stale = Boolean(form._stale || preview?.is_stale);
-  const normalizedWaterType = String(context?.system_water_type || '').toLowerCase();
+  const normalizedWaterType = normalizeBiologicalMediaWaterType(context?.system_water_type);
   const normalizedReactorType = String(form.reactor_type || '').toLowerCase();
   const approvedMedia = mediaProfiles.filter((profile: any) =>
     profile.status === 'Approved'
     && (!normalizedWaterType || (profile.water_types || []).some((value: string) =>
-      ['universal', normalizedWaterType].includes(value.toLowerCase())))
+      ['universal', normalizedWaterType].includes(normalizeBiologicalMediaWaterType(value))))
     && (!normalizedReactorType || (profile.reactor_types || []).some((value: string) => value.toLowerCase() === normalizedReactorType)));
   const approvedTan = tanProfiles.filter((profile: any) =>
     profile.status === 'Approved' && profile.coefficient_unit === 'kg TAN-N/kg feed protein');
@@ -750,7 +754,14 @@ export function BiologicalMediaCalculatorPanel({
             <span>{selectedMaxTanProfile?.engineering_note || selectedMaxTanProfile?.max_tan_profile_engineering_note || 'Saved controlled profile revision.'}</span>
           </div>}
         <p className="self-center text-xs text-amber-700 md:col-span-4">This profile or default is a design starting assumption, not a universal safety guarantee. Confirm suitability for the species, life stage, pH, temperature, salinity, and exposure duration.</p>
-        <label className="text-xs font-medium text-stone-500">Reactor type *<input className={bioInputClass} disabled={readOnly} value={form.reactor_type} onChange={e => set('reactor_type', e.target.value)} /></label>
+        <label className="text-xs font-medium text-stone-500">Reactor type *
+          <select className={bioInputClass} disabled={readOnly} value={form.reactor_type} onChange={e => set('reactor_type', e.target.value)}>
+            <option value="">Select reactor type</option>
+            {BIOLOGICAL_MEDIA_REACTOR_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+            {form.reactor_type && !BIOLOGICAL_MEDIA_REACTOR_TYPES.includes(form.reactor_type as any)
+              && <option value={form.reactor_type}>{form.reactor_type} (saved value)</option>}
+          </select>
+        </label>
         <div className="md:col-span-2">
           <ManagedBiologicalProfileSelect
             kind="media"

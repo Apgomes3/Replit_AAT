@@ -6,12 +6,16 @@ import api from '../../lib/api';
 import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
 import toast from 'react-hot-toast';
+import {
+  BIOLOGICAL_MEDIA_REACTOR_TYPES,
+  BIOLOGICAL_MEDIA_WATER_TYPES,
+} from '../../lib/biologicalMediaOptions';
 
 type ProfileKind = 'media' | 'tan' | 'max-tan';
 type AdminFocus = ProfileKind | 'evidence';
 
 const mediaEmpty: any = {
-  profile_code: '', profile_name: '', water_types: 'Freshwater', reactor_types: '',
+  profile_code: '', profile_name: '', water_types: ['Freshwater'], reactor_types: [],
   capacity_model: 'OVERALL_VTR', capacity_model_version: '', capacity_basis_unit: '',
   operating_min_temperature_c: '', operating_max_temperature_c: '',
   operating_min_salinity_ppt: '', operating_max_salinity_ppt: '',
@@ -34,6 +38,67 @@ const maxTanEmpty: any = {
   profile_code: '', profile_name: '', max_tan_mg_n_l: '', engineering_note: '',
 };
 const inputCls = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40';
+
+function compatibilityValues(value: unknown): string[] {
+  return Array.isArray(value) ? value : typeof value === 'string' ? value.split(',').map(item => item.trim()).filter(Boolean) : [];
+}
+
+function CompatibilityMultiSelect({
+  label,
+  values,
+  options,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  options: readonly string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = compatibilityValues(values);
+  const toggle = (value: string) => {
+    onChange(selected.includes(value) ? selected.filter(item => item !== value) : [...selected, value]);
+  };
+  const savedValues = selected.filter(value => !options.includes(value));
+
+  return (
+    <div className="relative">
+      <span className="text-xs font-medium text-stone-500">{label} *</span>
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen(current => !current)}
+        className={`${inputCls} flex min-h-[42px] items-center justify-between text-left`}
+      >
+        <span className={selected.length ? 'text-stone-700' : 'text-stone-400'}>
+          {selected.length ? selected.join(', ') : 'Select one or more'}
+        </span>
+        <span className="ml-2 text-stone-400">▾</span>
+      </button>
+      {open && (
+        <div role="listbox" aria-label={label} className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-stone-200 bg-white p-2 shadow-lg">
+          {options.map(option => (
+            <label key={option} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm text-stone-700 hover:bg-stone-50">
+              <input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)} />
+              {option}
+            </label>
+          ))}
+          {savedValues.map(option => (
+            <label key={option} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm text-stone-700 hover:bg-stone-50">
+              <input type="checkbox" checked onChange={() => toggle(option)} />
+              {option} <span className="text-xs text-stone-400">(saved value)</span>
+            </label>
+          ))}
+          <button type="button" className="mt-1 w-full border-t border-stone-100 px-2 pt-2 text-left text-xs font-semibold text-blue-700 hover:underline" onClick={() => setOpen(false)}>
+            Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function n(value: string) {
   return value === '' ? null : Number(value);
@@ -60,12 +125,20 @@ function ProfileForm({ kind, form, setForm, onSave, onCancel, saving, revising, 
           <input className={inputCls} value={form.profile_name} onChange={e => set('profile_name', e.target.value)} />
         </label>
         {kind === 'media' ? <>
-          <label className="text-xs font-medium text-stone-500">Water types * <span className="font-normal">(comma separated)</span>
-            <input className={inputCls} value={form.water_types} onChange={e => set('water_types', e.target.value)} placeholder="Freshwater, Marine" />
-          </label>
-          <label className="text-xs font-medium text-stone-500 md:col-span-2">Compatible reactor types * <span className="font-normal">(comma separated)</span>
-            <input className={inputCls} value={form.reactor_types} onChange={e => set('reactor_types', e.target.value)} placeholder="Moving bed biofilter" />
-          </label>
+          <CompatibilityMultiSelect
+            label="Water types"
+            values={form.water_types}
+            options={BIOLOGICAL_MEDIA_WATER_TYPES}
+            onChange={values => set('water_types', values)}
+          />
+          <div className="md:col-span-2">
+            <CompatibilityMultiSelect
+              label="Compatible reactor types"
+              values={form.reactor_types}
+              options={BIOLOGICAL_MEDIA_REACTOR_TYPES}
+              onChange={values => set('reactor_types', values)}
+            />
+          </div>
           <label className="text-xs font-medium text-stone-500">Capacity model *
             <select className={inputCls} value={form.capacity_model} onChange={e => set('capacity_model', e.target.value)}>
               <option value="OVERALL_VTR">Overall approved VTR</option>
@@ -417,8 +490,8 @@ export default function AdminBiologicalMediaProfiles() {
     const form = kind === 'media' ? mediaForm : kind === 'tan' ? tanForm : maxTanForm;
     if (kind === 'media') return {
       ...form,
-      water_types: form.water_types.split(',').map((value: string) => value.trim()).filter(Boolean),
-      reactor_types: form.reactor_types.split(',').map((value: string) => value.trim()).filter(Boolean),
+      water_types: compatibilityValues(form.water_types),
+      reactor_types: compatibilityValues(form.reactor_types),
       ...Object.fromEntries(['operating_min_temperature_c', 'operating_max_temperature_c', 'operating_min_salinity_ppt',
         'operating_max_salinity_ppt', 'media_min_depth_mm', 'media_max_depth_mm', 'media_void_fraction',
         'media_bulk_density_kg_m3', 'overall_vtr_g_tan_n_m3_d', 'default_safety_factor', 'minimum_media_m3',
@@ -483,8 +556,8 @@ export default function AdminBiologicalMediaProfiles() {
       setMediaForm({
         ...mediaEmpty,
         ...profile,
-        water_types: (profile.water_types || []).join(', '),
-        reactor_types: (profile.reactor_types || []).join(', '),
+         water_types: compatibilityValues(profile.water_types),
+         reactor_types: compatibilityValues(profile.reactor_types),
         capacity_model: profile.capacity_model ?? '',
         capacity_model_version: profile.capacity_model_version ?? '',
         capacity_basis_unit: profile.capacity_basis_unit ?? '',

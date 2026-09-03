@@ -68,6 +68,17 @@ const bassProInput = {
 };
 
 describe('Biological Media deterministic preview calculations', () => {
+  it('matches saltwater profiles to legacy Marine system values', () => {
+    const result = calculateBiologicalMediaPreview(
+      bassProInput,
+      { mediaProfile: { ...mediaProfile, water_types: ['Saltwater'] }, tanProfile },
+    );
+
+    expect(result.messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'PROFILE_001', field: 'water.water_type' }),
+    ]));
+  });
+
   it('matches the BassPro design benchmark without converting TAN-N mass basis', () => {
     const result = calculateBiologicalMediaPreview(bassProInput, { mediaProfile, tanProfile });
 

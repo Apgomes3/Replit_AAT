@@ -40,6 +40,23 @@ function arrayOfText(value: unknown): string[] {
   return [...new Set(value.map(item => String(item).trim()).filter(Boolean))];
 }
 
+function normalizeMediaWaterType(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+  if (normalized === 'freshwater' || normalized === 'fresh water') return 'freshwater';
+  if (normalized === 'saltwater' || normalized === 'salt water' || normalized === 'marine' || normalized === 'seawater') return 'saltwater';
+  if (normalized === 'brackish' || normalized === 'brackish water') return 'brackish';
+  if (normalized === 'universal') return 'universal';
+  return normalized;
+}
+
+function mediaWaterTypesMatch(profileTypes: unknown, systemWaterType: unknown): boolean {
+  const normalizedSystemType = normalizeMediaWaterType(systemWaterType);
+  return arrayOfText(profileTypes).some(type => {
+    const normalizedProfileType = normalizeMediaWaterType(type);
+    return normalizedProfileType === 'universal' || normalizedProfileType === normalizedSystemType;
+  });
+}
+
 function rangeError(min: number | null, max: number | null, label: string): string | null {
   return min != null && max != null && min > max
     ? `${label} minimum cannot exceed maximum.`
@@ -313,8 +330,8 @@ export function isBiologicalMediaPreviewStale(record: any, context: any) {
   const currentVolume = numberOrNull(context?.total_operating_volume_m3);
   if (savedVolume == null || currentVolume == null || Math.abs(savedVolume - currentVolume) > 1e-9) return true;
   const savedWaterType = String(snapshot.water.water_type || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
-  const currentWaterType = String(context?.system_water_type || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
-  return !savedWaterType || savedWaterType !== currentWaterType;
+  const currentWaterType = normalizeMediaWaterType(context?.system_water_type);
+  return !savedWaterType || normalizeMediaWaterType(savedWaterType) !== currentWaterType;
 }
 
 export function validateMediaProfile(body: any, approving = body.status === 'Approved'): string[] {
@@ -813,8 +830,7 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
   if ('error' in context) return res.status(context.error.code === 'NOT_FOUND' ? 404 : 409).json({ error: context.error });
   if (mediaId) {
     const selected = await profileRevision('lss_biological_media_profiles', mediaId);
-    const waterCompatible = selected.water_types.includes(context.system_water_type)
-      || selected.water_types.includes('Universal');
+    const waterCompatible = mediaWaterTypesMatch(selected.water_types, context.system_water_type);
     const reactorCompatible = !reactorType || selected.reactor_types.includes(reactorType);
     if (!waterCompatible || !reactorCompatible) {
       return res.status(409).json({

@@ -37,3 +37,4 @@
 - [Thermal plate selection](thermal-plate-selection.md) — select active-capacity plates from a Thermal Flow Route side stream and freeze duty, flow, and PIM evidence.
 - [Exhibit lighting snapshots](exhibit-lighting-snapshots.md) — PIM lights freeze source identity and physical kW load; W/kW changes are display conversions only.
 - [Exhibit environmental inheritance](exhibit-environmental-inheritance.md) — new exhibits may copy water type and temperature range once; the source remains independent.
+- [Biological media compatibility options](biological-media-compatibility-options.md) — use shared controlled labels and normalize historical saltwater aliases when matching profiles.

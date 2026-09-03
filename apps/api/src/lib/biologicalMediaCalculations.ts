@@ -344,6 +344,15 @@ function profileField(profile: any, ...keys: string[]) {
   return finite(first(...keys.map(key => profile?.[key])));
 }
 
+function normalizeMediaWaterType(value: unknown): string {
+  const normalized = String(value || '').trim().toUpperCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+  if (normalized === 'FRESHWATER' || normalized === 'FRESH WATER') return 'FRESHWATER';
+  if (normalized === 'SALTWATER' || normalized === 'SALT WATER' || normalized === 'MARINE' || normalized === 'SEAWATER') return 'SALTWATER';
+  if (normalized === 'BRACKISH' || normalized === 'BRACKISH WATER') return 'BRACKISH';
+  if (normalized === 'UNIVERSAL') return 'UNIVERSAL';
+  return normalized;
+}
+
 export function validateMediaProfileForPreview(profile: any, input: any) {
   const normalized = normalizeBiologicalMediaInput(input);
   const messages: CalculationMessage[] = [];
@@ -354,8 +363,8 @@ export function validateMediaProfileForPreview(profile: any, input: any) {
   if (!normalized.filter.reactor_type) {
     add(messages, 'PROFILE_001', 'A reactor type is required to verify media-profile compatibility.', 'filter.reactor_type');
   }
-  const waterType = normalized.water.water_type?.replace('SALT_WATER', 'MARINE');
-  const waterTypes = Array.isArray(profile.water_types) ? profile.water_types.map((v: any) => upper(v)) : [];
+  const waterType = normalizeMediaWaterType(normalized.water.water_type);
+  const waterTypes = Array.isArray(profile.water_types) ? profile.water_types.map((v: any) => normalizeMediaWaterType(v)) : [];
   if (waterType && !waterTypes.includes(waterType) && !waterTypes.includes('UNIVERSAL')) {
     add(messages, 'PROFILE_001', `The selected media profile is not approved for ${waterType}.`, 'water.water_type');
   }

@@ -52,6 +52,8 @@ const mediaProfiles = [
     profile_code: 'FW_MB_8C_850',
     profile_name: 'Cold freshwater moving bed — 850 m²/m³ media',
     revision: 1,
+    water_types: ['Freshwater'],
+    reactor_types: ['Moving bed biofilter'],
     overall_vtr_g_tan_n_m3_d: '231',
     capacity_basis_unit: 'g TAN-N/m³ media/day',
     provisional_label: 'Preliminary engineering reference — administrator review required',
@@ -208,6 +210,30 @@ describe('TAN generation profile administration', () => {
       }),
     );
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('uses controlled multi-selects for media water and reactor compatibility', async () => {
+    const user = userEvent.setup();
+    renderPage('media');
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('button', { name: 'Water types' })).toHaveTextContent('Freshwater');
+    expect(screen.getByRole('button', { name: 'Compatible reactor types' })).toHaveTextContent('Moving bed biofilter');
+
+    await user.click(screen.getByRole('button', { name: 'Water types' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Brackish' }));
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.click(screen.getByRole('button', { name: 'Compatible reactor types' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Trickling filter' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(api.patch).toHaveBeenCalledWith(
+      '/admin/biological-media/media-profiles/media-moving-cold',
+      expect.objectContaining({
+        water_types: ['Freshwater', 'Brackish'],
+        reactor_types: ['Moving bed biofilter', 'Trickling filter'],
+      }),
+    );
   });
 
   it('keeps the editor open and shows structured validation errors after a failed save', async () => {
