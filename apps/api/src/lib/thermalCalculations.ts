@@ -1500,6 +1500,7 @@ function calculateCaseLegacy(source: any, inputs: any, factors = { surface: 1, e
       recovery_heating_kw: recovery,
       total_heating_kw: recovery == null ? null : Math.max(0, -total) + recovery,
       margin_adjusted_cooling_kw: Math.max(0, total) * marginFactor,
+      margin_adjusted_steady_state_heating_kw: Math.max(0, -total) * marginFactor,
       margin_adjusted_heating_kw: recovery == null ? null : (Math.max(0, -total) + recovery) * marginFactor,
     },
     formula_inputs: {
@@ -1736,6 +1737,7 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
       recovery_heating_kw: recovery,
       total_heating_kw: recovery == null ? null : Math.max(0, -total) + recovery,
       margin_adjusted_cooling_kw: Math.max(0, total) * marginFactor,
+      margin_adjusted_steady_state_heating_kw: Math.max(0, -total) * marginFactor,
       margin_adjusted_heating_kw: recovery == null ? null : (Math.max(0, -total) + recovery) * marginFactor,
     },
     formula_inputs: {
@@ -1871,6 +1873,7 @@ export function calculateThermalCalculation(source: any, inputs: any = {}, calcu
         case_key: item.case_key,
         description: item.description,
         margin_adjusted_cooling_kw: item.results.margin_adjusted_cooling_kw,
+        margin_adjusted_steady_state_heating_kw: item.results.margin_adjusted_steady_state_heating_kw,
         margin_adjusted_heating_kw: item.results.margin_adjusted_heating_kw,
         status: item.status,
       })),

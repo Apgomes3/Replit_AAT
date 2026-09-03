@@ -3461,6 +3461,13 @@ function LegacyThermalTab({
   }
 
   const detail = selected?.calculation || selected?.current_preview;
+  const thermalNetLoad = Number(detail?.results?.net_total_load_kw);
+  const thermalActionIsCooling = Number.isFinite(thermalNetLoad) ? thermalNetLoad >= 0 : true;
+  const thermalActionLabel = thermalActionIsCooling ? 'Cooling with margin' : 'Heating with margin';
+  const thermalActionValue = thermalActionIsCooling
+    ? detail?.results?.margin_adjusted_cooling_kw
+    : detail?.results?.margin_adjusted_steady_state_heating_kw ??
+      (Number(detail?.results?.steady_state_heating_kw || 0) * (1 + Number(form.capacity_margin_pct || 0) / 100));
   const hasEquipmentHeatSources = thermalHasEquipmentHeatSources(selected?.source);
   const evidenceBasis = thermalEvidenceBasis(selected || detail);
   const wallBasisChange = thermalWallBasisChange(selected || detail);
@@ -4005,12 +4012,11 @@ function LegacyThermalTab({
                     </div>
                   ))}
                 </div>
-                <div className="grid gap-3 md:grid-cols-4 mt-3">
+                <div className="grid gap-3 md:grid-cols-3 mt-3">
                   {[
                     ['Net envelope', detail.results.net_envelope_kw],
                     ['Total load', detail.results.net_total_load_kw],
-                    ['Cooling with margin', detail.results.margin_adjusted_cooling_kw],
-                    ['Heating with recovery + margin', detail.results.margin_adjusted_heating_kw],
+                    [thermalActionLabel, thermalActionValue],
                   ].map(([label, value]) => (
                     <div key={String(label)} className="rounded-xl bg-stone-900 text-white px-4 py-3">
                       <div className="text-xs text-stone-300">{label}</div><div className="font-mono text-lg font-bold">{thermalNumber(value)} kW</div>
@@ -4026,7 +4032,7 @@ function LegacyThermalTab({
                       <tr key={item.case_key} className={detail.sensitivity_summary?.recommended_case === item.case_key ? 'bg-amber-50' : ''}>
                         <td className="px-3 py-2">{item.description}{detail.sensitivity_summary?.recommended_case === item.case_key && <span className="ml-2 text-xs font-semibold text-amber-700">Conservative sizing case</span>}</td>
                         <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_cooling_kw)} kW</td>
-                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_heating_kw)} kW</td>
+                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_steady_state_heating_kw)} kW</td>
                       </tr>
                     ))}</tbody>
                   </table>
@@ -4553,6 +4559,13 @@ function ThermalTab({
   }
 
   const detail = selected?.calculation || selected?.current_preview;
+  const thermalNetLoad = Number(detail?.results?.net_total_load_kw);
+  const thermalActionIsCooling = Number.isFinite(thermalNetLoad) ? thermalNetLoad >= 0 : true;
+  const thermalActionLabel = thermalActionIsCooling ? 'Cooling with margin' : 'Heating with margin';
+  const thermalActionValue = thermalActionIsCooling
+    ? detail?.results?.margin_adjusted_cooling_kw
+    : detail?.results?.margin_adjusted_steady_state_heating_kw ??
+      (Number(detail?.results?.steady_state_heating_kw || 0) * (1 + Number(form.capacity_margin_pct || 0) / 100));
   const evidenceBasis = thermalEvidenceBasis(selected || detail);
   const wallBasisChange = thermalWallBasisChange(selected || detail);
   const hasEquipmentHeatSources = thermalHasEquipmentHeatSources(selected?.source);
@@ -5221,12 +5234,11 @@ function ThermalTab({
                     </div>
                   ))}
                 </div>
-                <div className="grid gap-3 md:grid-cols-4 mt-3">
+                <div className="grid gap-3 md:grid-cols-3 mt-3">
                   {[
                     ['Net envelope', detail.results.net_envelope_kw],
                     ['Total load', detail.results.net_total_load_kw],
-                    ['Cooling with margin', detail.results.margin_adjusted_cooling_kw],
-                    ['Heating with recovery + margin', detail.results.margin_adjusted_heating_kw],
+                    [thermalActionLabel, thermalActionValue],
                   ].map(([label, value]) => (
                     <div key={String(label)} className="rounded-xl bg-stone-900 text-white px-4 py-3">
                       <div className="text-xs text-stone-300">{label}</div><div className="font-mono text-lg font-bold">{thermalNumber(value)} kW</div>
@@ -5242,7 +5254,7 @@ function ThermalTab({
                       <tr key={item.case_key} className={detail.sensitivity_summary?.recommended_case === item.case_key ? 'bg-amber-50' : ''}>
                         <td className="px-3 py-2">{item.description}{detail.sensitivity_summary?.recommended_case === item.case_key && <span className="ml-2 text-xs font-semibold text-amber-700">Conservative sizing case</span>}</td>
                         <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_cooling_kw)} kW</td>
-                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_heating_kw)} kW</td>
+                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_steady_state_heating_kw)} kW</td>
                       </tr>
                     ))}</tbody>
                   </table>
