@@ -46,6 +46,7 @@ const correlationId = '00000000-0000-4000-8000-000000000154';
 const newCorrelationId = '00000000-0000-4000-8000-000000000155';
 const state = vitest_1.vi.hoisted(() => ({
     calls: [],
+    moduleAccess: 'manage',
     usages: [
         {
             design_book_id: 'book-draft',
@@ -86,7 +87,7 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [] };
         }
         if (sql.includes('SELECT rma.access_level')) {
-            return { rows: [{ access_level: 'manage' }] };
+            return { rows: [{ access_level: state.moduleAccess }] };
         }
         if (sql.includes('SELECT id FROM thermal_mass_transfer_correlations') &&
             sql.includes("status='approved'")) {
@@ -301,5 +302,16 @@ function request(app, method, body, role = 'admin', path = `/api/v1/thermal-corr
         (0, vitest_1.expect)(state.calls.slice(callStart).some(call => call.sql.includes('WHERE id=$2') &&
             call.sql.includes("SET status='superseded'"))).toBe(true);
         (0, vitest_1.expect)(state.calls.slice(callStart).some(call => call.sql.includes('INSERT INTO audit_log'))).toBe(true);
+    });
+    (0, vitest_1.it)('allows platform admins to review correlations when Design Books are hidden', async () => {
+        state.moduleAccess = 'hidden';
+        try {
+            const response = await requestUsages(app);
+            (0, vitest_1.expect)(response.status).toBe(200);
+            (0, vitest_1.expect)(response.body.correlation).toMatchObject({ id: correlationId });
+        }
+        finally {
+            state.moduleAccess = 'manage';
+        }
     });
 });

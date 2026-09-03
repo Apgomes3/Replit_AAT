@@ -25,6 +25,7 @@ import {
 } from './foamFractionatorSizing';
 import { summarizeFiltration } from './LSSCompactUnitsCatalog';
 import LSSPumpSelectionPanel from './LSSPumpSelectionPanel';
+import LSSThermalSelectionPanel from './LSSThermalSelectionPanel';
 import NewRevisionModal from './NewRevisionModal';
 
 const SYSTEM_TYPES = [
@@ -5628,10 +5629,7 @@ export default function DesignBookLSSDetail() {
         tabIndex={0}
         hidden={activeTab !== 'thermal'}
       >
-        <EquipmentEmptyState
-          title="Thermal Selection"
-          description="Heating and chilling equipment selection is not configured for this system yet."
-        />
+        <LSSThermalSelectionPanel bookId={bookId} systemId={systemId} readOnly={readOnly} />
       </div>
       <div
         id="lss-panel-ozone"

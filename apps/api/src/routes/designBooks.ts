@@ -1579,6 +1579,15 @@ export async function loadReleaseContext(
       [id, systems.map(system => system.id)],
     )).rows
     : [];
+  const thermalSelections = systems.length
+    ? (await runner(
+      `SELECT *
+       FROM design_book_thermal_selections
+       WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])
+       ORDER BY system_id`,
+      [id, systems.map(system => system.id)],
+    )).rows
+    : [];
   const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
   const compactUnits = compactUnitIds.length
     ? (await runner(
@@ -1646,6 +1655,7 @@ export async function loadReleaseContext(
     biological_media_cases: biologicalMediaCases,
     biological_media_runs: biologicalMediaRuns,
     uv_selections: uvSelections,
+    thermal_selections: thermalSelections,
     thermal_calculations: thermalCalculations,
     thermal_construction_defaults: thermalConstructionDefaults,
     pump_selections: pumpSelections,
@@ -2688,6 +2698,14 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     pumpSelections,
     uvSelections,
   );
+  const thermalSelections = currentSystems.length
+    ? (await query(
+      `SELECT * FROM design_book_thermal_selections
+       WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])
+       ORDER BY system_id`,
+      [routeParam(req.params.id), currentSystems.map(system => system.id)],
+    )).rows
+    : [];
   const frictionLossCalculations = await loadFrictionLossPackages(
     query,
     routeParam(req.params.id),
@@ -2705,6 +2723,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     substrate,
     lights,
     thermal_calculations: thermalCalculations,
+    thermal_selections: thermalSelections,
     thermal_construction_defaults: thermalConstructionDefaults,
     pump_selections: pumpSelections,
     friction_loss_calculations: frictionLossCalculations,
@@ -3969,6 +3988,7 @@ function frozenFromSnapshot(snapshot: any) {
     friction_loss_calculations: snapshot?.friction_loss_calculations || [],
     ...(Array.isArray(snapshot?.lights) ? { lights: snapshot.lights } : {}),
     ...(Array.isArray(snapshot?.uv_selections) ? { uv_selections: snapshot.uv_selections } : {}),
+    ...(Array.isArray(snapshot?.thermal_selections) ? { thermal_selections: snapshot.thermal_selections } : {}),
     ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
   };
 }
@@ -4039,13 +4059,14 @@ function makeVersionSnapshot(context: any, capturedAt = new Date().toISOString()
       substrate: jsonCopy(context.substrate || []),
       lights: jsonCopy(context.lights || []),
       uv_selections: jsonCopy(context.uv_selections || []),
+      thermal_selections: jsonCopy(context.thermal_selections || []),
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
       friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
     },
     live_references: liveReferencesFromContext(context),
-    scope: {
-      frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'thermal calculations', 'friction loss calculations', 'review handovers'],
+      scope: {
+        frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'Thermal selections', 'thermal calculations', 'friction loss calculations', 'review handovers'],
       live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
       restore_target: 'working_copy',
     },
@@ -4062,6 +4083,7 @@ function currentRestoreStateDigest(context: any) {
       substrate: jsonCopy(context.substrate || []),
       lights: jsonCopy(context.lights || []),
       uv_selections: jsonCopy(context.uv_selections || []),
+      thermal_selections: jsonCopy(context.thermal_selections || []),
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
       friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
@@ -4445,6 +4467,34 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
         );
       }
     }
+    if (Array.isArray(frozen.thermal_selections)) {
+      await client.query('DELETE FROM design_book_thermal_selections WHERE design_book_id=$1', [req.params.id]);
+      for (const selection of frozen.thermal_selections) {
+        await client.query(
+          `INSERT INTO design_book_thermal_selections
+             (design_book_id, system_id, product_master_id, side_stream_id,
+              required_capacity_kw, plate_flow_m3h, duty, input_snapshot,
+              product_snapshot, result_snapshot, freshness, calculated_by,
+              calculated_at, created_at, updated_at)
+           SELECT $1, s.id,
+                  (SELECT id FROM product_masters WHERE id=$3),
+                  (SELECT id FROM system_flow_side_streams WHERE id=$4 AND system_id=s.id),
+                  $5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13,
+                  COALESCE($14,NOW()),COALESCE($15,NOW())
+             FROM systems s
+            WHERE s.id=$2 AND s.project_id=(SELECT project_id FROM design_books WHERE id=$1)`,
+          [req.params.id, selection.system_id, selection.product_master_id ?? null,
+            selection.side_stream_id ?? null, selection.required_capacity_kw,
+            selection.plate_flow_m3h, selection.duty,
+            JSON.stringify(selection.input_snapshot || {}),
+            JSON.stringify(selection.product_snapshot || {}),
+            JSON.stringify(selection.result_snapshot || {}),
+            selection.freshness || 'stale', selection.calculated_by ?? null,
+            selection.calculated_at ?? null, selection.created_at ?? null,
+            selection.updated_at ?? null],
+        );
+      }
+    }
     await client.query('DELETE FROM design_book_thermal_calculations WHERE design_book_id=$1', [req.params.id]);
     for (const thermal of frozen.thermal_calculations || []) {
       await insertThermalSnapshotRecord(
@@ -4508,6 +4558,245 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
 });
 
 // ─── UV Selection ──────────────────────────────────────────────────────────────
+
+// ─── Thermal Selection ─────────────────────────────────────────────────────────
+
+function thermalSelectionDuty(item: any) {
+  const results = item?.calculation?.results || item?.result_snapshot?.results || {};
+  const net = Number(results.net_total_load_kw);
+  if (!Number.isFinite(net) || net === 0) return null;
+  const duty = net > 0 ? 'Cooling' : 'Heating';
+  const required = duty === 'Cooling'
+    ? Number(results.margin_adjusted_cooling_kw)
+    : Number(results.margin_adjusted_steady_state_heating_kw ?? results.margin_adjusted_heating_kw);
+  return Number.isFinite(required) && required > 0
+    ? { duty, required_capacity_kw: required, net_total_load_kw: net }
+    : null;
+}
+
+function thermalSelectionStream(system: any, stream: any) {
+  const resolvedLoops = resolveLoopFlows(
+    system,
+    system?.design_flow_m3h,
+    system?.source_flows_m3h || {},
+  );
+  const loop = resolvedLoops.find(item => item.loop_number === Number(stream.parent_loop_number));
+  const percentage = stream.flow_pct == null ? null : Number(stream.flow_pct);
+  const flow = loop?.flow_m3h != null && Number.isFinite(percentage)
+    ? Number(loop.flow_m3h) * percentage / 100
+    : null;
+  return {
+    id: stream.id,
+    parent_loop_number: Number(stream.parent_loop_number),
+    name: stream.name,
+    preset: stream.preset,
+    flow_pct: percentage,
+    flow_m3h: flow != null && Number.isFinite(flow) ? Number(flow.toFixed(3)) : null,
+    loop_flow_m3h: loop?.flow_m3h ?? null,
+    loop_flow_available: loop?.flow_m3h != null,
+    notes: stream.notes || null,
+  };
+}
+
+function thermalProductDto(row: any) {
+  return {
+    id: row.id,
+    product_master_id: row.product_master_id,
+    product_code: row.product_code,
+    product_name: row.product_name,
+    model: row.model,
+    manufacturer: row.manufacturer,
+    standard_status: row.standard_status,
+    product_category: row.product_category,
+    thermal_capacity_kw: row.thermal_capacity_kw == null ? null : Number(row.thermal_capacity_kw),
+    duty: row.duty || null,
+    primary_fluid: row.primary_fluid || null,
+    secondary_fluid: row.secondary_fluid || null,
+    flow_rate_m3h: row.flow_rate_m3h == null ? null : Number(row.flow_rate_m3h),
+    pressure_rating_bar: row.pressure_rating_bar == null ? null : Number(row.pressure_rating_bar),
+    efficiency_pct: row.efficiency_pct == null ? null : Number(row.efficiency_pct),
+    primary_inlet_dn_mm: row.primary_inlet_dn_mm == null ? null : Number(row.primary_inlet_dn_mm),
+    primary_outlet_dn_mm: row.primary_outlet_dn_mm == null ? null : Number(row.primary_outlet_dn_mm),
+    secondary_inlet_dn_mm: row.secondary_inlet_dn_mm == null ? null : Number(row.secondary_inlet_dn_mm),
+    secondary_outlet_dn_mm: row.secondary_outlet_dn_mm == null ? null : Number(row.secondary_outlet_dn_mm),
+    flow_switch_status: row.flow_switch_status || null,
+    notes: row.notes || null,
+  };
+}
+
+async function loadThermalSelectionContext(bookId: string, systemId: string, frozen = false) {
+  let context: any;
+  if (frozen) {
+    const book = (await query(
+      'SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1',
+      [bookId],
+    )).rows[0];
+    context = book?.status === 'Released'
+      ? book.release_snapshot
+      : book?.review_snapshot;
+  } else {
+    context = await loadReleaseContext(bookId, query, false, true);
+  }
+  if (!context) return null;
+  const system = (context.systems || []).find((item: any) => item.id === systemId);
+  if (!system) return null;
+  const thermalCalculation = (context.thermal_calculations || [])
+    .find((item: any) => item.system_id === systemId);
+  const saved = (context.thermal_selections || [])
+    .find((item: any) => item.system_id === systemId) || null;
+  const duty = thermalSelectionDuty(thermalCalculation);
+  const sideStreams = (system.side_streams || [])
+    .filter((stream: any) => stream.preset === 'Thermal')
+    .map((stream: any) => thermalSelectionStream(system, stream));
+  return { context, system, thermalCalculation, saved, duty, sideStreams };
+}
+
+export const thermalSelectionTestUtils = {
+  thermalSelectionDuty,
+  thermalSelectionStream,
+  thermalProductDto,
+};
+
+router.get('/design-books/:id/thermal-selection/:systemId', async (req: AuthRequest, res: Response) => {
+  const bookId = routeParam(req.params.id);
+  const systemId = routeParam(req.params.systemId);
+  const bookResult = await query('SELECT id, status FROM design_books WHERE id=$1', [bookId]);
+  if (!bookResult.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+  const frozen = !isDesignBookContentEditable(bookResult.rows[0].status);
+  const loaded = await loadThermalSelectionContext(bookId, systemId, frozen);
+  if (!loaded) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System does not belong to this Design Book project' } });
+
+  const products = frozen
+    ? []
+    : (await query(
+      `SELECT pm.id, pm.product_code, pm.product_name, pm.model, pm.manufacturer,
+              pm.standard_status, pm.product_category, pt.*
+         FROM product_masters pm
+         JOIN product_thermal pt ON pt.product_master_id=pm.id
+        WHERE LOWER(BTRIM(pm.product_category))='thermal'
+          AND LOWER(BTRIM(pm.standard_status))='active'
+          AND pt.thermal_capacity_kw > 0
+        ORDER BY pt.thermal_capacity_kw, pm.product_code`,
+    )).rows.map(thermalProductDto);
+  const savedProduct = loaded.saved?.product_snapshot || null;
+  const savedSideStream = loaded.saved?.input_snapshot?.side_stream || null;
+  const savedDto = loaded.saved ? {
+    ...loaded.saved,
+    required_capacity_kw: Number(loaded.saved.required_capacity_kw),
+    plate_flow_m3h: Number(loaded.saved.plate_flow_m3h),
+    product_snapshot: savedProduct,
+    side_stream: savedSideStream,
+  } : null;
+  res.json({
+    duty: loaded.duty,
+    thermal_calculation: loaded.thermalCalculation?.calculation || null,
+    thermal_status: loaded.thermalCalculation?.status || 'Not configured',
+    thermal_freshness: loaded.thermalCalculation?.freshness || 'unsaved',
+    side_streams: loaded.sideStreams,
+    products,
+    saved: savedDto,
+    frozen,
+  });
+});
+
+router.post(
+  '/design-books/:id/thermal-selection/:systemId',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('design_books'),
+  async (req: AuthRequest, res: Response) => {
+    const bookId = routeParam(req.params.id);
+    const systemId = routeParam(req.params.systemId);
+    if (!await ensureBookEditable(bookId, res)) return;
+    const loaded = await loadThermalSelectionContext(bookId, systemId, false);
+    if (!loaded) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System does not belong to this Design Book project' } });
+    const thermal = loaded.thermalCalculation;
+    if (!thermal?.calculation || thermal.status !== 'Ready' || thermal.freshness !== 'fresh'
+      || thermal.calculation.is_stale === true) {
+      return res.status(409).json({
+        error: { code: 'THERMAL_CALCULATION_NOT_READY', message: 'Save a current Ready Thermal calculation before selecting a plate.' },
+      });
+    }
+    const duty = loaded.duty;
+    if (!duty) {
+      return res.status(409).json({
+        error: { code: 'THERMAL_DUTY_UNAVAILABLE', message: 'The active Thermal duty is unavailable or has no positive required capacity.' },
+      });
+    }
+    const productId = String(req.body?.product_master_id || '');
+    const sideStreamId = String(req.body?.side_stream_id || '');
+    const stream = loaded.sideStreams.find((item: any) => item.id === sideStreamId);
+    if (!stream) {
+      return res.status(400).json({ error: { code: 'INVALID_THERMAL_STREAM', message: 'Select a Thermal side stream from the current Flow Route.' } });
+    }
+    if (stream.flow_m3h == null || stream.flow_m3h <= 0) {
+      return res.status(409).json({ error: { code: 'THERMAL_STREAM_FLOW_UNAVAILABLE', message: 'The selected Thermal side stream does not have a resolved positive flow. Review Flow Route allocations first.' } });
+    }
+    const productResult = await query(
+      `SELECT pm.id, pm.product_code, pm.product_name, pm.model, pm.manufacturer,
+              pm.standard_status, pm.product_category, pt.*
+         FROM product_masters pm
+         JOIN product_thermal pt ON pt.product_master_id=pm.id
+        WHERE pm.id=$1
+          AND LOWER(BTRIM(pm.product_category))='thermal'
+          AND LOWER(BTRIM(pm.standard_status))='active'
+          AND pt.thermal_capacity_kw > 0`,
+      [productId],
+    );
+    const product = productResult.rows[0];
+    if (!product) {
+      return res.status(400).json({ error: { code: 'INELIGIBLE_THERMAL_PRODUCT', message: 'The selected Thermal Product Master record is not active or has no positive capacity.' } });
+    }
+    const productDto = thermalProductDto(product);
+    const productDuty = String(productDto.duty || '').trim().toLowerCase();
+    if (productDuty && productDuty !== duty.duty.toLowerCase()) {
+      return res.status(400).json({ error: { code: 'THERMAL_DUTY_MISMATCH', message: `This product is marked for ${productDto.duty}, not ${duty.duty}.` } });
+    }
+    if (Number(productDto.thermal_capacity_kw) < duty.required_capacity_kw) {
+      return res.status(400).json({ error: { code: 'THERMAL_CAPACITY_INSUFFICIENT', message: `The selected product capacity (${Number(productDto.thermal_capacity_kw).toFixed(2)} kW) is below the required ${duty.required_capacity_kw.toFixed(2)} kW.` } });
+    }
+    const inputSnapshot = {
+      thermal_calculation_id: thermal.saved?.id || null,
+      thermal_calculation_version: thermal.calculation.calculation_version || null,
+      thermal_source_fingerprint: thermal.calculation.source_fingerprint || thermal.source_fingerprint || null,
+      duty: duty.duty,
+      required_capacity_kw: duty.required_capacity_kw,
+      net_total_load_kw: duty.net_total_load_kw,
+      side_stream: stream,
+    };
+    const resultSnapshot = {
+      capacity_kw: productDto.thermal_capacity_kw,
+      capacity_margin_kw: Number(productDto.thermal_capacity_kw) - duty.required_capacity_kw,
+      flow_m3h: stream.flow_m3h,
+      product: productDto,
+    };
+    const saved = await query(
+      `INSERT INTO design_book_thermal_selections
+         (design_book_id, system_id, product_master_id, side_stream_id,
+          required_capacity_kw, plate_flow_m3h, duty, input_snapshot,
+          product_snapshot, result_snapshot, freshness, calculated_by, calculated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,'fresh',$11,NOW())
+       ON CONFLICT (design_book_id, system_id) DO UPDATE
+         SET product_master_id=$3, side_stream_id=$4, required_capacity_kw=$5,
+             plate_flow_m3h=$6, duty=$7, input_snapshot=$8::jsonb,
+             product_snapshot=$9::jsonb, result_snapshot=$10::jsonb,
+             freshness='fresh', calculated_by=$11, calculated_at=NOW(), updated_at=NOW()
+       RETURNING *`,
+      [bookId, systemId, productId, sideStreamId, duty.required_capacity_kw, stream.flow_m3h,
+        duty.duty, JSON.stringify(inputSnapshot), JSON.stringify(productDto),
+        JSON.stringify(resultSnapshot), req.user!.id],
+    );
+    await logAudit(req.user!.id, 'design_book_thermal', bookId, 'SELECT', {
+      summary: `Thermal plate selection saved for system ${systemId}`,
+      system_id: systemId,
+      product_master_id: productId,
+      side_stream_id: sideStreamId,
+      duty: duty.duty,
+      required_capacity_kw: duty.required_capacity_kw,
+      plate_flow_m3h: stream.flow_m3h,
+    });
+    res.json({ saved: saved.rows[0], product: productDto, side_stream: stream, duty });
+  },
+);
 
 router.get(
   '/design-books/:id/uv/:systemId',

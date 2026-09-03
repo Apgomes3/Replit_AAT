@@ -1803,6 +1803,39 @@ CREATE TABLE IF NOT EXISTS design_book_uv_selections (
 CREATE INDEX IF NOT EXISTS idx_design_book_uv_selections_book
   ON design_book_uv_selections(design_book_id, system_id);
 
+-- Saved Thermal plate/heat-exchanger selections per Design Book / LSS system.
+-- The snapshots deliberately retain the resolved duty, side-stream flow, and
+-- Product Master evidence used at selection time.
+CREATE TABLE IF NOT EXISTS design_book_thermal_selections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
+  side_stream_id UUID REFERENCES system_flow_side_streams(id) ON DELETE SET NULL,
+  required_capacity_kw NUMERIC NOT NULL CHECK (required_capacity_kw > 0),
+  plate_flow_m3h NUMERIC NOT NULL CHECK (plate_flow_m3h > 0),
+  duty VARCHAR(20) NOT NULL CHECK (duty IN ('Cooling', 'Heating')),
+  input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  product_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  freshness VARCHAR(20) NOT NULL DEFAULT 'fresh'
+    CHECK (freshness IN ('fresh', 'stale')),
+  calculated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  calculated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id),
+  CHECK (jsonb_typeof(input_snapshot) = 'object'),
+  CHECK (jsonb_typeof(product_snapshot) = 'object'),
+  CHECK (jsonb_typeof(result_snapshot) = 'object')
+);
+CREATE INDEX IF NOT EXISTS idx_design_book_thermal_selections_book
+  ON design_book_thermal_selections(design_book_id, system_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_thermal_selection ON design_book_thermal_selections;
+CREATE TRIGGER guard_released_design_book_thermal_selection
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_selections
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+
 -- Circuit-keyed pump selections are intentionally independent of Flow Route
 -- rows: a route can be revised while its prior selection remains auditable.
 CREATE TABLE IF NOT EXISTS system_pump_selections (
