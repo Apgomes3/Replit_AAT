@@ -3779,18 +3779,37 @@ function LegacyThermalTab({
                         <>
                           <b>{tank.tank_code || tank.tank_id}</b> · volume: {tank.volume_source}; surface: {tank.free_surface_source}; wall: {wallSource}
                           {tank.shape === 'custom' && (
-                      <label className="mt-2 flex items-center gap-2 text-stone-700">
-                        <span>Reviewed exposed wall area (m²)</span>
-                        <input type="number" min="0" step="any"
-                          value={form.custom_tank_wall_areas_m2?.[tank.tank_id] ?? ''}
-                          placeholder={defaultWallArea == null ? 'Rectangular default' : defaultWallArea.toFixed(2)}
-                          onChange={event => update('custom_tank_wall_areas_m2', {
-                            ...(form.custom_tank_wall_areas_m2 || {}),
-                            [tank.tank_id]: event.target.value === '' ? null : Number(event.target.value),
-                          })}
-                          disabled={readOnly}
-                          className="w-28 rounded border border-stone-200 px-2 py-1 disabled:bg-stone-50" />
-                      </label>
+                            <div className="mt-2 space-y-1.5 text-stone-700">
+                              <label className="flex flex-wrap items-center gap-2">
+                                <span>Reviewed exposed wall area override (m²)</span>
+                                <input type="number" min="0" step="any"
+                                  value={form.custom_tank_wall_areas_m2?.[tank.tank_id] ?? ''}
+                                  placeholder={defaultWallArea == null ? 'No calculated default' : defaultWallArea.toFixed(2)}
+                                  onChange={event => update('custom_tank_wall_areas_m2', {
+                                    ...(form.custom_tank_wall_areas_m2 || {}),
+                                    [tank.tank_id]: event.target.value === '' ? null : Number(event.target.value),
+                                  })}
+                                  disabled={readOnly}
+                                  className="w-28 rounded border border-stone-200 px-2 py-1 disabled:bg-stone-50" />
+                              </label>
+                              {defaultWallArea != null && (
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500">
+                                  <span>Calculated default: <b className="font-mono text-stone-700">{defaultWallArea.toFixed(2)} m²</b></span>
+                                  {hasOverride && !readOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={() => update('custom_tank_wall_areas_m2', {
+                                        ...(form.custom_tank_wall_areas_m2 || {}),
+                                        [tank.tank_id]: null,
+                                      })}
+                                      className="font-semibold text-[#456b7d] underline underline-offset-2"
+                                    >
+                                      Use calculated default
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </>
                       );
@@ -4942,18 +4961,37 @@ function ThermalTab({
                         <>
                           <b>{tank.tank_code || tank.tank_id}</b> · volume: {tank.volume_source}; surface: {tank.free_surface_source}; wall: {wallSource}
                           {tank.shape === 'custom' && (
-                      <label className="mt-2 flex items-center gap-2 text-stone-700">
-                        <span>Reviewed exposed wall area (m²)</span>
-                        <input type="number" min="0" step="any"
-                          value={form.custom_tank_wall_areas_m2?.[tank.tank_id] ?? ''}
-                          placeholder={defaultWallArea == null ? 'Rectangular default' : defaultWallArea.toFixed(2)}
-                          onChange={event => update('custom_tank_wall_areas_m2', {
-                            ...(form.custom_tank_wall_areas_m2 || {}),
-                            [tank.tank_id]: event.target.value === '' ? null : Number(event.target.value),
-                          })}
-                          disabled={readOnly}
-                          className="w-28 rounded border border-stone-200 px-2 py-1 disabled:bg-stone-50" />
-                      </label>
+                            <div className="mt-2 space-y-1.5 text-stone-700">
+                              <label className="flex flex-wrap items-center gap-2">
+                                <span>Reviewed exposed wall area override (m²)</span>
+                                <input type="number" min="0" step="any"
+                                  value={form.custom_tank_wall_areas_m2?.[tank.tank_id] ?? ''}
+                                  placeholder={defaultWallArea == null ? 'No calculated default' : defaultWallArea.toFixed(2)}
+                                  onChange={event => update('custom_tank_wall_areas_m2', {
+                                    ...(form.custom_tank_wall_areas_m2 || {}),
+                                    [tank.tank_id]: event.target.value === '' ? null : Number(event.target.value),
+                                  })}
+                                  disabled={readOnly}
+                                  className="w-28 rounded border border-stone-200 px-2 py-1 disabled:bg-stone-50" />
+                              </label>
+                              {defaultWallArea != null && (
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500">
+                                  <span>Calculated default: <b className="font-mono text-stone-700">{defaultWallArea.toFixed(2)} m²</b></span>
+                                  {hasOverride && !readOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={() => update('custom_tank_wall_areas_m2', {
+                                        ...(form.custom_tank_wall_areas_m2 || {}),
+                                        [tank.tank_id]: null,
+                                      })}
+                                      className="font-semibold text-[#456b7d] underline underline-offset-2"
+                                    >
+                                      Use calculated default
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </>
                       );

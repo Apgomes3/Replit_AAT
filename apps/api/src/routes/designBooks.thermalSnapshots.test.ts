@@ -6,6 +6,45 @@ import {
 } from '../lib/thermalCalculations';
 
 describe('thermal calculation snapshot persistence', () => {
+  it('ignores derived wall provenance labels but catches real wall-area changes', () => {
+    const savedSource = {
+      system_id: 'lss-01',
+      linked_tanks: [{
+        tank_id: 'custom-1',
+        shape: 'custom',
+        exposed_wall_area_m2: 273.6,
+        exposed_wall_source: 'manual override (custom tank)',
+        dimensions: {
+          inner_length_mm: 7600,
+          inner_width_mm: 7600,
+          water_height_mm: 9000,
+        },
+      }],
+    };
+    const currentSource = {
+      ...savedSource,
+      linked_tanks: [{
+        ...savedSource.linked_tanks[0],
+        exposed_wall_source: 'rectangular default (custom tank)',
+      }],
+    };
+
+    expect(thermalCalculationTestUtils.thermalNonWallSourceChanged(
+      savedSource,
+      currentSource,
+    )).toBe(false);
+    expect(thermalCalculationTestUtils.thermalNonWallSourceChanged(
+      savedSource,
+      {
+        ...currentSource,
+        linked_tanks: [{
+          ...currentSource.linked_tanks[0],
+          exposed_wall_area_m2: 300,
+        }],
+      },
+    )).toBe(true);
+  });
+
   it('classifies governed thickness and layer changes as wall-basis changes', () => {
     const savedBasis = {
       construction_type: 'acrylic',

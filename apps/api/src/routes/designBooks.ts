@@ -437,10 +437,6 @@ async function loadThermalCalculations(
       null;
     const correlationEvidenceMissing = !!saved &&
       !isApprovedThermalCorrelationSnapshot(correlationSnapshot);
-    const stale = !!saved && (
-      saved.source_fingerprint !== source.fingerprint ||
-      saved.calculation_version !== THERMAL_CALCULATION_VERSION
-    );
     const savedInputs = saved?.input_snapshot || {};
     const preview = calculateThermalCalculation(
       source,
@@ -471,12 +467,19 @@ async function loadThermalCalculations(
       saved?.source_snapshot,
       source,
     );
+    const calculationVersionChanged = !!saved &&
+      saved.calculation_version !== THERMAL_CALCULATION_VERSION;
+    const stale = !!saved && (
+      !!wallBasisChange ||
+      nonWallSourceChanged ||
+      calculationVersionChanged
+    );
     const staleReasons = [
       ...(wallBasisChange
         ? [`The approved Thermal wall basis changed after this calculation was saved (${wallBasisChange.changed_fields.join(', ')}). Review the saved and current wall evidence, then recalculate.`]
         : []),
       ...(!wallBasisChange || nonWallSourceChanged ||
-        saved?.calculation_version !== THERMAL_CALCULATION_VERSION
+        calculationVersionChanged
         ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
         : []),
     ];
@@ -626,7 +629,11 @@ function thermalNonWallSourceChanged(savedSource: any, currentSource: any) {
     return {
       ...rest,
       linked_tanks: (rest.linked_tanks || []).map((tank: any) => {
-        const { wall_construction_basis: _tankWallBasis, ...tankSource } = tank;
+        const {
+          wall_construction_basis: _tankWallBasis,
+          exposed_wall_source: _exposedWallSource,
+          ...tankSource
+        } = tank;
         return tankSource;
       }),
     };
@@ -674,6 +681,7 @@ async function insertThermalSnapshotRecord(
 export const thermalCalculationTestUtils = {
   insertThermalSnapshotRecord,
   loadThermalCalculations,
+  thermalNonWallSourceChanged,
   thermalWallBasisChange,
 };
 
@@ -1431,6 +1439,8 @@ export async function loadReleaseContext(
          COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
          COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
          COALESCE(t.primary_material, pm.primary_material_code) AS eff_primary_material,
+          mat.material_code,
+          mat.material_name,
           COALESCE(t.wall_thickness_mm, pm.wall_thickness_mm) AS eff_wall_thickness_mm,
          COALESCE(t.notes, pm.notes) AS eff_notes,
          COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
@@ -1452,6 +1462,7 @@ export async function loadReleaseContext(
        FROM tanks t
        LEFT JOIN product_masters pm ON pm.id=t.product_master_id
        LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
+        LEFT JOIN materials mat ON mat.id=t.material_id
        WHERE t.project_id=$1
        ORDER BY t.tank_code`,
       [book.project_id],
