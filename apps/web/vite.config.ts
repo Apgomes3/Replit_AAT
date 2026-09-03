@@ -1,13 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'url'
-import { dirname } from 'path'
+import { dirname, resolve } from 'path'
+import mathNumberInputBabelPlugin from './mathNumberInputBabelPlugin'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   root: __dirname,
-  plugins: [react()],
+  plugins: [react({ babel: { plugins: [mathNumberInputBabelPlugin] } })],
+  resolve: {
+    alias: {
+      '@web': resolve(__dirname, 'src')
+    }
+  },
   server: {
     port: 5000,
     host: '0.0.0.0',

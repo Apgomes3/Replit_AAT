@@ -285,7 +285,7 @@ describe('Design Book Thermal numeric fields', () => {
     await user.type(input, '123.45');
 
     expect(screen.getByRole('spinbutton', { name: 'Ambient air temperature' })).toBe(input);
-    expect(input).toHaveValue(123.45);
+    expect(input).toHaveValue('123.45');
     expect(input).toHaveFocus();
   });
 });

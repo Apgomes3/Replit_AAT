@@ -121,7 +121,7 @@ describe('ExhibitDetail Escape navigation', () => {
     await user.type(headInput, '50');
     await user.keyboard('{Escape}');
 
-    expect(headInput).toHaveValue(50);
+    expect(headInput).toHaveValue('50');
     expect(screen.getByTestId('location')).toHaveTextContent(currentPath);
   });
 
