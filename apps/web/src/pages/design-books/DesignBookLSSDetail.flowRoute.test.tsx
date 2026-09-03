@@ -1047,7 +1047,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('keeps every LSS tab reachable with its states intact in a narrow scrolling row', async () => {
     const user = userEvent.setup();
-    renderFlowRoute();
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
 
     const tablist = screen.getByRole('tablist', { name: 'Life Support System sections' });
@@ -1618,22 +1618,44 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     ));
   });
 
-  it('blocks active-loop allocations above 100 percent without normalizing them', async () => {
+  it('converts 100 percent of Surface Skim plus 100 percent of Bottom Drain into 100 percent total allocation', async () => {
     const user = userEvent.setup();
     renderFlowRoute({
       ...baseSystem,
-      loop1_flow_pct: 60,
+      loop1_flow_source: 'Bottom Drain',
+      loop1_flow_pct: 100,
       loop2_flow_source: 'Surface Skim',
       loop2_filtration: 'Pressurized Bag Filter',
-      loop2_flow_pct: 50,
-    });
+      loop2_flow_pct: 100,
+    }, {
+      ...bookWithLinkedExhibits,
+      engineering_calculations: {
+        ...bookWithLinkedExhibits.engineering_calculations,
+        systems: [{
+          ...baseBook.engineering_calculations.systems[0],
+          inputs: {
+            ...baseBook.engineering_calculations.systems[0].inputs,
+            source_flows_m3h: {
+              'Surface Skim': 45,
+              'Bottom Drain': 80,
+              'Both Integrated': 125,
+            },
+          },
+          results: {
+            ...baseBook.engineering_calculations.systems[0].results,
+            design_flow_m3h: 125,
+          },
+        }],
+      },
+    }, [primaryLink]);
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
-    expect(route.getByText(/Active loop allocations total 110.0%/)).toBeInTheDocument();
+    expect(route.getByText('100.0%')).toBeInTheDocument();
+    expect(route.getAllByText('125.0 m³/h').length).toBeGreaterThan(0);
     await user.click(route.getByRole('button', { name: 'Edit' }));
     await user.click(route.getByRole('button', { name: 'Save Flow Route' }));
-    expect(apiPut).not.toHaveBeenCalled();
+    await waitFor(() => expect(apiPut).toHaveBeenCalled());
   });
 
   it('preserves allocation drafts while switching to list editing and saves the row', async () => {
@@ -1767,7 +1789,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('renames a main loop and saves preset and custom side-stream details together', async () => {
     const user = userEvent.setup();
-    renderFlowRoute(baseSystem);
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
@@ -1963,6 +1985,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const user = userEvent.setup();
     renderFlowRoute({
       ...baseSystem,
+      loop1_flow_source: 'Vacuum Port',
       loop1_name: 'Main Filtration',
       loop2_name: 'Polishing',
       loop2_flow_source: 'Surface Skim',
@@ -2305,6 +2328,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
       {
         ...baseSystem,
         design_flow_m3h: null,
+        loop1_flow_source: 'Vacuum Port',
         loop1_flow_pct: 50,
         side_streams: [{
           id: 'side-1',
@@ -2417,12 +2441,12 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const capacity = route.getByText('Foam Fractionator capacity');
 
     expect(context.compareDocumentPosition(capacity)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(within(context).getByText('40% of total system flow')).toBeInTheDocument();
-    expect(within(context).getByText('40.0 m³/h')).toBeInTheDocument();
+    expect(within(context).getByText('40% of Bottom Drain flow')).toBeInTheDocument();
+    expect(within(context).getByText('32.0 m³/h')).toBeInTheDocument();
     expect(within(context).getByText('45.0 m³/h')).toBeInTheDocument();
     expect(within(context).getByText('aggregate Surface Skim flow')).toBeInTheDocument();
     expect(within(context).getByText('25% of loop')).toBeInTheDocument();
-    expect(within(context).getByText('10.0 m³/h derived branch flow')).toBeInTheDocument();
+    expect(within(context).getByText('8.0 m³/h derived branch flow')).toBeInTheDocument();
 
     const cardElement = route.getByRole('region', { name: 'Foam Fractionator FF-500' });
     const card = within(cardElement);
@@ -2440,8 +2464,8 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     await user.click(route.getByRole('button', { name: 'L/s' }));
     const convertedContext = within(route.getByLabelText('Foam Fractionator flow context for Loop 1'));
-    expect(convertedContext.getByText('11.1 L/s')).toBeInTheDocument();
-    expect(convertedContext.getByText('2.8 L/s derived branch flow')).toBeInTheDocument();
+    expect(convertedContext.getByText('8.9 L/s')).toBeInTheDocument();
+    expect(convertedContext.getByText('2.2 L/s derived branch flow')).toBeInTheDocument();
   });
 
   it('keeps long fractionator labels inside their card while preserving Details access', async () => {

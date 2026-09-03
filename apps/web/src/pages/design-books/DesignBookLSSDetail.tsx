@@ -1158,14 +1158,17 @@ function buildFlowLoopFields(draft: Record<string, any>, clearedLoop?: number) {
   return fields;
 }
 
-function flowAllocationError(draft: Record<string, any>): string | null {
+function flowAllocationError(
+  draft: Record<string, any>,
+  totalAllocationPct?: number | null,
+): string | null {
   const foamFractionationLoops = [1, 2, 3].filter(
     n => draft[`loop${n}_filtration`] === 'Foam Fractionation',
   );
   if (foamFractionationLoops.length > 1) {
     return 'Only one Flow Route loop may use Foam Fractionation.';
   }
-  let total = 0;
+  let rawTotal = 0;
   for (const n of [1, 2, 3]) {
     const isMatched = draft[`loop${n}_flow_mode`] === 'matched';
     for (const [key, label] of [
@@ -1181,7 +1184,7 @@ function flowAllocationError(draft: Record<string, any>): string | null {
       }
     }
     const flowPct = nullableNumber(draft[`loop${n}_flow_pct`]);
-    if (!isMatched && flowPct != null) total += flowPct;
+    if (!isMatched && flowPct != null) rawTotal += flowPct;
   }
   for (const loopNumber of [1, 2, 3]) {
     const streams = (draft.side_streams || [])
@@ -1195,8 +1198,9 @@ function flowAllocationError(draft: Record<string, any>): string | null {
       }
     }
   }
+  const total = totalAllocationPct ?? rawTotal;
   return total > 100.000001
-    ? `Active loop allocations total ${total.toFixed(1)}%. Reduce them to 100% or less before saving.`
+    ? `Active loop flows allocate ${total.toFixed(1)}% of total system flow. Reduce them to 100% or less before saving.`
     : null;
 }
 
@@ -2276,7 +2280,10 @@ export default function DesignBookLSSDetail() {
   };
 
   const saveFlowRoute = async () => {
-    const validationMessage = flowAllocationError(flowForm || {});
+    const validationMessage = flowAllocationError(
+      flowForm || {},
+      totalSystemAllocationPctFor(flowForm || {}),
+    );
     if (validationMessage) return toast.error(validationMessage);
     setFlowSaving(true);
     try {
@@ -2313,7 +2320,7 @@ export default function DesignBookLSSDetail() {
     for (const key of FLOW_LOOP_FIELDS) {
       draft[`loop${n}_${key}`] = listRowForm[key];
     }
-    const validationMessage = flowAllocationError(draft);
+    const validationMessage = flowAllocationError(draft, totalSystemAllocationPctFor(draft));
     if (validationMessage) return toast.error(validationMessage);
     setFlowSaving(true);
     try {
@@ -2463,6 +2470,43 @@ export default function DesignBookLSSDetail() {
   ) ?? null;
   const calculatedSystemFlow = systemCalculation?.results?.design_flow_m3h;
   const systemFlow = calculatedSystemFlow == null ? null : Number(calculatedSystemFlow);
+  const totalSystemAllocationPctFor = (draft: Record<string, any>): number | null => {
+    if (systemFlow == null || !(systemFlow > 0)) return null;
+    const sourceFlows = systemCalculation?.inputs?.source_flows_m3h || {};
+    const sourceResultKeys: Record<string, string> = {
+      'Surface Skim': 'surface_skim_flow_m3h',
+      'Bottom Drain': 'bottom_drain_flow_m3h',
+      'Both Integrated': 'total_return_flow_m3h',
+    };
+    const sourceFlowFor = (source: string): number | null => {
+      if (Object.prototype.hasOwnProperty.call(sourceFlows, source)) {
+        return nullableNumber(sourceFlows[source]);
+      }
+      const resultKey = sourceResultKeys[source];
+      if (!resultKey) return systemFlow;
+      if (!(links as any[]).length) return null;
+      const linkedCalculations = (links as any[]).map((link: any) =>
+        exhibitCalculations.find((calculation: any) =>
+          String(calculation.inputs?.exhibit_id) === String(link.exhibit_id)));
+      if (linkedCalculations.some((calculation: any) =>
+        !calculation || calculation.status !== 'valid' ||
+        calculation.is_stale === true || calculation.freshness === 'stale' ||
+        nullableNumber(calculation.results?.[resultKey]) == null)) return null;
+      return linkedCalculations.reduce(
+        (sum: number, calculation: any) => sum + Number(calculation.results[resultKey]),
+        0,
+      );
+    };
+    const allocatedFlow = [1, 2, 3].reduce((sum, loopNumber) => {
+      if (draft[`loop${loopNumber}_flow_mode`] === 'matched') return sum;
+      const percentage = nullableNumber(draft[`loop${loopNumber}_flow_pct`]);
+      if (percentage == null) return sum;
+      const source = String(draft[`loop${loopNumber}_flow_source`] || '');
+      const basisFlow = sourceFlowFor(source);
+      return basisFlow == null ? sum : sum + basisFlow * percentage / 100;
+    }, 0);
+    return allocatedFlow / systemFlow * 100;
+  };
   const exhibitCalculations: any[] = book?.engineering_calculations?.exhibits || [];
 
   // Values come exclusively from the API calculation contract.
@@ -3530,9 +3574,23 @@ export default function DesignBookLSSDetail() {
             unavailableReason: reference?.unavailableReason,
           };
         };
-        const flowForPercentage = (percentage: unknown): number | null => {
+        const loopAllocationFlowContext = (source: unknown): {
+          flow: number | null;
+          basisLabel: string;
+        } => {
+          const reference = sourceReferenceFor(source);
+          if (!reference) return { flow: systemFlow, basisLabel: 'total system flow' };
+          return {
+            flow: reference.unavailableReason ? null : reference.combinedFlowM3h,
+            basisLabel: `${String(source).trim()} flow`,
+          };
+        };
+        const flowForPercentage = (percentage: unknown, source: unknown): number | null => {
           const pct = nullableNumber(percentage);
-          return pct != null && systemFlow != null && systemFlow > 0 ? systemFlow * pct / 100 : null;
+          const basisFlow = loopAllocationFlowContext(source).flow;
+          return pct != null && basisFlow != null && basisFlow > 0
+            ? basisFlow * pct / 100
+            : null;
         };
         const loopMode = (source: any, n: number) =>
           source?.[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated';
@@ -3547,7 +3605,10 @@ export default function DesignBookLSSDetail() {
           if (path.includes(n)) return { flow: null, reason: 'Match cycle detected', chain: [...path, n] };
           if (loopMode(source, n) !== 'matched') {
             return {
-              flow: flowForPercentage(source?.[`loop${n}_flow_pct`]),
+              flow: flowForPercentage(
+                source?.[`loop${n}_flow_pct`],
+                source?.[`loop${n}_flow_source`],
+              ),
               chain: [...path, n],
             };
           }
@@ -3578,10 +3639,7 @@ export default function DesignBookLSSDetail() {
             allocationSource[`loop${n}_bio_degas_pct`] != null ||
             allocationSource[`loop${n}_bio_degas_m3h`] != null ||
             allocationSource[`loop${n}_link_bio_degas`]));
-        const allocationTotal = [1, 2, 3].reduce(
-          (sum, n) => sum + (loopMode(allocationSource, n) === 'matched' ? 0 : (nullableNumber(allocationSource[`loop${n}_flow_pct`]) ?? 0)),
-          0,
-        );
+        const allocationTotal = totalSystemAllocationPctFor(allocationSource) ?? 0;
         const allocationPending = allocationLoops.filter(
           n => nullableNumber(allocationSource[`loop${n}_flow_pct`]) == null,
         ).length;
@@ -3590,7 +3648,7 @@ export default function DesignBookLSSDetail() {
             nullableNumber(allocationSource[`loop${n}_bio_degas_pct`]) == null,
         ).length;
         const unallocatedPct = Math.max(0, 100 - allocationTotal);
-        const allocationValidation = flowAllocationError(allocationSource);
+        const allocationValidation = flowAllocationError(allocationSource, allocationTotal);
         const loopName = (source: any, n: number) =>
           String(source?.[`loop${n}_name`] || `Loop ${n}`);
         const sideStreamsFor = (source: any, n: number) =>
@@ -3936,7 +3994,7 @@ export default function DesignBookLSSDetail() {
           const bioPct = nullableNumber(system[`loop${n}_bio_degas_pct`]);
           const linked = !!system[`loop${n}_link_bio_degas`];
           const matched = loopMode(system, n) === 'matched';
-          const flowContext = { flow: systemFlow, basisLabel: 'total system flow' };
+          const flowContext = loopAllocationFlowContext(src);
           const foamFlowContext = exhibitSourceFlowContext('Surface Skim');
           const resolvedFlow = resolveLoopFlow(system, n);
           const loopFlow = resolvedFlow.flow;
@@ -4109,7 +4167,7 @@ export default function DesignBookLSSDetail() {
           const matched = loopMode(flowForm, n) === 'matched';
           const loopPct = nullableNumber(flowForm[pctKey]);
           const bioPct = nullableNumber(flowForm[bioPctKey]);
-          const flowContext = { flow: systemFlow, basisLabel: 'total system flow' };
+          const flowContext = loopAllocationFlowContext(curSrc);
           const resolvedFlow = resolveLoopFlow(flowForm, n);
           const loopFlow = resolvedFlow.flow;
           const bioFlow = loopFlow != null && bioPct != null ? loopFlow * bioPct / 100 : null;

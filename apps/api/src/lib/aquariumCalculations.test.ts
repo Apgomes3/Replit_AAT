@@ -889,7 +889,7 @@ describe('aquarium engineering calculations', () => {
     expect(system.results.turnover_rate_cycles_per_hour).toBe(2);
     expect(system.results.flow_override_m3h).toBeNull();
     expect(system.inputs.source_flows_m3h['Surface Skim']).toBe(18.24);
-    expect(system.flow_route.loops[0].flow_m3h).toBe(30.4);
+    expect(system.flow_route.loops[0].flow_m3h).toBe(9.12);
   });
 
   it('reports linked system flow as unavailable when any exhibit hydraulics are incomplete', () => {

@@ -762,7 +762,18 @@ export function calculateSystemEngineering(
   if (foamLoops.length > 1) {
     reasons.push('Only one Flow Route loop may use Foam Fractionation.');
   }
-  const resolvedLoopFlows = resolveLoopFlows(system, designFlow);
+  const resolvedLoopFlows = resolveLoopFlows(system, designFlow, sourceFlows);
+  const allocatedLoopFlow = resolvedLoopFlows
+    .filter(resolved => resolved.flow_mode === 'allocated')
+    .reduce((sum, resolved) => sum + (resolved.flow_m3h ?? 0), 0);
+  const flowRouteAllocationTotalPct = designFlow != null && designFlow > 0
+    ? roundEngineering(allocatedLoopFlow / designFlow * 100, 2)
+    : null;
+  if (flowRouteAllocationTotalPct != null && flowRouteAllocationTotalPct > 100.000001) {
+    reasons.push(
+      `Flow Route loop flows allocate ${flowRouteAllocationTotalPct.toFixed(1)}% of total system flow.`,
+    );
+  }
   for (const resolved of resolvedLoopFlows) {
     if (resolved.flow_mode === 'matched' && resolved.unavailable_reason) reasons.push(resolved.unavailable_reason);
   }
