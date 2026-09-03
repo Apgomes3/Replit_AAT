@@ -28,6 +28,7 @@ import {
   calculateThermalCalculation,
   isApprovedThermalCorrelationSnapshot,
   THERMAL_CALCULATION_VERSION,
+  THERMAL_CONSTANTS,
 } from '../lib/thermalCalculations';
 import { calculateSpeciesAllocation } from '../lib/speciesAllocations';
 import { PUMP_SELECTION_CALCULATION_VERSION, pumpCircuits, pumpLinesForCircuit } from '../lib/pumpSelections';
@@ -629,7 +630,11 @@ function thermalWallExpectedCurrentMatches(current: any, expectedCurrentId: stri
 function thermalWallConstructionDefaultRow(row: any) {
   const thicknessMm = Number(row.thickness_mm);
   const conductivity = Number(row.conductivity_w_m_k);
-  const uValue = conductivity / (thicknessMm / 1000);
+  const uValue = 1 / (
+    1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+    thicknessMm / 1000 / conductivity +
+    1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
+  );
   return {
     id: row.id || null,
     code: row.construction_code || row.code,
