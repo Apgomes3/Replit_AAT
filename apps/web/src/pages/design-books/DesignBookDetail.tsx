@@ -3311,11 +3311,6 @@ function ThermalTab({
                     'These categories describe surface activity and air/water movement—not biological species or tank construction.'}
                 </p>
               </div>
-              <div className="rounded-lg border border-[#d8d4cb] bg-[#f3efe8] px-3 py-2 sm:col-span-2">
-                <span className="block text-xs font-semibold uppercase tracking-wide text-[#456b7d]">Active platform correlation</span>
-                <div className="mt-1 text-sm font-semibold text-[#263746]">{form.agitation_correlation_version ? `Version ${form.agitation_correlation_version}` : 'No approved version available'}</div>
-                <p className="mt-1 text-xs text-[#71808a]">Read-only · resolved from the approved library for this activity class.</p>
-              </div>
               <label>
                 <span className={labelClass}>Mass-transfer coefficient (kg/m²·s·kPa){form.agitation_correlation_deviation && ' · Override'}</span>
                 <input aria-label="Mass-transfer coefficient" type="number" min="0" step="any"
