@@ -11,7 +11,7 @@ import { VendorOption, BOMLine, Document } from '../../types';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useState, useRef } from 'react';
 import FormulaInput from '../../components/ui/FormulaInput';
-import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Wind, Tag, Pencil, Check, Copy } from 'lucide-react';
+import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Wind, Thermometer, Tag, Pencil, Check, Copy } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
 import Button from '../../components/ui/Button';
 import ActivityLog from '../../components/ui/ActivityLog';
@@ -149,6 +149,10 @@ export default function ProductMasterDetail() {
   const [pneumaticForm, setPneumaticForm] = useState<Record<string, any>>({});
   const [pneumaticSaving, setPneumaticSaving] = useState(false);
 
+  const [editingThermal, setEditingThermal] = useState(false);
+  const [thermalForm, setThermalForm] = useState<Record<string, any>>({});
+  const [thermalSaving, setThermalSaving] = useState(false);
+
   const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', wall_thickness_mm: '', weight_kg: '' });
   const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
 
@@ -265,6 +269,12 @@ export default function ProductMasterDetail() {
     queryKey: ['product-pneumatic', id],
     queryFn: () => api.get(`/product-masters/${id}/pneumatic`).then(r => r.data),
     enabled: String(product?.product_category || '').toLowerCase() === 'pneumatic',
+  });
+
+  const { data: thermalData, refetch: refetchThermal } = useQuery({
+    queryKey: ['product-thermal', id],
+    queryFn: () => api.get(`/product-masters/${id}/thermal`).then(r => r.data),
+    enabled: String(product?.product_category || '').toLowerCase() === 'thermal',
   });
 
   const { data: materialsData } = useQuery({
@@ -663,6 +673,82 @@ export default function ProductMasterDetail() {
     }
   };
 
+  const handleSaveThermal = async () => {
+    if (thermalSaving) return;
+    const nonNegativeFields = [
+      ['thermal_capacity_kw', 'Thermal capacity'],
+      ['flow_rate_m3h', 'Flow rate'],
+      ['pressure_rating_bar', 'Pressure rating'],
+    ] as const;
+    const positiveFields = [
+      ['primary_inlet_dn_mm', 'Primary-side inlet DN'],
+      ['primary_outlet_dn_mm', 'Primary-side outlet DN'],
+      ['secondary_inlet_dn_mm', 'Secondary-side inlet DN'],
+      ['secondary_outlet_dn_mm', 'Secondary-side outlet DN'],
+    ] as const;
+    const temperatureFields = [
+      ['operating_temperature_min_c', 'Minimum operating temperature'],
+      ['operating_temperature_max_c', 'Maximum operating temperature'],
+      ['design_temperature_c', 'Design temperature'],
+    ] as const;
+    const hasValue = (value: unknown) => value !== null && value !== undefined && String(value).trim() !== '';
+    for (const [key, label] of nonNegativeFields) {
+      if (hasValue(thermalForm[key]) && (!Number.isFinite(Number(thermalForm[key])) || Number(thermalForm[key]) < 0)) {
+        toast.error(`${label} must be a finite, non-negative number`);
+        return;
+      }
+    }
+    for (const [key, label] of positiveFields) {
+      if (hasValue(thermalForm[key]) && (!Number.isFinite(Number(thermalForm[key])) || Number(thermalForm[key]) <= 0)) {
+        toast.error(`${label} must be a positive number`);
+        return;
+      }
+    }
+    for (const [key, label] of temperatureFields) {
+      if (hasValue(thermalForm[key]) && !Number.isFinite(Number(thermalForm[key]))) {
+        toast.error(`${label} must be a finite number`);
+        return;
+      }
+    }
+    if (hasValue(thermalForm.efficiency_pct)
+      && (!Number.isFinite(Number(thermalForm.efficiency_pct))
+        || Number(thermalForm.efficiency_pct) < 0
+        || Number(thermalForm.efficiency_pct) > 100)) {
+      toast.error('Efficiency must be between 0 and 100 percent');
+      return;
+    }
+    if (hasValue(thermalForm.operating_temperature_min_c)
+      && hasValue(thermalForm.operating_temperature_max_c)
+      && Number(thermalForm.operating_temperature_min_c) > Number(thermalForm.operating_temperature_max_c)) {
+      toast.error('Minimum operating temperature cannot exceed maximum operating temperature');
+      return;
+    }
+
+    setThermalSaving(true);
+    try {
+      const numericFields = [...nonNegativeFields, ...positiveFields, ...temperatureFields, ['efficiency_pct', 'Efficiency'] as const];
+      const payload = { ...thermalForm };
+      for (const [key] of numericFields) {
+        payload[key] = hasValue(payload[key]) ? Number(payload[key]) : null;
+      }
+      for (const key of ['thermal_duty', 'fluid_type', 'flow_switch_status', 'notes']) {
+        payload[key] = hasValue(payload[key]) ? String(payload[key]).trim() : null;
+      }
+      const { data: saved } = await api.put(`/product-masters/${id}/thermal`, payload);
+      if (!saved || typeof saved !== 'object') {
+        throw new Error('The server did not return the saved thermal specifications');
+      }
+      queryClient.setQueryData(['product-thermal', id], saved);
+      toast.success('Thermal specifications saved');
+      setEditingThermal(false);
+      refetchThermal();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || error?.message || 'Failed to save thermal specifications');
+    } finally {
+      setThermalSaving(false);
+    }
+  };
+
   const calcTankShapeVolumes = (shape: string, L: number|null, W: number|null, H: number|null, WL: number|null) => {
     const s = shape || 'Rectangular';
     let grossV: number|null = null, opV: number|null = null;
@@ -719,6 +805,7 @@ export default function ProductMasterDetail() {
   const isPiping = product.product_category === 'Piping';
   const isTank = product.product_category === 'Tank';
   const isPneumatic = String(product.product_category || '').toLowerCase() === 'pneumatic';
+  const isThermal = String(product.product_category || '').toLowerCase() === 'thermal';
   const productFamilyCode = String(product.product_family_code || '').trim().toUpperCase();
   const productCode = String(product.product_code || '').trim().toUpperCase();
   const isUvProduct = productFamilyCode === 'PFM-UV'
@@ -1579,6 +1666,104 @@ export default function ProductMasterDetail() {
                           <div key={String(label)} className="flex justify-between text-xs">
                             <span className="text-slate-400">{label}</span>
                             <span className="text-slate-700 font-medium">{String(value)}{unit ? <span className="text-slate-400 ml-1">{String(unit)}</span> : ''}</span>
+                          </div>
+                        ))}
+                      </div>}
+                </div>
+              )}
+            </div>}
+
+            {/* Thermal Card */}
+            {isThermal && <div className="bg-white border border-slate-200 rounded-lg mt-3">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Thermometer className="w-3.5 h-3.5" />Thermal Specifications</span>
+                {!editingThermal
+                  ? <button onClick={() => { setThermalForm({ ...thermalData }); setEditingThermal(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                  : <div className="flex gap-2"><button onClick={() => setEditingThermal(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveThermal} disabled={thermalSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{thermalSaving ? 'Saving…' : 'Save'}</button></div>}
+              </div>
+              {editingThermal ? (
+                <div className="p-3 grid grid-cols-2 gap-2">
+                  {[
+                    ['thermal_capacity_kw', 'Thermal Capacity (kW)', 0],
+                    ['flow_rate_m3h', 'Flow Rate (m³/h)', 0],
+                    ['operating_temperature_min_c', 'Operating Temperature Min (°C)', undefined],
+                    ['operating_temperature_max_c', 'Operating Temperature Max (°C)', undefined],
+                    ['design_temperature_c', 'Design Temperature (°C)', undefined],
+                    ['pressure_rating_bar', 'Pressure Rating (bar)', 0],
+                    ['efficiency_pct', 'Efficiency (%)', 0],
+                    ['primary_inlet_dn_mm', 'Primary-side Inlet DN (mm)', 0],
+                    ['primary_outlet_dn_mm', 'Primary-side Outlet DN (mm)', 0],
+                    ['secondary_inlet_dn_mm', 'Secondary-side Inlet DN (mm)', 0],
+                    ['secondary_outlet_dn_mm', 'Secondary-side Outlet DN (mm)', 0],
+                  ].map(([key, label, min]: any) => (
+                    <div key={key}>
+                      <label className="block text-xs text-slate-500 mb-0.5">{label}</label>
+                      <input type="number" min={min} max={key === 'efficiency_pct' ? 100 : undefined} step="any" value={thermalForm[key] ?? ''} onChange={event => setThermalForm(form => ({ ...form, [key]: event.target.value }))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-0.5">Thermal Duty / Service</label>
+                    <input value={thermalForm.thermal_duty ?? ''} onChange={event => setThermalForm(form => ({ ...form, thermal_duty: event.target.value }))} placeholder="e.g. Heating, chilling, heat recovery" className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-0.5">Fluid Type</label>
+                    <input value={thermalForm.fluid_type ?? ''} onChange={event => setThermalForm(form => ({ ...form, fluid_type: event.target.value }))} placeholder="e.g. Fresh water, glycol" className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-0.5">Flow Switch</label>
+                    <select value={thermalForm.flow_switch_status ?? ''} onChange={event => setThermalForm(form => ({ ...form, flow_switch_status: event.target.value }))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-600">
+                      <option value="">—</option>
+                      <option value="included">Included</option>
+                      <option value="optional">Optional</option>
+                      <option value="not_included">Not included</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs text-slate-500 mb-0.5">Notes</label>
+                    <textarea rows={2} value={thermalForm.notes ?? ''} onChange={event => setThermalForm(form => ({ ...form, notes: event.target.value }))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" />
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3">
+                  {[
+                    ['Thermal Capacity', thermalData?.thermal_capacity_kw, 'kW'],
+                    ['Thermal Duty / Service', thermalData?.thermal_duty, ''],
+                    ['Fluid Type', thermalData?.fluid_type, ''],
+                    ['Operating Temperature Min', thermalData?.operating_temperature_min_c, '°C'],
+                    ['Operating Temperature Max', thermalData?.operating_temperature_max_c, '°C'],
+                    ['Design Temperature', thermalData?.design_temperature_c, '°C'],
+                    ['Flow Rate', thermalData?.flow_rate_m3h, 'm³/h'],
+                    ['Pressure Rating', thermalData?.pressure_rating_bar, 'bar'],
+                    ['Efficiency', thermalData?.efficiency_pct, '%'],
+                    ['Primary-side Inlet DN', thermalData?.primary_inlet_dn_mm, 'mm'],
+                    ['Primary-side Outlet DN', thermalData?.primary_outlet_dn_mm, 'mm'],
+                    ['Secondary-side Inlet DN', thermalData?.secondary_inlet_dn_mm, 'mm'],
+                    ['Secondary-side Outlet DN', thermalData?.secondary_outlet_dn_mm, 'mm'],
+                    ['Flow Switch', thermalData?.flow_switch_status === 'included' ? 'Included' : thermalData?.flow_switch_status === 'optional' ? 'Optional' : thermalData?.flow_switch_status === 'not_included' ? 'Not included' : null, ''],
+                    ['Notes', thermalData?.notes, ''],
+                  ].filter(([, value]) => value !== null && value !== undefined && value !== '').length === 0
+                    ? <p className="text-xs text-slate-300 text-center py-2">No thermal specifications recorded — click Edit to add</p>
+                    : <div className="space-y-1">
+                        {[
+                          ['Thermal Capacity', thermalData?.thermal_capacity_kw, 'kW'],
+                          ['Thermal Duty / Service', thermalData?.thermal_duty, ''],
+                          ['Fluid Type', thermalData?.fluid_type, ''],
+                          ['Operating Temperature Min', thermalData?.operating_temperature_min_c, '°C'],
+                          ['Operating Temperature Max', thermalData?.operating_temperature_max_c, '°C'],
+                          ['Design Temperature', thermalData?.design_temperature_c, '°C'],
+                          ['Flow Rate', thermalData?.flow_rate_m3h, 'm³/h'],
+                          ['Pressure Rating', thermalData?.pressure_rating_bar, 'bar'],
+                          ['Efficiency', thermalData?.efficiency_pct, '%'],
+                          ['Primary-side Inlet DN', thermalData?.primary_inlet_dn_mm, 'mm'],
+                          ['Primary-side Outlet DN', thermalData?.primary_outlet_dn_mm, 'mm'],
+                          ['Secondary-side Inlet DN', thermalData?.secondary_inlet_dn_mm, 'mm'],
+                          ['Secondary-side Outlet DN', thermalData?.secondary_outlet_dn_mm, 'mm'],
+                          ['Flow Switch', thermalData?.flow_switch_status === 'included' ? 'Included' : thermalData?.flow_switch_status === 'optional' ? 'Optional' : thermalData?.flow_switch_status === 'not_included' ? 'Not included' : null, ''],
+                          ['Notes', thermalData?.notes, ''],
+                        ].filter(([, value]) => value !== null && value !== undefined && value !== '').map(([label, value, unit]) => (
+                          <div key={String(label)} className="flex justify-between gap-4 text-xs">
+                            <span className="text-slate-400">{label}</span>
+                            <span className="text-slate-700 font-medium text-right">{String(value)}{unit ? <span className="text-slate-400 ml-1">{String(unit)}</span> : ''}</span>
                           </div>
                         ))}
                       </div>}

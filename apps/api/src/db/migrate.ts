@@ -774,6 +774,26 @@ CREATE TABLE IF NOT EXISTS product_pneumatic (
   outlet_port_unit VARCHAR(10),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS product_thermal (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
+  thermal_capacity_kw NUMERIC,
+  thermal_duty VARCHAR(255),
+  fluid_type VARCHAR(100),
+  operating_temperature_min_c NUMERIC,
+  operating_temperature_max_c NUMERIC,
+  design_temperature_c NUMERIC,
+  flow_rate_m3h NUMERIC,
+  pressure_rating_bar NUMERIC,
+  efficiency_pct NUMERIC,
+  primary_inlet_dn_mm NUMERIC,
+  primary_outlet_dn_mm NUMERIC,
+  secondary_inlet_dn_mm NUMERIC,
+  secondary_outlet_dn_mm NUMERIC,
+  flow_switch_status VARCHAR(20),
+  notes TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS product_design_flow_reconciliations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
