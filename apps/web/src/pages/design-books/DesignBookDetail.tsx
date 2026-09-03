@@ -4689,7 +4689,7 @@ function ThermalTab({
                  type="button"
                  className="flex w-full items-center justify-between gap-3 text-left"
                  aria-expanded={!collapsedSections.linkedSource}
-                 aria-controls="thermal-linked-source-panel thermal-linked-wall-evidence-panel thermal-wall-calculations-panel"
+                 aria-controls="thermal-linked-source-panel thermal-linked-wall-evidence-panel thermal-wall-calculations-panel thermal-action-required-panel"
                  onClick={() => setCollapsedSections(current => ({ ...current, linkedSource: !current.linkedSource }))}
                >
                  <span><span className="mr-2 text-[#9aa8af]">02</span>Linked source and geometry</span>
@@ -5083,6 +5083,12 @@ function ThermalTab({
               </table>
             </div>
            </section>
+           {detail?.reasons?.length > 0 && (
+             <div id="thermal-action-required-panel" className="order-6 rounded-xl border border-red-200 bg-red-50 p-4">
+               <div className="flex items-center gap-2 text-sm font-semibold text-red-800"><AlertTriangle className="w-4 h-4" /> Action required</div>
+               <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">{detail.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
+             </div>
+           )}
            </>)}
            </section>
 
@@ -5135,13 +5141,6 @@ function ThermalTab({
             </label>
              </div>}
           </section>
-
-          {detail?.reasons?.length > 0 && (
-            <div className="order-6 rounded-xl border border-red-200 bg-red-50 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-red-800"><AlertTriangle className="w-4 h-4" /> Action required</div>
-              <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">{detail.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
-            </div>
-          )}
 
           {detail?.results && (
             <>
