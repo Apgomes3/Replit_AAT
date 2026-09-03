@@ -1645,6 +1645,18 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
   if (!pid) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
   const body = req.body || {};
   const { design_flow_m3h, venturi_flow_m3h, friction_loss_mh2o } = body;
+  const parseDn = (value: unknown) => {
+    if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : Number.NaN;
+  };
+  const suctionDn = parseDn(body.suction_dn_mm);
+  const dischargeDn = parseDn(body.discharge_dn_mm);
+  if (Number.isNaN(suctionDn) || Number.isNaN(dischargeDn)) {
+    return res.status(400).json({
+      error: { code: 'INVALID_DN_SIZE', message: 'Suction and discharge DN sizes must be positive numbers when provided.' },
+    });
+  }
   const venturiFlow = venturi_flow_m3h === null || venturi_flow_m3h === undefined ||
     (typeof venturi_flow_m3h === 'string' && venturi_flow_m3h.trim() === '')
     ? null
@@ -1667,7 +1679,7 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
       error: { code: 'INVALID_FRICTION_LOSS', message: 'Friction loss must be a finite, non-negative value in mH₂O' },
     });
   }
-  const fields = ['min_flow_m3h', 'max_flow_m3h', 'friction_loss_mh2o', 'design_head_m', 'design_pressure_bar', 'max_pressure_bar', 'npsh_required_m', 'fluid_type', 'min_temperature_c', 'max_temperature_c', 'notes'] as const;
+  const fields = ['min_flow_m3h', 'max_flow_m3h', 'friction_loss_mh2o', 'design_head_m', 'design_pressure_bar', 'max_pressure_bar', 'npsh_required_m', 'fluid_type', 'min_temperature_c', 'max_temperature_c', 'notes', 'suction_dn_mm', 'discharge_dn_mm'] as const;
   let previousProductFlow: unknown;
   let previousHydraulicFlow: unknown;
   let linkedDesignFlow: number | null;
@@ -1704,11 +1716,18 @@ router.put('/product-masters/:id/hydraulic', authenticate, async (req: AuthReque
         ? venturiFlow
         : existing.venturi_flow_m3h ?? null;
       const r = await client.query(`
-        INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, friction_loss_mh2o, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+        INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h, friction_loss_mh2o, design_head_m, design_pressure_bar, max_pressure_bar, npsh_required_m, fluid_type, min_temperature_c, max_temperature_c, notes, suction_dn_mm, discharge_dn_mm, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
         ON CONFLICT (product_master_id) DO UPDATE SET
-          design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, venturi_flow_m3h=$5, friction_loss_mh2o=$6, design_head_m=$7, design_pressure_bar=$8, max_pressure_bar=$9, npsh_required_m=$10, fluid_type=$11, min_temperature_c=$12, max_temperature_c=$13, notes=$14, updated_at=NOW()
-        RETURNING *`, [pid, linkedDesignFlow, merged.min_flow_m3h, merged.max_flow_m3h, mergedVenturi, merged.friction_loss_mh2o, merged.design_head_m, merged.design_pressure_bar, merged.max_pressure_bar, merged.npsh_required_m, merged.fluid_type, merged.min_temperature_c, merged.max_temperature_c, merged.notes]);
+          design_flow_m3h=$2, min_flow_m3h=$3, max_flow_m3h=$4, venturi_flow_m3h=$5, friction_loss_mh2o=$6, design_head_m=$7, design_pressure_bar=$8, max_pressure_bar=$9, npsh_required_m=$10, fluid_type=$11, min_temperature_c=$12, max_temperature_c=$13, notes=$14, suction_dn_mm=$15, discharge_dn_mm=$16, updated_at=NOW()
+        RETURNING *`, [
+          pid, linkedDesignFlow, merged.min_flow_m3h, merged.max_flow_m3h, mergedVenturi,
+          merged.friction_loss_mh2o, merged.design_head_m, merged.design_pressure_bar,
+          merged.max_pressure_bar, merged.npsh_required_m, merged.fluid_type,
+          merged.min_temperature_c, merged.max_temperature_c, merged.notes,
+          Object.prototype.hasOwnProperty.call(body, 'suction_dn_mm') ? suctionDn : existing.suction_dn_mm ?? null,
+          Object.prototype.hasOwnProperty.call(body, 'discharge_dn_mm') ? dischargeDn : existing.discharge_dn_mm ?? null,
+        ]);
       await client.query('UPDATE product_masters SET design_flow_m3h=$2, updated_at=NOW() WHERE id=$1', [pid, linkedDesignFlow]);
       if (flowsConflict(previousProductFlow, previousHydraulicFlow)) {
         await client.query(

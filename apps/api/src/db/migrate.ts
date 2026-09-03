@@ -757,6 +757,8 @@ CREATE TABLE IF NOT EXISTS product_hydraulic (
   min_temperature_c NUMERIC, max_temperature_c NUMERIC,
   notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS suction_dn_mm NUMERIC;
+ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS discharge_dn_mm NUMERIC;
 CREATE TABLE IF NOT EXISTS product_pneumatic (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,

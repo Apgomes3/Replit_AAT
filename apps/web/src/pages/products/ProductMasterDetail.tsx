@@ -542,6 +542,19 @@ export default function ProductMasterDetail() {
   };
 
   const handleSaveHydraulic = async () => {
+    for (const [key, label] of [
+      ['suction_dn_mm', 'Suction DN'],
+      ['discharge_dn_mm', 'Discharge DN'],
+    ] as const) {
+      const raw = hydraulicForm[key];
+      if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value <= 0) {
+          toast.error(`${label} must be a positive number`);
+          return;
+        }
+      }
+    }
     const rawVenturiFlow = hydraulicForm.venturi_flow_m3h;
     if (rawVenturiFlow !== null && rawVenturiFlow !== undefined && String(rawVenturiFlow).trim() !== '') {
       const venturiFlow = Number(rawVenturiFlow);
@@ -1592,7 +1605,7 @@ export default function ProductMasterDetail() {
                       Keep Hydraulic value ({hydraulicData.hydraulic_design_flow_m3h} m³/h); Product Master currently has {hydraulicData.product_design_flow_m3h} m³/h
                     </label>
                   )}
-                  {[['design_flow_m3h','Design Flow (m³/h)'],['min_flow_m3h','Min Flow (m³/h)'],['max_flow_m3h','Max Flow (m³/h)'],['venturi_flow_m3h','Venturi Flow (m³/h)'],['friction_loss_mh2o','Friction Loss (mH₂O)'],['design_head_m','Design Head (m)'],['design_pressure_bar','Design Pressure (bar)'],['max_pressure_bar','Max Pressure (bar)'],['npsh_required_m','NPSH Required (m)'],['min_temperature_c','Min Temp (°C)'],['max_temperature_c','Max Temp (°C)']].map(([k,l]) => (
+                  {[['design_flow_m3h','Design Flow (m³/h)'],['min_flow_m3h','Min Flow (m³/h)'],['max_flow_m3h','Max Flow (m³/h)'],['venturi_flow_m3h','Venturi Flow (m³/h)'],['friction_loss_mh2o','Friction Loss (mH₂O)'],['design_head_m','Design Head (m)'],['design_pressure_bar','Design Pressure (bar)'],['max_pressure_bar','Max Pressure (bar)'],['npsh_required_m','NPSH Required (m)'],['suction_dn_mm','Suction DN (mm)'],['discharge_dn_mm','Discharge DN (mm)'],['min_temperature_c','Min Temp (°C)'],['max_temperature_c','Max Temp (°C)']].map(([k,l]) => (
                       <div key={k}><label className="block text-xs text-slate-500 mb-0.5">{l}</label><input type="number" min={k === 'venturi_flow_m3h' || k === 'friction_loss_mh2o' ? 0 : undefined} step="any" value={hydraulicForm[k] ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,[k]:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
                   ))}
                   <div><label className="block text-xs text-slate-500 mb-0.5">Fluid Type</label><input value={hydraulicForm.fluid_type ?? ''} onChange={e => setHydraulicForm((f:any) => ({...f,fluid_type:e.target.value}))} className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" /></div>
@@ -1600,10 +1613,10 @@ export default function ProductMasterDetail() {
                 </div>
               ) : (
                 <div className="p-3">
-                  {[['Design Flow',hydraulicData?.design_flow_m3h,'m³/h'],['Min Flow',hydraulicData?.min_flow_m3h,'m³/h'],['Max Flow',hydraulicData?.max_flow_m3h,'m³/h'],['Venturi Flow',hydraulicData?.venturi_flow_m3h,'m³/h'],['Friction Loss',hydraulicData?.friction_loss_mh2o,'mH₂O'],['Design Head',hydraulicData?.design_head_m,'m'],['Design Pressure',hydraulicData?.design_pressure_bar,'bar'],['Max Pressure',hydraulicData?.max_pressure_bar,'bar'],['NPSH Required',hydraulicData?.npsh_required_m,'m'],['Fluid Type',hydraulicData?.fluid_type,''],['Min Temp',hydraulicData?.min_temperature_c,'°C'],['Max Temp',hydraulicData?.max_temperature_c,'°C'],['Notes',hydraulicData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
+                  {[['Design Flow',hydraulicData?.design_flow_m3h,'m³/h'],['Min Flow',hydraulicData?.min_flow_m3h,'m³/h'],['Max Flow',hydraulicData?.max_flow_m3h,'m³/h'],['Venturi Flow',hydraulicData?.venturi_flow_m3h,'m³/h'],['Friction Loss',hydraulicData?.friction_loss_mh2o,'mH₂O'],['Design Head',hydraulicData?.design_head_m,'m'],['Design Pressure',hydraulicData?.design_pressure_bar,'bar'],['Max Pressure',hydraulicData?.max_pressure_bar,'bar'],['NPSH Required',hydraulicData?.npsh_required_m,'m'],['Suction DN',hydraulicData?.suction_dn_mm,'mm'],['Discharge DN',hydraulicData?.discharge_dn_mm,'mm'],['Fluid Type',hydraulicData?.fluid_type,''],['Min Temp',hydraulicData?.min_temperature_c,'°C'],['Max Temp',hydraulicData?.max_temperature_c,'°C'],['Notes',hydraulicData?.notes,'']].filter(([,v])=>v!=null&&v!=='').length === 0
                     ? <p className="text-xs text-slate-300 text-center py-2">No hydraulic data recorded — click Edit to add</p>
                     : <div className="space-y-1">
-                        {[['Design Flow',hydraulicData?.design_flow_m3h,'m³/h'],['Min Flow',hydraulicData?.min_flow_m3h,'m³/h'],['Max Flow',hydraulicData?.max_flow_m3h,'m³/h'],['Venturi Flow',hydraulicData?.venturi_flow_m3h,'m³/h'],['Friction Loss',hydraulicData?.friction_loss_mh2o,'mH₂O'],['Design Head',hydraulicData?.design_head_m,'m'],['Design Pressure',hydraulicData?.design_pressure_bar,'bar'],['Max Pressure',hydraulicData?.max_pressure_bar,'bar'],['NPSH Required',hydraulicData?.npsh_required_m,'m'],['Fluid Type',hydraulicData?.fluid_type,''],['Min Temp',hydraulicData?.min_temperature_c,'°C'],['Max Temp',hydraulicData?.max_temperature_c,'°C'],['Notes',hydraulicData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
+                        {[['Design Flow',hydraulicData?.design_flow_m3h,'m³/h'],['Min Flow',hydraulicData?.min_flow_m3h,'m³/h'],['Max Flow',hydraulicData?.max_flow_m3h,'m³/h'],['Venturi Flow',hydraulicData?.venturi_flow_m3h,'m³/h'],['Friction Loss',hydraulicData?.friction_loss_mh2o,'mH₂O'],['Design Head',hydraulicData?.design_head_m,'m'],['Design Pressure',hydraulicData?.design_pressure_bar,'bar'],['Max Pressure',hydraulicData?.max_pressure_bar,'bar'],['NPSH Required',hydraulicData?.npsh_required_m,'m'],['Suction DN',hydraulicData?.suction_dn_mm,'mm'],['Discharge DN',hydraulicData?.discharge_dn_mm,'mm'],['Fluid Type',hydraulicData?.fluid_type,''],['Min Temp',hydraulicData?.min_temperature_c,'°C'],['Max Temp',hydraulicData?.max_temperature_c,'°C'],['Notes',hydraulicData?.notes,'']].filter(([,v])=>v!=null&&v!=='').map(([l,v,u])=>(
                           <div key={String(l)} className="flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-slate-700 font-medium">{String(v)}{u ? <span className="text-slate-400 ml-1">{u}</span> : ''}</span></div>
                         ))}
                       </div>}
