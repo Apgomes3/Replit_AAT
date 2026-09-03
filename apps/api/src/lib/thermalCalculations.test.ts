@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildThermalSourceContext,
   calculateThermalCalculation,
+  THERMAL_CALCULATION_VERSION,
   THERMAL_CONSTANTS,
   THERMAL_AGITATION_CLASS_CATALOG,
   THERMAL_CONSTRUCTION_BASIS_VERSION,
@@ -914,6 +915,9 @@ describe('AAT thermal calculation', () => {
     const result = calculateThermalCalculation(source, readyInputs());
     expect(result.status).toBe('Blocked');
     expect(result.reasons.join(' ')).toMatch(/conflicting water design temperatures/i);
+    expect(result.sensitivity_cases).toEqual([]);
+    expect(result.sensitivity_summary.cases).toHaveLength(1);
+    expect(result.sensitivity_summary.recommended_case).toBeNull();
   });
 
   it('defaults custom wall area from rectangular dimensions and keeps sensitivity separate from the base', () => {
@@ -955,7 +959,12 @@ describe('AAT thermal calculation', () => {
 
     const ready = calculateThermalCalculation(readySource(), readyInputs());
     expect(ready.sensitivity_summary.cases).toHaveLength(5);
-    expect(ready.sensitivity_cases.some(item => item.case_key === 'surface_plus_10_pct')).toBe(true);
+    expect(ready.sensitivity_cases.map(item => item.case_key)).toEqual([
+      'water_range_min',
+      'water_range_max',
+      'ambient_minus_2_c',
+      'ambient_plus_2_c',
+    ]);
     expect(ready.results.free_surface_area_m2).toBe(10);
   });
 
@@ -968,7 +977,7 @@ describe('AAT thermal calculation', () => {
     expect(result.reasons.join(' ')).toMatch(/non-negative/i);
   });
 
-  it('does not recommend an unapproved adjacent agitation correlation', () => {
+  it('uses exactly four one-factor temperature cases and recommends the highest valid duty', () => {
     const result = calculateThermalCalculation(readySource(), {
       ...readyInputs(),
       adjacent_agitation_classes: ['High'],
@@ -985,9 +994,62 @@ describe('AAT thermal calculation', () => {
         },
       },
     });
-    const adjacent = result.sensitivity_cases.find(item => item.case_key === 'agitation_High');
-    expect(adjacent?.status).toBe('Blocked');
-    expect(result.sensitivity_summary.recommended_case).not.toBe('agitation_High');
+    expect(result.calculation_version).toBe(THERMAL_CALCULATION_VERSION);
+    expect(THERMAL_CALCULATION_VERSION).toBe('aat-thermal-load-v9');
+    expect(result.sensitivity_summary.cases.map(item => item.case_key)).toEqual([
+      'base',
+      'water_range_min',
+      'water_range_max',
+      'ambient_minus_2_c',
+      'ambient_plus_2_c',
+    ]);
+    expect(result.sensitivity_cases).toHaveLength(4);
+
+    const cases = Object.fromEntries(
+      result.sensitivity_cases.map(item => [item.case_key, item]),
+    ) as Record<string, any>;
+    expect(cases.water_range_min).toMatchObject({
+      description: 'Shared water-range minimum — water 24 °C',
+      water_temperature_c: 24,
+      ambient_air_temperature_c: 20,
+      status: 'Ready',
+    });
+    expect(cases.water_range_max).toMatchObject({
+      description: 'Shared water-range maximum — water 26 °C',
+      water_temperature_c: 26,
+      ambient_air_temperature_c: 20,
+      status: 'Ready',
+    });
+    expect(cases.ambient_minus_2_c).toMatchObject({
+      description: 'Ambient −2 °C — ambient 18 °C',
+      water_temperature_c: 25,
+      ambient_air_temperature_c: 18,
+      status: 'Ready',
+    });
+    expect(cases.ambient_plus_2_c).toMatchObject({
+      description: 'Ambient +2 °C — ambient 22 °C',
+      water_temperature_c: 25,
+      ambient_air_temperature_c: 22,
+      status: 'Ready',
+    });
+    for (const item of result.sensitivity_cases) {
+      expect(item.results.free_surface_area_m2).toBe(result.results.free_surface_area_m2);
+      expect(item.results.exposed_wall_area_m2).toBe(result.results.exposed_wall_area_m2);
+      expect(item.results.recovery_heating_kw).toBe(result.results.recovery_heating_kw);
+      expect(item.results.operational_water_exchange_flow_m3h)
+        .toBe(result.results.operational_water_exchange_flow_m3h);
+    }
+    expect(cases.water_range_min.results.margin_adjusted_cooling_kw)
+      .toBeCloseTo(0.5884138243950015, 12);
+    expect(cases.water_range_max.results.margin_adjusted_heating_kw)
+      .toBeCloseTo(3.665161609667635, 12);
+    expect(cases.ambient_minus_2_c.results.margin_adjusted_heating_kw)
+      .toBeCloseTo(4.163661330112992, 12);
+    expect(cases.ambient_plus_2_c.results.margin_adjusted_cooling_kw)
+      .toBeCloseTo(1.0883313944327768, 12);
+    expect(result.sensitivity_summary.recommended_case).toBe('ambient_minus_2_c');
+    expect(result.sensitivity_summary.recommended_description)
+      .toBe('Ambient −2 °C — ambient 18 °C');
   });
 
   it('counts explicit water exchange but never normal circulation', () => {

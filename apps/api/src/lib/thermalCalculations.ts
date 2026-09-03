@@ -12,7 +12,7 @@
 
 import crypto from 'crypto';
 
-export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v8';
+export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v9';
 export const THERMAL_CONSTRUCTION_BASIS_VERSION = 'AAT_FOUNDATIONS_WALL_V1.0';
 /**
  * These are provisional AAT Foundations starter values. The database seed
@@ -1532,10 +1532,17 @@ function calculateCaseLegacy(source: any, inputs: any, factors = { surface: 1, e
     },
   };
 }
-function calculateCase(source: any, inputs: any, factors = { surface: 1, evaporation: 1, correlation: null as any }) {
+function calculateCase(source: any, inputs: any, factors = {
+  surface: 1,
+  evaporation: 1,
+  correlation: null as any,
+  water_temperature_c: null as number | null,
+  ambient_air_temperature_c: null as number | null,
+}) {
   const reasons: string[] = [];
   const common = validateCommonInputs(source, inputs, reasons);
-  const waterTemperature = common.water.value;
+  const waterTemperature = factors.water_temperature_c ?? common.water.value;
+  const ambientTemperature = factors.ambient_air_temperature_c ?? common.ambient;
   const volume = sumNumber((source.effective_volume_sources || []).map(
     (item: any) => finite(item.effective_water_volume_m3),
   ));
@@ -1559,19 +1566,19 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
   const surfaceTemperature = finite(inputs.surrounding_surface_temperature_c) ?? common.ambient;
   if (surfaceTemperature == null) reasons.push('Effective Radiant Surroundings Temperature is required.');
   const evaporationCoefficient = positive(correlation?.coefficient_kg_m2_s_kpa);
-  const airHumidityRatio = common.ambient == null || common.humidity == null || common.pressure == null
-    ? null : humidityRatio(common.ambient, common.humidity, common.pressure);
+  const airHumidityRatio = ambientTemperature == null || common.humidity == null || common.pressure == null
+    ? null : humidityRatio(ambientTemperature, common.humidity, common.pressure);
   const waterHumidityRatio = waterTemperature == null || common.pressure == null
     ? null : humidityRatio(waterTemperature, 100, common.pressure);
   const deltaHumidityRatio = airHumidityRatio == null || waterHumidityRatio == null
     ? null : waterHumidityRatio - airHumidityRatio;
-  const deltaVapourPressure = common.ambient == null || waterTemperature == null || common.humidity == null
+  const deltaVapourPressure = ambientTemperature == null || waterTemperature == null || common.humidity == null
     ? null
     : saturationVapourPressureKpa(waterTemperature) -
-      saturationVapourPressureKpa(common.ambient) * common.humidity / 100;
-  const convection = waterTemperature == null || common.ambient == null
+      saturationVapourPressureKpa(ambientTemperature) * common.humidity / 100;
+  const convection = waterTemperature == null || ambientTemperature == null
     ? null : THERMAL_CONSTANTS.convection_coefficient_w_m2_k * freeSurface *
-      (common.ambient - waterTemperature) / 1000;
+      (ambientTemperature - waterTemperature) / 1000;
   const radiation = waterTemperature == null || surfaceTemperature == null
     ? null : THERMAL_CONSTANTS.emissivity * THERMAL_CONSTANTS.stefan_boltzmann_w_m2_k4 *
       freeSurface * (Math.pow(celsiusToKelvin(surfaceTemperature), 4) -
@@ -1581,26 +1588,26 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
     exposed_wall_area_m2: basis.exposed_wall_area_m2 == null
       ? null
       : basis.exposed_wall_area_m2 * factors.surface,
-    wall_conduction_kw: waterTemperature == null || common.ambient == null ||
+    wall_conduction_kw: waterTemperature == null || ambientTemperature == null ||
       basis.u_value_w_m2_k == null || basis.exposed_wall_area_m2 == null
       ? null
       : basis.u_value_w_m2_k * basis.exposed_wall_area_m2 *
-        (common.ambient - waterTemperature) / 1000 * factors.surface,
-    overall_wall_conduction_kw: waterTemperature == null || common.ambient == null ||
+        (ambientTemperature - waterTemperature) / 1000 * factors.surface,
+    overall_wall_conduction_kw: waterTemperature == null || ambientTemperature == null ||
       basis.overall_u_value_w_m2_k == null || basis.exposed_wall_area_m2 == null
       ? null
       : basis.overall_u_value_w_m2_k * basis.exposed_wall_area_m2 *
-        (common.ambient - waterTemperature) / 1000 * factors.surface,
+        (ambientTemperature - waterTemperature) / 1000 * factors.surface,
   }));
   const wallConduction = wallTankBases.length
-    ? (waterTemperature == null || common.ambient == null ||
+    ? (waterTemperature == null || ambientTemperature == null ||
       wallConductionByTank.some(item => item.wall_conduction_kw == null)
         ? null
         : sumNumber(wallConductionByTank.map(item => item.wall_conduction_kw)))
-    : waterTemperature == null || common.ambient == null || uValue == null
-      ? null : uValue * wallArea * (common.ambient - waterTemperature) / 1000;
+    : waterTemperature == null || ambientTemperature == null || uValue == null
+      ? null : uValue * wallArea * (ambientTemperature - waterTemperature) / 1000;
   const overallWallConduction = wallTankBases.length
-    ? (waterTemperature == null || common.ambient == null ||
+    ? (waterTemperature == null || ambientTemperature == null ||
       wallConductionByTank.some(item => item.overall_wall_conduction_kw == null)
         ? null
         : sumNumber(wallConductionByTank.map(item => item.overall_wall_conduction_kw)))
@@ -1721,6 +1728,7 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
       wall_construction_source: wallConstructionBasis.source,
       wall_construction_basis_version: wallConstructionBasis.basis_version,
       water_temperature_c: waterTemperature,
+      ambient_air_temperature_c: ambientTemperature,
       water_temperature_source: common.water.source,
       water_temperature_min_c: waterTemperatureBasis.minimum_c,
       water_temperature_max_c: waterTemperatureBasis.maximum_c,
@@ -1741,7 +1749,7 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
       margin_adjusted_heating_kw: recovery == null ? null : (Math.max(0, -total) + recovery) * marginFactor,
     },
     formula_inputs: {
-      ambient_air_temperature_c: common.ambient,
+      ambient_air_temperature_c: ambientTemperature,
       relative_humidity_pct: common.humidity,
       surrounding_surface_temperature_c: surfaceTemperature,
       atmospheric_pressure_kpa: common.pressure,
@@ -1770,16 +1778,6 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
   };
 }
 
-function adjacentCases(source: any, inputs: any) {
-  const configured = inputs.agitation_correlations || inputs.agitation_correlation;
-  const classes = configured && !Array.isArray(configured)
-    ? Object.keys(configured)
-    : Array.isArray(inputs.adjacent_agitation_classes) ? inputs.adjacent_agitation_classes : [];
-  return classes
-    .filter(value => value !== inputs.agitation_class && correlationFor(inputs, value))
-    .slice(0, 2);
-}
-
 export function calculateThermalCalculation(source: any, inputs: any = {}, calculatedAt = new Date().toISOString()) {
   const normalizedInputs = {
     relative_humidity_pct: 60,
@@ -1804,39 +1802,69 @@ export function calculateThermalCalculation(source: any, inputs: any = {}, calcu
   normalizedInputs.water_temperature_basis = base.water_temperature_basis;
   normalizedInputs.wall_construction_basis = base.wall_construction_basis;
   const sensitivityCases: any[] = [];
-  for (const factor of [-0.1, 0.1]) {
-    const result = calculateCase(source, normalizedInputs, { surface: 1 + factor, evaporation: 1, correlation: null });
-    sensitivityCases.push({
-      case_key: `surface_${factor < 0 ? 'minus' : 'plus'}_10_pct`,
-      description: `Free-surface and exposed-wall area ${factor < 0 ? '−' : '+'}10%`,
-      results: result.results,
-      status: result.status,
-    });
-  }
-  for (const factor of [-0.15, 0.15]) {
-    const result = calculateCase(source, normalizedInputs, { surface: 1, evaporation: 1 + factor, correlation: null });
-    sensitivityCases.push({
-      case_key: `evaporation_${factor < 0 ? 'minus' : 'plus'}_${Math.abs(factor * 100)}_pct`,
-      description: `Evaporation rate ${factor < 0 ? '−' : '+'}${Math.abs(factor * 100)}%`,
-      results: result.results,
-      status: result.status,
-    });
-  }
-  for (const agitation of adjacentCases(source, normalizedInputs)) {
-    const result = calculateCase(source, normalizedInputs, {
-      surface: 1,
-      evaporation: 1,
-      correlation: correlationFor(normalizedInputs, agitation),
-    });
-    sensitivityCases.push({
-      case_key: `agitation_${agitation}`,
-      description: `Adjacent agitation class: ${agitation}`,
-      results: result.results,
-      status: result.status,
-    });
+  const baseAmbientTemperature = finite(normalizedInputs.ambient_air_temperature_c);
+  const waterRangeMinimum = finite(base.water_temperature_basis.minimum_c);
+  const waterRangeMaximum = finite(base.water_temperature_basis.maximum_c);
+  if (base.status === 'Ready' &&
+      baseAmbientTemperature != null &&
+      waterRangeMinimum != null &&
+      waterRangeMaximum != null) {
+    const scenarios = [
+      {
+        case_key: 'water_range_min',
+        description: `Shared water-range minimum — water ${waterRangeMinimum} °C`,
+        water_temperature_c: waterRangeMinimum,
+        ambient_air_temperature_c: baseAmbientTemperature,
+      },
+      {
+        case_key: 'water_range_max',
+        description: `Shared water-range maximum — water ${waterRangeMaximum} °C`,
+        water_temperature_c: waterRangeMaximum,
+        ambient_air_temperature_c: baseAmbientTemperature,
+      },
+      {
+        case_key: 'ambient_minus_2_c',
+        description: `Ambient −2 °C — ambient ${baseAmbientTemperature - 2} °C`,
+        water_temperature_c: base.results.water_temperature_c,
+        ambient_air_temperature_c: baseAmbientTemperature - 2,
+      },
+      {
+        case_key: 'ambient_plus_2_c',
+        description: `Ambient +2 °C — ambient ${baseAmbientTemperature + 2} °C`,
+        water_temperature_c: base.results.water_temperature_c,
+        ambient_air_temperature_c: baseAmbientTemperature + 2,
+      },
+    ];
+    for (const scenario of scenarios) {
+      const result = calculateCase(source, normalizedInputs, {
+        surface: 1,
+        evaporation: 1,
+        correlation: null,
+        water_temperature_c: scenario.water_temperature_c,
+        ambient_air_temperature_c: scenario.ambient_air_temperature_c,
+      });
+      sensitivityCases.push({
+        case_key: scenario.case_key,
+        description: scenario.description,
+        water_temperature_c: result.results.water_temperature_c,
+        ambient_air_temperature_c: result.results.ambient_air_temperature_c,
+        results: result.results,
+        status: result.status,
+      });
+    }
   }
   const allCases = [
-    { case_key: 'base', description: 'Base calculation', results: base.results, status: base.status },
+    {
+      case_key: 'base',
+      description: base.results.water_temperature_c != null &&
+        base.results.ambient_air_temperature_c != null
+        ? `Base calculation — water ${base.results.water_temperature_c} °C, ambient ${base.results.ambient_air_temperature_c} °C`
+        : 'Base calculation',
+      water_temperature_c: base.results.water_temperature_c,
+      ambient_air_temperature_c: base.results.ambient_air_temperature_c,
+      results: base.results,
+      status: base.status,
+    },
     ...sensitivityCases,
   ];
   const reasonable = allCases.filter(item => item.status === 'Ready').reduce<any | null>((selected, item) => {
@@ -1872,6 +1900,8 @@ export function calculateThermalCalculation(source: any, inputs: any = {}, calcu
       cases: allCases.map(item => ({
         case_key: item.case_key,
         description: item.description,
+        water_temperature_c: item.water_temperature_c,
+        ambient_air_temperature_c: item.ambient_air_temperature_c,
         margin_adjusted_cooling_kw: item.results.margin_adjusted_cooling_kw,
         margin_adjusted_steady_state_heating_kw: item.results.margin_adjusted_steady_state_heating_kw,
         margin_adjusted_heating_kw: item.results.margin_adjusted_heating_kw,

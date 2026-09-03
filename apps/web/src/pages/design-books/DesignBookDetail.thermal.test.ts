@@ -31,6 +31,7 @@ import {
   WaterTemperatureOverrideControl,
   EffectiveRadiantSurroundingsTemperature,
   SurfaceActivityGuidance,
+  ThermalSensitivityComparison,
 } from './DesignBookDetail';
 
 describe('Design Book Life Support Systems list', () => {
@@ -50,6 +51,42 @@ describe('Design Book Life Support Systems list', () => {
 });
 
 describe('Design Book Thermal navigation', () => {
+  it('shows all five temperature scenarios and marks the conservative sizing case', () => {
+    const cases = [
+      ['base', 'Base calculation — water 25 °C, ambient 20 °C', 25, 20],
+      ['water_range_min', 'Shared water-range minimum — water 24 °C', 24, 20],
+      ['water_range_max', 'Shared water-range maximum — water 26 °C', 26, 20],
+      ['ambient_minus_2_c', 'Ambient −2 °C — ambient 18 °C', 25, 18],
+      ['ambient_plus_2_c', 'Ambient +2 °C — ambient 22 °C', 25, 22],
+    ].map(([case_key, description, water_temperature_c, ambient_air_temperature_c]) => ({
+      case_key,
+      description,
+      water_temperature_c,
+      ambient_air_temperature_c,
+      margin_adjusted_cooling_kw: 1,
+      margin_adjusted_steady_state_heating_kw: 2,
+    }));
+
+    render(createElement(ThermalSensitivityComparison, {
+      detail: {
+        sensitivity_summary: {
+          recommended_case: 'ambient_minus_2_c',
+          cases,
+        },
+      },
+    }));
+
+    expect(screen.getAllByRole('row')).toHaveLength(6);
+    expect(screen.getByRole('columnheader', { name: 'Water' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Ambient' })).toBeInTheDocument();
+    expect(screen.getByText('Shared water-range minimum — water 24 °C')).toBeInTheDocument();
+    expect(screen.getByText('Ambient +2 °C — ambient 22 °C')).toBeInTheDocument();
+    expect(screen.getByText('Conservative sizing case').closest('tr'))
+      .toHaveTextContent('Ambient −2 °C — ambient 18 °C');
+    expect(screen.getAllByText('25.0 °C')).toHaveLength(3);
+    expect(screen.getAllByText('20.0 °C')).toHaveLength(3);
+  });
+
   it('identifies calculated equipment heat sources and displays their heat-gain breakdown', () => {
     const source = {
       equipment_heat_gain_kw: 4.25,

@@ -298,6 +298,12 @@ describe('thermal calculation snapshot persistence', () => {
     const frozenSourceWallEvidence = structuredClone(
       savedRow.source_snapshot.linked_tanks[0].wall_construction_basis,
     );
+    const frozenSensitivityEvidence = structuredClone(
+      savedRow.result_snapshot.sensitivity_cases,
+    );
+    const frozenSensitivitySummary = structuredClone(
+      savedRow.result_snapshot.sensitivity_summary,
+    );
 
     const loadRunner = vi.fn(async () => ({ rows: [savedRow] }));
     const initiallyFresh = await thermalCalculationTestUtils.loadThermalCalculations(
@@ -318,6 +324,12 @@ describe('thermal calculation snapshot persistence', () => {
         is_stale: false,
       },
     });
+    expect(initiallyFresh[0].calculation.sensitivity_cases).toEqual(
+      frozenSensitivityEvidence,
+    );
+    expect(initiallyFresh[0].calculation.sensitivity_summary).toEqual(
+      frozenSensitivitySummary,
+    );
 
     const changedApprovedWall = {
       ...approvedWall,
@@ -368,6 +380,12 @@ describe('thermal calculation snapshot persistence', () => {
     );
     expect(reloaded[0].source.fingerprint).not.toBe(savedRow.source_fingerprint);
     expect(reloaded[0].calculation.results.tank_wall_calculations).toEqual(frozenWallEvidence);
+    expect(reloaded[0].calculation.sensitivity_cases).toEqual(
+      frozenSensitivityEvidence,
+    );
+    expect(reloaded[0].calculation.sensitivity_summary).toEqual(
+      frozenSensitivitySummary,
+    );
     expect(reloaded[0].saved.result_snapshot.results.tank_wall_calculations).toEqual(
       frozenWallEvidence,
     );

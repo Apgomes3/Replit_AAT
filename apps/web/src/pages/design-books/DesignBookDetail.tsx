@@ -1903,6 +1903,63 @@ function thermalNumber(value: any, decimals = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
 }
 
+export function ThermalSensitivityComparison({
+  detail,
+  className = '',
+}: {
+  detail: any;
+  className?: string;
+}) {
+  return (
+    <section className={className}>
+      <h3 className="font-semibold text-stone-900 mb-2">Sensitivity comparison</h3>
+      <div className="overflow-x-auto rounded-xl border border-stone-200">
+        <table className="w-full text-sm">
+          <thead className="bg-stone-50">
+            <tr>
+              <th className="text-left px-3 py-2">Case</th>
+              <th className="text-right px-3 py-2">Water</th>
+              <th className="text-right px-3 py-2">Ambient</th>
+              <th className="text-right px-3 py-2">Cooling</th>
+              <th className="text-right px-3 py-2">Heating</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-100">
+            {(detail.sensitivity_summary?.cases || []).map((item: any) => {
+              const recommended =
+                detail.sensitivity_summary?.recommended_case === item.case_key;
+              return (
+                <tr key={item.case_key} className={recommended ? 'bg-amber-50' : ''}>
+                  <td className="px-3 py-2">
+                    {item.description}
+                    {recommended && (
+                      <span className="ml-2 text-xs font-semibold text-amber-700">
+                        Conservative sizing case
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {thermalNumber(item.water_temperature_c, 1)} °C
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {thermalNumber(item.ambient_air_temperature_c, 1)} °C
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {thermalNumber(item.margin_adjusted_cooling_kw)} kW
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {thermalNumber(item.margin_adjusted_steady_state_heating_kw)} kW
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function thermalActiveDuty(calculation: any) {
   const result = calculation?.results;
   const netLoad = Number(result?.net_total_load_kw);
@@ -4042,20 +4099,7 @@ function LegacyThermalTab({
                   ))}
                 </div>
               </section>
-              <section>
-                <h3 className="font-semibold text-stone-900 mb-2">Sensitivity comparison</h3>
-                <div className="overflow-x-auto rounded-xl border border-stone-200">
-                  <table className="w-full text-sm"><thead className="bg-stone-50"><tr><th className="text-left px-3 py-2">Case</th><th className="text-right px-3 py-2">Cooling</th><th className="text-right px-3 py-2">Heating</th></tr></thead>
-                    <tbody className="divide-y divide-stone-100">{(detail.sensitivity_summary?.cases || []).map((item: any) => (
-                      <tr key={item.case_key} className={detail.sensitivity_summary?.recommended_case === item.case_key ? 'bg-amber-50' : ''}>
-                        <td className="px-3 py-2">{item.description}{detail.sensitivity_summary?.recommended_case === item.case_key && <span className="ml-2 text-xs font-semibold text-amber-700">Conservative sizing case</span>}</td>
-                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_cooling_kw)} kW</td>
-                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_steady_state_heating_kw)} kW</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </section>
+              <ThermalSensitivityComparison detail={detail} />
             </>
           )}
 
@@ -5263,20 +5307,7 @@ function ThermalTab({
                   ))}
                 </div>
               </section>
-              <section className="order-8">
-                <h3 className="font-semibold text-stone-900 mb-2">Sensitivity comparison</h3>
-                <div className="overflow-x-auto rounded-xl border border-stone-200">
-                  <table className="w-full text-sm"><thead className="bg-stone-50"><tr><th className="text-left px-3 py-2">Case</th><th className="text-right px-3 py-2">Cooling</th><th className="text-right px-3 py-2">Heating</th></tr></thead>
-                    <tbody className="divide-y divide-stone-100">{(detail.sensitivity_summary?.cases || []).map((item: any) => (
-                      <tr key={item.case_key} className={detail.sensitivity_summary?.recommended_case === item.case_key ? 'bg-amber-50' : ''}>
-                        <td className="px-3 py-2">{item.description}{detail.sensitivity_summary?.recommended_case === item.case_key && <span className="ml-2 text-xs font-semibold text-amber-700">Conservative sizing case</span>}</td>
-                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_cooling_kw)} kW</td>
-                        <td className="px-3 py-2 text-right font-mono">{thermalNumber(item.margin_adjusted_steady_state_heating_kw)} kW</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </section>
+              <ThermalSensitivityComparison detail={detail} className="order-8" />
             </>
           )}
 
