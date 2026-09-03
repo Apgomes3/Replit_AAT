@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { useEffect } from 'react';
 import { useAuthStore } from './store/authStore';
+import { useMathEnabledNumericInputs } from './components/ui/useMathEnabledNumericInputs';
 import Shell from './components/layout/Shell';
 import CommandPalette from './components/ui/CommandPalette';
 import Login from './pages/auth/Login';
@@ -89,6 +90,7 @@ function EngineeringAdminGuard({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useMathEnabledNumericInputs();
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

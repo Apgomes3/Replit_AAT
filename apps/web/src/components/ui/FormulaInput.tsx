@@ -1,21 +1,5 @@
 import { useState, useRef } from 'react';
-
-function safeEval(expr: string): number | null {
-  const trimmed = expr.trim();
-  if (!trimmed) return null;
-  const sanitized = trimmed.replace(/[^0-9+\-*/().\s]/g, '');
-  if (!/[+\-*/]/.test(sanitized)) return null;
-  try {
-    // eslint-disable-next-line no-new-func
-    const result = new Function(`'use strict'; return (${sanitized})`)();
-    if (typeof result === 'number' && isFinite(result)) {
-      return Math.round(result * 10000) / 10000;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
+import { evaluateMathExpression, resolveMathInput } from './mathExpression';
 
 interface FormulaInputProps {
   value: string;
@@ -32,7 +16,7 @@ export default function FormulaInput({ value, onChange, placeholder, className, 
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const liveResult = isFocused ? safeEval(rawText) : null;
+  const liveResult = isFocused ? evaluateMathExpression(rawText) : null;
 
   const handleFocus = () => {
     setRawText(value);
@@ -40,13 +24,13 @@ export default function FormulaInput({ value, onChange, placeholder, className, 
   };
 
   const handleBlur = () => {
-    const result = safeEval(rawText);
+    const result = evaluateMathExpression(rawText);
     if (result !== null) {
       setLastFormula({ expr: rawText.trim(), result });
       onChange(String(result));
     } else {
-      const num = parseFloat(rawText);
-      if (!isNaN(num)) {
+      const num = resolveMathInput(rawText);
+      if (num !== null) {
         onChange(String(num));
       } else if (rawText.trim() === '') {
         onChange('');
