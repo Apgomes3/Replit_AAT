@@ -3935,6 +3935,7 @@ function ThermalTab({
     .filter(Boolean);
   const [selected, setSelected] = useState<any>(null);
   const [selectedWallTankId, setSelectedWallTankId] = useState<string | null>(null);
+  const [selectedExhibitKey, setSelectedExhibitKey] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState({
     environment: false,
     linkedSource: false,
@@ -4003,6 +4004,12 @@ function ThermalTab({
     const sourceHasMixedWalls = thermalWallBasesAreMixed(sourceTankWallBases);
     const sourceTankWallBasis = sourceHasMixedWalls ? null : sourceTankWallBases[0];
     setSelectedWallTankId(sourceTankWallBases[0]?.tank_id || null);
+    const firstLinkedExhibit = item.source?.linked_exhibits?.[0] ||
+      item.source?.water_temperature_sources?.[0] ||
+      item.source?.linked_tanks?.[0];
+    setSelectedExhibitKey(firstLinkedExhibit
+      ? String(firstLinkedExhibit.id || firstLinkedExhibit.exhibit_id || firstLinkedExhibit.exhibit_code || 'unassigned')
+      : null);
     const savedWallHasOverride = existing.reviewed_u_value_w_m2_k != null ||
       Object.values(wallEvidence.layer_override_flags || {}).some(Boolean);
     const savedCustomConstruction = existing.tank_construction_type === '' ||
@@ -4427,17 +4434,38 @@ function ThermalTab({
   const displayedTankWallBases = evidenceBasis.wall?.tank_bases?.length
     ? evidenceBasis.wall.tank_bases
     : sourceTankWallBases;
-  const selectedWallTankBasis = displayedTankWallBases.find(
+  const linkedExhibitTabs = [
+    ...(selected?.source?.linked_exhibits || []).map((exhibit: any) => ({
+      key: String(exhibit.id || exhibit.exhibit_id || exhibit.exhibit_code || 'unassigned'),
+      code: exhibit.exhibit_code || exhibit.id || 'Unassigned exhibit',
+    })),
+    ...(selected?.source?.water_temperature_sources || []).map((source: any) => ({
+      key: String(source.exhibit_id || source.exhibit_code || 'unassigned'),
+      code: source.exhibit_code || source.exhibit_id || 'Unassigned exhibit',
+    })),
+    ...(selected?.source?.linked_tanks || []).map((tank: any) => ({
+      key: String(tank.exhibit_id || tank.exhibit_code || 'unassigned'),
+      code: tank.exhibit_code || tank.exhibit_id || 'Unassigned exhibit',
+    })),
+  ].reduce((tabs: any[], tab: any) => (
+    tabs.some(candidate => candidate.key === tab.key) ? tabs : [...tabs, tab]
+  ), []);
+  const selectedWallTankById = displayedTankWallBases.find(
     (basis: any) => basis.tank_id === selectedWallTankId,
-  ) || displayedTankWallBases[0] || null;
-  const wallExhibitTabs = displayedTankWallBases.filter((basis: any, index: number, all: any[]) => {
-    const exhibitKey = basis.exhibit_id || basis.exhibit_code || 'unassigned';
-    return all.findIndex(candidate =>
-      (candidate.exhibit_id || candidate.exhibit_code || 'unassigned') === exhibitKey) === index;
-  });
-  const selectedWallExhibitKey = selectedWallTankBasis?.exhibit_id ||
-    selectedWallTankBasis?.exhibit_code ||
-    'unassigned';
+  ) || null;
+  const selectedWallExhibitKey = String(
+    selectedWallTankById?.exhibit_id ||
+    selectedWallTankById?.exhibit_code ||
+    selectedExhibitKey ||
+    linkedExhibitTabs[0]?.key ||
+    'unassigned',
+  );
+  const selectedWallTankBasis = selectedWallTankById ||
+    displayedTankWallBases.find((basis: any) =>
+      String(basis.exhibit_id || basis.exhibit_code || 'unassigned') === selectedWallExhibitKey,
+    ) ||
+    displayedTankWallBases[0] ||
+    null;
   const selectedExhibitTemperatureSources = (selected?.source?.water_temperature_sources || [])
     .filter((source: any) =>
       (source.exhibit_id || source.exhibit_code || 'unassigned') === selectedWallExhibitKey);
@@ -4724,32 +4752,38 @@ function ThermalTab({
                </button>
              </h3>
              {!collapsedSections.linkedSource && <div id="thermal-linked-source-panel" className="space-y-3">
-            {displayedTankWallBases.length > 0 && (
+             {linkedExhibitTabs.length > 0 && (
               <div
                 role="tablist"
                 aria-label="Linked exhibits"
                 className="mb-3 flex gap-2 overflow-x-auto border-b border-[#d8e3e7] pb-1"
               >
-                {wallExhibitTabs.map((basis: any, index: number) => {
-                  const tankId = basis.tank_id || `${basis.exhibit_id || 'exhibit'}-${index}`;
-                  const exhibitKey = basis.exhibit_id || basis.exhibit_code || 'unassigned';
-                  const isActive = selectedWallExhibitKey === exhibitKey;
+                 {linkedExhibitTabs.map((exhibit: any) => {
+                   const exhibitBasis = displayedTankWallBases.find((basis: any) =>
+                     String(basis.exhibit_id || basis.exhibit_code || 'unassigned') === exhibit.key,
+                   );
+                   const isActive = selectedWallExhibitKey === exhibit.key;
                   return (
                     <button
-                      key={tankId}
-                      id={`thermal-wall-tab-${tankId}`}
+                       key={exhibit.key}
+                       id={`thermal-exhibit-tab-${exhibit.key}`}
                       type="button"
                       role="tab"
                       aria-selected={isActive}
-                      aria-controls={`thermal-wall-panel-${tankId}`}
-                      onClick={() => setSelectedWallTankId(basis.tank_id || tankId)}
+                       aria-controls={exhibitBasis?.tank_id
+                         ? `thermal-wall-panel-${exhibitBasis.tank_id}`
+                         : undefined}
+                       onClick={() => {
+                         setSelectedExhibitKey(exhibit.key);
+                         setSelectedWallTankId(exhibitBasis?.tank_id || null);
+                       }}
                       className={`shrink-0 rounded-t-lg border-b-2 px-3 py-2 text-left text-xs font-semibold transition ${
                         isActive
                           ? 'border-[#456b7d] bg-[#e8f0f2] text-[#263746]'
                           : 'border-transparent text-[#71808a] hover:border-[#b9c9d0] hover:bg-[#f3f7f8]'
                       }`}
                     >
-                      <span className="block">{basis.exhibit_code || basis.exhibit_id || 'Unassigned exhibit'}</span>
+                       <span className="block">{exhibit.code}</span>
                     </button>
                   );
                 })}
@@ -4785,6 +4819,15 @@ function ThermalTab({
                     </span>
                   </div>
                 ))}
+                 {!selectedExhibitTemperatureSources.length && (
+                   <div className="flex justify-between gap-3 py-1 text-sm">
+                     <span>
+                       {linkedExhibitTabs.find((exhibit: any) => exhibit.key === selectedWallExhibitKey)?.code ||
+                         'Unassigned exhibit'}
+                     </span>
+                     <span className="text-xs text-[#71808a]">linked exhibit</span>
+                   </div>
+                 )}
                 {evidenceBasis.temperature && (
                   <WaterTemperatureOverrideControl
                     average={evidenceBasis.temperature.average_c}
