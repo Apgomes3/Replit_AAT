@@ -705,7 +705,7 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
     }
   }
   const surfaceTemperature = finite(inputs.surrounding_surface_temperature_c) ?? common.ambient;
-  if (surfaceTemperature == null) reasons.push('Surrounding-surface temperature is required.');
+  if (surfaceTemperature == null) reasons.push('Effective Radiant Surroundings Temperature is required.');
   const evaporationCoefficient = positive(correlation?.coefficient_kg_m2_s_kpa);
   const airHumidityRatio = common.ambient == null || common.humidity == null || common.pressure == null
     ? null : humidityRatio(common.ambient, common.humidity, common.pressure);

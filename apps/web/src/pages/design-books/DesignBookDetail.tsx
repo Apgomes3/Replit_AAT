@@ -3391,7 +3391,7 @@ function ThermalTab({
                   ))}
                 </select>
                  <p className="mt-2 text-xs text-[#718894]">
-                   Surrounding-surface temperature:{' '}
+                   Effective Radiant Surroundings Temperature:{' '}
                    <span className="font-mono font-medium text-[#456b7d]">
                      {thermalNumber(
                        form.surrounding_surface_temperature_c !== '' &&
