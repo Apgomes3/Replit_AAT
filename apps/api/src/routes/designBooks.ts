@@ -504,6 +504,7 @@ async function insertThermalSnapshotRecord(
 
 export const thermalCalculationTestUtils = {
   insertThermalSnapshotRecord,
+  loadThermalCalculations,
 };
 
 async function insertFrictionSnapshotRecord(
