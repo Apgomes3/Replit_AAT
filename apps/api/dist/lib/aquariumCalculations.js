@@ -167,7 +167,7 @@ function calculateFoamFractionatorCapacity(parentLoopFlowM3h, processRateLsM2, p
     }) : [];
     const reasons = [];
     if (parentFlowM3h == null || parentFlowM3h < 0)
-        reasons.push('Parent loop allocation is unavailable.');
+        reasons.push('Required Foam Fractionator flow is unavailable.');
     if (!selectedProducts.length)
         reasons.push('Select at least one Foam Fractionator.');
     if (selectedProducts.some(product => product.quantity <= 0))
@@ -583,7 +583,14 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
         const required = calculationIsCurrent
             ? exhibit.results.total_return_flow_m3h ?? null
             : null;
-        const override = numberOrNull(link.flow_allocation_m3h);
+        const savedAllocation = numberOrNull(link.flow_allocation_m3h);
+        // Zero-valued rows were historically stored as allocation overrides even
+        // when the link was meant to follow its exhibit calculation. A real manual
+        // allocation must be explicit and positive; otherwise use calculated flow.
+        const override = link.allocation_source === 'manual_override' &&
+            savedAllocation != null && savedAllocation > 0
+            ? savedAllocation
+            : null;
         return {
             link_id: link.id,
             exhibit_id: link.exhibit_id,
@@ -604,6 +611,16 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
     const requiredFlow = linkedFlowsAvailable
         ? linked.reduce((sum, link) => sum + Number(link.required_flow_m3h), 0)
         : null;
+    const sourceFlows = {};
+    if (linked.length > 0) {
+        const linkedCalculations = linked.map(link => exhibitCalculations.find(calculation => calculation.inputs.exhibit_id === link.exhibit_id));
+        const aggregateSourceFlow = (resultKey) => linkedFlowsAvailable && linkedCalculations.every(calculation => numberOrNull(calculation?.results?.[resultKey]) != null)
+            ? (0, exports.roundEngineering)(linkedCalculations.reduce((sum, calculation) => sum + Number(calculation.results[resultKey]), 0), exports.FLOW_DECIMALS)
+            : null;
+        sourceFlows['Surface Skim'] = aggregateSourceFlow('surface_skim_flow_m3h');
+        sourceFlows['Bottom Drain'] = aggregateSourceFlow('bottom_drain_flow_m3h');
+        sourceFlows['Both Integrated'] = requiredFlow;
+    }
     const allocatedFlow = linked.length === 0
         ? 0
         : linked.every(link => link.allocation_m3h != null)
@@ -652,11 +669,11 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
     const turnover = turnoverSource === 'manual_override'
         ? savedTurnover
         : calculatedTurnover;
-    if (turnoverSource === 'primary_exhibit' && linked.length > 0 && primaryLinks.length !== 1) {
-        reasons.push(primaryLinks.length === 0
+    const turnoverUnavailableReason = turnoverSource === 'primary_exhibit' && linked.length > 0 && primaryLinks.length !== 1
+        ? (primaryLinks.length === 0
             ? 'Exactly one Primary exhibit link is required to calculate system turnover.'
-            : 'Multiple Primary exhibit links make system turnover unavailable.');
-    }
+            : 'Multiple Primary exhibit links make system turnover unavailable.')
+        : null;
     const hasTurnoverOverride = turnoverSource === 'manual_override' && savedTurnover != null;
     const storedTurnoverDiffers = hasTurnoverOverride && calculatedTurnover != null &&
         Math.abs(savedTurnover - calculatedTurnover) > 0.005;
@@ -681,7 +698,20 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
     // Resolve matched loops after reading the complete route. This deliberately
     // uses loop flow, not its allocation percent, so a chain always follows the
     // current authoritative source flow.
-    const resolvedLoopFlows = (0, flowRoute_1.resolveLoopFlows)(system, designFlow);
+    const foamLoops = [1, 2, 3].filter(loopNumber => String(system?.[`loop${loopNumber}_filtration`] || '') === 'Foam Fractionation');
+    if (foamLoops.length > 1) {
+        reasons.push('Only one Flow Route loop may use Foam Fractionation.');
+    }
+    const resolvedLoopFlows = (0, flowRoute_1.resolveLoopFlows)(system, designFlow, sourceFlows);
+    const allocatedLoopFlow = resolvedLoopFlows
+        .filter(resolved => resolved.flow_mode === 'allocated')
+        .reduce((sum, resolved) => sum + (resolved.flow_m3h ?? 0), 0);
+    const flowRouteAllocationTotalPct = designFlow != null && designFlow > 0
+        ? (0, exports.roundEngineering)(allocatedLoopFlow / designFlow * 100, 2)
+        : null;
+    if (flowRouteAllocationTotalPct != null && flowRouteAllocationTotalPct > 100.000001) {
+        reasons.push(`Flow Route loop flows allocate ${flowRouteAllocationTotalPct.toFixed(1)}% of total system flow.`);
+    }
     for (const resolved of resolvedLoopFlows) {
         if (resolved.flow_mode === 'matched' && resolved.unavailable_reason)
             reasons.push(resolved.unavailable_reason);
@@ -717,7 +747,12 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
                     return {
                         allocation_id: allocation?.id || null,
                         notes: allocation?.notes || null,
-                        ...calculateFoamFractionatorCapacity(parentFlow, allocation?.process_rate_ls_m2, allocation?.products || []),
+                        ...calculateFoamFractionatorCapacity(sourceFlows['Surface Skim'] ?? null, allocation?.process_rate_ls_m2, allocation?.products || []),
+                        flow_basis: 'aggregate_surface_skim',
+                        required_flow_m3h: sourceFlows['Surface Skim'] ?? null,
+                        share_of_total_allocated_flow_pct: sourceFlows['Surface Skim'] != null && allocatedLoopFlow > 0
+                            ? (0, exports.roundEngineering)(Number(sourceFlows['Surface Skim']) / allocatedLoopFlow * 100, 2)
+                            : null,
                     };
                 })()
                 : null,
@@ -728,6 +763,9 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
                         allocation_id: allocation?.id || null,
                         notes: allocation?.notes || null,
                         ...calculateSandFilterCapacity(parentFlow, allocation?.process_rate_ls_m2, allocation?.products || []),
+                        share_of_total_allocated_flow_pct: parentFlow != null && allocatedLoopFlow > 0
+                            ? (0, exports.roundEngineering)(parentFlow / allocatedLoopFlow * 100, 2)
+                            : null,
                     };
                 })()
                 : null,
@@ -772,12 +810,14 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
             design_flow_source: designFlowSource,
             turnover_source: turnoverSource,
             system_water_type: system?.water_type || null,
+            source_flows_m3h: sourceFlows,
         },
         results: {
             calculated_required_flow_m3h: (0, exports.roundEngineering)(requiredFlow, exports.FLOW_DECIMALS),
             allocated_flow_m3h: (0, exports.roundEngineering)(allocatedFlow, exports.FLOW_DECIMALS),
             design_flow_m3h: (0, exports.roundEngineering)(designFlow, exports.FLOW_DECIMALS),
             turnover_rate_cycles_per_hour: turnover,
+            turnover_unavailable_reason: turnoverUnavailableReason,
             allocation_total_m3h: (0, exports.roundEngineering)(allocatedFlow, exports.FLOW_DECIMALS),
             flow_override_m3h: hasFlowOverride ? savedFlow : null,
             turnover_override_cycles_per_hour: hasTurnoverOverride ? savedTurnover : null,
@@ -792,6 +832,8 @@ function calculateSystemEngineering(system, links, exhibitCalculations, compactU
         flow_route: {
             flow_unit: exports.FLOW_UNIT,
             side_streams_are_branches: true,
+            allocated_flow_m3h: (0, exports.roundEngineering)(allocatedLoopFlow, exports.FLOW_DECIMALS),
+            allocation_total_pct: flowRouteAllocationTotalPct,
             loops: flowRoute,
         },
         suitability: unitResult,

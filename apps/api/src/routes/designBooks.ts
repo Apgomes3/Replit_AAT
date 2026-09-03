@@ -48,7 +48,15 @@ import {
 } from '../lib/uvCalculations';
 
 const router = Router();
-router.use(authenticate, requireModuleAccess('design_books'));
+router.use(authenticate, (req: AuthRequest, res: Response, next) => {
+  // Platform Admin governs correlation evidence even when Design Books are
+  // hidden for that administrator. All other Design Book routes retain the
+  // module visibility gate.
+  if (req.user?.role === 'admin' && req.path.startsWith('/thermal-correlations')) {
+    return next();
+  }
+  return requireModuleAccess('design_books')(req, res, next);
+});
 
 type DbRunner = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
 
@@ -1927,8 +1935,7 @@ router.get('/thermal-correlations', async (_req: AuthRequest, res: Response) => 
 
 router.get(
   '/thermal-correlations/versions/:versionId/usages',
-  requireRole('admin', 'engineer'),
-  requireModuleManage('design_books'),
+  requireRole('admin'),
   async (req: AuthRequest, res: Response) => {
     const client = await pool.connect();
     try {
@@ -1961,8 +1968,7 @@ router.get(
 
 router.post(
   '/thermal-correlations/classes',
-  requireRole('admin', 'engineer'),
-  requireModuleManage('design_books'),
+  requireRole('admin'),
   async (req: AuthRequest, res: Response) => {
     const classCode = String(req.body.class_code || '').trim();
     const className = String(req.body.class_name || '').trim();
@@ -2003,8 +2009,7 @@ router.post(
 
 router.put(
   '/thermal-correlations/classes/:classId',
-  requireRole('admin', 'engineer'),
-  requireModuleManage('design_books'),
+  requireRole('admin'),
   async (req: AuthRequest, res: Response) => {
     const classCode = String(req.body.class_code || '').trim();
     const className = String(req.body.class_name || '').trim();
@@ -2041,8 +2046,7 @@ router.put(
 
 router.post(
   '/thermal-correlations/classes/:classId/versions',
-  requireRole('admin', 'engineer'),
-  requireModuleManage('design_books'),
+  requireRole('admin'),
   async (req: AuthRequest, res: Response) => {
     const version = String(req.body.version || '').trim();
     const coefficient = positiveCorrelationCoefficient(req.body.coefficient_kg_m2_s_kpa);
@@ -2115,7 +2119,7 @@ router.post(
             upper_agitation_class_code, upper_agitation_class_name,
             upper_class_coefficient_kg_m2_s_kpa, related_agitation_values,
             source_reference, notes, approved_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18)
          RETURNING *`,
         [
           agitationClass.id,
@@ -2176,8 +2180,7 @@ router.post(
 
 router.post(
   '/thermal-correlations/versions/:versionId/supersede',
-  requireRole('admin', 'engineer'),
-  requireModuleManage('design_books'),
+  requireRole('admin'),
   async (req: AuthRequest, res: Response) => {
     const client = await pool.connect();
     try {

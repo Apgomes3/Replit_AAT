@@ -32,6 +32,7 @@ const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/admin/roles', title: 'Roles' },
   { path: '/admin/tank-families', title: 'Tank Families' },
   { path: '/admin/audit-log', title: 'Audit Log' },
+  { path: '/admin/evaporation-correlations', title: 'Evaporation Correlations' },
   { path: '/purchase-orders/:id', title: 'Purchase Order' },
   { path: '/purchase-orders', title: 'Purchase Orders' },
 ];

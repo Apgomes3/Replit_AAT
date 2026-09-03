@@ -52,6 +52,7 @@ const state = vitest_1.vi.hoisted(() => ({
     sideStreams: [{ id: 'side-1', system_id: 'system-1', parent_loop_number: 1, name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0 }],
     fractionatorAllocations: [],
     saved: [],
+    existingProjectEquipment: [],
     candidates: [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }],
     exhibits: [], tanks: [], hydraulics: [], links: [],
 }));
@@ -84,6 +85,8 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [] };
         if (sql.includes('SELECT equip_code FROM project_equipment_items'))
             return { rows: [] };
+        if (sql.includes('/* existing-pump-code */'))
+            return { rows: state.existingProjectEquipment };
         if (sql.includes('FROM project_equipment_items'))
             return { rows: state.candidates };
         if (sql.includes('FROM product_masters pm') && sql.includes('pm.id=$1')) {
@@ -99,6 +102,18 @@ vitest_1.vi.mock('../db', () => {
             };
             state.candidates.push(created);
             return { rows: [created] };
+        }
+        if (sql.includes('UPDATE project_equipment_items') && sql.includes('SET system_id=$1')) {
+            const item = state.existingProjectEquipment.find(value => value.id === params[4]);
+            if (!item)
+                return { rows: [] };
+            Object.assign(item, {
+                system_id: params[0],
+                quantity: params[1],
+                description: params[2],
+                product_master_id: params[3] || item.product_master_id,
+            });
+            return { rows: [item] };
         }
         if (sql.includes('INSERT INTO system_pump_selections')) {
             const saved = {
@@ -127,7 +142,11 @@ vitest_1.vi.mock('../db', () => {
 function request(app, method, path, body) {
     return new Promise((resolve, reject) => {
         const server = app.listen(0, '127.0.0.1', () => {
-            const payload = body === undefined ? '' : JSON.stringify(body);
+            const normalizedBody = body !== undefined && method === 'PUT' &&
+                path.includes('/pump-selections') && body.installation_location === undefined
+                ? { ...body, installation_location: 'external' }
+                : body;
+            const payload = normalizedBody === undefined ? '' : JSON.stringify(normalizedBody);
             const token = jsonwebtoken_1.default.sign({ id: 'engineer-1', email: 'engineer@example.com', role: 'engineer' }, secret);
             const req = node_http_1.default.request({ host: '127.0.0.1', port: server.address().port, method, path,
                 headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }) } }, res => {
@@ -156,11 +175,16 @@ function request(app, method, path, body) {
         state.book = { id: 'book-1', project_id: 'project-1', status: 'Draft' };
         state.saved = [];
         state.candidates = [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }];
+        state.existingProjectEquipment = [];
         state.fractionatorAllocations = [];
         state.exhibits = [];
         state.tanks = [];
         state.hydraulics = [];
         state.links = [];
+        state.sideStreams = [{
+                id: 'side-1', system_id: 'system-1', parent_loop_number: 1,
+                name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0,
+            }];
         state.system.calculation_inputs = { design_flow_source: 'manual_override' };
         state.system.design_flow_m3h = '100';
         state.system.loop1_name = 'Main return';
@@ -209,8 +233,9 @@ function request(app, method, path, body) {
         state.links = [{ id: 'link-1', system_id: 'system-1', exhibit_id: 'ex-1', exhibit_code: 'EX-1', link_type: 'Primary' }];
         const response = await request(app, 'GET', '/api/v1/systems/system-1/pump-selections?design_book_id=book-1');
         (0, vitest_1.expect)(response.status).toBe(200);
-        // 20 m³ × 2/h = 40 m³/h resolved Design Book system flow; loop is 60%.
-        (0, vitest_1.expect)(response.body.items.find((item) => item.circuit_key === 'loop:1').flow_m3h).toBe(24);
+        // Bottom Drain is 70% of 40 m³/h, then the Sand Filter loop takes 60%.
+        (0, vitest_1.expect)(response.body.items.find((item) => item.circuit_key === 'loop:1').flow_m3h).toBe(16.8);
+        (0, vitest_1.expect)(response.body.items.find((item) => item.circuit_key === 'side_stream:side-1').flow_m3h).toBe(4.2);
     });
     (0, vitest_1.it)('persists an eligible same-system pump and returns ready sizing', async () => {
         const response = await request(app, 'PUT', '/api/v1/systems/system-1/pump-selections', {
@@ -423,6 +448,36 @@ function request(app, method, path, body) {
         (0, vitest_1.expect)(repeated.status).toBe(200);
         (0, vitest_1.expect)(repeated.body.idempotent).toBe(true);
         (0, vitest_1.expect)(state.calls.filter(call => call.sql.includes('INSERT INTO project_equipment_items'))).toHaveLength(1);
+    });
+    (0, vitest_1.it)('reassigns an existing generated tag to the correct LSS instead of rejecting it', async () => {
+        state.candidates = [];
+        state.existingProjectEquipment = [{
+                id: 'misplaced-pump',
+                equip_code: 'SYS-FFSP-01',
+                project_id: 'project-1',
+                system_id: 'wrong-system',
+                description: 'Pump assigned to the wrong LSS',
+                quantity: 1,
+                unit: 'EA',
+                status: 'Draft',
+            }];
+        const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+            design_book_id: 'book-1',
+            circuit_key: 'loop:1',
+            pump_role: 'primary',
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body.reassigned_existing_code).toBe(true);
+        (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
+            id: 'misplaced-pump',
+            equip_code: 'SYS-FFSP-01',
+            system_id: 'system-1',
+        });
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('INSERT INTO project_equipment_items'))).toBe(false);
+        (0, vitest_1.expect)(state.calls).toContainEqual(vitest_1.expect.objectContaining({
+            sql: vitest_1.expect.stringContaining('SET project_equipment_item_id=NULL'),
+            params: ['wrong-system', 'misplaced-pump'],
+        }));
     });
     (0, vitest_1.it)('refuses to create equipment for an orphaned no-pump side-stream duty', async () => {
         state.sideStreams = [{

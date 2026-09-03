@@ -51,6 +51,7 @@ const pumpQuantityOrNull = (value) => {
     return Number.isInteger(parsed) && parsed >= 1 && parsed <= 99 ? parsed : null;
 };
 const allowedPumpRoles = new Set([pumpSelections_1.PUMP_ROLE_PRIMARY, pumpSelections_1.PUMP_ROLE_VENTURI]);
+const allowedInstallationLocations = new Set(['external', 'submerged']);
 async function candidates(runner, projectId, systemId) {
     return (await runner(`/* pump-selection-candidates */
      SELECT COALESCE(pei.id, pm.id) AS id,
@@ -202,6 +203,9 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
     if (pumpQuantity == null) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
     }
+    if (!allowedInstallationLocations.has(input.installation_location)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'installation_location must be external or submerged.' } });
+    }
     // For FFVP lines the flow basis comes from the explicit venturi_flow_m3h input.
     const isVenturi = pumpRole === pumpSelections_1.PUMP_ROLE_VENTURI;
     const totalFlow = isVenturi
@@ -247,8 +251,8 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
        (system_id,circuit_key,project_equipment_item_id,
         design_head_m,pump_efficiency_pct,motor_efficiency_pct,
         source_fingerprint,pump_snapshot,calculation_version,result_snapshot,updated_by,
-         pump_role,venturi_flow_m3h,pump_quantity,pump_duty_type_id,pump_duty_snapshot)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14,$15,$16::jsonb)
+          pump_role,venturi_flow_m3h,pump_quantity,pump_duty_type_id,pump_duty_snapshot,installation_location)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14,$15,$16::jsonb,$17)
      ON CONFLICT (system_id,circuit_key,pump_role) DO UPDATE SET
        project_equipment_item_id=EXCLUDED.project_equipment_item_id,
        design_head_m=EXCLUDED.design_head_m,
@@ -263,6 +267,7 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
         pump_quantity=EXCLUDED.pump_quantity,
         pump_duty_type_id=EXCLUDED.pump_duty_type_id,
         pump_duty_snapshot=EXCLUDED.pump_duty_snapshot,
+        installation_location=EXCLUDED.installation_location,
        updated_at=NOW()`, [
         system.id, input.circuit_key, selected?.project_equipment_item_id || null,
         input.design_head_m, input.pump_efficiency_pct, input.motor_efficiency_pct,
@@ -276,6 +281,7 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
         pumpQuantity,
         dutyType.id || null,
         JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
+        input.installation_location,
     ]);
     const updatedLines = await liveItems(db_1.query, system);
     const item = updatedLines.find(value => value.circuit_key === input.circuit_key && value.pump_role === pumpRole);
@@ -358,11 +364,6 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
     const pumpTags = (0, pumpSelections_1.buildPumpTags)(system.system_code, dutyType.tag, pumpQuantity);
     const equipCode = (input.equip_code || '').trim() || pumpTags[0];
     const description = (input.description || '').trim() || (0, pumpSelections_1.defaultPumpLineName)(circuitLine || { circuit_name: circuitKey, circuit_type: null, circuit_kind: 'loop' }, pumpRole);
-    // Check equip_code uniqueness.
-    const existing = await (0, db_1.query)('SELECT id FROM project_equipment_items WHERE project_id=$1 AND equip_code=$2', [book.project_id, equipCode]);
-    if (existing.rows.length) {
-        return res.status(409).json({ error: { code: 'DUPLICATE_EQUIP_CODE', message: `Equipment code "${equipCode}" already exists on this project. Provide a unique code.` } });
-    }
     const client = await db_1.default.connect();
     try {
         await client.query('BEGIN');
@@ -370,6 +371,10 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
         const lockedSelection = (await client.query(`SELECT * FROM system_pump_selections
        WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3
        FOR UPDATE`, [system.id, circuitKey, pumpRole])).rows[0];
+        const existingCodeItem = (await client.query(`/* existing-pump-code */
+       SELECT * FROM project_equipment_items
+        WHERE project_id=$1 AND equip_code=$2
+        FOR UPDATE`, [book.project_id, equipCode])).rows[0] || null;
         if (lockedSelection?.project_equipment_item_id) {
             const refreshedEquipment = (await client.query(`UPDATE project_equipment_items
           SET quantity=$1, description=$2,
@@ -407,11 +412,31 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
                 idempotent: true,
             });
         }
-        const result = await client.query(`INSERT INTO project_equipment_items
-         (equip_code, project_id, system_id, description, quantity, unit, status, product_master_id)
-       VALUES ($1,$2,$3,$4,$5,'EA','Draft',$6)
-       RETURNING *`, [equipCode, book.project_id, system.id, description, pumpQuantity, requestedProduct?.product_master_id || null]);
-        const pei = result.rows[0];
+        const reusedExistingCode = !!existingCodeItem;
+        const previousSystemId = existingCodeItem?.system_id || null;
+        const pei = reusedExistingCode
+            ? (await client.query(`UPDATE project_equipment_items
+            SET system_id=$1, quantity=$2, description=$3,
+                product_master_id=COALESCE($4,product_master_id),
+                status=CASE WHEN $4::uuid IS NOT NULL THEN 'Draft' ELSE status END,
+                updated_at=NOW()
+          WHERE id=$5
+          RETURNING *`, [
+                system.id,
+                pumpQuantity,
+                description,
+                requestedProduct?.product_master_id || null,
+                existingCodeItem.id,
+            ])).rows[0]
+            : (await client.query(`INSERT INTO project_equipment_items
+           (equip_code, project_id, system_id, description, quantity, unit, status, product_master_id)
+         VALUES ($1,$2,$3,$4,$5,'EA','Draft',$6)
+         RETURNING *`, [equipCode, book.project_id, system.id, description, pumpQuantity, requestedProduct?.product_master_id || null])).rows[0];
+        if (reusedExistingCode && previousSystemId && previousSystemId !== system.id) {
+            await client.query(`UPDATE system_pump_selections
+            SET project_equipment_item_id=NULL, pump_snapshot=NULL, updated_at=NOW()
+          WHERE system_id=$1 AND project_equipment_item_id=$2`, [previousSystemId, existingCodeItem.id]);
+        }
         const circuit = allLines.find(item => item.circuit_key === circuitKey && item.pump_role === pumpSelections_1.PUMP_ROLE_PRIMARY);
         if (!circuit) {
             await client.query('ROLLBACK');
@@ -480,7 +505,7 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
             dutyType.id || null, JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
         ]);
         await client.query('COMMIT');
-        res.status(201).json({ project_equipment_item: pei, pump_line: (0, pumpSelections_1.buildPumpLineItem)(circuit, {
+        res.status(reusedExistingCode ? 200 : 201).json({ project_equipment_item: pei, pump_line: (0, pumpSelections_1.buildPumpLineItem)(circuit, {
                 project_equipment_item_id: pei.id,
                 pump_snapshot: snapshot,
                 source_fingerprint: (0, pumpSelections_1.pumpSourceFingerprint)(source),
@@ -491,7 +516,7 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
                 pump_quantity: pumpQuantity,
                 pump_duty_type_id: dutyType.id || null,
                 pump_duty_snapshot: { tag: dutyType.tag, pump_name: dutyType.pump_name },
-            }, pumpRole) });
+            }, pumpRole), ...(reusedExistingCode ? { reassigned_existing_code: true } : {}) });
     }
     catch (error) {
         await client.query('ROLLBACK');

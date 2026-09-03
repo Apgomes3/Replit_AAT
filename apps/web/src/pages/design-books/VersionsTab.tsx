@@ -98,7 +98,7 @@ function Pill({ icon, text, blue = false }: { icon: React.ReactNode; text: strin
   );
 }
 
-function VersionCard({ version, latest, onRestore, restoring, readOnly }: {
+export function VersionCard({ version, latest, onRestore, restoring, readOnly }: {
   version: any;
   latest: boolean;
   onRestore: (version: any) => void;
@@ -140,8 +140,10 @@ function VersionCard({ version, latest, onRestore, restoring, readOnly }: {
           </button>
           {!readOnly && (
             <button onClick={() => onRestore(version)}
-              disabled={restoring || unresolved > 0 || integrityFailed}
-              title={unresolved ? 'Restore is blocked because referenced project records are missing' : 'Preview and restore this version'}
+              disabled={restoring}
+              title={unresolved || integrityFailed
+                ? 'Open a fresh restore preview to re-check this version'
+                : 'Preview and restore this version'}
               className="flex items-center gap-1.5 text-xs text-stone-600 hover:text-violet-700 border border-stone-200 hover:border-violet-300 bg-white px-2.5 py-1.5 rounded-lg disabled:opacity-40 font-medium">
               <RotateCcw className="w-3.5 h-3.5" />{restoring ? 'Restoring…' : 'Restore'}
             </button>
@@ -237,6 +239,8 @@ export default function VersionsTab({ bookId, onBookRefresh, readOnly = false }:
       setRestoringId(null);
     }
   };
+  const confirmUnresolved = confirmVersion?.drift?.unresolved_references?.length || 0;
+  const confirmIntegrityFailed = confirmVersion?.summary?.integrity === 'invalid';
 
   const previewVersion = async (version: any) => {
     setPreviewingId(version.id);
@@ -279,7 +283,8 @@ export default function VersionsTab({ bookId, onBookRefresh, readOnly = false }:
             </div>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setConfirmVersion(null)} className="px-4 py-2 text-sm text-stone-600 border border-stone-200 rounded-lg hover:bg-stone-50">Cancel</button>
-              <button onClick={() => restoreVersion(confirmVersion)} disabled={restoringId === confirmVersion.id}
+              <button onClick={() => restoreVersion(confirmVersion)}
+                disabled={restoringId === confirmVersion.id || confirmUnresolved > 0 || confirmIntegrityFailed}
                 className="flex items-center gap-2 px-4 py-2 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 font-medium disabled:opacity-50">
                 <RotateCcw className="w-4 h-4" />{restoringId === confirmVersion.id ? 'Restoring atomically…' : 'Create checkpoint & restore'}
               </button>

@@ -32,6 +32,11 @@ function readySource(shapeType = 'Rectangular', surfaceAreaM2 = 10) {
                 inputs: { exhibit_id: 'exhibit-1' },
                 results: { operating_volume_m3: 14 },
             }],
+        lights: [{
+                exhibit_id: 'exhibit-1',
+                power_kw: 1,
+                quantity: 1,
+            }],
     });
 }
 function readyInputs() {
@@ -53,6 +58,49 @@ function readyInputs() {
     };
 }
 (0, vitest_1.describe)('AAT thermal calculation', () => {
+    (0, vitest_1.it)('keeps the source fingerprint stable when reload queries add display-only exhibit fields', () => {
+        const sourceArgs = {
+            system: { id: 'system-1', system_code: 'LSS-1', design_flow_m3h: 120 },
+            links: [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }],
+            exhibits: [{
+                    id: 'exhibit-1',
+                    exhibit_code: 'EX-1',
+                    design_temperature_min: 24,
+                    design_temperature_max: 26,
+                    water_type: 'freshwater',
+                }],
+            tanks: [{
+                    id: 'tank-1',
+                    tank_code: 'TK-1',
+                    exhibit_id: 'exhibit-1',
+                    shape_type: 'Rectangular',
+                    surface_area_m2: 10,
+                    operating_volume_m3: 15,
+                    primary_material: 'Acrylic',
+                    wall_thickness_mm: 12,
+                }],
+            exhibitCalculations: [{
+                    status: 'Ready',
+                    freshness: 'fresh',
+                    inputs: { exhibit_id: 'exhibit-1' },
+                    results: { operating_volume_m3: 15, total_return_flow_m3h: 120 },
+                }],
+        };
+        const savedSource = (0, thermalCalculations_1.buildThermalSourceContext)(sourceArgs);
+        const reloadedSource = (0, thermalCalculations_1.buildThermalSourceContext)({
+            ...sourceArgs,
+            exhibits: sourceArgs.exhibits.map(exhibit => ({
+                ...exhibit,
+                area_code: 'A-01',
+                area_name: 'Public Gallery',
+            })),
+        });
+        (0, vitest_1.expect)(reloadedSource.fingerprint).toBe(savedSource.fingerprint);
+        (0, vitest_1.expect)(reloadedSource.linked_exhibits).toEqual([{
+                id: 'exhibit-1',
+                exhibit_code: 'EX-1',
+            }]);
+    });
     (0, vitest_1.it)('publishes the stable recommended surface-activity class catalog', () => {
         (0, vitest_1.expect)(thermalCalculations_1.THERMAL_AGITATION_CLASS_CATALOG.map(item => item.name)).toEqual([
             'Calm or Covered',
@@ -85,6 +133,180 @@ function readyInputs() {
         });
         (0, vitest_1.expect)(result.inputs.water_temperature_basis).toEqual(result.water_temperature_basis);
     });
+    (0, vitest_1.it)('sums captured lighting power across linked exhibits and quantities', () => {
+        const source = (0, thermalCalculations_1.buildThermalSourceContext)({
+            system: { id: 'system-1', system_code: 'LSS-1' },
+            links: [
+                { system_id: 'system-1', exhibit_id: 'exhibit-1' },
+                { system_id: 'system-1', exhibit_id: 'exhibit-2' },
+            ],
+            exhibits: [
+                { id: 'exhibit-1', exhibit_code: 'EX-1', design_temperature_min: 24, design_temperature_max: 26 },
+                { id: 'exhibit-2', exhibit_code: 'EX-2', design_temperature_min: 24, design_temperature_max: 26 },
+            ],
+            tanks: [
+                { id: 'tank-1', tank_code: 'TK-1', exhibit_id: 'exhibit-1', quantity: 1, shape_type: 'Rectangular', surface_area_m2: 10, operating_volume_m3: 15, primary_material: 'Acrylic', wall_thickness_mm: 12 },
+                { id: 'tank-2', tank_code: 'TK-2', exhibit_id: 'exhibit-2', quantity: 1, shape_type: 'Rectangular', surface_area_m2: 10, operating_volume_m3: 15, primary_material: 'Acrylic', wall_thickness_mm: 12 },
+            ],
+            exhibitCalculations: [
+                { status: 'valid', freshness: 'fresh', inputs: { exhibit_id: 'exhibit-1' }, results: { operating_volume_m3: 14 } },
+                { status: 'valid', freshness: 'fresh', inputs: { exhibit_id: 'exhibit-2' }, results: { operating_volume_m3: 14 } },
+            ],
+            lights: [
+                { exhibit_id: 'exhibit-1', power_kw: 0.2, quantity: 2 },
+                { exhibit_id: 'exhibit-2', power_kw: 0.5, quantity: 1 },
+                { exhibit_id: 'unlinked', power_kw: 99, quantity: 1 },
+            ],
+        });
+        (0, vitest_1.expect)(source.lighting_power_kw).toBeCloseTo(0.9, 12);
+        (0, vitest_1.expect)(source.lighting_sources).toEqual([
+            vitest_1.expect.objectContaining({ exhibit_id: 'exhibit-1', lighting_power_kw: 0.4, light_count: 1 }),
+            vitest_1.expect.objectContaining({ exhibit_id: 'exhibit-2', lighting_power_kw: 0.5, light_count: 1 }),
+        ]);
+        const result = (0, thermalCalculations_1.calculateThermalCalculation)(source, readyInputs());
+        (0, vitest_1.expect)(result.contributions.lighting_kw).toBeCloseTo(0.765, 12);
+        (0, vitest_1.expect)(result.formula_inputs.lighting_power_kw).toBeCloseTo(0.9, 12);
+    });
+    (0, vitest_1.it)('derives deterministic pump and UV water heat sources using their governed power bases', () => {
+        const source = (0, thermalCalculations_1.buildThermalSourceContext)({
+            system: { id: 'system-1', system_code: 'LSS-1' },
+            links: [], exhibits: [], tanks: [],
+            pumpSelections: [{
+                    circuit_key: 'loop:1', pump_role: 'primary', project_equipment_item_id: 'pump-a',
+                    pump_tags: ['01-CIRCP-01', '01-CIRCP-02'], pump_quantity: 2,
+                    installation_location: 'external', freshness: 'fresh', status: 'ready',
+                    calculation_version: 'pump-selection-v1',
+                    results: { shaft_power_kw: 1.2, motor_input_kw: 1.5 },
+                }, {
+                    circuit_key: 'loop:2', pump_role: 'primary', project_equipment_item_id: 'pump-b',
+                    pump_quantity: 1, installation_location: 'submerged', freshness: 'fresh', status: 'ready',
+                    calculation_version: 'pump-selection-v1',
+                    results: { shaft_power_kw: 3, motor_input_kw: 4 },
+                }],
+            uvSelections: [{
+                    system_id: 'system-1', freshness: 'fresh',
+                    result_snapshot: { overall_status: 'pass' },
+                    input_snapshot: { streams: [{
+                                side_stream_id: 'uv-stream', side_stream_name: 'UV sidestream',
+                                uv_unit_quantity: 3, uv_revision: { product_code: 'UV-1', rated_power_kw: 0.4 },
+                            }] },
+                }],
+        });
+        (0, vitest_1.expect)(source.equipment_heat_sources.map((item) => item.equipment_type)).toEqual(['Pump', 'Pump', 'UV']);
+        (0, vitest_1.expect)(source.equipment_heat_sources.map((item) => item.heat_gain_kw)).toEqual([2.4, 4, vitest_1.expect.closeTo(1.2, 12)]);
+        (0, vitest_1.expect)(source.equipment_heat_gain_kw).toBeCloseTo(7.6, 12);
+        (0, vitest_1.expect)(source.equipment_heat_sources[0]).toMatchObject({
+            power_basis: 'shaft_power_kw',
+            installation_location: 'external',
+            heat_basis: 'Pump shaft power transferred to water',
+        });
+        (0, vitest_1.expect)(source.equipment_heat_sources[2]).toMatchObject({
+            side_stream_id: 'uv-stream',
+            power_basis: 'saved_uv_rated_power_kw',
+            heat_basis: 'Full saved UV Selection rated power',
+            water_heat_fraction_pct: 100,
+        });
+    });
+    (0, vitest_1.it)('uses frozen UV Selection power without revalidating or recalculating UV performance', () => {
+        const source = (0, thermalCalculations_1.buildThermalSourceContext)({
+            system: { id: 'system-1', system_code: 'LSS-1' },
+            links: [], exhibits: [], tanks: [],
+            uvSelections: [{
+                    system_id: 'system-1',
+                    freshness: 'stale',
+                    input_snapshot: { streams: [{
+                                side_stream_id: 'uv-stream',
+                                side_stream_name: 'UV sidestream',
+                                uv_unit_quantity: 9,
+                                rated_power_kw: 99,
+                                product_code: 'UV-OLD',
+                            }] },
+                    result_snapshot: {
+                        overall_status: 'fail',
+                        streams: [{
+                                side_stream_id: 'uv-stream',
+                                side_stream_name: 'UV sidestream',
+                                unit_quantity: 2,
+                                rated_power_kw: 2.5,
+                                product_code: 'UV-SAVED',
+                                product_name: 'Saved UV model',
+                            }],
+                    },
+                }],
+        });
+        (0, vitest_1.expect)(source.equipment_heat_sources).toEqual([
+            vitest_1.expect.objectContaining({
+                equipment_type: 'UV',
+                equipment_code: 'UV-SAVED',
+                equipment_name: 'Saved UV model',
+                quantity: 2,
+                input_power_kw_per_unit: 2.5,
+                heat_gain_kw: 5,
+                power_basis: 'saved_uv_rated_power_kw',
+                heat_basis: 'Full saved UV Selection rated power',
+                status: 'ready',
+                reasons: [],
+            }),
+        ]);
+        (0, vitest_1.expect)(source.equipment_heat_gain_kw).toBe(5);
+    });
+    (0, vitest_1.it)('does not revalidate pump compatibility while consuming saved Thermal heat input', () => {
+        const source = (0, thermalCalculations_1.buildThermalSourceContext)({
+            system: { id: 'system-1', system_code: 'LSS-1' },
+            links: [], exhibits: [], tanks: [],
+            pumpSelections: [{
+                    circuit_key: 'loop:1',
+                    pump_role: 'primary',
+                    project_equipment_item_id: 'pump-a',
+                    pump_quantity: 1,
+                    installation_location: 'external',
+                    freshness: 'fresh',
+                    status: 'incompatible',
+                    calculation_version: 'pump-selection-v1',
+                    results: { shaft_power_kw: 1.2, motor_input_kw: 1.5 },
+                    reasons: ['Selected pump catalog design flow is 100 m³/h; circuit requires 120 m³/h.'],
+                }],
+            uvSelections: [],
+        });
+        (0, vitest_1.expect)(source.equipment_heat_sources[0]).toMatchObject({
+            input_power_kw_per_unit: 1.2,
+            heat_gain_kw: 1.2,
+            power_basis: 'shaft_power_kw',
+            freshness: 'saved',
+            status: 'ready',
+            reasons: [],
+        });
+    });
+    (0, vitest_1.it)('uses saved pump power for Thermal heat even when current Flow Route freshness is stale', () => {
+        const source = (0, thermalCalculations_1.buildThermalSourceContext)({
+            system: { id: 'system-1', system_code: 'LSS-1' },
+            links: [], exhibits: [], tanks: [],
+            pumpSelections: [{
+                    circuit_key: 'loop:1',
+                    pump_role: 'primary',
+                    project_equipment_item_id: 'pump-a',
+                    pump_quantity: 1,
+                    installation_location: 'external',
+                    freshness: 'stale',
+                    status: 'incompatible',
+                    calculation_version: 'pump-selection-v1',
+                    results: { shaft_power_kw: 9.882, motor_input_kw: 11.103 },
+                    reasons: [
+                        'Pump selection is stale and must be recalculated.',
+                        'Selected pump catalog design flow is 248.7 m³/h; circuit requires 323.204 m³/h.',
+                    ],
+                }],
+            uvSelections: [],
+        });
+        (0, vitest_1.expect)(source.equipment_heat_sources[0]).toMatchObject({
+            input_power_kw_per_unit: 9.882,
+            heat_gain_kw: 9.882,
+            power_basis: 'shaft_power_kw',
+            freshness: 'saved',
+            status: 'ready',
+            reasons: [],
+        });
+    });
     (0, vitest_1.it)('derives free surface from linked rectangular tank dimensions when no saved area exists', () => {
         const source = readySource('Rectangular', null);
         const result = (0, thermalCalculations_1.calculateThermalCalculation)(source, readyInputs());
@@ -92,6 +314,14 @@ function readyInputs() {
         (0, vitest_1.expect)(result.results.free_surface_area_m2).toBeCloseTo(10, 12);
         (0, vitest_1.expect)(source.linked_tanks[0].free_surface_source)
             .toBe('rectangular length × width footprint');
+    });
+    (0, vitest_1.it)('uses rectangular dimensions as the temporary free-surface default for custom tanks', () => {
+        const source = readySource('Custom', null);
+        const result = (0, thermalCalculations_1.calculateThermalCalculation)(source, readyInputs());
+        (0, vitest_1.expect)(result.status).toBe('Ready');
+        (0, vitest_1.expect)(result.results.free_surface_area_m2).toBeCloseTo(10, 12);
+        (0, vitest_1.expect)(source.linked_tanks[0].free_surface_source)
+            .toBe('rectangular length × width footprint (custom default)');
     });
     vitest_1.it.each(thermalCalculations_1.THERMAL_CONSTRUCTION_DEFAULTS)('applies and freezes the governed $label construction default', construction => {
         const inputs = readyInputs();
@@ -590,6 +820,9 @@ function readyInputs() {
         const result = (0, thermalCalculations_1.calculateThermalCalculation)(source, readyInputs());
         (0, vitest_1.expect)(result.status).toBe('Blocked');
         (0, vitest_1.expect)(result.reasons.join(' ')).toMatch(/conflicting water design temperatures/i);
+        (0, vitest_1.expect)(result.sensitivity_cases).toEqual([]);
+        (0, vitest_1.expect)(result.sensitivity_summary.cases).toHaveLength(1);
+        (0, vitest_1.expect)(result.sensitivity_summary.recommended_case).toBeNull();
     });
     (0, vitest_1.it)('defaults custom wall area from rectangular dimensions and keeps sensitivity separate from the base', () => {
         const source = readySource('Custom');
@@ -624,7 +857,12 @@ function readyInputs() {
         (0, vitest_1.expect)(blocked.reasons.join(' ')).toMatch(/rectangular default.*reviewed override/i);
         const ready = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), readyInputs());
         (0, vitest_1.expect)(ready.sensitivity_summary.cases).toHaveLength(5);
-        (0, vitest_1.expect)(ready.sensitivity_cases.some(item => item.case_key === 'surface_plus_10_pct')).toBe(true);
+        (0, vitest_1.expect)(ready.sensitivity_cases.map(item => item.case_key)).toEqual([
+            'water_range_min',
+            'water_range_max',
+            'ambient_minus_2_c',
+            'ambient_plus_2_c',
+        ]);
         (0, vitest_1.expect)(ready.results.free_surface_area_m2).toBe(10);
     });
     (0, vitest_1.it)('rejects negative equipment heat gain', () => {
@@ -635,7 +873,7 @@ function readyInputs() {
         (0, vitest_1.expect)(result.status).toBe('Blocked');
         (0, vitest_1.expect)(result.reasons.join(' ')).toMatch(/non-negative/i);
     });
-    (0, vitest_1.it)('does not recommend an unapproved adjacent agitation correlation', () => {
+    (0, vitest_1.it)('uses exactly four one-factor temperature cases and recommends the highest valid duty', () => {
         const result = (0, thermalCalculations_1.calculateThermalCalculation)(readySource(), {
             ...readyInputs(),
             adjacent_agitation_classes: ['High'],
@@ -652,9 +890,59 @@ function readyInputs() {
                 },
             },
         });
-        const adjacent = result.sensitivity_cases.find(item => item.case_key === 'agitation_High');
-        (0, vitest_1.expect)(adjacent?.status).toBe('Blocked');
-        (0, vitest_1.expect)(result.sensitivity_summary.recommended_case).not.toBe('agitation_High');
+        (0, vitest_1.expect)(result.calculation_version).toBe(thermalCalculations_1.THERMAL_CALCULATION_VERSION);
+        (0, vitest_1.expect)(thermalCalculations_1.THERMAL_CALCULATION_VERSION).toBe('aat-thermal-load-v9');
+        (0, vitest_1.expect)(result.sensitivity_summary.cases.map(item => item.case_key)).toEqual([
+            'base',
+            'water_range_min',
+            'water_range_max',
+            'ambient_minus_2_c',
+            'ambient_plus_2_c',
+        ]);
+        (0, vitest_1.expect)(result.sensitivity_cases).toHaveLength(4);
+        const cases = Object.fromEntries(result.sensitivity_cases.map(item => [item.case_key, item]));
+        (0, vitest_1.expect)(cases.water_range_min).toMatchObject({
+            description: 'Shared water-range minimum — water 24 °C',
+            water_temperature_c: 24,
+            ambient_air_temperature_c: 20,
+            status: 'Ready',
+        });
+        (0, vitest_1.expect)(cases.water_range_max).toMatchObject({
+            description: 'Shared water-range maximum — water 26 °C',
+            water_temperature_c: 26,
+            ambient_air_temperature_c: 20,
+            status: 'Ready',
+        });
+        (0, vitest_1.expect)(cases.ambient_minus_2_c).toMatchObject({
+            description: 'Ambient −2 °C — ambient 18 °C',
+            water_temperature_c: 25,
+            ambient_air_temperature_c: 18,
+            status: 'Ready',
+        });
+        (0, vitest_1.expect)(cases.ambient_plus_2_c).toMatchObject({
+            description: 'Ambient +2 °C — ambient 22 °C',
+            water_temperature_c: 25,
+            ambient_air_temperature_c: 22,
+            status: 'Ready',
+        });
+        for (const item of result.sensitivity_cases) {
+            (0, vitest_1.expect)(item.results.free_surface_area_m2).toBe(result.results.free_surface_area_m2);
+            (0, vitest_1.expect)(item.results.exposed_wall_area_m2).toBe(result.results.exposed_wall_area_m2);
+            (0, vitest_1.expect)(item.results.recovery_heating_kw).toBe(result.results.recovery_heating_kw);
+            (0, vitest_1.expect)(item.results.operational_water_exchange_flow_m3h)
+                .toBe(result.results.operational_water_exchange_flow_m3h);
+        }
+        (0, vitest_1.expect)(cases.water_range_min.results.margin_adjusted_cooling_kw)
+            .toBeCloseTo(0.5884138243950015, 12);
+        (0, vitest_1.expect)(cases.water_range_max.results.margin_adjusted_heating_kw)
+            .toBeCloseTo(3.665161609667635, 12);
+        (0, vitest_1.expect)(cases.ambient_minus_2_c.results.margin_adjusted_heating_kw)
+            .toBeCloseTo(4.163661330112992, 12);
+        (0, vitest_1.expect)(cases.ambient_plus_2_c.results.margin_adjusted_cooling_kw)
+            .toBeCloseTo(1.0883313944327768, 12);
+        (0, vitest_1.expect)(result.sensitivity_summary.recommended_case).toBe('ambient_minus_2_c');
+        (0, vitest_1.expect)(result.sensitivity_summary.recommended_description)
+            .toBe('Ambient −2 °C — ambient 18 °C');
     });
     (0, vitest_1.it)('counts explicit water exchange but never normal circulation', () => {
         const inputs = {

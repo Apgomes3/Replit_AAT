@@ -222,6 +222,10 @@ function requestDetail(app) {
         }));
         (0, vitest_1.expect)(response.body.friction_loss_calculations.map((item) => item.system_id)).toEqual(systems.map(system => system.id));
         (0, vitest_1.expect)(response.body.systems[0].sand_filter_allocations).toEqual([sandFilterAllocation]);
+        (0, vitest_1.expect)(response.body.systems).toEqual(vitest_1.expect.arrayContaining(systems.map(system => vitest_1.expect.objectContaining({
+            id: system.id,
+            source_flows_m3h: vitest_1.expect.any(Object),
+        }))));
     });
     (0, vitest_1.it)('inherits a fresh circuit pump into an unsaved friction-loss package', async () => {
         const system = {

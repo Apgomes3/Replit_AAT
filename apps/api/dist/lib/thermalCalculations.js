@@ -23,7 +23,7 @@ exports.buildThermalSourceContext = buildThermalSourceContext;
 exports.calculateThermalCalculation = calculateThermalCalculation;
 exports.thermalDisplayValue = thermalDisplayValue;
 const crypto_1 = __importDefault(require("crypto"));
-exports.THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v7';
+exports.THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v9';
 exports.THERMAL_CONSTRUCTION_BASIS_VERSION = 'AAT_FOUNDATIONS_WALL_V1.0';
 /**
  * These are provisional AAT Foundations starter values. The database seed
@@ -217,9 +217,11 @@ function tankGeometry(tank) {
         freeSurface = Math.PI * Math.pow(width / 2, 2) / 1e6;
         freeSurfaceSource = 'cylindrical diameter footprint';
     }
-    else if (freeSurface == null && shape !== 'custom' && length != null && width != null) {
+    else if (freeSurface == null && length != null && width != null) {
         freeSurface = length * width / 1e6;
-        freeSurfaceSource = 'rectangular length × width footprint';
+        freeSurfaceSource = shape === 'custom'
+            ? 'rectangular length × width footprint (custom default)'
+            : 'rectangular length × width footprint';
     }
     let wallArea = positive(tank?.exposed_wall_area_m2 ?? tank?.wall_area_m2);
     let wallSource = wallArea != null ? 'tank saved exposed wall area' : null;
@@ -268,23 +270,36 @@ function tankGeometry(tank) {
  * by the Design Book endpoint.
  */
 function buildThermalSourceContext(args) {
-    const { system, links = [], exhibits = [], tanks = [], exhibitCalculations = [], wallConstructions = [], } = args;
+    // Omission retains the legacy manually-entered equipment field for frozen
+    // callers/snapshots. Live Design Book loading supplies both packages and
+    // therefore always produces the governed breakdown (including an empty one).
+    const includeEquipmentHeatSources = Object.prototype.hasOwnProperty.call(args, 'pumpSelections') ||
+        Object.prototype.hasOwnProperty.call(args, 'uvSelections');
+    const { system, links = [], exhibits = [], tanks = [], exhibitCalculations = [], lights = [], wallConstructions = [], pumpSelections = [], uvSelections = [], } = args;
     const governedWallConstructions = wallConstructions.length
         ? wallConstructions
         : exports.THERMAL_CONSTRUCTION_DEFAULTS;
-    const linkedExhibitIds = links.map(link => link.exhibit_id).filter(Boolean);
+    const linkedExhibitIds = links
+        .map(link => link.exhibit_id)
+        .filter(Boolean)
+        .sort((left, right) => String(left).localeCompare(String(right)));
     const duplicateExhibitIds = [...new Set(linkedExhibitIds.filter((id, index) => linkedExhibitIds.indexOf(id) !== index))];
-    const linkedExhibits = linkedExhibitIds.map(id => exhibits.find(exhibit => exhibit.id === id) || {
-        id, missing: true,
-    });
+    const linkedExhibitRecords = linkedExhibitIds.map(id => exhibits.find(exhibit => exhibit.id === id) || { id, missing: true });
+    const linkedExhibits = linkedExhibitRecords.map(exhibit => ({
+        id: exhibit.id || null,
+        exhibit_code: exhibit.exhibit_code || null,
+        ...(exhibit.missing ? { missing: true } : {}),
+    }));
     const linkedTanks = tanks
         .filter(tank => linkedExhibitIds.includes(tank.exhibit_id))
         .map(tank => ({
         ...tankGeometry(tank),
         exhibit_id: tank.exhibit_id || null,
         exhibit_code: linkedExhibits.find(exhibit => exhibit.id === tank.exhibit_id)?.exhibit_code || null,
-    }));
-    const exhibitTemperatures = linkedExhibits.map(exhibit => ({
+    }))
+        .sort((left, right) => String(left.exhibit_id || '').localeCompare(String(right.exhibit_id || '')) ||
+        String(left.tank_id || left.tank_code || '').localeCompare(String(right.tank_id || right.tank_code || '')));
+    const exhibitTemperatures = linkedExhibitRecords.map(exhibit => ({
         exhibit_id: exhibit.id || null,
         exhibit_code: exhibit.exhibit_code || null,
         water_temperature_min_c: finite(exhibit.design_temperature_min),
@@ -316,6 +331,125 @@ function buildThermalSourceContext(args) {
             source: 'Design Book exhibit effective operating-volume calculation',
         };
     });
+    const lightingSources = linkedExhibitIds.map(exhibitId => {
+        const exhibitLights = lights.filter(light => light.exhibit_id === exhibitId);
+        const powerKw = exhibitLights.reduce((total, light) => {
+            const unitPowerKw = finite(light.power_kw);
+            const quantity = finite(light.quantity) ?? 1;
+            return total + (unitPowerKw || 0) * quantity;
+        }, 0);
+        const exhibit = linkedExhibits.find(item => item.id === exhibitId);
+        return {
+            exhibit_id: exhibitId,
+            exhibit_code: exhibit?.exhibit_code || null,
+            lighting_power_kw: powerKw,
+            light_count: exhibitLights.length,
+            source: 'Design Book exhibit lighting schedule',
+        };
+    });
+    // Pump sizing and UV selection are separate governed packages. Capture each
+    // source individually so no electrical/mechanical heat is silently assumed.
+    const pumpLines = pumpSelections.flatMap((selection) => Array.isArray(selection?.items) ? selection.items : [selection]).filter(Boolean);
+    const pumpHeatSources = pumpLines.map((pump) => {
+        const location = pump.installation_location === 'external' || pump.installation_location === 'submerged'
+            ? pump.installation_location : null;
+        const hasSavedCalculation = !!pump.results && pump.calculation_version != null;
+        const powerBasis = location === 'external' ? 'shaft_power_kw'
+            : location === 'submerged' ? 'motor_input_kw' : null;
+        const perUnit = powerBasis && hasSavedCalculation
+            ? positive(pump.results?.[powerBasis])
+            : null;
+        const quantity = positive(pump.pump_quantity);
+        const incompleteReasons = [
+            ...(perUnit != null
+                ? []
+                : ['Pump Selection must provide a saved calculated power value for Thermal heat.']),
+            ...(location ? [] : ['Pump installation location is required (external or submerged).']),
+            ...(quantity != null ? [] : ['Pump quantity is required.']),
+            ...(powerBasis && perUnit != null ? [] : [`Pump ${powerBasis || 'heat power'} is required.`]),
+        ];
+        return {
+            equipment_type: 'Pump',
+            equipment_id: pump.project_equipment_item_id || `${pump.circuit_key || ''}:${pump.pump_role || 'primary'}`,
+            circuit_key: pump.circuit_key || null,
+            pump_role: pump.pump_role || 'primary',
+            equipment_code: (pump.pump_tags || [])[0] || pump.selected_pump?.equip_code || null,
+            equipment_tags: pump.pump_tags || [],
+            equipment_name: pump.pump_duty_name || pump.selected_pump?.description || null,
+            installation_location: location,
+            quantity,
+            input_power_kw_per_unit: perUnit,
+            heat_gain_kw_per_unit: perUnit,
+            heat_gain_kw: perUnit != null && quantity != null ? perUnit * quantity : null,
+            heat_basis: location === 'external'
+                ? 'Pump shaft power transferred to water'
+                : location === 'submerged'
+                    ? '100% of motor input power transferred to water'
+                    : null,
+            power_basis: powerBasis,
+            // Thermal consumes the saved Pump Selection result only. Its current
+            // Flow Route freshness/suitability is intentionally not re-evaluated
+            // here; that lifecycle belongs to Pump Selection.
+            freshness: hasSavedCalculation ? 'saved' : 'unsaved',
+            status: incompleteReasons.length ? 'incomplete' : 'ready',
+            reasons: incompleteReasons.filter((reason, index, reasons) => reasons.indexOf(reason) === index),
+        };
+    });
+    const seenUvStreams = new Set();
+    const uvHeatSources = uvSelections.flatMap((selection) => {
+        const inputStreams = Array.isArray(selection?.input_snapshot?.streams)
+            ? selection.input_snapshot.streams
+            : [];
+        const inputById = new Map(inputStreams.map((stream) => [
+            String(stream?.side_stream_id || stream?.id || ''),
+            stream,
+        ]));
+        const resultStreams = Array.isArray(selection?.result_snapshot?.streams)
+            ? selection.result_snapshot.streams
+            : [];
+        const savedStreams = resultStreams.length > 0
+            ? resultStreams.map((stream) => ({
+                ...(inputById.get(String(stream?.side_stream_id || stream?.id || '')) || {}),
+                ...stream,
+            }))
+            : inputStreams;
+        return savedStreams.map((stream) => ({ selection, stream }));
+    }).filter(({ stream }) => {
+        const identity = String(stream?.side_stream_id || stream?.id || '');
+        if (!identity || seenUvStreams.has(identity))
+            return false;
+        seenUvStreams.add(identity);
+        return true;
+    }).map(({ selection, stream }) => {
+        const quantity = positive(stream.unit_quantity ?? stream.uv_unit_quantity);
+        const perUnit = positive(stream.rated_power_kw ?? stream.uv_revision?.rated_power_kw);
+        const incompleteReasons = [
+            ...(quantity != null ? [] : ['UV unit quantity is required.']),
+            ...(perUnit != null ? [] : ['Saved UV Selection rated power is required.']),
+        ];
+        return {
+            equipment_type: 'UV',
+            equipment_id: stream.side_stream_id || stream.id || null,
+            side_stream_id: stream.side_stream_id || stream.id || null,
+            side_stream_name: stream.side_stream_name || stream.name || null,
+            equipment_code: stream.uv_revision?.product_code || stream.product_code || null,
+            equipment_name: stream.uv_revision?.product_name || stream.product_name || null,
+            quantity,
+            installation_location: 'UV Selection',
+            input_power_kw_per_unit: perUnit,
+            heat_gain_kw_per_unit: perUnit,
+            heat_gain_kw: perUnit != null && quantity != null ? perUnit * quantity : null,
+            heat_basis: 'Full saved UV Selection rated power',
+            power_basis: 'saved_uv_rated_power_kw',
+            water_heat_fraction_pct: 100,
+            freshness: selection?.freshness || 'unsaved',
+            status: incompleteReasons.length > 0 ? 'incomplete' : 'ready',
+            reasons: incompleteReasons,
+        };
+    });
+    const equipmentHeatSources = [...pumpHeatSources, ...uvHeatSources].sort((left, right) => String(left.equipment_type).localeCompare(String(right.equipment_type)) ||
+        String(left.equipment_id || '').localeCompare(String(right.equipment_id || '')));
+    const equipmentHeatGainKw = sumNumber(equipmentHeatSources.map(item => finite(item.heat_gain_kw)));
     const source = {
         system_id: system?.id || null,
         system_code: system?.system_code || null,
@@ -324,6 +458,12 @@ function buildThermalSourceContext(args) {
         linked_tanks: linkedTanks,
         water_temperature_sources: exhibitTemperatures,
         effective_volume_sources: effectiveVolumeSources,
+        lighting_sources: lightingSources,
+        lighting_power_kw: lightingSources.reduce((total, item) => total + item.lighting_power_kw, 0),
+        ...(includeEquipmentHeatSources ? {
+            equipment_heat_sources: equipmentHeatSources,
+            equipment_heat_gain_kw: equipmentHeatGainKw,
+        } : {}),
         circulation_flows: circulationFlows,
         lss_circulation_flow_m3h: finite(system?.design_flow_m3h),
         duplicate_exhibit_ids: duplicateExhibitIds,
@@ -1010,13 +1150,32 @@ function validateCommonInputs(source, inputs, reasons) {
             reasons.push('Provide a deviation justification for the non-standard evaporation correlation.');
         }
     }
-    const lightingPower = nonNegative(inputs.lighting_power_kw);
-    const equipment = nonNegative(inputs.equipment_heat_gain_kw);
+    const sourceHasLightingSchedule = Object.prototype.hasOwnProperty.call(source || {}, 'lighting_power_kw');
+    const scheduledLightingPower = sourceHasLightingSchedule
+        ? nonNegative(source.lighting_power_kw)
+        : null;
+    const lightingPower = scheduledLightingPower ?? nonNegative(inputs.lighting_power_kw);
+    const sourceHasEquipmentBreakdown = Object.prototype.hasOwnProperty.call(source || {}, 'equipment_heat_sources');
+    const equipmentSources = sourceHasEquipmentBreakdown
+        ? (Array.isArray(source.equipment_heat_sources) ? source.equipment_heat_sources : [])
+        : [];
+    const incompleteEquipmentSources = equipmentSources.filter((item) => item?.heat_gain_kw == null || (item?.reasons || []).length > 0);
+    if (incompleteEquipmentSources.length) {
+        incompleteEquipmentSources.forEach((item) => {
+            const label = item.equipment_code || item.equipment_name ||
+                item.equipment_id || item.equipment_type || 'equipment';
+            reasons.push(`Equipment heat source ${label} is incomplete: ${(item.reasons || ['total heat is required']).join(' ')}`);
+        });
+    }
+    const equipment = sourceHasEquipmentBreakdown
+        ? sumNumber(equipmentSources.map((item) => finite(item.heat_gain_kw)))
+        : nonNegative(inputs.equipment_heat_gain_kw);
     const margin = nonNegative(inputs.capacity_margin_pct);
-    if (inputs.equipment_heat_gain_kw != null && equipment == null)
+    if (!sourceHasEquipmentBreakdown && inputs.equipment_heat_gain_kw != null && equipment == null)
         reasons.push('Equipment heat gain must be a non-negative finite value.');
-    if (inputs.lighting_power_kw != null && lightingPower == null)
+    if (!sourceHasLightingSchedule && inputs.lighting_power_kw != null && lightingPower == null) {
         reasons.push('Lighting power must be non-negative.');
+    }
     if (margin == null)
         reasons.push('Capacity margin must be a non-negative percentage.');
     if (inputs.water_exchange_enabled) {
@@ -1034,7 +1193,12 @@ function validateCommonInputs(source, inputs, reasons) {
         correlation,
         agitation,
         lightingPower: lightingPower || 0,
+        lightingPowerSource: scheduledLightingPower != null
+            ? 'Design Book exhibit lighting schedule'
+            : 'Thermal input',
         equipment: equipment || 0,
+        equipmentSources,
+        sourceHasEquipmentBreakdown,
         margin: margin || 0,
     };
 }
@@ -1191,12 +1355,14 @@ function calculateCaseLegacy(source, inputs, factors = { surface: 1, evaporation
             circulation_flow_is_reference_only: true,
             operational_water_exchange_flow_m3h: exchangeFlow || 0,
             net_envelope_kw: envelope,
+            equipment_heat_sources: common.equipmentSources,
             net_total_load_kw: total,
             required_cooling_kw: Math.max(0, total),
             steady_state_heating_kw: Math.max(0, -total),
             recovery_heating_kw: recovery,
             total_heating_kw: recovery == null ? null : Math.max(0, -total) + recovery,
             margin_adjusted_cooling_kw: Math.max(0, total) * marginFactor,
+            margin_adjusted_steady_state_heating_kw: Math.max(0, -total) * marginFactor,
             margin_adjusted_heating_kw: recovery == null ? null : (Math.max(0, -total) + recovery) * marginFactor,
         },
         formula_inputs: {
@@ -1211,6 +1377,8 @@ function calculateCaseLegacy(source, inputs, factors = { surface: 1, evaporation
             lighting_power_kw: common.lightingPower,
             lighting_coupling_pct: lightingCoupling,
             equipment_heat_gain_kw: common.equipment,
+            equipment_heat_sources: common.equipmentSources,
+            equipment_heat_basis: common.sourceHasEquipmentBreakdown ? 'source-derived' : 'legacy_manual',
             capacity_margin_pct: common.margin,
             water_exchange_enabled: !!inputs.water_exchange_enabled,
             evaporation_correlation_basis: inputs.agitation_correlation_snapshot || {
@@ -1226,10 +1394,17 @@ function calculateCaseLegacy(source, inputs, factors = { surface: 1, evaporation
         },
     };
 }
-function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, correlation: null }) {
+function calculateCase(source, inputs, factors = {
+    surface: 1,
+    evaporation: 1,
+    correlation: null,
+    water_temperature_c: null,
+    ambient_air_temperature_c: null,
+}) {
     const reasons = [];
     const common = validateCommonInputs(source, inputs, reasons);
-    const waterTemperature = common.water.value;
+    const waterTemperature = factors.water_temperature_c ?? common.water.value;
+    const ambientTemperature = factors.ambient_air_temperature_c ?? common.ambient;
     const volume = sumNumber((source.effective_volume_sources || []).map((item) => finite(item.effective_water_volume_m3)));
     const freeSurface = sumNumber((source.linked_tanks || []).map((tank) => finite(tank.free_surface_area_m2))) * factors.surface;
     const wallArea = sumNumber((source.linked_tanks || []).map((tank) => resolvedWallArea(tank, inputs))) * factors.surface;
@@ -1249,19 +1424,19 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
     if (surfaceTemperature == null)
         reasons.push('Effective Radiant Surroundings Temperature is required.');
     const evaporationCoefficient = positive(correlation?.coefficient_kg_m2_s_kpa);
-    const airHumidityRatio = common.ambient == null || common.humidity == null || common.pressure == null
-        ? null : humidityRatio(common.ambient, common.humidity, common.pressure);
+    const airHumidityRatio = ambientTemperature == null || common.humidity == null || common.pressure == null
+        ? null : humidityRatio(ambientTemperature, common.humidity, common.pressure);
     const waterHumidityRatio = waterTemperature == null || common.pressure == null
         ? null : humidityRatio(waterTemperature, 100, common.pressure);
     const deltaHumidityRatio = airHumidityRatio == null || waterHumidityRatio == null
         ? null : waterHumidityRatio - airHumidityRatio;
-    const deltaVapourPressure = common.ambient == null || waterTemperature == null || common.humidity == null
+    const deltaVapourPressure = ambientTemperature == null || waterTemperature == null || common.humidity == null
         ? null
         : saturationVapourPressureKpa(waterTemperature) -
-            saturationVapourPressureKpa(common.ambient) * common.humidity / 100;
-    const convection = waterTemperature == null || common.ambient == null
+            saturationVapourPressureKpa(ambientTemperature) * common.humidity / 100;
+    const convection = waterTemperature == null || ambientTemperature == null
         ? null : exports.THERMAL_CONSTANTS.convection_coefficient_w_m2_k * freeSurface *
-        (common.ambient - waterTemperature) / 1000;
+        (ambientTemperature - waterTemperature) / 1000;
     const radiation = waterTemperature == null || surfaceTemperature == null
         ? null : exports.THERMAL_CONSTANTS.emissivity * exports.THERMAL_CONSTANTS.stefan_boltzmann_w_m2_k4 *
         freeSurface * (Math.pow(celsiusToKelvin(surfaceTemperature), 4) -
@@ -1271,26 +1446,26 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
         exposed_wall_area_m2: basis.exposed_wall_area_m2 == null
             ? null
             : basis.exposed_wall_area_m2 * factors.surface,
-        wall_conduction_kw: waterTemperature == null || common.ambient == null ||
+        wall_conduction_kw: waterTemperature == null || ambientTemperature == null ||
             basis.u_value_w_m2_k == null || basis.exposed_wall_area_m2 == null
             ? null
             : basis.u_value_w_m2_k * basis.exposed_wall_area_m2 *
-                (common.ambient - waterTemperature) / 1000 * factors.surface,
-        overall_wall_conduction_kw: waterTemperature == null || common.ambient == null ||
+                (ambientTemperature - waterTemperature) / 1000 * factors.surface,
+        overall_wall_conduction_kw: waterTemperature == null || ambientTemperature == null ||
             basis.overall_u_value_w_m2_k == null || basis.exposed_wall_area_m2 == null
             ? null
             : basis.overall_u_value_w_m2_k * basis.exposed_wall_area_m2 *
-                (common.ambient - waterTemperature) / 1000 * factors.surface,
+                (ambientTemperature - waterTemperature) / 1000 * factors.surface,
     }));
     const wallConduction = wallTankBases.length
-        ? (waterTemperature == null || common.ambient == null ||
+        ? (waterTemperature == null || ambientTemperature == null ||
             wallConductionByTank.some(item => item.wall_conduction_kw == null)
             ? null
             : sumNumber(wallConductionByTank.map(item => item.wall_conduction_kw)))
-        : waterTemperature == null || common.ambient == null || uValue == null
-            ? null : uValue * wallArea * (common.ambient - waterTemperature) / 1000;
+        : waterTemperature == null || ambientTemperature == null || uValue == null
+            ? null : uValue * wallArea * (ambientTemperature - waterTemperature) / 1000;
     const overallWallConduction = wallTankBases.length
-        ? (waterTemperature == null || common.ambient == null ||
+        ? (waterTemperature == null || ambientTemperature == null ||
             wallConductionByTank.some(item => item.overall_wall_conduction_kw == null)
             ? null
             : sumNumber(wallConductionByTank.map(item => item.overall_wall_conduction_kw)))
@@ -1409,6 +1584,7 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
             wall_construction_source: wallConstructionBasis.source,
             wall_construction_basis_version: wallConstructionBasis.basis_version,
             water_temperature_c: waterTemperature,
+            ambient_air_temperature_c: ambientTemperature,
             water_temperature_source: common.water.source,
             water_temperature_min_c: waterTemperatureBasis.minimum_c,
             water_temperature_max_c: waterTemperatureBasis.maximum_c,
@@ -1418,16 +1594,18 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
             circulation_flow_is_reference_only: true,
             operational_water_exchange_flow_m3h: exchangeFlow || 0,
             net_envelope_kw: envelope,
+            equipment_heat_sources: common.equipmentSources,
             net_total_load_kw: total,
             required_cooling_kw: Math.max(0, total),
             steady_state_heating_kw: Math.max(0, -total),
             recovery_heating_kw: recovery,
             total_heating_kw: recovery == null ? null : Math.max(0, -total) + recovery,
             margin_adjusted_cooling_kw: Math.max(0, total) * marginFactor,
+            margin_adjusted_steady_state_heating_kw: Math.max(0, -total) * marginFactor,
             margin_adjusted_heating_kw: recovery == null ? null : (Math.max(0, -total) + recovery) * marginFactor,
         },
         formula_inputs: {
-            ambient_air_temperature_c: common.ambient,
+            ambient_air_temperature_c: ambientTemperature,
             relative_humidity_pct: common.humidity,
             surrounding_surface_temperature_c: surfaceTemperature,
             atmospheric_pressure_kpa: common.pressure,
@@ -1438,6 +1616,8 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
             lighting_power_kw: common.lightingPower,
             lighting_coupling_pct: lightingCoupling,
             equipment_heat_gain_kw: common.equipment,
+            equipment_heat_sources: common.equipmentSources,
+            equipment_heat_basis: common.sourceHasEquipmentBreakdown ? 'source-derived' : 'legacy_manual',
             capacity_margin_pct: common.margin,
             water_exchange_enabled: !!inputs.water_exchange_enabled,
             evaporation_correlation_basis: inputs.agitation_correlation_snapshot || {
@@ -1452,15 +1632,6 @@ function calculateCase(source, inputs, factors = { surface: 1, evaporation: 1, c
             wall_construction_basis: wallConstructionBasis,
         },
     };
-}
-function adjacentCases(source, inputs) {
-    const configured = inputs.agitation_correlations || inputs.agitation_correlation;
-    const classes = configured && !Array.isArray(configured)
-        ? Object.keys(configured)
-        : Array.isArray(inputs.adjacent_agitation_classes) ? inputs.adjacent_agitation_classes : [];
-    return classes
-        .filter(value => value !== inputs.agitation_class && correlationFor(inputs, value))
-        .slice(0, 2);
 }
 function calculateThermalCalculation(source, inputs = {}, calculatedAt = new Date().toISOString()) {
     const normalizedInputs = {
@@ -1482,39 +1653,69 @@ function calculateThermalCalculation(source, inputs = {}, calculatedAt = new Dat
     normalizedInputs.water_temperature_basis = base.water_temperature_basis;
     normalizedInputs.wall_construction_basis = base.wall_construction_basis;
     const sensitivityCases = [];
-    for (const factor of [-0.1, 0.1]) {
-        const result = calculateCase(source, normalizedInputs, { surface: 1 + factor, evaporation: 1, correlation: null });
-        sensitivityCases.push({
-            case_key: `surface_${factor < 0 ? 'minus' : 'plus'}_10_pct`,
-            description: `Free-surface and exposed-wall area ${factor < 0 ? '−' : '+'}10%`,
-            results: result.results,
-            status: result.status,
-        });
-    }
-    for (const factor of [-0.15, 0.15]) {
-        const result = calculateCase(source, normalizedInputs, { surface: 1, evaporation: 1 + factor, correlation: null });
-        sensitivityCases.push({
-            case_key: `evaporation_${factor < 0 ? 'minus' : 'plus'}_${Math.abs(factor * 100)}_pct`,
-            description: `Evaporation rate ${factor < 0 ? '−' : '+'}${Math.abs(factor * 100)}%`,
-            results: result.results,
-            status: result.status,
-        });
-    }
-    for (const agitation of adjacentCases(source, normalizedInputs)) {
-        const result = calculateCase(source, normalizedInputs, {
-            surface: 1,
-            evaporation: 1,
-            correlation: correlationFor(normalizedInputs, agitation),
-        });
-        sensitivityCases.push({
-            case_key: `agitation_${agitation}`,
-            description: `Adjacent agitation class: ${agitation}`,
-            results: result.results,
-            status: result.status,
-        });
+    const baseAmbientTemperature = finite(normalizedInputs.ambient_air_temperature_c);
+    const waterRangeMinimum = finite(base.water_temperature_basis.minimum_c);
+    const waterRangeMaximum = finite(base.water_temperature_basis.maximum_c);
+    if (base.status === 'Ready' &&
+        baseAmbientTemperature != null &&
+        waterRangeMinimum != null &&
+        waterRangeMaximum != null) {
+        const scenarios = [
+            {
+                case_key: 'water_range_min',
+                description: `Shared water-range minimum — water ${waterRangeMinimum} °C`,
+                water_temperature_c: waterRangeMinimum,
+                ambient_air_temperature_c: baseAmbientTemperature,
+            },
+            {
+                case_key: 'water_range_max',
+                description: `Shared water-range maximum — water ${waterRangeMaximum} °C`,
+                water_temperature_c: waterRangeMaximum,
+                ambient_air_temperature_c: baseAmbientTemperature,
+            },
+            {
+                case_key: 'ambient_minus_2_c',
+                description: `Ambient −2 °C — ambient ${baseAmbientTemperature - 2} °C`,
+                water_temperature_c: base.results.water_temperature_c,
+                ambient_air_temperature_c: baseAmbientTemperature - 2,
+            },
+            {
+                case_key: 'ambient_plus_2_c',
+                description: `Ambient +2 °C — ambient ${baseAmbientTemperature + 2} °C`,
+                water_temperature_c: base.results.water_temperature_c,
+                ambient_air_temperature_c: baseAmbientTemperature + 2,
+            },
+        ];
+        for (const scenario of scenarios) {
+            const result = calculateCase(source, normalizedInputs, {
+                surface: 1,
+                evaporation: 1,
+                correlation: null,
+                water_temperature_c: scenario.water_temperature_c,
+                ambient_air_temperature_c: scenario.ambient_air_temperature_c,
+            });
+            sensitivityCases.push({
+                case_key: scenario.case_key,
+                description: scenario.description,
+                water_temperature_c: result.results.water_temperature_c,
+                ambient_air_temperature_c: result.results.ambient_air_temperature_c,
+                results: result.results,
+                status: result.status,
+            });
+        }
     }
     const allCases = [
-        { case_key: 'base', description: 'Base calculation', results: base.results, status: base.status },
+        {
+            case_key: 'base',
+            description: base.results.water_temperature_c != null &&
+                base.results.ambient_air_temperature_c != null
+                ? `Base calculation — water ${base.results.water_temperature_c} °C, ambient ${base.results.ambient_air_temperature_c} °C`
+                : 'Base calculation',
+            water_temperature_c: base.results.water_temperature_c,
+            ambient_air_temperature_c: base.results.ambient_air_temperature_c,
+            results: base.results,
+            status: base.status,
+        },
         ...sensitivityCases,
     ];
     const reasonable = allCases.filter(item => item.status === 'Ready').reduce((selected, item) => {
@@ -1551,7 +1752,10 @@ function calculateThermalCalculation(source, inputs = {}, calculatedAt = new Dat
             cases: allCases.map(item => ({
                 case_key: item.case_key,
                 description: item.description,
+                water_temperature_c: item.water_temperature_c,
+                ambient_air_temperature_c: item.ambient_air_temperature_c,
                 margin_adjusted_cooling_kw: item.results.margin_adjusted_cooling_kw,
+                margin_adjusted_steady_state_heating_kw: item.results.margin_adjusted_steady_state_heating_kw,
                 margin_adjusted_heating_kw: item.results.margin_adjusted_heating_kw,
                 status: item.status,
             })),

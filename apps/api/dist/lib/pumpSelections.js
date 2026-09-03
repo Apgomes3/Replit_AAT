@@ -183,7 +183,7 @@ function pumpSourcePayload(circuit, role, effectiveFlow, inputs) {
 /** Flow Route circuits use the Design Book's resolved system flow as input. */
 function pumpCircuits(system, sideStreams) {
     const baseFlow = nullableNumber(system.design_flow_m3h);
-    const resolvedLoops = (0, flowRoute_1.resolveLoopFlows)(system, baseFlow);
+    const resolvedLoops = (0, flowRoute_1.resolveLoopFlows)(system, baseFlow, system.source_flows_m3h || {});
     const loopFlow = (number) => resolvedLoops[number - 1]?.flow_m3h ?? null;
     const flowMode = (number) => resolvedLoops[number - 1]?.flow_mode || 'allocated';
     const activeLoops = [1, 2, 3].filter(n => system[`loop${n}_flow_source`] || system[`loop${n}_filtration`] || system[`loop${n}_flow_pct`] != null ||
@@ -390,6 +390,7 @@ function buildPumpLineItem(circuit, row, role, dutyTypes = exports.DEFAULT_PUMP_
         is_foam_fractionator: isFF,
         ...(isVenturi ? { venturi_flow_m3h: row?.venturi_flow_m3h != null ? Number(row.venturi_flow_m3h) : null } : {}),
         pump_quantity: pumpQuantity,
+        installation_location: row?.installation_location || null,
         effective_flow_m3h: effectiveFlow,
         project_equipment_item_id: row?.project_equipment_item_id || null,
         selected_pump: row?.pump_snapshot || null,

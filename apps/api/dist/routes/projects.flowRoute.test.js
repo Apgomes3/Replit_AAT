@@ -195,18 +195,19 @@ const basePayload = {
     (0, vitest_1.afterAll)(() => {
         delete process.env.JWT_SECRET;
     });
-    (0, vitest_1.it)('rejects active loop allocation totals above 100 percent', async () => {
+    (0, vitest_1.it)('accepts 100 percent allocations for separate source flows', async () => {
         const response = await request(app, {
             ...basePayload,
-            loop1_flow_pct: 60,
+            loop1_flow_source: 'Bottom Drain',
+            loop1_flow_pct: 100,
             loop1_bio_degas_pct: 25,
-            loop2_flow_pct: 50,
+            loop2_flow_source: 'Surface Skim',
+            loop2_filtration: 'Pressurized Bag Filter',
+            loop2_flow_pct: 100,
             loop2_bio_degas_pct: null,
         });
-        (0, vitest_1.expect)(response.status).toBe(400);
-        (0, vitest_1.expect)(response.body.error.code).toBe('FLOW_ALLOCATION_EXCEEDS_100');
-        (0, vitest_1.expect)(response.body.error.message).toContain('110.0%');
-        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(false);
+        (0, vitest_1.expect)(response.status, JSON.stringify(response.body)).toBe(200);
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(true);
     });
     (0, vitest_1.it)('keeps legacy explicit Break Tank allocations allocated and rejects matching another source', async () => {
         const allocated = await request(app, {

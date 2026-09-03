@@ -14,6 +14,26 @@ const pumpSelections_1 = require("./pumpSelections");
             'side_stream:yes',
         ]);
     });
+    (0, vitest_1.it)('uses the resolved source flow for a Sand Filter loop and its side stream', () => {
+        const circuits = (0, pumpSelections_1.pumpCircuits)({
+            ...system,
+            design_flow_m3h: 323.2,
+            loop1_flow_source: 'Bottom Drain',
+            loop1_flow_pct: 100,
+            source_flows_m3h: { 'Bottom Drain': 227 },
+        }, streams);
+        (0, vitest_1.expect)(circuits).toEqual(vitest_1.expect.arrayContaining([
+            vitest_1.expect.objectContaining({
+                circuit_key: 'loop:1',
+                circuit_type: 'Sand Filter',
+                flow_m3h: 227,
+            }),
+            vitest_1.expect.objectContaining({
+                circuit_key: 'side_stream:yes',
+                flow_m3h: 56.75,
+            }),
+        ]));
+    });
     (0, vitest_1.it)('derives FFVP duty from selected fractionator venturi flows and quantities', () => {
         const circuits = (0, pumpSelections_1.pumpCircuits)({
             ...system,
@@ -188,6 +208,19 @@ const pumpSelections_1 = require("./pumpSelections");
         (0, vitest_1.expect)(line.flow_m3h).toBe(224.15);
         (0, vitest_1.expect)(line.effective_flow_m3h).toBeCloseTo(56.0375);
         (0, vitest_1.expect)(line.current_source_fingerprint).not.toBe((0, pumpSelections_1.buildPumpLineItem)(circuit, { ...row, pump_quantity: 2 }, pumpSelections_1.PUMP_ROLE_PRIMARY).current_source_fingerprint);
+    });
+    (0, vitest_1.it)('returns the persisted installation location without changing sizing freshness', () => {
+        const savedRow = {
+            project_equipment_item_id: 'pump-1', pump_snapshot: { id: 'pump-1', power_kw: 15 },
+            design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90,
+            calculation_version: 'pump-selection-v1', installation_location: 'submerged',
+        };
+        const initial = (0, pumpSelections_1.buildPumpLineItem)(circuit, savedRow, pumpSelections_1.PUMP_ROLE_PRIMARY);
+        const line = (0, pumpSelections_1.buildPumpLineItem)(circuit, {
+            ...savedRow, source_fingerprint: initial.current_source_fingerprint,
+        }, pumpSelections_1.PUMP_ROLE_PRIMARY);
+        (0, vitest_1.expect)(line.installation_location).toBe('submerged');
+        (0, vitest_1.expect)(line.freshness).toBe('fresh');
     });
     (0, vitest_1.it)('FFSP unsaved line has status incomplete (no pump selected)', () => {
         const line = (0, pumpSelections_1.buildPumpLineItem)(circuit, null, pumpSelections_1.PUMP_ROLE_PRIMARY);

@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -51,6 +51,7 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'biological-media-profiles', to: '/admin/biological-media-profiles', icon: Activity, label: 'Biological Media Profiles' },
   { id: 'uv-engineering', to: '/admin/uv-engineering', icon: Sun, label: 'UV Engineering Products' },
   { id: 'thermal-wall-constructions', to: '/admin/thermal-wall-constructions', icon: Layers, label: 'Thermal Wall Constructions' },
+  { id: 'evaporation-correlations', to: '/admin/evaporation-correlations', icon: Wind, label: 'Evaporation Correlations' },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
   { id: 'po-stage-roles', to: '/admin/po-stage-roles', icon: GitBranch, label: 'PO Stage Roles' },
   { id: 'roles', to: '/admin/roles', icon: Users, label: 'Roles' },
@@ -214,7 +215,7 @@ function DraggableSection({ section, savedOrder, onOrderChange, collapsed }: {
 }
 
 const ADMIN_GROUPS = [
-  { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families', 'tank-cost-rates', 'system-types', 'pump-duty-types', 'biological-media-profiles', 'uv-engineering', 'thermal-wall-constructions'].includes(i.id)) },
+  { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families', 'tank-cost-rates', 'system-types', 'pump-duty-types', 'biological-media-profiles', 'uv-engineering', 'thermal-wall-constructions', 'evaporation-correlations'].includes(i.id)) },
   { label: 'Documents', items: ADMIN_ITEMS.filter(i => ['document-register'].includes(i.id)) },
   { label: 'Order Management', items: ADMIN_ITEMS.filter(i => ['po-stage-roles'].includes(i.id)) },
   { label: 'System', items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import', 'audit-log'].includes(i.id)) },

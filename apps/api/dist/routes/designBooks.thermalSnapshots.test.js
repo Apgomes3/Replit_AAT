@@ -4,6 +4,70 @@ const vitest_1 = require("vitest");
 const designBooks_1 = require("./designBooks");
 const thermalCalculations_1 = require("../lib/thermalCalculations");
 (0, vitest_1.describe)('thermal calculation snapshot persistence', () => {
+    (0, vitest_1.it)('ignores derived wall provenance labels but catches real wall-area changes', () => {
+        const savedSource = {
+            system_id: 'lss-01',
+            linked_tanks: [{
+                    tank_id: 'custom-1',
+                    shape: 'custom',
+                    exposed_wall_area_m2: 273.6,
+                    exposed_wall_source: 'manual override (custom tank)',
+                    dimensions: {
+                        inner_length_mm: 7600,
+                        inner_width_mm: 7600,
+                        water_height_mm: 9000,
+                    },
+                }],
+        };
+        const currentSource = {
+            ...savedSource,
+            linked_tanks: [{
+                    ...savedSource.linked_tanks[0],
+                    exposed_wall_source: 'rectangular default (custom tank)',
+                }],
+        };
+        (0, vitest_1.expect)(designBooks_1.thermalCalculationTestUtils.thermalNonWallSourceChanged(savedSource, currentSource)).toBe(false);
+        (0, vitest_1.expect)(designBooks_1.thermalCalculationTestUtils.thermalNonWallSourceChanged(savedSource, {
+            ...currentSource,
+            linked_tanks: [{
+                    ...currentSource.linked_tanks[0],
+                    exposed_wall_area_m2: 300,
+                }],
+        })).toBe(true);
+    });
+    (0, vitest_1.it)('classifies governed thickness and layer changes as wall-basis changes', () => {
+        const savedBasis = {
+            construction_type: 'acrylic',
+            basis_version: 'WALL-V1',
+            conductivity_w_m_k: 0.19,
+            thickness_mm: 12,
+        };
+        const currentBasis = {
+            ...savedBasis,
+            thickness_mm: 15,
+        };
+        const savedDefault = {
+            code: 'acrylic',
+            version: 'WALL-V1',
+            conductivity_w_m_k: 0.19,
+            thickness_mm: 12,
+            layers: [{ material: 'Acrylic', thickness_mm: 12, conductivity_w_m_k: 0.19 }],
+        };
+        const currentDefault = {
+            ...savedDefault,
+            thickness_mm: 15,
+            layers: [
+                { material: 'Acrylic', thickness_mm: 12, conductivity_w_m_k: 0.19 },
+                { material: 'Coating', thickness_mm: 3, conductivity_w_m_k: 0.1 },
+            ],
+        };
+        (0, vitest_1.expect)(designBooks_1.thermalCalculationTestUtils.thermalWallBasisChange(savedBasis, currentBasis, [savedDefault], [currentDefault])).toMatchObject({
+            changed: true,
+            changed_fields: vitest_1.expect.arrayContaining(['thickness_mm', 'layers']),
+            saved: savedBasis,
+            current: currentBasis,
+        });
+    });
     (0, vitest_1.it)('persists exact temperature and wall-construction evidence for reloads', async () => {
         const waterTemperatureBasis = {
             source: 'linked exhibit design-temperature range average',
@@ -197,6 +261,8 @@ const thermalCalculations_1 = require("../lib/thermalCalculations");
         };
         const frozenWallEvidence = structuredClone(savedRow.result_snapshot.results.tank_wall_calculations);
         const frozenSourceWallEvidence = structuredClone(savedRow.source_snapshot.linked_tanks[0].wall_construction_basis);
+        const frozenSensitivityEvidence = structuredClone(savedRow.result_snapshot.sensitivity_cases);
+        const frozenSensitivitySummary = structuredClone(savedRow.result_snapshot.sensitivity_summary);
         const loadRunner = vitest_1.vi.fn(async () => ({ rows: [savedRow] }));
         const initiallyFresh = await designBooks_1.thermalCalculationTestUtils.loadThermalCalculations(loadRunner, 'book-thermal-1', [system], links, exhibits, tanks, exhibitCalculations, [approvedWall]);
         (0, vitest_1.expect)(initiallyFresh[0]).toMatchObject({
@@ -207,6 +273,8 @@ const thermalCalculations_1 = require("../lib/thermalCalculations");
                 is_stale: false,
             },
         });
+        (0, vitest_1.expect)(initiallyFresh[0].calculation.sensitivity_cases).toEqual(frozenSensitivityEvidence);
+        (0, vitest_1.expect)(initiallyFresh[0].calculation.sensitivity_summary).toEqual(frozenSensitivitySummary);
         const changedApprovedWall = {
             ...approvedWall,
             conductivity_w_m_k: 0.2,
@@ -244,6 +312,8 @@ const thermalCalculations_1 = require("../lib/thermalCalculations");
         (0, vitest_1.expect)(reloaded[0].calculation.reasons).not.toContain('Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.');
         (0, vitest_1.expect)(reloaded[0].source.fingerprint).not.toBe(savedRow.source_fingerprint);
         (0, vitest_1.expect)(reloaded[0].calculation.results.tank_wall_calculations).toEqual(frozenWallEvidence);
+        (0, vitest_1.expect)(reloaded[0].calculation.sensitivity_cases).toEqual(frozenSensitivityEvidence);
+        (0, vitest_1.expect)(reloaded[0].calculation.sensitivity_summary).toEqual(frozenSensitivitySummary);
         (0, vitest_1.expect)(reloaded[0].saved.result_snapshot.results.tank_wall_calculations).toEqual(frozenWallEvidence);
         (0, vitest_1.expect)(reloaded[0].saved.source_snapshot.linked_tanks[0].wall_construction_basis).toEqual(frozenSourceWallEvidence);
         const changedTanks = tanks.map(tank => ({

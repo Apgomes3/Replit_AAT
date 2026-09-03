@@ -549,8 +549,31 @@ router.get('/exhibits/:id', auth_1.authenticate, async (req, res) => {
     res.json(result.rows[0]);
 });
 router.post('/exhibits', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
-    const { exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity } = req.body;
-    const result = await (0, db_1.query)('INSERT INTO exhibits (exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity]);
+    const { exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity, inherit_from_exhibit_id, } = req.body;
+    let inherited = null;
+    if (inherit_from_exhibit_id) {
+        const source = await (0, db_1.query)(`SELECT water_type, design_temperature_min, design_temperature_max
+       FROM exhibits WHERE id=$1 AND project_id=$2`, [inherit_from_exhibit_id, project_id]);
+        if (!source.rows[0]) {
+            return res.status(400).json({
+                error: {
+                    code: 'INVALID_REFERENCE',
+                    message: 'The selected previous exhibit must belong to this project.',
+                },
+            });
+        }
+        inherited = source.rows[0];
+    }
+    // Inheritance is a one-time copy at creation. An explicitly supplied value,
+    // including null, always wins and no link is retained to the source exhibit.
+    const resolvedWaterType = water_type == null ? inherited?.water_type ?? null : water_type;
+    const resolvedTemperatureMin = design_temperature_min == null
+        ? inherited?.design_temperature_min ?? null
+        : design_temperature_min;
+    const resolvedTemperatureMax = design_temperature_max == null
+        ? inherited?.design_temperature_max ?? null
+        : design_temperature_max;
+    const result = await (0, db_1.query)('INSERT INTO exhibits (exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [exhibit_code, project_id, area_id, exhibit_name, resolvedWaterType, resolvedTemperatureMin, resolvedTemperatureMax, design_salinity]);
     res.status(201).json(result.rows[0]);
 });
 // TANKS
@@ -915,7 +938,7 @@ router.post('/tanks/from-pim', auth_1.authenticate, (0, auth_1.requireRole)('adm
          LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
          WHERE (pm.id::text=$1 OR pm.product_code=$1)
            AND pm.product_category='Tank'
-         FOR SHARE`, [productMasterId]);
+         FOR SHARE OF pm`, [productMasterId]);
         const product = productResult.rows[0];
         if (!product) {
             await client.query('ROLLBACK');
@@ -1880,6 +1903,12 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
             loop2_match_loop_number: resolvedMatchTargets[1],
             loop3_match_loop_number: resolvedMatchTargets[2],
         };
+        const foamFractionationLoops = [1, 2, 3].filter(loopNumber => intendedSystem[`loop${loopNumber}_filtration`] === 'Foam Fractionation');
+        if (foamFractionationLoops.length > 1) {
+            return res.status(400).json({
+                error: { code: 'VALIDATION', message: 'Only one Flow Route loop may use Foam Fractionation.' },
+            });
+        }
         for (const [index, target] of resolvedMatchTargets.entries()) {
             if (target != null && !intendedSystem[`loop${target}_flow_source`] &&
                 !intendedSystem[`loop${target}_filtration`]) {
@@ -1913,19 +1942,6 @@ router.put('/systems/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
         }
         catch (error) {
             return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
-        }
-        const loopAllocationTotal = [
-            [resolvedLoop1FlowPct, resolvedLoop1FlowMode],
-            [resolvedLoop2FlowPct, resolvedLoop2FlowMode],
-            [resolvedLoop3FlowPct, resolvedLoop3FlowMode],
-        ].reduce((sum, [value, mode]) => sum + (mode === 'allocated' ? (value ?? 0) : 0), 0);
-        if (loopAllocationTotal > 100.000001) {
-            return res.status(400).json({
-                error: {
-                    code: 'FLOW_ALLOCATION_EXCEEDS_100',
-                    message: `Active loop allocations total ${loopAllocationTotal.toFixed(1)}%. Reduce them to 100% or less before saving.`,
-                },
-            });
         }
         const intendedWaterType = water_type || currentResult.rows[0].water_type;
         const foamLoops = [1, 2, 3].filter(loopNumber => intendedSystem[`loop${loopNumber}_filtration`] === 'Foam Fractionation');
@@ -2643,8 +2659,8 @@ router.post('/systems/:id/exhibit-links', auth_1.authenticate, (0, auth_1.requir
     if (!exhibit_id)
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id is required' } });
     if (flow_allocation_m3h != null &&
-        (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
-        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be a non-negative number.' } });
+        (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) <= 0)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be greater than zero, or left blank to use calculated exhibit flow.' } });
     }
     try {
         const ownership = await (0, db_1.query)(`SELECT s.project_id AS system_project_id, s.water_type AS system_water_type,
@@ -2689,8 +2705,8 @@ router.put('/systems/:id/exhibit-links/:linkId', auth_1.authenticate, (0, auth_1
         return res.status(409).json({ error: editable.error });
     const { link_type, flow_allocation_m3h, notes } = req.body;
     if (flow_allocation_m3h != null &&
-        (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
-        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be a non-negative number.' } });
+        (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) <= 0)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be greater than zero, or left blank to use calculated exhibit flow.' } });
     }
     const result = await (0, db_1.query)(`UPDATE system_exhibit_links
      SET link_type=$1, flow_allocation_m3h=$2, notes=$3,

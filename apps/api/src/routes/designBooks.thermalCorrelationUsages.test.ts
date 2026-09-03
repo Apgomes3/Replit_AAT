@@ -7,9 +7,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const testSecret = 'thermal-correlation-usage-test-secret';
 const correlationId = '00000000-0000-4000-8000-000000000154';
+const newCorrelationId = '00000000-0000-4000-8000-000000000155';
 
 const state = vi.hoisted(() => ({
   calls: [] as Array<{ sql: string; params: any[] }>,
+  moduleAccess: 'manage',
   usages: [
     {
       design_book_id: 'book-draft',
@@ -51,11 +53,40 @@ vi.mock('../db', () => {
       return { rows: [] };
     }
     if (sql.includes('SELECT rma.access_level')) {
-      return { rows: [{ access_level: 'manage' }] };
+      return { rows: [{ access_level: state.moduleAccess }] };
     }
     if (sql.includes('SELECT id FROM thermal_mass_transfer_correlations') &&
         sql.includes("status='approved'")) {
       return { rows: [{ id: correlationId }] };
+    }
+    if (sql.includes('SELECT * FROM thermal_agitation_classes')) {
+      return {
+        rows: [{
+          id: 'class-1',
+          class_code: 'MODERATE',
+          class_name: 'Moderate',
+          description: 'Moderate circulation',
+        }],
+      };
+    }
+    if (sql.includes('UPDATE thermal_mass_transfer_correlations')) {
+      if (sql.includes('WHERE id=$2')) {
+        return {
+          rows: [{
+            id: correlationId,
+            version: '2026.1',
+            status: 'superseded',
+            superseded_by: 'admin-1',
+          }],
+        };
+      }
+      return { rows: [] };
+    }
+    if (sql.includes('INSERT INTO thermal_mass_transfer_correlations')) {
+      return { rows: [{ id: newCorrelationId }] };
+    }
+    if (sql.includes('INSERT INTO audit_log')) {
+      return { rows: [] };
     }
     if (sql.includes('SELECT id FROM design_books') && sql.includes('FOR SHARE')) {
       return { rows: state.usages.map(usage => ({ id: usage.design_book_id })) };
@@ -105,8 +136,10 @@ function requestUsages(app: Express): Promise<{ status: number; body: any }> {
 
 function request(
   app: Express,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT',
   body?: Record<string, any>,
+  role = 'admin',
+  path = `/api/v1/thermal-correlations/versions/${correlationId}/${method === 'GET' ? 'usages' : 'supersede'}`,
 ): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
     const server = app.listen(0, '127.0.0.1', () => {
@@ -117,13 +150,13 @@ function request(
         return;
       }
       const token = jwt.sign(
-        { id: 'admin-1', email: 'admin@example.com', role: 'admin' },
+        { id: `${role}-1`, email: `${role}@example.com`, role },
         testSecret,
       );
       const req = http.request({
         host: '127.0.0.1',
         port: address.port,
-        path: `/api/v1/thermal-correlations/versions/${correlationId}/${method === 'GET' ? 'usages' : 'supersede'}`,
+        path,
         method,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -188,13 +221,117 @@ describe('thermal correlation captured usage', () => {
     expect(usageQuery?.sql).toContain("db.release_snapshot->'thermal_calculations'");
   });
 
+  it('forbids correlation usage review and supersession for non-admin users', async () => {
+    const usageResponse = await request(app, 'GET', undefined, 'engineer');
+    const supersedeResponse = await request(app, 'POST', {}, 'engineer');
+
+    expect(usageResponse.status).toBe(403);
+    expect(usageResponse.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(supersedeResponse.status).toBe(403);
+    expect(supersedeResponse.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(state.calls.some(call => call.sql.includes("SET status='superseded'"))).toBe(false);
+  });
+
+  it('forbids every correlation governance mutation for non-admin users', async () => {
+    const createClass = await request(
+      app,
+      'POST',
+      { class_code: 'new', class_name: 'New' },
+      'engineer',
+      '/api/v1/thermal-correlations/classes',
+    );
+    const createVersion = await request(
+      app,
+      'POST',
+      { version: '2026.2', coefficient_kg_m2_s_kpa: 0.000001, source_reference: 'ES-42' },
+      'engineer',
+      `/api/v1/thermal-correlations/classes/${correlationId}/versions`,
+    );
+    const updateClass = await request(
+      app,
+      'PUT',
+      { class_code: 'moderate', class_name: 'Moderate' },
+      'engineer',
+      `/api/v1/thermal-correlations/classes/${correlationId}`,
+    );
+
+    expect(createClass.status).toBe(403);
+    expect(createClass.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(createVersion.status).toBe(403);
+    expect(createVersion.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(updateClass.status).toBe(403);
+    expect(updateClass.body.error).toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('allows an admin to approve a replacement after confirming captured usage', async () => {
+    const usageResponse = await requestUsages(app);
+    const response = await request(
+      app,
+      'POST',
+      {
+        version: '2026.2',
+        coefficient_kg_m2_s_kpa: 0.0000012,
+        upper_class_coefficient_kg_m2_s_kpa: 0.0000015,
+        related_agitation_values: { upper: 0.0000015 },
+        source_reference: 'ES-42',
+        impact_token: usageResponse.body.impact_token,
+      },
+      'admin',
+      '/api/v1/thermal-correlations/classes/class-1/versions',
+    );
+
+    expect(response.status).toBe(201);
+    const insert = state.calls.find(call =>
+      call.sql.includes('INSERT INTO thermal_mass_transfer_correlations'));
+    expect(insert?.params).toHaveLength(18);
+    expect(insert?.params[13]).toBe(0.0000015);
+    expect(insert?.params[14]).toBe(JSON.stringify({ upper: 0.0000015 }));
+    expect(insert?.params[17]).toBe('admin-1');
+    expect(state.calls.some(call =>
+      call.sql.includes('UPDATE thermal_mass_transfer_correlations') &&
+      call.sql.includes("status='superseded'"))).toBe(true);
+  });
+
   it('rejects a direct supersede request that did not acknowledge the current usage', async () => {
+    const callStart = state.calls.length;
     const response = await request(app, 'POST', {});
 
     expect(response.status).toBe(409);
     expect(response.body.error).toMatchObject({
       code: 'THERMAL_CORRELATION_IMPACT_CHANGED',
     });
-    expect(state.calls.some(call => call.sql.includes("SET status='superseded'"))).toBe(false);
+    expect(state.calls.slice(callStart).some(call => call.sql.includes("SET status='superseded'"))).toBe(false);
+  });
+
+  it('allows an admin to supersede directly after confirming captured usage', async () => {
+    const usageResponse = await requestUsages(app);
+    const callStart = state.calls.length;
+    const response = await request(app, 'POST', {
+      impact_token: usageResponse.body.impact_token,
+      reason: 'Replaced by validated evidence',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      id: correlationId,
+      status: 'superseded',
+      superseded_by: 'admin-1',
+    });
+    expect(state.calls.slice(callStart).some(call =>
+      call.sql.includes('WHERE id=$2') &&
+      call.sql.includes("SET status='superseded'"))).toBe(true);
+    expect(state.calls.slice(callStart).some(call =>
+      call.sql.includes('INSERT INTO audit_log'))).toBe(true);
+  });
+
+  it('allows platform admins to review correlations when Design Books are hidden', async () => {
+    state.moduleAccess = 'hidden';
+    try {
+      const response = await requestUsages(app);
+      expect(response.status).toBe(200);
+      expect(response.body.correlation).toMatchObject({ id: correlationId });
+    } finally {
+      state.moduleAccess = 'manage';
+    }
   });
 });

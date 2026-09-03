@@ -118,7 +118,7 @@ const aquariumCalculations_1 = require("./aquariumCalculations");
         (0, vitest_1.expect)(result.status).toBe('valid');
     });
     vitest_1.it.each([
-        { flow: null, rate: 20, products: [model('FF-500', 500, 1)], reason: 'Parent loop' },
+        { flow: null, rate: 20, products: [model('FF-500', 500, 1)], reason: 'Required Foam Fractionator flow' },
         { flow: 18, rate: 20, products: [], reason: 'Select at least one' },
         { flow: 18, rate: 20, products: [model('FF-500', null, 1)], reason: 'saved diameter' },
     ])('returns an incomplete result when required inputs are unavailable', ({ flow, rate, products, reason }) => {
@@ -128,6 +128,23 @@ const aquariumCalculations_1 = require("./aquariumCalculations");
     });
 });
 (0, vitest_1.describe)('Foam Fractionator release readiness', () => {
+    const foamLinks = [{ id: 'foam-link', exhibit_id: 'foam-exhibit', link_type: 'Primary' }];
+    const foamExhibitCalculations = [{
+            status: 'valid',
+            is_stale: false,
+            freshness: 'current',
+            inputs: {
+                exhibit_id: 'foam-exhibit',
+                target_turnover_rate_cycles_per_hour: 2,
+                water_type: 'Marine',
+            },
+            results: {
+                total_return_flow_m3h: 100,
+                surface_skim_flow_m3h: 30,
+                bottom_drain_flow_m3h: 70,
+                operating_volume_m3: 50,
+            },
+        }];
     const baseSystem = {
         id: 'system-foam',
         design_flow_m3h: 100,
@@ -139,12 +156,12 @@ const aquariumCalculations_1 = require("./aquariumCalculations");
         loop1_flow_pct: 50,
     };
     (0, vitest_1.it)('makes incomplete Foam Fractionator inputs invalidate the system calculation', () => {
-        const result = (0, aquariumCalculations_1.calculateSystemEngineering)(baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [], [{ parent_loop_number: 1, process_rate_ls_m2: null, products: [] }]);
+        const result = (0, aquariumCalculations_1.calculateSystemEngineering)(baseSystem, foamLinks, foamExhibitCalculations, null, '2026-08-28T00:00:00.000Z', [], [{ parent_loop_number: 1, process_rate_ls_m2: null, products: [] }]);
         (0, vitest_1.expect)(result.status).toBe('invalid');
         (0, vitest_1.expect)(result.reasons.join(' ')).toContain('Foam Fractionator capacity is incomplete');
     });
     (0, vitest_1.it)('makes insufficient Foam Fractionator capacity invalidate the system calculation', () => {
-        const result = (0, aquariumCalculations_1.calculateSystemEngineering)(baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [], [{
+        const result = (0, aquariumCalculations_1.calculateSystemEngineering)(baseSystem, foamLinks, foamExhibitCalculations, null, '2026-08-28T00:00:00.000Z', [], [{
                 parent_loop_number: 1,
                 process_rate_ls_m2: 18,
                 products: [{
@@ -159,7 +176,7 @@ const aquariumCalculations_1 = require("./aquariumCalculations");
         (0, vitest_1.expect)(result.reasons.join(' ')).toContain('required flow is above');
     });
     (0, vitest_1.it)('does not invalidate a system with adequate Foam Fractionator capacity', () => {
-        const result = (0, aquariumCalculations_1.calculateSystemEngineering)(baseSystem, [], [], null, '2026-08-28T00:00:00.000Z', [], [{
+        const result = (0, aquariumCalculations_1.calculateSystemEngineering)(baseSystem, foamLinks, foamExhibitCalculations, null, '2026-08-28T00:00:00.000Z', [], [{
                 parent_loop_number: 1,
                 process_rate_ls_m2: 20,
                 products: [{
@@ -172,6 +189,15 @@ const aquariumCalculations_1 = require("./aquariumCalculations");
             }]);
         (0, vitest_1.expect)(result.flow_route.loops[0].foam_fractionation.match_status).toBe('capacity_above_required');
         (0, vitest_1.expect)(result.reasons.some(reason => reason.includes('Foam Fractionator'))).toBe(false);
+    });
+    (0, vitest_1.it)('rejects more than one Foam Fractionation loop', () => {
+        const result = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            ...baseSystem,
+            loop2_filtration: 'Foam Fractionation',
+            loop2_flow_pct: 50,
+        }, foamLinks, foamExhibitCalculations, null);
+        (0, vitest_1.expect)(result.status).toBe('invalid');
+        (0, vitest_1.expect)(result.reasons).toContain('Only one Flow Route loop may use Foam Fractionation.');
     });
 });
 (0, vitest_1.describe)('matched Flow Route loops', () => {
@@ -386,15 +412,36 @@ const tank = {
             allocated_flow_m3h: 320.221,
         });
         (0, vitest_1.expect)(system.flow_route.loops[0].foam_fractionation).toMatchObject({
-            match_status: 'matched',
+            match_status: 'capacity_above_required',
+            share_of_total_allocated_flow_pct: 42.86,
             inputs: {
-                parent_loop_flow_m3h: 224.155,
+                parent_loop_flow_m3h: 96.066,
             },
             results: {
                 capacity_m3h: 224.357,
             },
         });
         (0, vitest_1.expect)(system.reasons).toEqual([]);
+    });
+    (0, vitest_1.it)('reports Sand Filter flow as a share of all allocated loop flow', () => {
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sand-share-system',
+            design_flow_m3h: 100,
+            calculation_inputs: { design_flow_source: 'manual_override' },
+            loop1_flow_source: 'Exhibit return',
+            loop1_filtration: 'Sand Filter',
+            loop1_flow_pct: 60,
+            loop2_flow_source: 'Exhibit return',
+            loop2_filtration: 'Pressurized Bag Filter',
+            loop2_flow_pct: 40,
+        }, [], [], null);
+        (0, vitest_1.expect)(system.flow_route).toMatchObject({
+            allocated_flow_m3h: 100,
+            allocation_total_pct: 100,
+        });
+        (0, vitest_1.expect)(system.flow_route.loops[0].sand_filter).toMatchObject({
+            share_of_total_allocated_flow_pct: 60,
+        });
     });
     (0, vitest_1.it)('falls back to stored operating volume for a standard tank without dimensions', () => {
         const calculated = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [{ id: 'legacy', eff_shape: 'rectangular', operating_volume_m3: 12.5 }], { target_turnover_rate: 3, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
@@ -523,7 +570,7 @@ const tank = {
         (0, vitest_1.expect)(system.results.design_flow_m3h).toBe(75);
         (0, vitest_1.expect)(system.results.flow_override_m3h).toBe(75);
     });
-    (0, vitest_1.it)('requires exactly one primary link before deriving system turnover', () => {
+    (0, vitest_1.it)('keeps system flow valid while leaving turnover unavailable for ambiguous primary links', () => {
         const first = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
         const second = (0, aquariumCalculations_1.calculateExhibitHydraulics)({ ...exhibit, id: 'ex-2' }, [{ ...tank, id: 'tank-2' }], { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
         const calculate = (linkType) => (0, aquariumCalculations_1.calculateSystemEngineering)({
@@ -537,13 +584,34 @@ const tank = {
             { id: 'link-2', exhibit_id: 'ex-2', link_type: linkType },
         ], [first, second], null);
         const noPrimary = calculate('Secondary');
-        (0, vitest_1.expect)(noPrimary.status).toBe('invalid');
+        (0, vitest_1.expect)(noPrimary.status).toBe('valid');
         (0, vitest_1.expect)(noPrimary.results.turnover_rate_cycles_per_hour).toBeNull();
-        (0, vitest_1.expect)(noPrimary.reasons.join(' ')).toContain('Exactly one Primary');
+        (0, vitest_1.expect)(noPrimary.results.turnover_unavailable_reason).toContain('Exactly one Primary');
+        (0, vitest_1.expect)(noPrimary.reasons).toEqual([]);
         const multiplePrimary = calculate('Primary');
-        (0, vitest_1.expect)(multiplePrimary.status).toBe('invalid');
+        (0, vitest_1.expect)(multiplePrimary.status).toBe('valid');
         (0, vitest_1.expect)(multiplePrimary.results.turnover_rate_cycles_per_hour).toBeNull();
-        (0, vitest_1.expect)(multiplePrimary.reasons.join(' ')).toContain('Multiple Primary');
+        (0, vitest_1.expect)(multiplePrimary.results.turnover_unavailable_reason).toContain('Multiple Primary');
+        (0, vitest_1.expect)(multiplePrimary.reasons).toEqual([]);
+    });
+    (0, vitest_1.it)('treats legacy zero allocations as calculated flow instead of invalid overrides', () => {
+        const first = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);
+        const system = (0, aquariumCalculations_1.calculateSystemEngineering)({
+            id: 'sys-legacy-zero-allocation',
+            calculation_inputs: {
+                design_flow_source: 'linked_exhibits',
+                turnover_source: 'primary_exhibit',
+            },
+        }, [{
+                id: 'link-1',
+                exhibit_id: exhibit.id,
+                link_type: 'Primary',
+                flow_allocation_m3h: 0,
+                allocation_source: 'manual_override',
+            }], [first], null);
+        (0, vitest_1.expect)(system.status).toBe('valid');
+        (0, vitest_1.expect)(system.results.allocated_flow_m3h).toBe(system.results.calculated_required_flow_m3h);
+        (0, vitest_1.expect)(system.allocations[0].allocation_source).toBe('calculated');
     });
     (0, vitest_1.it)('sums current linked exhibit flows without splitting the system design flow', () => {
         const first = (0, aquariumCalculations_1.calculateExhibitHydraulics)({ id: 'ex-1', water_type: 'Marine' }, [{ ...tank, id: 'tank-1' }], { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 }, { substrate_volume_m3: 2 });
@@ -552,6 +620,8 @@ const tank = {
             id: 'sys-linked',
             design_flow_m3h: 999,
             turnover_rate_hr: 9,
+            loop1_flow_source: 'Surface Skim',
+            loop1_flow_pct: 50,
             calculation_inputs: {
                 design_flow_source: 'linked_exhibits',
                 turnover_source: 'primary_exhibit',
@@ -566,6 +636,8 @@ const tank = {
         (0, vitest_1.expect)(system.results.design_flow_m3h).toBe(60.8);
         (0, vitest_1.expect)(system.results.turnover_rate_cycles_per_hour).toBe(2);
         (0, vitest_1.expect)(system.results.flow_override_m3h).toBeNull();
+        (0, vitest_1.expect)(system.inputs.source_flows_m3h['Surface Skim']).toBe(18.24);
+        (0, vitest_1.expect)(system.flow_route.loops[0].flow_m3h).toBe(9.12);
     });
     (0, vitest_1.it)('reports linked system flow as unavailable when any exhibit hydraulics are incomplete', () => {
         const valid = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, [tank], { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 }, null);

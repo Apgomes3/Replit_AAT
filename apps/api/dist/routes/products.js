@@ -869,6 +869,21 @@ router.post('/product-masters/:id/duplicate', auth_1.authenticate, (0, auth_1.re
            FROM product_pneumatic
            WHERE product_master_id=$2`, [result.rows[0].id, req.params.id]);
             }
+            if (String(src.product_category || '').toLowerCase() === 'thermal') {
+                await client.query(`INSERT INTO product_thermal
+             (product_master_id, thermal_capacity_kw, thermal_capacity_unit, thermal_duty, fluid_type,
+              operating_temperature_min_c, operating_temperature_max_c, design_temperature_c,
+              flow_rate_m3h, pressure_rating_bar, efficiency_pct,
+              primary_inlet_dn_mm, primary_outlet_dn_mm, secondary_inlet_dn_mm, secondary_outlet_dn_mm,
+              flow_switch_status, notes, updated_at)
+           SELECT $1::uuid, thermal_capacity_kw, thermal_capacity_unit, thermal_duty, fluid_type,
+                  operating_temperature_min_c, operating_temperature_max_c, design_temperature_c,
+                  flow_rate_m3h, pressure_rating_bar, efficiency_pct,
+                  primary_inlet_dn_mm, primary_outlet_dn_mm, secondary_inlet_dn_mm, secondary_outlet_dn_mm,
+                  flow_switch_status, notes, NOW()
+           FROM product_thermal
+           WHERE product_master_id=$2`, [result.rows[0].id, req.params.id]);
+            }
             if (applyAatFrictionDefault) {
                 await client.query(`INSERT INTO product_hydraulic_catalog_defaults (product_master_id, default_key)
            VALUES ($1,$2)
@@ -1230,7 +1245,7 @@ router.delete('/family-classifiers/:id', auth_1.authenticate, async (req, res) =
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Classifier not found' } });
     res.json({ deleted: true });
 });
-// PRODUCT SPEC TABLES (dimensions, electrical, hydraulic, pneumatic)
+// PRODUCT SPEC TABLES (dimensions, electrical, hydraulic, pneumatic, thermal)
 const resolveProductId = async (param) => {
     const r = await (0, db_1.query)('SELECT id FROM product_masters WHERE id::text=$1 OR product_code=$1', [param]);
     return r.rows[0]?.id ?? null;
@@ -1393,6 +1408,176 @@ router.get('/product-masters/:id/pneumatic', auth_1.authenticate, async (req, re
         }
         const r = await (0, db_1.query)('SELECT * FROM product_pneumatic WHERE product_master_id=$1', [pid]);
         res.json(r.rows[0] || {});
+    }
+    catch (error) {
+        next(error);
+    }
+});
+const THERMAL_FLOW_SWITCH_STATUSES = new Set(['included', 'optional', 'not_included']);
+const THERMAL_CAPACITY_UNITS = new Set(['kW', 'BTU/h', 'TON']);
+const thermalNumericFields = [
+    'thermal_capacity_kw',
+    'operating_temperature_min_c',
+    'operating_temperature_max_c',
+    'design_temperature_c',
+    'flow_rate_m3h',
+    'pressure_rating_bar',
+    'efficiency_pct',
+    'primary_inlet_dn_mm',
+    'primary_outlet_dn_mm',
+    'secondary_inlet_dn_mm',
+    'secondary_outlet_dn_mm',
+];
+const nullableThermalValue = (value) => value === null || value === undefined || (typeof value === 'string' && value.trim() === '') ? null : value;
+router.get('/product-masters/:id/thermal', auth_1.authenticate, async (req, res, next) => {
+    try {
+        const pid = await resolveProductId(String(req.params.id));
+        if (!pid)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+        const productResult = await (0, db_1.query)('SELECT product_category FROM product_masters WHERE id=$1', [pid]);
+        if (String(productResult.rows[0]?.product_category || '').toLowerCase() !== 'thermal') {
+            return res.status(400).json({
+                error: { code: 'INVALID_PRODUCT_CATEGORY', message: 'Thermal specifications are only available for products in the Thermal category' },
+            });
+        }
+        const r = await (0, db_1.query)('SELECT * FROM product_thermal WHERE product_master_id=$1', [pid]);
+        res.json(r.rows[0] || {});
+    }
+    catch (error) {
+        next(error);
+    }
+});
+router.put('/product-masters/:id/thermal', auth_1.authenticate, (0, auth_1.requireModuleManage)('pim'), async (req, res, next) => {
+    try {
+        const pid = await resolveProductId(String(req.params.id));
+        if (!pid)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+        const body = req.body || {};
+        const saved = await withProductTransaction(async (client) => {
+            const productResult = await client.query('SELECT product_category FROM product_masters WHERE id=$1 FOR UPDATE', [pid]);
+            if (!productResult.rows[0]) {
+                const error = new Error('Product not found');
+                error.status = 404;
+                error.code = 'NOT_FOUND';
+                throw error;
+            }
+            if (String(productResult.rows[0].product_category || '').toLowerCase() !== 'thermal') {
+                const error = new Error('Thermal specifications are only available for products in the Thermal category');
+                error.status = 400;
+                error.code = 'INVALID_PRODUCT_CATEGORY';
+                throw error;
+            }
+            const existingResult = await client.query('SELECT * FROM product_thermal WHERE product_master_id=$1 FOR UPDATE', [pid]);
+            const current = existingResult.rows[0] || {};
+            const values = {};
+            for (const field of thermalNumericFields) {
+                const raw = Object.prototype.hasOwnProperty.call(body, field) ? body[field] : current[field] ?? null;
+                const value = nullableThermalValue(raw);
+                if (value === null) {
+                    values[field] = null;
+                    continue;
+                }
+                const parsed = Number(value);
+                if (!Number.isFinite(parsed)) {
+                    const error = new Error(`${field} must be a finite number or blank`);
+                    error.status = 400;
+                    error.code = 'INVALID_THERMAL_SPEC';
+                    throw error;
+                }
+                values[field] = parsed;
+            }
+            if (values.thermal_capacity_kw !== null && Number(values.thermal_capacity_kw) < 0) {
+                const error = new Error('Thermal capacity must be non-negative');
+                error.status = 400;
+                error.code = 'INVALID_THERMAL_SPEC';
+                throw error;
+            }
+            if (values.flow_rate_m3h !== null && Number(values.flow_rate_m3h) < 0) {
+                const error = new Error('Flow rate must be non-negative');
+                error.status = 400;
+                error.code = 'INVALID_THERMAL_SPEC';
+                throw error;
+            }
+            if (values.pressure_rating_bar !== null && Number(values.pressure_rating_bar) < 0) {
+                const error = new Error('Pressure rating must be non-negative');
+                error.status = 400;
+                error.code = 'INVALID_THERMAL_SPEC';
+                throw error;
+            }
+            if (values.efficiency_pct !== null && (Number(values.efficiency_pct) < 0 || Number(values.efficiency_pct) > 100)) {
+                const error = new Error('Efficiency must be between 0 and 100 percent');
+                error.status = 400;
+                error.code = 'INVALID_THERMAL_SPEC';
+                throw error;
+            }
+            for (const field of ['primary_inlet_dn_mm', 'primary_outlet_dn_mm', 'secondary_inlet_dn_mm', 'secondary_outlet_dn_mm']) {
+                if (values[field] !== null && Number(values[field]) <= 0) {
+                    const error = new Error(`${field} must be a positive number`);
+                    error.status = 400;
+                    error.code = 'INVALID_THERMAL_SPEC';
+                    throw error;
+                }
+            }
+            if (values.operating_temperature_min_c !== null && values.operating_temperature_max_c !== null
+                && Number(values.operating_temperature_min_c) > Number(values.operating_temperature_max_c)) {
+                const error = new Error('Minimum operating temperature cannot exceed maximum operating temperature');
+                error.status = 400;
+                error.code = 'INVALID_THERMAL_SPEC';
+                throw error;
+            }
+            const flowSwitch = Object.prototype.hasOwnProperty.call(body, 'flow_switch_status')
+                ? nullableThermalValue(body.flow_switch_status)
+                : current.flow_switch_status ?? null;
+            if (flowSwitch !== null && !THERMAL_FLOW_SWITCH_STATUSES.has(String(flowSwitch))) {
+                const error = new Error('Flow switch status must be Included, Optional, or Not included');
+                error.status = 400;
+                error.code = 'INVALID_THERMAL_SPEC';
+                throw error;
+            }
+            const thermalCapacityUnit = String(Object.prototype.hasOwnProperty.call(body, 'thermal_capacity_unit')
+                ? body.thermal_capacity_unit || 'kW'
+                : current.thermal_capacity_unit || 'kW');
+            if (!THERMAL_CAPACITY_UNITS.has(thermalCapacityUnit)) {
+                const error = new Error('Thermal capacity unit must be kW, BTU/h, or TON');
+                error.status = 400;
+                error.code = 'INVALID_THERMAL_SPEC';
+                throw error;
+            }
+            const textValue = (field) => Object.prototype.hasOwnProperty.call(body, field)
+                ? nullableThermalValue(body[field])
+                : current[field] ?? null;
+            const r = await client.query(`INSERT INTO product_thermal
+           (product_master_id, thermal_capacity_kw, thermal_capacity_unit, thermal_duty, fluid_type,
+            operating_temperature_min_c, operating_temperature_max_c, design_temperature_c,
+            flow_rate_m3h, pressure_rating_bar, efficiency_pct,
+            primary_inlet_dn_mm, primary_outlet_dn_mm, secondary_inlet_dn_mm, secondary_outlet_dn_mm,
+            flow_switch_status, notes, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
+         ON CONFLICT (product_master_id) DO UPDATE SET
+           thermal_capacity_kw=$2, thermal_capacity_unit=$3, thermal_duty=$4, fluid_type=$5,
+           operating_temperature_min_c=$6, operating_temperature_max_c=$7, design_temperature_c=$8,
+           flow_rate_m3h=$9, pressure_rating_bar=$10, efficiency_pct=$11,
+           primary_inlet_dn_mm=$12, primary_outlet_dn_mm=$13, secondary_inlet_dn_mm=$14, secondary_outlet_dn_mm=$15,
+           flow_switch_status=$16, notes=$17, updated_at=NOW()
+         RETURNING *`, [pid, values.thermal_capacity_kw, thermalCapacityUnit, textValue('thermal_duty'), textValue('fluid_type'),
+                values.operating_temperature_min_c, values.operating_temperature_max_c, values.design_temperature_c,
+                values.flow_rate_m3h, values.pressure_rating_bar, values.efficiency_pct,
+                values.primary_inlet_dn_mm, values.primary_outlet_dn_mm, values.secondary_inlet_dn_mm, values.secondary_outlet_dn_mm,
+                flowSwitch, textValue('notes')]);
+            if (!r.rows[0]) {
+                const error = new Error('The server did not return the saved thermal specifications');
+                error.status = 500;
+                error.code = 'THERMAL_SAVE_FAILED';
+                throw error;
+            }
+            await insertAuditTx(client, req.user.id, 'product', pid, 'THERMAL_SPECIFICATION_UPDATE', {
+                summary: 'Thermal specifications updated',
+                before: current,
+                after: r.rows[0],
+            });
+            return r.rows[0];
+        });
+        res.json(saved);
     }
     catch (error) {
         next(error);

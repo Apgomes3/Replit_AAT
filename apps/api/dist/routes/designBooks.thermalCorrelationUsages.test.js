@@ -43,6 +43,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const vitest_1 = require("vitest");
 const testSecret = 'thermal-correlation-usage-test-secret';
 const correlationId = '00000000-0000-4000-8000-000000000154';
+const newCorrelationId = '00000000-0000-4000-8000-000000000155';
 const state = vitest_1.vi.hoisted(() => ({
     calls: [],
     usages: [
@@ -91,6 +92,35 @@ vitest_1.vi.mock('../db', () => {
             sql.includes("status='approved'")) {
             return { rows: [{ id: correlationId }] };
         }
+        if (sql.includes('SELECT * FROM thermal_agitation_classes')) {
+            return {
+                rows: [{
+                        id: 'class-1',
+                        class_code: 'MODERATE',
+                        class_name: 'Moderate',
+                        description: 'Moderate circulation',
+                    }],
+            };
+        }
+        if (sql.includes('UPDATE thermal_mass_transfer_correlations')) {
+            if (sql.includes('WHERE id=$2')) {
+                return {
+                    rows: [{
+                            id: correlationId,
+                            version: '2026.1',
+                            status: 'superseded',
+                            superseded_by: 'admin-1',
+                        }],
+                };
+            }
+            return { rows: [] };
+        }
+        if (sql.includes('INSERT INTO thermal_mass_transfer_correlations')) {
+            return { rows: [{ id: newCorrelationId }] };
+        }
+        if (sql.includes('INSERT INTO audit_log')) {
+            return { rows: [] };
+        }
         if (sql.includes('SELECT id FROM design_books') && sql.includes('FOR SHARE')) {
             return { rows: state.usages.map(usage => ({ id: usage.design_book_id })) };
         }
@@ -135,7 +165,7 @@ vitest_1.vi.mock('../db', () => {
 function requestUsages(app) {
     return request(app, 'GET');
 }
-function request(app, method, body) {
+function request(app, method, body, role = 'admin', path = `/api/v1/thermal-correlations/versions/${correlationId}/${method === 'GET' ? 'usages' : 'supersede'}`) {
     return new Promise((resolve, reject) => {
         const server = app.listen(0, '127.0.0.1', () => {
             const address = server.address();
@@ -144,11 +174,11 @@ function request(app, method, body) {
                 reject(new Error('Could not determine test server port'));
                 return;
             }
-            const token = jsonwebtoken_1.default.sign({ id: 'admin-1', email: 'admin@example.com', role: 'admin' }, testSecret);
+            const token = jsonwebtoken_1.default.sign({ id: `${role}-1`, email: `${role}@example.com`, role }, testSecret);
             const req = node_http_1.default.request({
                 host: '127.0.0.1',
                 port: address.port,
-                path: `/api/v1/thermal-correlations/versions/${correlationId}/${method === 'GET' ? 'usages' : 'supersede'}`,
+                path,
                 method,
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -207,12 +237,69 @@ function request(app, method, body) {
         (0, vitest_1.expect)(usageQuery?.sql).toContain("db.review_snapshot->'thermal_calculations'");
         (0, vitest_1.expect)(usageQuery?.sql).toContain("db.release_snapshot->'thermal_calculations'");
     });
+    (0, vitest_1.it)('forbids correlation usage review and supersession for non-admin users', async () => {
+        const usageResponse = await request(app, 'GET', undefined, 'engineer');
+        const supersedeResponse = await request(app, 'POST', {}, 'engineer');
+        (0, vitest_1.expect)(usageResponse.status).toBe(403);
+        (0, vitest_1.expect)(usageResponse.body.error).toMatchObject({ code: 'FORBIDDEN' });
+        (0, vitest_1.expect)(supersedeResponse.status).toBe(403);
+        (0, vitest_1.expect)(supersedeResponse.body.error).toMatchObject({ code: 'FORBIDDEN' });
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='superseded'"))).toBe(false);
+    });
+    (0, vitest_1.it)('forbids every correlation governance mutation for non-admin users', async () => {
+        const createClass = await request(app, 'POST', { class_code: 'new', class_name: 'New' }, 'engineer', '/api/v1/thermal-correlations/classes');
+        const createVersion = await request(app, 'POST', { version: '2026.2', coefficient_kg_m2_s_kpa: 0.000001, source_reference: 'ES-42' }, 'engineer', `/api/v1/thermal-correlations/classes/${correlationId}/versions`);
+        const updateClass = await request(app, 'PUT', { class_code: 'moderate', class_name: 'Moderate' }, 'engineer', `/api/v1/thermal-correlations/classes/${correlationId}`);
+        (0, vitest_1.expect)(createClass.status).toBe(403);
+        (0, vitest_1.expect)(createClass.body.error).toMatchObject({ code: 'FORBIDDEN' });
+        (0, vitest_1.expect)(createVersion.status).toBe(403);
+        (0, vitest_1.expect)(createVersion.body.error).toMatchObject({ code: 'FORBIDDEN' });
+        (0, vitest_1.expect)(updateClass.status).toBe(403);
+        (0, vitest_1.expect)(updateClass.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    });
+    (0, vitest_1.it)('allows an admin to approve a replacement after confirming captured usage', async () => {
+        const usageResponse = await requestUsages(app);
+        const response = await request(app, 'POST', {
+            version: '2026.2',
+            coefficient_kg_m2_s_kpa: 0.0000012,
+            upper_class_coefficient_kg_m2_s_kpa: 0.0000015,
+            related_agitation_values: { upper: 0.0000015 },
+            source_reference: 'ES-42',
+            impact_token: usageResponse.body.impact_token,
+        }, 'admin', '/api/v1/thermal-correlations/classes/class-1/versions');
+        (0, vitest_1.expect)(response.status).toBe(201);
+        const insert = state.calls.find(call => call.sql.includes('INSERT INTO thermal_mass_transfer_correlations'));
+        (0, vitest_1.expect)(insert?.params).toHaveLength(18);
+        (0, vitest_1.expect)(insert?.params[13]).toBe(0.0000015);
+        (0, vitest_1.expect)(insert?.params[14]).toBe(JSON.stringify({ upper: 0.0000015 }));
+        (0, vitest_1.expect)(insert?.params[17]).toBe('admin-1');
+        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes('UPDATE thermal_mass_transfer_correlations') &&
+            call.sql.includes("status='superseded'"))).toBe(true);
+    });
     (0, vitest_1.it)('rejects a direct supersede request that did not acknowledge the current usage', async () => {
+        const callStart = state.calls.length;
         const response = await request(app, 'POST', {});
         (0, vitest_1.expect)(response.status).toBe(409);
         (0, vitest_1.expect)(response.body.error).toMatchObject({
             code: 'THERMAL_CORRELATION_IMPACT_CHANGED',
         });
-        (0, vitest_1.expect)(state.calls.some(call => call.sql.includes("SET status='superseded'"))).toBe(false);
+        (0, vitest_1.expect)(state.calls.slice(callStart).some(call => call.sql.includes("SET status='superseded'"))).toBe(false);
+    });
+    (0, vitest_1.it)('allows an admin to supersede directly after confirming captured usage', async () => {
+        const usageResponse = await requestUsages(app);
+        const callStart = state.calls.length;
+        const response = await request(app, 'POST', {
+            impact_token: usageResponse.body.impact_token,
+            reason: 'Replaced by validated evidence',
+        });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(response.body).toMatchObject({
+            id: correlationId,
+            status: 'superseded',
+            superseded_by: 'admin-1',
+        });
+        (0, vitest_1.expect)(state.calls.slice(callStart).some(call => call.sql.includes('WHERE id=$2') &&
+            call.sql.includes("SET status='superseded'"))).toBe(true);
+        (0, vitest_1.expect)(state.calls.slice(callStart).some(call => call.sql.includes('INSERT INTO audit_log'))).toBe(true);
     });
 });
