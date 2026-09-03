@@ -15,6 +15,7 @@ import {
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
   ThermalNumericField,
+  SurfaceActivityGuidance,
 } from './DesignBookDetail';
 
 describe('Design Book Life Support Systems list', () => {
@@ -287,6 +288,25 @@ describe('Design Book Thermal numeric fields', () => {
     expect(screen.getByRole('spinbutton', { name: 'Ambient air temperature' })).toBe(input);
     expect(input).toHaveValue('123.45');
     expect(input).toHaveFocus();
+  });
+});
+
+describe('Surface-activity guidance', () => {
+  it('keeps the guidance collapsed until the details link is clicked', async () => {
+    const user = userEvent.setup();
+    render(createElement(SurfaceActivityGuidance, {
+      selectedAgitationClass: {
+        description: 'Typical operating circulation with ordinary surface movement.',
+        guidance: 'Choose for normal filtration circulation without sustained aeration.',
+      },
+    }));
+
+    expect(screen.queryByText('Typical operating circulation with ordinary surface movement.')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'See more details' }));
+
+    expect(screen.getByText('Typical operating circulation with ordinary surface movement.')).toBeInTheDocument();
+    expect(screen.getByText('Choose for normal filtration circulation without sustained aeration.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true');
   });
 });
 

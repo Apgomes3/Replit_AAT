@@ -2480,6 +2480,43 @@ export function ThermalWallConstructionLibrary({
   );
 }
 
+export function SurfaceActivityGuidance({
+  selectedAgitationClass,
+}: {
+  selectedAgitationClass?: {
+    description?: string;
+    guidance?: string;
+  } | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (!selectedAgitationClass) return null;
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        className="text-xs font-medium text-[#9d5637] underline underline-offset-2 hover:text-[#7d442f]"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(current => !current)}
+      >
+        {expanded ? 'Hide details' : 'See more details'}
+      </button>
+      {expanded && (
+        <div className="mt-2 rounded-md border border-[#c7d8df] bg-[#f7faf9] px-3 py-2">
+          <p className="text-sm font-medium text-[#263746]">
+            {selectedAgitationClass.description ||
+              'Select the category that best describes movement at the water surface.'}
+          </p>
+          <p className="mt-1 text-xs text-[#718894]">
+            {selectedAgitationClass.guidance ||
+              'These categories describe surface activity and air/water movement—not biological species or tank construction.'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ThermalTab({
   book,
   readOnly,
@@ -3299,18 +3336,11 @@ function ThermalTab({
                     <option key={item.id} value={item.class_code}>{item.class_name}</option>
                   ))}
                 </select>
+                <SurfaceActivityGuidance
+                  key={form.agitation_class || 'no-surface-activity'}
+                  selectedAgitationClass={selectedAgitationClass}
+                />
               </label>
-              <div className="rounded-lg border border-[#c7d8df] bg-[#edf3f4] px-3 py-2 sm:col-span-2">
-                <span className="block text-xs font-semibold uppercase tracking-wide text-[#456b7d]">Surface-activity guidance</span>
-                <p className="mt-1 text-sm font-medium text-[#263746]">
-                  {selectedAgitationClass?.description ||
-                    'Select the category that best describes movement at the water surface.'}
-                </p>
-                <p className="mt-1 text-xs text-[#718894]">
-                  {selectedAgitationClass?.guidance ||
-                    'These categories describe surface activity and air/water movement—not biological species or tank construction.'}
-                </p>
-              </div>
               <label>
                 <span className={labelClass}>Mass-transfer coefficient (kg/m²·s·kPa){form.agitation_correlation_deviation && ' · Override'}</span>
                 <input aria-label="Mass-transfer coefficient" type="number" min="0" step="any"
