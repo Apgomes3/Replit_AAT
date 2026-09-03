@@ -4398,6 +4398,20 @@ function ThermalTab({
   const selectedWallTankBasis = displayedTankWallBases.find(
     (basis: any) => basis.tank_id === selectedWallTankId,
   ) || displayedTankWallBases[0] || null;
+  const wallExhibitTabs = displayedTankWallBases.filter((basis: any, index: number, all: any[]) => {
+    const exhibitKey = basis.exhibit_id || basis.exhibit_code || 'unassigned';
+    return all.findIndex(candidate =>
+      (candidate.exhibit_id || candidate.exhibit_code || 'unassigned') === exhibitKey) === index;
+  });
+  const selectedWallExhibitKey = selectedWallTankBasis?.exhibit_id ||
+    selectedWallTankBasis?.exhibit_code ||
+    'unassigned';
+  const selectedExhibitTemperatureSources = (selected?.source?.water_temperature_sources || [])
+    .filter((source: any) =>
+      (source.exhibit_id || source.exhibit_code || 'unassigned') === selectedWallExhibitKey);
+  const selectedExhibitTanks = (selected?.source?.linked_tanks || [])
+    .filter((tank: any) =>
+      (tank.exhibit_id || tank.exhibit_code || 'unassigned') === selectedWallExhibitKey);
   const selectedConstructionDefault = normalizeThermalWallConstruction(
     form.tank_wall_default_basis ||
     constructionDefaults.find(item => item.code === form.tank_construction_type) ||
@@ -4660,8 +4674,40 @@ function ThermalTab({
           </div>
           <ThermalWallBasisChangeNotice change={wallBasisChange} />
 
-          <section>
-            <h3 className="mb-3 font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">01</span>Linked source and geometry</h3>
+          <div className="flex flex-col gap-6">
+          <section className="order-2">
+            <h3 className="mb-3 font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">02</span>Linked source and geometry</h3>
+            {displayedTankWallBases.length > 0 && (
+              <div
+                role="tablist"
+                aria-label="Linked exhibits"
+                className="mb-3 flex gap-2 overflow-x-auto border-b border-[#d8e3e7] pb-1"
+              >
+                {wallExhibitTabs.map((basis: any, index: number) => {
+                  const tankId = basis.tank_id || `${basis.exhibit_id || 'exhibit'}-${index}`;
+                  const exhibitKey = basis.exhibit_id || basis.exhibit_code || 'unassigned';
+                  const isActive = selectedWallExhibitKey === exhibitKey;
+                  return (
+                    <button
+                      key={tankId}
+                      id={`thermal-wall-tab-${tankId}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-controls={`thermal-wall-panel-${tankId}`}
+                      onClick={() => setSelectedWallTankId(basis.tank_id || tankId)}
+                      className={`shrink-0 rounded-t-lg border-b-2 px-3 py-2 text-left text-xs font-semibold transition ${
+                        isActive
+                          ? 'border-[#456b7d] bg-[#e8f0f2] text-[#263746]'
+                          : 'border-transparent text-[#71808a] hover:border-[#b9c9d0] hover:bg-[#f3f7f8]'
+                      }`}
+                    >
+                      <span className="block">{basis.exhibit_code || basis.exhibit_id || 'Unassigned exhibit'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="grid gap-3 md:grid-cols-4">
               {[
                 ['Effective volume', `${thermalNumber(detail?.results?.effective_water_volume_m3, 3)} m³`],
@@ -4680,7 +4726,7 @@ function ThermalTab({
             <div className="mt-3 grid gap-3 lg:grid-cols-2">
               <div className="rounded-xl border border-stone-200 p-3">
                 <p className="text-xs font-semibold text-stone-700 mb-2">Exhibits and water-temperature sources</p>
-                {(selected.source?.water_temperature_sources || []).map((source: any) => (
+                {selectedExhibitTemperatureSources.map((source: any) => (
                   <div key={source.exhibit_id} className="flex justify-between gap-3 text-sm py-1">
                     <span>{source.exhibit_code || source.exhibit_id}</span>
                     <span className="text-right">
@@ -4703,7 +4749,7 @@ function ThermalTab({
               </div>
               <div className="rounded-xl border border-stone-200 p-3">
                 <p className="text-xs font-semibold text-stone-700 mb-2">Tank geometry provenance</p>
-                {(selected.source?.linked_tanks || []).map((tank: any) => (
+                {selectedExhibitTanks.map((tank: any) => (
                   <div key={tank.tank_id} className="border-b border-stone-100 last:border-0 py-1.5 text-xs">
                     {(() => {
                       const override = Number(form.custom_tank_wall_areas_m2?.[tank.tank_id]);
@@ -4738,8 +4784,9 @@ function ThermalTab({
             </div>
           </section>
 
-          <section className="space-y-3">
-            <h3 className="font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">02</span>Environment and effective values</h3>
+          <section className="contents">
+            <div className="order-1 space-y-3">
+            <h3 className="font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">01</span>Environment and effective values</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <ThermalNumericField name="ambient_air_temperature_c" label="Ambient air temperature" unit="°C"
                 value={form.ambient_air_temperature_c} onChange={event => update('ambient_air_temperature_c', event.target.value)} disabled={readOnly} />
@@ -4816,7 +4863,8 @@ function ThermalTab({
                 </label>
               </div>
             )}
-            <div className="space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
+            </div>
+            <div className="order-3 space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
               <div>
                 <h4 className="text-sm font-semibold text-[#263746]">Effective wall value and evidence</h4>
                 <p className="mt-1 text-xs text-[#71808a]">
@@ -4827,37 +4875,6 @@ function ThermalTab({
               </div>
               {displayedTankWallBases.length > 0 && (
                 <div className="space-y-3">
-                  <div
-                    role="tablist"
-                    aria-label="Linked exhibit tank wall evidence"
-                    className="flex gap-2 overflow-x-auto border-b border-[#d8e3e7] pb-1"
-                  >
-                    {displayedTankWallBases.map((basis: any, index: number) => {
-                      const tankId = basis.tank_id || `${basis.exhibit_id || 'exhibit'}-${index}`;
-                      const isActive = selectedWallTankBasis === basis;
-                      return (
-                        <button
-                          key={tankId}
-                          id={`thermal-wall-tab-${tankId}`}
-                          type="button"
-                          role="tab"
-                          aria-selected={isActive}
-                          aria-controls={`thermal-wall-panel-${tankId}`}
-                          onClick={() => setSelectedWallTankId(basis.tank_id || tankId)}
-                          className={`shrink-0 rounded-t-lg border-b-2 px-3 py-2 text-left text-xs font-semibold transition ${
-                            isActive
-                              ? 'border-[#456b7d] bg-[#e8f0f2] text-[#263746]'
-                              : 'border-transparent text-[#71808a] hover:border-[#b9c9d0] hover:bg-[#f3f7f8]'
-                          }`}
-                        >
-                          <span className="block">{basis.exhibit_code || basis.exhibit_id || 'Unassigned exhibit'}</span>
-                          <span className="mt-0.5 block font-mono text-[11px] font-normal">
-                            {basis.tank_code || basis.tank_id || `Tank ${index + 1}`}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
                   {selectedWallTankBasis && (
                     <div
                       id={`thermal-wall-panel-${selectedWallTankBasis.tank_id || 'selected'}`}
@@ -4997,7 +5014,7 @@ function ThermalTab({
             </div>
           </section>
 
-          <section className="space-y-3">
+          <section className="order-4 space-y-3">
             <div>
               <h3 className="font-semibold text-[#263746]">Wall calculations by exhibit tank</h3>
               <p className="mt-1 text-xs text-[#71808a]">
@@ -5042,7 +5059,7 @@ function ThermalTab({
             </div>
           </section>
 
-          <section className="space-y-3">
+          <section className="order-5 space-y-3">
             <h3 className="font-semibold text-stone-900">Operational gains and capacity</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <ThermalNumericField name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW"
@@ -5073,7 +5090,7 @@ function ThermalTab({
           </section>
 
           {detail?.reasons?.length > 0 && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <div className="order-6 rounded-xl border border-red-200 bg-red-50 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-red-800"><AlertTriangle className="w-4 h-4" /> Action required</div>
               <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">{detail.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
             </div>
@@ -5081,7 +5098,7 @@ function ThermalTab({
 
           {detail?.results && (
             <>
-              <section>
+              <section className="order-7">
                 <h3 className="font-semibold text-stone-900 mb-3">Signed contributions</h3>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {Object.entries(detail.contributions || {}).map(([key, value]) => (
@@ -5104,7 +5121,7 @@ function ThermalTab({
                   ))}
                 </div>
               </section>
-              <section>
+              <section className="order-8">
                 <h3 className="font-semibold text-stone-900 mb-2">Sensitivity comparison</h3>
                 <div className="overflow-x-auto rounded-xl border border-stone-200">
                   <table className="w-full text-sm"><thead className="bg-stone-50"><tr><th className="text-left px-3 py-2">Case</th><th className="text-right px-3 py-2">Cooling</th><th className="text-right px-3 py-2">Heating</th></tr></thead>
@@ -5121,9 +5138,10 @@ function ThermalTab({
             </>
           )}
 
-          <div className="flex justify-end gap-2 border-t border-[#d8d4cb] pt-4">
+          <div className="order-9 flex justify-end gap-2 border-t border-[#d8d4cb] pt-4">
             <button onClick={() => setSelected(null)} className="px-3 py-2 text-sm font-medium text-[#456b7d]">Close calculation</button>
             {!readOnly && <Button onClick={save} variant="thermal" disabled={saving || !form.agitation_correlation_id}><Calculator className="mr-1.5 h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</Button>}
+          </div>
           </div>
           {readOnly && <p className="text-xs text-stone-500 text-right">This calculation is part of the frozen Design Book package and is read-only.</p>}
         </div>
