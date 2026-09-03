@@ -4689,7 +4689,7 @@ function ThermalTab({
                  type="button"
                  className="flex w-full items-center justify-between gap-3 text-left"
                  aria-expanded={!collapsedSections.linkedSource}
-                 aria-controls="thermal-linked-source-panel"
+                 aria-controls="thermal-linked-source-panel thermal-linked-wall-evidence-panel thermal-wall-calculations-panel"
                  onClick={() => setCollapsedSections(current => ({ ...current, linkedSource: !current.linkedSource }))}
                >
                  <span><span className="mr-2 text-[#9aa8af]">02</span>Linked source and geometry</span>
@@ -4898,7 +4898,8 @@ function ThermalTab({
             )}
              </div>}
             </div>
-            <div className="order-3 space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
+             {!collapsedSections.linkedSource && (<>
+             <div id="thermal-linked-wall-evidence-panel" className="order-3 space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
               <div>
                 <h4 className="text-sm font-semibold text-[#263746]">Effective wall value and evidence</h4>
                 <p className="mt-1 text-xs text-[#71808a]">
@@ -5037,9 +5038,8 @@ function ThermalTab({
                 </div>
               )}
             </div>
-          </section>
 
-          <section className="order-4 space-y-3">
+           <section id="thermal-wall-calculations-panel" className="order-4 space-y-3">
             <div>
               <h3 className="font-semibold text-[#263746]">Wall calculations by exhibit tank</h3>
               <p className="mt-1 text-xs text-[#71808a]">
@@ -5082,7 +5082,9 @@ function ThermalTab({
                 </tbody>
               </table>
             </div>
-          </section>
+           </section>
+           </>)}
+           </section>
 
           <section className="order-5 space-y-3">
              <h3 className="font-semibold text-stone-900">
