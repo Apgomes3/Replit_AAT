@@ -4466,6 +4466,9 @@ function ThermalTab({
     ) ||
     displayedTankWallBases[0] ||
     null;
+  const wallEvidenceCardVisible = !!selected?.source?.linked_tanks?.length ||
+    !!evidenceBasis.wall ||
+    !!form.tank_construction_type;
   const selectedExhibitTemperatureSources = (selected?.source?.water_temperature_sources || [])
     .filter((source: any) =>
       (source.exhibit_id || source.exhibit_code || 'unassigned') === selectedWallExhibitKey);
@@ -4978,15 +4981,14 @@ function ThermalTab({
                     : 'The governed construction is the effective basis unless a reviewed U-value or explicit wall layer overrides it.'}
                 </p>
               </div>
-              {displayedTankWallBases.length > 0 && (
+               {wallEvidenceCardVisible && (
                 <div className="space-y-3">
-                  {selectedWallTankBasis && (
-                    <div
-                      id={`thermal-wall-panel-${selectedWallTankBasis.tank_id || 'selected'}`}
-                      role="tabpanel"
-                      aria-labelledby={`thermal-wall-tab-${selectedWallTankBasis.tank_id || 'selected'}`}
-                      className="grid gap-2 rounded-lg border border-[#c7d8df] bg-[#edf3f4] p-3 sm:grid-cols-2 lg:grid-cols-4"
-                    >
+                   <div
+                     id={`thermal-wall-panel-${selectedWallTankBasis?.tank_id || 'selected'}`}
+                     role="tabpanel"
+                     aria-labelledby={`thermal-wall-tab-${selectedWallTankBasis?.tank_id || 'selected'}`}
+                     className="grid gap-2 rounded-lg border border-[#c7d8df] bg-[#edf3f4] p-3 sm:grid-cols-2 lg:grid-cols-4"
+                   >
                       <div className="col-span-full mt-1 pt-3">
                         <div className={`grid gap-3 sm:grid-cols-2 ${sourceHasMixedWalls ? '' : 'lg:grid-cols-4'}`}>
                           {!sourceHasMixedWalls && (
@@ -5065,8 +5067,7 @@ function ThermalTab({
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
+                   </div>
                 </div>
               )}
               {showMixedWallEvidence && (
