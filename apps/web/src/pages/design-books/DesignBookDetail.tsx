@@ -2889,6 +2889,7 @@ function LegacyThermalTab({
     .map(normalizeThermalWallConstruction)
     .filter(Boolean);
   const [selected, setSelected] = useState<any>(null);
+  const [selectedWallTankId, setSelectedWallTankId] = useState<string | null>(null);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -3976,6 +3977,7 @@ function ThermalTab({
     const sourceTankWallBases = thermalExhibitTankWallBases(item.source, constructionDefaults);
     const sourceHasMixedWalls = thermalWallBasesAreMixed(sourceTankWallBases);
     const sourceTankWallBasis = sourceHasMixedWalls ? null : sourceTankWallBases[0];
+    setSelectedWallTankId(sourceTankWallBases[0]?.tank_id || null);
     const savedWallHasOverride = existing.reviewed_u_value_w_m2_k != null ||
       Object.values(wallEvidence.layer_override_flags || {}).some(Boolean);
     const constructionType = sourceHasMixedWalls
@@ -4393,6 +4395,9 @@ function ThermalTab({
   const displayedTankWallBases = evidenceBasis.wall?.tank_bases?.length
     ? evidenceBasis.wall.tank_bases
     : sourceTankWallBases;
+  const selectedWallTankBasis = displayedTankWallBases.find(
+    (basis: any) => basis.tank_id === selectedWallTankId,
+  ) || displayedTankWallBases[0] || null;
   const selectedConstructionDefault = normalizeThermalWallConstruction(
     form.tank_wall_default_basis ||
     constructionDefaults.find(item => item.code === form.tank_construction_type) ||
@@ -4820,6 +4825,65 @@ function ThermalTab({
                     : 'The governed construction is the effective basis unless a reviewed U-value or explicit wall layer overrides it.'}
                 </p>
               </div>
+              {displayedTankWallBases.length > 0 && (
+                <div className="space-y-3">
+                  <div
+                    role="tablist"
+                    aria-label="Linked exhibit tank wall evidence"
+                    className="flex gap-2 overflow-x-auto border-b border-[#d8e3e7] pb-1"
+                  >
+                    {displayedTankWallBases.map((basis: any, index: number) => {
+                      const tankId = basis.tank_id || `${basis.exhibit_id || 'exhibit'}-${index}`;
+                      const isActive = selectedWallTankBasis === basis;
+                      return (
+                        <button
+                          key={tankId}
+                          id={`thermal-wall-tab-${tankId}`}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          aria-controls={`thermal-wall-panel-${tankId}`}
+                          onClick={() => setSelectedWallTankId(basis.tank_id || tankId)}
+                          className={`shrink-0 rounded-t-lg border-b-2 px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? 'border-[#456b7d] bg-[#e8f0f2] text-[#263746]'
+                              : 'border-transparent text-[#71808a] hover:border-[#b9c9d0] hover:bg-[#f3f7f8]'
+                          }`}
+                        >
+                          <span className="block">{basis.exhibit_code || basis.exhibit_id || 'Unassigned exhibit'}</span>
+                          <span className="mt-0.5 block font-mono text-[11px] font-normal">
+                            {basis.tank_code || basis.tank_id || `Tank ${index + 1}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedWallTankBasis && (
+                    <div
+                      id={`thermal-wall-panel-${selectedWallTankBasis.tank_id || 'selected'}`}
+                      role="tabpanel"
+                      aria-labelledby={`thermal-wall-tab-${selectedWallTankBasis.tank_id || 'selected'}`}
+                      className="grid gap-2 rounded-lg border border-[#c7d8df] bg-[#edf3f4] p-3 sm:grid-cols-2 lg:grid-cols-4"
+                    >
+                      {[
+                        ['Material', selectedWallTankBasis.material || '—'],
+                        ['Thickness', `${thermalNumber(selectedWallTankBasis.thickness_mm, 2)} mm`],
+                        ['Conductivity', `${thermalNumber(selectedWallTankBasis.conductivity_w_m_k, 3)} W/m·K`],
+                        ['Material U-value', `${thermalNumber(selectedWallTankBasis.material_u_value_w_m2_k, 2)} W/m²·K`],
+                        ['Overall U-value', `${thermalNumber(selectedWallTankBasis.overall_u_value_w_m2_k, 2)} W/m²·K`],
+                        ['Exposed wall', `${thermalNumber(selectedWallTankBasis.exposed_wall_area_m2, 2)} m²`],
+                        ['Quantity', `× ${selectedWallTankBasis.quantity || 1}`],
+                        ['Evidence', selectedWallTankBasis.source || 'Linked exhibit tank'],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-md bg-white/75 px-2.5 py-2">
+                          <div className="text-[10px] uppercase tracking-wide text-[#71808a]">{label}</div>
+                          <div className="mt-0.5 text-xs font-semibold text-[#263746]">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {showMixedWallEvidence && (
                 <div className="overflow-x-auto rounded-lg border border-[#c7d8df] bg-[#edf3f4]">
                   <div className="border-b border-[#c7d8df] px-3 py-2 text-xs text-[#456b7d]">
