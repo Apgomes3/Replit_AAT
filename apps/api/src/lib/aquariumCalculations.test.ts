@@ -559,6 +559,7 @@ describe('aquarium engineering calculations', () => {
     });
     expect(system.flow_route.loops[0].foam_fractionation).toMatchObject({
       match_status: 'capacity_above_required',
+      share_of_total_allocated_flow_pct: 42.86,
       inputs: {
         parent_loop_flow_m3h: 96.066,
       },
@@ -567,6 +568,28 @@ describe('aquarium engineering calculations', () => {
       },
     });
     expect(system.reasons).toEqual([]);
+  });
+
+  it('reports Sand Filter flow as a share of all allocated loop flow', () => {
+    const system = calculateSystemEngineering({
+      id: 'sand-share-system',
+      design_flow_m3h: 100,
+      calculation_inputs: { design_flow_source: 'manual_override' },
+      loop1_flow_source: 'Exhibit return',
+      loop1_filtration: 'Sand Filter',
+      loop1_flow_pct: 60,
+      loop2_flow_source: 'Exhibit return',
+      loop2_filtration: 'Pressurized Bag Filter',
+      loop2_flow_pct: 40,
+    }, [], [], null);
+
+    expect(system.flow_route).toMatchObject({
+      allocated_flow_m3h: 100,
+      allocation_total_pct: 100,
+    });
+    expect(system.flow_route.loops[0].sand_filter).toMatchObject({
+      share_of_total_allocated_flow_pct: 60,
+    });
   });
 
   it('falls back to stored operating volume for a standard tank without dimensions', () => {

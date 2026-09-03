@@ -3458,7 +3458,7 @@ export default function DesignBookLSSDetail() {
                     </div>
                   )}
                   <p className="text-[10px] text-stone-400 mt-2">
-                    Exhibit split only; loop allocation remains an independent percentage of total system flow.
+                    The loop allocation percentage applies directly to this calculated source flow.
                   </p>
                 </>
               )}
@@ -3640,6 +3640,9 @@ export default function DesignBookLSSDetail() {
             allocationSource[`loop${n}_bio_degas_m3h`] != null ||
             allocationSource[`loop${n}_link_bio_degas`]));
         const allocationTotal = totalSystemAllocationPctFor(allocationSource) ?? 0;
+        const totalAllocatedFlow = systemFlow != null && systemFlow > 0
+          ? systemFlow * allocationTotal / 100
+          : null;
         const allocationPending = allocationLoops.filter(
           n => nullableNumber(allocationSource[`loop${n}_flow_pct`]) == null,
         ).length;
@@ -3724,6 +3727,10 @@ export default function DesignBookLSSDetail() {
           const equipmentFlow = isSandFilter
             ? loopFlow
             : exhibitSourceFlowContext('Surface Skim').flow;
+          const equipmentShareOfAllocatedFlow = equipmentFlow != null &&
+            totalAllocatedFlow != null && totalAllocatedFlow > 0
+            ? equipmentFlow / totalAllocatedFlow * 100
+            : null;
           const calculation: any = flowEquipmentCalculation(source, n, equipmentFlow);
           const statusStyle = calculation.status === 'matched'
             ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -3790,6 +3797,23 @@ export default function DesignBookLSSDetail() {
               <div className="flex items-center justify-between gap-2 mb-2">
                 <span className="text-xs font-semibold">{equipmentLabel} capacity</span>
                 <span className="text-[10px] font-semibold">{statusLabel}</span>
+              </div>
+              <div className="mb-3 rounded-md border border-current/15 bg-white/55 px-2.5 py-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[10px] font-medium">
+                    {isSandFilter ? 'SF' : 'FF'} share of total allocated flow
+                  </span>
+                  <strong className="font-mono text-sm">
+                    {equipmentShareOfAllocatedFlow != null
+                      ? `${equipmentShareOfAllocatedFlow.toFixed(1)}%`
+                      : 'Unavailable'}
+                  </strong>
+                </div>
+                <p className="mt-0.5 text-[9px] opacity-75">
+                  {equipmentFlow != null && totalAllocatedFlow != null && totalAllocatedFlow > 0
+                    ? `${fmtReferenceFlow(equipmentFlow)} ÷ ${fmtReferenceFlow(totalAllocatedFlow)} total allocated flow`
+                    : 'Requires current equipment flow and total allocated loop flow.'}
+                </p>
               </div>
               {editable && selectedProducts.length === 0 && (
                 <div className="space-y-3 mb-3">

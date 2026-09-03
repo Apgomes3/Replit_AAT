@@ -1217,14 +1217,14 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await screen.findByRole('heading', { name: 'Primary Life Support' });
 
     expect(screen.getAllByText('320.0 m³/h').length).toBeGreaterThan(0);
-    expect(document.querySelector('#flow-route')).toHaveTextContent('128.0 m³/h');
+    expect(document.querySelector('#flow-route')).toHaveTextContent('32.0 m³/h');
     expect(screen.queryByText('350.0 m³/h')).not.toBeInTheDocument();
 
     act(() => {
       rendered.queryClient.setQueryData(['design-book', 'book-1'], linkedBook(300));
     });
     await waitFor(() => expect(screen.getAllByText('300.0 m³/h').length).toBeGreaterThan(0));
-    expect(document.querySelector('#flow-route')).toHaveTextContent('120.0 m³/h');
+    expect(document.querySelector('#flow-route')).toHaveTextContent('32.0 m³/h');
 
     rendered.unmount();
     renderFlowRoute(staleStoredSystem, linkedBook(320), [primaryLink]);
@@ -1251,7 +1251,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
   });
 
   it('retains a persisted design flow only for an explicit manual override', async () => {
-    renderFlowRoute();
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
 
     expect(screen.getAllByText('100.0 m³/h').length).toBeGreaterThan(0);
@@ -1261,14 +1261,15 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('keeps loop flow visible while hiding Bio/Degas details when the branch is not linked', async () => {
     const user = userEvent.setup();
-    renderFlowRoute();
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
-    expect(route.getByText('Bottom Drain')).toBeInTheDocument();
+    expect(route.getByText('Vacuum Port')).toBeInTheDocument();
     expect(route.getByText('Sand Filter')).toBeInTheDocument();
     expect(route.getAllByText('40.0 m³/h').length).toBeGreaterThan(0);
     expect(document.querySelector('#flow-route')).toHaveTextContent('40% of total system flow');
+    expect(route.getByText('SF share of total allocated flow').parentElement).toHaveTextContent('100.0%');
     expect(route.queryByText('Bio/Degas:')).not.toBeInTheDocument();
     expect(route.getByText('60.0%')).toBeInTheDocument();
 
@@ -1280,7 +1281,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getAllByText('146.6 Imperial GPM').length).toBeGreaterThan(0);
   });
 
-  it('shows the primary exhibit source split without changing the loop allocation', async () => {
+  it('uses the primary exhibit source split as the loop allocation basis', async () => {
     const user = userEvent.setup();
     renderFlowRoute(baseSystem, bookWithPrimarySplit, [primaryLink]);
     await screen.findByRole('heading', { name: 'Primary Life Support' });
@@ -1289,14 +1290,14 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getByText('Read-only · from linked exhibit')).toBeInTheDocument();
     expect(route.getByText('EX-01')).toBeInTheDocument();
     expect(route.getByText('64% · 80.0 m³/h')).toBeInTheDocument();
-    expect(route.getByText(/loop allocation remains an independent percentage/)).toBeInTheDocument();
+    expect(route.getByText(/loop allocation percentage applies directly to this calculated source flow/)).toBeInTheDocument();
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
     await user.selectOptions(route.getByRole('combobox', { name: 'Loop 1 Flow Source' }), 'Surface Skim');
     expect(route.getByText('(Surface Skimmer Box)')).toBeInTheDocument();
     expect(route.getByText('36% · 45.0 m³/h')).toBeInTheDocument();
-    expect(route.getByText('Loop Flow Allocation (% of total system flow)')).toBeInTheDocument();
-    expect(route.getAllByText('40.0 m³/h').length).toBeGreaterThan(0);
+    expect(route.getByText('Loop Flow Allocation (% of Surface Skim flow)')).toBeInTheDocument();
+    expect(route.getAllByText('18.0 m³/h').length).toBeGreaterThan(0);
     expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(40);
 
     await user.click(route.getByRole('button', { name: 'L/s' }));
@@ -1319,7 +1320,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('offers Vacuum Port in the grouped source picker and saves it as an allocated source', async () => {
     const user = userEvent.setup();
-    renderFlowRoute(baseSystem);
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
@@ -1587,7 +1588,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('edits total-loop and linked branch percentages independently and saves canonical values', async () => {
     const user = userEvent.setup();
-    renderFlowRoute();
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
@@ -2032,7 +2033,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('saves multiple side streams at 100 percent because each is an independent branch', async () => {
     const user = userEvent.setup();
-    renderFlowRoute(baseSystem);
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
@@ -2056,7 +2057,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('persists a Break Tank circulation loop as a non-allocating match', async () => {
     const user = userEvent.setup();
-    renderFlowRoute(baseSystem);
+    renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
@@ -2226,7 +2227,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('keeps a saved rename and side stream visible after reload and when editing resumes', async () => {
     const user = userEvent.setup();
-    const firstRender = renderFlowRoute(baseSystem);
+    const firstRender = renderFlowRoute({ ...baseSystem, loop1_flow_source: 'Vacuum Port' });
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     let route = within(document.querySelector('#flow-route')!);
 
@@ -2270,6 +2271,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const user = userEvent.setup();
     renderFlowRoute({
       ...baseSystem,
+      loop1_flow_source: 'Vacuum Port',
       loop1_name: 'Main Filtration',
       side_streams: [{
         id: 'side-1',
@@ -2319,7 +2321,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     expect(route.getByText('30% of parent')).toBeInTheDocument();
-    expect(route.getByText('Unavailable')).toBeInTheDocument();
+    expect(route.getAllByText('Unavailable').length).toBeGreaterThan(0);
     expect(route.getByText(/Set the parent loop allocation/)).toBeInTheDocument();
   });
 
@@ -2360,7 +2362,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('refreshes the displayed system flow when the design-book calculation changes', async () => {
     const { queryClient, unmount } = renderFlowRoute(
-      { ...baseSystem, design_flow_m3h: null },
+      { ...baseSystem, design_flow_m3h: null, loop1_flow_source: 'Vacuum Port' },
       {
         ...baseBook,
         engineering_calculations: {
@@ -2381,7 +2383,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
       },
     );
     await screen.findByRole('heading', { name: 'Primary Life Support' });
-    expect(screen.getByText('80.0 m³/h')).toBeInTheDocument();
+    expect(screen.getAllByText('80.0 m³/h').length).toBeGreaterThan(0);
 
     act(() => {
       queryClient.setQueryData(['design-book', 'book-1'], {
@@ -2404,7 +2406,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
       });
     });
 
-    await waitFor(() => expect(screen.getByText('125.0 m³/h')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('125.0 m³/h').length).toBeGreaterThan(0));
     expect(screen.queryByText('2.5 ×/h')).not.toBeInTheDocument();
     unmount();
   });
@@ -2452,6 +2454,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const card = within(cardElement);
     expect(cardElement.parentElement).toHaveClass('grid-cols-1');
     expect(card.getByText('FF-500')).toBeInTheDocument();
+    expect(route.getByText('FF share of total allocated flow').parentElement).toHaveTextContent('140.6%');
     expect(card.getByText('1 unit')).toBeInTheDocument();
     expect(card.getAllByText('Ø500 mm').length).toBeGreaterThan(0);
     expect(card.getAllByText('Required flow above capacity')).toHaveLength(1);

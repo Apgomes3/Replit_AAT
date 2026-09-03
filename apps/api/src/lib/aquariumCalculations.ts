@@ -816,6 +816,13 @@ export function calculateSystemEngineering(
               ),
               flow_basis: 'aggregate_surface_skim',
               required_flow_m3h: sourceFlows['Surface Skim'] ?? null,
+              share_of_total_allocated_flow_pct:
+                sourceFlows['Surface Skim'] != null && allocatedLoopFlow > 0
+                  ? roundEngineering(
+                    Number(sourceFlows['Surface Skim']) / allocatedLoopFlow * 100,
+                    2,
+                  )
+                  : null,
             };
           })()
         : null,
@@ -831,6 +838,10 @@ export function calculateSystemEngineering(
                 allocation?.process_rate_ls_m2,
                 allocation?.products || [],
               ),
+              share_of_total_allocated_flow_pct:
+                parentFlow != null && allocatedLoopFlow > 0
+                  ? roundEngineering(parentFlow / allocatedLoopFlow * 100, 2)
+                  : null,
             };
           })()
         : null,
@@ -898,6 +909,8 @@ export function calculateSystemEngineering(
     flow_route: {
       flow_unit: FLOW_UNIT,
       side_streams_are_branches: true,
+      allocated_flow_m3h: roundEngineering(allocatedLoopFlow, FLOW_DECIMALS),
+      allocation_total_pct: flowRouteAllocationTotalPct,
       loops: flowRoute,
     },
     suitability: unitResult,

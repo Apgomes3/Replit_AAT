@@ -7,4 +7,4 @@ Foam Fractionator presentations must establish hydraulic meaning before sizing: 
 
 **Why:** Capacity numbers are ambiguous without their parent hydraulic context, and hidden flip-card controls made engineering review and editing difficult to understand.
 
-**How to apply:** Keep each model summary stable and independently expandable. Details/Hide details only reveals metrics and never changes saved values. Quantity and removal remain directly discoverable in edit mode and absent from read-only or reviewed views.
+**How to apply:** Keep each model summary stable and independently expandable. Show FF required flow and Sand Filter loop flow as read-only percentages of the sum of allocated loop flows; these shares never become saved inputs or change sizing. Details/Hide details only reveals metrics and never changes saved values. Quantity and removal remain directly discoverable in edit mode and absent from read-only or reviewed views.
