@@ -2490,6 +2490,8 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
         COALESCE(t.height_mm, pm.height_mm) as eff_height_mm,
         COALESCE(t.design_water_level_mm, pm.design_water_level_mm) as eff_water_level_mm,
         COALESCE(
+           t.gross_volume_m3,
+           pm.gross_volume_m3,
           CASE
             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
@@ -2501,10 +2503,11 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
                  AND COALESCE(t.height_mm, pm.height_mm) IS NOT NULL
               THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.height_mm,pm.height_mm)/1000000000.0)::numeric, 4)
             ELSE NULL
-          END,
-          t.gross_volume_m3, pm.gross_volume_m3
+           END
         ) as gross_volume_m3,
         COALESCE(
+           t.operating_volume_m3,
+           pm.operating_volume_m3,
           CASE
             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
@@ -2516,8 +2519,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
                  AND COALESCE(t.design_water_level_mm, pm.design_water_level_mm) IS NOT NULL
               THEN ROUND((COALESCE(t.length_mm,pm.length_mm)*COALESCE(t.width_mm,pm.width_mm)*COALESCE(t.design_water_level_mm,pm.design_water_level_mm)/1000000000.0)::numeric, 4)
             ELSE NULL
-          END,
-          t.operating_volume_m3, pm.operating_volume_m3
+           END
         ) as design_volume_m3,
          COALESCE(
            NULLIF(t.surface_area_m2, 0),

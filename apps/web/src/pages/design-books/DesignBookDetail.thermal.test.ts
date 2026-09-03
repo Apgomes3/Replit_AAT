@@ -827,4 +827,69 @@ describe('Thermal freshness diagnostics', () => {
     expect(screen.getByText(/likely stale browser state/)).toBeInTheDocument();
     expect(screen.getByText(/No saved-versus-current source category differs/)).toBeInTheDocument();
   });
+
+  it('shows the current resolved wall basis without treating saved annotations as geometry changes', async () => {
+    const user = userEvent.setup();
+    const rawTank = {
+      tank_id: 'tank-11',
+      tank_code: 'RC-MAIN',
+      exposed_wall_area_m2: 273.6,
+      effective_water_volume_m3: 519.84,
+      wall_material: 'Reinforced Concrete',
+      wall_thickness_mm: 120,
+    };
+    const savedWallBasis = {
+      basis_version: 'AAT 2.0',
+      tank_bases: [{
+        tank_id: 'tank-11',
+        tank_code: 'RC-MAIN',
+        material: 'Reinforced Concrete',
+        exposed_wall_area_m2: 273.6,
+      }],
+    };
+    const currentWallBasis = {
+      ...savedWallBasis,
+      tank_bases: savedWallBasis.tank_bases.map(tank => ({
+        ...tank,
+        source: 'current governed material',
+      })),
+    };
+
+    render(createElement(ThermalFreshnessDiagnostics, {
+      item: {
+        saved: {
+          source_fingerprint: 'saved-fingerprint',
+          calculation_version: 'aat-thermal-load-v8',
+          source_snapshot: {
+            linked_tanks: [{
+              ...rawTank,
+              exposed_wall_source: 'rectangular default (custom tank)',
+              wall_construction_basis: savedWallBasis.tank_bases[0],
+            }],
+            wall_construction_basis: savedWallBasis,
+          },
+          result_snapshot: {
+            wall_construction_basis: savedWallBasis,
+          },
+        },
+        source: {
+          fingerprint: 'current-fingerprint',
+          linked_tanks: [{
+            ...rawTank,
+            exposed_wall_source: 'rectangular default (custom tank)',
+          }],
+        },
+        current_preview: {
+          calculation_version: 'aat-thermal-load-v8',
+          wall_construction_basis: currentWallBasis,
+        },
+      },
+    }));
+
+    await user.click(screen.getByText(/Show freshness diagnostics/));
+    expect(screen.getByText('Wall construction basis')).toBeInTheDocument();
+    expect(screen.getByText(/No saved-versus-current source category differs/)).toBeInTheDocument();
+    expect(screen.queryByText('Linked tanks and geometry')).not.toBeInTheDocument();
+    expect(screen.getByText(/current governed material/)).toBeInTheDocument();
+  });
 });

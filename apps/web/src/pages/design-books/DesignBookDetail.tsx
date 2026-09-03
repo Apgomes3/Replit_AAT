@@ -5814,6 +5814,26 @@ function stableThermalDiagnosticValue(value: any): any {
   }, {});
 }
 
+function thermalComparableSource(source: any) {
+  if (!source) return source;
+  const {
+    fingerprint: _fingerprint,
+    wall_construction_basis: _wallConstructionBasis,
+    ...comparable
+  } = source;
+  return {
+    ...comparable,
+    linked_tanks: (comparable.linked_tanks || []).map((tank: any) => {
+      const {
+        wall_construction_basis: _tankWallConstructionBasis,
+        exposed_wall_source: _exposedWallSource,
+        ...tankGeometry
+      } = tank;
+      return tankGeometry;
+    }),
+  };
+}
+
 function thermalSourceDiagnosticChanges(savedSource: any, currentSource: any) {
   if (!savedSource || !currentSource) return [];
   const keys = [...new Set([
@@ -5836,6 +5856,15 @@ export function ThermalFreshnessDiagnostics({ item }: { item: any }) {
     item?.result_snapshot?.source_snapshot ||
     null;
   const currentSource = item?.source || null;
+  const savedComparableSource = thermalComparableSource(savedSource);
+  const currentComparableSource = thermalComparableSource(currentSource);
+  const savedWallBasis = item?.saved?.result_snapshot?.wall_construction_basis ||
+    item?.calculation?.wall_construction_basis ||
+    savedSource?.wall_construction_basis ||
+    null;
+  const currentWallBasis = item?.current_preview?.wall_construction_basis ||
+    item?.current_preview?.source_snapshot?.wall_construction_basis ||
+    null;
   const savedFingerprint = item?.saved?.source_fingerprint ||
     item?.calculation?.source_fingerprint ||
     item?.result_snapshot?.source_fingerprint ||
@@ -5848,7 +5877,10 @@ export function ThermalFreshnessDiagnostics({ item }: { item: any }) {
     item?.result_snapshot?.calculation_version ||
     null;
   const currentVersion = item?.current_preview?.calculation_version || null;
-  const changedKeys = thermalSourceDiagnosticChanges(savedSource, currentSource);
+  const changedKeys = thermalSourceDiagnosticChanges(
+    savedComparableSource,
+    currentComparableSource,
+  );
   const fingerprintsMatch = !!savedFingerprint && !!currentFingerprint &&
     savedFingerprint === currentFingerprint;
   const versionsMatch = !!savedVersion && !!currentVersion && savedVersion === currentVersion;
@@ -5885,6 +5917,24 @@ export function ThermalFreshnessDiagnostics({ item }: { item: any }) {
           </p>
         )}
 
+        {(savedWallBasis || currentWallBasis) && (
+          <details className="rounded-md border border-stone-200 bg-white">
+            <summary className="cursor-pointer px-3 py-2 font-semibold text-stone-800">
+              Wall construction basis
+            </summary>
+            <div className="grid gap-2 border-t border-stone-200 p-2 lg:grid-cols-2">
+              <div>
+                <p className="mb-1 font-semibold text-stone-500">Saved resolved basis</p>
+                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(savedWallBasis)}</pre>
+              </div>
+              <div>
+                <p className="mb-1 font-semibold text-stone-500">Current resolved basis</p>
+                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(currentWallBasis)}</pre>
+              </div>
+            </div>
+          </details>
+        )}
+
         {!savedSource || !currentSource ? (
           <p className="rounded-md border border-red-200 bg-red-50 p-2 text-red-800">
             The saved or current source snapshot is unavailable, so the changed category cannot be identified.
@@ -5904,11 +5954,11 @@ export function ThermalFreshnessDiagnostics({ item }: { item: any }) {
                 <div className="grid gap-2 border-t border-stone-200 p-2 lg:grid-cols-2">
                   <div>
                     <p className="mb-1 font-semibold text-stone-500">Saved</p>
-                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(savedSource[key])}</pre>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(savedComparableSource[key])}</pre>
                   </div>
                   <div>
                     <p className="mb-1 font-semibold text-stone-500">Current</p>
-                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(currentSource[key])}</pre>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-2 font-mono text-[11px]">{thermalDiagnosticJson(currentComparableSource[key])}</pre>
                   </div>
                 </div>
               </details>

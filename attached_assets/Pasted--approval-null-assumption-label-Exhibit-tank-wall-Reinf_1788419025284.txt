@@ -1,0 +1,163 @@
+{
+  "approval": null,
+  "assumption_label": "Exhibit tank wall — Reinforced Concrete, 120 mm",
+  "basis_version": "AAT 2.0",
+  "conductivity_units": "W/m·K",
+  "conductivity_w_m_k": 1.7,
+  "construction_label": "Concrete",
+  "construction_type": "concrete",
+  "default_layers": [
+    {
+      "conductivity_w_m_k": 1.7,
+      "material": "Reinforced Concrete",
+      "thickness_m": 0.12
+    }
+  ],
+  "effective_layers": [
+    {
+      "conductivity_w_m_k": 1.7,
+      "material": "Reinforced Concrete",
+      "thickness_m": 0.12
+    }
+  ],
+  "layer_override_flags": {
+    "conductivity_w_m_k": false,
+    "material": false,
+    "thickness_mm": false
+  },
+  "layer_override_justification": null,
+  "layers": [
+    {
+      "conductivity_w_m_k": 1.7,
+      "material": "Reinforced Concrete",
+      "thickness_m": 0.12
+    }
+  ],
+  "material": "Reinforced Concrete",
+  "material_resistance_m2_k_w": null,
+  "material_u_value_w_m2_k": null,
+  "overall_resistance_m2_k_w": null,
+  "overall_u_value_w_m2_k": 3.605910291457421,
+  "reviewed": false,
+  "source": "exhibit tank wall with governed material conductivity",
+  "source_basis": "AAT Foundations",
+  "source_reference": "RC-MAIN",
+  "tank_bases": [
+    {
+      "approval": null,
+      "assumption_label": "Exhibit tank wall — Reinforced Concrete, 120 mm",
+      "basis_version": "AAT 2.0",
+      "conductivity_units": "W/m·K",
+      "conductivity_w_m_k": 1.7,
+      "construction_label": "Concrete",
+      "construction_type": "concrete",
+      "default_layers": [
+        {
+          "conductivity_w_m_k": 1.7,
+          "material": "Reinforced Concrete",
+          "thickness_m": 0.12
+        }
+      ],
+      "effective_layers": [
+        {
+          "conductivity_w_m_k": 1.7,
+          "material": "Reinforced Concrete",
+          "thickness_m": 0.12
+        }
+      ],
+      "exhibit_code": "11",
+      "exhibit_id": "353639aa-c710-41ce-9066-f10a121316bc",
+      "exposed_wall_area_m2": 273.6,
+      "layer_override_flags": {
+        "conductivity_w_m_k": false,
+        "material": false,
+        "thickness_mm": false
+      },
+      "layer_override_justification": null,
+      "layers": [
+        {
+          "conductivity_w_m_k": 1.7,
+          "material": "Reinforced Concrete",
+          "thickness_m": 0.12
+        }
+      ],
+      "material": "Reinforced Concrete",
+      "material_resistance_m2_k_w": 0.07058823529411765,
+      "material_u_value_w_m2_k": 14.166666666666666,
+      "overall_resistance_m2_k_w": 0.27725490196078434,
+      "overall_u_value_w_m2_k": 3.6067892503536063,
+      "quantity": 1,
+      "reviewed": false,
+      "source": "exhibit tank wall with governed material conductivity",
+      "source_basis": "AAT Foundations",
+      "source_reference": "RC-MAIN",
+      "tank_code": "RC-MAIN",
+      "tank_id": "e2ba8860-10cc-4b01-a642-549a4e669338",
+      "thickness_mm": 120,
+      "thickness_units": "mm",
+      "u_value_w_m2_k": 14.166666666666666,
+      "units": "W/m²·K",
+      "wall_area_source": "rectangular default (custom tank)"
+    },
+    {
+      "approval": null,
+      "assumption_label": "Exhibit tank wall — MAT-FRP, 20 mm",
+      "basis_version": "AAT_FOUNDATIONS_WALL_V1.0",
+      "conductivity_units": "W/m·K",
+      "conductivity_w_m_k": 0.25,
+      "construction_label": "FRP",
+      "construction_type": "frp",
+      "default_layers": [
+        {
+          "conductivity_w_m_k": 0.25,
+          "material": "MAT-FRP",
+          "thickness_m": 0.02
+        }
+      ],
+      "effective_layers": [
+        {
+          "conductivity_w_m_k": 0.25,
+          "material": "MAT-FRP",
+          "thickness_m": 0.02
+        }
+      ],
+      "exhibit_code": "13",
+      "exhibit_id": "c1044db7-acd1-45a2-940a-e7693d2083b5",
+      "exposed_wall_area_m2": 2.046,
+      "layer_override_flags": {
+        "conductivity_w_m_k": false,
+        "material": false,
+        "thickness_mm": false
+      },
+      "layer_override_justification": null,
+      "layers": [
+        {
+          "conductivity_w_m_k": 0.25,
+          "material": "MAT-FRP",
+          "thickness_m": 0.02
+        }
+      ],
+      "material": "MAT-FRP",
+      "material_resistance_m2_k_w": 0.08,
+      "material_u_value_w_m2_k": 12.5,
+      "overall_resistance_m2_k_w": 0.2866666666666667,
+      "overall_u_value_w_m2_k": 3.488372093023256,
+      "quantity": 1,
+      "reviewed": false,
+      "source": "exhibit tank wall with governed material conductivity",
+      "source_basis": "AAT Foundations",
+      "source_reference": "PIM-TK.CORAL.01",
+      "tank_code": "PIM-TK.CORAL.01",
+      "tank_id": "34c71bd3-8031-4863-b010-7510300edce0",
+      "thickness_mm": 20,
+      "thickness_units": "mm",
+      "u_value_w_m2_k": 12.5,
+      "units": "W/m²·K",
+      "wall_area_source": "rectangular inner perimeter × water height"
+    }
+  ],
+  "thickness_mm": 120,
+  "thickness_units": "mm",
+  "u_value_w_m2_k": 14.154295727128272,
+  "units": "W/m²·K"
+}
