@@ -1,5 +1,6 @@
 export const BIOLOGICAL_MEDIA_WATER_TYPES = [
   'Freshwater',
+  'Marine',
   'Saltwater',
   'Brackish',
   'Universal',

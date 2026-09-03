@@ -230,6 +230,7 @@ describe('TAN generation profile administration', () => {
     expect(screen.getByRole('button', { name: 'Compatible reactor types' })).toHaveTextContent('Moving bed biofilter');
 
     await user.click(screen.getByRole('button', { name: 'Water types' }));
+    expect(screen.getByRole('checkbox', { name: 'Marine' })).toBeVisible();
     await user.click(screen.getByRole('checkbox', { name: 'Brackish' }));
     await user.click(screen.getByRole('button', { name: 'Done' }));
     await user.click(screen.getByRole('button', { name: 'Compatible reactor types' }));
