@@ -1903,6 +1903,25 @@ function thermalNumber(value: any, decimals = 2) {
   return Number.isFinite(parsed) ? parsed.toFixed(decimals) : '—';
 }
 
+function thermalActiveDuty(calculation: any) {
+  const result = calculation?.results;
+  const netLoad = Number(result?.net_total_load_kw);
+  if (!result || !Number.isFinite(netLoad)) return null;
+  if (netLoad >= 0) {
+    return { label: 'Cooling', value: result.margin_adjusted_cooling_kw };
+  }
+  const marginPct = Number(
+    calculation?.formula_inputs?.capacity_margin_pct ??
+    calculation?.inputs?.capacity_margin_pct ??
+    0,
+  );
+  return {
+    label: 'Heating',
+    value: result.margin_adjusted_steady_state_heating_kw ??
+      Number(result.steady_state_heating_kw || 0) * (1 + marginPct / 100),
+  };
+}
+
 export function thermalLinkedFreeSurfaceArea(source: any) {
   const tanks = Array.isArray(source?.linked_tanks) ? source.linked_tanks : [];
   if (!tanks.length) return null;
@@ -3681,7 +3700,7 @@ function LegacyThermalTab({
         <div className="divide-y divide-[#e6e1d8]">
               {items.map(item => {
                 const calculation = item.calculation;
-                const result = calculation?.results;
+                const activeDuty = thermalActiveDuty(calculation);
                 return (
                   <div key={item.system_id} className={`grid w-full gap-3 px-4 py-4 text-left transition hover:bg-[#edf2f3] sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:px-5 ${selected?.system_id === item.system_id ? 'bg-[#edf2f3]' : ''}`}>
                     <div>
@@ -3696,8 +3715,7 @@ function LegacyThermalTab({
                       }`}>{item.status}</span>
                     </div>
                     <div className="flex items-center gap-4 text-right">
-                      <div><span className="block text-[11px] uppercase tracking-wide text-[#71808a]">Cooling</span><b className="font-mono text-sm text-[#263746]">{result ? `${thermalNumber(result.margin_adjusted_cooling_kw)} kW` : '—'}</b></div>
-                      <div><span className="block text-[11px] uppercase tracking-wide text-[#71808a]">Heating</span><b className="font-mono text-sm text-[#263746]">{result ? `${thermalNumber(result.margin_adjusted_heating_kw)} kW` : '—'}</b></div>
+                      {activeDuty && <div><span className="block text-[11px] uppercase tracking-wide text-[#71808a]">{activeDuty.label}</span><b className="font-mono text-sm text-[#263746]">{thermalNumber(activeDuty.value)} kW</b></div>}
                       <button
                         type="button"
                         onClick={() => open(item)}
@@ -4807,7 +4825,7 @@ function ThermalTab({
         <div className="divide-y divide-[#e6e1d8]">
               {items.map(item => {
                 const calculation = item.calculation;
-                const result = calculation?.results;
+                const activeDuty = thermalActiveDuty(calculation);
                 return (
                   <div key={item.system_id} className={`grid w-full gap-3 px-4 py-4 text-left transition hover:bg-[#edf2f3] sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:px-5 ${selected?.system_id === item.system_id ? 'bg-[#edf2f3]' : ''}`}>
                     <div>
@@ -4822,8 +4840,7 @@ function ThermalTab({
                       }`}>{item.status}</span>
                     </div>
                     <div className="flex items-center gap-4 text-right">
-                      <div><span className="block text-[11px] uppercase tracking-wide text-[#71808a]">Cooling</span><b className="font-mono text-sm text-[#263746]">{result ? `${thermalNumber(result.margin_adjusted_cooling_kw)} kW` : '—'}</b></div>
-                      <div><span className="block text-[11px] uppercase tracking-wide text-[#71808a]">Heating</span><b className="font-mono text-sm text-[#263746]">{result ? `${thermalNumber(result.margin_adjusted_heating_kw)} kW` : '—'}</b></div>
+                      {activeDuty && <div><span className="block text-[11px] uppercase tracking-wide text-[#71808a]">{activeDuty.label}</span><b className="font-mono text-sm text-[#263746]">{thermalNumber(activeDuty.value)} kW</b></div>}
                       <button
                         type="button"
                         onClick={() => open(item)}
