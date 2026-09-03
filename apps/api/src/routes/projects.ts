@@ -1003,7 +1003,7 @@ router.post(
          LEFT JOIN tank_families tf ON tf.id=pm.tank_family_id
          WHERE (pm.id::text=$1 OR pm.product_code=$1)
            AND pm.product_category='Tank'
-         FOR SHARE`,
+         FOR SHARE OF pm`,
         [productMasterId],
       );
       const product = productResult.rows[0];
