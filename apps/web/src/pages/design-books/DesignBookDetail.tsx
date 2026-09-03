@@ -1877,7 +1877,11 @@ function thermalNumber(value: any, decimals = 2) {
 export function thermalLinkedFreeSurfaceArea(source: any) {
   const tanks = Array.isArray(source?.linked_tanks) ? source.linked_tanks : [];
   if (!tanks.length) return null;
-  const areas = tanks.map((tank: any) => Number(tank?.free_surface_area_m2));
+  const areas = tanks.map((tank: any) => Number(
+    tank?.free_surface_area_m2 ??
+    tank?.water_surface_area_m2 ??
+    tank?.surface_area_m2,
+  ));
   if (areas.some((area: number) => !Number.isFinite(area) || area <= 0)) return null;
   return areas.reduce((sum: number, area: number) => sum + area, 0);
 }
@@ -3888,6 +3892,12 @@ function ThermalTab({
     source_reference: '',
     notes: '',
   });
+  useEffect(() => {
+    if (!selected?.system_id) return;
+    const current = items.find(item => item.system_id === selected.system_id);
+    if (!current || current === selected) return;
+    setSelected(current);
+  }, [items, selected?.system_id]);
   const { data: correlationLibrary, refetch: refetchCorrelationLibrary } = useQuery({
     queryKey: ['thermal-correlation-library'],
     queryFn: () => api.get('/thermal-correlations').then(response => response.data),

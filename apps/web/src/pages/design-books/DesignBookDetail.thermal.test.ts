@@ -53,6 +53,9 @@ describe('Design Book Thermal navigation', () => {
     expect(thermalLinkedFreeSurfaceArea({
       linked_tanks: [{ tank_id: 'custom-1', shape: 'custom', free_surface_area_m2: null }],
     })).toBeNull();
+    expect(thermalLinkedFreeSurfaceArea({
+      linked_tanks: [{ tank_id: 'custom-1', shape: 'custom', surface_area_m2: '12.5' }],
+    })).toBe(12.5);
   });
   it('places Thermal immediately after Life Support Systems', () => {
     expect(DESIGN_BOOK_TAB_ORDER).toEqual([
