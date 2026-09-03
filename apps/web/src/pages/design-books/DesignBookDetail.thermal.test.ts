@@ -83,7 +83,8 @@ describe('Design Book Thermal navigation', () => {
     expect(screen.getByText('Pump shaft power')).toBeInTheDocument();
     expect(screen.getByText('Calculated equipment total')).toBeInTheDocument();
     expect(screen.getByText('4.25 kW')).toBeInTheDocument();
-    expect(screen.getByText(/External pumps contribute shaft power/)).toBeInTheDocument();
+    expect(screen.getByText(/Thermal does not re-size pumps/)).toBeInTheDocument();
+    expect(screen.getByText(/External pumps contribute saved shaft power/)).toBeInTheDocument();
   });
 
   it('uses current linked tank free-surface values, including custom tanks', () => {

@@ -9,6 +9,12 @@ The Design Book’s calculated system flow is the sole authority for circuit-lev
 
 **How to apply:** Keep display, sizing, freshness, and snapshots on that same flow basis. Treat changed assumptions or formulas as stale, and block release until active circuits have fresh ready selections.
 
+Thermal equipment heat is a downstream consumer of the saved Pump Selection result, not a second pump-sizing authority.
+
+**Why:** Revalidating Flow Route flow or catalog suitability while assembling Thermal heat can contradict Pump Selection and reject a usable saved shaft or motor-input power value. Thermal needs the frozen power result, not a newly resolved duty point.
+
+**How to apply:** For external pumps, consume the saved shaft power per unit; for submerged pumps, consume the saved motor-input power per unit; multiply by saved quantity. Do not recalculate pump hydraulics or propagate current Flow Route freshness/suitability errors into Thermal. Warn only when the saved power result, installation basis, or quantity is missing.
+
 The Design Book owns the project pump tag and the design values entered or calculated during sizing. A selected PIM Product Master is linked as the pump model, but it does not replace the Design Book’s tag or overwrite its engineering evidence.
 
 **Why:** A catalog model identifies what pump is being used, while the Design Book records the project-specific duty point and assignment. Mixing those ownership boundaries would make catalog maintenance change historical project evidence unexpectedly.

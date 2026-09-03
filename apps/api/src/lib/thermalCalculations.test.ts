@@ -223,7 +223,7 @@ describe('AAT thermal calculation', () => {
     });
   });
 
-  it('preserves the specific compatibility reason for a saved fresh pump selection', () => {
+  it('does not revalidate pump compatibility while consuming saved Thermal heat input', () => {
     const source = buildThermalSourceContext({
       system: { id: 'system-1', system_code: 'LSS-1' },
       links: [], exhibits: [], tanks: [],
@@ -242,12 +242,46 @@ describe('AAT thermal calculation', () => {
       uvSelections: [],
     });
 
-    expect(source.equipment_heat_sources[0].reasons).toEqual([
-      'Selected pump catalog design flow is 100 m³/h; circuit requires 120 m³/h.',
-    ]);
-    expect(source.equipment_heat_sources[0].reasons).not.toContain(
-      'Pump selection must be saved, fresh, and ready.',
-    );
+    expect(source.equipment_heat_sources[0]).toMatchObject({
+      input_power_kw_per_unit: 1.2,
+      heat_gain_kw: 1.2,
+      power_basis: 'shaft_power_kw',
+      freshness: 'saved',
+      status: 'ready',
+      reasons: [],
+    });
+  });
+
+  it('uses saved pump power for Thermal heat even when current Flow Route freshness is stale', () => {
+    const source = buildThermalSourceContext({
+      system: { id: 'system-1', system_code: 'LSS-1' },
+      links: [], exhibits: [], tanks: [],
+      pumpSelections: [{
+        circuit_key: 'loop:1',
+        pump_role: 'primary',
+        project_equipment_item_id: 'pump-a',
+        pump_quantity: 1,
+        installation_location: 'external',
+        freshness: 'stale',
+        status: 'incompatible',
+        calculation_version: 'pump-selection-v1',
+        results: { shaft_power_kw: 9.882, motor_input_kw: 11.103 },
+        reasons: [
+          'Pump selection is stale and must be recalculated.',
+          'Selected pump catalog design flow is 248.7 m³/h; circuit requires 323.204 m³/h.',
+        ],
+      }],
+      uvSelections: [],
+    });
+
+    expect(source.equipment_heat_sources[0]).toMatchObject({
+      input_power_kw_per_unit: 9.882,
+      heat_gain_kw: 9.882,
+      power_basis: 'shaft_power_kw',
+      freshness: 'saved',
+      status: 'ready',
+      reasons: [],
+    });
   });
 
   it('derives free surface from linked rectangular tank dimensions when no saved area exists', () => {

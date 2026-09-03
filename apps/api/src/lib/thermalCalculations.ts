@@ -413,30 +413,16 @@ export function buildThermalSourceContext(args: {
     const location = pump.installation_location === 'external' || pump.installation_location === 'submerged'
       ? pump.installation_location : null;
     const hasSavedCalculation = !!pump.results && pump.calculation_version != null;
-    const pumpSelectionReasons = Array.isArray(pump.reasons)
-      ? pump.reasons.filter((reason: unknown) => String(reason || '').trim())
-      : [];
-    const readinessReasons = [
-      ...(pump.freshness === 'fresh'
-        ? []
-        : [pump.freshness === 'stale'
-          ? 'Pump selection is stale and must be recalculated.'
-          : 'Pump selection must be saved and calculated.']),
-      ...(pump.status === 'ready'
-        ? []
-        : pumpSelectionReasons.length
-          ? pumpSelectionReasons
-          : [pump.status === 'incompatible'
-            ? 'Selected pump does not meet the current circuit flow, head, or power duty.'
-            : 'Pump selection is incomplete.']),
-      ...(hasSavedCalculation ? [] : ['Pump sizing calculation results are required.']),
-    ];
     const powerBasis = location === 'external' ? 'shaft_power_kw'
       : location === 'submerged' ? 'motor_input_kw' : null;
-    const perUnit = powerBasis ? positive(pump.results?.[powerBasis]) : null;
+    const perUnit = powerBasis && hasSavedCalculation
+      ? positive(pump.results?.[powerBasis])
+      : null;
     const quantity = positive(pump.pump_quantity);
     const incompleteReasons = [
-      ...readinessReasons,
+      ...(perUnit != null
+        ? []
+        : ['Pump Selection must provide a saved calculated power value for Thermal heat.']),
       ...(location ? [] : ['Pump installation location is required (external or submerged).']),
       ...(quantity != null ? [] : ['Pump quantity is required.']),
       ...(powerBasis && perUnit != null ? [] : [`Pump ${powerBasis || 'heat power'} is required.`]),
@@ -460,9 +446,12 @@ export function buildThermalSourceContext(args: {
           ? '100% of motor input power transferred to water'
           : null,
       power_basis: powerBasis,
-      freshness: pump.freshness || 'unsaved',
-      status: pump.status || 'incomplete',
-      reasons: incompleteReasons,
+      // Thermal consumes the saved Pump Selection result only. Its current
+      // Flow Route freshness/suitability is intentionally not re-evaluated
+      // here; that lifecycle belongs to Pump Selection.
+      freshness: hasSavedCalculation ? 'saved' : 'unsaved',
+      status: incompleteReasons.length ? 'incomplete' : 'ready',
+      reasons: incompleteReasons.filter((reason, index, reasons) => reasons.indexOf(reason) === index),
     };
   });
   const seenUvStreams = new Set<string>();

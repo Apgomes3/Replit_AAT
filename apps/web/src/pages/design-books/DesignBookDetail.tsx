@@ -2358,8 +2358,8 @@ export function EquipmentHeatGainBreakdown({ source }: { source: any }) {
       <div>
         <h4 className="text-sm font-semibold text-[#263746]">Equipment heat-gain breakdown</h4>
         <p className="mt-1 text-xs text-[#71808a]">
-          Calculated from the linked pump and UV equipment captured for this LSS system.
-          External pumps contribute shaft power to the water; submerged pumps contribute 100% of motor input power.
+          Uses the saved pump-selection and UV equipment results captured for this LSS system; Thermal does not re-size pumps.
+          External pumps contribute saved shaft power to the water; submerged pumps contribute saved motor input power.
           UV heat follows its saved equipment heat basis.
         </p>
       </div>
