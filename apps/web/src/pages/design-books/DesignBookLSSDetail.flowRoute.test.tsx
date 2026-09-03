@@ -761,6 +761,44 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(screen.getByText(/Approval Engineer/)).toBeInTheDocument();
   });
 
+  it('creates a review run without sending a stale cached preview timestamp', async () => {
+    const user = userEvent.setup();
+    renderFlowRoute(
+      baseSystem,
+      bookWithLinkedExhibits,
+      [primaryLink],
+      [],
+      '/design-books/book-1/lss/system-1?tab=biological-media',
+      {
+        case: {
+          id: 'case-1',
+          reactor_type: 'Moving bed biofilter',
+          previewed_at: '2026-08-29T08:55:00.000Z',
+        },
+        preview: {
+          status: 'VALID',
+          status_label: 'Valid',
+          is_stale: false,
+          engine_version: 'BIOFILTER_1_0',
+          assumptions: [],
+          messages: [],
+        },
+        readiness_status: 'Valid',
+        input_completeness: { complete: true, missing: [] },
+        context: { status: 'ready', total_operating_volume_m3: 42.125, linked_exhibits: [] },
+        latest_run: null,
+        runs: [],
+      },
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Create review run' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith(
+      '/systems/system-1/biological-media/runs',
+      { design_book_id: 'book-1' },
+    ));
+  });
+
   it('opens the selected linked exhibit from the table without changing neighboring controls', async () => {
     const user = userEvent.setup();
     const secondaryLink = {

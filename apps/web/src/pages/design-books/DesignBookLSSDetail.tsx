@@ -560,19 +560,19 @@ export function BiologicalMediaCalculatorPanel({
     <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
         <div>
-          <h2 className="text-sm font-semibold text-stone-700">Current calculation run</h2>
-          <p className="mt-0.5 text-xs text-stone-400">Approval authorizes this frozen evidence snapshot; it never recalculates the result.</p>
+          <h2 className="text-sm font-semibold text-stone-700">Calculation run for review</h2>
+          <p className="mt-0.5 text-xs text-stone-400">After calculating a valid preview, create a run to lock the current inputs and result for review. Creating or approving a run does not recalculate it.</p>
         </div>
         {!readOnly && preview && !stale && preview.status !== 'BLOCKED' &&
           <button type="button" onClick={onCreateRun} disabled={runBusy}
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-            <LockKeyhole className="h-3.5 w-3.5" />{runBusy === 'create' ? 'Creating run…' : 'Create frozen run'}
+            <LockKeyhole className="h-3.5 w-3.5" />{runBusy === 'create' ? 'Creating run…' : 'Create review run'}
           </button>}
       </div>
       <div className="p-5">
         {!latestRun ? <div className="rounded-lg border border-dashed border-stone-200 px-4 py-6 text-center">
-          <p className="text-sm font-medium text-stone-600">No calculation run has been created.</p>
-          <p className="mt-1 text-xs text-stone-400">Save and calculate a current, unblocked preview before freezing a reviewable run.</p>
+          <p className="text-sm font-medium text-stone-600">No review run has been created.</p>
+          <p className="mt-1 text-xs text-stone-400">Complete the required fields and select Calculate preview. When the preview is valid, select Create review run.</p>
         </div> : <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1782,7 +1782,6 @@ export default function DesignBookLSSDetail() {
     try {
       await api.post(`/systems/${systemId}/biological-media/runs`, {
         design_book_id: bookId,
-        previewed_at: biologicalMedia?.case?.previewed_at,
       });
       toast.success('Frozen Biological Media run created for review');
       await refreshBiologicalMedia();
