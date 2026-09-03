@@ -99,6 +99,7 @@ const primaryExhibitCalculation = {
   status: 'valid',
   inputs: {
     exhibit_id: 'exhibit-1',
+    target_turnover_rate_cycles_per_hour: 2,
     surface_skim_pct: 36,
     bottom_drain_pct: 64,
   },
@@ -517,7 +518,9 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     );
     expect(screen.getByRole('tabpanel', { name: 'System Overview' })).toBeVisible();
     expect(screen.getByText('Design Flow')).toBeInTheDocument();
-    expect(screen.getByText('Turnover Rate')).toBeInTheDocument();
+    expect(screen.queryByText('Turnover Rate')).not.toBeInTheDocument();
+    expect(screen.getByText('Turnover ×/h')).toBeInTheDocument();
+    expect(screen.getByText('2.00')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Link Exhibit/ })).toBeInTheDocument();
     expect(screen.getByText('125.0')).toBeInTheDocument();
   });
@@ -2328,7 +2331,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     });
 
     await waitFor(() => expect(screen.getByText('125.0 m³/h')).toBeInTheDocument());
-    expect(screen.getAllByText('2.5 ×/h').length).toBeGreaterThan(0);
+    expect(screen.queryByText('2.5 ×/h')).not.toBeInTheDocument();
     unmount();
   });
 

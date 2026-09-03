@@ -744,7 +744,7 @@ describe('aquarium engineering calculations', () => {
     expect(system.results.flow_override_m3h).toBe(75);
   });
 
-  it('requires exactly one primary link before deriving system turnover', () => {
+  it('keeps system flow valid while leaving turnover unavailable for ambiguous primary links', () => {
     const first = calculateExhibitHydraulics(
       exhibit,
       [tank],
@@ -774,14 +774,47 @@ describe('aquarium engineering calculations', () => {
     );
 
     const noPrimary = calculate('Secondary');
-    expect(noPrimary.status).toBe('invalid');
+    expect(noPrimary.status).toBe('valid');
     expect(noPrimary.results.turnover_rate_cycles_per_hour).toBeNull();
-    expect(noPrimary.reasons.join(' ')).toContain('Exactly one Primary');
+    expect(noPrimary.results.turnover_unavailable_reason).toContain('Exactly one Primary');
+    expect(noPrimary.reasons).toEqual([]);
 
     const multiplePrimary = calculate('Primary');
-    expect(multiplePrimary.status).toBe('invalid');
+    expect(multiplePrimary.status).toBe('valid');
     expect(multiplePrimary.results.turnover_rate_cycles_per_hour).toBeNull();
-    expect(multiplePrimary.reasons.join(' ')).toContain('Multiple Primary');
+    expect(multiplePrimary.results.turnover_unavailable_reason).toContain('Multiple Primary');
+    expect(multiplePrimary.reasons).toEqual([]);
+  });
+
+  it('treats legacy zero allocations as calculated flow instead of invalid overrides', () => {
+    const first = calculateExhibitHydraulics(
+      exhibit,
+      [tank],
+      { target_turnover_rate: 4, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    const system = calculateSystemEngineering(
+      {
+        id: 'sys-legacy-zero-allocation',
+        calculation_inputs: {
+          design_flow_source: 'linked_exhibits',
+          turnover_source: 'primary_exhibit',
+        },
+      },
+      [{
+        id: 'link-1',
+        exhibit_id: exhibit.id,
+        link_type: 'Primary',
+        flow_allocation_m3h: 0,
+        allocation_source: 'manual_override',
+      }],
+      [first],
+      null,
+    );
+
+    expect(system.status).toBe('valid');
+    expect(system.results.allocated_flow_m3h).toBe(system.results.calculated_required_flow_m3h);
+    expect(system.allocations[0].allocation_source).toBe('calculated');
   });
 
   it('sums current linked exhibit flows without splitting the system design flow', () => {

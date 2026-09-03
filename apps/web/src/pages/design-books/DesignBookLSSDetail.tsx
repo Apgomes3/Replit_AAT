@@ -1244,11 +1244,10 @@ function EngineeringTrace({ calculation }: { calculation?: any | null }) {
           {calculation.calculation_version} · {new Date(calculation.calculated_at).toLocaleString()}
         </span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 text-xs">
         <div><span className="block opacity-70">Calculated flow</span><strong className="font-mono">{calculation.results?.calculated_required_flow_m3h ?? '—'} m³/h</strong></div>
         <div><span className="block opacity-70">Design flow</span><strong className="font-mono">{calculation.results?.design_flow_m3h ?? '—'} m³/h</strong></div>
         <div><span className="block opacity-70">Allocated flow</span><strong className="font-mono">{calculation.results?.allocated_flow_m3h ?? '—'} m³/h</strong></div>
-        <div><span className="block opacity-70">Turnover</span><strong className="font-mono">{calculation.results?.turnover_rate_cycles_per_hour ?? '—'} ×/h</strong></div>
       </div>
       <p className="text-xs opacity-80 mt-2">{calculation.formula}</p>
       {calculation.reasons?.length > 0 && (
@@ -2458,17 +2457,22 @@ export default function DesignBookLSSDetail() {
   ) ?? null;
   const calculatedSystemFlow = systemCalculation?.results?.design_flow_m3h;
   const systemFlow = calculatedSystemFlow == null ? null : Number(calculatedSystemFlow);
-  const systemTurnover =
-    systemCalculation?.results?.turnover_rate_cycles_per_hour ?? null;
   const exhibitCalculations: any[] = book?.engineering_calculations?.exhibits || [];
 
   // Values come exclusively from the API calculation contract.
   const exhibitFlowMap = new Map<string, number | null>();
+  const exhibitTurnoverMap = new Map<string, number | null>();
   (links as any[]).forEach((l: any) => {
     const calculation = exhibitCalculations.find(
       (candidate: any) => candidate.inputs?.exhibit_id === l.exhibit_id,
     );
     exhibitFlowMap.set(l.exhibit_id, calculation?.results?.total_return_flow_m3h ?? null);
+    exhibitTurnoverMap.set(
+      l.exhibit_id,
+      calculation?.inputs?.target_turnover_rate_cycles_per_hour ??
+        calculation?.results?.turnover_rate_cycles_per_hour ??
+        null,
+    );
   });
   const totalCalculatedFlow = systemCalculation?.results?.calculated_required_flow_m3h ?? 0;
 
@@ -2996,7 +3000,7 @@ export default function DesignBookLSSDetail() {
             </div>
 
             {/* Stats row */}
-            <div className="grid grid-cols-3 gap-3 mt-5">
+            <div className="grid grid-cols-2 gap-3 mt-5">
               {[
                 {
                   label: 'Design Flow',
@@ -3006,15 +3010,6 @@ export default function DesignBookLSSDetail() {
                     : 'Synced from linked exhibits',
                   icon: <Gauge className="w-4 h-4 text-cyan-600" />,
                   bg: 'bg-cyan-50',
-                },
-                {
-                  label: 'Turnover Rate',
-                  value: systemTurnover != null ? `${Number(systemTurnover).toFixed(1)} ×/h` : 'Unavailable',
-                  detail: systemCalculation?.inputs?.turnover_source === 'manual_override'
-                    ? 'Manual override'
-                    : 'Synced from primary exhibit',
-                  icon: <Droplets className="w-4 h-4 text-blue-500" />,
-                  bg: 'bg-blue-50',
                 },
                 {
                   label: 'Linked Exhibits',
@@ -3088,6 +3083,7 @@ export default function DesignBookLSSDetail() {
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Water Type</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Link Type</th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Design Flow m³/h</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Turnover ×/h</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase tracking-wide">Notes</th>
                   <th className="px-4 py-2.5" />
                 </tr>
@@ -3136,6 +3132,14 @@ export default function DesignBookLSSDetail() {
                           : f != null
                           ? <span>{f.toFixed(1)} <small className="block font-sans text-[10px] text-stone-400">calculated</small></span>
                           : <span className="text-stone-300 text-xs">no hydraulics</span>;
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-sm text-stone-700">
+                      {(() => {
+                        const turnover = exhibitTurnoverMap.get(link.exhibit_id);
+                        return turnover != null
+                          ? <span>{Number(turnover).toFixed(2)}</span>
+                          : <span className="text-stone-300 text-xs">unavailable</span>;
                       })()}
                     </td>
                     <td className="px-4 py-3 text-stone-500 max-w-xs">

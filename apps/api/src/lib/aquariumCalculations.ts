@@ -629,7 +629,14 @@ export function calculateSystemEngineering(
     const required = calculationIsCurrent
       ? exhibit.results.total_return_flow_m3h ?? null
       : null;
-    const override = numberOrNull(link.flow_allocation_m3h);
+    const savedAllocation = numberOrNull(link.flow_allocation_m3h);
+    // Zero-valued rows were historically stored as allocation overrides even
+    // when the link was meant to follow its exhibit calculation. A real manual
+    // allocation must be explicit and positive; otherwise use calculated flow.
+    const override = link.allocation_source === 'manual_override' &&
+      savedAllocation != null && savedAllocation > 0
+      ? savedAllocation
+      : null;
     return {
       link_id: link.id,
       exhibit_id: link.exhibit_id,
@@ -698,11 +705,12 @@ export function calculateSystemEngineering(
   const turnover = turnoverSource === 'manual_override'
     ? savedTurnover
     : calculatedTurnover;
-  if (turnoverSource === 'primary_exhibit' && linked.length > 0 && primaryLinks.length !== 1) {
-    reasons.push(primaryLinks.length === 0
+  const turnoverUnavailableReason =
+    turnoverSource === 'primary_exhibit' && linked.length > 0 && primaryLinks.length !== 1
+      ? (primaryLinks.length === 0
       ? 'Exactly one Primary exhibit link is required to calculate system turnover.'
-      : 'Multiple Primary exhibit links make system turnover unavailable.');
-  }
+      : 'Multiple Primary exhibit links make system turnover unavailable.')
+      : null;
   const hasTurnoverOverride = turnoverSource === 'manual_override' && savedTurnover != null;
   const storedTurnoverDiffers = hasTurnoverOverride && calculatedTurnover != null &&
     Math.abs(savedTurnover - calculatedTurnover) > 0.005;
@@ -838,6 +846,7 @@ export function calculateSystemEngineering(
       allocated_flow_m3h: roundEngineering(allocatedFlow, FLOW_DECIMALS),
       design_flow_m3h: roundEngineering(designFlow, FLOW_DECIMALS),
       turnover_rate_cycles_per_hour: turnover,
+      turnover_unavailable_reason: turnoverUnavailableReason,
       allocation_total_m3h: roundEngineering(allocatedFlow, FLOW_DECIMALS),
       flow_override_m3h: hasFlowOverride ? savedFlow : null,
       turnover_override_cycles_per_hour: hasTurnoverOverride ? savedTurnover : null,

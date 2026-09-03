@@ -2958,8 +2958,8 @@ router.post('/systems/:id/exhibit-links', authenticate, requireRole('admin', 'en
   const { exhibit_id, link_type, flow_allocation_m3h, notes, sort_order } = req.body;
   if (!exhibit_id) return res.status(400).json({ error: { code: 'VALIDATION', message: 'exhibit_id is required' } });
   if (flow_allocation_m3h != null &&
-      (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
-    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be a non-negative number.' } });
+      (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) <= 0)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be greater than zero, or left blank to use calculated exhibit flow.' } });
   }
   try {
     const ownership = await query(
@@ -3009,8 +3009,8 @@ router.put('/systems/:id/exhibit-links/:linkId', authenticate, requireRole('admi
   if (editable.error) return res.status(409).json({ error: editable.error });
   const { link_type, flow_allocation_m3h, notes } = req.body;
   if (flow_allocation_m3h != null &&
-      (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) < 0)) {
-    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be a non-negative number.' } });
+      (!Number.isFinite(Number(flow_allocation_m3h)) || Number(flow_allocation_m3h) <= 0)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Flow allocation must be greater than zero, or left blank to use calculated exhibit flow.' } });
   }
   const result = await query(
     `UPDATE system_exhibit_links
