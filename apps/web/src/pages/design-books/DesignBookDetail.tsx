@@ -4882,7 +4882,7 @@ function ThermalTab({
                       aria-labelledby={`thermal-wall-tab-${selectedWallTankBasis.tank_id || 'selected'}`}
                       className="grid gap-2 rounded-lg border border-[#c7d8df] bg-[#edf3f4] p-3 sm:grid-cols-2 lg:grid-cols-4"
                     >
-                      <div className="col-span-full mt-1 border-t border-[#c7d8df] pt-3">
+                      <div className="col-span-full mt-1 pt-3">
                         <div className={`grid gap-3 sm:grid-cols-2 ${sourceHasMixedWalls ? '' : 'lg:grid-cols-4'}`}>
                           {!sourceHasMixedWalls && (
                             <label>
