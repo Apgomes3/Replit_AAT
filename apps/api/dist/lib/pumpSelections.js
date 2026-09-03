@@ -8,6 +8,7 @@ exports.isFoamFractionatorCircuit = isFoamFractionatorCircuit;
 exports.isSandFilterCircuit = isSandFilterCircuit;
 exports.pumpDutyTag = pumpDutyTag;
 exports.inferredPumpDutyTag = inferredPumpDutyTag;
+exports.pumpFlowRouteRole = pumpFlowRouteRole;
 exports.inferPumpDutyType = inferPumpDutyType;
 exports.resolvePumpDutyType = resolvePumpDutyType;
 exports.systemNumberToken = systemNumberToken;
@@ -38,11 +39,11 @@ exports.SAND_FILTER_CIRCUIT_TYPE = 'Sand Filter';
 exports.PUMP_ROLE_PRIMARY = 'primary';
 exports.PUMP_ROLE_VENTURI = 'venturi';
 exports.DEFAULT_PUMP_DUTY_TYPES = [
-    { tag: 'FFSP', pump_name: 'Foam Fractionator Supply Pump' },
-    { tag: 'FFVP', pump_name: 'Foam Fractionator Venturi Pump' },
-    { tag: 'SFSP', pump_name: 'Sand Filter Supply Pump' },
-    { tag: 'CIRCP', pump_name: 'Circulation Pump' },
-    { tag: 'VACP', pump_name: 'Vacuum Pump' },
+    { tag: 'FFSP', pump_name: 'Foam Fractionator Supply Pump', flow_route_role: 'foam_fractionator_supply' },
+    { tag: 'FFVP', pump_name: 'Foam Fractionator Venturi Pump', flow_route_role: 'foam_fractionator_venturi' },
+    { tag: 'SFSP', pump_name: 'Sand Filter Supply Pump', flow_route_role: 'sand_filter_supply' },
+    { tag: 'CIRCP', pump_name: 'Circulation Pump', flow_route_role: 'circulation' },
+    { tag: 'VACP', pump_name: 'Vacuum Pump', flow_route_role: 'vacuum' },
 ];
 /** True when the circuit belongs to a Foam Fractionator loop. */
 function isFoamFractionatorCircuit(circuit) {
@@ -89,12 +90,30 @@ function inferredPumpDutyTag(circuit, role) {
         return 'CIRCP';
     return null;
 }
+function pumpFlowRouteRole(circuit, role) {
+    if (role === exports.PUMP_ROLE_VENTURI) {
+        return isFoamFractionatorCircuit(circuit) ? 'foam_fractionator_venturi' : null;
+    }
+    if (/break tank|plenum tank/i.test(String(circuit.flow_source || '')) ||
+        circuit.flow_mode === 'matched')
+        return 'circulation';
+    if (isFoamFractionatorCircuit(circuit))
+        return 'foam_fractionator_supply';
+    if (isSandFilterCircuit(circuit))
+        return 'sand_filter_supply';
+    const originText = `${circuit.circuit_name || ''} ${circuit.circuit_type || ''} ${circuit.flow_source || ''}`.toLowerCase();
+    if (originText.includes('vacuum'))
+        return 'vacuum';
+    if (circuit.circuit_kind === 'side_stream' || originText.includes('circulation'))
+        return 'circulation';
+    return null;
+}
 function inferPumpDutyType(circuit, role, dutyTypes = exports.DEFAULT_PUMP_DUTY_TYPES) {
-    const tag = inferredPumpDutyTag(circuit, role);
-    if (!tag)
+    const flowRouteRole = pumpFlowRouteRole(circuit, role);
+    if (!flowRouteRole)
         return null;
-    return dutyTypes.find(item => item.tag === tag)
-        || exports.DEFAULT_PUMP_DUTY_TYPES.find(item => item.tag === tag)
+    return dutyTypes.find(item => item.flow_route_role === flowRouteRole)
+        || exports.DEFAULT_PUMP_DUTY_TYPES.find(item => item.flow_route_role === flowRouteRole)
         || null;
 }
 function resolvePumpDutyType(circuit, role, dutyTypes = exports.DEFAULT_PUMP_DUTY_TYPES) {
@@ -354,8 +373,8 @@ function buildPumpLineItem(circuit, row, role, dutyTypes = exports.DEFAULT_PUMP_
             ...(venturiFlowMissing ? ['Venturi duty flow is required and must be greater than zero. Enter the venturi pump flow before saving.'] : []),
             ...(row && row.source_fingerprint && !sourceMatches ? ['Flow Route or sizing inputs changed after this pump calculation was saved. Save and calculate again.'] : []),
             ...(versionStale ? [`Pump sizing calculation version ${row.calculation_version} is outdated; recalculate using ${exports.PUMP_SELECTION_CALCULATION_VERSION}.`] : []),
-            ...(!duty ? ['Confirm the pump origin and write a new system pump name.'] : []),
-            ...(row?.project_equipment_item_id && row?.pump_snapshot ? [] : ['Select a pump assigned to this LSS system.']),
+            ...(!duty ? ['No active Platform Admin pump duty relationship matches this Flow Route circuit.'] : []),
+            ...(row?.project_equipment_item_id && row?.pump_snapshot ? [] : ['Save and calculate to create the governed system pump.']),
             ...calculation.reasons.filter(r => !venturiFlowMissing || !r.includes('Circuit flow')),
             ...suitability.reasons,
         ];

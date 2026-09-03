@@ -16,18 +16,16 @@ async function seedThermalWallConstructions(client, approvingEngineerId) {
     let insertedCount = 0;
     for (const item of exports.STARTER_THERMAL_WALL_CONSTRUCTIONS) {
         const result = await client.query(`INSERT INTO thermal_wall_construction_defaults
-         (construction_code, construction_label, material, thickness_mm,
-          conductivity_w_m_k, thickness_units, conductivity_units, version,
+         (construction_code, construction_label, material,
+          conductivity_w_m_k, conductivity_units, version,
           source_basis, source_reference, notes, status, approved_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'approved',$12)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'approved',$10)
        ON CONFLICT (construction_code, version) DO NOTHING
        RETURNING id`, [
             item.code,
             item.label,
             item.material,
-            item.thickness_mm,
             item.conductivity_w_m_k,
-            item.thickness_units,
             item.conductivity_units,
             item.version,
             item.source_basis,

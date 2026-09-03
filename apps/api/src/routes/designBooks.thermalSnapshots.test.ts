@@ -6,6 +6,46 @@ import {
 } from '../lib/thermalCalculations';
 
 describe('thermal calculation snapshot persistence', () => {
+  it('classifies governed thickness and layer changes as wall-basis changes', () => {
+    const savedBasis = {
+      construction_type: 'acrylic',
+      basis_version: 'WALL-V1',
+      conductivity_w_m_k: 0.19,
+      thickness_mm: 12,
+    };
+    const currentBasis = {
+      ...savedBasis,
+      thickness_mm: 15,
+    };
+    const savedDefault = {
+      code: 'acrylic',
+      version: 'WALL-V1',
+      conductivity_w_m_k: 0.19,
+      thickness_mm: 12,
+      layers: [{ material: 'Acrylic', thickness_mm: 12, conductivity_w_m_k: 0.19 }],
+    };
+    const currentDefault = {
+      ...savedDefault,
+      thickness_mm: 15,
+      layers: [
+        { material: 'Acrylic', thickness_mm: 12, conductivity_w_m_k: 0.19 },
+        { material: 'Coating', thickness_mm: 3, conductivity_w_m_k: 0.1 },
+      ],
+    };
+
+    expect(thermalCalculationTestUtils.thermalWallBasisChange(
+      savedBasis,
+      currentBasis,
+      [savedDefault],
+      [currentDefault],
+    )).toMatchObject({
+      changed: true,
+      changed_fields: expect.arrayContaining(['thickness_mm', 'layers']),
+      saved: savedBasis,
+      current: currentBasis,
+    });
+  });
+
   it('persists exact temperature and wall-construction evidence for reloads', async () => {
     const waterTemperatureBasis = {
       source: 'linked exhibit design-temperature range average',
@@ -260,13 +300,33 @@ describe('thermal calculation snapshot persistence', () => {
       status: 'Stale',
       freshness: 'stale',
       source_fingerprint: expect.any(String),
+      wall_basis_change: {
+        changed: true,
+        changed_fields: expect.arrayContaining(['basis_version', 'conductivity_w_m_k']),
+        saved: expect.objectContaining({
+          basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+          conductivity_w_m_k: 0.19,
+        }),
+        current: expect.objectContaining({
+          basis_version: 'AAT_FOUNDATIONS_WALL_V2.0',
+          conductivity_w_m_k: 0.2,
+        }),
+      },
       calculation: {
         status: 'Blocked',
         freshness: 'stale',
         is_stale: true,
         wall_construction_basis: calculation.wall_construction_basis,
+        wall_basis_change: {
+          changed: true,
+          changed_fields: expect.arrayContaining(['basis_version', 'conductivity_w_m_k']),
+        },
       },
     });
+    expect(reloaded[0].calculation.reasons[0]).toContain('approved Thermal wall basis changed');
+    expect(reloaded[0].calculation.reasons).not.toContain(
+      'Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.',
+    );
     expect(reloaded[0].source.fingerprint).not.toBe(savedRow.source_fingerprint);
     expect(reloaded[0].calculation.results.tank_wall_calculations).toEqual(frozenWallEvidence);
     expect(reloaded[0].saved.result_snapshot.results.tank_wall_calculations).toEqual(
@@ -275,5 +335,31 @@ describe('thermal calculation snapshot persistence', () => {
     expect(reloaded[0].saved.source_snapshot.linked_tanks[0].wall_construction_basis).toEqual(
       frozenSourceWallEvidence,
     );
+
+    const changedTanks = tanks.map(tank => ({
+      ...tank,
+      wall_thickness_mm: Number(tank.wall_thickness_mm) + 5,
+    }));
+    const tankEditReload = await thermalCalculationTestUtils.loadThermalCalculations(
+      loadRunner as any,
+      'book-thermal-1',
+      [system],
+      links,
+      exhibits,
+      changedTanks,
+      exhibitCalculations,
+      [approvedWall],
+    );
+    expect(tankEditReload[0]).toMatchObject({
+      status: 'Stale',
+      freshness: 'stale',
+      wall_basis_change: null,
+      calculation: {
+        wall_basis_change: null,
+        reasons: [
+          'Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.',
+        ],
+      },
+    });
   });
 });

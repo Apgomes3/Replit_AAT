@@ -367,7 +367,7 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
         };
     });
 }
-async function loadThermalCalculations(runner, designBookId, systems, links, exhibits, tanks, exhibitCalculations) {
+async function loadThermalCalculations(runner, designBookId, systems, links, exhibits, tanks, exhibitCalculations, wallConstructions) {
     const savedRows = systems.length
         ? (await runner('SELECT * FROM design_book_thermal_calculations WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])', [designBookId, systems.map(system => system.id)])).rows
         : [];
@@ -378,6 +378,7 @@ async function loadThermalCalculations(runner, designBookId, systems, links, exh
             exhibits,
             tanks,
             exhibitCalculations,
+            wallConstructions,
         });
         const saved = savedRows.find(row => row.system_id === system.id) || null;
         const correlationSnapshot = saved?.correlation_snapshot ||
@@ -388,7 +389,34 @@ async function loadThermalCalculations(runner, designBookId, systems, links, exh
             !(0, thermalCalculations_1.isApprovedThermalCorrelationSnapshot)(correlationSnapshot);
         const stale = !!saved && (saved.source_fingerprint !== source.fingerprint ||
             saved.calculation_version !== thermalCalculations_1.THERMAL_CALCULATION_VERSION);
-        const preview = (0, thermalCalculations_1.calculateThermalCalculation)(source, saved?.input_snapshot || {});
+        const savedInputs = saved?.input_snapshot || {};
+        const preview = (0, thermalCalculations_1.calculateThermalCalculation)(source, savedInputs);
+        // Re-resolve the wall without the saved default/layer values so a
+        // superseded governed default is visible next to the frozen evidence.
+        const currentApprovedPreview = saved
+            ? (0, thermalCalculations_1.calculateThermalCalculation)(source, {
+                ...savedInputs,
+                tank_wall_default_basis: null,
+                tank_wall_layers: [],
+            })
+            : null;
+        const wallBasisChange = thermalWallBasisChange(saved?.result_snapshot?.wall_construction_basis ||
+            saved?.formula_inputs?.wall_construction_basis ||
+            savedInputs.wall_construction_basis ||
+            saved?.source_snapshot?.wall_construction_basis ||
+            null, currentApprovedPreview?.wall_construction_basis ||
+            preview.wall_construction_basis ||
+            null, saved?.source_snapshot?.wall_construction_defaults || [], source.wall_construction_defaults || []);
+        const nonWallSourceChanged = thermalNonWallSourceChanged(saved?.source_snapshot, source);
+        const staleReasons = [
+            ...(wallBasisChange
+                ? [`The approved Thermal wall basis changed after this calculation was saved (${wallBasisChange.changed_fields.join(', ')}). Review the saved and current wall evidence, then recalculate.`]
+                : []),
+            ...(!wallBasisChange || nonWallSourceChanged ||
+                saved?.calculation_version !== thermalCalculations_1.THERMAL_CALCULATION_VERSION
+                ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
+                : []),
+        ];
         const calculation = saved
             ? {
                 ...saved.result_snapshot,
@@ -401,9 +429,10 @@ async function loadThermalCalculations(runner, designBookId, systems, links, exh
                 reasons: correlationEvidenceMissing
                     ? ['Select a current approved shared-library evaporation correlation and recalculate before review or release.']
                     : stale
-                        ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
+                        ? staleReasons
                         : (saved.result_snapshot?.reasons || []),
                 correlation_snapshot: correlationSnapshot,
+                wall_basis_change: wallBasisChange,
             }
             : null;
         return {
@@ -416,8 +445,117 @@ async function loadThermalCalculations(runner, designBookId, systems, links, exh
             status: stale ? 'Stale' : correlationEvidenceMissing ? 'Blocked' : saved?.status || 'Not configured',
             freshness: stale ? 'stale' : saved?.freshness || 'unsaved',
             source_fingerprint: source.fingerprint,
+            wall_basis_change: wallBasisChange,
         };
     });
+}
+function thermalWallBasisComparable(basis) {
+    if (!basis)
+        return null;
+    const normalizeNumber = (value) => {
+        if (value === null || value === undefined || value === '')
+            return null;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+    const normalizeText = (value) => {
+        const text = String(value ?? '').trim();
+        return text || null;
+    };
+    const layers = (Array.isArray(basis.effective_layers) && basis.effective_layers.length
+        ? basis.effective_layers
+        : Array.isArray(basis.layers) ? basis.layers : [])
+        .map((layer) => ({
+        material: normalizeText(layer?.material),
+        thickness_mm: normalizeNumber(layer?.thickness_mm ?? (layer?.thickness_m == null ? null : Number(layer.thickness_m) * 1000)),
+        conductivity_w_m_k: normalizeNumber(layer?.conductivity_w_m_k),
+    }));
+    const tankBases = (Array.isArray(basis.tank_bases) ? basis.tank_bases : [])
+        .map((tank) => ({
+        tank_id: normalizeText(tank?.tank_id) || normalizeText(tank?.tank_code),
+        tank_code: normalizeText(tank?.tank_code),
+        material: normalizeText(tank?.material),
+        thickness_mm: normalizeNumber(tank?.thickness_mm),
+        conductivity_w_m_k: normalizeNumber(tank?.conductivity_w_m_k),
+        basis_version: normalizeText(tank?.basis_version),
+        layers: (Array.isArray(tank?.layers) ? tank.layers : []).map((layer) => ({
+            material: normalizeText(layer?.material),
+            thickness_mm: normalizeNumber(layer?.thickness_mm ?? (layer?.thickness_m == null ? null : Number(layer.thickness_m) * 1000)),
+            conductivity_w_m_k: normalizeNumber(layer?.conductivity_w_m_k),
+        })),
+    }))
+        .sort((left, right) => String(left.tank_id).localeCompare(String(right.tank_id)));
+    return {
+        basis_version: normalizeText(basis.basis_version ?? basis.version),
+        source_basis: normalizeText(basis.source_basis),
+        source_reference: normalizeText(basis.source_reference),
+        material: normalizeText(basis.material),
+        thickness_mm: normalizeNumber(basis.thickness_mm),
+        conductivity_w_m_k: normalizeNumber(basis.conductivity_w_m_k),
+        layers,
+        tank_bases: tankBases,
+    };
+}
+function thermalWallBasisChange(savedBasis, currentBasis, savedDefaults = [], currentDefaults = []) {
+    const savedComparable = thermalWallBasisComparable(savedBasis);
+    const currentComparable = thermalWallBasisComparable(currentBasis);
+    if (!savedComparable || !currentComparable)
+        return null;
+    const applicableCodes = [...new Set([
+            savedBasis?.construction_type,
+            ...(savedBasis?.tank_bases || []).map((tank) => tank?.construction_type),
+        ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))];
+    const defaultFor = (defaults, code) => defaults.find(defaultBasis => String(defaultBasis?.code || defaultBasis?.construction_code || defaultBasis?.construction_type || '')
+        .trim().toLowerCase() === code);
+    const changedFields = [
+        'basis_version',
+        'conductivity_w_m_k',
+        'material',
+        'source_basis',
+        'source_reference',
+    ].filter(field => {
+        return applicableCodes.some(code => {
+            const savedDefault = thermalWallBasisComparable(defaultFor(savedDefaults, code));
+            const currentDefault = thermalWallBasisComparable(defaultFor(currentDefaults, code));
+            return !!savedDefault && !!currentDefault &&
+                JSON.stringify(savedDefault[field]) !==
+                    JSON.stringify(currentDefault[field]);
+        });
+    });
+    if (!changedFields.length)
+        return null;
+    return {
+        changed: true,
+        changed_fields: changedFields,
+        saved: savedBasis,
+        current: currentBasis,
+    };
+}
+function stableThermalSourceValue(value) {
+    if (Array.isArray(value))
+        return value.map(stableThermalSourceValue);
+    if (!value || typeof value !== 'object')
+        return value;
+    return Object.keys(value).sort().reduce((normalized, key) => {
+        normalized[key] = stableThermalSourceValue(value[key]);
+        return normalized;
+    }, {});
+}
+function thermalNonWallSourceChanged(savedSource, currentSource) {
+    if (!savedSource || !currentSource)
+        return true;
+    const withoutWallEvidence = (source) => {
+        const { fingerprint: _fingerprint, wall_construction_defaults: _wallDefaults, wall_construction_basis: _wallBasis, ...rest } = source;
+        return {
+            ...rest,
+            linked_tanks: (rest.linked_tanks || []).map((tank) => {
+                const { wall_construction_basis: _tankWallBasis, ...tankSource } = tank;
+                return tankSource;
+            }),
+        };
+    };
+    return JSON.stringify(stableThermalSourceValue(withoutWallEvidence(savedSource))) !==
+        JSON.stringify(stableThermalSourceValue(withoutWallEvidence(currentSource)));
 }
 async function insertThermalSnapshotRecord(runner, designBookId, item) {
     const row = item?.saved || item;
@@ -450,6 +588,8 @@ async function insertThermalSnapshotRecord(runner, designBookId, item) {
 }
 exports.thermalCalculationTestUtils = {
     insertThermalSnapshotRecord,
+    loadThermalCalculations,
+    thermalWallBasisChange,
 };
 async function insertFrictionSnapshotRecord(runner, designBookId, systemId, item) {
     if (!item?.circuit_key || !item?.project_equipment_item_id || !item?.source_fingerprint)
@@ -551,11 +691,8 @@ function thermalWallExpectedCurrentMatches(current, expectedCurrentId) {
     return current ? expectedCurrentId === current.id : !expectedCurrentId;
 }
 function thermalWallConstructionDefaultRow(row) {
-    const thicknessMm = Number(row.thickness_mm);
+    const thicknessMm = row.thickness_mm == null ? null : Number(row.thickness_mm);
     const conductivity = Number(row.conductivity_w_m_k);
-    const uValue = 1 / (1 / thermalCalculations_1.THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
-        thicknessMm / 1000 / conductivity +
-        1 / thermalCalculations_1.THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k);
     return {
         id: row.id || null,
         code: row.construction_code || row.code,
@@ -563,7 +700,6 @@ function thermalWallConstructionDefaultRow(row) {
         material: row.material,
         thickness_mm: thicknessMm,
         conductivity_w_m_k: conductivity,
-        u_value_w_m2_k: uValue,
         units: 'W/m²·K',
         thickness_units: row.thickness_units || 'mm',
         conductivity_units: row.conductivity_units || 'W/m·K',
@@ -627,11 +763,19 @@ async function resolveThermalWallConstructionInputs(runner, rawInputs, editableS
     const requestedLayers = Array.isArray(rawInputs.tank_wall_layers) &&
         rawInputs.tank_wall_layers.length
         ? rawInputs.tank_wall_layers
-        : [{
-                material: defaultRecord.material,
-                thickness_mm: defaultRecord.thickness_mm,
-                conductivity_w_m_k: defaultRecord.conductivity_w_m_k,
-            }];
+        : [];
+    if (!requestedLayers.length) {
+        return {
+            ...rawInputs,
+            tank_construction_type: constructionCode,
+            tank_wall_default_basis: defaultRecord,
+            tank_wall_layers: [],
+            tank_wall_layer_overrides: {},
+            tank_wall_override_justification: String(rawInputs.tank_wall_override_justification ||
+                rawInputs.wall_layer_override_justification ||
+                '').trim(),
+        };
+    }
     if (requestedLayers.length !== 1) {
         const error = new Error('A standard Thermal construction requires exactly one effective wall layer.');
         error.status = 400;
@@ -643,14 +787,13 @@ async function resolveThermalWallConstructionInputs(runner, rawInputs, editableS
     const thickness = positiveCorrelationCoefficient(requested.thickness_mm);
     const conductivity = positiveCorrelationCoefficient(requested.conductivity_w_m_k);
     if (!material || thickness == null || conductivity == null) {
-        const error = new Error('Wall material, thickness, and conductivity are required; thickness and conductivity must be positive.');
+        const error = new Error('Wall material and positive thickness and conductivity are required for an explicit wall-layer override.');
         error.status = 400;
         error.code = 'THERMAL_WALL_LAYER_INVALID';
         throw error;
     }
     const overrides = {
         material: material !== defaultRecord.material,
-        thickness_mm: Math.abs(thickness - defaultRecord.thickness_mm) > 1e-9,
         conductivity_w_m_k: Math.abs(conductivity - defaultRecord.conductivity_w_m_k) > 1e-9,
     };
     if (Object.values(overrides).some(Boolean) && editableStatus !== 'Draft') {
@@ -978,17 +1121,16 @@ router.post('/thermal-wall-constructions/:constructionCode/versions', (0, auth_1
     const constructionCode = routeParam(req.params.constructionCode).trim().toLowerCase();
     const version = String(req.body.version || '').trim();
     const material = String(req.body.material || '').trim();
-    const thickness = positiveCorrelationCoefficient(req.body.thickness_mm);
     const conductivity = positiveCorrelationCoefficient(req.body.conductivity_w_m_k);
     const sourceBasis = String(req.body.source_basis || '').trim();
     const sourceReference = String(req.body.source_reference || '').trim();
     const expectedCurrentId = String(req.body.expected_current_id || '').trim();
-    if (!constructionCode || !version || !material || thickness == null || conductivity == null ||
+    if (!constructionCode || !version || !material || conductivity == null ||
         !sourceBasis || !sourceReference) {
         return res.status(400).json({
             error: {
                 code: 'THERMAL_WALL_CONSTRUCTION_REQUIRED',
-                message: 'Version, material, positive thickness and conductivity, source basis, and source reference are required.',
+                message: 'Version, material, positive conductivity, source basis, and source reference are required.',
             },
         });
     }
@@ -1030,17 +1172,15 @@ router.post('/thermal-wall-constructions/:constructionCode/versions', (0, auth_1
            WHERE id=$2`, [req.user.id, current.id]);
         }
         const inserted = await client.query(`INSERT INTO thermal_wall_construction_defaults
-           (construction_code, construction_label, material, thickness_mm,
-            conductivity_w_m_k, thickness_units, conductivity_units, version,
+           (construction_code, construction_label, material,
+            conductivity_w_m_k, conductivity_units, version,
             source_basis, source_reference, notes, status, approved_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'approved',$12)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved',$11)
          RETURNING *`, [
             constructionCode,
             constructionLabel,
             material,
-            thickness,
             conductivity,
-            String(req.body.thickness_units || 'mm').trim() || 'mm',
             String(req.body.conductivity_units || 'W/m·K').trim() || 'W/m·K',
             version,
             sourceBasis,
@@ -1101,12 +1241,13 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
          COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
          COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
          COALESCE(t.primary_material, pm.primary_material_code) AS eff_primary_material,
+          COALESCE(t.wall_thickness_mm, pm.wall_thickness_mm) AS eff_wall_thickness_mm,
          COALESCE(t.notes, pm.notes) AS eff_notes,
          COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
          COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
          COALESCE(
-           t.surface_area_m2,
-           pm.surface_area_m2,
+           NULLIF(t.surface_area_m2, 0),
+           NULLIF(pm.surface_area_m2, 0),
            CASE
              WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                   AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
@@ -1216,8 +1357,8 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
             design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
         };
     });
-    const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(lssSystems_1.isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations);
     const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);
+    const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(lssSystems_1.isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations, thermalConstructionDefaults);
     const pumpSelections = await loadPumpSelections(runner, currentSystems);
     const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
     const liveContext = {
@@ -1921,6 +2062,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
          tf.name as pim_tank_family_name,
          COALESCE(t.tank_type, pm.application_type) as eff_tank_type,
          COALESCE(t.primary_material, pm.primary_material_code) as eff_primary_material,
+          COALESCE(t.wall_thickness_mm, pm.wall_thickness_mm) as eff_wall_thickness_mm,
          COALESCE(t.notes, pm.notes) as eff_notes,
         promoted_pm.id as promoted_product_master_id,
         promoted_pm.product_code as promoted_product_code,
@@ -1960,9 +2102,9 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
           END,
           t.operating_volume_m3, pm.operating_volume_m3
         ) as design_volume_m3,
-        COALESCE(
-          t.surface_area_m2,
-          pm.surface_area_m2,
+         COALESCE(
+           NULLIF(t.surface_area_m2, 0),
+           NULLIF(pm.surface_area_m2, 0),
           CASE
             WHEN COALESCE(t.shape_type, pm.shape_type) = 'Cylindrical'
                  AND COALESCE(t.width_mm, pm.width_mm) IS NOT NULL
@@ -2055,8 +2197,8 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
             design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
         };
     });
-    const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(lssSystems_1.isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations);
     const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(index_1.query);
+    const thermalCalculations = await loadThermalCalculations(index_1.query, routeParam(req.params.id), currentSystems.filter(lssSystems_1.isLifeSupportSystem), systemLinks, exhibits, tanks, exhibitCalculations, thermalConstructionDefaults);
     const pumpSelections = await loadPumpSelections(index_1.query, currentSystems);
     const frictionLossCalculations = await loadFrictionLossPackages(index_1.query, routeParam(req.params.id), currentSystems);
     const livePackage = {
@@ -3766,21 +3908,9 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
     // Load system and its UV side streams with flow calculations
     const systemResult = await (0, index_1.query)(`SELECT s.*,
               s.calculation_inputs->>'design_flow_source' AS design_flow_source,
-              se.design_flow_m3h AS exhibit_flow_m3h,
               s.loop1_flow_pct, s.loop2_flow_pct, s.loop3_flow_pct
          FROM systems s
-         LEFT JOIN LATERAL (
-           SELECT SUM(COALESCE(sel.flow_allocation_m3h, calc.total_return_flow_m3h)) AS design_flow_m3h
-           FROM system_exhibit_links sel
-           LEFT JOIN LATERAL (
-             SELECT results->>'total_return_flow_m3h' AS total_return_flow_m3h
-             FROM design_book_exhibit_hydraulics dbeh
-             WHERE dbeh.exhibit_id=sel.exhibit_id AND dbeh.design_book_id=$2
-             ORDER BY dbeh.updated_at DESC LIMIT 1
-           ) calc ON true
-           WHERE sel.system_id=s.id AND sel.link_type='Primary'
-         ) se ON true
-        WHERE s.id=$1`, [systemId, bookId]);
+        WHERE s.id=$1`, [systemId]);
     if (!systemResult.rows[0]) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
     }
@@ -3788,12 +3918,30 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
     if ((0, systemLifecycle_1.isRetiredSystem)(system)) {
         return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system) });
     }
-    // Resolve design flow — manual_override uses the persisted design_flow_m3h;
-    // linked_exhibits uses the aggregated exhibit hydraulic return flow.
-    const designFlowSource = system.design_flow_source || 'linked_exhibits';
-    const designFlowM3h = designFlowSource === 'manual_override'
-        ? (system.design_flow_m3h != null ? Number(system.design_flow_m3h) : null)
-        : (system.exhibit_flow_m3h != null ? Number(system.exhibit_flow_m3h) : null);
+    // Resolve the same authoritative system flow shown by the Flow Route.
+    // Exhibit hydraulic rows store inputs, not a result JSON column, so derive
+    // current exhibit flows through the shared engineering calculator.
+    const linksResult = await (0, index_1.query)(`SELECT sel.*, e.exhibit_code
+         FROM system_exhibit_links sel
+         LEFT JOIN exhibits e ON e.id=sel.exhibit_id
+        WHERE sel.system_id=$1`, [systemId]);
+    const links = linksResult.rows;
+    const exhibitIds = links.map(link => link.exhibit_id).filter(Boolean);
+    const [exhibitsResult, tanksResult, hydraulicsResult, substrateResult] = exhibitIds.length
+        ? await Promise.all([
+            (0, index_1.query)('SELECT * FROM exhibits WHERE id=ANY($1::uuid[])', [exhibitIds]),
+            (0, index_1.query)('SELECT * FROM tanks WHERE exhibit_id=ANY($1::uuid[])', [exhibitIds]),
+            (0, index_1.query)('SELECT * FROM design_book_exhibit_hydraulics WHERE design_book_id=$1 AND exhibit_id=ANY($2::uuid[])', [bookId, exhibitIds]),
+            (0, index_1.query)('SELECT * FROM design_book_exhibit_substrate WHERE design_book_id=$1 AND exhibit_id=ANY($2::uuid[])', [bookId, exhibitIds]),
+        ])
+        : [{ rows: [] }, { rows: [] }, { rows: [] }, { rows: [] }];
+    const calculatedAt = new Date().toISOString();
+    const exhibitCalculations = exhibitsResult.rows.map(exhibit => (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, tanksResult.rows.filter(tank => tank.exhibit_id === exhibit.id), hydraulicsResult.rows.find(record => record.exhibit_id === exhibit.id), substrateResult.rows.find(record => record.exhibit_id === exhibit.id), calculatedAt));
+    const systemCalculation = (0, aquariumCalculations_1.calculateSystemEngineering)(system, links, exhibitCalculations, null, calculatedAt);
+    const designFlowSource = systemCalculation.inputs.design_flow_source || 'linked_exhibits';
+    const designFlowM3h = systemCalculation.results.design_flow_m3h != null
+        ? Number(systemCalculation.results.design_flow_m3h)
+        : null;
     // Load UV side streams with revision details
     const streamsResult = await (0, index_1.query)(`SELECT s.*,
               r.id AS rev_id, r.revision_number, r.status AS rev_status,
@@ -3803,7 +3951,14 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
               r.approved_per_lamp_flow_exception_m3h, r.notes AS rev_notes,
               pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer,
               pm.primary_material_code AS material_code, pm.power_kw AS rated_power_kw,
-              mwc.allowed AS compatibility_allowed, mwc.water_type AS mapped_water_type
+              COALESCE(uvc.allowed, mwc.allowed) AS compatibility_allowed,
+              CASE
+                WHEN $2='Marine' THEN 'Seawater'
+                WHEN $2='Salt Water' THEN 'Saltwater'
+                WHEN $2='Brackish' THEN 'Brackish water'
+                WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+                ELSE $2
+              END AS mapped_water_type
          FROM system_flow_side_streams s
          LEFT JOIN uv_engineering_revisions r ON r.id=s.uv_revision_id
          LEFT JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
@@ -3811,10 +3966,21 @@ router.post('/design-books/:id/uv/:systemId', (0, auth_1.requireRole)('admin', '
          LEFT JOIN material_water_compatibility mwc
            ON mwc.material_code=pm.primary_material_code
           AND mwc.water_type=CASE
-            WHEN $2 IN ('Marine', 'Salt Water', 'Brackish') THEN CASE WHEN $2='Marine' THEN 'Marine' ELSE 'Salt Water' END
-            WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
-            ELSE $2
-          END
+                WHEN $2='Marine' THEN 'Seawater'
+                WHEN $2='Salt Water' THEN 'Saltwater'
+                WHEN $2='Brackish' THEN 'Brackish water'
+                WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+                ELSE $2
+              END
+          LEFT JOIN uv_engineering_revision_compatibility uvc
+            ON uvc.revision_id=r.id
+           AND uvc.water_type=CASE
+                WHEN $2='Marine' THEN 'Seawater'
+                WHEN $2='Salt Water' THEN 'Saltwater'
+                WHEN $2='Brackish' THEN 'Brackish water'
+                WHEN $2 IN ('Freshwater', 'Blackwater') THEN 'Freshwater'
+                ELSE $2
+              END
         WHERE s.system_id=$1 AND s.preset='UV'
         ORDER BY s.parent_loop_number, s.sort_order, s.created_at, s.id`, [systemId, system.water_type]);
     // Build UVStreamInput objects

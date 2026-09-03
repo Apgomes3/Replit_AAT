@@ -86,11 +86,16 @@ vitest_1.vi.mock('../db', () => {
             return { rows: [] };
         if (sql.includes('FROM project_equipment_items'))
             return { rows: state.candidates };
+        if (sql.includes('FROM product_masters pm') && sql.includes('pm.id=$1')) {
+            const candidate = state.candidates.find(item => item.product_master_id === params[0]);
+            return { rows: candidate ? [candidate] : [] };
+        }
         if (sql.includes('INSERT INTO project_equipment_items')) {
             const created = {
                 id: 'created-pump-1', project_equipment_item_id: 'created-pump-1',
                 equip_code: params[0], project_id: params[1], system_id: params[2],
-                description: params[3], quantity: 1, unit: 'EA', status: 'Design',
+                description: params[3], quantity: params[4], unit: 'EA', status: 'Draft',
+                product_master_id: params[5] || null,
             };
             state.candidates.push(created);
             return { rows: [created] };
@@ -290,6 +295,41 @@ function request(app, method, path, body) {
         });
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'BEGIN')).toBe(true);
         (0, vitest_1.expect)(state.calls.some(call => call.sql === 'COMMIT')).toBe(true);
+    });
+    (0, vitest_1.it)('links an eligible PIM Pump product when creating the project pump', async () => {
+        state.system.design_flow_m3h = '100';
+        state.system.loop1_flow_pct = '100';
+        state.system.loop1_filtration = 'Sand Filter';
+        state.candidates = [{
+                id: 'pump-product-1',
+                project_equipment_item_id: null,
+                product_master_id: 'pump-product-1',
+                product_code: 'PUMP-100',
+                product_name: 'Catalog duty pump',
+                product_category: 'Pumping',
+                design_flow_m3h: '120',
+                design_head_m: '20',
+                power_kw: '11',
+            }];
+        const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+            design_book_id: 'book-1',
+            circuit_key: 'loop:1',
+            pump_role: 'primary',
+            pump_quantity: 1,
+            product_master_id: 'pump-product-1',
+        });
+        (0, vitest_1.expect)(response.status).toBe(201);
+        (0, vitest_1.expect)(response.body.project_equipment_item).toMatchObject({
+            product_master_id: 'pump-product-1',
+            status: 'Draft',
+        });
+        (0, vitest_1.expect)(response.body.pump_line.selected_pump).toMatchObject({
+            product_master_id: 'pump-product-1',
+            product_code: 'PUMP-100',
+            product_name: 'Catalog duty pump',
+        });
+        const insert = state.calls.find(call => call.sql.includes('INSERT INTO project_equipment_items'));
+        (0, vitest_1.expect)(insert?.params[5]).toBe('pump-product-1');
     });
     (0, vitest_1.it)('creates the first FFVP line from its active FFSP circuit', async () => {
         state.system.design_flow_m3h = '224.15';

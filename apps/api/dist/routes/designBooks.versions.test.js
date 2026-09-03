@@ -219,6 +219,8 @@ const baseContext = () => ({
             eff_width_mm: '3500',
             eff_height_mm: '2800',
             eff_water_level_mm: '2500',
+            eff_primary_material: 'Acrylic',
+            eff_wall_thickness_mm: '18',
             design_volume_m3: '52.5',
             quantity: 1,
         };
@@ -242,6 +244,7 @@ const baseContext = () => ({
                 (0, vitest_1.expect)(sql).toContain('LEFT JOIN product_masters');
                 (0, vitest_1.expect)(sql).toContain('pm.operating_volume_m3 AS pim_operating_volume_m3');
                 (0, vitest_1.expect)(sql).toContain('COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm');
+                (0, vitest_1.expect)(sql).toContain('COALESCE(t.wall_thickness_mm, pm.wall_thickness_mm) AS eff_wall_thickness_mm');
                 (0, vitest_1.expect)(sql).toContain('t.surface_area_m2');
                 (0, vitest_1.expect)(sql).toContain('pm.surface_area_m2');
                 (0, vitest_1.expect)(sql).toContain("COALESCE(t.shape_type, pm.shape_type) NOT IN ('Cylindrical', 'Custom')");
@@ -263,6 +266,7 @@ const baseContext = () => ({
         (0, vitest_1.expect)(context.tanks[0]).toMatchObject({
             product_master_id: 'pim-tank-1',
             eff_length_mm: '6000',
+            eff_wall_thickness_mm: '18',
         });
         (0, vitest_1.expect)(context.engineering_calculations.exhibits[0].results).toMatchObject({
             operating_volume_m3: 52.5,

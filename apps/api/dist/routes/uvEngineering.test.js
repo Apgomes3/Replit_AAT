@@ -191,10 +191,25 @@ function request(app, method, path, token, body = {}) {
         (0, vitest_1.expect)(response.body.error.code).toBe('VALIDATION');
         (0, vitest_1.expect)(state.queries.some(sql => sql.startsWith('update uv_engineering_revisions set lamp_count='))).toBe(false);
     });
+    (0, vitest_1.it)('stores explicit water compatibility overrides on a draft revision', async () => {
+        const response = await request(app, 'PUT', '/api/v1/admin/uv-engineering/revisions/revision-1', token, { compatibility_overrides: [{ water_type: 'Seawater', allowed: true }] });
+        (0, vitest_1.expect)(response.status).toBe(200);
+        (0, vitest_1.expect)(state.calls).toContainEqual(vitest_1.expect.objectContaining({
+            sql: vitest_1.expect.stringContaining('insert into uv_engineering_revision_compatibility'),
+            params: ['revision-1', 'Seawater', true],
+        }));
+    });
+    (0, vitest_1.it)('rejects unknown water compatibility types', async () => {
+        const response = await request(app, 'PUT', '/api/v1/admin/uv-engineering/revisions/revision-1', token, { compatibility_overrides: [{ water_type: 'Pool water', allowed: true }] });
+        (0, vitest_1.expect)(response.status).toBe(400);
+        (0, vitest_1.expect)(response.body.error.code).toBe('VALIDATION');
+    });
     (0, vitest_1.it)('does not approve incomplete UV engineering evidence', async () => {
         const response = await request(app, 'PATCH', '/api/v1/admin/uv-engineering/revisions/revision-1/status', token, { status: 'Approved' });
         (0, vitest_1.expect)(response.status).toBe(400);
         (0, vitest_1.expect)(response.body.error.code).toBe('INCOMPLETE_REVISION');
+        (0, vitest_1.expect)(response.body.error.message).toContain('PIM lamp count');
+        (0, vitest_1.expect)(response.body.error.message).toContain('positive effective reactor volume');
     });
     (0, vitest_1.it)('keeps approved revision values immutable', async () => {
         state.revision.status = 'Approved';

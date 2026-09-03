@@ -86,16 +86,8 @@ const approvedWall = {
                     approved_at: '2026-09-01T00:00:00.000Z',
                 },
             },
-            tank_wall_layers: [{
-                    material: 'Acrylic / PMMA',
-                    thickness_mm: 12,
-                    conductivity_w_m_k: 0.19,
-                }],
-            tank_wall_layer_overrides: {
-                material: false,
-                thickness_mm: false,
-                conductivity_w_m_k: false,
-            },
+            tank_wall_layers: [],
+            tank_wall_layer_overrides: {},
         });
     });
     (0, vitest_1.it)('freezes valid Draft effective values separately from defaults', async () => {
@@ -121,7 +113,6 @@ const approvedWall = {
             }]);
         (0, vitest_1.expect)(inputs.tank_wall_layer_overrides).toEqual({
             material: true,
-            thickness_mm: true,
             conductivity_w_m_k: true,
         });
         (0, vitest_1.expect)(inputs.tank_wall_override_justification).toBe('Project wall schedule.');
@@ -135,7 +126,7 @@ const approvedWall = {
         await (0, vitest_1.expect)(designBooks_1.thermalCorrelationTestUtils.resolveThermalWallConstructionInputs(runner, {
             tank_construction_type: 'acrylic',
             tank_wall_layers: [{
-                    material: 'Acrylic / PMMA',
+                    material: 'Project acrylic',
                     thickness_mm: 20,
                     conductivity_w_m_k: 0.19,
                 }],

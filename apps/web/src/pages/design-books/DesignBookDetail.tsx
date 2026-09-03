@@ -1933,6 +1933,11 @@ export function thermalEvidenceBasis(detail: any) {
   };
 }
 
+export function thermalWallBasisChange(detail: any) {
+  return detail?.wall_basis_change ||
+    detail?.calculation?.wall_basis_change ||
+    null;
+}
 export function thermalCorrelationVersionsForClass(
   items: any[],
   classCode: string,
@@ -2183,6 +2188,37 @@ function ThermalCorrelationUsageList({ usages }: { usages: any[] }) {
   );
 }
 
+function thermalWallBasisValue(basis: any, key: string) {
+  const value = basis?.[key];
+  if (value !== null && value !== undefined && value !== '') return value;
+  const tankValues = (basis?.tank_bases || [])
+    .map((tank: any) => tank?.[key])
+    .filter((item: any) => item !== null && item !== undefined && item !== '');
+  if (!tankValues.length) return null;
+  const distinct = [...new Set(tankValues.map(String))];
+  return distinct.length === 1 ? tankValues[0] : 'Mixed by tank';
+}
+
+function thermalWallBasisLayers(basis: any) {
+  const basisLayers = Array.isArray(basis?.effective_layers) && basis.effective_layers.length
+    ? basis.effective_layers
+    : Array.isArray(basis?.layers) && basis.layers.length
+      ? basis.layers
+      : Array.isArray(basis?.default_layers) ? basis.default_layers : [];
+  if (basisLayers.length) {
+    return basisLayers.map((layer: any, index: number) => ({
+      ...layer,
+      key: `basis-${index}`,
+      scope: null,
+    }));
+  }
+  return (basis?.tank_bases || []).flatMap((tank: any, tankIndex: number) =>
+    (tank?.layers || []).map((layer: any, layerIndex: number) => ({
+      ...layer,
+      key: `${tank.tank_id || tank.tank_code || tankIndex}-${layerIndex}`,
+      scope: tank.tank_code || tank.tank_id || 'Linked tank',
+    })));
+}
 type ThermalWallForm = {
   construction_code: string;
   construction_label: string;
@@ -3309,6 +3345,7 @@ function LegacyThermalTab({
 
   const detail = selected?.calculation || selected?.current_preview;
   const evidenceBasis = thermalEvidenceBasis(selected || detail);
+  const wallBasisChange = thermalWallBasisChange(selected || detail);
   const selectedConstructionDefault = normalizeThermalWallConstruction(
     form.tank_wall_default_basis ||
     constructionDefaults.find(item => item.code === form.tank_construction_type) ||
@@ -3569,6 +3606,7 @@ function LegacyThermalTab({
             <div className="flex gap-2 text-[#456b7d]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span><b className="block">Evidence preserved</b><small className="text-[#718894]">Snapshots remain immutable</small></span></div>
             <div className="flex gap-2 text-[#456b7d]"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" /><span><b className="block">{readOnly ? 'Frozen evidence' : 'Draft controls'}</b><small className="text-[#718894]">{readOnly ? 'Editing is disabled' : 'Save to recalculate'}</small></span></div>
           </div>
+          <ThermalWallBasisChangeNotice change={wallBasisChange} />
 
           <section>
             <h3 className="mb-3 font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">01</span>Linked source and geometry</h3>
@@ -4344,6 +4382,7 @@ function ThermalTab({
 
   const detail = selected?.calculation || selected?.current_preview;
   const evidenceBasis = thermalEvidenceBasis(selected || detail);
+  const wallBasisChange = thermalWallBasisChange(selected || detail);
   const sourceTankWallBases = thermalExhibitTankWallBases(
     selected?.source,
     constructionDefaults,
@@ -4614,6 +4653,7 @@ function ThermalTab({
             <div className="flex gap-2 text-[#456b7d]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span><b className="block">Evidence preserved</b><small className="text-[#718894]">Snapshots remain immutable</small></span></div>
             <div className="flex gap-2 text-[#456b7d]"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" /><span><b className="block">{readOnly ? 'Frozen evidence' : 'Draft controls'}</b><small className="text-[#718894]">{readOnly ? 'Editing is disabled' : 'Save to recalculate'}</small></span></div>
           </div>
+          <ThermalWallBasisChangeNotice change={wallBasisChange} />
 
           <section>
             <h3 className="mb-3 font-semibold text-[#263746]"><span className="mr-2 text-[#9aa8af]">01</span>Linked source and geometry</h3>
@@ -5447,4 +5487,76 @@ function thermalExhibitTankWallBasisLegacy(source: any, constructions: any[]) {
     source_basis: 'Linked exhibit tank with governed material conductivity',
     source_reference: tank.tank_code || tank.tank_id || construction.source_reference,
   });
+}
+
+export function ThermalWallBasisChangeNotice({ change }: { change: any }) {
+  if (!change?.changed) return null;
+  const renderBasis = (title: string, basis: any, tone: string) => {
+    const layers = thermalWallBasisLayers(basis);
+    return <div className={`rounded-xl border p-3 ${tone}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide">{title}</p>
+      <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+        <div><span className="block text-xs opacity-70">Basis version</span><b className="font-mono">{thermalWallBasisValue(basis, 'basis_version') || '—'}</b></div>
+        <div><span className="block text-xs opacity-70">Conductivity</span><b className="font-mono">{thermalNumber(thermalWallBasisValue(basis, 'conductivity_w_m_k'), 4)} W/m·K</b></div>
+        <div><span className="block text-xs opacity-70">Material</span><b>{thermalWallBasisValue(basis, 'material') || '—'}</b></div>
+        <div><span className="block text-xs opacity-70">Thickness</span><b className="font-mono">{thermalNumber(thermalWallBasisValue(basis, 'thickness_mm'), 2)} mm</b></div>
+        <div><span className="block text-xs opacity-70">Source basis</span><b>{basis?.source_basis || '—'}</b></div>
+        <div><span className="block text-xs opacity-70">Source reference</span><b>{basis?.source_reference || '—'}</b></div>
+      </div>
+      {!!layers.length && (
+        <div className="mt-3 rounded-lg border border-current/15 bg-white/60 p-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">Wall layer stack</p>
+          <div className="mt-1 divide-y divide-current/10">
+            {layers.map((layer: any, index: number) => (
+              <div key={layer.key || index} className="grid gap-1 py-1.5 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                <span>{layer.scope ? `${layer.scope} · ` : ''}{layer.material || `Layer ${index + 1}`}</span>
+                <span className="font-mono">{thermalNumber(
+                  layer.thickness_mm ?? (layer.thickness_m == null ? null : Number(layer.thickness_m) * 1000),
+                  2,
+                )} mm</span>
+                <span className="font-mono">{thermalNumber(layer.conductivity_w_m_k, 4)} W/m·K</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {!!basis?.tank_bases?.length && (
+        <div className="mt-3 overflow-x-auto rounded-lg border border-current/15 bg-white/60">
+          <table className="w-full min-w-[460px] text-xs">
+            <thead className="border-b border-current/15 text-left uppercase tracking-wide opacity-70">
+              <tr><th className="px-2 py-1.5">Tank</th><th className="px-2 py-1.5">Material</th><th className="px-2 py-1.5">Thickness</th><th className="px-2 py-1.5">Conductivity</th><th className="px-2 py-1.5">Version</th></tr>
+            </thead>
+            <tbody className="divide-y divide-current/10">
+              {basis.tank_bases.map((tank: any, index: number) => (
+                <tr key={tank.tank_id || tank.tank_code || index}>
+                  <td className="px-2 py-1.5 font-medium">{tank.tank_code || tank.tank_id || 'Linked tank'}</td>
+                  <td className="px-2 py-1.5">{tank.material || '—'}</td>
+                  <td className="px-2 py-1.5 font-mono">{thermalNumber(tank.thickness_mm, 2)} mm</td>
+                  <td className="px-2 py-1.5 font-mono">{thermalNumber(tank.conductivity_w_m_k, 4)} W/m·K</td>
+                  <td className="px-2 py-1.5 font-mono">{tank.basis_version || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  };
+  return (
+    <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+        <div>
+          <p className="font-semibold">Approved Thermal wall basis changed</p>
+          <p className="mt-1 text-sm text-amber-900/80">
+            This saved calculation is stale because governed wall evidence changed: {change.changed_fields.join(', ')}. Review both snapshots before saving a recalculation.
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        {renderBasis('Saved wall evidence', change.saved, 'border-amber-200 bg-amber-100/60 text-amber-950')}
+        {renderBasis('Current approved basis', change.current, 'border-[#b9c9d0] bg-[#e8f0f2] text-[#263746]')}
+      </div>
+    </div>
+  );
 }

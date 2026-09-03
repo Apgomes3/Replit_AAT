@@ -644,6 +644,8 @@ ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS model VARCHAR(255);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS configuration VARCHAR(255);
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS control_type VARCHAR(255);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS signal_type VARCHAR(255);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS control_type_optional BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE components ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);
 ALTER TABLE components ADD COLUMN IF NOT EXISTS model VARCHAR(255);
 
@@ -743,11 +745,12 @@ ALTER TABLE product_dimensions ADD COLUMN IF NOT EXISTS sand_media_per_filter_kg
 CREATE TABLE IF NOT EXISTS product_electrical (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
-  rated_power_kw NUMERIC, voltage_v NUMERIC, phases INTEGER, frequency_hz NUMERIC,
+  rated_power_kw NUMERIC, lamp_power_w NUMERIC, voltage_v NUMERIC, phases INTEGER, frequency_hz NUMERIC,
   full_load_current_a NUMERIC, rated_speed_rpm NUMERIC, motor_type VARCHAR(100),
   insulation_class VARCHAR(20), protection_class VARCHAR(20), efficiency_class VARCHAR(20),
   notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE product_electrical ADD COLUMN IF NOT EXISTS lamp_power_w NUMERIC;
 CREATE TABLE IF NOT EXISTS product_hydraulic (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
@@ -758,6 +761,8 @@ CREATE TABLE IF NOT EXISTS product_hydraulic (
   min_temperature_c NUMERIC, max_temperature_c NUMERIC,
   notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS suction_dn_mm NUMERIC;
+ALTER TABLE product_hydraulic ADD COLUMN IF NOT EXISTS discharge_dn_mm NUMERIC;
 CREATE TABLE IF NOT EXISTS product_pneumatic (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_master_id UUID REFERENCES product_masters(id) ON DELETE CASCADE UNIQUE,
@@ -1110,6 +1115,8 @@ CREATE INDEX IF NOT EXISTS idx_thermal_wall_construction_active
 CREATE UNIQUE INDEX IF NOT EXISTS uq_thermal_wall_construction_approved
   ON thermal_wall_construction_defaults(construction_code)
   WHERE status='approved';
+ALTER TABLE thermal_wall_construction_defaults
+  ALTER COLUMN thickness_mm DROP NOT NULL;
 CREATE OR REPLACE FUNCTION protect_thermal_wall_construction_default()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -1801,18 +1808,36 @@ CREATE TABLE IF NOT EXISTS pump_duty_types (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tag VARCHAR(10) NOT NULL UNIQUE CHECK (tag = UPPER(tag) AND tag ~ '^[A-Z0-9]+$'),
   pump_name VARCHAR(255) NOT NULL,
+  flow_route_role VARCHAR(80),
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-INSERT INTO pump_duty_types (tag, pump_name, sort_order) VALUES
-  ('FFSP', 'Foam Fractionator Supply Pump', 10),
-  ('FFVP', 'Foam Fractionator Venturi Pump', 20),
-  ('SFSP', 'Sand Filter Supply Pump', 30),
-  ('CIRCP', 'Circulation Pump', 40),
-  ('VACP', 'Vacuum Pump', 50)
+ALTER TABLE pump_duty_types ADD COLUMN IF NOT EXISTS flow_route_role VARCHAR(80);
+INSERT INTO pump_duty_types (tag, pump_name, flow_route_role, sort_order) VALUES
+  ('FFSP', 'Foam Fractionator Supply Pump', 'foam_fractionator_supply', 10),
+  ('FFVP', 'Foam Fractionator Venturi Pump', 'foam_fractionator_venturi', 20),
+  ('SFSP', 'Sand Filter Supply Pump', 'sand_filter_supply', 30),
+  ('CIRCP', 'Circulation Pump', 'circulation', 40),
+  ('VACP', 'Vacuum Pump', 'vacuum', 50)
 ON CONFLICT (tag) DO NOTHING;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pump_duty_types WHERE flow_route_role IS NOT NULL) THEN
+    UPDATE pump_duty_types
+    SET flow_route_role = CASE tag
+      WHEN 'FFSP' THEN 'foam_fractionator_supply'
+      WHEN 'FFVP' THEN 'foam_fractionator_venturi'
+      WHEN 'SFSP' THEN 'sand_filter_supply'
+      WHEN 'CIRCP' THEN 'circulation'
+      WHEN 'VACP' THEN 'vacuum'
+      ELSE NULL
+    END;
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pump_duty_types_flow_route_role
+  ON pump_duty_types(flow_route_role) WHERE flow_route_role IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS system_flow_fractionator_allocations (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2447,6 +2472,44 @@ CREATE TABLE IF NOT EXISTS material_water_compatibility (
 CREATE INDEX IF NOT EXISTS idx_material_water_compatibility_lookup
   ON material_water_compatibility(material_code, water_type);
 
+CREATE TABLE IF NOT EXISTS uv_engineering_revision_compatibility (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  revision_id UUID NOT NULL REFERENCES uv_engineering_revisions(id) ON DELETE CASCADE,
+  water_type VARCHAR(50) NOT NULL
+    CHECK (water_type IN ('Saltwater', 'Seawater', 'Freshwater', 'Brackish water')),
+  allowed BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(revision_id, water_type)
+);
+CREATE INDEX IF NOT EXISTS idx_uv_revision_compatibility_revision
+  ON uv_engineering_revision_compatibility(revision_id);
+
+-- Governed starter compatibility values. Existing decisions are preserved.
+INSERT INTO material_water_compatibility (material_code, water_type, allowed, source, notes)
+SELECT defaults.material_code, defaults.water_type, defaults.allowed, 'AAT Foundations',
+       'Governed default compatibility for the material catalogue.'
+FROM (VALUES
+  ('MAT-TI', 'Saltwater', true),
+  ('MAT-TI', 'Seawater', true),
+  ('MAT-TI', 'Freshwater', true),
+  ('MAT-TI', 'Brackish water', true),
+  ('MAT-SS304', 'Saltwater', false),
+  ('MAT-SS304', 'Seawater', false),
+  ('MAT-SS304', 'Freshwater', true),
+  ('MAT-SS304', 'Brackish water', false),
+  ('MAT-SS316', 'Saltwater', true),
+  ('MAT-SS316', 'Seawater', false),
+  ('MAT-SS316', 'Freshwater', false),
+  ('MAT-SS316', 'Brackish water', true),
+  ('MAT-PVC', 'Saltwater', true),
+  ('MAT-PVC', 'Seawater', true),
+  ('MAT-PVC', 'Freshwater', true),
+  ('MAT-PVC', 'Brackish water', true)
+) AS defaults(material_code, water_type, allowed)
+JOIN materials m ON m.material_code=defaults.material_code
+ON CONFLICT (material_code, water_type) DO NOTHING;
+
 -- Pre-governance approvals retain their historical evidence but cannot be
 -- represented as reviewed AAT Foundations data until an administrator creates
 -- and approves a new revision.
@@ -2569,6 +2632,7 @@ RETURNS jsonb LANGUAGE sql STABLE AS $$
     'manufacturer', p.manufacturer, 'status', p.status,
     'category', p.product_category, 'material', p.primary_material_code,
     'configuration', p.configuration, 'control_type', p.control_type,
+    'signal_type', p.signal_type, 'control_type_optional', p.control_type_optional,
     'rated_power_kw', p.power_kw, 'lamp_count', p.lamp_count
   )
 $$;
@@ -2611,6 +2675,8 @@ BEGIN
     OR OLD.primary_material_code IS DISTINCT FROM NEW.primary_material_code
     OR OLD.configuration IS DISTINCT FROM NEW.configuration
     OR OLD.control_type IS DISTINCT FROM NEW.control_type
+    OR OLD.signal_type IS DISTINCT FROM NEW.signal_type
+    OR OLD.control_type_optional IS DISTINCT FROM NEW.control_type_optional
     OR OLD.power_kw IS DISTINCT FROM NEW.power_kw
     OR OLD.lamp_count IS DISTINCT FROM NEW.lamp_count;
   IF changed THEN

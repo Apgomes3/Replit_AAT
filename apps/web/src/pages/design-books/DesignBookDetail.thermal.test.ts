@@ -8,6 +8,8 @@ import {
   isDesignBookTab,
   SystemConfigBadge,
   thermalEvidenceBasis,
+  thermalWallBasisChange,
+  ThermalWallBasisChangeNotice,
   thermalCorrelationDefaults,
   thermalCorrelationVersionsForClass,
   normalizeThermalWallConstruction,
@@ -56,15 +58,6 @@ describe('Design Book Thermal navigation', () => {
     expect(thermalLinkedFreeSurfaceArea({
       linked_tanks: [{ tank_id: 'custom-1', shape: 'custom', surface_area_m2: '12.5' }],
     })).toBe(12.5);
-    expect(thermalLinkedFreeSurfaceArea({
-      linked_tanks: [{
-        tank_id: 'custom-1',
-        shape: 'custom',
-        quantity: 1,
-        free_surface_area_m2: null,
-        dimensions: { inner_length_mm: 7600, inner_width_mm: 7600 },
-      }],
-    })).toBe(57.76);
   });
   it('places Thermal immediately after Life Support Systems', () => {
     expect(DESIGN_BOOK_TAB_ORDER).toEqual([
@@ -136,87 +129,38 @@ describe('Design Book Thermal navigation', () => {
     });
   });
 
-  it('normalizes saved metre layers and database-default field names for the form', () => {
-    expect(normalizeThermalWallConstruction({
-      construction_code: 'acrylic',
-      construction_label: 'Acrylic',
-      material: 'Acrylic / PMMA',
-      thickness_mm: '12',
-      conductivity_w_m_k: '0.19',
-      version: 'AAT_FOUNDATIONS_WALL_V1.0',
-    })).toMatchObject({
-      code: 'acrylic',
-      label: 'Acrylic',
-      thickness_mm: 12,
-      thickness_units: 'mm',
-      conductivity_units: 'W/m·K',
-      basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
-    });
-
-    expect(thermalWallFormValues({
-      construction_type: 'frp',
-      construction_label: 'FRP',
-      effective_layers: [{
-        material: 'Project FRP',
-        thickness_m: 0.008,
-        conductivity_w_m_k: 0.3,
-      }],
-    })).toEqual({
-      wall_material: 'Project FRP',
-      wall_thickness_mm: 8,
-      wall_conductivity_w_m_k: 0.3,
-    });
-  });
-
-  it('reads wall evidence through a saved-calculation response wrapper', () => {
-    expect(thermalEvidenceBasis({
+  it('reads a wall basis change from a stale calculation wrapper', () => {
+    const change = {
+      changed: true,
+      changed_fields: ['basis_version', 'conductivity_w_m_k', 'source_reference', 'layers'],
       saved: {
-        input_snapshot: {
-          wall_construction_basis: {
-            construction_type: 'concrete',
-            construction_label: 'Concrete',
-            assumption_label: 'Governed concrete basis',
-            basis_version: 'WALL-V1',
-            effective_layers: [{
-              material: 'Reinforced concrete',
-              thickness_m: 0.15,
-              conductivity_w_m_k: 1.4,
-            }],
-          },
-        },
+        basis_version: 'WALL-V1',
+        conductivity_w_m_k: 0.19,
+        source_basis: 'Saved source basis',
+        source_reference: 'Saved source reference',
+        layers: [{ material: 'Saved acrylic layer', thickness_mm: 12, conductivity_w_m_k: 0.19 }],
+        tank_bases: [{ tank_id: 'tank-1', tank_code: 'TK-1', conductivity_w_m_k: 0.19 }],
       },
-    }).wall).toMatchObject({
-      code: 'concrete',
-      label: 'Concrete',
-      material: 'Reinforced concrete',
-      thickness_mm: 150,
-      conductivity_w_m_k: 1.4,
-      thickness_units: 'mm',
-      conductivity_units: 'W/m·K',
-      assumption_label: 'Governed concrete basis',
-      basis_version: 'WALL-V1',
-    });
-  });
-
-  it('keeps reviewed custom U-value evidence distinct from a wall construction', () => {
-    const wall = thermalEvidenceBasis({
-      calculation: {
-        wall_construction_basis: {
-          source: 'reviewed custom U-value',
-          u_value_w_m2_k: 2.75,
-          reviewed: true,
-        },
+      current: {
+        basis_version: 'WALL-V2',
+        conductivity_w_m_k: 0.2,
+        source_basis: 'Current source basis',
+        source_reference: 'Current source reference',
+        layers: [{ material: 'Current acrylic layer', thickness_mm: 15, conductivity_w_m_k: 0.2 }],
+        tank_bases: [{ tank_id: 'tank-1', tank_code: 'TK-1', conductivity_w_m_k: 0.2 }],
       },
-    }).wall;
+    };
 
-    expect(wall).toMatchObject({
-      label: '',
-      material: '',
-      thickness_mm: '',
-      conductivity_w_m_k: '',
-      units: 'W/m²·K',
-      reviewed: true,
-    });
+    expect(thermalWallBasisChange({ wall_basis_change: change })).toBe(change);
+    render(createElement(ThermalWallBasisChangeNotice, { change }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Approved Thermal wall basis changed');
+    expect(screen.getByText('WALL-V1')).toBeInTheDocument();
+    expect(screen.getByText('WALL-V2')).toBeInTheDocument();
+    expect(screen.getAllByText('TK-1')).toHaveLength(2);
+    expect(screen.getByText('Saved source reference')).toBeInTheDocument();
+    expect(screen.getByText('Current source reference')).toBeInTheDocument();
+    expect(screen.getByText('Saved acrylic layer')).toBeInTheDocument();
+    expect(screen.getByText('Current acrylic layer')).toBeInTheDocument();
   });
 
   it('filters approved versions to the selected surface-activity class', () => {
@@ -406,6 +350,21 @@ describe('Exhibit tank wall basis', () => {
         }],
       },
     }).wall;
+
+    const change = {
+      changed: true,
+      changed_fields: ['basis_version', 'conductivity_w_m_k'],
+      saved: {
+        basis_version: 'WALL-V1',
+        conductivity_w_m_k: 0.19,
+        tank_bases: [{ tank_id: 'tank-1', tank_code: 'TK-1', conductivity_w_m_k: 0.19 }],
+      },
+      current: {
+        basis_version: 'WALL-V2',
+        conductivity_w_m_k: 0.2,
+        tank_bases: [{ tank_id: 'tank-1', tank_code: 'TK-1', conductivity_w_m_k: 0.2 }],
+      },
+    };
 
     expect(wall.tank_bases).toEqual([
       expect.objectContaining({

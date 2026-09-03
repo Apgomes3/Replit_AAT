@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const designBooks_1 = require("./designBooks");
+const thermalCalculations_1 = require("../lib/thermalCalculations");
 (0, vitest_1.describe)('thermal calculation snapshot persistence', () => {
     (0, vitest_1.it)('persists exact temperature and wall-construction evidence for reloads', async () => {
         const waterTemperatureBasis = {
@@ -27,6 +28,27 @@ const designBooks_1 = require("./designBooks");
             effective_layers: [{ material: 'Project FRP', thickness_m: 0.008, conductivity_w_m_k: 0.3 }],
             layer_override_flags: { material: true, thickness_mm: true, conductivity_w_m_k: true },
             layer_override_justification: 'Project laminate schedule.',
+            tank_bases: [{
+                    tank_id: 'tank-frp',
+                    tank_code: 'TK-FRP',
+                    quantity: 2,
+                    exposed_wall_area_m2: 18,
+                    material: 'Project FRP',
+                    thickness_mm: 8,
+                    conductivity_w_m_k: 0.3,
+                    u_value_w_m2_k: 37.5,
+                    basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+                }, {
+                    tank_id: 'tank-concrete',
+                    tank_code: 'TK-CON',
+                    quantity: 1,
+                    exposed_wall_area_m2: 12,
+                    material: 'Reinforced concrete',
+                    thickness_mm: 150,
+                    conductivity_w_m_k: 1.4,
+                    u_value_w_m2_k: 9.333333333333334,
+                    basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+                }],
         };
         const calculation = {
             calculation_version: 'aat-thermal-load-v2',
@@ -65,5 +87,180 @@ const designBooks_1 = require("./designBooks");
         (0, vitest_1.expect)(reloadedInputSnapshot.wall_construction_basis).toEqual(wallConstructionBasis);
         (0, vitest_1.expect)(reloadedResultSnapshot.water_temperature_basis).toEqual(waterTemperatureBasis);
         (0, vitest_1.expect)(reloadedResultSnapshot.wall_construction_basis).toEqual(wallConstructionBasis);
+    });
+    (0, vitest_1.it)('marks a saved Ready calculation stale when approved wall evidence changes while preserving frozen tank evidence', async () => {
+        const system = {
+            id: 'system-thermal-1',
+            system_code: 'LSS-THERMAL-1',
+            system_name: 'Thermal regression LSS',
+            design_flow_m3h: 100,
+        };
+        const links = [{ system_id: system.id, exhibit_id: 'exhibit-thermal-1' }];
+        const exhibits = [{
+                id: 'exhibit-thermal-1',
+                exhibit_code: 'EX-THERMAL-1',
+                design_temperature_min: 24,
+                design_temperature_max: 26,
+                water_type: 'freshwater',
+            }];
+        const tanks = [{
+                id: 'tank-thermal-1',
+                exhibit_id: exhibits[0].id,
+                tank_code: 'TK-THERMAL-1',
+                shape_type: 'Rectangular',
+                length_mm: 2000,
+                width_mm: 1000,
+                design_water_level_mm: 1000,
+                operating_volume_m3: 2,
+                surface_area_m2: 2,
+                primary_material: 'Acrylic / PMMA',
+                wall_thickness_mm: 12,
+            }];
+        const exhibitCalculations = [{
+                inputs: { exhibit_id: exhibits[0].id },
+                results: {
+                    operating_volume_m3: 2,
+                    total_return_flow_m3h: 100,
+                },
+                status: 'Ready',
+                freshness: 'fresh',
+            }];
+        const approvedCorrelation = {
+            source: 'shared_library',
+            correlation_id: 'correlation-thermal-1',
+            agitation_class: 'Moderate',
+            version: '2026.2',
+            coefficient_kg_m2_s_kpa: 0.0000012,
+            effective_coefficient_kg_m2_s_kpa: 0.0000012,
+            approved: true,
+        };
+        const approvedWall = {
+            code: 'acrylic',
+            label: 'Acrylic',
+            material: 'Acrylic / PMMA',
+            thickness_mm: 12,
+            conductivity_w_m_k: 0.19,
+            basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+            source_basis: 'AAT Foundations',
+            source_reference: 'AAT Foundations wall construction starter defaults',
+            assumption_label: 'Approved acrylic wall construction',
+            approval: { status: 'approved', approved_at: '2026-08-31T00:00:00.000Z' },
+        };
+        const originalSource = (0, thermalCalculations_1.buildThermalSourceContext)({
+            system,
+            links,
+            exhibits,
+            tanks,
+            exhibitCalculations,
+            wallConstructions: [approvedWall],
+        });
+        const calculation = (0, thermalCalculations_1.calculateThermalCalculation)(originalSource, {
+            ambient_air_temperature_c: 20,
+            relative_humidity_pct: 60,
+            atmospheric_pressure_kpa: 101.325,
+            agitation_class: 'Moderate',
+            agitation_correlation_snapshot: approvedCorrelation,
+            tank_construction_type: 'acrylic',
+        }, '2026-08-31T00:00:00.000Z');
+        (0, vitest_1.expect)(calculation.status).toBe('Ready');
+        const saveRunner = vitest_1.vi.fn(async () => ({ rows: [] }));
+        await designBooks_1.thermalCalculationTestUtils.insertThermalSnapshotRecord(saveRunner, 'book-thermal-1', {
+            system_id: system.id,
+            calculation_version: calculation.calculation_version,
+            status: calculation.status,
+            freshness: calculation.freshness,
+            source_fingerprint: calculation.source_fingerprint,
+            source_snapshot: calculation.source_snapshot,
+            constants: calculation.constants,
+            formula_inputs: calculation.formula_inputs,
+            input_snapshot: calculation.inputs,
+            result_snapshot: calculation,
+            sensitivity_cases: calculation.sensitivity_cases,
+            correlation_snapshot: calculation.correlation_snapshot,
+            calculated_at: calculation.calculated_at,
+        });
+        const savedParams = saveRunner.mock.calls[0][1];
+        const savedRow = {
+            system_id: savedParams[1],
+            calculation_version: savedParams[2],
+            status: savedParams[3],
+            freshness: savedParams[4],
+            source_fingerprint: savedParams[5],
+            source_snapshot: JSON.parse(savedParams[6]),
+            constants: JSON.parse(savedParams[7]),
+            formula_inputs: JSON.parse(savedParams[8]),
+            input_snapshot: JSON.parse(savedParams[9]),
+            result_snapshot: JSON.parse(savedParams[10]),
+            sensitivity_cases: JSON.parse(savedParams[11]),
+            correlation_snapshot: JSON.parse(savedParams[12]),
+            calculated_at: savedParams[15],
+        };
+        const frozenWallEvidence = structuredClone(savedRow.result_snapshot.results.tank_wall_calculations);
+        const frozenSourceWallEvidence = structuredClone(savedRow.source_snapshot.linked_tanks[0].wall_construction_basis);
+        const loadRunner = vitest_1.vi.fn(async () => ({ rows: [savedRow] }));
+        const initiallyFresh = await designBooks_1.thermalCalculationTestUtils.loadThermalCalculations(loadRunner, 'book-thermal-1', [system], links, exhibits, tanks, exhibitCalculations, [approvedWall]);
+        (0, vitest_1.expect)(initiallyFresh[0]).toMatchObject({
+            status: 'Ready',
+            freshness: 'fresh',
+            calculation: {
+                status: 'Ready',
+                is_stale: false,
+            },
+        });
+        const changedApprovedWall = {
+            ...approvedWall,
+            conductivity_w_m_k: 0.2,
+            basis_version: 'AAT_FOUNDATIONS_WALL_V2.0',
+        };
+        const reloaded = await designBooks_1.thermalCalculationTestUtils.loadThermalCalculations(loadRunner, 'book-thermal-1', [system], links, exhibits, tanks, exhibitCalculations, [changedApprovedWall]);
+        (0, vitest_1.expect)(reloaded[0]).toMatchObject({
+            status: 'Stale',
+            freshness: 'stale',
+            source_fingerprint: vitest_1.expect.any(String),
+            wall_basis_change: {
+                changed: true,
+                changed_fields: vitest_1.expect.arrayContaining(['basis_version', 'conductivity_w_m_k']),
+                saved: vitest_1.expect.objectContaining({
+                    basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+                    conductivity_w_m_k: 0.19,
+                }),
+                current: vitest_1.expect.objectContaining({
+                    basis_version: 'AAT_FOUNDATIONS_WALL_V2.0',
+                    conductivity_w_m_k: 0.2,
+                }),
+            },
+            calculation: {
+                status: 'Blocked',
+                freshness: 'stale',
+                is_stale: true,
+                wall_construction_basis: calculation.wall_construction_basis,
+                wall_basis_change: {
+                    changed: true,
+                    changed_fields: vitest_1.expect.arrayContaining(['basis_version', 'conductivity_w_m_k']),
+                },
+            },
+        });
+        (0, vitest_1.expect)(reloaded[0].calculation.reasons[0]).toContain('approved Thermal wall basis changed');
+        (0, vitest_1.expect)(reloaded[0].calculation.reasons).not.toContain('Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.');
+        (0, vitest_1.expect)(reloaded[0].source.fingerprint).not.toBe(savedRow.source_fingerprint);
+        (0, vitest_1.expect)(reloaded[0].calculation.results.tank_wall_calculations).toEqual(frozenWallEvidence);
+        (0, vitest_1.expect)(reloaded[0].saved.result_snapshot.results.tank_wall_calculations).toEqual(frozenWallEvidence);
+        (0, vitest_1.expect)(reloaded[0].saved.source_snapshot.linked_tanks[0].wall_construction_basis).toEqual(frozenSourceWallEvidence);
+        const changedTanks = tanks.map(tank => ({
+            ...tank,
+            wall_thickness_mm: Number(tank.wall_thickness_mm) + 5,
+        }));
+        const tankEditReload = await designBooks_1.thermalCalculationTestUtils.loadThermalCalculations(loadRunner, 'book-thermal-1', [system], links, exhibits, changedTanks, exhibitCalculations, [approvedWall]);
+        (0, vitest_1.expect)(tankEditReload[0]).toMatchObject({
+            status: 'Stale',
+            freshness: 'stale',
+            wall_basis_change: null,
+            calculation: {
+                wall_basis_change: null,
+                reasons: [
+                    'Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.',
+                ],
+            },
+        });
     });
 });

@@ -431,10 +431,45 @@ async function loadThermalCalculations(
       saved.source_fingerprint !== source.fingerprint ||
       saved.calculation_version !== THERMAL_CALCULATION_VERSION
     );
+    const savedInputs = saved?.input_snapshot || {};
     const preview = calculateThermalCalculation(
       source,
-      saved?.input_snapshot || {},
+      savedInputs,
     );
+    // Re-resolve the wall without the saved default/layer values so a
+    // superseded governed default is visible next to the frozen evidence.
+    const currentApprovedPreview = saved
+      ? calculateThermalCalculation(source, {
+          ...savedInputs,
+          tank_wall_default_basis: null,
+          tank_wall_layers: [],
+        })
+      : null;
+    const wallBasisChange = thermalWallBasisChange(
+      saved?.result_snapshot?.wall_construction_basis ||
+        saved?.formula_inputs?.wall_construction_basis ||
+        savedInputs.wall_construction_basis ||
+        saved?.source_snapshot?.wall_construction_basis ||
+        null,
+      currentApprovedPreview?.wall_construction_basis ||
+        preview.wall_construction_basis ||
+        null,
+      saved?.source_snapshot?.wall_construction_defaults || [],
+      source.wall_construction_defaults || [],
+    );
+    const nonWallSourceChanged = thermalNonWallSourceChanged(
+      saved?.source_snapshot,
+      source,
+    );
+    const staleReasons = [
+      ...(wallBasisChange
+        ? [`The approved Thermal wall basis changed after this calculation was saved (${wallBasisChange.changed_fields.join(', ')}). Review the saved and current wall evidence, then recalculate.`]
+        : []),
+      ...(!wallBasisChange || nonWallSourceChanged ||
+        saved?.calculation_version !== THERMAL_CALCULATION_VERSION
+        ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
+        : []),
+    ];
     const calculation = saved
       ? {
           ...saved.result_snapshot,
@@ -447,9 +482,10 @@ async function loadThermalCalculations(
           reasons: correlationEvidenceMissing
             ? ['Select a current approved shared-library evaporation correlation and recalculate before review or release.']
             : stale
-            ? ['Linked exhibits, tanks, geometry, or relationships changed since this calculation was saved. Recalculate before review or release.']
+            ? staleReasons
             : (saved.result_snapshot?.reasons || []),
           correlation_snapshot: correlationSnapshot,
+          wall_basis_change: wallBasisChange,
         }
       : null;
     return {
@@ -462,8 +498,131 @@ async function loadThermalCalculations(
       status: stale ? 'Stale' : correlationEvidenceMissing ? 'Blocked' : saved?.status || 'Not configured',
       freshness: stale ? 'stale' : saved?.freshness || 'unsaved',
       source_fingerprint: source.fingerprint,
+      wall_basis_change: wallBasisChange,
     };
   });
+}
+
+function thermalWallBasisComparable(basis: any) {
+  if (!basis) return null;
+  const normalizeNumber = (value: any) => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const normalizeText = (value: any) => {
+    const text = String(value ?? '').trim();
+    return text || null;
+  };
+  const layers = (Array.isArray(basis.effective_layers) && basis.effective_layers.length
+    ? basis.effective_layers
+    : Array.isArray(basis.layers) ? basis.layers : [])
+    .map((layer: any) => ({
+      material: normalizeText(layer?.material),
+      thickness_mm: normalizeNumber(
+        layer?.thickness_mm ?? (layer?.thickness_m == null ? null : Number(layer.thickness_m) * 1000),
+      ),
+      conductivity_w_m_k: normalizeNumber(layer?.conductivity_w_m_k),
+    }));
+  const tankBases = (Array.isArray(basis.tank_bases) ? basis.tank_bases : [])
+    .map((tank: any) => ({
+      tank_id: normalizeText(tank?.tank_id) || normalizeText(tank?.tank_code),
+      tank_code: normalizeText(tank?.tank_code),
+      material: normalizeText(tank?.material),
+      thickness_mm: normalizeNumber(tank?.thickness_mm),
+      conductivity_w_m_k: normalizeNumber(tank?.conductivity_w_m_k),
+      basis_version: normalizeText(tank?.basis_version),
+      layers: (Array.isArray(tank?.layers) ? tank.layers : []).map((layer: any) => ({
+        material: normalizeText(layer?.material),
+        thickness_mm: normalizeNumber(
+          layer?.thickness_mm ?? (layer?.thickness_m == null ? null : Number(layer.thickness_m) * 1000),
+        ),
+        conductivity_w_m_k: normalizeNumber(layer?.conductivity_w_m_k),
+      })),
+    }))
+    .sort((left: any, right: any) => String(left.tank_id).localeCompare(String(right.tank_id)));
+  return {
+    basis_version: normalizeText(basis.basis_version ?? basis.version),
+    source_basis: normalizeText(basis.source_basis),
+    source_reference: normalizeText(basis.source_reference),
+    material: normalizeText(basis.material),
+    thickness_mm: normalizeNumber(basis.thickness_mm),
+    conductivity_w_m_k: normalizeNumber(basis.conductivity_w_m_k),
+    layers,
+    tank_bases: tankBases,
+  };
+}
+
+function thermalWallBasisChange(
+  savedBasis: any,
+  currentBasis: any,
+  savedDefaults: readonly any[] = [],
+  currentDefaults: readonly any[] = [],
+) {
+  const savedComparable = thermalWallBasisComparable(savedBasis);
+  const currentComparable = thermalWallBasisComparable(currentBasis);
+  if (!savedComparable || !currentComparable) return null;
+  const applicableCodes = [...new Set([
+    savedBasis?.construction_type,
+    ...(savedBasis?.tank_bases || []).map((tank: any) => tank?.construction_type),
+  ].map((value: any) => String(value || '').trim().toLowerCase()).filter(Boolean))];
+  const defaultFor = (defaults: readonly any[], code: string) => defaults.find(defaultBasis =>
+    String(defaultBasis?.code || defaultBasis?.construction_code || defaultBasis?.construction_type || '')
+      .trim().toLowerCase() === code);
+  const changedFields = [
+    'basis_version',
+    'conductivity_w_m_k',
+    'thickness_mm',
+    'material',
+    'source_basis',
+    'source_reference',
+    'layers',
+  ].filter(field => {
+    return applicableCodes.some(code => {
+      const savedDefault = thermalWallBasisComparable(defaultFor(savedDefaults, code));
+      const currentDefault = thermalWallBasisComparable(defaultFor(currentDefaults, code));
+      return !!savedDefault && !!currentDefault &&
+        JSON.stringify(savedDefault[field as keyof typeof savedDefault]) !==
+          JSON.stringify(currentDefault[field as keyof typeof currentDefault]);
+    });
+  });
+  if (!changedFields.length) return null;
+  return {
+    changed: true,
+    changed_fields: changedFields,
+    saved: savedBasis,
+    current: currentBasis,
+  };
+}
+
+function stableThermalSourceValue(value: any): any {
+  if (Array.isArray(value)) return value.map(stableThermalSourceValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.keys(value).sort().reduce((normalized: Record<string, any>, key) => {
+    normalized[key] = stableThermalSourceValue(value[key]);
+    return normalized;
+  }, {});
+}
+
+function thermalNonWallSourceChanged(savedSource: any, currentSource: any) {
+  if (!savedSource || !currentSource) return true;
+  const withoutWallEvidence = (source: any) => {
+    const {
+      fingerprint: _fingerprint,
+      wall_construction_defaults: _wallDefaults,
+      wall_construction_basis: _wallBasis,
+      ...rest
+    } = source;
+    return {
+      ...rest,
+      linked_tanks: (rest.linked_tanks || []).map((tank: any) => {
+        const { wall_construction_basis: _tankWallBasis, ...tankSource } = tank;
+        return tankSource;
+      }),
+    };
+  };
+  return JSON.stringify(stableThermalSourceValue(withoutWallEvidence(savedSource))) !==
+    JSON.stringify(stableThermalSourceValue(withoutWallEvidence(currentSource)));
 }
 
 async function insertThermalSnapshotRecord(
@@ -505,6 +664,7 @@ async function insertThermalSnapshotRecord(
 export const thermalCalculationTestUtils = {
   insertThermalSnapshotRecord,
   loadThermalCalculations,
+  thermalWallBasisChange,
 };
 
 async function insertFrictionSnapshotRecord(
