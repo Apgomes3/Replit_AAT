@@ -3160,30 +3160,6 @@ function LegacyThermalTab({
   };
 
   const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
-  const selectConstruction = (constructionCode: string) => {
-    const construction = constructionDefaults.find(
-      (candidate: any) => candidate.code === constructionCode,
-    );
-    setForm((current: any) => ({
-      ...current,
-      tank_construction_type: constructionCode,
-      tank_wall_default_basis: construction,
-      reviewed_u_value_w_m2_k: '',
-      tank_wall_override_justification: '',
-      ...thermalWallFormValues(construction),
-    }));
-  };
-  const resetWallLayer = () => {
-    const construction = constructionDefaults.find(
-      (candidate: any) => candidate.code === form.tank_construction_type,
-    );
-    setForm((current: any) => ({
-      ...current,
-      tank_wall_default_basis: construction,
-      tank_wall_override_justification: '',
-      ...thermalWallFormValues(construction),
-    }));
-  };
   const updateCorrelationOverride = (key: string, formKey: string, value: any) =>
     setForm((current: any) => ({
       ...current,
@@ -4553,9 +4529,6 @@ function ThermalTab({
     selected?.source,
     constructionDefaults,
   );
-  const sourceHasMixedWalls = thermalWallBasesAreMixed(sourceTankWallBases);
-  const evidenceHasMixedWalls = thermalWallBasesAreMixed(evidenceBasis.wall?.tank_bases || []);
-  const showMixedWallEvidence = sourceHasMixedWalls || evidenceHasMixedWalls;
   const displayedTankWallBases = evidenceBasis.wall?.tank_bases?.length
     ? evidenceBasis.wall.tank_bases
     : sourceTankWallBases;
@@ -4591,9 +4564,6 @@ function ThermalTab({
     ) ||
     displayedTankWallBases[0] ||
     null;
-  const wallEvidenceCardVisible = !!selected?.source?.linked_tanks?.length ||
-    !!evidenceBasis.wall ||
-    !!form.tank_construction_type;
   const selectedExhibitTemperatureSources = (selected?.source?.water_temperature_sources || [])
     .filter((source: any) =>
       (source.exhibit_id || source.exhibit_code || 'unassigned') === selectedWallExhibitKey);
@@ -4603,13 +4573,6 @@ function ThermalTab({
   const lightingSchedulePower = selected?.source?.lighting_power_kw;
   const lightingScheduleIsAvailable = selected?.source &&
     Object.prototype.hasOwnProperty.call(selected.source, 'lighting_power_kw');
-  const selectedConstructionDefault = normalizeThermalWallConstruction(
-    form.tank_wall_default_basis ||
-    constructionDefaults.find(item => item.code === form.tank_construction_type) ||
-    (evidenceBasis.wall?.material ? evidenceBasis.wall : null),
-  );
-  const wallOverrideFlags = thermalWallOverrideFlags(form, selectedConstructionDefault);
-  const hasWallLayerOverride = Object.values(wallOverrideFlags).some(Boolean);
   const selectedAgitationClass = agitationClasses.find(
     item => item.class_code === form.agitation_class,
   );
@@ -4624,19 +4587,6 @@ function ThermalTab({
     form.adjacent_upper_coefficient,
   ].some(value => value !== '' && value != null);
   const draftOverridesAllowed = !readOnly && book.status === 'Draft';
-  const hasWallUValueOverride = form.reviewed_u_value_w_m2_k !== '' &&
-    form.reviewed_u_value_w_m2_k != null;
-  const wallThicknessMm = Number(form.wall_thickness_mm);
-  const wallConductivity = Number(form.wall_conductivity_w_m_k);
-  const governedWallUValue = wallThicknessMm > 0 && wallConductivity > 0
-    ? wallConductivity / (wallThicknessMm / 1000)
-    : selectedConstructionDefault?.u_value_w_m2_k ??
-      evidenceBasis.wall?.u_value_w_m2_k ?? '';
-  const wallUValueOverrideAllowed = draftOverridesAllowed &&
-    (governedWallUValue !== '' || hasWallUValueOverride);
-  const wallThicknessInfo = !sourceHasMixedWalls && wallThicknessMm > 0
-    ? `${form.wall_material || selectedConstructionDefault?.material || 'Wall'} thickness: ${thermalNumber(wallThicknessMm, 2)} mm · k ${thermalNumber(wallConductivity, 3)} W/m·K`
-    : undefined;
   const mainCorrelationOverrideAllowed = draftOverridesAllowed && !!form.agitation_correlation_id;
   const fieldClass = thermalFieldClass;
   const labelClass = thermalLabelClass;
@@ -4872,7 +4822,7 @@ function ThermalTab({
                  type="button"
                  className="flex w-full items-center justify-between gap-3 text-left"
                  aria-expanded={!collapsedSections.linkedSource}
-                 aria-controls="thermal-linked-source-panel thermal-linked-wall-evidence-panel thermal-wall-calculations-panel thermal-action-required-panel"
+                  aria-controls="thermal-linked-source-panel thermal-wall-calculations-panel thermal-action-required-panel"
                  onClick={() => setCollapsedSections(current => ({ ...current, linkedSource: !current.linkedSource }))}
                >
                  <span><span className="mr-2 text-[#9aa8af]">02</span>Linked source and geometry</span>
@@ -5097,144 +5047,6 @@ function ThermalTab({
              </div>}
             </div>
              {!collapsedSections.linkedSource && (<>
-             <div id="thermal-linked-wall-evidence-panel" className="order-3 space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
-              <div>
-                <h4 className="text-sm font-semibold text-[#263746]">Effective wall value and evidence</h4>
-                <p className="mt-1 text-xs text-[#71808a]">
-                  {showMixedWallEvidence
-                    ? 'This system has mixed tank walls. Each tank uses its own material, thickness, governed conductivity, exposed area, and quantity; wall conduction is summed tank by tank.'
-                    : 'The governed construction is the effective basis unless a reviewed U-value or explicit wall layer overrides it.'}
-                </p>
-              </div>
-               {wallEvidenceCardVisible && (
-                <div className="space-y-3">
-                   <div
-                     id={`thermal-wall-panel-${selectedWallTankBasis?.tank_id || 'selected'}`}
-                     role="tabpanel"
-                     aria-labelledby={`thermal-wall-tab-${selectedWallTankBasis?.tank_id || 'selected'}`}
-                     className="grid gap-2 rounded-lg border border-[#c7d8df] bg-[#edf3f4] p-3 sm:grid-cols-2 lg:grid-cols-4"
-                   >
-                      <div className="col-span-full mt-1 pt-3">
-                        <div className={`grid gap-3 sm:grid-cols-2 ${sourceHasMixedWalls ? '' : 'lg:grid-cols-4'}`}>
-                          {!sourceHasMixedWalls && (
-                            <label>
-                              <span className={labelClass}>Tank construction type</span>
-                              <select
-                                aria-label="Tank construction type"
-                                value={form.tank_construction_type || ''}
-                                onChange={event => selectConstruction(event.target.value)}
-                                disabled={readOnly}
-                                className={fieldClass}
-                              >
-                                <option value="">Custom / explicit wall layers</option>
-                                {constructionDefaults.map(item => (
-                                  <option key={item.code} value={item.code}>{item.label}</option>
-                                ))}
-                                {!constructionDefaults.some(item => item.code === form.tank_construction_type) &&
-                                  form.tank_construction_type && (
-                                    <option value={form.tank_construction_type}>{evidenceBasis.wall?.construction_label || form.tank_construction_type}</option>
-                                  )}
-                              </select>
-                            </label>
-                          )}
-                          {!sourceHasMixedWalls && (
-                            <>
-                              <label>
-                                <span className={labelClass}>Effective wall material{wallOverrideFlags.material ? ' · Override' : ''}</span>
-                                <input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)}
-                                  disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
-                                {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.material}</span>}
-                              </label>
-                              <label>
-                                <span className={labelClass}>Effective wall layer thickness (mm){wallOverrideFlags.thickness_mm ? ' · Override' : ''}</span>
-                                <input aria-label="Wall layer thickness" type="number" min="0" step="any" value={form.wall_thickness_mm ?? ''} onChange={e => update('wall_thickness_mm', e.target.value)} disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
-                                {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.thickness_mm} mm</span>}
-                              </label>
-                            </>
-                          )}
-                          <WallUValueControl
-                            key={`${selected.system_id}:${form.tank_construction_type || 'custom'}`}
-                            governedValue={governedWallUValue}
-                            overrideValue={form.reviewed_u_value_w_m2_k}
-                            canOverride={wallUValueOverrideAllowed}
-                            onChange={event => update('reviewed_u_value_w_m2_k', event.target.value)}
-                            onOverride={() => update('reviewed_u_value_w_m2_k', governedWallUValue)}
-                            onReset={() => update('reviewed_u_value_w_m2_k', '')}
-                            info={sourceHasMixedWalls
-                              ? 'Area-weighted equivalent from the tank-by-tank wall calculation. A reviewed override applies to every contributing tank.'
-                              : wallThicknessInfo}
-                          />
-                          {!sourceHasMixedWalls && (
-                            <>
-                              <label>
-                                <span className={labelClass}>Effective wall conductivity (W/m·K){wallOverrideFlags.conductivity_w_m_k ? ' · Override' : ''}</span>
-                                <input aria-label="Wall conductivity" type="number" min="0" step="any" value={form.wall_conductivity_w_m_k ?? ''} onChange={e => update('wall_conductivity_w_m_k', e.target.value)} disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
-                                {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.conductivity_w_m_k} {selectedConstructionDefault.conductivity_units}</span>}
-                              </label>
-                            </>
-                          )}
-                        </div>
-                        {!sourceHasMixedWalls && hasWallLayerOverride && (
-                          <label className="mt-3 block">
-                            <span className={labelClass}>Wall-layer override justification (optional)</span>
-                            <input value={form.tank_wall_override_justification || ''}
-                              onChange={event => update('tank_wall_override_justification', event.target.value)}
-                              disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k}
-                              className={fieldClass} />
-                          </label>
-                        )}
-                        {evidenceBasis.wall && (
-                          <div className="mt-3 rounded-lg bg-white/60 px-3 py-2 text-xs text-stone-600">
-                            Saved calculation basis: <b>{evidenceBasis.wall.source}</b> · {thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} {evidenceBasis.wall.units}
-                            {evidenceBasis.wall.tank_bases?.length > 1 ? ` · ${evidenceBasis.wall.tank_bases.length} frozen tank wall bases` : ''}
-                            {evidenceBasis.wall.reviewed ? ' · reviewed engineering value' : ' · governed default assumption'}
-                            {Object.values(evidenceBasis.wall.layer_override_flags || {}).some(Boolean) ? ' · designer layer override' : ''}
-                          </div>
-                        )}
-                      </div>
-                   </div>
-                </div>
-              )}
-              {showMixedWallEvidence && (
-                <div className="overflow-x-auto rounded-lg border border-[#c7d8df] bg-[#edf3f4]">
-                  <div className="border-b border-[#c7d8df] px-3 py-2 text-xs text-[#456b7d]">
-                    The system U-value shown below is the exact exposed-area-weighted equivalent. No single tank thickness is applied to the other tanks.
-                  </div>
-                  <table className="min-w-[720px] w-full text-left text-xs">
-                    <thead className="bg-[#e2ecef] text-[10px] uppercase tracking-wide text-[#456b7d]">
-                      <tr>
-                        <th className="px-3 py-2">Tank</th>
-                        <th className="px-3 py-2">Material</th>
-                        <th className="px-3 py-2 text-right">Thickness</th>
-                        <th className="px-3 py-2 text-right">Conductivity</th>
-                        <th className="px-3 py-2 text-right">U material</th>
-                        <th className="px-3 py-2 text-right">U overall</th>
-                        <th className="px-3 py-2 text-right">Exposed area</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#d8e3e7] bg-white">
-                      {displayedTankWallBases.map((basis: any, index: number) => (
-                        <tr key={basis.tank_id || `${basis.tank_code || 'tank'}-${index}`}>
-                          <td className="px-3 py-2 font-semibold text-[#263746]">
-                            {basis.tank_code || basis.tank_id || `Tank ${index + 1}`}
-                            {Number(basis.quantity) > 1 && (
-                              <span className="ml-1 font-normal text-[#71808a]">× {basis.quantity}</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-[#456b7d]">{basis.material || '—'}</td>
-                          <td className="px-3 py-2 text-right font-mono">{thermalNumber(basis.thickness_mm, 2)} mm</td>
-                          <td className="px-3 py-2 text-right font-mono">{thermalNumber(basis.conductivity_w_m_k, 3)} W/m·K</td>
-                          <td className="px-3 py-2 text-right font-mono">{thermalNumber(basis.u_value_w_m2_k, 2)} W/m²·K</td>
-                          <td className="px-3 py-2 text-right font-mono">{thermalNumber(basis.overall_u_value_w_m2_k, 2)} W/m²·K</td>
-                          <td className="px-3 py-2 text-right font-mono">{thermalNumber(basis.exposed_wall_area_m2, 2)} m²</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
            <section id="thermal-wall-calculations-panel" className="order-4 space-y-3">
             <div>
               <h3 className="font-semibold text-[#263746]">Wall calculations by exhibit tank</h3>
