@@ -981,12 +981,12 @@ router.post('/product-masters/:id/duplicate', authenticate, requireModuleManage(
       if (String(src.product_category || '').toLowerCase() === 'thermal') {
         await client.query(
           `INSERT INTO product_thermal
-             (product_master_id, thermal_capacity_kw, thermal_duty, fluid_type,
+             (product_master_id, thermal_capacity_kw, thermal_capacity_unit, thermal_duty, fluid_type,
               operating_temperature_min_c, operating_temperature_max_c, design_temperature_c,
               flow_rate_m3h, pressure_rating_bar, efficiency_pct,
               primary_inlet_dn_mm, primary_outlet_dn_mm, secondary_inlet_dn_mm, secondary_outlet_dn_mm,
               flow_switch_status, notes, updated_at)
-           SELECT $1::uuid, thermal_capacity_kw, thermal_duty, fluid_type,
+           SELECT $1::uuid, thermal_capacity_kw, thermal_capacity_unit, thermal_duty, fluid_type,
                   operating_temperature_min_c, operating_temperature_max_c, design_temperature_c,
                   flow_rate_m3h, pressure_rating_bar, efficiency_pct,
                   primary_inlet_dn_mm, primary_outlet_dn_mm, secondary_inlet_dn_mm, secondary_outlet_dn_mm,
@@ -1572,6 +1572,7 @@ router.get('/product-masters/:id/pneumatic', authenticate, async (req: AuthReque
 });
 
 const THERMAL_FLOW_SWITCH_STATUSES = new Set(['included', 'optional', 'not_included']);
+const THERMAL_CAPACITY_UNITS = new Set(['kW', 'BTU/h', 'TON']);
 const thermalNumericFields = [
   'thermal_capacity_kw',
   'operating_temperature_min_c',
@@ -1700,25 +1701,36 @@ router.put('/product-masters/:id/thermal', authenticate, requireModuleManage('pi
         error.code = 'INVALID_THERMAL_SPEC';
         throw error;
       }
+      const thermalCapacityUnit = String(
+        Object.prototype.hasOwnProperty.call(body, 'thermal_capacity_unit')
+          ? body.thermal_capacity_unit || 'kW'
+          : current.thermal_capacity_unit || 'kW',
+      );
+      if (!THERMAL_CAPACITY_UNITS.has(thermalCapacityUnit)) {
+        const error: any = new Error('Thermal capacity unit must be kW, BTU/h, or TON');
+        error.status = 400;
+        error.code = 'INVALID_THERMAL_SPEC';
+        throw error;
+      }
       const textValue = (field: string) => Object.prototype.hasOwnProperty.call(body, field)
         ? nullableThermalValue(body[field])
         : current[field] ?? null;
       const r = await client.query(
         `INSERT INTO product_thermal
-           (product_master_id, thermal_capacity_kw, thermal_duty, fluid_type,
+           (product_master_id, thermal_capacity_kw, thermal_capacity_unit, thermal_duty, fluid_type,
             operating_temperature_min_c, operating_temperature_max_c, design_temperature_c,
             flow_rate_m3h, pressure_rating_bar, efficiency_pct,
             primary_inlet_dn_mm, primary_outlet_dn_mm, secondary_inlet_dn_mm, secondary_outlet_dn_mm,
             flow_switch_status, notes, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
          ON CONFLICT (product_master_id) DO UPDATE SET
-           thermal_capacity_kw=$2, thermal_duty=$3, fluid_type=$4,
-           operating_temperature_min_c=$5, operating_temperature_max_c=$6, design_temperature_c=$7,
-           flow_rate_m3h=$8, pressure_rating_bar=$9, efficiency_pct=$10,
-           primary_inlet_dn_mm=$11, primary_outlet_dn_mm=$12, secondary_inlet_dn_mm=$13, secondary_outlet_dn_mm=$14,
-           flow_switch_status=$15, notes=$16, updated_at=NOW()
+           thermal_capacity_kw=$2, thermal_capacity_unit=$3, thermal_duty=$4, fluid_type=$5,
+           operating_temperature_min_c=$6, operating_temperature_max_c=$7, design_temperature_c=$8,
+           flow_rate_m3h=$9, pressure_rating_bar=$10, efficiency_pct=$11,
+           primary_inlet_dn_mm=$12, primary_outlet_dn_mm=$13, secondary_inlet_dn_mm=$14, secondary_outlet_dn_mm=$15,
+           flow_switch_status=$16, notes=$17, updated_at=NOW()
          RETURNING *`,
-        [pid, values.thermal_capacity_kw, textValue('thermal_duty'), textValue('fluid_type'),
+        [pid, values.thermal_capacity_kw, thermalCapacityUnit, textValue('thermal_duty'), textValue('fluid_type'),
           values.operating_temperature_min_c, values.operating_temperature_max_c, values.design_temperature_c,
           values.flow_rate_m3h, values.pressure_rating_bar, values.efficiency_pct,
           values.primary_inlet_dn_mm, values.primary_outlet_dn_mm, values.secondary_inlet_dn_mm, values.secondary_outlet_dn_mm,

@@ -9,7 +9,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
 import { VendorOption, BOMLine, Document } from '../../types';
 import { useRecordTitle } from '../../hooks/usePageTitle';
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import FormulaInput from '../../components/ui/FormulaInput';
 import { Network, FileText, FileCheck, FileSearch, Wrench, Award, Upload, Plus, X, Trash2, ArrowRight, ArrowLeft, Link2, Ruler, Box, Zap, Wind, Thermometer, Tag, Pencil, Check, Copy } from 'lucide-react';
 import FamilyPickerModal from '../../components/ui/FamilyPickerModal';
@@ -83,6 +83,28 @@ function calculateLampRatedPowerKw(lampCount: unknown, lampPowerW: unknown): num
     : null;
 }
 
+type ThermalCapacityUnit = 'kW' | 'BTU/h' | 'TON';
+const THERMAL_CAPACITY_UNITS: ThermalCapacityUnit[] = ['kW', 'BTU/h', 'TON'];
+const THERMAL_KW_PER_BTU_H = 0.00029307107;
+const THERMAL_KW_PER_TON = 3.51685284;
+
+function thermalCapacityToKw(value: unknown, unit: ThermalCapacityUnit): number | null {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (unit === 'BTU/h') return numeric * THERMAL_KW_PER_BTU_H;
+  if (unit === 'TON') return numeric * THERMAL_KW_PER_TON;
+  return numeric;
+}
+
+function thermalCapacityFromKw(value: unknown, unit: ThermalCapacityUnit): number | null {
+  const kw = thermalCapacityToKw(value, 'kW');
+  if (kw === null) return null;
+  if (unit === 'BTU/h') return +(kw / THERMAL_KW_PER_BTU_H).toFixed(2);
+  if (unit === 'TON') return +(kw / THERMAL_KW_PER_TON).toFixed(3);
+  return +kw.toFixed(3);
+}
+
 const docTypeIcon = (type: string) => {
   switch (type) {
     case 'Technical Data Sheet': return <FileSearch className="w-4 h-4 text-blue-500" />;
@@ -152,6 +174,7 @@ export default function ProductMasterDetail() {
   const [editingThermal, setEditingThermal] = useState(false);
   const [thermalForm, setThermalForm] = useState<Record<string, any>>({});
   const [thermalSaving, setThermalSaving] = useState(false);
+  const [thermalDisplayUnit, setThermalDisplayUnit] = useState<ThermalCapacityUnit>('kW');
 
   const [tankSpecsForm, setTankSpecsForm] = useState({ shape_type: '', length_mm: '', width_mm: '', height_mm: '', design_water_level_mm: '', wall_thickness_mm: '', weight_kg: '' });
   const [tankSpecsSubmitting, setTankSpecsSubmitting] = useState(false);
@@ -276,6 +299,12 @@ export default function ProductMasterDetail() {
     queryFn: () => api.get(`/product-masters/${id}/thermal`).then(r => r.data),
     enabled: String(product?.product_category || '').toLowerCase() === 'thermal',
   });
+
+  useEffect(() => {
+    if (THERMAL_CAPACITY_UNITS.includes(thermalData?.thermal_capacity_unit)) {
+      setThermalDisplayUnit(thermalData.thermal_capacity_unit);
+    }
+  }, [thermalData?.thermal_capacity_unit]);
 
   const { data: materialsData } = useQuery({
     queryKey: ['materials-list'],
@@ -675,6 +704,9 @@ export default function ProductMasterDetail() {
 
   const handleSaveThermal = async () => {
     if (thermalSaving) return;
+    const capacityUnit: ThermalCapacityUnit = THERMAL_CAPACITY_UNITS.includes(thermalForm.thermal_capacity_unit)
+      ? thermalForm.thermal_capacity_unit
+      : 'kW';
     const nonNegativeFields = [
       ['thermal_capacity_kw', 'Thermal capacity'],
       ['flow_rate_m3h', 'Flow rate'],
@@ -731,6 +763,8 @@ export default function ProductMasterDetail() {
       for (const [key] of numericFields) {
         payload[key] = hasValue(payload[key]) ? Number(payload[key]) : null;
       }
+      payload.thermal_capacity_kw = thermalCapacityToKw(payload.thermal_capacity_kw, capacityUnit);
+      payload.thermal_capacity_unit = capacityUnit;
       for (const key of ['thermal_duty', 'fluid_type', 'flow_switch_status', 'notes']) {
         payload[key] = hasValue(payload[key]) ? String(payload[key]).trim() : null;
       }
@@ -739,6 +773,7 @@ export default function ProductMasterDetail() {
         throw new Error('The server did not return the saved thermal specifications');
       }
       queryClient.setQueryData(['product-thermal', id], saved);
+      setThermalDisplayUnit(capacityUnit);
       toast.success('Thermal specifications saved');
       setEditingThermal(false);
       refetchThermal();
@@ -1678,13 +1713,45 @@ export default function ProductMasterDetail() {
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5"><Thermometer className="w-3.5 h-3.5" />Thermal Specifications</span>
                 {!editingThermal
-                  ? <button onClick={() => { setThermalForm({ ...thermalData }); setEditingThermal(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                  ? <div className="flex items-center gap-2">
+                      <select aria-label="Thermal capacity display unit" value={thermalDisplayUnit} onChange={event => setThermalDisplayUnit(event.target.value as ThermalCapacityUnit)} className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-600">
+                        {THERMAL_CAPACITY_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                      </select>
+                      <button onClick={() => {
+                        const capacityUnit = thermalDisplayUnit;
+                        setThermalForm({
+                          ...thermalData,
+                          thermal_capacity_unit: capacityUnit,
+                          thermal_capacity_kw: thermalCapacityFromKw(thermalData?.thermal_capacity_kw, capacityUnit) ?? '',
+                        });
+                        setEditingThermal(true);
+                      }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                    </div>
                   : <div className="flex gap-2"><button onClick={() => setEditingThermal(false)} className="text-xs text-slate-400 hover:underline">Cancel</button><button onClick={handleSaveThermal} disabled={thermalSaving} className="text-xs text-blue-600 font-semibold hover:underline disabled:opacity-50">{thermalSaving ? 'Saving…' : 'Save'}</button></div>}
               </div>
               {editingThermal ? (
                 <div className="p-3 grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-0.5">Thermal Capacity</label>
+                    <div className="flex">
+                      <input type="number" min={0} step="any" value={thermalForm.thermal_capacity_kw ?? ''} onChange={event => setThermalForm(form => ({ ...form, thermal_capacity_kw: event.target.value }))} className="min-w-0 flex-1 border border-r-0 border-slate-200 rounded-l px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-600" />
+                      <select aria-label="Thermal Capacity unit" value={thermalForm.thermal_capacity_unit ?? 'kW'} onChange={event => {
+                        const nextUnit = event.target.value as ThermalCapacityUnit;
+                        setThermalForm(form => {
+                          const currentUnit: ThermalCapacityUnit = THERMAL_CAPACITY_UNITS.includes(form.thermal_capacity_unit) ? form.thermal_capacity_unit : 'kW';
+                          const capacityKw = thermalCapacityToKw(form.thermal_capacity_kw, currentUnit);
+                          return {
+                            ...form,
+                            thermal_capacity_unit: nextUnit,
+                            thermal_capacity_kw: capacityKw === null ? '' : thermalCapacityFromKw(capacityKw, nextUnit),
+                          };
+                        });
+                      }} className="w-20 border border-slate-200 rounded-r px-1.5 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-600">
+                        {THERMAL_CAPACITY_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                      </select>
+                    </div>
+                  </div>
                   {[
-                    ['thermal_capacity_kw', 'Thermal Capacity (kW)', 0],
                     ['flow_rate_m3h', 'Flow Rate (m³/h)', 0],
                     ['operating_temperature_min_c', 'Operating Temperature Min (°C)', undefined],
                     ['operating_temperature_max_c', 'Operating Temperature Max (°C)', undefined],
@@ -1726,7 +1793,7 @@ export default function ProductMasterDetail() {
               ) : (
                 <div className="p-3">
                   {[
-                    ['Thermal Capacity', thermalData?.thermal_capacity_kw, 'kW'],
+                    ['Thermal Capacity', thermalCapacityFromKw(thermalData?.thermal_capacity_kw, thermalDisplayUnit), thermalDisplayUnit],
                     ['Thermal Duty / Service', thermalData?.thermal_duty, ''],
                     ['Fluid Type', thermalData?.fluid_type, ''],
                     ['Operating Temperature Min', thermalData?.operating_temperature_min_c, '°C'],
@@ -1745,7 +1812,7 @@ export default function ProductMasterDetail() {
                     ? <p className="text-xs text-slate-300 text-center py-2">No thermal specifications recorded — click Edit to add</p>
                     : <div className="space-y-1">
                         {[
-                          ['Thermal Capacity', thermalData?.thermal_capacity_kw, 'kW'],
+                          ['Thermal Capacity', thermalCapacityFromKw(thermalData?.thermal_capacity_kw, thermalDisplayUnit), thermalDisplayUnit],
                           ['Thermal Duty / Service', thermalData?.thermal_duty, ''],
                           ['Fluid Type', thermalData?.fluid_type, ''],
                           ['Operating Temperature Min', thermalData?.operating_temperature_min_c, '°C'],

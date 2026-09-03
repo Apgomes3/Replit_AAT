@@ -75,6 +75,7 @@ describe('ProductMasterDetail thermal specifications', () => {
     category = 'Thermal';
     thermal = {
       thermal_capacity_kw: 120,
+      thermal_capacity_unit: 'kW',
       thermal_duty: 'Heating',
       fluid_type: 'Fresh water',
       operating_temperature_min_c: 12,
@@ -129,9 +130,10 @@ describe('ProductMasterDetail thermal specifications', () => {
     const card = await thermalCard();
     await user.click(card.getByRole('button', { name: 'Edit' }));
 
-    const capacity = card.getByText('Thermal Capacity (kW)').nextElementSibling as HTMLInputElement;
+    const capacity = card.getByText('Thermal Capacity').nextElementSibling?.querySelector('input') as HTMLInputElement;
+    await user.selectOptions(card.getByLabelText('Thermal Capacity unit'), 'TON');
     await user.clear(capacity);
-    await user.type(capacity, '150');
+    await user.type(capacity, '10');
     await user.selectOptions(card.getByText('Flow Switch').nextElementSibling as HTMLSelectElement, 'included');
     await user.click(card.getByRole('button', { name: 'Save' }));
 
@@ -139,7 +141,8 @@ describe('ProductMasterDetail thermal specifications', () => {
     expect(mocks.put).toHaveBeenCalledWith(
       `/product-masters/${productId}/thermal`,
       expect.objectContaining({
-        thermal_capacity_kw: 150,
+        thermal_capacity_kw: 35.1685284,
+        thermal_capacity_unit: 'TON',
         primary_inlet_dn_mm: 80,
         primary_outlet_dn_mm: 80,
         secondary_inlet_dn_mm: 65,
@@ -147,6 +150,7 @@ describe('ProductMasterDetail thermal specifications', () => {
         flow_switch_status: 'included',
       }),
     );
+    expect(card.getByText('10').parentElement).toHaveTextContent(/10\s*TON/);
     expect(card.getByText('Included')).toBeInTheDocument();
   });
 

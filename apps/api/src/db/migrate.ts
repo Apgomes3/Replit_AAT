@@ -794,6 +794,7 @@ CREATE TABLE IF NOT EXISTS product_thermal (
   notes TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE product_thermal ADD COLUMN IF NOT EXISTS thermal_capacity_unit VARCHAR(10) NOT NULL DEFAULT 'kW';
 
 CREATE TABLE IF NOT EXISTS product_design_flow_reconciliations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
