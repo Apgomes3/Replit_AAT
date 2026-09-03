@@ -1877,11 +1877,20 @@ function thermalNumber(value: any, decimals = 2) {
 export function thermalLinkedFreeSurfaceArea(source: any) {
   const tanks = Array.isArray(source?.linked_tanks) ? source.linked_tanks : [];
   if (!tanks.length) return null;
-  const areas = tanks.map((tank: any) => Number(
-    tank?.free_surface_area_m2 ??
-    tank?.water_surface_area_m2 ??
-    tank?.surface_area_m2,
-  ));
+  const areas = tanks.map((tank: any) => {
+    const storedArea = Number(
+      tank?.free_surface_area_m2 ??
+      tank?.water_surface_area_m2 ??
+      tank?.surface_area_m2,
+    );
+    if (Number.isFinite(storedArea) && storedArea > 0) return storedArea;
+    const length = Number(tank?.dimensions?.inner_length_mm ?? tank?.inner_length_mm);
+    const width = Number(tank?.dimensions?.inner_width_mm ?? tank?.inner_width_mm);
+    const quantity = Math.max(1, Number(tank?.quantity) || 1);
+    return Number.isFinite(length) && length > 0 && Number.isFinite(width) && width > 0
+      ? length * width / 1e6 * quantity
+      : Number.NaN;
+  });
   if (areas.some((area: number) => !Number.isFinite(area) || area <= 0)) return null;
   return areas.reduce((sum: number, area: number) => sum + area, 0);
 }
