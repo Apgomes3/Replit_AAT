@@ -2183,6 +2183,52 @@ export function ThermalNumericField({
   );
 }
 
+export function MassTransferCoefficientControl({
+  value,
+  overridden,
+  canOverride,
+  onChange,
+  onOverride,
+  onReset,
+}: {
+  value?: number | string | null;
+  overridden: boolean;
+  canOverride: boolean;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onOverride: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <span className={thermalLabelClass}>
+          Mass-transfer coefficient (kg/m²·s·kPa){overridden && ' · Override'}
+        </span>
+        {canOverride && (
+          <button
+            type="button"
+            aria-label={overridden ? 'Reset mass-transfer coefficient override' : 'Override mass-transfer coefficient'}
+            className="text-xs font-medium text-[#9d5637] underline underline-offset-2 hover:text-[#7d442f]"
+            onClick={overridden ? onReset : onOverride}
+          >
+            {overridden ? 'Reset' : 'Override'}
+          </button>
+        )}
+      </div>
+      <input
+        aria-label="Mass-transfer coefficient"
+        type="number"
+        min="0"
+        step="any"
+        value={value ?? ''}
+        onChange={onChange}
+        disabled={!canOverride || !overridden}
+        className={thermalFieldClass}
+      />
+    </div>
+  );
+}
+
 export function WaterTemperatureOverrideControl({
   average,
   overrideValue,
@@ -3133,6 +3179,9 @@ function ThermalTab({
   const selectedAgitationClass = agitationClasses.find(
     item => item.class_code === form.agitation_class,
   );
+  const selectedCorrelation = correlationItems.find(
+    item => item.id === form.agitation_correlation_id,
+  );
   const hasCorrelationSensitivityInputs = [
     form.adjacent_lower_class,
     form.adjacent_lower_coefficient,
@@ -3141,6 +3190,7 @@ function ThermalTab({
     form.adjacent_upper_coefficient,
   ].some(value => value !== '' && value != null);
   const draftOverridesAllowed = !readOnly && book.status === 'Draft';
+  const mainCorrelationOverrideAllowed = draftOverridesAllowed && !!form.agitation_correlation_id;
   const fieldClass = thermalFieldClass;
   const labelClass = thermalLabelClass;
 
@@ -3473,18 +3523,20 @@ function ThermalTab({
                   selectedAgitationClass={selectedAgitationClass}
                 />
                </div>
-              <label>
-                <span className={labelClass}>Mass-transfer coefficient (kg/m²·s·kPa){form.agitation_correlation_deviation && ' · Override'}</span>
-                <input aria-label="Mass-transfer coefficient" type="number" min="0" step="any"
-                  value={form.evaporation_coefficient_kg_m2_s_kpa ?? ''}
-                  onChange={event => update('evaporation_coefficient_kg_m2_s_kpa', event.target.value)}
-                  disabled={!draftOverridesAllowed || !form.agitation_correlation_id ||
-                    !form.agitation_correlation_deviation} className={fieldClass} />
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-5 text-sm">
-              <span className="inline-flex items-center gap-2 text-[#456b7d]"><ShieldCheck className="h-4 w-4" /> Approval is governed by the shared library</span>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={!!form.agitation_correlation_deviation} onChange={e => update('agitation_correlation_deviation', e.target.checked)} disabled={!draftOverridesAllowed || !form.agitation_correlation_id} /> Project-specific deviation from selected correlation</label>
+              <MassTransferCoefficientControl
+                value={form.evaporation_coefficient_kg_m2_s_kpa}
+                overridden={!!form.agitation_correlation_deviation}
+                canOverride={mainCorrelationOverrideAllowed}
+                onChange={event => update('evaporation_coefficient_kg_m2_s_kpa', event.target.value)}
+                onOverride={() => update('agitation_correlation_deviation', true)}
+                onReset={() => setForm((current: any) => ({
+                  ...current,
+                  agitation_correlation_deviation: false,
+                  evaporation_coefficient_kg_m2_s_kpa:
+                    selectedCorrelation?.coefficient_kg_m2_s_kpa ?? '',
+                  deviation_justification: '',
+                }))}
+              />
             </div>
             {!form.agitation_correlation_id && form.agitation_class && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">

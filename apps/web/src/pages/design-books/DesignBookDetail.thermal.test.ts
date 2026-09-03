@@ -15,6 +15,7 @@ import {
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
   ThermalNumericField,
+  MassTransferCoefficientControl,
   WaterTemperatureOverrideControl,
   EffectiveRadiantSurroundingsTemperature,
   SurfaceActivityGuidance,
@@ -383,6 +384,47 @@ describe('Effective radiant surroundings temperature', () => {
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.getByText('20.0 °C')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Override' })).toBeInTheDocument();
+  });
+});
+
+describe('Mass-transfer coefficient override', () => {
+  function CoefficientHarness() {
+    const [value, setValue] = useState<string | number>('0.000001');
+    const [overridden, setOverridden] = useState(false);
+    return createElement(MassTransferCoefficientControl, {
+      value,
+      overridden,
+      canOverride: true,
+      onChange: event => setValue(event.target.value),
+      onOverride: () => setOverridden(true),
+      onReset: () => {
+        setValue('0.000001');
+        setOverridden(false);
+      },
+    });
+  }
+
+  it('keeps the approved coefficient locked until Override and restores it on Reset', async () => {
+    const user = userEvent.setup();
+    render(createElement(CoefficientHarness));
+    const input = screen.getByRole('spinbutton', { name: 'Mass-transfer coefficient' });
+
+    expect(input).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Override mass-transfer coefficient' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Override mass-transfer coefficient' }));
+    expect(input).toBeEnabled();
+
+    await user.clear(input);
+    await user.type(input, '0.000002');
+    expect(input).toHaveValue('0.000002');
+    expect(screen.getByText(/Mass-transfer coefficient.*Override/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reset mass-transfer coefficient override' }));
+
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue(0.000001);
+    expect(screen.getByRole('button', { name: 'Override mass-transfer coefficient' })).toBeInTheDocument();
   });
 });
 
