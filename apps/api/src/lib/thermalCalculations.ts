@@ -412,14 +412,31 @@ export function buildThermalSourceContext(args: {
   const pumpHeatSources = pumpLines.map((pump: any) => {
     const location = pump.installation_location === 'external' || pump.installation_location === 'submerged'
       ? pump.installation_location : null;
-    const ready = pump.freshness === 'fresh' && pump.status === 'ready' &&
-      pump.results && (pump.calculation_version != null);
+    const hasSavedCalculation = !!pump.results && pump.calculation_version != null;
+    const pumpSelectionReasons = Array.isArray(pump.reasons)
+      ? pump.reasons.filter((reason: unknown) => String(reason || '').trim())
+      : [];
+    const readinessReasons = [
+      ...(pump.freshness === 'fresh'
+        ? []
+        : [pump.freshness === 'stale'
+          ? 'Pump selection is stale and must be recalculated.'
+          : 'Pump selection must be saved and calculated.']),
+      ...(pump.status === 'ready'
+        ? []
+        : pumpSelectionReasons.length
+          ? pumpSelectionReasons
+          : [pump.status === 'incompatible'
+            ? 'Selected pump does not meet the current circuit flow, head, or power duty.'
+            : 'Pump selection is incomplete.']),
+      ...(hasSavedCalculation ? [] : ['Pump sizing calculation results are required.']),
+    ];
     const powerBasis = location === 'external' ? 'shaft_power_kw'
       : location === 'submerged' ? 'motor_input_kw' : null;
     const perUnit = powerBasis ? positive(pump.results?.[powerBasis]) : null;
     const quantity = positive(pump.pump_quantity);
     const incompleteReasons = [
-      ...(ready ? [] : ['Pump selection must be saved, fresh, and ready.']),
+      ...readinessReasons,
       ...(location ? [] : ['Pump installation location is required (external or submerged).']),
       ...(quantity != null ? [] : ['Pump quantity is required.']),
       ...(powerBasis && perUnit != null ? [] : [`Pump ${powerBasis || 'heat power'} is required.`]),

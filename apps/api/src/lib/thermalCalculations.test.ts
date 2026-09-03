@@ -223,6 +223,33 @@ describe('AAT thermal calculation', () => {
     });
   });
 
+  it('preserves the specific compatibility reason for a saved fresh pump selection', () => {
+    const source = buildThermalSourceContext({
+      system: { id: 'system-1', system_code: 'LSS-1' },
+      links: [], exhibits: [], tanks: [],
+      pumpSelections: [{
+        circuit_key: 'loop:1',
+        pump_role: 'primary',
+        project_equipment_item_id: 'pump-a',
+        pump_quantity: 1,
+        installation_location: 'external',
+        freshness: 'fresh',
+        status: 'incompatible',
+        calculation_version: 'pump-selection-v1',
+        results: { shaft_power_kw: 1.2, motor_input_kw: 1.5 },
+        reasons: ['Selected pump catalog design flow is 100 m³/h; circuit requires 120 m³/h.'],
+      }],
+      uvSelections: [],
+    });
+
+    expect(source.equipment_heat_sources[0].reasons).toEqual([
+      'Selected pump catalog design flow is 100 m³/h; circuit requires 120 m³/h.',
+    ]);
+    expect(source.equipment_heat_sources[0].reasons).not.toContain(
+      'Pump selection must be saved, fresh, and ready.',
+    );
+  });
+
   it('derives free surface from linked rectangular tank dimensions when no saved area exists', () => {
     const source = readySource('Rectangular', null);
     const result = calculateThermalCalculation(source, readyInputs());
