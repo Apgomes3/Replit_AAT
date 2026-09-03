@@ -20,6 +20,7 @@
 - [Compact-unit PIM snapshots](compact-unit-pim-snapshots.md) — Product Master specs seed editable compact-unit values once; edits and future PIM changes never overwrite saved LSS values implicitly.
 - [Custom tank footprints](custom-tank-footprints.md) — geometry is authoritative for plan measurements; manual Custom tanks never inherit rectangular area assumptions.
 - [LSS pump selection authority](lss-pump-selection-authority.md) — size circuit pumps from Design Book flow; stale, incomplete, or ineligible selections block release.
+- [LSS pump tag ownership](lss-pump-tag-ownership.md) — generated pump tags belong to their governed LSS duty; reclaim misplaced project tags instead of creating duplicates.
 - [Thermal correlation snapshots](thermal-correlation-snapshots.md) — Ready thermal work requires a governed library snapshot; deviations retain the approved basis and justification.
 - [Thermal UI palette](thermal-ui-palette.md) — Thermal uses a scoped parchment, marine-navy, slate-blue, and copper visual system; do not introduce green accents.
 - [Thermal assumption evidence](thermal-assumption-evidence.md) — freeze linked-range midpoint plus governed default/effective wall layers; custom U-values remain separate.

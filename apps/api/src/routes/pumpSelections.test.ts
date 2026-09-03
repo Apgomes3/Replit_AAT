@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   sideStreams: [{ id: 'side-1', system_id: 'system-1', parent_loop_number: 1, name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0 }] as any[],
   fractionatorAllocations: [] as any[],
   saved: [] as any[],
+  existingProjectEquipment: [] as any[],
   candidates: [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }] as any[],
   exhibits: [] as any[], tanks: [] as any[], hydraulics: [] as any[], links: [] as any[],
 }));
@@ -35,6 +36,7 @@ vi.mock('../db', () => {
     if (sql.includes('FROM system_pump_selections')) return { rows: state.saved };
     if (sql.startsWith('SELECT id FROM project_equipment_items')) return { rows: [] };
     if (sql.includes('SELECT equip_code FROM project_equipment_items')) return { rows: [] };
+    if (sql.includes('/* existing-pump-code */')) return { rows: state.existingProjectEquipment };
     if (sql.includes('FROM project_equipment_items')) return { rows: state.candidates };
     if (sql.includes('FROM product_masters pm') && sql.includes('pm.id=$1')) {
       const candidate = state.candidates.find(item => item.product_master_id === params[0]);
@@ -49,6 +51,17 @@ vi.mock('../db', () => {
       };
       state.candidates.push(created as any);
       return { rows: [created] };
+    }
+    if (sql.includes('UPDATE project_equipment_items') && sql.includes('SET system_id=$1')) {
+      const item = state.existingProjectEquipment.find(value => value.id === params[4]);
+      if (!item) return { rows: [] };
+      Object.assign(item, {
+        system_id: params[0],
+        quantity: params[1],
+        description: params[2],
+        product_master_id: params[3] || item.product_master_id,
+      });
+      return { rows: [item] };
     }
     if (sql.includes('INSERT INTO system_pump_selections')) {
       const saved = {
@@ -105,6 +118,7 @@ describe('pump selection HTTP routes', () => {
   beforeEach(() => {
     state.calls.length = 0; state.book = { id: 'book-1', project_id: 'project-1', status: 'Draft' };
     state.saved = []; state.candidates = [{ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', equip_code: 'P-101', product_master_id: 'pump-1', product_code: 'PUMP-101', product_name: 'Duty Pump', power_kw: '3' }];
+    state.existingProjectEquipment = [];
     state.fractionatorAllocations = [];
     state.exhibits = []; state.tanks = []; state.hydraulics = []; state.links = [];
     state.sideStreams = [{
@@ -398,6 +412,39 @@ describe('pump selection HTTP routes', () => {
     expect(repeated.status).toBe(200);
     expect(repeated.body.idempotent).toBe(true);
     expect(state.calls.filter(call => call.sql.includes('INSERT INTO project_equipment_items'))).toHaveLength(1);
+  });
+
+  it('reassigns an existing generated tag to the correct LSS instead of rejecting it', async () => {
+    state.candidates = [];
+    state.existingProjectEquipment = [{
+      id: 'misplaced-pump',
+      equip_code: 'SYS-FFSP-01',
+      project_id: 'project-1',
+      system_id: 'wrong-system',
+      description: 'Pump assigned to the wrong LSS',
+      quantity: 1,
+      unit: 'EA',
+      status: 'Draft',
+    }];
+
+    const response = await request(app, 'POST', '/api/v1/systems/system-1/pump-lines', {
+      design_book_id: 'book-1',
+      circuit_key: 'loop:1',
+      pump_role: 'primary',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.reassigned_existing_code).toBe(true);
+    expect(response.body.project_equipment_item).toMatchObject({
+      id: 'misplaced-pump',
+      equip_code: 'SYS-FFSP-01',
+      system_id: 'system-1',
+    });
+    expect(state.calls.some(call => call.sql.includes('INSERT INTO project_equipment_items'))).toBe(false);
+    expect(state.calls).toContainEqual(expect.objectContaining({
+      sql: expect.stringContaining('SET project_equipment_item_id=NULL'),
+      params: ['wrong-system', 'misplaced-pump'],
+    }));
   });
 
   it('refuses to create equipment for an orphaned no-pump side-stream duty', async () => {

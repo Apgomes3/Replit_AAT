@@ -365,15 +365,6 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     pumpRole,
   );
 
-  // Check equip_code uniqueness.
-  const existing = await query(
-    'SELECT id FROM project_equipment_items WHERE project_id=$1 AND equip_code=$2',
-    [book.project_id, equipCode],
-  );
-  if (existing.rows.length) {
-    return res.status(409).json({ error: { code: 'DUPLICATE_EQUIP_CODE', message: `Equipment code "${equipCode}" already exists on this project. Provide a unique code.` } });
-  }
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -387,6 +378,13 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
        FOR UPDATE`,
       [system.id, circuitKey, pumpRole],
     )).rows[0];
+    const existingCodeItem = (await client.query(
+      `/* existing-pump-code */
+       SELECT * FROM project_equipment_items
+        WHERE project_id=$1 AND equip_code=$2
+        FOR UPDATE`,
+      [book.project_id, equipCode],
+    )).rows[0] || null;
     if (lockedSelection?.project_equipment_item_id) {
       const refreshedEquipment = (await client.query(
         `UPDATE project_equipment_items
@@ -431,14 +429,40 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
         idempotent: true,
       });
     }
-    const result = await client.query(
-      `INSERT INTO project_equipment_items
-         (equip_code, project_id, system_id, description, quantity, unit, status, product_master_id)
-       VALUES ($1,$2,$3,$4,$5,'EA','Draft',$6)
-       RETURNING *`,
-      [equipCode, book.project_id, system.id, description, pumpQuantity, requestedProduct?.product_master_id || null],
-    );
-    const pei = result.rows[0];
+    const reusedExistingCode = !!existingCodeItem;
+    const previousSystemId = existingCodeItem?.system_id || null;
+    const pei = reusedExistingCode
+      ? (await client.query(
+        `UPDATE project_equipment_items
+            SET system_id=$1, quantity=$2, description=$3,
+                product_master_id=COALESCE($4,product_master_id),
+                status=CASE WHEN $4::uuid IS NOT NULL THEN 'Draft' ELSE status END,
+                updated_at=NOW()
+          WHERE id=$5
+          RETURNING *`,
+        [
+          system.id,
+          pumpQuantity,
+          description,
+          requestedProduct?.product_master_id || null,
+          existingCodeItem.id,
+        ],
+      )).rows[0]
+      : (await client.query(
+        `INSERT INTO project_equipment_items
+           (equip_code, project_id, system_id, description, quantity, unit, status, product_master_id)
+         VALUES ($1,$2,$3,$4,$5,'EA','Draft',$6)
+         RETURNING *`,
+        [equipCode, book.project_id, system.id, description, pumpQuantity, requestedProduct?.product_master_id || null],
+      )).rows[0];
+    if (reusedExistingCode && previousSystemId && previousSystemId !== system.id) {
+      await client.query(
+        `UPDATE system_pump_selections
+            SET project_equipment_item_id=NULL, pump_snapshot=NULL, updated_at=NOW()
+          WHERE system_id=$1 AND project_equipment_item_id=$2`,
+        [previousSystemId, existingCodeItem.id],
+      );
+    }
     const circuit = allLines.find(item =>
       item.circuit_key === circuitKey && item.pump_role === PUMP_ROLE_PRIMARY);
     if (!circuit) {
@@ -511,7 +535,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       ],
     );
     await client.query('COMMIT');
-    res.status(201).json({ project_equipment_item: pei, pump_line: buildPumpLineItem(circuit, {
+    res.status(reusedExistingCode ? 200 : 201).json({ project_equipment_item: pei, pump_line: buildPumpLineItem(circuit, {
       project_equipment_item_id: pei.id,
       pump_snapshot: snapshot,
       source_fingerprint: pumpSourceFingerprint(source),
@@ -522,7 +546,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       pump_quantity: pumpQuantity,
       pump_duty_type_id: dutyType.id || null,
       pump_duty_snapshot: { tag: dutyType.tag, pump_name: dutyType.pump_name },
-    }, pumpRole) });
+    }, pumpRole), ...(reusedExistingCode ? { reassigned_existing_code: true } : {}) });
   } catch (error: any) {
     await client.query('ROLLBACK');
     if (error?.code === '23505') {
