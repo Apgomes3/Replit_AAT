@@ -207,6 +207,12 @@ describe('Design Book detail thermal response', () => {
       systems.map(system => system.id),
     );
     expect(response.body.systems[0].sand_filter_allocations).toEqual([sandFilterAllocation]);
+    expect(response.body.systems).toEqual(expect.arrayContaining(
+      systems.map(system => expect.objectContaining({
+        id: system.id,
+        source_flows_m3h: expect.any(Object),
+      })),
+    ));
   });
 
   it('inherits a fresh circuit pump into an unsaved friction-loss package', async () => {

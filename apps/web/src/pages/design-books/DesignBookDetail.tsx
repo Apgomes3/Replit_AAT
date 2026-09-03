@@ -2376,7 +2376,14 @@ export function EquipmentHeatGainBreakdown({ source }: { source: any }) {
           </thead>
           <tbody className="divide-y divide-stone-100">
             {rows.map((equipment, index) => (
-              <tr key={equipment.equipment_id || `${equipment.equipment_type}-${equipment.equipment_code}-${index}`}>
+              <tr key={[
+                source?.system_id || 'system',
+                equipment.equipment_type || 'equipment',
+                equipment.equipment_id || 'unassigned',
+                equipment.circuit_key || equipment.side_stream_id || 'circuit',
+                equipment.pump_role || 'role',
+                equipment.equipment_code || index,
+              ].join(':')}>
                 <td className="px-3 py-3">
                   <div className="font-semibold text-stone-800">
                     {equipment.equipment_name || equipment.equipment_code || equipment.equipment_type || 'Equipment'}
@@ -3958,7 +3965,11 @@ function LegacyThermalTab({
           {detail?.reasons?.length > 0 && (
             <div className="rounded-xl border border-red-200 bg-red-50 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-red-800"><AlertTriangle className="w-4 h-4" /> Action required</div>
-              <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">{detail.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
+              <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">
+                {detail.reasons.map((reason: string, index: number) => (
+                  <li key={`${selected?.system_id || 'system'}:${index}:${reason}`}>{reason}</li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -5094,7 +5105,11 @@ function ThermalTab({
            {detail?.reasons?.length > 0 && (
              <div id="thermal-action-required-panel" className="order-6 rounded-xl border border-red-200 bg-red-50 p-4">
                <div className="flex items-center gap-2 text-sm font-semibold text-red-800"><AlertTriangle className="w-4 h-4" /> Action required</div>
-               <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">{detail.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
+               <ul className="list-disc pl-5 mt-2 text-sm text-red-700 space-y-1">
+                 {detail.reasons.map((reason: string, index: number) => (
+                   <li key={`${selected?.system_id || 'system'}:${index}:${reason}`}>{reason}</li>
+                 ))}
+               </ul>
              </div>
            )}
            </>)}

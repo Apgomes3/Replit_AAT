@@ -87,6 +87,62 @@ describe('Design Book Thermal navigation', () => {
     expect(screen.getByText(/External pumps contribute saved shaft power/)).toBeInTheDocument();
   });
 
+  it('removes the previous LSS pump rows when switching equipment breakdowns', () => {
+    const lss01 = {
+      system_id: 'lss-01',
+      equipment_heat_gain_kw: 15.923,
+      equipment_heat_sources: [{
+        equipment_type: 'Pump',
+        equipment_id: 'shared-project-pump',
+        circuit_key: 'loop:1',
+        pump_role: 'primary',
+        equipment_code: '01-FFSP-01',
+        equipment_name: 'LSS 01 Supply Pump',
+        quantity: 1,
+        installation_location: 'external',
+        input_power_kw_per_unit: 9.882,
+        heat_gain_kw: 9.882,
+      }, {
+        equipment_type: 'Pump',
+        equipment_id: 'shared-project-pump',
+        circuit_key: 'loop:3',
+        pump_role: 'primary',
+        equipment_code: '01-CIRCP-01',
+        equipment_name: 'LSS 01 Circulation Pump',
+        quantity: 1,
+        installation_location: 'external',
+        input_power_kw_per_unit: 6.041,
+        heat_gain_kw: 6.041,
+      }],
+    };
+    const lss03 = {
+      system_id: 'lss-03',
+      equipment_heat_gain_kw: 0,
+      equipment_heat_sources: [{
+        equipment_type: 'Pump',
+        equipment_id: 'lss-03-pump',
+        circuit_key: 'loop:1',
+        pump_role: 'primary',
+        equipment_code: '03-FFSP-01',
+        equipment_name: 'LSS 03 Supply Pump',
+        quantity: 1,
+        installation_location: null,
+        input_power_kw_per_unit: null,
+        heat_gain_kw: null,
+      }],
+    };
+
+    const { rerender } = render(createElement(EquipmentHeatGainBreakdown, { source: lss01 }));
+    expect(screen.getByText('LSS 01 Supply Pump')).toBeInTheDocument();
+    expect(screen.getByText('LSS 01 Circulation Pump')).toBeInTheDocument();
+
+    rerender(createElement(EquipmentHeatGainBreakdown, { source: lss03 }));
+
+    expect(screen.queryByText('LSS 01 Supply Pump')).not.toBeInTheDocument();
+    expect(screen.queryByText('LSS 01 Circulation Pump')).not.toBeInTheDocument();
+    expect(screen.getByText('LSS 03 Supply Pump')).toBeInTheDocument();
+  });
+
   it('uses current linked tank free-surface values, including custom tanks', () => {
     expect(thermalLinkedFreeSurfaceArea({
       linked_tanks: [
