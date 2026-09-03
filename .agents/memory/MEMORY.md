@@ -9,7 +9,7 @@
 - [Project tank promotion](project-tank-promotion.md) — PIM promotion is explicit and independent; never convert or mutate the source project tank.
 - [Exhibit tank replacement](exhibit-tank-replacement.md) — hide assignment tools once a tank is in use; explicit replacement preserves the project-tank identity.
 - [Species catalog snapshots](species-catalog-snapshots.md) — allocations capture values; setup uses reviewed offline artifacts, and maintenance preserves referenced identities.
-- [Flow Route exhibit references](flow-route-exhibit-references.md) — source splits require exactly one fresh Primary exhibit; loop and Bio/Degas allocations remain independent.
+- [Flow Route exhibit references](flow-route-exhibit-references.md) — source splits aggregate every fresh linked exhibit; loop and Bio/Degas allocations remain independent.
 - [Flow Route side streams](flow-route-side-streams.md) — each side stream is an independent 0–100% branch; sibling percentages are never summed.
 - [Flow Route matched circulation](flow-route-matched-circulation.md) — matched Break/Plenum loops are distinct non-allocating circuits resolved through one canonical flow graph.
 - [Flow Route fractionator controls](flow-route-fractionator-controls.md) — show loop and Bio/Degas context before sizing; model details are disclosures, never draft mutations.

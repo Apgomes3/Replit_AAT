@@ -657,6 +657,23 @@ export function calculateSystemEngineering(
   const requiredFlow = linkedFlowsAvailable
     ? linked.reduce((sum, link) => sum + Number(link.required_flow_m3h), 0)
     : null;
+  const sourceFlows: Record<string, number | null> = {};
+  if (linked.length > 0) {
+    const linkedCalculations = linked.map(link => exhibitCalculations.find(
+      calculation => calculation.inputs.exhibit_id === link.exhibit_id,
+    ));
+    const aggregateSourceFlow = (resultKey: string) =>
+      linkedFlowsAvailable && linkedCalculations.every(
+        calculation => numberOrNull(calculation?.results?.[resultKey]) != null,
+      )
+        ? roundEngineering(linkedCalculations.reduce(
+          (sum, calculation) => sum + Number(calculation.results[resultKey]), 0,
+        ), FLOW_DECIMALS)
+        : null;
+    sourceFlows['Surface Skim'] = aggregateSourceFlow('surface_skim_flow_m3h');
+    sourceFlows['Bottom Drain'] = aggregateSourceFlow('bottom_drain_flow_m3h');
+    sourceFlows['Both Integrated'] = requiredFlow;
+  }
   const allocatedFlow = linked.length === 0
     ? 0
     : linked.every(link => link.allocation_m3h != null)
@@ -739,7 +756,7 @@ export function calculateSystemEngineering(
   // Resolve matched loops after reading the complete route. This deliberately
   // uses loop flow, not its allocation percent, so a chain always follows the
   // current authoritative source flow.
-  const resolvedLoopFlows = resolveLoopFlows(system, designFlow);
+  const resolvedLoopFlows = resolveLoopFlows(system, designFlow, sourceFlows);
   for (const resolved of resolvedLoopFlows) {
     if (resolved.flow_mode === 'matched' && resolved.unavailable_reason) reasons.push(resolved.unavailable_reason);
   }
@@ -840,6 +857,7 @@ export function calculateSystemEngineering(
       design_flow_source: designFlowSource,
       turnover_source: turnoverSource,
       system_water_type: system?.water_type || null,
+      source_flows_m3h: sourceFlows,
     },
     results: {
       calculated_required_flow_m3h: roundEngineering(requiredFlow, FLOW_DECIMALS),

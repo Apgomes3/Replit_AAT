@@ -1097,7 +1097,7 @@ function nullableNumber(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function allocationStatus(value: number | null, basis: 'system' | 'loop') {
+function allocationStatus(value: number | null, basis: string) {
   if (value == null) return 'allocation not reviewed';
   return value === 0 ? '0% (intentional zero allocation)' : `${value}% of ${basis}`;
 }
@@ -3199,18 +3199,6 @@ export default function DesignBookLSSDetail() {
           { label: 'Sand Filter',            value: 'Sand Filter',            saltwaterOnly: false },
         ];
         const bioLinkLabel = isSaltwater ? 'Link FF to Bio/Degas' : 'Link SF Loop to Bio/Degas';
-        // Hydraulics split % from the primary linked exhibit.  Do not fall
-        // back to an arbitrary link: the source reference is authoritative
-        // only when it can be traced to the system's Primary exhibit.
-        const primaryExLinks = (links as any[]).filter((l: any) => l.link_type === 'Primary');
-        const primaryExLink = primaryExLinks.length === 1 ? primaryExLinks[0] : null;
-        const primaryExhibit = primaryExLink
-          ? exhibits.find((exhibit: any) => String(exhibit.id) === String(primaryExLink.exhibit_id))
-          : null;
-        const primaryCalculation = primaryExLink
-          ? exhibitCalculations.find((calculation: any) =>
-              calculation.inputs?.exhibit_id === primaryExLink.exhibit_id)
-          : null;
         // System flow is selected exclusively by the current API calculation
         // contract, including an explicit manual override when configured.
         const systemFlow = calculatedSystemFlow == null
@@ -3244,6 +3232,8 @@ export default function DesignBookLSSDetail() {
         type ExhibitSplitComponent = {
           label: string;
           exhibitLabel: string;
+          exhibitCode: string;
+          exhibitId: string;
           percentage: number | null;
           flowM3h: number | null;
         };
@@ -3259,6 +3249,7 @@ export default function DesignBookLSSDetail() {
           components: ExhibitSplitComponent[];
           combinedFlowM3h: number | null;
           exhibitCode: string;
+           exhibitCount: number;
           exhibitId: string | null;
         } | null => {
           const normalized = String(source || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
@@ -3271,54 +3262,82 @@ export default function DesignBookLSSDetail() {
                 : null;
           if (!sourceKey) return null;
 
-          const exhibitCode = primaryExLink?.exhibit_code ||
-            primaryExhibit?.exhibit_code ||
-            'Primary linked exhibit';
+          const linkedReferences = (links as any[]).map((link: any) => {
+            const exhibit = exhibits.find(
+              (candidate: any) => String(candidate.id) === String(link.exhibit_id),
+            );
+            const calculation = exhibitCalculations.find(
+              (candidate: any) =>
+                String(candidate.inputs?.exhibit_id) === String(link.exhibit_id),
+            );
+            return {
+              link,
+              calculation,
+              exhibitCode: link.exhibit_code || exhibit?.exhibit_code || 'Exhibit',
+              exhibitId: String(link.exhibit_id),
+            };
+          });
+          const exhibitCount = linkedReferences.length;
+          const exhibitCode = exhibitCount === 1
+            ? linkedReferences[0].exhibitCode
+            : `${exhibitCount} linked exhibits`;
           const unavailable = (reason: string) => ({
             unavailableReason: reason,
             components: [],
             combinedFlowM3h: null,
             exhibitCode,
+            exhibitCount,
             exhibitId: null,
           });
-          if (primaryExLinks.length > 1) {
-            return unavailable('Multiple primary linked exhibits are configured; choose one authoritative Primary link.');
+          if (exhibitCount === 0) {
+            return unavailable('No linked exhibit is configured.');
           }
-          if (!primaryExLink) {
-            return unavailable('No primary linked exhibit is configured.');
-          }
-          if (!primaryCalculation || primaryCalculation.status !== 'valid' ||
-              primaryCalculation.is_stale === true || primaryCalculation.freshness === 'stale') {
-            return unavailable('The primary exhibit has no usable hydraulic split calculation.');
+          const unusableReference = linkedReferences.find(({ calculation }) =>
+            !calculation || calculation.status !== 'valid' ||
+            calculation.is_stale === true || calculation.freshness === 'stale');
+          if (unusableReference) {
+            return unavailable(
+              `Linked exhibit ${unusableReference.exhibitCode} has no usable hydraulic split calculation.`,
+            );
           }
 
-          const surface: ExhibitSplitComponent = {
-            label: 'Surface Skim',
-            exhibitLabel: 'Surface Skimmer Box',
-            percentage: finiteValue(primaryCalculation.inputs?.surface_skim_pct),
-            flowM3h: finiteValue(primaryCalculation.results?.surface_skim_flow_m3h),
-          };
-          const bottom: ExhibitSplitComponent = {
-            label: 'Bottom Drain',
-            exhibitLabel: 'Bottom Drain',
-            percentage: finiteValue(primaryCalculation.inputs?.bottom_drain_pct),
-            flowM3h: finiteValue(primaryCalculation.results?.bottom_drain_flow_m3h),
-          };
-          const combinedFlowM3h = finiteValue(primaryCalculation.results?.total_return_flow_m3h);
-          const selected = sourceKey === 'surface'
-            ? [surface]
-            : sourceKey === 'bottom'
-              ? [bottom]
-              : [surface, bottom];
+          const selected = linkedReferences.flatMap((reference): ExhibitSplitComponent[] => {
+            const surface: ExhibitSplitComponent = {
+              label: 'Surface Skim',
+              exhibitLabel: 'Surface Skimmer Box',
+              exhibitCode: reference.exhibitCode,
+              exhibitId: reference.exhibitId,
+              percentage: finiteValue(reference.calculation.inputs?.surface_skim_pct),
+              flowM3h: finiteValue(reference.calculation.results?.surface_skim_flow_m3h),
+            };
+            const bottom: ExhibitSplitComponent = {
+              label: 'Bottom Drain',
+              exhibitLabel: 'Bottom Drain',
+              exhibitCode: reference.exhibitCode,
+              exhibitId: reference.exhibitId,
+              percentage: finiteValue(reference.calculation.inputs?.bottom_drain_pct),
+              flowM3h: finiteValue(reference.calculation.results?.bottom_drain_flow_m3h),
+            };
+            return sourceKey === 'surface'
+              ? [surface]
+              : sourceKey === 'bottom'
+                ? [bottom]
+                : [surface, bottom];
+          });
+          const combinedFlowM3h = selected.reduce(
+            (sum, component) => sum + Number(component.flowM3h || 0),
+            0,
+          );
           if (selected.some(component => component.percentage == null || component.flowM3h == null) ||
-              (sourceKey === 'both' && combinedFlowM3h == null)) {
-            return unavailable('The primary exhibit split or calculated flow is incomplete.');
+              !Number.isFinite(combinedFlowM3h)) {
+            return unavailable('A linked exhibit split or calculated flow is incomplete.');
           }
           return {
             components: selected,
             combinedFlowM3h,
             exhibitCode,
-            exhibitId: primaryExhibit ? String(primaryExhibit.id) : null,
+            exhibitCount,
+            exhibitId: exhibitCount === 1 ? linkedReferences[0].exhibitId : null,
           };
         };
 
@@ -3354,8 +3373,8 @@ export default function DesignBookLSSDetail() {
               ) : (
                 <>
                   <p className="text-[11px] text-stone-500 mt-1">
-                    Primary linked exhibit:{' '}
-                    {exhibitPath ? (
+                    {reference.exhibitCount === 1 ? 'Linked exhibit: ' : 'Linked exhibits: '}
+                    {reference.exhibitCount === 1 && exhibitPath ? (
                       <Link
                         to={exhibitPath}
                         aria-label={`Open exhibit ${reference.exhibitCode}`}
@@ -3367,12 +3386,14 @@ export default function DesignBookLSSDetail() {
                     ) : (
                       <strong className="font-mono text-stone-700">{reference.exhibitCode}</strong>
                     )}
+                    {reference.exhibitCount > 1 && ' aggregated'}
                   </p>
                   <div className={`grid ${reference.components.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'} gap-2 mt-2`}>
                     {reference.components.map(component => (
-                      <div key={component.label} className="rounded-md bg-white/70 border border-cyan-100 px-2 py-1.5">
+                      <div key={`${component.exhibitId}-${component.label}`} className="rounded-md bg-white/70 border border-cyan-100 px-2 py-1.5">
                         <div className="text-[10px] text-stone-500">
-                          {component.label} <span className="text-stone-400">({component.exhibitLabel})</span>
+                          <span className="font-mono text-stone-600">{component.exhibitCode} · {component.label}</span>
+                          {' '}<span className="text-stone-400">({component.exhibitLabel})</span>
                         </div>
                         <div className="font-mono text-[11px] font-semibold text-cyan-800">
                           {component.percentage}% · {fmtReferenceFlow(component.flowM3h)}
@@ -3382,7 +3403,7 @@ export default function DesignBookLSSDetail() {
                   </div>
                   {reference.components.length > 1 && (
                     <div className="flex items-center justify-between gap-2 mt-2 text-[11px] text-stone-600">
-                      <span>Combined exhibit return flow</span>
+                      <span>Combined linked-exhibit return flow</span>
                       <strong className="font-mono text-cyan-800">{fmtReferenceFlow(reference.combinedFlowM3h)}</strong>
                     </div>
                   )}
@@ -3417,8 +3438,8 @@ export default function DesignBookLSSDetail() {
                 <>
                   <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                     {reference.components.map(component => (
-                      <span key={component.label} className="font-mono">
-                        {component.label}: {component.percentage}% · {fmtReferenceFlow(component.flowM3h)}
+                      <span key={`${component.exhibitId}-${component.label}`} className="font-mono">
+                        {component.exhibitCode} · {component.label}: {component.percentage}% · {fmtReferenceFlow(component.flowM3h)}
                       </span>
                     ))}
                   </div>
@@ -3491,9 +3512,26 @@ export default function DesignBookLSSDetail() {
         const nextLoopToAdd: number | undefined = [1, 2, 3].find(n =>
           !loopHasData(n) && (n === 1 || loopHasData(n - 1)));
         const canAddNext = nextLoopToAdd != null && nextLoopToAdd <= 3;
-        const flowForPercentage = (percentage: unknown): number | null => {
+        const sourceFlowContext = (source: unknown): {
+          flow: number | null;
+          basisLabel: string;
+        } => {
+          const reference = sourceReferenceFor(source);
+          // With no linked-exhibit context, preserve the legacy system-flow
+          // basis. Once linked exhibits exist, a recognized exhibit source
+          // must use its complete aggregated flow or remain unavailable.
+          if (!reference || (reference.exhibitCount === 0 && reference.unavailableReason)) {
+            return { flow: systemFlow, basisLabel: 'total system flow' };
+          }
+          return {
+            flow: reference.combinedFlowM3h,
+            basisLabel: `${String(source).trim()} flow`,
+          };
+        };
+        const flowForPercentage = (percentage: unknown, source: unknown): number | null => {
           const pct = nullableNumber(percentage);
-          return pct != null && systemFlow > 0 ? systemFlow * pct / 100 : null;
+          const basisFlow = sourceFlowContext(source).flow;
+          return pct != null && basisFlow != null && basisFlow > 0 ? basisFlow * pct / 100 : null;
         };
         const loopMode = (source: any, n: number) =>
           source?.[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated';
@@ -3506,7 +3544,15 @@ export default function DesignBookLSSDetail() {
           flow: number | null; reason?: string; target?: number; chain?: number[];
         } => {
           if (path.includes(n)) return { flow: null, reason: 'Match cycle detected', chain: [...path, n] };
-          if (loopMode(source, n) !== 'matched') return { flow: flowForPercentage(source?.[`loop${n}_flow_pct`]), chain: [...path, n] };
+          if (loopMode(source, n) !== 'matched') {
+            return {
+              flow: flowForPercentage(
+                source?.[`loop${n}_flow_pct`],
+                source?.[`loop${n}_flow_source`],
+              ),
+              chain: [...path, n],
+            };
+          }
           const target = nullableNumber(source?.[`loop${n}_match_loop_number`]);
           if (!Number.isInteger(target) || target! < 1 || target! > 3 || !hasLoopConfiguration(source, target!)) {
             return { flow: null, reason: 'Matched loop is unavailable', target: target ?? undefined, chain: [...path, n] };
@@ -3887,6 +3933,7 @@ export default function DesignBookLSSDetail() {
           const bioPct = nullableNumber(system[`loop${n}_bio_degas_pct`]);
           const linked = !!system[`loop${n}_link_bio_degas`];
           const matched = loopMode(system, n) === 'matched';
+          const flowContext = sourceFlowContext(src);
           const resolvedFlow = resolveLoopFlow(system, n);
           const loopFlow = resolvedFlow.flow;
           const bioFlow = loopFlow != null && bioPct != null
@@ -3929,7 +3976,8 @@ export default function DesignBookLSSDetail() {
                   <div className="grid gap-2 sm:grid-cols-3">
                     <div>
                       <span className="block text-cyan-900/60">Loop allocation</span>
-                      <strong className="text-cyan-950">{allocationStatus(loopPct, 'system')}</strong>
+                       <span className="block text-cyan-900/70">{flowContext.basisLabel}</span>
+                       <strong className="text-cyan-950">{allocationStatus(loopPct, flowContext.basisLabel)}</strong>
                     </div>
                     <div>
                       <span className="block text-cyan-900/60">Derived loop flow</span>
@@ -3964,7 +4012,7 @@ export default function DesignBookLSSDetail() {
                   {fmtFlow(loopFlow ?? 0)}
                 </span>
                 <span className="text-stone-400 text-xs">
-                   · {matched ? 'matched flow (not allocated)' : allocationStatus(loopPct, 'system')}
+                    · {matched ? 'matched flow (not allocated)' : allocationStatus(loopPct, flowContext.basisLabel)}
                 </span>
               </div>
               {linked && (
@@ -4050,6 +4098,7 @@ export default function DesignBookLSSDetail() {
           const matched = loopMode(flowForm, n) === 'matched';
           const loopPct = nullableNumber(flowForm[pctKey]);
           const bioPct = nullableNumber(flowForm[bioPctKey]);
+          const flowContext = sourceFlowContext(curSrc);
           const resolvedFlow = resolveLoopFlow(flowForm, n);
           const loopFlow = resolvedFlow.flow;
           const bioFlow = loopFlow != null && bioPct != null ? loopFlow * bioPct / 100 : null;
@@ -4149,7 +4198,7 @@ export default function DesignBookLSSDetail() {
                 {!matched && (
                   <div>
                     <label className="block text-xs font-medium text-stone-500 mb-1.5">
-                      Loop Flow Allocation (% of total system flow)
+                       Loop Flow Allocation (% of {flowContext.basisLabel})
                     </label>
                     <div className="flex items-center gap-2">
                       <input type="number" step="0.1" min="0" max="100" placeholder="e.g. 60"
@@ -4341,6 +4390,15 @@ export default function DesignBookLSSDetail() {
                   </button>
                 )}
               </div>
+            </div>
+
+            <div data-testid="flow-route-linked-exhibits" className="flex flex-wrap items-start gap-3 border-b border-stone-100 bg-stone-50/40 px-5 py-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                <GitBranch className="h-3.5 w-3.5 text-blue-500" />
+                <span>Linked Exhibits</span>
+                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700">{(links as any[]).length}</span>
+              </div>
+              <LinkedExhibitsSummary />
             </div>
 
             <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-3 border-b ${
@@ -4556,11 +4614,10 @@ export default function DesignBookLSSDetail() {
                   </div>
                 )}
                 <div className="overflow-x-auto" tabIndex={0} aria-label="Flow Route list">
-                  <table data-testid="flow-route-list-table" className="min-w-[1200px] w-full text-sm">
+                  <table data-testid="flow-route-list-table" className="min-w-[1000px] w-full text-sm">
                     <thead>
                       <tr className="border-b border-stone-100 bg-stone-50/60">
                         <th className="min-w-32 px-4 py-2.5 text-left text-xs font-medium text-stone-500">Loop</th>
-                        <th className="min-w-56 px-3 py-2.5 text-left text-xs font-medium text-stone-500">Linked Exhibits</th>
                         <th className="min-w-56 px-3 py-2.5 text-left text-xs font-medium text-stone-500">Flow Source</th>
                         <th aria-label="Loop Flow" className="min-w-36 px-3 py-2.5 text-left text-xs font-medium text-stone-500">
                           Loop Flow <span className="font-normal text-stone-400">({UNIT_LABELS[flowUnit]})</span>
@@ -4611,7 +4668,6 @@ export default function DesignBookLSSDetail() {
                                     className="w-28 border border-stone-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/40" />
                                 </div>
                               </td>
-                              <td className="px-3 py-2 align-top"><LinkedExhibitsSummary /></td>
                               <td className="px-3 py-2 align-top">
                                 <FlowSourcePicker
                                   id={`loop-${n}-list-flow-source`}
@@ -4765,7 +4821,6 @@ export default function DesignBookLSSDetail() {
                                 <span className="text-xs font-semibold text-stone-700">{loopName(displayedSource, n)}</span>
                               </div>
                             </td>
-                            <td className="px-3 py-3 align-top"><LinkedExhibitsSummary /></td>
                             <td className="px-3 py-3 align-top">
                               {src ? (
                                 <>

@@ -835,6 +835,8 @@ describe('aquarium engineering calculations', () => {
         id: 'sys-linked',
         design_flow_m3h: 999,
         turnover_rate_hr: 9,
+        loop1_flow_source: 'Surface Skim',
+        loop1_flow_pct: 50,
         calculation_inputs: {
           design_flow_source: 'linked_exhibits',
           turnover_source: 'primary_exhibit',
@@ -854,6 +856,8 @@ describe('aquarium engineering calculations', () => {
     expect(system.results.design_flow_m3h).toBe(60.8);
     expect(system.results.turnover_rate_cycles_per_hour).toBe(2);
     expect(system.results.flow_override_m3h).toBeNull();
+    expect(system.inputs.source_flows_m3h['Surface Skim']).toBe(18.24);
+    expect(system.flow_route.loops[0].flow_m3h).toBe(9.12);
   });
 
   it('reports linked system flow as unavailable when any exhibit hydraulics are incomplete', () => {

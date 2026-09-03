@@ -807,7 +807,8 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await screen.findByRole('heading', { name: 'Primary Life Support' });
 
     const route = within(document.querySelector('#flow-route')!);
-    const exhibitLink = route.getByRole('link', { name: 'Open exhibit EX-01' });
+    const splitReference = route.getByTestId('flow-route-source-reference');
+    const exhibitLink = within(splitReference).getByRole('link', { name: 'Open exhibit EX-01' });
     expect(exhibitLink).toHaveAttribute('href', '/design-books/book-1/exhibits/exhibit-1');
 
     await user.click(route.getByRole('button', { name: 'List' }));
@@ -815,7 +816,9 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
       '/design-books/book-1/lss/system-1?tab=flow',
     );
     await user.click(route.getByRole('button', { name: 'Card' }));
-    await user.click(route.getByRole('link', { name: 'Open exhibit EX-01' }));
+    await user.click(within(route.getByTestId('flow-route-source-reference')).getByRole('link', {
+      name: 'Open exhibit EX-01',
+    }));
     expect(screen.getByTestId('location')).toHaveTextContent(
       '/design-books/book-1/exhibits/exhibit-1',
     );
@@ -1265,7 +1268,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.getByText('Bottom Drain')).toBeInTheDocument();
     expect(route.getByText('Sand Filter')).toBeInTheDocument();
     expect(route.getAllByText('40.0 m³/h').length).toBeGreaterThan(0);
-    expect(document.querySelector('#flow-route')).toHaveTextContent('40% of system');
+    expect(document.querySelector('#flow-route')).toHaveTextContent('40% of total system flow');
     expect(route.queryByText('Bio/Degas:')).not.toBeInTheDocument();
     expect(route.getByText('60.0%')).toBeInTheDocument();
 
@@ -1292,6 +1295,8 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await user.selectOptions(route.getByRole('combobox', { name: 'Loop 1 Flow Source' }), 'Surface Skim');
     expect(route.getByText('(Surface Skimmer Box)')).toBeInTheDocument();
     expect(route.getByText('36% · 45.0 m³/h')).toBeInTheDocument();
+    expect(route.getByText('Loop Flow Allocation (% of Surface Skim flow)')).toBeInTheDocument();
+    expect(route.getByText('18.0 m³/h')).toBeInTheDocument();
     expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(40);
 
     await user.click(route.getByRole('button', { name: 'L/s' }));
@@ -1348,7 +1353,6 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const table = within(route.getByTestId('flow-route-list-table'));
     expect(table.getAllByRole('columnheader').map(header => header.getAttribute('aria-label') || header.textContent?.trim())).toEqual([
       'Loop',
-      'Linked Exhibits',
       'Flow Source',
       'Loop Flow',
       'Filtration',
@@ -1356,8 +1360,11 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
       'Side Streams',
       'Actions',
     ]);
-    expect(table.getByText('EX-01 — Main Exhibit')).toBeInTheDocument();
-    expect(table.getByText('Primary')).toBeInTheDocument();
+    const linkedExhibits = route.getByTestId('flow-route-linked-exhibits');
+    expect(linkedExhibits).toHaveTextContent('Linked Exhibits');
+    expect(linkedExhibits).toHaveTextContent('EX-01 — Main Exhibit');
+    expect(linkedExhibits).toHaveTextContent('Primary');
+    expect(table.queryByText('EX-01 — Main Exhibit')).not.toBeInTheDocument();
     expect(table.getByText('Surface Skim')).toBeInTheDocument();
     expect(table.queryByText('Surface Skim: 36% · 45.0 m³/h')).not.toBeInTheDocument();
     expect(table.getByText('25% of loop')).toBeInTheDocument();
@@ -1376,7 +1383,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     expect(route.getByText('36% · 45.0 m³/h')).toBeInTheDocument();
     expect(route.getByText('64% · 80.0 m³/h')).toBeInTheDocument();
-    expect(route.getByText('Combined exhibit return flow')).toBeInTheDocument();
+    expect(route.getByText('Combined linked-exhibit return flow')).toBeInTheDocument();
     expect(route.getByText('125.0 m³/h')).toBeInTheDocument();
 
     await user.click(route.getByRole('button', { name: 'List' }));
@@ -1389,7 +1396,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(route.queryByTestId('flow-route-source-reference')).not.toBeInTheDocument();
   });
 
-  it('does not use a secondary exhibit as an authoritative source reference', async () => {
+  it('uses every linked exhibit split regardless of link label', async () => {
     const user = userEvent.setup();
     renderFlowRoute(baseSystem, bookWithPrimarySplit, [{
       ...primaryLink,
@@ -1398,18 +1405,49 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
-    expect(route.getByText(/Exhibit split unavailable: No primary linked exhibit is configured/)).toBeInTheDocument();
-    expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
+    expect(route.getByText('64% · 80.0 m³/h')).toBeInTheDocument();
+    expect(route.queryByText(/Exhibit split unavailable/)).not.toBeInTheDocument();
 
     await user.click(route.getByRole('button', { name: 'List' }));
     const table = within(route.getByTestId('flow-route-list-table'));
     expect(table.getByText('Bottom Drain')).toBeInTheDocument();
-    expect(table.queryByText(/Exhibit split unavailable: No primary linked exhibit is configured/)).not.toBeInTheDocument();
+    expect(table.queryByText(/Exhibit split unavailable/)).not.toBeInTheDocument();
     expect(route.queryByTestId('flow-route-source-reference')).not.toBeInTheDocument();
   });
 
-  it('shows an unavailable state when multiple primary exhibit links are configured', async () => {
-    renderFlowRoute(baseSystem, bookWithPrimarySplit, [
+  it('aggregates source splits across multiple linked exhibits', async () => {
+    const secondCalculation = {
+      status: 'valid',
+      inputs: {
+        exhibit_id: 'exhibit-2',
+        surface_skim_pct: 40,
+        bottom_drain_pct: 60,
+      },
+      results: {
+        total_return_flow_m3h: 50,
+        surface_skim_flow_m3h: 20,
+        bottom_drain_flow_m3h: 30,
+      },
+    };
+    renderFlowRoute(
+      { ...baseSystem, loop1_flow_source: 'Both Integrated' },
+      {
+        ...bookWithPrimarySplit,
+        engineering_calculations: {
+          ...bookWithPrimarySplit.engineering_calculations,
+          systems: [{
+            ...bookWithPrimarySplit.engineering_calculations.systems[0],
+            results: {
+              ...bookWithPrimarySplit.engineering_calculations.systems[0].results,
+              calculated_required_flow_m3h: 175,
+              allocated_flow_m3h: 175,
+              design_flow_m3h: 175,
+            },
+          }],
+          exhibits: [primaryExhibitCalculation, secondCalculation],
+        },
+      },
+      [
       primaryLink,
       {
         ...primaryLink,
@@ -1417,12 +1455,22 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
         exhibit_id: 'exhibit-2',
         exhibit_code: 'EX-02',
       },
-    ]);
+      ],
+    );
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
-    expect(route.getByText(/Exhibit split unavailable: Multiple primary linked exhibits are configured/)).toBeInTheDocument();
-    expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
+    expect(route.getByText('2 linked exhibits').closest('p')).toHaveTextContent('Linked exhibits: 2 linked exhibits aggregated');
+    expect(route.getByText('EX-01 · Surface Skim')).toBeInTheDocument();
+    expect(route.getByText('EX-01 · Bottom Drain')).toBeInTheDocument();
+    expect(route.getByText('EX-02 · Surface Skim')).toBeInTheDocument();
+    expect(route.getByText('EX-02 · Bottom Drain')).toBeInTheDocument();
+    expect(route.getByText('40% · 20.0 m³/h')).toBeInTheDocument();
+    expect(route.getByText('60% · 30.0 m³/h')).toBeInTheDocument();
+    expect(route.getByText('Combined linked-exhibit return flow')).toBeInTheDocument();
+    expect(route.getByText('175.0 m³/h')).toBeInTheDocument();
+    expect(route.getAllByText('70.0 m³/h').length).toBeGreaterThan(0);
+    expect(route.queryByText(/Exhibit split unavailable/)).not.toBeInTheDocument();
   });
 
   it('clears the old source reference when the primary exhibit link changes', async () => {
@@ -1477,7 +1525,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
-    expect(route.getByText(/Exhibit split unavailable: The primary exhibit has no usable hydraulic split calculation/)).toBeInTheDocument();
+    expect(route.getByText(/Exhibit split unavailable: Linked exhibit EX-01 has no usable hydraulic split calculation/)).toBeInTheDocument();
     expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
   });
 
@@ -1508,11 +1556,13 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
     fireEvent.click(route.getByRole('button', { name: 'List' }));
     const table = within(await screen.findByTestId('flow-route-list-table'));
-    expect(table.getByText('EX-01 — Main Exhibit')).toBeInTheDocument();
-    expect(table.getByRole('link', { name: 'Open exhibit EX-01' })).toHaveAttribute(
+    const linkedExhibits = route.getByTestId('flow-route-linked-exhibits');
+    expect(linkedExhibits).toHaveTextContent('EX-01 — Main Exhibit');
+    expect(within(linkedExhibits).getByRole('link', { name: 'Open exhibit EX-01' })).toHaveAttribute(
       'href',
       '/design-books/book-1/exhibits/exhibit-1',
     );
+    expect(table.queryByText('EX-01 — Main Exhibit')).not.toBeInTheDocument();
     expect(table.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 
@@ -1531,7 +1581,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
 
-    expect(route.getByText(/Exhibit split unavailable: The primary exhibit has no usable hydraulic split calculation/)).toBeInTheDocument();
+    expect(route.getByText(/Exhibit split unavailable: Linked exhibit EX-01 has no usable hydraulic split calculation/)).toBeInTheDocument();
     expect(route.queryByText('64% · 80.0 m³/h')).not.toBeInTheDocument();
   });
 
@@ -2017,7 +2067,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const route = within(document.querySelector('#flow-route')!);
 
     expect(route.getAllByText('40.0 m³/h')).not.toHaveLength(0);
-    expect(route.getByText((_, element) => element?.textContent?.trim() === '· 40% of system')).toBeInTheDocument();
+    expect(route.getByText((_, element) => element?.textContent?.trim() === '· 40% of total system flow')).toBeInTheDocument();
     expect(route.queryByText('Non-allocating circulation flow')).not.toBeInTheDocument();
 
     await user.click(route.getByRole('button', { name: 'Edit' }));
@@ -2367,7 +2417,7 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     const capacity = route.getByText('Foam Fractionator capacity');
 
     expect(context.compareDocumentPosition(capacity)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(within(context).getByText('40% of system')).toBeInTheDocument();
+    expect(within(context).getByText('40% of total system flow')).toBeInTheDocument();
     expect(within(context).getByText('40.0 m³/h')).toBeInTheDocument();
     expect(within(context).getByText('25% of loop')).toBeInTheDocument();
     expect(within(context).getByText('10.0 m³/h derived branch flow')).toBeInTheDocument();

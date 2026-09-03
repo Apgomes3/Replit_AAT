@@ -19,7 +19,11 @@ const loopIsConfigured = (system: any, n: number) =>
   Boolean(system?.[`loop${n}_link_bio_degas`]);
 
 /** Resolves Flow Route loop duties without treating matched circuits as allocation. */
-export function resolveLoopFlows(system: any, designFlow = system?.design_flow_m3h): ResolvedLoopFlow[] {
+export function resolveLoopFlows(
+  system: any,
+  designFlow = system?.design_flow_m3h,
+  sourceFlows: Record<string, number | null> = {},
+): ResolvedLoopFlow[] {
   const baseFlow = finite(designFlow);
   const mode = (n: number): 'allocated' | 'matched' =>
     system?.[`loop${n}_flow_mode`] === 'matched' ? 'matched' : 'allocated';
@@ -56,13 +60,19 @@ export function resolveLoopFlows(system: any, designFlow = system?.design_flow_m
       };
     }
     const pct = finite(system?.[`loop${n}_flow_pct`]);
+    const source = String(system?.[`loop${n}_flow_source`] || '');
+    const hasSourceFlow = Object.prototype.hasOwnProperty.call(sourceFlows, source);
+    const allocationBasis = hasSourceFlow ? finite(sourceFlows[source]) : baseFlow;
     return {
       loop_number: n, flow_mode: flowMode, match_loop_number: null,
-      flow_m3h: baseFlow != null && baseFlow > 0 && pct != null
-        ? Number((baseFlow * pct / 100).toFixed(3)) : null,
-      unavailable_reason: baseFlow == null || baseFlow <= 0 || pct == null
-        ? 'Loop allocation is unavailable.' : null,
-      unavailable_kind: baseFlow == null || baseFlow <= 0 || pct == null
+      flow_m3h: allocationBasis != null && allocationBasis > 0 && pct != null
+        ? Number((allocationBasis * pct / 100).toFixed(3)) : null,
+      unavailable_reason: allocationBasis == null || allocationBasis <= 0 || pct == null
+        ? (hasSourceFlow
+          ? `Loop allocation is unavailable because ${source || 'the selected source'} flow is unavailable.`
+          : 'Loop allocation is unavailable.')
+        : null,
+      unavailable_kind: allocationBasis == null || allocationBasis <= 0 || pct == null
         ? 'allocation_unavailable' : null,
     };
   };
