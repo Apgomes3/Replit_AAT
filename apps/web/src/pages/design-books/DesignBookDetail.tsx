@@ -3439,8 +3439,8 @@ function LegacyThermalTab({
       toast.success(response.data.calculation?.status === 'Ready'
         ? 'Thermal calculation saved and Ready'
         : 'Thermal inputs saved with blockers');
-      await onRefresh();
       setSelected(response.data);
+      await onRefresh();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Unable to save thermal calculation');
     } finally {
@@ -4511,8 +4511,8 @@ function ThermalTab({
       toast.success(response.data.calculation?.status === 'Ready'
         ? 'Thermal calculation saved and Ready'
         : 'Thermal inputs saved with blockers');
-      await onRefresh();
       setSelected(response.data);
+      await onRefresh();
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Unable to save thermal calculation');
     } finally {
