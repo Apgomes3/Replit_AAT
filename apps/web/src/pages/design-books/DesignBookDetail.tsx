@@ -4883,14 +4883,9 @@ function ThermalTab({
                       className="grid gap-2 rounded-lg border border-[#c7d8df] bg-[#edf3f4] p-3 sm:grid-cols-2 lg:grid-cols-4"
                     >
                       {[
-                        ['Material', selectedWallTankBasis.material || '—'],
                         ['Thickness', `${thermalNumber(selectedWallTankBasis.thickness_mm, 2)} mm`],
                         ['Conductivity', `${thermalNumber(selectedWallTankBasis.conductivity_w_m_k, 3)} W/m·K`],
-                        ['Material U-value', `${thermalNumber(selectedWallTankBasis.material_u_value_w_m2_k, 2)} W/m²·K`],
-                        ['Overall U-value', `${thermalNumber(selectedWallTankBasis.overall_u_value_w_m2_k, 2)} W/m²·K`],
                         ['Exposed wall', `${thermalNumber(selectedWallTankBasis.exposed_wall_area_m2, 2)} m²`],
-                        ['Quantity', `× ${selectedWallTankBasis.quantity || 1}`],
-                        ['Evidence', selectedWallTankBasis.source || 'Linked exhibit tank'],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-md bg-white/75 px-2.5 py-2">
                           <div className="text-[10px] uppercase tracking-wide text-[#71808a]">{label}</div>
