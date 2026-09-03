@@ -322,21 +322,31 @@ export function buildThermalSourceContext(args: {
   const governedWallConstructions = wallConstructions.length
     ? wallConstructions
     : THERMAL_CONSTRUCTION_DEFAULTS;
-  const linkedExhibitIds = links.map(link => link.exhibit_id).filter(Boolean);
+  const linkedExhibitIds = links
+    .map(link => link.exhibit_id)
+    .filter(Boolean)
+    .sort((left, right) => String(left).localeCompare(String(right)));
   const duplicateExhibitIds = [...new Set(
     linkedExhibitIds.filter((id, index) => linkedExhibitIds.indexOf(id) !== index),
   )];
-  const linkedExhibits = linkedExhibitIds.map(id => exhibits.find(exhibit => exhibit.id === id) || {
-    id, missing: true,
-  });
+  const linkedExhibitRecords = linkedExhibitIds.map(id =>
+    exhibits.find(exhibit => exhibit.id === id) || { id, missing: true });
+  const linkedExhibits = linkedExhibitRecords.map(exhibit => ({
+    id: exhibit.id || null,
+    exhibit_code: exhibit.exhibit_code || null,
+    ...(exhibit.missing ? { missing: true } : {}),
+  }));
   const linkedTanks = tanks
     .filter(tank => linkedExhibitIds.includes(tank.exhibit_id))
     .map(tank => ({
         ...tankGeometry(tank),
         exhibit_id: tank.exhibit_id || null,
         exhibit_code: linkedExhibits.find(exhibit => exhibit.id === tank.exhibit_id)?.exhibit_code || null,
-      }));
-  const exhibitTemperatures = linkedExhibits.map(exhibit => ({
+      }))
+    .sort((left, right) =>
+      String(left.exhibit_id || '').localeCompare(String(right.exhibit_id || '')) ||
+      String(left.tank_id || left.tank_code || '').localeCompare(String(right.tank_id || right.tank_code || '')));
+  const exhibitTemperatures = linkedExhibitRecords.map(exhibit => ({
     exhibit_id: exhibit.id || null,
     exhibit_code: exhibit.exhibit_code || null,
     water_temperature_min_c: finite(exhibit.design_temperature_min),

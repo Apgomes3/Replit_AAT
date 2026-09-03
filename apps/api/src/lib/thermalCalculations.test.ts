@@ -66,6 +66,51 @@ function readyInputs() {
 }
 
 describe('AAT thermal calculation', () => {
+  it('keeps the source fingerprint stable when reload queries add display-only exhibit fields', () => {
+    const sourceArgs = {
+      system: { id: 'system-1', system_code: 'LSS-1', design_flow_m3h: 120 },
+      links: [{ system_id: 'system-1', exhibit_id: 'exhibit-1' }],
+      exhibits: [{
+        id: 'exhibit-1',
+        exhibit_code: 'EX-1',
+        design_temperature_min: 24,
+        design_temperature_max: 26,
+        water_type: 'freshwater',
+      }],
+      tanks: [{
+        id: 'tank-1',
+        tank_code: 'TK-1',
+        exhibit_id: 'exhibit-1',
+        shape_type: 'Rectangular',
+        surface_area_m2: 10,
+        operating_volume_m3: 15,
+        primary_material: 'Acrylic',
+        wall_thickness_mm: 12,
+      }],
+      exhibitCalculations: [{
+        status: 'Ready',
+        freshness: 'fresh',
+        inputs: { exhibit_id: 'exhibit-1' },
+        results: { operating_volume_m3: 15, total_return_flow_m3h: 120 },
+      }],
+    };
+    const savedSource = buildThermalSourceContext(sourceArgs);
+    const reloadedSource = buildThermalSourceContext({
+      ...sourceArgs,
+      exhibits: sourceArgs.exhibits.map(exhibit => ({
+        ...exhibit,
+        area_code: 'A-01',
+        area_name: 'Public Gallery',
+      })),
+    });
+
+    expect(reloadedSource.fingerprint).toBe(savedSource.fingerprint);
+    expect(reloadedSource.linked_exhibits).toEqual([{
+      id: 'exhibit-1',
+      exhibit_code: 'EX-1',
+    }]);
+  });
+
   it('publishes the stable recommended surface-activity class catalog', () => {
     expect(THERMAL_AGITATION_CLASS_CATALOG.map(item => item.name)).toEqual([
       'Calm or Covered',
