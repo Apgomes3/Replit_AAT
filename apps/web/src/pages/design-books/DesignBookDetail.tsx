@@ -2244,6 +2244,76 @@ export function EffectiveWaterTemperatureField({
   );
 }
 
+export function EffectiveRadiantSurroundingsTemperature({
+  ambientValue,
+  overrideValue,
+  onOverrideChange,
+  disabled = false,
+}: {
+  ambientValue?: number | string | null;
+  overrideValue?: number | string | null;
+  onOverrideChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  disabled?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const hasOverride = overrideValue !== '' && overrideValue != null;
+  const effectiveValue = hasOverride ? overrideValue : ambientValue;
+
+  return (
+    <div className="mt-2 text-xs text-[#718894]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>Effective Radiant Surroundings Temperature:</span>
+        <span className="font-mono font-medium text-[#456b7d]">
+          {thermalNumber(effectiveValue, 1)} °C
+        </span>
+        {!disabled && !editing && (
+          <button
+            type="button"
+            className="font-medium text-[#9d5637] underline underline-offset-2 hover:text-[#7d442f]"
+            onClick={() => {
+              setEditing(true);
+              if (!hasOverride && ambientValue != null && ambientValue !== '') {
+                onOverrideChange({
+                  target: { value: String(ambientValue) },
+                  currentTarget: { value: String(ambientValue) },
+                } as ChangeEvent<HTMLInputElement>);
+              }
+            }}
+          >
+            {hasOverride ? 'Edit override' : 'Override'}
+          </button>
+        )}
+      </div>
+      {editing && (
+        <div className="mt-1 flex max-w-sm items-center gap-2">
+          <input
+            aria-label="Effective Radiant Surroundings Temperature override"
+            type="number"
+            min="-100"
+            step="any"
+            value={overrideValue ?? ''}
+            onChange={onOverrideChange}
+            className="w-full rounded border border-[#c7d1d4] bg-[#fbfaf7] px-2 py-1 font-mono text-sm font-semibold text-[#263746] outline-none transition focus:border-[#b86843] focus:ring-2 focus:ring-[#b86843]/25"
+          />
+          <button
+            type="button"
+            className="shrink-0 font-medium text-[#9d5637] underline underline-offset-2 hover:text-[#7d442f]"
+            onClick={() => {
+              setEditing(false);
+              onOverrideChange({
+                target: { value: '' },
+                currentTarget: { value: '' },
+              } as ChangeEvent<HTMLInputElement>);
+            }}
+          >
+            Reset
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function thermalWallDate(value: unknown) {
   return value ? new Date(String(value)).toLocaleString() : '—';
 }
@@ -2678,7 +2748,7 @@ function ThermalTab({
     setForm({
       ambient_air_temperature_c: existing.ambient_air_temperature_c ?? '',
       relative_humidity_pct: existing.relative_humidity_pct ?? 60,
-      surrounding_surface_temperature_c: existing.surrounding_surface_temperature_c ?? existing.ambient_air_temperature_c ?? '',
+       surrounding_surface_temperature_c: existing.surrounding_surface_temperature_c ?? '',
       atmospheric_pressure_kpa: existing.atmospheric_pressure_kpa ?? 101.325,
       reviewed_water_temperature_c:
         existing.reviewed_water_temperature_c ?? existing.water_temperature_c ?? '',
@@ -3379,9 +3449,9 @@ function ThermalTab({
                  onOverrideChange={event => update('reviewed_water_temperature_c', event.target.value)}
                  disabled={readOnly}
                />
-              <label className="sm:col-span-2">
-                <span className={labelClass}>Surface-activity class (required)</span>
-                <select aria-label="Surface-activity class" value={form.agitation_class || ''}
+              <div className="sm:col-span-2">
+                 <label htmlFor="surface-activity-class" className={labelClass}>Surface-activity class (required)</label>
+                 <select id="surface-activity-class" aria-label="Surface-activity class" value={form.agitation_class || ''}
                   onChange={event => selectAgitationClass(event.target.value)}
                   disabled={readOnly} required className={fieldClass}>
                   <option value="">Select surface activity</option>
@@ -3390,23 +3460,17 @@ function ThermalTab({
                     <option key={item.id} value={item.class_code}>{item.class_name}</option>
                   ))}
                 </select>
-                 <p className="mt-2 text-xs text-[#718894]">
-                   Effective Radiant Surroundings Temperature:{' '}
-                   <span className="font-mono font-medium text-[#456b7d]">
-                     {thermalNumber(
-                       form.surrounding_surface_temperature_c !== '' &&
-                         form.surrounding_surface_temperature_c != null
-                         ? form.surrounding_surface_temperature_c
-                         : form.ambient_air_temperature_c,
-                       1,
-                     )} °C
-                   </span>
-                 </p>
+                 <EffectiveRadiantSurroundingsTemperature
+                   ambientValue={form.ambient_air_temperature_c}
+                   overrideValue={form.surrounding_surface_temperature_c}
+                   onOverrideChange={event => update('surrounding_surface_temperature_c', event.target.value)}
+                   disabled={readOnly}
+                 />
                 <SurfaceActivityGuidance
                   key={form.agitation_class || 'no-surface-activity'}
                   selectedAgitationClass={selectedAgitationClass}
                 />
-              </label>
+               </div>
               <label>
                 <span className={labelClass}>Mass-transfer coefficient (kg/m²·s·kPa){form.agitation_correlation_deviation && ' · Override'}</span>
                 <input aria-label="Mass-transfer coefficient" type="number" min="0" step="any"

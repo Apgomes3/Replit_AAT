@@ -16,6 +16,7 @@ import {
   thermalWallReplacementIsValid,
   ThermalNumericField,
   EffectiveWaterTemperatureField,
+  EffectiveRadiantSurroundingsTemperature,
   SurfaceActivityGuidance,
 } from './DesignBookDetail';
 
@@ -343,6 +344,43 @@ describe('Effective water temperature', () => {
     expect(input).toHaveValue(25);
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
     expect(screen.getByText(/Arithmetic average/)).toBeInTheDocument();
+  });
+});
+
+describe('Effective radiant surroundings temperature', () => {
+  function RadiantTemperatureHarness() {
+    const [override, setOverride] = useState<string | number>('');
+    return createElement(EffectiveRadiantSurroundingsTemperature, {
+      ambientValue: 20,
+      overrideValue: override,
+      onOverrideChange: event => setOverride(event.target.value),
+    });
+  }
+
+  it('keeps the value compact until an override is requested, then supports reset', async () => {
+    const user = userEvent.setup();
+    render(createElement(RadiantTemperatureHarness));
+
+    expect(screen.getByText(/Effective Radiant Surroundings Temperature:/)).toBeInTheDocument();
+    expect(screen.getByText('20.0 °C')).toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Override' }));
+    const input = screen.getByRole('spinbutton', {
+      name: 'Effective Radiant Surroundings Temperature override',
+    });
+    expect(input).toHaveValue(20);
+
+    await user.clear(input);
+    await user.type(input, '24');
+    expect(input).toHaveValue('24');
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.getByText('20.0 °C')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Override' })).toBeInTheDocument();
   });
 });
 
