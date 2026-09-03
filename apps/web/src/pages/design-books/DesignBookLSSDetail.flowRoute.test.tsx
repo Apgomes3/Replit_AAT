@@ -321,9 +321,9 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(await screen.findByText('UV-100 — UV Reactor')).toBeInTheDocument();
     expect(screen.getByText('Frozen UV selection — read-only')).toBeInTheDocument();
     expect(screen.getByText(/cannot be changed in this revision/)).toBeInTheDocument();
-    expect(screen.getByText(/20\.00 L/)).toBeInTheDocument();
-    expect(screen.getByText(/1\.5000 mW\/cm²/)).toBeInTheDocument();
-    expect(screen.getByText(/1\.8000 mW\/cm²/)).toBeInTheDocument();
+    expect(screen.queryByText(/20\.00 L/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1\.5000 mW\/cm²/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1\.8000 mW\/cm²/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/50 mJ\/cm²/).length).toBeGreaterThan(0);
     expect(screen.getByText('Governing UVT basis: 85%T')).toBeInTheDocument();
     expect(screen.getByText(/75\.0000 mJ\/cm²/)).toBeInTheDocument();
@@ -485,6 +485,11 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     expect(apiPost).toHaveBeenCalledWith('/design-books/book-1/uv/system-1', {
       target_fluence_mj_cm2: 60,
     });
+    await user.click(screen.getByRole('tab', { name: 'Flow Route' }));
+    const route = within(screen.getByRole('tabpanel', { name: 'Flow Route' }));
+    expect(route.getByText('UV-200')).toBeInTheDocument();
+    expect(route.getByText(/Current Approved Reactor/)).toBeInTheDocument();
+    expect(route.queryByText('No UV product assigned — open UV Selection tab.')).not.toBeInTheDocument();
   });
 
   it('opens on an accessible system overview with linked flow information', async () => {

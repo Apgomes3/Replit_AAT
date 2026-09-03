@@ -4131,7 +4131,20 @@ export default function DesignBookLSSDetail() {
                       ? loopFlow * percentage / 100
                       : null;
                     const isUV = stream.preset === 'UV';
-                    const uvRev = stream.uv_revision;
+                    const uvSelectionStream = isUV
+                      ? (uvSelectionDataForView?.streams || []).find(
+                        (candidate: any) => String(candidate.id) === String(stream.id),
+                      )
+                      : null;
+                    const uvAssignment = isUV ? uvStreamAssignments[stream.id] : null;
+                    const selectedUvRevisionId = uvAssignment?.uv_revision_id ||
+                      uvSelectionStream?.uv_revision_id || stream.uv_revision_id || '';
+                    const uvRev = stream.uv_revision || uvSelectionStream?.uv_revision ||
+                      (uvSelectionDataForView?.selectable_revisions || []).find(
+                        (revision: any) => revision.revision_id === selectedUvRevisionId,
+                      );
+                    const uvUnitQuantity = uvAssignment?.uv_unit_quantity ||
+                      uvSelectionStream?.uv_unit_quantity || stream.uv_unit_quantity;
                     return (
                       <div key={stream.id || `${stream.name}-${stream.sort_order}`} className={`rounded-md border px-2.5 py-2 ${isUV ? 'border-cyan-200 bg-cyan-50/60' : 'border-cyan-100 bg-cyan-50/40'}`}>
                         <div className="flex items-center justify-between gap-2">
@@ -4154,7 +4167,7 @@ export default function DesignBookLSSDetail() {
                           <div className="mt-1 text-[10px] text-cyan-700">
                             <span className="font-medium">{uvRev.product_code}</span>
                             {uvRev.product_name ? ` — ${uvRev.product_name}` : ''}
-                            {stream.uv_unit_quantity ? ` · ${stream.uv_unit_quantity} unit${stream.uv_unit_quantity === 1 ? '' : 's'}` : ''}
+                             {uvUnitQuantity ? ` · ${uvUnitQuantity} unit${Number(uvUnitQuantity) === 1 ? '' : 's'}` : ''}
                             {' · '}Rev {uvRev.revision_number}
                           </div>
                         )}
@@ -5493,28 +5506,6 @@ export default function DesignBookLSSDetail() {
                               </div>
                             </div>
                           )}
-
-                          {/* Selected product spec summary */}
-                          {(() => {
-                            const rev = selectedRevision || (stream.uv_revision_id ? stream.uv_revision : null);
-                            if (!rev) return null;
-                            return (
-                              <div className="rounded-md bg-stone-50 border border-stone-200 px-3 py-2 text-[10px] text-stone-600 mb-3 grid sm:grid-cols-3 gap-x-4 gap-y-1">
-                                <div><span className="text-stone-400">Lamps/unit:</span> <strong>{rev.lamp_count ?? rev.lamp_count}</strong></div>
-                                <div><span className="text-stone-400">Lamp power:</span> <strong>{Number(rev.lamp_power_w ?? 0).toFixed(0)} W</strong></div>
-                                <div><span className="text-stone-400">Reactor vol/unit:</span> <strong>{Number(rev.effective_reactor_volume_l ?? 0).toFixed(2)} L</strong></div>
-                                <div><span className="text-stone-400">Irradiance 85th pct:</span> <strong className="font-mono">{Number(rev.irradiance_85t_mw_cm2 ?? 0).toFixed(4)} mW/cm²</strong></div>
-                                <div><span className="text-stone-400">Irradiance 95th pct:</span> <strong className="font-mono">{Number(rev.irradiance_95t_mw_cm2 ?? 0).toFixed(4)} mW/cm²</strong></div>
-                                <div><span className="text-stone-400">Compatibility:</span> <strong>{rev.compatibility}</strong></div>
-                                {rev.approved_per_lamp_flow_exception_m3h && (
-                                  <div className="sm:col-span-3">
-                                    <span className="text-amber-700">Approved hydraulic exception: </span>
-                                    <strong className="text-amber-800">{Number(rev.approved_per_lamp_flow_exception_m3h).toFixed(2)} m³/h per lamp</strong>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
 
                           {/* Calculation result */}
                           {streamResult && (
