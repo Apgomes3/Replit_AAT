@@ -4977,20 +4977,6 @@ function ThermalTab({
                   </>
                 )}
               </div>
-              {!sourceHasMixedWalls && selectedConstructionDefault && (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
-                  <div className="text-xs text-stone-600">
-                    {hasWallLayerOverride
-                      ? 'Effective values differ from the frozen governed default.'
-                      : 'Effective values match the governed default.'}
-                  </div>
-                  <button type="button" onClick={resetWallLayer}
-                    disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k || !hasWallLayerOverride}
-                    className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                    Reset to governed default
-                  </button>
-                </div>
-              )}
               {!sourceHasMixedWalls && hasWallLayerOverride && (
                 <label>
                   <span className={labelClass}>Wall-layer override justification (optional)</span>
