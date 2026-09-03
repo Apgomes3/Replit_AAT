@@ -403,6 +403,7 @@ async function loadThermalCalculations(
   exhibits: any[],
   tanks: any[],
   exhibitCalculations: any[],
+  wallConstructions: any[],
 ) {
   const savedRows = systems.length
     ? (await runner(
@@ -417,6 +418,7 @@ async function loadThermalCalculations(
       exhibits,
       tanks,
       exhibitCalculations,
+      wallConstructions,
     });
     const saved = savedRows.find(row => row.system_id === system.id) || null;
     const correlationSnapshot = saved?.correlation_snapshot ||
@@ -1258,6 +1260,7 @@ export async function loadReleaseContext(
          COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
          COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
          COALESCE(t.primary_material, pm.primary_material_code) AS eff_primary_material,
+          COALESCE(t.wall_thickness_mm, pm.wall_thickness_mm) AS eff_wall_thickness_mm,
          COALESCE(t.notes, pm.notes) AS eff_notes,
          COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
          COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
@@ -1420,6 +1423,7 @@ export async function loadReleaseContext(
       design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
     };
   });
+  const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);
   const thermalCalculations = await loadThermalCalculations(
     runner,
     id,
@@ -1428,8 +1432,8 @@ export async function loadReleaseContext(
     exhibits,
     tanks,
     exhibitCalculations,
+    thermalConstructionDefaults,
   );
-  const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);
   const pumpSelections = await loadPumpSelections(runner, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
 
@@ -2469,6 +2473,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
       design_flow_source: calculation?.inputs.design_flow_source || 'linked_exhibits',
     };
   });
+  const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(query);
   const thermalCalculations = await loadThermalCalculations(
     query,
     routeParam(req.params.id),
@@ -2477,8 +2482,8 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     exhibits,
     tanks,
     exhibitCalculations,
+    thermalConstructionDefaults,
   );
-  const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(query);
   const pumpSelections = await loadPumpSelections(query, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(
     query,

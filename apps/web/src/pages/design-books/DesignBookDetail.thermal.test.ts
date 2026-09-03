@@ -12,7 +12,9 @@ import {
   thermalCorrelationVersionsForClass,
   normalizeThermalWallConstruction,
   thermalExhibitTankWallBasis,
+  thermalExhibitTankWallBases,
   thermalLinkedFreeSurfaceArea,
+  thermalWallBasesAreMixed,
   thermalWallFormValues,
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
@@ -311,6 +313,103 @@ describe('Exhibit tank wall basis', () => {
       1 / (1 / 150 + 0.012 / 0.19 + 1 / 5),
       10,
     );
+  });
+
+  it('keeps distinct mixed tank materials, thicknesses, quantities, and areas', () => {
+    const bases = thermalExhibitTankWallBases({
+      linked_tanks: [
+        {
+          tank_id: 'tank-acrylic',
+          tank_code: 'TK-ACR',
+          quantity: 2,
+          exposed_wall_area_m2: 6,
+          wall_material: 'Acrylic',
+          wall_thickness_mm: 10,
+        },
+        {
+          tank_id: 'tank-concrete',
+          tank_code: 'TK-CON',
+          quantity: 3,
+          exposed_wall_area_m2: 12,
+          wall_material: 'Concrete',
+          wall_thickness_mm: 200,
+        },
+      ],
+    }, [
+      {
+        code: 'acrylic',
+        label: 'Acrylic',
+        material: 'Acrylic / PMMA',
+        conductivity_w_m_k: 0.19,
+      },
+      {
+        code: 'concrete',
+        label: 'Concrete',
+        material: 'Reinforced concrete',
+        conductivity_w_m_k: 1.4,
+      },
+    ]);
+
+    expect(bases).toHaveLength(2);
+    expect(thermalWallBasesAreMixed(bases)).toBe(true);
+    expect(bases[0]).toMatchObject({
+      tank_id: 'tank-acrylic',
+      tank_code: 'TK-ACR',
+      quantity: 2,
+      exposed_wall_area_m2: 6,
+      material: 'Acrylic',
+      thickness_mm: 10,
+      conductivity_w_m_k: 0.19,
+    });
+    expect(bases[0].u_value_w_m2_k).toBeCloseTo(19, 12);
+    expect(bases[1]).toMatchObject({
+      tank_id: 'tank-concrete',
+      tank_code: 'TK-CON',
+      quantity: 3,
+      exposed_wall_area_m2: 12,
+      material: 'Concrete',
+      thickness_mm: 200,
+      conductivity_w_m_k: 1.4,
+    });
+    expect(bases[1].u_value_w_m2_k).toBeCloseTo(7, 12);
+  });
+
+  it('normalizes every frozen tank wall basis from saved Thermal evidence', () => {
+    const wall = thermalEvidenceBasis({
+      wall_construction_basis: {
+        source: 'exhibit tank wall with governed material conductivity',
+        u_value_w_m2_k: 11,
+        tank_bases: [{
+          tank_id: 'tank-1',
+          material: 'Acrylic',
+          thickness_mm: 10,
+          conductivity_w_m_k: 0.19,
+          u_value_w_m2_k: 19,
+        }, {
+          tank_id: 'tank-2',
+          material: 'Concrete',
+          thickness_mm: 200,
+          conductivity_w_m_k: 1.4,
+          u_value_w_m2_k: 7,
+        }],
+      },
+    }).wall;
+
+    expect(wall.tank_bases).toEqual([
+      expect.objectContaining({
+        tank_id: 'tank-1',
+        thickness_mm: 10,
+        thickness_units: 'mm',
+        conductivity_units: 'W/m·K',
+      }),
+      expect.objectContaining({
+        tank_id: 'tank-2',
+        thickness_mm: 200,
+        thickness_units: 'mm',
+        conductivity_units: 'W/m·K',
+      }),
+    ]);
+    expect(thermalWallBasesAreMixed(wall.tank_bases)).toBe(true);
   });
 });
 

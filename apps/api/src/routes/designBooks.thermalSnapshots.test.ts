@@ -26,6 +26,27 @@ describe('thermal calculation snapshot persistence', () => {
       effective_layers: [{ material: 'Project FRP', thickness_m: 0.008, conductivity_w_m_k: 0.3 }],
       layer_override_flags: { material: true, thickness_mm: true, conductivity_w_m_k: true },
       layer_override_justification: 'Project laminate schedule.',
+      tank_bases: [{
+        tank_id: 'tank-frp',
+        tank_code: 'TK-FRP',
+        quantity: 2,
+        exposed_wall_area_m2: 18,
+        material: 'Project FRP',
+        thickness_mm: 8,
+        conductivity_w_m_k: 0.3,
+        u_value_w_m2_k: 37.5,
+        basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+      }, {
+        tank_id: 'tank-concrete',
+        tank_code: 'TK-CON',
+        quantity: 1,
+        exposed_wall_area_m2: 12,
+        material: 'Reinforced concrete',
+        thickness_mm: 150,
+        conductivity_w_m_k: 1.4,
+        u_value_w_m2_k: 9.333333333333334,
+        basis_version: 'AAT_FOUNDATIONS_WALL_V1.0',
+      }],
     };
     const calculation = {
       calculation_version: 'aat-thermal-load-v2',
