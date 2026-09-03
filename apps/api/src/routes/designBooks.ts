@@ -405,6 +405,8 @@ async function loadThermalCalculations(
   exhibitCalculations: any[],
   wallConstructions: any[],
   lights: any[] = [],
+  pumpSelections?: any[],
+  uvSelections?: any[],
 ) {
   const savedRows = systems.length
     ? (await runner(
@@ -421,6 +423,12 @@ async function loadThermalCalculations(
       exhibitCalculations,
       lights,
       wallConstructions,
+      ...(pumpSelections !== undefined || uvSelections !== undefined
+        ? {
+          pumpSelections: pumpSelections?.find(item => item.system_id === system.id)?.items || [],
+          uvSelections: uvSelections?.filter(item => item.system_id === system.id) || [],
+        }
+        : {}),
     });
     const saved = savedRows.find(row => row.system_id === system.id) || null;
     const correlationSnapshot = saved?.correlation_snapshot ||
@@ -1587,6 +1595,7 @@ export async function loadReleaseContext(
     };
   });
   const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);
+  const pumpSelections = await loadPumpSelections(runner, currentSystems);
   const thermalCalculations = await loadThermalCalculations(
     runner,
     id,
@@ -1597,8 +1606,9 @@ export async function loadReleaseContext(
     exhibitCalculations,
     thermalConstructionDefaults,
     lights,
+    pumpSelections,
+    uvSelections,
   );
-  const pumpSelections = await loadPumpSelections(runner, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
 
   const liveContext = {
@@ -2638,6 +2648,15 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     };
   });
   const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(query);
+  const pumpSelections = await loadPumpSelections(query, currentSystems);
+  const uvSelections = currentSystems.length
+    ? (await query(
+      `SELECT * FROM design_book_uv_selections
+       WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])
+       ORDER BY system_id`,
+      [routeParam(req.params.id), currentSystems.map(system => system.id)],
+    )).rows
+    : [];
   const thermalCalculations = await loadThermalCalculations(
     query,
     routeParam(req.params.id),
@@ -2648,8 +2667,9 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     exhibitCalculations,
     thermalConstructionDefaults,
     lights,
+    pumpSelections,
+    uvSelections,
   );
-  const pumpSelections = await loadPumpSelections(query, currentSystems);
   const frictionLossCalculations = await loadFrictionLossPackages(
     query,
     routeParam(req.params.id),

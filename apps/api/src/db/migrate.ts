@@ -2731,6 +2731,13 @@ ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS venturi_flow_m3h NUM
 ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_quantity INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_duty_type_id UUID REFERENCES pump_duty_types(id) ON DELETE SET NULL;
 ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS pump_duty_snapshot JSONB;
+-- Installation location is intentionally nullable for historic selections.
+-- New Pump Selection saves validate a choice at the API boundary.
+ALTER TABLE system_pump_selections ADD COLUMN IF NOT EXISTS installation_location VARCHAR(20);
+ALTER TABLE system_pump_selections DROP CONSTRAINT IF EXISTS chk_system_pump_selections_installation_location;
+ALTER TABLE system_pump_selections
+  ADD CONSTRAINT chk_system_pump_selections_installation_location
+  CHECK (installation_location IS NULL OR installation_location IN ('external', 'submerged'));
 ALTER TABLE system_pump_selections DROP CONSTRAINT IF EXISTS chk_system_pump_selections_quantity;
 ALTER TABLE system_pump_selections
   ADD CONSTRAINT chk_system_pump_selections_quantity CHECK (pump_quantity > 0 AND pump_quantity <= 99);

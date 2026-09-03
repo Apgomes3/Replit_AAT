@@ -12,7 +12,7 @@
 
 import crypto from 'crypto';
 
-export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v7';
+export const THERMAL_CALCULATION_VERSION = 'aat-thermal-load-v8';
 export const THERMAL_CONSTRUCTION_BASIS_VERSION = 'AAT_FOUNDATIONS_WALL_V1.0';
 /**
  * These are provisional AAT Foundations starter values. The database seed
@@ -309,7 +309,15 @@ export function buildThermalSourceContext(args: {
   exhibitCalculations?: any[];
   lights?: any[];
   wallConstructions?: any[];
+  pumpSelections?: any[];
+  uvSelections?: any[];
 }) {
+  // Omission retains the legacy manually-entered equipment field for frozen
+  // callers/snapshots. Live Design Book loading supplies both packages and
+  // therefore always produces the governed breakdown (including an empty one).
+  const includeEquipmentHeatSources =
+    Object.prototype.hasOwnProperty.call(args, 'pumpSelections') ||
+    Object.prototype.hasOwnProperty.call(args, 'uvSelections');
   const {
     system,
     links = [],
@@ -318,6 +326,8 @@ export function buildThermalSourceContext(args: {
     exhibitCalculations = [],
     lights = [],
     wallConstructions = [],
+    pumpSelections = [],
+    uvSelections = [],
   } = args;
   const governedWallConstructions = wallConstructions.length
     ? wallConstructions
@@ -395,6 +405,94 @@ export function buildThermalSourceContext(args: {
       source: 'Design Book exhibit lighting schedule',
     };
   });
+  // Pump sizing and UV selection are separate governed packages. Capture each
+  // source individually so no electrical/mechanical heat is silently assumed.
+  const pumpLines = pumpSelections.flatMap((selection: any) =>
+    Array.isArray(selection?.items) ? selection.items : [selection]).filter(Boolean);
+  const pumpHeatSources = pumpLines.map((pump: any) => {
+    const location = pump.installation_location === 'external' || pump.installation_location === 'submerged'
+      ? pump.installation_location : null;
+    const ready = pump.freshness === 'fresh' && pump.status === 'ready' &&
+      pump.results && (pump.calculation_version != null);
+    const powerBasis = location === 'external' ? 'shaft_power_kw'
+      : location === 'submerged' ? 'motor_input_kw' : null;
+    const perUnit = powerBasis ? positive(pump.results?.[powerBasis]) : null;
+    const quantity = positive(pump.pump_quantity);
+    const incompleteReasons = [
+      ...(ready ? [] : ['Pump selection must be saved, fresh, and ready.']),
+      ...(location ? [] : ['Pump installation location is required (external or submerged).']),
+      ...(quantity != null ? [] : ['Pump quantity is required.']),
+      ...(powerBasis && perUnit != null ? [] : [`Pump ${powerBasis || 'heat power'} is required.`]),
+    ];
+    return {
+      equipment_type: 'Pump',
+      equipment_id: pump.project_equipment_item_id || `${pump.circuit_key || ''}:${pump.pump_role || 'primary'}`,
+      circuit_key: pump.circuit_key || null,
+      pump_role: pump.pump_role || 'primary',
+      equipment_code: (pump.pump_tags || [])[0] || pump.selected_pump?.equip_code || null,
+      equipment_tags: pump.pump_tags || [],
+      equipment_name: pump.pump_duty_name || pump.selected_pump?.description || null,
+      installation_location: location,
+      quantity,
+      input_power_kw_per_unit: perUnit,
+      heat_gain_kw_per_unit: perUnit,
+      heat_gain_kw: perUnit != null && quantity != null ? perUnit * quantity : null,
+      heat_basis: location === 'external'
+        ? 'Pump shaft power transferred to water'
+        : location === 'submerged'
+          ? '100% of motor input power transferred to water'
+          : null,
+      power_basis: powerBasis,
+      freshness: pump.freshness || 'unsaved',
+      status: pump.status || 'incomplete',
+      reasons: incompleteReasons,
+    };
+  });
+  const seenUvStreams = new Set<string>();
+  const uvHeatSources = uvSelections.flatMap((selection: any) =>
+    (selection?.input_snapshot?.streams || []).map((stream: any) => ({
+      selection,
+      stream,
+    }))).filter(({ stream }: any) => {
+    const identity = String(stream?.side_stream_id || stream?.id || '');
+    if (!identity || seenUvStreams.has(identity)) return false;
+    seenUvStreams.add(identity);
+    return true;
+  }).map(({ selection, stream }: any) => {
+    const quantity = positive(stream.uv_unit_quantity ?? stream.unit_quantity);
+    const perUnit = positive(stream.uv_revision?.rated_power_kw ?? stream.rated_power_kw);
+    const ready = selection?.freshness === 'fresh' &&
+      ['pass', 'ready'].includes(String(selection?.result_snapshot?.overall_status || selection?.result_snapshot?.status || '').toLowerCase());
+    const incompleteReasons = [
+      ...(ready ? [] : ['UV selection must be saved, fresh, and ready.']),
+      ...(quantity != null ? [] : ['UV unit quantity is required.']),
+      ...(perUnit != null ? [] : ['UV rated power is required.']),
+    ];
+    return {
+      equipment_type: 'UV',
+      equipment_id: stream.side_stream_id || stream.id || null,
+      side_stream_id: stream.side_stream_id || stream.id || null,
+      side_stream_name: stream.side_stream_name || stream.name || null,
+      equipment_code: stream.uv_revision?.product_code || stream.product_code || null,
+      equipment_name: stream.uv_revision?.product_name || stream.product_name || null,
+      quantity,
+      installation_location: 'in_water_stream',
+      input_power_kw_per_unit: perUnit,
+      heat_gain_kw_per_unit: perUnit,
+      heat_gain_kw: perUnit != null && quantity != null ? perUnit * quantity : null,
+      heat_basis: '100% of UV rated electrical power transferred to water',
+      power_basis: 'rated_power_kw',
+      water_heat_fraction_pct: 100,
+      freshness: selection?.freshness || 'unsaved',
+      status: selection?.result_snapshot?.overall_status || selection?.result_snapshot?.status || 'incomplete',
+      reasons: incompleteReasons,
+    };
+  });
+  const equipmentHeatSources = [...pumpHeatSources, ...uvHeatSources].sort((left, right) =>
+    String(left.equipment_type).localeCompare(String(right.equipment_type)) ||
+    String(left.equipment_id || '').localeCompare(String(right.equipment_id || '')));
+  const equipmentHeatGainKw = sumNumber(equipmentHeatSources.map(item =>
+    finite(item.heat_gain_kw)));
   const source = {
     system_id: system?.id || null,
     system_code: system?.system_code || null,
@@ -405,6 +503,10 @@ export function buildThermalSourceContext(args: {
     effective_volume_sources: effectiveVolumeSources,
     lighting_sources: lightingSources,
     lighting_power_kw: lightingSources.reduce((total, item) => total + item.lighting_power_kw, 0),
+    ...(includeEquipmentHeatSources ? {
+      equipment_heat_sources: equipmentHeatSources,
+      equipment_heat_gain_kw: equipmentHeatGainKw,
+    } : {}),
     circulation_flows: circulationFlows,
     lss_circulation_flow_m3h: finite(system?.design_flow_m3h),
     duplicate_exhibit_ids: duplicateExhibitIds,
@@ -1170,9 +1272,24 @@ function validateCommonInputs(source: any, inputs: any, reasons: string[]) {
     ? nonNegative(source.lighting_power_kw)
     : null;
   const lightingPower = scheduledLightingPower ?? nonNegative(inputs.lighting_power_kw);
-  const equipment = nonNegative(inputs.equipment_heat_gain_kw);
+  const sourceHasEquipmentBreakdown = Object.prototype.hasOwnProperty.call(source || {}, 'equipment_heat_sources');
+  const equipmentSources = sourceHasEquipmentBreakdown
+    ? (Array.isArray(source.equipment_heat_sources) ? source.equipment_heat_sources : [])
+    : [];
+  const incompleteEquipmentSources = equipmentSources.filter((item: any) =>
+    item?.heat_gain_kw == null || (item?.reasons || []).length > 0);
+  if (incompleteEquipmentSources.length) {
+    incompleteEquipmentSources.forEach((item: any) => {
+      const label = item.equipment_code || item.equipment_name ||
+        item.equipment_id || item.equipment_type || 'equipment';
+      reasons.push(`Equipment heat source ${label} is incomplete: ${(item.reasons || ['total heat is required']).join(' ')}`);
+    });
+  }
+  const equipment = sourceHasEquipmentBreakdown
+    ? sumNumber(equipmentSources.map((item: any) => finite(item.heat_gain_kw)))
+    : nonNegative(inputs.equipment_heat_gain_kw);
   const margin = nonNegative(inputs.capacity_margin_pct);
-  if (inputs.equipment_heat_gain_kw != null && equipment == null) reasons.push('Equipment heat gain must be a non-negative finite value.');
+  if (!sourceHasEquipmentBreakdown && inputs.equipment_heat_gain_kw != null && equipment == null) reasons.push('Equipment heat gain must be a non-negative finite value.');
   if (!sourceHasLightingSchedule && inputs.lighting_power_kw != null && lightingPower == null) {
     reasons.push('Lighting power must be non-negative.');
   }
@@ -1194,6 +1311,8 @@ function validateCommonInputs(source: any, inputs: any, reasons: string[]) {
       ? 'Design Book exhibit lighting schedule'
       : 'Thermal input',
     equipment: equipment || 0,
+    equipmentSources,
+    sourceHasEquipmentBreakdown,
     margin: margin || 0,
   };
 }
@@ -1357,6 +1476,7 @@ function calculateCaseLegacy(source: any, inputs: any, factors = { surface: 1, e
       circulation_flow_is_reference_only: true,
       operational_water_exchange_flow_m3h: exchangeFlow || 0,
       net_envelope_kw: envelope,
+      equipment_heat_sources: common.equipmentSources,
       net_total_load_kw: total,
       required_cooling_kw: Math.max(0, total),
       steady_state_heating_kw: Math.max(0, -total),
@@ -1377,6 +1497,8 @@ function calculateCaseLegacy(source: any, inputs: any, factors = { surface: 1, e
       lighting_power_kw: common.lightingPower,
       lighting_coupling_pct: lightingCoupling,
       equipment_heat_gain_kw: common.equipment,
+      equipment_heat_sources: common.equipmentSources,
+      equipment_heat_basis: common.sourceHasEquipmentBreakdown ? 'source-derived' : 'legacy_manual',
       capacity_margin_pct: common.margin,
       water_exchange_enabled: !!inputs.water_exchange_enabled,
       evaporation_correlation_basis: inputs.agitation_correlation_snapshot || {
@@ -1590,6 +1712,7 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
       circulation_flow_is_reference_only: true,
       operational_water_exchange_flow_m3h: exchangeFlow || 0,
       net_envelope_kw: envelope,
+      equipment_heat_sources: common.equipmentSources,
       net_total_load_kw: total,
       required_cooling_kw: Math.max(0, total),
       steady_state_heating_kw: Math.max(0, -total),
@@ -1610,6 +1733,8 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
       lighting_power_kw: common.lightingPower,
       lighting_coupling_pct: lightingCoupling,
       equipment_heat_gain_kw: common.equipment,
+      equipment_heat_sources: common.equipmentSources,
+      equipment_heat_basis: common.sourceHasEquipmentBreakdown ? 'source-derived' : 'legacy_manual',
       capacity_margin_pct: common.margin,
       water_exchange_enabled: !!inputs.water_exchange_enabled,
       evaporation_correlation_basis: inputs.agitation_correlation_snapshot || {

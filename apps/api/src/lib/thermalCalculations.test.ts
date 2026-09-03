@@ -185,6 +185,44 @@ describe('AAT thermal calculation', () => {
     expect(result.formula_inputs.lighting_power_kw).toBeCloseTo(0.9, 12);
   });
 
+  it('derives deterministic pump and UV water heat sources using their governed power bases', () => {
+    const source = buildThermalSourceContext({
+      system: { id: 'system-1', system_code: 'LSS-1' },
+      links: [], exhibits: [], tanks: [],
+      pumpSelections: [{
+        circuit_key: 'loop:1', pump_role: 'primary', project_equipment_item_id: 'pump-a',
+        pump_tags: ['01-CIRCP-01', '01-CIRCP-02'], pump_quantity: 2,
+        installation_location: 'external', freshness: 'fresh', status: 'ready',
+        calculation_version: 'pump-selection-v1',
+        results: { shaft_power_kw: 1.2, motor_input_kw: 1.5 },
+      }, {
+        circuit_key: 'loop:2', pump_role: 'primary', project_equipment_item_id: 'pump-b',
+        pump_quantity: 1, installation_location: 'submerged', freshness: 'fresh', status: 'ready',
+        calculation_version: 'pump-selection-v1',
+        results: { shaft_power_kw: 3, motor_input_kw: 4 },
+      }],
+      uvSelections: [{
+        system_id: 'system-1', freshness: 'fresh',
+        result_snapshot: { overall_status: 'pass' },
+        input_snapshot: { streams: [{
+          side_stream_id: 'uv-stream', side_stream_name: 'UV sidestream',
+          uv_unit_quantity: 3, uv_revision: { product_code: 'UV-1', rated_power_kw: 0.4 },
+        }] },
+      }],
+    });
+    expect(source.equipment_heat_sources.map((item: any) => item.equipment_type)).toEqual(['Pump', 'Pump', 'UV']);
+    expect(source.equipment_heat_sources.map((item: any) => item.heat_gain_kw)).toEqual([2.4, 4, expect.closeTo(1.2, 12)]);
+    expect(source.equipment_heat_gain_kw).toBeCloseTo(7.6, 12);
+    expect(source.equipment_heat_sources[0]).toMatchObject({
+      power_basis: 'shaft_power_kw',
+      installation_location: 'external',
+      heat_basis: 'Pump shaft power transferred to water',
+    });
+    expect(source.equipment_heat_sources[2]).toMatchObject({
+      side_stream_id: 'uv-stream', power_basis: 'rated_power_kw', water_heat_fraction_pct: 100,
+    });
+  });
+
   it('derives free surface from linked rectangular tank dimensions when no saved area exists', () => {
     const source = readySource('Rectangular', null);
     const result = calculateThermalCalculation(source, readyInputs());

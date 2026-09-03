@@ -23,6 +23,7 @@ const pumpQuantityOrNull = (value: any) => {
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 99 ? parsed : null;
 };
 const allowedPumpRoles = new Set([PUMP_ROLE_PRIMARY, PUMP_ROLE_VENTURI]);
+const allowedInstallationLocations = new Set(['external', 'submerged']);
 
 async function candidates(runner: any, projectId: string, systemId: string) {
   return (await runner(
@@ -190,6 +191,9 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
   if (pumpQuantity == null) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pump quantity must be between 1 and 99.' } });
   }
+  if (!allowedInstallationLocations.has(input.installation_location)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'installation_location must be external or submerged.' } });
+  }
   // For FFVP lines the flow basis comes from the explicit venturi_flow_m3h input.
   const isVenturi = pumpRole === PUMP_ROLE_VENTURI;
   const totalFlow = isVenturi
@@ -240,8 +244,8 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
        (system_id,circuit_key,project_equipment_item_id,
         design_head_m,pump_efficiency_pct,motor_efficiency_pct,
         source_fingerprint,pump_snapshot,calculation_version,result_snapshot,updated_by,
-         pump_role,venturi_flow_m3h,pump_quantity,pump_duty_type_id,pump_duty_snapshot)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14,$15,$16::jsonb)
+          pump_role,venturi_flow_m3h,pump_quantity,pump_duty_type_id,pump_duty_snapshot,installation_location)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14,$15,$16::jsonb,$17)
      ON CONFLICT (system_id,circuit_key,pump_role) DO UPDATE SET
        project_equipment_item_id=EXCLUDED.project_equipment_item_id,
        design_head_m=EXCLUDED.design_head_m,
@@ -256,6 +260,7 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
         pump_quantity=EXCLUDED.pump_quantity,
         pump_duty_type_id=EXCLUDED.pump_duty_type_id,
         pump_duty_snapshot=EXCLUDED.pump_duty_snapshot,
+        installation_location=EXCLUDED.installation_location,
        updated_at=NOW()`,
     [
       system.id, input.circuit_key, selected?.project_equipment_item_id || null,
@@ -270,6 +275,7 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
       pumpQuantity,
       dutyType.id || null,
       JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
+       input.installation_location,
     ],
   );
 

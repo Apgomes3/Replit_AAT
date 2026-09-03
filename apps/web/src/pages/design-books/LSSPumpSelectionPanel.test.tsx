@@ -43,6 +43,7 @@ const response = {
     design_head_m: null,
     pump_efficiency_pct: null,
     motor_efficiency_pct: null,
+    installation_location: null,
     freshness: 'fresh',
     status: 'incomplete',
     reasons: ['Save and calculate to create the governed system pump.'],
@@ -80,6 +81,7 @@ describe('LSSPumpSelectionPanel', () => {
     await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
     await user.type(screen.getByLabelText('Pump efficiency for Sand Filter Loop'), '76');
     await user.type(screen.getByLabelText('Motor efficiency for Sand Filter Loop'), '92');
+    await user.selectOptions(screen.getByLabelText('Installation location for Sand Filter Loop'), 'external');
     await user.selectOptions(screen.getByLabelText('Pump product for Sand Filter Loop'), 'equipment-1');
     await user.clear(screen.getByLabelText('Pump quantity for Sand Filter Loop'));
     await user.type(screen.getByLabelText('Pump quantity for Sand Filter Loop'), '3');
@@ -94,6 +96,7 @@ describe('LSSPumpSelectionPanel', () => {
       design_head_m: 18,
       pump_efficiency_pct: 76,
       motor_efficiency_pct: 92,
+      installation_location: 'external',
       pump_quantity: 3,
     });
   });
@@ -221,6 +224,7 @@ describe('LSSPumpSelectionPanel', () => {
     await user.type(screen.getByLabelText('Initial design head for Sand Filter Loop'), '18');
     await user.type(screen.getByLabelText('Pump efficiency for Sand Filter Loop'), '76');
     await user.type(screen.getByLabelText('Motor efficiency for Sand Filter Loop'), '92');
+    await user.selectOptions(screen.getByLabelText('Installation location for Sand Filter Loop'), 'submerged');
     await user.selectOptions(screen.getByLabelText('Pump product for Sand Filter Loop'), 'equipment-1');
     await user.click(screen.getByRole('button', { name: 'Save & calculate' }));
 
@@ -363,6 +367,7 @@ describe('LSSPumpSelectionPanel', () => {
     await user.type(screen.getByLabelText('Initial design head for FFVP — Foam Fractionator Venturi Pump'), '8');
     await user.type(screen.getByLabelText('Pump efficiency for FFVP — Foam Fractionator Venturi Pump'), '75');
     await user.type(screen.getByLabelText('Motor efficiency for FFVP — Foam Fractionator Venturi Pump'), '90');
+    await user.selectOptions(screen.getByLabelText('Installation location for FFVP — Foam Fractionator Venturi Pump'), 'external');
     await user.click(screen.getAllByRole('button', { name: 'Save & calculate' })[1]);
 
     await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/systems/system-1/pump-selections', expect.objectContaining({
@@ -371,5 +376,14 @@ describe('LSSPumpSelectionPanel', () => {
       venturi_flow_m3h: 42.5,
       design_head_m: 8,
     })));
+  });
+
+  it('requires an installation location and shows the thermal heat-gain basis', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    expect(await screen.findByText('Required for thermal heat gain.')).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Installation location for Sand Filter Loop'), 'submerged');
+    expect(screen.getByText('External contributes pump shaft power to water; submerged contributes 100% of motor input power.')).toBeInTheDocument();
   });
 });

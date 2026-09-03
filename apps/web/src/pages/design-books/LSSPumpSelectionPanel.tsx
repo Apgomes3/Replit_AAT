@@ -38,6 +38,7 @@ type PumpLine = {
   design_head_m?: number | string | null;
   pump_efficiency_pct?: number | string | null;
   motor_efficiency_pct?: number | string | null;
+  installation_location?: string | null;
   freshness?: string | null;
   status?: string | null;
   reasons?: string[];
@@ -142,6 +143,7 @@ function PumpLineCard({
     design_head_m: line.design_head_m ?? '',
     pump_efficiency_pct: line.pump_efficiency_pct ?? '',
     motor_efficiency_pct: line.motor_efficiency_pct ?? '',
+    installation_location: line.installation_location ?? '',
     venturi_flow_m3h: line.venturi_flow_m3h ?? '',
     pump_quantity: line.pump_quantity ?? 1,
   });
@@ -151,13 +153,14 @@ function PumpLineCard({
       design_head_m: line.design_head_m ?? '',
       pump_efficiency_pct: line.pump_efficiency_pct ?? '',
       motor_efficiency_pct: line.motor_efficiency_pct ?? '',
+      installation_location: line.installation_location ?? '',
       venturi_flow_m3h: line.venturi_flow_m3h ?? '',
       pump_quantity: line.pump_quantity ?? 1,
     });
   }, [
     line.circuit_key, line.pump_role,
     line.project_equipment_item_id,
-    line.design_head_m, line.pump_efficiency_pct, line.motor_efficiency_pct,
+    line.design_head_m, line.pump_efficiency_pct, line.motor_efficiency_pct, line.installation_location,
     line.venturi_flow_m3h, line.pump_quantity,
   ]);
 
@@ -230,6 +233,10 @@ function PumpLineCard({
   };
 
   const save = async () => {
+    if (!form.installation_location) {
+      toast.error('Select whether this pump is external or submerged.');
+      return;
+    }
     setSaving(true);
     try {
       let projectEquipmentItemId = selectedCandidate?.project_equipment_item_id || null;
@@ -248,6 +255,7 @@ function PumpLineCard({
         design_head_m: form.design_head_m === '' ? null : Number(form.design_head_m),
         pump_efficiency_pct: form.pump_efficiency_pct === '' ? null : Number(form.pump_efficiency_pct),
         motor_efficiency_pct: form.motor_efficiency_pct === '' ? null : Number(form.motor_efficiency_pct),
+        installation_location: form.installation_location,
         pump_quantity: Number(form.pump_quantity),
         ...(isVenturi ? { venturi_flow_m3h: form.venturi_flow_m3h === '' ? null : Number(form.venturi_flow_m3h) } : {}),
       });
@@ -368,7 +376,7 @@ function PumpLineCard({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="lg:col-span-2">
           <label htmlFor={`pump-product-${line.circuit_key}-${pumpRole}`} className="mb-1 block text-xs font-medium text-stone-600">
             Pump product
@@ -460,6 +468,38 @@ function PumpLineCard({
             className={inputClass}
           />
         </label>
+        <div>
+          <label htmlFor={`pump-installation-${line.circuit_key}-${pumpRole}`} className="mb-1 block text-xs font-medium text-stone-600">
+            Installation location <span className="text-red-600">*</span>
+          </label>
+          {readOnly ? (
+            <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+              {line.installation_location
+                ? line.installation_location === 'external' ? 'External' : line.installation_location === 'submerged' ? 'Submerged' : line.installation_location
+                : 'Installation location not recorded'}
+            </div>
+          ) : (
+            <select
+              id={`pump-installation-${line.circuit_key}-${pumpRole}`}
+              aria-label={`Installation location for ${line.pump_role_name || line.circuit_name}`}
+              value={form.installation_location}
+              onChange={event => setForm(current => ({ ...current, installation_location: event.target.value }))}
+              required
+              className={inputClass}
+            >
+              <option value="">Select installation location</option>
+              <option value="external">External</option>
+              <option value="submerged">Submerged</option>
+            </select>
+          )}
+          <p className="mt-1 text-xs text-stone-500">
+            {readOnly
+              ? 'Saved pump installation location used for thermal heat gain.'
+              : !form.installation_location
+                ? 'Required for thermal heat gain.'
+                : 'External contributes pump shaft power to water; submerged contributes 100% of motor input power.'}
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

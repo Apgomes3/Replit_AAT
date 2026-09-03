@@ -23,6 +23,8 @@ import {
   thermalWallOverrideFlags,
   thermalWallReplacementIsValid,
   ThermalNumericField,
+  EquipmentHeatGainBreakdown,
+  thermalHasEquipmentHeatSources,
   MassTransferCoefficientControl,
   WallUValueControl,
   WaterTemperatureOverrideControl,
@@ -47,6 +49,43 @@ describe('Design Book Life Support Systems list', () => {
 });
 
 describe('Design Book Thermal navigation', () => {
+  it('identifies calculated equipment heat sources and displays their heat-gain breakdown', () => {
+    const source = {
+      equipment_heat_gain_kw: 4.25,
+      equipment_heat_sources: [{
+        equipment_type: 'Pump',
+        equipment_id: 'pump-1',
+        equipment_code: 'P-101',
+        equipment_name: 'Circulation Pump',
+        quantity: 2,
+        installation_location: 'external',
+        input_power_kw_per_unit: 3,
+        heat_gain_kw: 2.5,
+        heat_basis: 'Pump shaft power',
+      }, {
+        equipment_type: 'UV',
+        equipment_id: 'uv-1',
+        equipment_code: 'UV-101',
+        equipment_name: 'UV reactor',
+        quantity: 1,
+        input_power_kw_per_unit: 1.75,
+        heat_gain_kw: 1.75,
+        heat_basis: 'UV input power',
+      }],
+    };
+
+    expect(thermalHasEquipmentHeatSources(source)).toBe(true);
+    expect(thermalHasEquipmentHeatSources({})).toBe(false);
+    render(createElement(EquipmentHeatGainBreakdown, { source }));
+
+    expect(screen.getByText('Circulation Pump')).toBeInTheDocument();
+    expect(screen.getByText('UV reactor')).toBeInTheDocument();
+    expect(screen.getByText('Pump shaft power')).toBeInTheDocument();
+    expect(screen.getByText('Calculated equipment total')).toBeInTheDocument();
+    expect(screen.getByText('4.25 kW')).toBeInTheDocument();
+    expect(screen.getByText(/External pumps contribute shaft power/)).toBeInTheDocument();
+  });
+
   it('uses current linked tank free-surface values, including custom tanks', () => {
     expect(thermalLinkedFreeSurfaceArea({
       linked_tanks: [

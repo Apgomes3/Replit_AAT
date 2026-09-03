@@ -33,3 +33,4 @@
 - [UV control metadata](uv-product-control-metadata.md) — installation and control attributes are PIM-owned, displayed read-only in UV Engineering, and reviewed when changed.
 - [UV water compatibility](uv-water-compatibility.md) — material defaults seed each revision; explicit revision overrides govern approval and Design Book use.
 - [Exhibit lighting snapshots](exhibit-lighting-snapshots.md) — PIM lights freeze source identity and physical kW load; W/kW changes are display conversions only.
+- [Exhibit environmental inheritance](exhibit-environmental-inheritance.md) — new exhibits may copy water type and temperature range once; the source remains independent.

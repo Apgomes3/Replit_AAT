@@ -226,6 +226,20 @@ describe('buildPumpLineItem', () => {
     );
   });
 
+  it('returns the persisted installation location without changing sizing freshness', () => {
+    const savedRow = {
+      project_equipment_item_id: 'pump-1', pump_snapshot: { id: 'pump-1', power_kw: 15 },
+      design_head_m: 10, pump_efficiency_pct: 80, motor_efficiency_pct: 90,
+      calculation_version: 'pump-selection-v1', installation_location: 'submerged',
+    };
+    const initial = buildPumpLineItem(circuit, savedRow, PUMP_ROLE_PRIMARY);
+    const line = buildPumpLineItem(circuit, {
+      ...savedRow, source_fingerprint: initial.current_source_fingerprint,
+    }, PUMP_ROLE_PRIMARY);
+    expect(line.installation_location).toBe('submerged');
+    expect(line.freshness).toBe('fresh');
+  });
+
   it('FFSP unsaved line has status incomplete (no pump selected)', () => {
     const line = buildPumpLineItem(circuit, null, PUMP_ROLE_PRIMARY);
     expect(line.status).toBe('incomplete');

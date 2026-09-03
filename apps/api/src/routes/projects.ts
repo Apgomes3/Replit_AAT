@@ -578,9 +578,45 @@ router.get('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response
 });
 
 router.post('/exhibits', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
-  const { exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity } = req.body;
+  const {
+    exhibit_code, project_id, area_id, exhibit_name, water_type,
+    design_temperature_min, design_temperature_max, design_salinity,
+    inherit_from_exhibit_id,
+  } = req.body;
+  let inherited: {
+    water_type: string | null;
+    design_temperature_min: number | null;
+    design_temperature_max: number | null;
+  } | null = null;
+
+  if (inherit_from_exhibit_id) {
+    const source = await query(
+      `SELECT water_type, design_temperature_min, design_temperature_max
+       FROM exhibits WHERE id=$1 AND project_id=$2`,
+      [inherit_from_exhibit_id, project_id],
+    );
+    if (!source.rows[0]) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REFERENCE',
+          message: 'The selected previous exhibit must belong to this project.',
+        },
+      });
+    }
+    inherited = source.rows[0];
+  }
+
+  // Inheritance is a one-time copy at creation. An explicitly supplied value,
+  // including null, always wins and no link is retained to the source exhibit.
+  const resolvedWaterType = water_type == null ? inherited?.water_type ?? null : water_type;
+  const resolvedTemperatureMin = design_temperature_min == null
+    ? inherited?.design_temperature_min ?? null
+    : design_temperature_min;
+  const resolvedTemperatureMax = design_temperature_max == null
+    ? inherited?.design_temperature_max ?? null
+    : design_temperature_max;
   const result = await query('INSERT INTO exhibits (exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-    [exhibit_code, project_id, area_id, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity]);
+    [exhibit_code, project_id, area_id, exhibit_name, resolvedWaterType, resolvedTemperatureMin, resolvedTemperatureMax, design_salinity]);
   res.status(201).json(result.rows[0]);
 });
 

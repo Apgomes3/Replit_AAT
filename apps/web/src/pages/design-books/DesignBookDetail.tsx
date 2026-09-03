@@ -1129,18 +1129,30 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
 const WATER_TYPES = ['Marine', 'Freshwater', 'Brackish', 'Salt Water', 'Blackwater'];
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Custom'];
 
-function NewExhibitModal({ projectId, onClose, onCreated }: {
+function NewExhibitModal({ projectId, exhibits, onClose, onCreated }: {
   projectId: string;
+  exhibits: any[];
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [form, setForm] = useState({
     exhibit_code: '', exhibit_name: '', water_type: '',
     design_temperature_min: '', design_temperature_max: '', design_salinity: '', notes: '',
+    inherit_from_exhibit_id: '',
   });
   const [saving, setSaving] = useState(false);
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const selectPreviousExhibit = (exhibitId: string) => {
+    const previous = exhibits.find(exhibit => exhibit.id === exhibitId);
+    setForm(form => ({
+      ...form,
+      inherit_from_exhibit_id: exhibitId,
+      water_type: previous?.water_type ?? '',
+      design_temperature_min: previous?.design_temperature_min == null ? '' : String(previous.design_temperature_min),
+      design_temperature_max: previous?.design_temperature_max == null ? '' : String(previous.design_temperature_max),
+    }));
+  };
 
   const handleSave = async () => {
     if (!form.exhibit_code.trim() || !form.exhibit_name.trim()) {
@@ -1157,6 +1169,7 @@ function NewExhibitModal({ projectId, onClose, onCreated }: {
         design_temperature_max: form.design_temperature_max ? parseFloat(form.design_temperature_max) : null,
         design_salinity: form.design_salinity ? parseFloat(form.design_salinity) : null,
         notes: form.notes || null,
+        inherit_from_exhibit_id: form.inherit_from_exhibit_id || null,
       });
       toast.success('Exhibit created');
       onCreated();
@@ -1201,6 +1214,22 @@ function NewExhibitModal({ projectId, onClose, onCreated }: {
             <input type="text" placeholder="e.g. Coral Reef Display"
               value={form.exhibit_name} onChange={e => set('exhibit_name', e.target.value)}
               className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">Link to previous exhibit</label>
+            <select
+              value={form.inherit_from_exhibit_id}
+              onChange={e => selectPreviousExhibit(e.target.value)}
+              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            >
+              <option value="">— None —</option>
+              {exhibits.map(exhibit => (
+                <option key={exhibit.id} value={exhibit.id}>
+                  {exhibit.exhibit_code ? `${exhibit.exhibit_code} — ` : ''}{exhibit.exhibit_name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-stone-400">Copies water type and design temperatures; you can edit them below.</p>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -2305,6 +2334,88 @@ export function ThermalNumericField({
   );
 }
 
+export function thermalHasEquipmentHeatSources(source: any) {
+  return !!source && Object.prototype.hasOwnProperty.call(source, 'equipment_heat_sources');
+}
+
+export function EquipmentHeatGainBreakdown({ source }: { source: any }) {
+  const rows: any[] = Array.isArray(source?.equipment_heat_sources)
+    ? source.equipment_heat_sources
+    : [];
+  const suppliedTotal = Number(source?.equipment_heat_gain_kw);
+  const calculatedTotal = Number.isFinite(suppliedTotal)
+    ? suppliedTotal
+    : rows.reduce((total, row) => total + (Number(row.heat_gain_kw) || 0), 0);
+  const installationLabel = (location: any) => {
+    const normalized = String(location || '').toLowerCase();
+    if (normalized === 'external') return 'External';
+    if (normalized === 'submerged') return 'Submerged';
+    return location || '—';
+  };
+
+  return (
+    <div className="space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
+      <div>
+        <h4 className="text-sm font-semibold text-[#263746]">Equipment heat-gain breakdown</h4>
+        <p className="mt-1 text-xs text-[#71808a]">
+          Calculated from the linked pump and UV equipment captured for this LSS system.
+          External pumps contribute shaft power to the water; submerged pumps contribute 100% of motor input power.
+          UV heat follows its saved equipment heat basis.
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
+        <table className="w-full min-w-[850px] text-left text-xs">
+          <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-500">
+            <tr>
+              <th className="px-3 py-2">Equipment / type</th>
+              <th className="px-3 py-2 text-right">Quantity</th>
+              <th className="px-3 py-2">Installation / basis</th>
+              <th className="px-3 py-2 text-right">Power per unit</th>
+              <th className="px-3 py-2 text-right">Heat to water</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-100">
+            {rows.map((equipment, index) => (
+              <tr key={equipment.equipment_id || `${equipment.equipment_type}-${equipment.equipment_code}-${index}`}>
+                <td className="px-3 py-3">
+                  <div className="font-semibold text-stone-800">
+                    {equipment.equipment_name || equipment.equipment_code || equipment.equipment_type || 'Equipment'}
+                  </div>
+                  <div className="mt-0.5 font-mono text-[11px] text-stone-500">
+                    {[equipment.equipment_code, equipment.equipment_type].filter(Boolean).join(' · ') || '—'}
+                  </div>
+                </td>
+                <td className="px-3 py-3 text-right font-mono">{thermalNumber(equipment.quantity, 0)}</td>
+                <td className="px-3 py-3 text-stone-700">
+                  <div>{installationLabel(equipment.installation_location)}</div>
+                  {equipment.heat_basis && <div className="mt-0.5 text-[11px] text-stone-500">{equipment.heat_basis}</div>}
+                  {equipment.status && equipment.status !== 'ready' && (
+                    <div className="mt-0.5 text-[11px] text-amber-700">{equipment.status}</div>
+                  )}
+                  {Array.isArray(equipment.reasons) && equipment.reasons.length > 0 && (
+                    <div className="mt-0.5 text-[11px] text-amber-700">{equipment.reasons.join(' ')}</div>
+                  )}
+                </td>
+                <td className="px-3 py-3 text-right font-mono">{thermalNumber(equipment.input_power_kw_per_unit)} kW</td>
+                <td className="px-3 py-3 text-right font-mono">{thermalNumber(equipment.heat_gain_kw)} kW</td>
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-stone-500">No linked pump or UV heat sources are available.</td></tr>
+            )}
+          </tbody>
+          <tfoot className="border-t border-stone-200 bg-stone-50 font-semibold text-stone-800">
+            <tr>
+              <td colSpan={4} className="px-3 py-2 text-right">Calculated equipment total</td>
+              <td className="px-3 py-2 text-right font-mono">{thermalNumber(calculatedTotal)} kW</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function MassTransferCoefficientControl({
   value,
   overridden,
@@ -3327,7 +3438,11 @@ function LegacyThermalTab({
           : form.tank_construction_type || null,
         tank_wall_layers: wallLayers,
         tank_wall_override_justification: form.tank_wall_override_justification || '',
-        equipment_heat_gain_kw: numericOrNull(form.equipment_heat_gain_kw),
+        equipment_heat_gain_kw: numericOrNull(
+          thermalHasEquipmentHeatSources(selected?.source)
+            ? selected?.source?.equipment_heat_gain_kw
+            : form.equipment_heat_gain_kw,
+        ),
         lighting_power_kw: numericOrNull(form.lighting_power_kw),
         lighting_coupling_pct: numericOrNull(form.lighting_coupling_pct),
         water_exchange_enabled: !!form.water_exchange_enabled,
@@ -3363,6 +3478,7 @@ function LegacyThermalTab({
   }
 
   const detail = selected?.calculation || selected?.current_preview;
+  const hasEquipmentHeatSources = thermalHasEquipmentHeatSources(selected?.source);
   const evidenceBasis = thermalEvidenceBasis(selected || detail);
   const wallBasisChange = thermalWallBasisChange(selected || detail);
   const selectedConstructionDefault = normalizeThermalWallConstruction(
@@ -3832,8 +3948,11 @@ function LegacyThermalTab({
           <section className="space-y-3">
             <h3 className="font-semibold text-stone-900">Operational gains and capacity</h3>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <ThermalNumericField name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW"
-                value={form.equipment_heat_gain_kw} onChange={event => update('equipment_heat_gain_kw', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="equipment_heat_gain_kw"
+                label={hasEquipmentHeatSources ? 'Calculated equipment total' : 'Equipment heat gain'} unit="kW"
+                value={hasEquipmentHeatSources ? selected?.source?.equipment_heat_gain_kw ?? form.equipment_heat_gain_kw : form.equipment_heat_gain_kw}
+                onChange={event => update('equipment_heat_gain_kw', event.target.value)}
+                disabled={readOnly || hasEquipmentHeatSources} />
               <ThermalNumericField name="lighting_power_kw" label="Lighting power" unit="kW"
                 value={form.lighting_power_kw} onChange={event => update('lighting_power_kw', event.target.value)} disabled={readOnly} />
               <ThermalNumericField name="lighting_coupling_pct" label="Lighting-to-water coupling" unit="%"
@@ -3841,6 +3960,7 @@ function LegacyThermalTab({
               <ThermalNumericField name="capacity_margin_pct" label="Capacity margin" unit="%"
                 value={form.capacity_margin_pct} onChange={event => update('capacity_margin_pct', event.target.value)} disabled={readOnly} />
             </div>
+            {hasEquipmentHeatSources && <EquipmentHeatGainBreakdown source={selected?.source} />}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={!!form.water_exchange_enabled} onChange={e => update('water_exchange_enabled', e.target.checked)} disabled={readOnly} />
               Count an explicit operational water exchange (not LSS circulation)
@@ -4386,7 +4506,11 @@ function ThermalTab({
           : form.tank_construction_type || null,
         tank_wall_layers: wallLayers,
         tank_wall_override_justification: form.tank_wall_override_justification || '',
-        equipment_heat_gain_kw: numericOrNull(form.equipment_heat_gain_kw),
+        equipment_heat_gain_kw: numericOrNull(
+          thermalHasEquipmentHeatSources(selected?.source)
+            ? selected?.source?.equipment_heat_gain_kw
+            : form.equipment_heat_gain_kw,
+        ),
         lighting_power_kw: numericOrNull(form.lighting_power_kw),
         lighting_coupling_pct: numericOrNull(form.lighting_coupling_pct),
         water_exchange_enabled: !!form.water_exchange_enabled,
@@ -4424,6 +4548,7 @@ function ThermalTab({
   const detail = selected?.calculation || selected?.current_preview;
   const evidenceBasis = thermalEvidenceBasis(selected || detail);
   const wallBasisChange = thermalWallBasisChange(selected || detail);
+  const hasEquipmentHeatSources = thermalHasEquipmentHeatSources(selected?.source);
   const sourceTankWallBases = thermalExhibitTankWallBases(
     selected?.source,
     constructionDefaults,
@@ -5178,8 +5303,11 @@ function ThermalTab({
              </h3>
              {!collapsedSections.operational && <div id="thermal-operational-panel" className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <ThermalNumericField name="equipment_heat_gain_kw" label="Equipment heat gain" unit="kW"
-                value={form.equipment_heat_gain_kw} onChange={event => update('equipment_heat_gain_kw', event.target.value)} disabled={readOnly} />
+              <ThermalNumericField name="equipment_heat_gain_kw"
+                label={hasEquipmentHeatSources ? 'Calculated equipment total' : 'Equipment heat gain'} unit="kW"
+                value={hasEquipmentHeatSources ? selected?.source?.equipment_heat_gain_kw ?? form.equipment_heat_gain_kw : form.equipment_heat_gain_kw}
+                onChange={event => update('equipment_heat_gain_kw', event.target.value)}
+                disabled={readOnly || hasEquipmentHeatSources} />
               <ThermalNumericField name="lighting_power_kw" label="Lighting power" unit="kW"
                 value={lightingScheduleIsAvailable ? lightingSchedulePower : form.lighting_power_kw}
                 onChange={event => update('lighting_power_kw', event.target.value)}
@@ -5194,6 +5322,7 @@ function ThermalTab({
               <ThermalNumericField name="capacity_margin_pct" label="Capacity margin" unit="%"
                 value={form.capacity_margin_pct} onChange={event => update('capacity_margin_pct', event.target.value)} disabled={readOnly} />
             </div>
+            {hasEquipmentHeatSources && <EquipmentHeatGainBreakdown source={selected?.source} />}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={!!form.water_exchange_enabled} onChange={e => update('water_exchange_enabled', e.target.checked)} disabled={readOnly} />
               Count an explicit operational water exchange (not LSS circulation)
@@ -5442,6 +5571,7 @@ export default function DesignBookDetail() {
       {showNewExhibit && book.project_id && !isDesignReadOnly && (
         <NewExhibitModal
           projectId={book.project_id}
+          exhibits={exhibits}
           onClose={() => setShowNewExhibit(false)}
           onCreated={() => { setShowNewExhibit(false); refresh(); }}
         />

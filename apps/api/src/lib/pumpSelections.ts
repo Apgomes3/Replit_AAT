@@ -449,6 +449,7 @@ export function buildPumpLineItem(
     is_foam_fractionator: isFF,
     ...(isVenturi ? { venturi_flow_m3h: row?.venturi_flow_m3h != null ? Number(row.venturi_flow_m3h) : null } : {}),
     pump_quantity: pumpQuantity,
+    installation_location: row?.installation_location || null,
     effective_flow_m3h: effectiveFlow,
     project_equipment_item_id: row?.project_equipment_item_id || null,
     selected_pump: row?.pump_snapshot || null,
