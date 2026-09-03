@@ -110,16 +110,8 @@ describe('Thermal wall construction approval boundary', () => {
           approved_at: '2026-09-01T00:00:00.000Z',
         },
       },
-      tank_wall_layers: [{
-        material: 'Acrylic / PMMA',
-        thickness_mm: 12,
-        conductivity_w_m_k: 0.19,
-      }],
-      tank_wall_layer_overrides: {
-        material: false,
-        thickness_mm: false,
-        conductivity_w_m_k: false,
-      },
+      tank_wall_layers: [],
+      tank_wall_layer_overrides: {},
     });
   });
 
@@ -151,7 +143,6 @@ describe('Thermal wall construction approval boundary', () => {
     }]);
     expect(inputs.tank_wall_layer_overrides).toEqual({
       material: true,
-      thickness_mm: true,
       conductivity_w_m_k: true,
     });
     expect(inputs.tank_wall_override_justification).toBe('Project wall schedule.');
@@ -172,7 +163,7 @@ describe('Thermal wall construction approval boundary', () => {
       {
         tank_construction_type: 'acrylic',
         tank_wall_layers: [{
-          material: 'Acrylic / PMMA',
+          material: 'Project acrylic',
           thickness_mm: 20,
           conductivity_w_m_k: 0.19,
         }],

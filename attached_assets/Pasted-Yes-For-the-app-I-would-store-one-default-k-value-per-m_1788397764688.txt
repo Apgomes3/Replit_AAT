@@ -1,0 +1,82 @@
+Yes. For the app, I would store one default \(k\) value per material, while allowing an admin override because some materials vary significantly with composition.
+
+A good engineering starting table would be:
+
+Material	Recommended default k W/m·K	Typical range W/m·K	Comment
+Acrylic PMMA	0.19	0.18 to 0.21	Very stable choice
+FRP GRP	0.30	0.20 to 0.40	Depends strongly on resin and glass content
+Carbon steel	50	45 to 60	Very conductive
+Stainless steel	16	14 to 17	Much less conductive than carbon steel
+Glass	1.0	0.8 to 1.1	Good default for normal aquarium glass
+Concrete	1.7	1.2 to 2.5	Depends on density, moisture and aggregate
+
+For your aquarium thermal calculator, my recommended database defaults would therefore be:
+
+$$ \boxed{k_{PMMA}=0.19} $$ $$ \boxed{k_{FRP}=0.30} $$ $$ \boxed{k_{Glass}=1.00} $$ $$ \boxed{k_{Concrete}=1.70} $$
+
+all in:
+
+$$ W/(m\cdot K) $$
+
+For steel I would treat it separately.
+
+If you have an FRP tank with a steel reinforcement frame, do not average FRP and steel together.
+
+The water normally passes heat through the FRP wall. The steel reinforcement only occupies part of the area and can create local thermal bridges.
+
+So for a typical FRP aquarium tank:
+
+Wall material = FRP
+
+$$ k=0.30\;W/mK $$
+
+Then user enters, for example:
+
+$$ L=15\;mm=0.015\;m $$
+
+The material resistance becomes:
+
+$$ R=\frac{0.015}{0.30}=0.050\;m^2K/W $$
+
+and the FRP material U value:
+
+$$ U=\frac{1}{0.050}=20\;W/m^2K $$
+
+That number looks high, but remember this is only through the FRP material. Once we add the air side and water side films, the actual overall wall U becomes much lower.
+
+Concrete needs special attention
+
+Concrete is the one I would definitely allow the administrator to modify.
+
+A dense wet concrete wall can conduct heat considerably better than dry lightweight concrete.
+
+For a normal reinforced aquarium concrete structure, I would use:
+
+$$ \boxed{k=1.7\;W/mK} $$
+
+as the default unless project specific data are available.
+
+For example, 200 mm concrete:
+
+$$ R=\frac{0.20}{1.7}=0.118 $$ $$ U_{material}=8.5\;W/m^2K $$
+How I would build the app
+
+The material table should contain:
+
+Material	Default k	User enters
+Acrylic	0.19	Thickness
+FRP	0.30	Thickness
+Glass	1.00	Thickness
+Concrete	1.70	Thickness
+Carbon Steel	50	Thickness
+Stainless Steel	16	Thickness
+
+Then calculate automatically:
+
+$$ \boxed{R_{material}=\frac{Thickness}{k}} $$
+
+and ultimately:
+
+$$ \boxed{ U_{overall} = \frac{1} { R_{water} + R_{material} + R_{air} } } $$
+
+For multilayer walls, such as FRP plus insulation plus FRP, the app should add all layer resistances rather than trying to create one averaged \(k\). That will become particularly important for your insulated LSS tanks and equipment.

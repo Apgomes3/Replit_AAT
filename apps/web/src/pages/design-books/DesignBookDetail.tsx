@@ -2041,11 +2041,16 @@ export function thermalExhibitTankWallBasis(source: any, constructions: any[]) {
   const conductivity = Number(construction?.conductivity_w_m_k);
   const thicknessMm = Number(tank.wall_thickness_mm);
   if (!construction || !(conductivity > 0) || !(thicknessMm > 0)) return null;
+  const materialResistance = thicknessMm / 1000 / conductivity;
+  const overallResistance = 1 / 150 + materialResistance + 1 / 5;
   return normalizeThermalWallConstruction({
     ...construction,
     material: tank.wall_material,
     thickness_mm: thicknessMm,
-    u_value_w_m2_k: conductivity / (thicknessMm / 1000),
+    material_resistance_m2_k_w: materialResistance,
+    material_u_value_w_m2_k: 1 / materialResistance,
+    overall_resistance_m2_k_w: overallResistance,
+    u_value_w_m2_k: 1 / overallResistance,
     assumption_label: `Exhibit tank wall — ${tank.wall_material}, ${thicknessMm} mm`,
     source_basis: 'Linked exhibit tank with governed material conductivity',
     source_reference: tank.tank_code || tank.tank_id || construction.source_reference,
@@ -2142,7 +2147,6 @@ type ThermalWallForm = {
   construction_code: string;
   construction_label: string;
   material: string;
-  thickness_mm: string | number;
   conductivity_w_m_k: string | number;
   source_basis: string;
   source_reference: string;
@@ -2155,8 +2159,6 @@ export function thermalWallReplacementIsValid(form: Partial<ThermalWallForm>) {
     String(form.construction_code || '').trim() &&
     String(form.construction_label || '').trim() &&
     String(form.material || '').trim() &&
-    Number.isFinite(Number(form.thickness_mm)) &&
-    Number(form.thickness_mm) > 0 &&
     Number.isFinite(Number(form.conductivity_w_m_k)) &&
     Number(form.conductivity_w_m_k) > 0 &&
     String(form.source_basis || '').trim() &&
@@ -2171,7 +2173,6 @@ function thermalWallFormFrom(construction: any, preserveVersion = false): Therma
     construction_code: normalized?.code || '',
     construction_label: normalized?.label || '',
     material: normalized?.material || '',
-    thickness_mm: normalized?.thickness_mm ?? '',
     conductivity_w_m_k: normalized?.conductivity_w_m_k ?? '',
     source_basis: normalized?.source_basis || 'AAT Foundations',
     source_reference: normalized?.source_reference || '',
@@ -2536,7 +2537,6 @@ export function ThermalWallConstructionLibrary({
         expected_current_id: current.id,
         construction_label: replacement.construction_label,
         material: replacement.material,
-        thickness_mm: Number(replacement.thickness_mm),
         conductivity_w_m_k: Number(replacement.conductivity_w_m_k),
         source_basis: replacement.source_basis,
         source_reference: replacement.source_reference,
@@ -2581,7 +2581,7 @@ export function ThermalWallConstructionLibrary({
                       {pendingWallApproval.current.label} · {pendingWallApproval.current.basis_version || pendingWallApproval.current.version}
                     </p>
                     <p className="mt-1 text-sm text-amber-900">
-                      {pendingWallApproval.current.material} · {pendingWallApproval.current.thickness_mm} {pendingWallApproval.current.thickness_units || 'mm'} · {pendingWallApproval.current.conductivity_w_m_k} {pendingWallApproval.current.conductivity_units || 'W/m·K'}
+                       {pendingWallApproval.current.material} · {pendingWallApproval.current.conductivity_w_m_k} {pendingWallApproval.current.conductivity_units || 'W/m·K'}
                     </p>
                   </div>
                 </div>
@@ -2593,7 +2593,6 @@ export function ThermalWallConstructionLibrary({
                 </p>
                 <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm text-[#263746] sm:grid-cols-2">
                   <div><dt className="inline text-[#456b7d]">Material: </dt><dd className="inline">{pendingWallApproval.replacement.material}</dd></div>
-                  <div><dt className="inline text-[#456b7d]">Thickness: </dt><dd className="inline">{pendingWallApproval.replacement.thickness_mm} mm</dd></div>
                   <div><dt className="inline text-[#456b7d]">Conductivity: </dt><dd className="inline">{pendingWallApproval.replacement.conductivity_w_m_k} W/m·K</dd></div>
                   <div><dt className="inline text-[#456b7d]">Source: </dt><dd className="inline">{pendingWallApproval.replacement.source_basis} · {pendingWallApproval.replacement.source_reference}</dd></div>
                 </dl>
@@ -2624,11 +2623,11 @@ export function ThermalWallConstructionLibrary({
           <div>
             <div className="flex items-center gap-2 font-semibold text-stone-900">
               <Layers className="h-4 w-4 text-[#456b7d]" />
-              Thermal wall construction defaults
+              Thermal wall material conductivity
             </div>
             <div className="text-xs text-stone-500">
-              {visibleCurrentWallItems.length} current approved construction{visibleCurrentWallItems.length === 1 ? '' : 's'}.
-              Governed values are versioned; captured calculation snapshots remain unchanged.
+               {visibleCurrentWallItems.length} current approved material{visibleCurrentWallItems.length === 1 ? '' : 's'}.
+               Conductivity is versioned; tank thickness comes from each exhibit tank.
             </div>
           </div>
           {canManageLibrary && (
@@ -2637,7 +2636,7 @@ export function ThermalWallConstructionLibrary({
               onClick={() => setShowWallLibrary(value => !value)}
               className="rounded-lg border border-stone-200 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
             >
-              {showWallLibrary ? 'Close wall library' : 'Manage wall defaults'}
+               {showWallLibrary ? 'Close material library' : 'Manage conductivity'}
             </button>
           )}
         </div>
@@ -2645,7 +2644,7 @@ export function ThermalWallConstructionLibrary({
           {visibleCurrentWallItems.map(item => (
             <div key={item.id || item.code} className="rounded-lg bg-stone-50 px-3 py-2">
               <div className="text-xs font-semibold text-stone-700">{item.label || item.construction_label}</div>
-              <div className="mt-1 text-xs text-stone-500">{item.material} · {item.thickness_mm} mm · {item.conductivity_w_m_k} W/m·K</div>
+               <div className="mt-1 text-xs text-stone-500">{item.material} · k {item.conductivity_w_m_k} W/m·K</div>
               <div className="mt-1 text-[11px] text-stone-400">{item.basis_version || item.version}</div>
             </div>
           ))}
@@ -2656,7 +2655,7 @@ export function ThermalWallConstructionLibrary({
             <div>
               <div className="flex items-center gap-2 font-semibold text-stone-900">
                 <LibraryBig className="h-4 w-4 text-[#456b7d]" />
-                Approved and superseded history
+                 Approved and superseded conductivity history
               </div>
               <p className="mt-1 text-xs text-stone-500">Review source evidence and approval metadata before adding a successor version.</p>
             </div>
@@ -2669,8 +2668,8 @@ export function ThermalWallConstructionLibrary({
                 <table className="min-w-[900px] w-full text-left text-xs">
                   <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-500">
                     <tr>
-                      <th className="px-3 py-2">Construction / version</th>
-                      <th className="px-3 py-2">Layer</th>
+                      <th className="px-3 py-2">Material / version</th>
+                      <th className="px-3 py-2">Conductivity</th>
                       <th className="px-3 py-2">Source</th>
                       <th className="px-3 py-2">Status</th>
                       <th className="px-3 py-2">Approval metadata</th>
@@ -2685,7 +2684,7 @@ export function ThermalWallConstructionLibrary({
                         </td>
                         <td className="px-3 py-3 text-stone-600">
                           <div>{item.material}</div>
-                          <div className="mt-1">{item.thickness_mm} {item.thickness_units} · {item.conductivity_w_m_k} {item.conductivity_units}</div>
+                           <div className="mt-1">k {item.conductivity_w_m_k} {item.conductivity_units}</div>
                         </td>
                         <td className="max-w-[220px] px-3 py-3 text-stone-600">
                           <div>{item.source_basis}</div>
@@ -2739,14 +2738,13 @@ export function ThermalWallConstructionLibrary({
                 <label><span className={labelClass}>Construction label</span><input value={wallForm.construction_label} onChange={event => setWallForm(current => ({ ...current, construction_label: event.target.value }))} className={fieldClass} /></label>
                 <label><span className={labelClass}>New version</span><input value={wallForm.version} onChange={event => setWallForm(current => ({ ...current, version: event.target.value }))} className={fieldClass} placeholder="AAT_FOUNDATIONS_WALL_V2.0" /></label>
                 <label><span className={labelClass}>Material</span><input value={wallForm.material} onChange={event => setWallForm(current => ({ ...current, material: event.target.value }))} className={fieldClass} /></label>
-                <label><span className={labelClass}>Thickness (mm)</span><input type="number" min="0" step="any" value={wallForm.thickness_mm} onChange={event => setWallForm(current => ({ ...current, thickness_mm: event.target.value }))} className={fieldClass} /></label>
                 <label><span className={labelClass}>Conductivity (W/m·K)</span><input type="number" min="0" step="any" value={wallForm.conductivity_w_m_k} onChange={event => setWallForm(current => ({ ...current, conductivity_w_m_k: event.target.value }))} className={fieldClass} /></label>
                 <label><span className={labelClass}>Source / standard</span><input value={wallForm.source_basis} onChange={event => setWallForm(current => ({ ...current, source_basis: event.target.value }))} className={fieldClass} /></label>
                 <label><span className={labelClass}>Source version / reference</span><input value={wallForm.source_reference} onChange={event => setWallForm(current => ({ ...current, source_reference: event.target.value }))} className={fieldClass} /></label>
               </div>
               <label className="mt-3 block"><span className={labelClass}>Engineering notes</span><textarea rows={2} value={wallForm.notes} onChange={event => setWallForm(current => ({ ...current, notes: event.target.value }))} className={`${fieldClass} resize-none`} placeholder="Record the basis for this successor version…" /></label>
               {!wallFormValid && (
-                <p className="mt-2 text-xs text-red-700">Complete the construction, version, material, source fields and enter positive thickness and conductivity values.</p>
+                 <p className="mt-2 text-xs text-red-700">Complete the construction, version, material, source fields and enter a positive conductivity value.</p>
               )}
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-[11px] text-[#9d6337]">Approval actor and time are captured from the signed-in account.</p>
@@ -3297,7 +3295,7 @@ function ThermalTab({
   const wallThicknessMm = Number(form.wall_thickness_mm);
   const wallConductivity = Number(form.wall_conductivity_w_m_k);
   const governedWallUValue = wallThicknessMm > 0 && wallConductivity > 0
-    ? wallConductivity / (wallThicknessMm / 1000)
+    ? 1 / (1 / 150 + wallThicknessMm / 1000 / wallConductivity + 1 / 5)
     : selectedConstructionDefault?.u_value_w_m2_k ??
       evidenceBasis.wall?.u_value_w_m2_k ?? '';
   const wallUValueOverrideAllowed = draftOverridesAllowed &&
@@ -3687,88 +3685,50 @@ function ThermalTab({
             )}
             <div className="space-y-3 rounded-xl border border-[#d8d4cb] bg-[#faf9f5] p-4">
               <div>
-                <h4 className="text-sm font-semibold text-[#263746]">Effective wall value and evidence</h4>
+                <h4 className="text-sm font-semibold text-[#263746]">Wall calculations by exhibit tank</h4>
                 <p className="mt-1 text-xs text-[#71808a]">
-                  The governed construction is the effective basis unless a reviewed U-value or explicit wall layer overrides it.
+                  Each tank is calculated separately. Material and thickness come from the exhibit tank; conductivity comes from the governed material library. No average U-value is used.
                 </p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label>
-                  <span className={labelClass}>Tank construction type</span>
-                  <select
-                    aria-label="Tank construction type"
-                    value={form.tank_construction_type || ''}
-                    onChange={event => selectConstruction(event.target.value)}
-                    disabled={readOnly}
-                    className={fieldClass}
-                  >
-                    <option value="">Custom / explicit wall layers</option>
-                    {constructionDefaults.map(item => (
-                      <option key={item.code} value={item.code}>{item.label}</option>
+              <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
+                <table className="w-full min-w-[980px] text-left text-xs">
+                  <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-500">
+                    <tr>
+                      <th className="px-3 py-2">Exhibit / tank</th>
+                      <th className="px-3 py-2">Material</th>
+                      <th className="px-3 py-2 text-right">Thickness</th>
+                      <th className="px-3 py-2 text-right">k</th>
+                      <th className="px-3 py-2 text-right">R material</th>
+                      <th className="px-3 py-2 text-right">U material</th>
+                      <th className="px-3 py-2 text-right">U overall</th>
+                      <th className="px-3 py-2 text-right">Wall load</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {(detail?.results?.tank_wall_calculations || []).map((wall: any) => (
+                      <tr key={wall.tank_id || `${wall.exhibit_id}-${wall.tank_code}`}>
+                        <td className="px-3 py-3">
+                          <div className="font-semibold text-stone-800">{wall.exhibit_code || wall.exhibit_id || 'Unassigned exhibit'}</div>
+                          <div className="mt-0.5 font-mono text-[11px] text-stone-500">{wall.tank_code || wall.tank_id}</div>
+                        </td>
+                        <td className="px-3 py-3 text-stone-700">{wall.material || 'Missing'}</td>
+                        <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.thickness_mm, 2)} mm</td>
+                        <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.conductivity_w_m_k, 3)} W/m·K</td>
+                        <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.material_resistance_m2_k_w, 4)} m²K/W</td>
+                        <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.material_u_value_w_m2_k, 2)} W/m²K</td>
+                        <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.overall_u_value_w_m2_k, 2)} W/m²K</td>
+                        <td className="px-3 py-3 text-right font-mono">{thermalNumber(wall.wall_conduction_kw, 2)} kW</td>
+                      </tr>
                     ))}
-                    {!constructionDefaults.some(item => item.code === form.tank_construction_type) &&
-                      form.tank_construction_type && (
-                        <option value={form.tank_construction_type}>{evidenceBasis.wall?.construction_label || form.tank_construction_type}</option>
-                      )}
-                  </select>
-                </label>
-                <WallUValueControl
-                  key={`${selected.system_id}:${form.tank_construction_type || 'custom'}`}
-                  governedValue={governedWallUValue}
-                  overrideValue={form.reviewed_u_value_w_m2_k}
-                  canOverride={wallUValueOverrideAllowed}
-                  onChange={event => update('reviewed_u_value_w_m2_k', event.target.value)}
-                  onOverride={() => update('reviewed_u_value_w_m2_k', governedWallUValue)}
-                  onReset={() => update('reviewed_u_value_w_m2_k', '')}
-                  info={wallThicknessInfo}
-                />
-                <label>
-                  <span className={labelClass}>Effective wall material{wallOverrideFlags.material ? ' · Override' : ''}</span>
-                  <input value={form.wall_material || ''} onChange={e => update('wall_material', e.target.value)}
-                    disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
-                  {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.material}</span>}
-                </label>
-                <label>
-                  <span className={labelClass}>Effective wall layer thickness (mm){wallOverrideFlags.thickness_mm ? ' · Override' : ''}</span>
-                  <input aria-label="Wall layer thickness" type="number" min="0" step="any" value={form.wall_thickness_mm ?? ''} onChange={e => update('wall_thickness_mm', e.target.value)} disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
-                  {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.thickness_mm} mm</span>}
-                </label>
-                <label>
-                  <span className={labelClass}>Effective wall conductivity (W/m·K){wallOverrideFlags.conductivity_w_m_k ? ' · Override' : ''}</span>
-                  <input aria-label="Wall conductivity" type="number" min="0" step="any" value={form.wall_conductivity_w_m_k ?? ''} onChange={e => update('wall_conductivity_w_m_k', e.target.value)} disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k} className={fieldClass} />
-                  {selectedConstructionDefault && <span className="mt-1 block text-[11px] text-stone-500">Default: {selectedConstructionDefault.conductivity_w_m_k} {selectedConstructionDefault.conductivity_units}</span>}
-                </label>
+                    {!(detail?.results?.tank_wall_calculations || []).length && (
+                      <tr><td colSpan={8} className="px-3 py-6 text-center text-stone-500">Save the calculation to resolve each linked tank wall.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-              {selectedConstructionDefault && (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
-                  <div className="text-xs text-stone-600">
-                    {hasWallLayerOverride
-                      ? 'Effective values differ from the frozen governed default.'
-                      : 'Effective values match the governed default.'}
-                  </div>
-                  <button type="button" onClick={resetWallLayer}
-                    disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k || !hasWallLayerOverride}
-                    className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                    Reset to governed default
-                  </button>
-                </div>
-              )}
-              {hasWallLayerOverride && (
-                <label>
-                  <span className={labelClass}>Wall-layer override justification (optional)</span>
-                  <input value={form.tank_wall_override_justification || ''}
-                    onChange={event => update('tank_wall_override_justification', event.target.value)}
-                    disabled={!draftOverridesAllowed || !!form.reviewed_u_value_w_m2_k}
-                    className={fieldClass} />
-                </label>
-              )}
-              {evidenceBasis.wall && (
-                <div className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
-                  Saved calculation basis: <b>{evidenceBasis.wall.source}</b> · {thermalNumber(evidenceBasis.wall.u_value_w_m2_k, 2)} {evidenceBasis.wall.units}
-                  {evidenceBasis.wall.reviewed ? ' · reviewed engineering value' : ' · governed default assumption'}
-                  {Object.values(evidenceBasis.wall.layer_override_flags || {}).some(Boolean) ? ' · designer layer override' : ''}
-                </div>
-              )}
+              <p className="text-[11px] text-[#71808a]">
+                Update material or thickness on the exhibit tank. Update governed conductivity in Platform Admin → Thermal Wall Materials.
+              </p>
             </div>
           </section>
 

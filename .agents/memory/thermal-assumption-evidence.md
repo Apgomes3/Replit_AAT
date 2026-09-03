@@ -1,10 +1,10 @@
 ---
 name: Thermal assumption evidence
-description: Governance rule for temperature-range derivation and tank-construction U-value assumptions.
+description: Governance rule for temperature-range derivation and tank wall resistance evidence.
 ---
 
-Thermal calculations must derive water temperature from the arithmetic midpoint of a complete, valid, consistent linked-exhibit range. Reviewed overrides may change the applied temperature, but must retain the source minimum, maximum, and midpoint. Standard tank constructions resolve from one approved, versioned wall-layer basis; calculations freeze both governed defaults and designer-effective layers. A reviewed custom U-value remains a separate alternative and never combines with layer resistance.
+Thermal calculations must derive water temperature from the arithmetic midpoint of a complete, valid, consistent linked-exhibit range. Reviewed overrides may change the applied temperature, but must retain the source minimum, maximum, and midpoint. Wall conductivity is governed per material, while thickness and layer order belong to each exhibit tank. For multilayer walls, sum every layer resistance `L/k`; never average conductivity. Add water-side and air-side film resistances only after summing the material layers. Calculate each linked tank separately and sum heat-transfer contributions rather than averaging U-values across tanks.
 
-**Why:** A single mutable temperature or unexplained wall coefficient can make saved thermal evidence impossible to audit. Source evidence and the exact applied assumption must remain frozen through review, approval, release, and version restore.
+**Why:** A single mutable temperature or unexplained wall coefficient can make saved thermal evidence impossible to audit. Averaged conductivity or U-values are physically wrong for series layers and conceal differences between tank constructions.
 
-**How to apply:** Block missing, reversed, incomplete, or conflicting linked ranges. Resolve new wall selections only from the active governed record, preserve historical snapshots, and persist temperature plus default/effective wall evidence in both input and result snapshots. Bump the thermal calculation version whenever the governed basis changes.
+**How to apply:** Block missing, reversed, incomplete, or conflicting linked ranges. Resolve each wall layer against the active governed material record, preserve historical snapshots, and persist per-layer resistance plus per-tank wall evidence. Bump the thermal calculation version whenever the governed basis changes.

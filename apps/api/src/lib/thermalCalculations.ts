@@ -246,6 +246,9 @@ function tankGeometry(tank: any) {
       ? 'rectangular default (custom tank)'
       : 'rectangular inner perimeter × water height';
   }
+  const sourceWallLayers = Array.isArray(tank?.wall_layers) && tank.wall_layers.length
+    ? tank.wall_layers
+    : null;
   const volume = positive(
     tank?.effective_operating_volume_m3 ?? tank?.design_volume_m3 ??
     tank?.operating_volume_m3 ?? tank?.project_operating_volume_m3,
@@ -273,6 +276,7 @@ function tankGeometry(tank: any) {
     wall_thickness_mm: positive(
       tank?.eff_wall_thickness_mm ?? tank?.wall_thickness_mm,
     ),
+    wall_layers: sourceWallLayers,
     dimensions: {
       inner_length_mm: length,
       inner_width_mm: width,
@@ -471,6 +475,21 @@ function calculatedWallProperties(thicknessM: number | null, conductivity: numbe
   };
 }
 
+function calculatedWallPropertiesFromResistance(materialResistance: number | null) {
+  if (materialResistance == null || materialResistance <= 0) return null;
+  const materialUValue = 1 / materialResistance;
+  const overallResistance =
+    1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+    materialResistance +
+    1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k;
+  return {
+    material_resistance_m2_k_w: materialResistance,
+    material_u_value_w_m2_k: materialUValue,
+    overall_resistance_m2_k_w: overallResistance,
+    overall_u_value_w_m2_k: 1 / overallResistance,
+  };
+}
+
 function resolveWallUValue(source: any, inputs: any, reasons: string[]) {
   const sourceTankWall = (source?.linked_tanks || []).find((tank: any) =>
     positive(tank?.wall_thickness_mm) != null && String(tank?.wall_material || '').trim());
@@ -551,7 +570,7 @@ function resolveWallUValue(source: any, inputs: any, reasons: string[]) {
       (sum: number, layer: any) => sum + layer.thickness_m / layer.conductivity_w_m_k,
       0,
     );
-    const properties = calculatedWallProperties(materialResistance, 1);
+    const properties = calculatedWallPropertiesFromResistance(materialResistance);
     return {
       value: properties!.overall_u_value_w_m2_k,
       ...properties,
@@ -596,7 +615,7 @@ function resolveWallUValue(source: any, inputs: any, reasons: string[]) {
     (sum: number, layer: any) => sum + layer.thickness_m / layer.conductivity_w_m_k,
     0,
   );
-  const properties = calculatedWallProperties(materialResistance, 1);
+  const properties = calculatedWallPropertiesFromResistance(materialResistance);
   return {
     value: properties!.overall_u_value_w_m2_k,
     ...properties,
@@ -618,36 +637,65 @@ function resolveWallUValue(source: any, inputs: any, reasons: string[]) {
 
 function resolveTankWallCalculation(tank: any, inputs: any, reasons: string[]) {
   const label = tank?.tank_code || tank?.tank_id || 'Linked tank';
-  const material = String(tank?.wall_material || '').trim();
-  const thicknessMm = positive(tank?.wall_thickness_mm);
-  const construction = constructionForWallMaterial(material);
-  const conductivity = positive(construction?.conductivity_w_m_k);
+  const sourceLayers = Array.isArray(tank?.wall_layers) && tank.wall_layers.length
+    ? tank.wall_layers
+    : [{
+        material: tank?.wall_material,
+        thickness_mm: tank?.wall_thickness_mm,
+      }];
+  const explicitLayers = inputs.tank_wall_layers_by_tank?.[tank?.tank_id] ||
+    inputs.tank_wall_layers_by_exhibit?.[tank?.exhibit_id];
+  const layers = Array.isArray(explicitLayers) && explicitLayers.length
+    ? explicitLayers
+    : sourceLayers;
   const area = resolvedWallArea(tank, inputs);
-  if (!material) reasons.push(`${label} requires a wall material before Thermal calculation.`);
-  if (thicknessMm == null) reasons.push(`${label} requires a positive wall thickness before Thermal calculation.`);
-  if (!construction || conductivity == null) {
-    reasons.push(`${label} wall material "${material || 'missing'}" has no governed thermal conductivity.`);
+  const resolvedLayers = layers.map((layer: any) => {
+    const material = String(layer?.material || '').trim();
+    const construction = constructionForWallMaterial(material);
+    return {
+      material: material || null,
+      thickness_mm: positive(layer?.thickness_mm),
+      conductivity_w_m_k: positive(layer?.conductivity_w_m_k ?? construction?.conductivity_w_m_k),
+      construction_type: construction?.code || null,
+    };
+  });
+  if (resolvedLayers.some(layer => !layer.material)) {
+    reasons.push(`${label} requires a material for every wall layer before Thermal calculation.`);
+  }
+  if (resolvedLayers.some(layer => layer.thickness_mm == null)) {
+    reasons.push(`${label} requires a positive thickness for every wall layer before Thermal calculation.`);
+  }
+  if (resolvedLayers.some(layer => layer.conductivity_w_m_k == null)) {
+    reasons.push(`${label} has a wall material without governed thermal conductivity.`);
   }
   if (area == null) reasons.push(`${label} requires a positive exposed wall area before Thermal calculation.`);
-  const properties = calculatedWallProperties(
-    thicknessMm == null ? null : thicknessMm / 1000,
-    conductivity,
-  );
+  const materialResistance = resolvedLayers.every(layer =>
+    layer.thickness_mm != null && layer.conductivity_w_m_k != null)
+    ? resolvedLayers.reduce(
+        (sum: number, layer: any) =>
+          sum + (layer.thickness_mm / 1000) / layer.conductivity_w_m_k,
+        0,
+      )
+    : null;
+  const properties = calculatedWallPropertiesFromResistance(materialResistance);
   return {
     tank_id: tank?.tank_id || null,
     tank_code: tank?.tank_code || null,
     exhibit_id: tank?.exhibit_id || null,
     exhibit_code: tank?.exhibit_code || null,
     quantity: tank?.quantity || 1,
-    material: material || null,
-    construction_type: construction?.code || null,
-    thickness_mm: thicknessMm,
-    conductivity_w_m_k: conductivity,
+    material: resolvedLayers.length === 1 ? resolvedLayers[0].material : null,
+    construction_type: resolvedLayers.length === 1 ? resolvedLayers[0].construction_type : null,
+    thickness_mm: resolvedLayers.length === 1 ? resolvedLayers[0].thickness_mm : null,
+    conductivity_w_m_k: resolvedLayers.length === 1 ? resolvedLayers[0].conductivity_w_m_k : null,
     water_side_h_w_m2_k: THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k,
     air_side_h_w_m2_k: THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k,
     exposed_wall_area_m2: area,
+    layers: resolvedLayers,
     ...properties,
-    source: 'linked exhibit tank with governed material conductivity',
+    source: resolvedLayers.length > 1
+      ? 'linked exhibit tank multilayer wall with governed material conductivity'
+      : 'linked exhibit tank with governed material conductivity',
   };
 }
 
@@ -883,41 +931,34 @@ function calculateCase(source: any, inputs: any, factors = { surface: 1, evapora
     calculated_temperature_c: waterTemperature,
     reviewed_override_used: common.water.reviewed_override_used === true,
   };
+  const singleTankWall = tankWallBreakdown.length === 1 ? tankWallBreakdown[0] : null;
   const wallConstructionBasis = {
-    construction_type: common.wall.construction?.code || null,
-    construction_label: common.wall.construction?.label ||
-      common.wall.effective_layers?.[0]?.material ||
-      common.wall.layers?.[0]?.material ||
-      null,
-    material: common.wall.effective_layers?.[0]?.material ||
-      common.wall.layers?.[0]?.material ||
-      common.wall.construction?.material ||
-      null,
-    thickness_mm: common.wall.effective_layers?.[0]?.thickness_m != null
-      ? common.wall.effective_layers[0].thickness_m * 1000
-      : common.wall.layers?.[0]?.thickness_m != null
-        ? common.wall.layers[0].thickness_m * 1000
-        : common.wall.construction?.thickness_mm ?? null,
-    conductivity_w_m_k: common.wall.effective_layers?.[0]?.conductivity_w_m_k ??
-      common.wall.layers?.[0]?.conductivity_w_m_k ??
-      common.wall.construction?.conductivity_w_m_k ??
-      null,
-    u_value_w_m2_k: uValue,
+    construction_type: singleTankWall?.construction_type || null,
+    construction_label: singleTankWall?.material || null,
+    material: singleTankWall?.material || null,
+    thickness_mm: singleTankWall?.thickness_mm ?? null,
+    conductivity_w_m_k: singleTankWall?.conductivity_w_m_k ?? null,
+    material_resistance_m2_k_w: singleTankWall?.material_resistance_m2_k_w ?? null,
+    material_u_value_w_m2_k: singleTankWall?.material_u_value_w_m2_k ?? null,
+    overall_resistance_m2_k_w: singleTankWall?.overall_resistance_m2_k_w ?? null,
+    u_value_w_m2_k: singleTankWall?.overall_u_value_w_m2_k ?? null,
     units: 'W/m²·K',
     thickness_units: 'mm',
     conductivity_units: 'W/m·K',
-    source: common.wall.source,
-    reviewed: common.wall.reviewed === true,
-    assumption_label: common.wall.assumption_label || null,
-    basis_version: common.wall.basis_version || null,
-    source_basis: common.wall.source_basis || null,
-    source_reference: common.wall.source_reference || null,
-    approval: common.wall.approval || null,
-    layers: common.wall.effective_layers || common.wall.layers || null,
-    default_layers: common.wall.default_layers || null,
-    effective_layers: common.wall.effective_layers || common.wall.layers || null,
-    layer_override_flags: common.wall.layer_override_flags || {},
-    layer_override_justification: common.wall.layer_override_justification || null,
+    source: singleTankWall
+      ? 'linked exhibit tank with governed material conductivity'
+      : 'separate linked exhibit tank wall calculations',
+    reviewed: false,
+    assumption_label: 'Tank thickness from exhibit; conductivity from governed material library',
+    basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
+    source_basis: 'Exhibit tank and governed Thermal material library',
+    source_reference: null,
+    approval: null,
+    layers: null,
+    default_layers: null,
+    effective_layers: null,
+    layer_override_flags: {},
+    layer_override_justification: null,
     tank_wall_calculations: tankWallBreakdown,
     mixed_constructions: new Set(
       tankWallBreakdown.map((wall: any) =>

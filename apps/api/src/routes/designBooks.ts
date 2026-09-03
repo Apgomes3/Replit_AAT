@@ -628,13 +628,8 @@ function thermalWallExpectedCurrentMatches(current: any, expectedCurrentId: stri
 }
 
 function thermalWallConstructionDefaultRow(row: any) {
-  const thicknessMm = Number(row.thickness_mm);
+  const thicknessMm = row.thickness_mm == null ? null : Number(row.thickness_mm);
   const conductivity = Number(row.conductivity_w_m_k);
-  const uValue = 1 / (
-    1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
-    thicknessMm / 1000 / conductivity +
-    1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
-  );
   return {
     id: row.id || null,
     code: row.construction_code || row.code,
@@ -642,7 +637,6 @@ function thermalWallConstructionDefaultRow(row: any) {
     material: row.material,
     thickness_mm: thicknessMm,
     conductivity_w_m_k: conductivity,
-    u_value_w_m2_k: uValue,
     units: 'W/m²·K',
     thickness_units: row.thickness_units || 'mm',
     conductivity_units: row.conductivity_units || 'W/m·K',
@@ -723,11 +717,21 @@ async function resolveThermalWallConstructionInputs(
   const requestedLayers = Array.isArray(rawInputs.tank_wall_layers) &&
     rawInputs.tank_wall_layers.length
     ? rawInputs.tank_wall_layers
-    : [{
-        material: defaultRecord.material,
-        thickness_mm: defaultRecord.thickness_mm,
-        conductivity_w_m_k: defaultRecord.conductivity_w_m_k,
-      }];
+    : [];
+  if (!requestedLayers.length) {
+    return {
+      ...rawInputs,
+      tank_construction_type: constructionCode,
+      tank_wall_default_basis: defaultRecord,
+      tank_wall_layers: [],
+      tank_wall_layer_overrides: {},
+      tank_wall_override_justification: String(
+        rawInputs.tank_wall_override_justification ||
+        rawInputs.wall_layer_override_justification ||
+        '',
+      ).trim(),
+    };
+  }
   if (requestedLayers.length !== 1) {
     const error: any = new Error('A standard Thermal construction requires exactly one effective wall layer.');
     error.status = 400;
@@ -739,14 +743,13 @@ async function resolveThermalWallConstructionInputs(
   const thickness = positiveCorrelationCoefficient(requested.thickness_mm);
   const conductivity = positiveCorrelationCoefficient(requested.conductivity_w_m_k);
   if (!material || thickness == null || conductivity == null) {
-    const error: any = new Error('Wall material, thickness, and conductivity are required; thickness and conductivity must be positive.');
+    const error: any = new Error('Wall material and positive thickness and conductivity are required for an explicit wall-layer override.');
     error.status = 400;
     error.code = 'THERMAL_WALL_LAYER_INVALID';
     throw error;
   }
   const overrides = {
     material: material !== defaultRecord.material,
-    thickness_mm: Math.abs(thickness - defaultRecord.thickness_mm) > 1e-9,
     conductivity_w_m_k: Math.abs(conductivity - defaultRecord.conductivity_w_m_k) > 1e-9,
   };
   if (Object.values(overrides).some(Boolean) && editableStatus !== 'Draft') {
@@ -1106,17 +1109,16 @@ router.post(
     const constructionCode = routeParam(req.params.constructionCode).trim().toLowerCase();
     const version = String(req.body.version || '').trim();
     const material = String(req.body.material || '').trim();
-    const thickness = positiveCorrelationCoefficient(req.body.thickness_mm);
     const conductivity = positiveCorrelationCoefficient(req.body.conductivity_w_m_k);
     const sourceBasis = String(req.body.source_basis || '').trim();
     const sourceReference = String(req.body.source_reference || '').trim();
     const expectedCurrentId = String(req.body.expected_current_id || '').trim();
-    if (!constructionCode || !version || !material || thickness == null || conductivity == null ||
+    if (!constructionCode || !version || !material || conductivity == null ||
         !sourceBasis || !sourceReference) {
       return res.status(400).json({
         error: {
           code: 'THERMAL_WALL_CONSTRUCTION_REQUIRED',
-          message: 'Version, material, positive thickness and conductivity, source basis, and source reference are required.',
+          message: 'Version, material, positive conductivity, source basis, and source reference are required.',
         },
       });
     }
@@ -1168,18 +1170,16 @@ router.post(
       }
       const inserted = await client.query(
         `INSERT INTO thermal_wall_construction_defaults
-           (construction_code, construction_label, material, thickness_mm,
-            conductivity_w_m_k, thickness_units, conductivity_units, version,
+           (construction_code, construction_label, material,
+            conductivity_w_m_k, conductivity_units, version,
             source_basis, source_reference, notes, status, approved_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'approved',$12)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved',$11)
          RETURNING *`,
         [
           constructionCode,
           constructionLabel,
           material,
-          thickness,
           conductivity,
-          String(req.body.thickness_units || 'mm').trim() || 'mm',
           String(req.body.conductivity_units || 'W/m·K').trim() || 'W/m·K',
           version,
           sourceBasis,

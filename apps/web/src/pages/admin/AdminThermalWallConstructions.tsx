@@ -32,15 +32,15 @@ export default function AdminThermalWallConstructions() {
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <PageHeader
-        title="Thermal Wall Constructions"
-        subtitle="Governed wall-layer defaults used by Thermal calculations. Review evidence and approve successor versions without opening a Design Book."
+        title="Thermal Wall Materials"
+        subtitle="Governed material conductivity values used with the wall thickness stored on each exhibit tank."
       />
 
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
         <p>
-          Approved versions are selected by new Thermal calculations. Existing calculations keep their
-          frozen wall evidence when a replacement is approved.
+          Approved conductivity versions are selected by new Thermal calculations. Tank thickness remains
+          owned by the exhibit tank, and existing calculations keep their frozen evidence.
         </p>
       </div>
 

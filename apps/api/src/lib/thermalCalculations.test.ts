@@ -29,6 +29,8 @@ function readySource(shapeType = 'Rectangular') {
       inner_width_mm: 2000,
       design_water_level_mm: 1500,
       operating_volume_m3: 15,
+      primary_material: 'Acrylic',
+      wall_thickness_mm: 12,
     }],
     exhibitCalculations: [{
       status: 'valid',
@@ -102,57 +104,47 @@ describe('AAT thermal calculation', () => {
     construction => {
       const inputs = readyInputs();
       delete (inputs as any).reviewed_u_value_w_m2_k;
-      const result = calculateThermalCalculation(readySource(), {
+      const source = readySource();
+      source.linked_tanks[0].wall_material = construction.material;
+      source.linked_tanks[0].wall_thickness_mm = construction.thickness_mm;
+      const result = calculateThermalCalculation(source, {
         ...inputs,
         tank_construction_type: construction.code,
       });
 
       expect(result.status).toBe('Ready');
-      expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(
-        construction.conductivity_w_m_k / (construction.thickness_mm / 1000),
-        10,
+      const expectedOverallU = 1 / (
+        1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+        construction.thickness_mm / 1000 / construction.conductivity_w_m_k +
+        1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
       );
+      expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(expectedOverallU, 10);
       expect(result.wall_construction_basis).toMatchObject({
         construction_type: construction.code,
-        construction_label: construction.label,
+        construction_label: construction.material,
         material: construction.material,
         thickness_mm: construction.thickness_mm,
         conductivity_w_m_k: construction.conductivity_w_m_k,
         units: 'W/m²·K',
         thickness_units: 'mm',
         conductivity_units: 'W/m·K',
-        source: 'AAT Foundations governed wall-layer default',
+        source: 'linked exhibit tank with governed material conductivity',
         reviewed: false,
-        assumption_label: construction.assumption_label,
+        assumption_label: 'Tank thickness from exhibit; conductivity from governed material library',
         basis_version: THERMAL_CONSTRUCTION_BASIS_VERSION,
-        source_reference: construction.source_reference,
+        source_reference: null,
       });
-      expect(result.wall_construction_basis.u_value_w_m2_k).toBeCloseTo(
-        construction.conductivity_w_m_k / (construction.thickness_mm / 1000),
-        10,
-      );
+      expect(result.wall_construction_basis.u_value_w_m2_k).toBeCloseTo(expectedOverallU, 10);
       expect(result.inputs.wall_construction_basis).toEqual(result.wall_construction_basis);
       expect(result.wall_construction_basis).toMatchObject({
-        default_layers: [{
-          material: construction.material,
-          thickness_m: construction.thickness_mm / 1000,
-          conductivity_w_m_k: construction.conductivity_w_m_k,
-        }],
-        effective_layers: [{
-          material: construction.material,
-          thickness_m: construction.thickness_mm / 1000,
-          conductivity_w_m_k: construction.conductivity_w_m_k,
-        }],
-        layer_override_flags: {
-          material: false,
-          thickness_mm: false,
-          conductivity_w_m_k: false,
-        },
+        default_layers: null,
+        effective_layers: null,
+        layer_override_flags: {},
       });
     },
   );
 
-  it('retains a reviewed custom U-value over the selected construction assumption', () => {
+  it('keeps linked tank wall properties authoritative over a legacy system-wide U-value', () => {
     const result = calculateThermalCalculation(readySource(), {
       ...readyInputs(),
       tank_construction_type: 'acrylic',
@@ -168,16 +160,15 @@ describe('AAT thermal calculation', () => {
     expect(result.wall_construction_basis).toMatchObject({
       construction_type: 'acrylic',
       construction_label: 'Acrylic',
-      u_value_w_m2_k: 2.75,
-      source: 'reviewed custom U-value',
-      reviewed: true,
-      basis_version: null,
+      u_value_w_m2_k: 3.7061118335500645,
+      source: 'linked exhibit tank with governed material conductivity',
+      reviewed: false,
       default_layers: null,
       effective_layers: null,
     });
   });
 
-  it('calculates a selected construction from designer-edited effective layer values', () => {
+  it('keeps linked tank wall properties authoritative over legacy system-wide layer values', () => {
     const inputs = readyInputs();
     delete (inputs as any).reviewed_u_value_w_m2_k;
     const result = calculateThermalCalculation(readySource(), {
@@ -190,15 +181,18 @@ describe('AAT thermal calculation', () => {
       }],
       tank_wall_override_justification: 'Reviewed project wall schedule.',
     });
-    const expected = 0.2 / 0.02;
+    const expected = 1 / (
+      1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+      0.02 / 0.2 +
+      1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
+    );
 
-    expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(expected, 12);
+    expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(3.7061118335500645, 12);
     expect(result.wall_construction_basis).toMatchObject({
-      source: 'AAT Foundations wall-layer default with designer override',
-      default_layers: [{ material: 'Acrylic / PMMA', thickness_m: 0.012, conductivity_w_m_k: 0.19 }],
-      effective_layers: [{ material: 'Project acrylic', thickness_m: 0.02, conductivity_w_m_k: 0.2 }],
-      layer_override_flags: { material: true, thickness_mm: true, conductivity_w_m_k: true },
-      layer_override_justification: 'Reviewed project wall schedule.',
+      source: 'linked exhibit tank with governed material conductivity',
+      material: 'Acrylic',
+      thickness_mm: 12,
+      conductivity_w_m_k: 0.19,
     });
   });
 
@@ -217,12 +211,16 @@ describe('AAT thermal calculation', () => {
     const result = calculateThermalCalculation(source, inputs);
 
     expect(result.status).toBe('Ready');
-    expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(0.19 / 0.012, 12);
+    expect(result.results.wall_u_value_w_m2_k).toBeCloseTo(1 / (
+      1 / THERMAL_CONSTANTS.inside_film_coefficient_w_m2_k +
+      0.012 / 0.19 +
+      1 / THERMAL_CONSTANTS.outside_film_coefficient_w_m2_k
+    ), 12);
     expect(result.wall_construction_basis).toMatchObject({
       material: 'Acrylic',
       thickness_mm: 12,
       conductivity_w_m_k: 0.19,
-      source: 'exhibit tank wall with governed material conductivity',
+      source: 'linked exhibit tank with governed material conductivity',
     });
   });
 
@@ -245,7 +243,7 @@ describe('AAT thermal calculation', () => {
     );
   });
 
-  it('retains reviewed explicit wall layers when no default construction applies', () => {
+  it('does not replace linked tank evidence with legacy explicit wall layers', () => {
     const inputs = readyInputs();
     delete (inputs as any).reviewed_u_value_w_m2_k;
     const result = calculateThermalCalculation(readySource(), {
@@ -259,15 +257,69 @@ describe('AAT thermal calculation', () => {
 
     expect(result.status).toBe('Ready');
     expect(result.wall_construction_basis).toMatchObject({
-      construction_type: null,
-      source: 'material-only wall-layer resistance',
-      reviewed: true,
-      layers: [{
-        material: 'Insulated panel',
-        thickness_m: 0.05,
-        conductivity_w_m_k: 0.04,
-      }],
+      construction_type: 'acrylic',
+      source: 'linked exhibit tank with governed material conductivity',
+      reviewed: false,
+      material: 'Acrylic',
+      thickness_mm: 12,
+      conductivity_w_m_k: 0.19,
     });
+  });
+
+  it('sums separate tank wall loads without averaging different constructions', () => {
+    const source = readySource();
+    source.linked_tanks[0] = {
+      ...source.linked_tanks[0],
+      exposed_wall_area_m2: 20,
+      wall_material: 'Acrylic',
+      wall_thickness_mm: 12,
+    };
+    source.linked_tanks.push({
+      tank_id: 'tank-2',
+      tank_code: 'TK-2',
+      exhibit_id: 'exhibit-2',
+      exhibit_code: 'EX-2',
+      quantity: 1,
+      free_surface_area_m2: 10,
+      exposed_wall_area_m2: 30,
+      wall_material: 'Reinforced concrete',
+      wall_thickness_mm: 300,
+    });
+
+    const result = calculateThermalCalculation(source, readyInputs());
+    const acrylicU = 1 / (1 / 150 + 0.012 / 0.19 + 1 / 5);
+    const concreteU = 1 / (1 / 150 + 0.3 / 1.4 + 1 / 5);
+    const expectedWallLoad = (
+      acrylicU * 20 * (20 - 25) +
+      concreteU * 30 * (20 - 25)
+    ) / 1000;
+
+    expect(result.status).toBe('Ready');
+    expect(result.results.wall_u_value_w_m2_k).toBeNull();
+    expect(result.results.tank_wall_calculations).toHaveLength(2);
+    expect(result.results.tank_wall_calculations[0].overall_u_value_w_m2_k).toBeCloseTo(acrylicU, 12);
+    expect(result.results.tank_wall_calculations[1].overall_u_value_w_m2_k).toBeCloseTo(concreteU, 12);
+    expect(result.contributions.wall_conduction_kw).toBeCloseTo(expectedWallLoad, 12);
+    expect(result.wall_construction_basis.mixed_constructions).toBe(true);
+  });
+
+  it('adds every layer resistance for an FRP-insulation-FRP wall', () => {
+    const source = readySource();
+    source.linked_tanks[0].wall_layers = [
+      { material: 'FRP', thickness_mm: 5, conductivity_w_m_k: 0.3 },
+      { material: 'Insulation', thickness_mm: 50, conductivity_w_m_k: 0.04 },
+      { material: 'FRP', thickness_mm: 5, conductivity_w_m_k: 0.3 },
+    ];
+    const result = calculateThermalCalculation(source, readyInputs());
+    const materialResistance = 0.005 / 0.3 + 0.05 / 0.04 + 0.005 / 0.3;
+    const overallU = 1 / (1 / 150 + materialResistance + 1 / 5);
+
+    expect(result.status).toBe('Ready');
+    expect(result.results.tank_wall_calculations[0].layers).toHaveLength(3);
+    expect(result.results.tank_wall_calculations[0].material_resistance_m2_k_w)
+      .toBeCloseTo(materialResistance, 12);
+    expect(result.results.tank_wall_calculations[0].overall_u_value_w_m2_k)
+      .toBeCloseTo(overallU, 12);
   });
 
   it('uses and distinguishes a reviewed water-temperature override', () => {

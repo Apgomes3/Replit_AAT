@@ -1109,6 +1109,8 @@ CREATE INDEX IF NOT EXISTS idx_thermal_wall_construction_active
 CREATE UNIQUE INDEX IF NOT EXISTS uq_thermal_wall_construction_approved
   ON thermal_wall_construction_defaults(construction_code)
   WHERE status='approved';
+ALTER TABLE thermal_wall_construction_defaults
+  ALTER COLUMN thickness_mm DROP NOT NULL;
 CREATE OR REPLACE FUNCTION protect_thermal_wall_construction_default()
 RETURNS TRIGGER AS $$
 BEGIN

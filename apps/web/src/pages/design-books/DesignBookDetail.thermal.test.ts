@@ -265,14 +265,13 @@ describe('Design Book Thermal navigation', () => {
 
     expect(thermalWallReplacementIsValid(valid)).toBe(true);
     expect(thermalWallReplacementIsValid({ ...valid, material: '' })).toBe(false);
-    expect(thermalWallReplacementIsValid({ ...valid, thickness_mm: 0 })).toBe(false);
     expect(thermalWallReplacementIsValid({ ...valid, conductivity_w_m_k: -0.1 })).toBe(false);
     expect(thermalWallReplacementIsValid({ ...valid, source_reference: '' })).toBe(false);
   });
 });
 
 describe('Exhibit tank wall basis', () => {
-  it('calculates the material-only U-value from the tank thickness', () => {
+  it('calculates material resistance and overall U-value from the tank thickness', () => {
     const basis = thermalExhibitTankWallBasis({
       linked_tanks: [{
         tank_code: 'TK-ACR-01',
@@ -294,7 +293,12 @@ describe('Exhibit tank wall basis', () => {
       conductivity_w_m_k: 0.19,
       source_basis: 'Linked exhibit tank with governed material conductivity',
     });
-    expect(basis.u_value_w_m2_k).toBeCloseTo(15.8333333333, 8);
+    expect(basis.material_resistance_m2_k_w).toBeCloseTo(0.012 / 0.19, 10);
+    expect(basis.material_u_value_w_m2_k).toBeCloseTo(0.19 / 0.012, 10);
+    expect(basis.u_value_w_m2_k).toBeCloseTo(
+      1 / (1 / 150 + 0.012 / 0.19 + 1 / 5),
+      10,
+    );
   });
 });
 
