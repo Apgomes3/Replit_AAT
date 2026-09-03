@@ -2118,22 +2118,6 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
     } catch (error: any) {
       return res.status(400).json({ error: { code: 'VALIDATION', message: error.message } });
     }
-    const loopAllocationTotal = ([
-      [resolvedLoop1FlowPct, resolvedLoop1FlowMode],
-      [resolvedLoop2FlowPct, resolvedLoop2FlowMode],
-      [resolvedLoop3FlowPct, resolvedLoop3FlowMode],
-    ] as Array<[number | null, string]>).reduce(
-      (sum, [value, mode]) => sum + (mode === 'allocated' ? (value ?? 0) : 0),
-      0,
-    );
-    if (loopAllocationTotal > 100.000001) {
-      return res.status(400).json({
-        error: {
-          code: 'FLOW_ALLOCATION_EXCEEDS_100',
-          message: `Active loop allocations total ${loopAllocationTotal.toFixed(1)}%. Reduce them to 100% or less before saving.`,
-        },
-      });
-    }
     const intendedWaterType = water_type || currentResult.rows[0].water_type;
     const foamLoops = [1, 2, 3].filter(
       loopNumber => intendedSystem[`loop${loopNumber}_filtration`] === 'Foam Fractionation');

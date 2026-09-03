@@ -170,19 +170,20 @@ describe('system Flow Route allocation persistence', () => {
     delete process.env.JWT_SECRET;
   });
 
-  it('rejects active loop allocation totals above 100 percent', async () => {
+  it('accepts 100 percent allocations for separate source flows', async () => {
     const response = await request(app, {
       ...basePayload,
-      loop1_flow_pct: 60,
+      loop1_flow_source: 'Bottom Drain',
+      loop1_flow_pct: 100,
       loop1_bio_degas_pct: 25,
-      loop2_flow_pct: 50,
+      loop2_flow_source: 'Surface Skim',
+      loop2_filtration: 'Pressurized Bag Filter',
+      loop2_flow_pct: 100,
       loop2_bio_degas_pct: null,
     });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('FLOW_ALLOCATION_EXCEEDS_100');
-    expect(response.body.error.message).toContain('110.0%');
-    expect(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(false);
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(true);
   });
 
   it('keeps legacy explicit Break Tank allocations allocated and rejects matching another source', async () => {
