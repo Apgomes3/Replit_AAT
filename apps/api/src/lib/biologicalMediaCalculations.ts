@@ -7,6 +7,8 @@
  */
 
 export const BIOLOGICAL_MEDIA_ENGINE_VERSION = 'BIOFILTER_1_0';
+export const AAT_CORE_ENGINE_VERSION = 'AAT_CORE_1_0';
+export const BIOLOGICAL_MEDIA_ENGINES = ['MASS_BALANCE', 'AAT_CORE'] as const;
 export const BIOMASS_METHODS = ['VOLUME_DENSITY', 'SPECIES_LIST'] as const;
 export const FEEDING_MODES = ['GLOBAL', 'PER_SPECIES'] as const;
 export const VALIDATION_TOLERANCE = 0.001;
@@ -78,6 +80,7 @@ export function normalizeBiologicalMediaInput(input: any) {
     ? biomass.species
     : Array.isArray(input?.species_rows) ? input.species_rows : [];
   return {
+    calculation_engine: upper(first(input?.calculation_engine, input?.engine)) || 'MASS_BALANCE',
     biomass: {
       method,
       water_volume_m3: finite(first(biomass.water_volume_m3, input?.water_volume_m3)),
@@ -136,6 +139,68 @@ export function normalizeBiologicalMediaInput(input: any) {
         input?.media_profile_revision_id,
       ) || null,
       safety_factor: finite(first(filter.safety_factor, input?.safety_factor)),
+    },
+  };
+}
+
+export function calculateAatCoreFoundation(input: any): any {
+  const normalized = normalizeBiologicalMediaInput(input);
+  const volume = normalized.biomass.water_volume_m3;
+  const temperature = normalized.water.temperature_c;
+  const waterType = normalized.water.water_type;
+  const messages: CalculationMessage[] = [];
+  if (volume == null || volume <= 0) add(messages, 'AAT_001', 'A positive linked net exhibit volume is required.');
+  if (temperature == null) add(messages, 'AAT_002', 'Design water temperature is required to apply the cold-exhibit rule.', 'water.temperature_c');
+
+  const marine = ['MARINE', 'SALTWATER', 'SALT_WATER', 'SEAWATER'].includes(waterType || '');
+  const freshwater = ['FRESHWATER', 'FRESH_WATER'].includes(waterType || '');
+  if (!marine && !freshwater) add(messages, 'AAT_003', 'AAT Core currently supports Marine and Freshwater exhibits.', 'water.water_type');
+
+  let rate: number | null = null;
+  let rule: string | null = null;
+  if (!messages.length) {
+    if ((temperature as number) < 18) {
+      rate = 0.04;
+      rule = 'Cold exhibit below 18°C';
+    } else if (freshwater) {
+      rate = 0.035;
+      rule = 'Freshwater exhibit';
+    } else if ((volume as number) > 100) {
+      rate = 0.0225;
+      rule = 'Marine exhibit over 100 m³';
+    } else {
+      rate = 0.03;
+      rule = 'Marine exhibit at or below 100 m³';
+    }
+  }
+  const mediaVolumeM3 = rate == null || volume == null ? null : volume * rate;
+  return {
+    engine_version: AAT_CORE_ENGINE_VERSION,
+    calculation_engine: 'AAT_CORE',
+    status: messages.length ? 'BLOCKED' : 'VALID',
+    messages,
+    assumptions: [
+      'AAT Core Foundation sizes biological media as a fixed percentage of linked net exhibit volume.',
+      'Design temperatures below 18°C use the 4.0% cold-exhibit rule before water-type and size rules.',
+      'This is a simplified concept-sizing foundation, not a TAN mass-balance calculation.',
+    ],
+    biomass: { water_volume_m3: volume },
+    feeding: {},
+    ammonia: {},
+    capacity: {},
+    nitrification: {},
+    hydraulics: {},
+    media: {
+      required_media_m3: mediaVolumeM3,
+      required_media_l: mediaVolumeM3 == null ? null : mediaVolumeM3 * 1000,
+      installed_media_m3: mediaVolumeM3,
+      installed_media_l: mediaVolumeM3 == null ? null : mediaVolumeM3 * 1000,
+      foundation_rate: rate,
+      foundation_percentage: rate == null ? null : rate * 100,
+      foundation_rule: rule,
+      net_volume_m3: volume,
+      design_temperature_c: temperature,
+      water_type: waterType,
     },
   };
 }
@@ -520,8 +585,9 @@ export function calculateOptionalHydraulics(input: any, feedResult: any, nitrifi
   return { ...result, messages };
 }
 
-export function calculateBiologicalMediaPreview(input: any, options: { mediaProfile?: any; tanProfile?: any } = {}) {
+export function calculateBiologicalMediaPreview(input: any, options: { mediaProfile?: any; tanProfile?: any } = {}): any {
   const normalized = normalizeBiologicalMediaInput(input);
+  if (normalized.calculation_engine === 'AAT_CORE') return calculateAatCoreFoundation(normalized);
   const biomass = calculateBiomass(normalized);
   const feeding = calculateFeeding(normalized, biomass, options.tanProfile);
   const ammonia = calculateAmmonia(normalized);

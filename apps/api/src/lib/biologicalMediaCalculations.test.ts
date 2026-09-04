@@ -2,10 +2,30 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  calculateAatCoreFoundation,
   calculateAmmonia,
   calculateBiologicalMediaPreview,
   calculateBiomass,
 } from './biologicalMediaCalculations';
+
+describe('AAT Core Foundation engine', () => {
+  it.each([
+    ['large warm marine', 120, 24, 'Marine', 2.25, 2.7],
+    ['small warm marine', 100, 24, 'Marine', 3, 3],
+    ['warm freshwater', 120, 24, 'Freshwater', 3.5, 4.2],
+    ['cold marine override', 120, 17.9, 'Marine', 4, 4.8],
+    ['cold freshwater override', 20, 17.9, 'Freshwater', 4, 0.8],
+  ])('sizes %s from net volume', (_label, volume, temperature, waterType, percentage, expectedM3) => {
+    const result = calculateAatCoreFoundation({
+      calculation_engine: 'AAT_CORE',
+      biomass: { water_volume_m3: volume },
+      water: { temperature_c: temperature, water_type: waterType },
+    });
+    expect(result.status).toBe('VALID');
+    expect(result.media.foundation_percentage).toBeCloseTo(percentage);
+    expect(result.media.required_media_m3).toBeCloseTo(expectedM3);
+  });
+});
 
 const mediaProfile = {
   id: 'media-1',

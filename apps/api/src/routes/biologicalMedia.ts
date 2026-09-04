@@ -87,6 +87,7 @@ function canonicalJson(value: any): string {
 
 function biologicalMediaInputFromCase(record: any, context: any) {
   return normalizeBiologicalMediaInput({
+    calculation_engine: record?.calculation_engine || 'MASS_BALANCE',
     biomass: {
       method: record?.biomass_method,
       water_volume_m3: context?.total_operating_volume_m3,
@@ -816,8 +817,9 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
   }
   const reactorType = text(req.body.reactor_type);
   if (reactorType && reactorType.length > 120) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Reactor type must be 120 characters or fewer.' } });
-  const mediaId = text(req.body.media_profile_revision_id);
-  const tanId = text(req.body.tan_generation_profile_revision_id);
+  const calculationEngine = text(req.body.calculation_engine)?.toUpperCase() === 'AAT_CORE' ? 'AAT_CORE' : 'MASS_BALANCE';
+  const mediaId = calculationEngine === 'MASS_BALANCE' ? text(req.body.media_profile_revision_id) : null;
+  const tanId = calculationEngine === 'MASS_BALANCE' ? text(req.body.tan_generation_profile_revision_id) : null;
   const mediaError = await requireApprovedProfile('lss_biological_media_profiles', mediaId, 'Media profile');
   const tanError = await requireApprovedProfile('lss_tan_generation_profiles', tanId, 'TAN generation profile');
   if (mediaError || tanError) return res.status(409).json({ error: { code: 'PROFILE_NOT_APPROVED', message: mediaError || tanError } });
@@ -826,7 +828,9 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
     'SELECT * FROM lss_biological_media_cases WHERE system_id=$1 AND design_book_id=$2',
     [systemId, designBookId],
   );
-  const maximumTan = await resolveMaxTanSelection(req.body, currentCaseResult.rows[0] || null, query, true);
+  const maximumTan = calculationEngine === 'MASS_BALANCE'
+    ? await resolveMaxTanSelection(req.body, currentCaseResult.rows[0] || null, query, true)
+    : { source: null, value: null, profile: null };
   if ('error' in maximumTan) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: maximumTan.error } });
   }
@@ -847,22 +851,24 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
       });
     }
   }
-  const status = context.status === 'blocked' || !reactorType || !mediaId || !tanId ? (context.status === 'blocked' ? 'Blocked' : 'Incomplete') : 'Draft';
+  const status = context.status === 'blocked'
+    || (calculationEngine === 'MASS_BALANCE' && (!reactorType || !mediaId || !tanId))
+    ? (context.status === 'blocked' ? 'Blocked' : 'Incomplete') : 'Draft';
   const contextVolume = Number(context.total_operating_volume_m3);
   try {
     const result = await query(
       `INSERT INTO lss_biological_media_cases
        (system_id, design_book_id, reactor_type, media_profile_revision_id, tan_generation_profile_revision_id, status, notes, created_by,
-        biomass_method, water_volume_m3, stocking_density_kg_m3, feed_rate_pct_biomass_day, protein_pct,
+         calculation_engine, biomass_method, water_volume_m3, stocking_density_kg_m3, feed_rate_pct_biomass_day, protein_pct,
          manual_daily_feed_kg_d, water_type, temperature_c, ph, salinity_ppt, max_tan_mg_n_l,
          max_tan_source, max_tan_profile_revision_id, do_in_mg_l,
          do_out_min_mg_l, alkalinity_mg_l_caco3, actual_flow_m3_h, safety_factor, preview_stale)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
        ON CONFLICT (system_id, design_book_id) DO UPDATE SET
          reactor_type=EXCLUDED.reactor_type,
          media_profile_revision_id=EXCLUDED.media_profile_revision_id,
          tan_generation_profile_revision_id=EXCLUDED.tan_generation_profile_revision_id,
-          status=EXCLUDED.status, notes=EXCLUDED.notes, biomass_method=EXCLUDED.biomass_method,
+           status=EXCLUDED.status, notes=EXCLUDED.notes, calculation_engine=EXCLUDED.calculation_engine, biomass_method=EXCLUDED.biomass_method,
           water_volume_m3=EXCLUDED.water_volume_m3, stocking_density_kg_m3=EXCLUDED.stocking_density_kg_m3,
           feed_rate_pct_biomass_day=EXCLUDED.feed_rate_pct_biomass_day, protein_pct=EXCLUDED.protein_pct,
           manual_daily_feed_kg_d=EXCLUDED.manual_daily_feed_kg_d, water_type=EXCLUDED.water_type,
@@ -873,7 +879,7 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
           actual_flow_m3_h=EXCLUDED.actual_flow_m3_h, safety_factor=EXCLUDED.safety_factor,
           preview_stale=true, updated_at=NOW()
        RETURNING *`,
-      [systemId, designBookId, reactorType, mediaId, tanId, status, text(req.body.notes), req.user!.id,
+      [systemId, designBookId, reactorType, mediaId, tanId, status, text(req.body.notes), req.user!.id, calculationEngine,
         text(req.body.biomass_method), numberOrNull(req.body.water_volume_m3)
           ?? (Number.isFinite(contextVolume) && contextVolume > 0 ? contextVolume : null),
         numberOrNull(req.body.stocking_density_kg_m3), numberOrNull(req.body.feed_rate_pct_biomass_day),
@@ -941,13 +947,16 @@ router.post('/systems/:id/biological-media/preview', requireModuleManage('design
       messages: [{ code: 'WATER_CONTEXT_BLOCKED', severity: 'BLOCKING', message }],
     });
   }
-  const mediaId = text(req.body.media_profile_revision_id);
-  const tanId = text(req.body.tan_generation_profile_revision_id);
+  const calculationEngine = text(req.body.calculation_engine)?.toUpperCase() === 'AAT_CORE' ? 'AAT_CORE' : 'MASS_BALANCE';
+  const mediaId = calculationEngine === 'MASS_BALANCE' ? text(req.body.media_profile_revision_id) : null;
+  const tanId = calculationEngine === 'MASS_BALANCE' ? text(req.body.tan_generation_profile_revision_id) : null;
   const currentCase = await query(
     'SELECT * FROM lss_biological_media_cases WHERE system_id=$1 AND design_book_id=$2',
     [systemId, designBookId],
   );
-  const maximumTan = await resolveMaxTanSelection(req.body, currentCase.rows[0] || null);
+  const maximumTan = calculationEngine === 'MASS_BALANCE'
+    ? await resolveMaxTanSelection(req.body, currentCase.rows[0] || null)
+    : { source: null, value: null, profile: null };
   if ('error' in maximumTan) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: maximumTan.error } });
   }
@@ -959,6 +968,7 @@ router.post('/systems/:id/biological-media/preview', requireModuleManage('design
   const tanProfile = tanResult.rows[0] || null;
   const body = {
     ...req.body,
+    calculation_engine: calculationEngine,
     biomass: {
       ...(req.body.biomass || {}),
       method: req.body.biomass_method || req.body.biomass?.method,
@@ -1146,6 +1156,7 @@ router.post(
       return res.status(409).json({ error: { code: 'DRAFT_REQUIRED', message: 'Create and save the Biological Media draft before creating a run.' } });
     }
     const baseInput = biologicalMediaInputFromCase(record, context);
+    const massBalanceEngine = record.calculation_engine !== 'AAT_CORE';
     if (!record.preview_result || !record.preview_input_snapshot || !record.previewed_at) {
       return res.status(409).json({ error: { code: 'PREVIEW_REQUIRED', message: 'Calculate a current preview before creating a run.' } });
     }
@@ -1157,21 +1168,21 @@ router.post(
       });
     }
     const [mediaResult, tanResult, maximumTanProfileResult] = await Promise.all([
-      query('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [record.media_profile_revision_id]),
-      query('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [record.tan_generation_profile_revision_id]),
-      record.max_tan_profile_revision_id
+      massBalanceEngine ? query('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [record.media_profile_revision_id]) : Promise.resolve({ rows: [] }),
+      massBalanceEngine ? query('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [record.tan_generation_profile_revision_id]) : Promise.resolve({ rows: [] }),
+      massBalanceEngine && record.max_tan_profile_revision_id
         ? query('SELECT * FROM lss_max_tan_profiles WHERE id=$1', [record.max_tan_profile_revision_id])
         : Promise.resolve({ rows: [] }),
     ]);
     const mediaProfile = mediaResult.rows[0] || null;
     const tanProfile = tanResult.rows[0] || null;
     const maximumTanProfile = maximumTanProfileResult.rows[0] || null;
-    if (!mediaProfile || mediaProfile.status !== 'Approved' || !tanProfile || tanProfile.status !== 'Approved') {
+    if (massBalanceEngine && (!mediaProfile || mediaProfile.status !== 'Approved' || !tanProfile || tanProfile.status !== 'Approved')) {
       return res.status(409).json({
         error: { code: 'PROFILE_NOT_APPROVED', message: 'Both controlled profile revisions must still be approved when the run is executed.' },
       });
     }
-    const maximumTanError = maximumTanRunError(record, maximumTanProfile);
+    const maximumTanError = massBalanceEngine ? maximumTanRunError(record, maximumTanProfile) : null;
     if (maximumTanError) {
       return res.status(409).json({ error: { code: 'MAX_TAN_PROFILE_NOT_ACTIVE', message: maximumTanError } });
     }
@@ -1231,9 +1242,9 @@ router.post(
         editableRunContext(systemId, designBookId, runner),
         linkedVolumeContext(systemId, designBookId, runner),
         loadBiologicalMediaCase(systemId, designBookId, runner),
-        runner('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [record.media_profile_revision_id]),
-        runner('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [record.tan_generation_profile_revision_id]),
-        record.max_tan_profile_revision_id
+        massBalanceEngine ? runner('SELECT * FROM lss_biological_media_profiles WHERE id=$1', [record.media_profile_revision_id]) : Promise.resolve({ rows: [] }),
+        massBalanceEngine ? runner('SELECT * FROM lss_tan_generation_profiles WHERE id=$1', [record.tan_generation_profile_revision_id]) : Promise.resolve({ rows: [] }),
+        massBalanceEngine && record.max_tan_profile_revision_id
           ? runner('SELECT * FROM lss_max_tan_profiles WHERE id=$1', [record.max_tan_profile_revision_id])
           : Promise.resolve({ rows: [] }),
       ]);
@@ -1247,10 +1258,10 @@ router.post(
           || canonicalJson(lockedInput) !== canonicalJson(baseInput)
           || canonicalJson(lockedRecord.preview_input_snapshot) !== canonicalJson(baseInput)
           || isBiologicalMediaPreviewStale(lockedRecord, lockedContext)
-          || lockedMediaProfile?.status !== 'Approved' || lockedTanProfile?.status !== 'Approved'
-          || canonicalJson(lockedMediaProfile) !== canonicalJson(mediaProfile)
-          || canonicalJson(lockedTanProfile) !== canonicalJson(tanProfile)
-          || canonicalJson(lockedMaximumTanProfile) !== canonicalJson(maximumTanProfile)) {
+          || (massBalanceEngine && (lockedMediaProfile?.status !== 'Approved' || lockedTanProfile?.status !== 'Approved'
+            || canonicalJson(lockedMediaProfile) !== canonicalJson(mediaProfile)
+            || canonicalJson(lockedTanProfile) !== canonicalJson(tanProfile)
+            || canonicalJson(lockedMaximumTanProfile) !== canonicalJson(maximumTanProfile)))) {
         const staleError: any = new Error('The draft or linked context changed while the run was being created.');
         staleError.httpStatus = 409;
         staleError.apiCode = 'RUN_PREVIEW_STALE';

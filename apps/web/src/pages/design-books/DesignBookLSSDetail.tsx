@@ -558,6 +558,24 @@ export function BiologicalMediaCalculatorPanel({
     </div>
 
     <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-stone-700">Calculation engine</h2>
+        <p className="mt-0.5 text-xs text-stone-400">Choose the simplified AAT volume foundation or the detailed TAN mass balance.</p>
+      </div>
+      <div className="grid gap-3 p-5 md:grid-cols-2">
+        {[
+          ['AAT_CORE', 'AAT Core Foundation', 'Fixed percentage of linked net volume, based on water type, size, and temperature.'],
+          ['MASS_BALANCE', 'Mass Balance', 'Existing biomass, feeding, TAN load, approved media profile, and capacity calculation.'],
+        ].map(([value, label, description]) =>
+          <label key={value} className={`cursor-pointer rounded-xl border p-4 ${form.calculation_engine === value ? 'border-blue-400 bg-blue-50' : 'border-stone-200'}`}>
+            <span className="flex items-start gap-3"><input type="radio" name="calculation-engine" value={value} checked={form.calculation_engine === value} disabled={readOnly} onChange={() => set('calculation_engine', value)} />
+              <span><span className="block text-sm font-semibold text-stone-800">{label}</span><span className="mt-1 block text-xs text-stone-500">{description}</span></span>
+            </span>
+          </label>)}
+      </div>
+    </section>
+
+    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
         <div>
           <h2 className="text-sm font-semibold text-stone-700">Calculation run for review</h2>
@@ -587,7 +605,9 @@ export function BiologicalMediaCalculatorPanel({
                 {latestRunStale && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Draft changed — run is historical</span>}
               </div>
               <p className="mt-1 text-xs text-stone-500">
-                {latestRun.media_profile_snapshot?.profile_code || 'Media profile'} r{latestRun.media_profile_snapshot?.revision ?? '—'}
+                {latestRun.engine_version?.startsWith('AAT_CORE')
+                  ? 'AAT Core Foundation'
+                  : `${latestRun.media_profile_snapshot?.profile_code || 'Media profile'} r${latestRun.media_profile_snapshot?.revision ?? '—'}`}
                 {' · '}{latestRun.engine_version}{' · '}
                 {latestRun.executed_at ? new Date(latestRun.executed_at).toLocaleString() : 'Execution time unavailable'}
               </p>
@@ -650,7 +670,7 @@ export function BiologicalMediaCalculatorPanel({
       </div>
     </section>
 
-    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+    {form.calculation_engine === 'MASS_BALANCE' && <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
         <h2 className="text-sm font-semibold text-stone-700">1. Biomass design basis</h2>
         <p className="mt-0.5 text-xs text-stone-400">Choose exactly one method. Linked water volume remains read-only.</p>
@@ -690,9 +710,26 @@ export function BiologicalMediaCalculatorPanel({
           <div className="text-sm text-stone-600">Total design biomass <strong className="font-mono text-stone-900">{calculatedBiomass > 0 ? bioFormat(calculatedBiomass, 6) : '—'} kg</strong>{context?.total_operating_volume_m3 > 0 && calculatedBiomass > 0 ? ` · Equivalent density ${bioFormat(calculatedBiomass / context.total_operating_volume_m3, 4)} kg/m³` : ''}</div>
         </div>}
       </div>
-    </section>
+    </section>}
 
-    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+    {form.calculation_engine === 'AAT_CORE' && <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-stone-700">AAT Core sizing basis</h2>
+        <p className="mt-0.5 text-xs text-stone-400">Cold below 18°C: 4.0% · Freshwater: 3.5% · Marine ≤100 m³: 3.0% · Marine &gt;100 m³: 2.25%.</p>
+      </div>
+      <div className="grid gap-4 p-5 md:grid-cols-3">
+        <label className="text-xs font-medium text-stone-500">Linked net volume m³<input className={bioInputClass} disabled value={context?.total_operating_volume_m3 ?? ''} /></label>
+        <label className="text-xs font-medium text-stone-500">Water type<input className={bioInputClass} disabled value={context?.system_water_type || ''} /></label>
+        <label className="text-xs font-medium text-stone-500">Design water temperature °C *<input aria-label="Design water temperature °C" type="number" step="any" className={bioInputClass} disabled={readOnly} value={form.temperature_c} onChange={e => set('temperature_c', e.target.value)} /></label>
+        <label className="text-xs font-medium text-stone-500 md:col-span-3">Design basis notes<textarea rows={2} className={bioInputClass} disabled={readOnly} value={form.notes} onChange={e => set('notes', e.target.value)} /></label>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 bg-stone-50/40 px-5 py-3">
+        <p className="text-xs text-stone-400">{data?.case?.updated_at ? `Last saved ${new Date(data.case.updated_at).toLocaleString()}` : 'No draft saved yet.'}</p>
+        {!readOnly && <div className="flex gap-2"><button type="button" onClick={onSave} disabled={saving || previewing} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? 'Saving…' : data?.case ? 'Save draft' : 'Create draft'}</button><button type="button" onClick={onPreview} disabled={saving || previewing} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"><Activity className="h-3.5 w-3.5" />{previewing ? 'Calculating…' : 'Calculate preview'}</button></div>}
+      </div>
+    </section>}
+
+    {form.calculation_engine === 'MASS_BALANCE' && <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">2. Global feeding and TAN nitrogen</h2><p className="mt-0.5 text-xs text-stone-400">Manual feed is comparison-only and is never added to the calculated load.</p></div>
       <div className="grid gap-4 p-5 md:grid-cols-4">
         <label className="text-xs font-medium text-stone-500">Feed rate % biomass/day *<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.feed_rate_pct_biomass_day} onChange={e => set('feed_rate_pct_biomass_day', e.target.value)} /></label>
@@ -711,9 +748,9 @@ export function BiologicalMediaCalculatorPanel({
         />
         <label className="text-xs font-medium text-stone-500">Manual daily feed kg/day<input type="number" min="0" step="any" className={bioInputClass} disabled={readOnly} value={form.manual_daily_feed_kg_d} onChange={e => set('manual_daily_feed_kg_d', e.target.value)} /></label>
       </div>
-    </section>
+    </section>}
 
-    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+    {form.calculation_engine === 'MASS_BALANCE' && <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">3. Water conditions, Maximum TAN, and approved media</h2><p className="mt-0.5 text-xs text-stone-400">The Maximum TAN concentration profile is separate from the TAN-generation profile above. It supplies the concentration used for ammonia and optional hydraulic checks.</p></div>
       <div className="grid gap-4 p-5 md:grid-cols-4">
         {[['temperature_c', 'Temperature °C *'], ['ph', 'pH *'], ['salinity_ppt', 'Salinity ppt *'], ['do_in_mg_l', 'Biofilter inlet DO mg/L'], ['do_out_min_mg_l', 'Minimum outlet DO mg/L'], ['alkalinity_mg_l_caco3', 'Alkalinity mg/L CaCO₃'], ['actual_flow_m3_h', 'Actual flow m³/h']].map(([key, label]) =>
@@ -787,14 +824,19 @@ export function BiologicalMediaCalculatorPanel({
         <p className="text-xs text-stone-400">{data?.case?.updated_at ? `Last saved ${new Date(data.case.updated_at).toLocaleString()}` : 'No draft saved yet.'}</p>
         {!readOnly && <div className="flex gap-2"><button type="button" onClick={onSave} disabled={saving || previewing} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? 'Saving…' : data?.case ? 'Save draft' : 'Create draft'}</button><button type="button" onClick={onPreview} disabled={saving || previewing} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"><Activity className="h-3.5 w-3.5" />{previewing ? 'Calculating…' : 'Calculate preview'}</button></div>}
       </div>
-    </section>
+    </section>}
 
     {preview && <section className={`overflow-hidden rounded-xl border bg-white ${stale ? 'opacity-60' : ''}`}>
       <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">Sizing preview</h2><p className="mt-0.5 text-xs text-stone-400">{preview.profile ? `${preview.profile.profile_code} r${preview.profile.revision}` : 'No eligible approved profile'} · {preview.engine_version || 'BIOFILTER_1_0'}</p></div>
       {(preview.messages || []).length > 0 && <div className="border-b border-stone-100 p-5"><ul className="space-y-2">{preview.messages.map((message: any, index: number) => <li key={`${message.code}-${index}`} className={`rounded-lg px-3 py-2 text-xs ${message.severity === 'BLOCKING' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}><strong>{message.code}</strong> — {message.message}</li>)}</ul></div>}
       {preview.status !== 'BLOCKED' && <div className="space-y-5 p-5">
         <div><span className="text-xs font-semibold uppercase tracking-wide text-stone-400">Recommended installed media</span><div className="font-mono text-4xl font-semibold text-stone-900">{bioFormat(preview.media?.installed_media_l, 1)} <span className="text-lg text-stone-400">L</span></div><p className="mt-1 text-sm text-stone-500">{bioFormat(preview.media?.required_media_l, 5)} L required before upward module rounding</p></div>
-        <div className="grid gap-3 md:grid-cols-4">{[
+        {form.calculation_engine === 'AAT_CORE' ? <div className="grid gap-3 md:grid-cols-4">{[
+          ['Applied foundation rate', preview.media?.foundation_percentage, '%'],
+          ['Linked net volume', preview.media?.net_volume_m3, 'm³'],
+          ['Design temperature', preview.media?.design_temperature_c, '°C'],
+          ['Rule applied', preview.media?.foundation_rule, ''],
+        ].map(([label, value, unit]) => <div key={label as string} className="rounded-lg bg-stone-50 p-3"><span className="text-xs text-stone-400">{label}</span><strong className="mt-1 block font-mono text-stone-800">{typeof value === 'number' ? bioFormat(value, 4) : value || '—'} {unit}</strong></div>)}</div> : <div className="grid gap-3 md:grid-cols-4">{[
           ['Design biomass', preview.biomass?.design_biomass_kg, 'kg'],
           ['Daily feed', preview.feeding?.total_feed_kg_d, 'kg/day'],
           ['TAN nitrogen load', preview.feeding?.tan_load_g_n_d, 'g N/day'],
@@ -803,7 +845,7 @@ export function BiologicalMediaCalculatorPanel({
           ['Operating utilization', preview.media?.operating_utilization != null ? preview.media.operating_utilization * 100 : null, '%'],
           ['Design utilization', preview.media?.design_utilization != null ? preview.media.design_utilization * 100 : null, '%'],
           ['Operating margin', preview.media?.operating_capacity_margin_g_n_d, 'g N/day'],
-        ].map(([label, value, unit]) => <div key={label as string} className="rounded-lg bg-stone-50 p-3"><span className="text-xs text-stone-400">{label}</span><strong className="mt-1 block font-mono text-stone-800">{bioFormat(value, 4)} {unit}</strong></div>)}</div>
+        ].map(([label, value, unit]) => <div key={label as string} className="rounded-lg bg-stone-50 p-3"><span className="text-xs text-stone-400">{label}</span><strong className="mt-1 block font-mono text-stone-800">{bioFormat(value, 4)} {unit}</strong></div>)}</div>}
         <div className="grid gap-3 md:grid-cols-4">{[
           ['NH₃-N at maximum TAN', preview.ammonia?.nh3_n_mg_l, 'mg N/L'],
           ['NH₃ molecular mass', preview.ammonia?.nh3_mg_l, 'mg NH₃/L'],
@@ -1577,6 +1619,7 @@ export default function DesignBookLSSDetail() {
   const [configResetSaving, setConfigResetSaving] = useState(false);
   const [configResetError, setConfigResetError] = useState<string | null>(null);
   const [biologicalMediaForm, setBiologicalMediaForm] = useState({
+    calculation_engine: 'MASS_BALANCE',
     reactor_type: '',
     media_profile_revision_id: '',
     tan_generation_profile_revision_id: '',
@@ -1624,6 +1667,7 @@ export default function DesignBookLSSDetail() {
   useEffect(() => {
     const draft = biologicalMedia?.case;
     setBiologicalMediaForm({
+      calculation_engine: draft?.calculation_engine || 'MASS_BALANCE',
       reactor_type: draft?.reactor_type || '',
       media_profile_revision_id: draft?.media_profile_revision_id || '',
       tan_generation_profile_revision_id: draft?.tan_generation_profile_revision_id || '',

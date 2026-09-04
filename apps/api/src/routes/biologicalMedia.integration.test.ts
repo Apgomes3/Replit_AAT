@@ -269,4 +269,37 @@ describe('Biological Media review run PostgreSQL integration', () => {
       overrides_snapshot: [],
     });
   });
+
+  it('persists, previews, and freezes an AAT Core Foundation selection', async () => {
+    const draft = {
+      design_book_id: ids.book,
+      calculation_engine: 'AAT_CORE',
+      temperature_c: 17.9,
+      notes: 'Cold-water AAT foundation.',
+    };
+    const saved = await request('PUT', `/api/v1/systems/${ids.system}/biological-media`, draft);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.case.calculation_engine).toBe('AAT_CORE');
+
+    const preview = await request('POST', `/api/v1/systems/${ids.system}/biological-media/preview`, draft);
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body).toMatchObject({
+      status: 'VALID',
+      engine_version: 'AAT_CORE_1_0',
+      calculation_engine: 'AAT_CORE',
+      media: {
+        foundation_percentage: 4,
+        required_media_m3: 0.8,
+        foundation_rule: 'Cold exhibit below 18°C',
+      },
+    });
+
+    const created = await request('POST', `/api/v1/systems/${ids.system}/biological-media/runs`, {
+      design_book_id: ids.book,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    expect(created.body.engine_version).toBe('AAT_CORE_1_0');
+    expect(created.body.normalized_input_snapshot.calculation_engine).toBe('AAT_CORE');
+    expect(created.body.result_snapshot.media.required_media_m3).toBe(0.8);
+  });
 });
