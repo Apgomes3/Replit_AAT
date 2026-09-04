@@ -6,6 +6,7 @@ import {
   isBiologicalMediaPreviewStale,
   maximumTanRunError,
   renderBiologicalMediaRunSummary,
+  serializeJsonbParam,
   validateMaxTanProfile,
   validateMediaProfile,
   validateTanProfile,
@@ -217,6 +218,17 @@ describe('Biological Media preview freshness', () => {
       total_operating_volume_m3: 42.125,
       system_water_type: 'Marine',
     })).toBe(true);
+  });
+});
+
+describe('Biological Media run snapshot persistence', () => {
+  it('serializes array snapshots as JSON rather than PostgreSQL array literals', () => {
+    const species = [{ species_name: 'Shark', biomass_kg: 120 }];
+    const messages = [{ code: 'MEDIA_W01', severity: 'WARNING' }];
+
+    expect(serializeJsonbParam(species)).toBe('[{"species_name":"Shark","biomass_kg":120}]');
+    expect(serializeJsonbParam(messages)).toBe('[{"code":"MEDIA_W01","severity":"WARNING"}]');
+    expect(JSON.parse(serializeJsonbParam([]))).toEqual([]);
   });
 });
 

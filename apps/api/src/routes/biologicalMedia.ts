@@ -73,6 +73,10 @@ function jsonCopy<T>(value: T): T {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+export function serializeJsonbParam(value: unknown) {
+  return JSON.stringify(value ?? null);
+}
+
 function canonicalJson(value: any): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -1271,10 +1275,20 @@ router.post(
           record.id, systemId, designBookId, runNumber, result.status,
           warningAcknowledged, warningAcknowledged ? req.user!.id : null,
           warningAcknowledged ? new Date().toISOString() : null,
-          normalizedRunInput, jsonCopy(context), normalizedRunInput.biomass.species,
-          result.feeding, jsonCopy(mediaProfile), jsonCopy(tanProfile),
-          maxTanSnapshot(record, maximumTanProfile), result.engine_version,
-          result.assumptions, result.messages, result, overrides, authorSnapshot, req.user!.id,
+          serializeJsonbParam(normalizedRunInput),
+          serializeJsonbParam(jsonCopy(context)),
+          serializeJsonbParam(normalizedRunInput.biomass.species),
+          serializeJsonbParam(result.feeding),
+          serializeJsonbParam(jsonCopy(mediaProfile)),
+          serializeJsonbParam(jsonCopy(tanProfile)),
+          serializeJsonbParam(maxTanSnapshot(record, maximumTanProfile)),
+          result.engine_version,
+          serializeJsonbParam(result.assumptions),
+          serializeJsonbParam(result.messages),
+          serializeJsonbParam(result),
+          serializeJsonbParam(overrides),
+          serializeJsonbParam(authorSnapshot),
+          req.user!.id,
         ],
       );
       await client.query(
