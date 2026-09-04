@@ -117,8 +117,8 @@ beforeAll(async () => {
     [`BIO-RUN-${suffix}`, ids.user],
   )).rows[0].id;
   ids.exhibit = (await client.query(
-    `INSERT INTO exhibits(project_id,exhibit_code,exhibit_name,water_type)
-     VALUES($1,$2,'Biological Media exhibit','Freshwater') RETURNING id`,
+    `INSERT INTO exhibits(project_id,exhibit_code,exhibit_name,water_type,design_temperature_min,design_temperature_max)
+      VALUES($1,$2,'Biological Media exhibit','Freshwater',16,20) RETURNING id`,
     [ids.project, `BIO-EX-${suffix}`],
   )).rows[0].id;
   ids.book = (await client.query(
@@ -274,7 +274,8 @@ describe('Biological Media review run PostgreSQL integration', () => {
     const draft = {
       design_book_id: ids.book,
       calculation_engine: 'AAT_CORE',
-      temperature_c: 17.9,
+      temperature_basis: 'AVERAGE',
+      temperature_c: 5,
       notes: 'Cold-water AAT foundation.',
     };
     const saved = await request('PUT', `/api/v1/systems/${ids.system}/biological-media`, draft);
@@ -288,9 +289,10 @@ describe('Biological Media review run PostgreSQL integration', () => {
       engine_version: 'AAT_CORE_1_0',
       calculation_engine: 'AAT_CORE',
       media: {
-        foundation_percentage: 4,
-        required_media_m3: 0.8,
-        foundation_rule: 'Cold exhibit below 18°C',
+        foundation_percentage: 3.5,
+        required_media_m3: 0.7,
+        design_temperature_c: 18,
+        foundation_rule: 'Freshwater exhibit',
       },
     });
 
@@ -300,6 +302,7 @@ describe('Biological Media review run PostgreSQL integration', () => {
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     expect(created.body.engine_version).toBe('AAT_CORE_1_0');
     expect(created.body.normalized_input_snapshot.calculation_engine).toBe('AAT_CORE');
-    expect(created.body.result_snapshot.media.required_media_m3).toBe(0.8);
+    expect(created.body.normalized_input_snapshot.temperature_basis).toBe('AVERAGE');
+    expect(created.body.result_snapshot.media.required_media_m3).toBe(0.7);
   });
 });

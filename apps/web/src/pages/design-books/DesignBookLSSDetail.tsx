@@ -516,6 +516,10 @@ export function BiologicalMediaCalculatorPanel({
   const calculatedBiomass = form.biomass_method === 'VOLUME_DENSITY'
     ? Number(context?.total_operating_volume_m3 || 0) * Number(form.stocking_density_kg_m3 || 0)
     : rows.reduce((sum: number, row: any) => sum + Number(row.quantity || 0) * Number(row.design_weight_kg || 0), 0);
+  const aatTemperature = form.temperature_basis === 'AVERAGE'
+    && context?.design_temperature_min_c != null && context?.design_temperature_max_c != null
+    ? (Number(context.design_temperature_min_c) + Number(context.design_temperature_max_c)) / 2
+    : context?.design_temperature_min_c;
 
   const updateSpecies = (index: number, key: string, value: any) => {
     const next = rows.map((row: any, rowIndex: number) => rowIndex === index ? { ...row, [key]: value } : row);
@@ -720,7 +724,14 @@ export function BiologicalMediaCalculatorPanel({
       <div className="grid gap-4 p-5 md:grid-cols-3">
         <label className="text-xs font-medium text-stone-500">Linked net volume m³<input className={bioInputClass} disabled value={context?.total_operating_volume_m3 ?? ''} /></label>
         <label className="text-xs font-medium text-stone-500">Water type<input className={bioInputClass} disabled value={context?.system_water_type || ''} /></label>
-        <label className="text-xs font-medium text-stone-500">Design water temperature °C *<input aria-label="Design water temperature °C" type="number" step="any" className={bioInputClass} disabled={readOnly} value={form.temperature_c} onChange={e => set('temperature_c', e.target.value)} /></label>
+        <label className="text-xs font-medium text-stone-500">Temperature basis
+          <select aria-label="Temperature basis" className={bioInputClass} disabled={readOnly} value={form.temperature_basis} onChange={e => set('temperature_basis', e.target.value)}>
+            <option value="LOWEST">Lowest point</option>
+            <option value="AVERAGE">Average of minimum and maximum</option>
+          </select>
+        </label>
+        <label className="text-xs font-medium text-stone-500">Design water temperature °C<input aria-label="Design water temperature °C" className={bioInputClass} disabled value={aatTemperature ?? ''} /></label>
+        <p className="text-xs text-stone-500 md:col-span-3">Exhibit range: {context?.design_temperature_min_c ?? '—'}–{context?.design_temperature_max_c ?? '—'} °C. This value is inherited from the linked exhibit and cannot be edited here.</p>
         <label className="text-xs font-medium text-stone-500 md:col-span-3">Design basis notes<textarea rows={2} className={bioInputClass} disabled={readOnly} value={form.notes} onChange={e => set('notes', e.target.value)} /></label>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 bg-stone-50/40 px-5 py-3">
@@ -1620,6 +1631,7 @@ export default function DesignBookLSSDetail() {
   const [configResetError, setConfigResetError] = useState<string | null>(null);
   const [biologicalMediaForm, setBiologicalMediaForm] = useState({
     calculation_engine: 'MASS_BALANCE',
+    temperature_basis: 'LOWEST',
     reactor_type: '',
     media_profile_revision_id: '',
     tan_generation_profile_revision_id: '',
@@ -1668,6 +1680,7 @@ export default function DesignBookLSSDetail() {
     const draft = biologicalMedia?.case;
     setBiologicalMediaForm({
       calculation_engine: draft?.calculation_engine || 'MASS_BALANCE',
+      temperature_basis: draft?.temperature_basis || 'LOWEST',
       reactor_type: draft?.reactor_type || '',
       media_profile_revision_id: draft?.media_profile_revision_id || '',
       tan_generation_profile_revision_id: draft?.tan_generation_profile_revision_id || '',

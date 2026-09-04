@@ -88,6 +88,7 @@ function canonicalJson(value: any): string {
 function biologicalMediaInputFromCase(record: any, context: any) {
   return normalizeBiologicalMediaInput({
     calculation_engine: record?.calculation_engine || 'MASS_BALANCE',
+    temperature_basis: record?.temperature_basis || 'LOWEST',
     biomass: {
       method: record?.biomass_method,
       water_volume_m3: context?.total_operating_volume_m3,
@@ -103,7 +104,9 @@ function biologicalMediaInputFromCase(record: any, context: any) {
     },
     water: {
       water_type: context?.system_water_type,
-      temperature_c: record?.temperature_c,
+      temperature_c: record?.calculation_engine === 'AAT_CORE'
+        ? contextTemperature(context, record?.temperature_basis)
+        : record?.temperature_c,
       ph: record?.ph,
       salinity_ppt: record?.salinity_ppt,
       tan_target_mg_n_l: record?.max_tan_mg_n_l,
@@ -120,6 +123,15 @@ function biologicalMediaInputFromCase(record: any, context: any) {
       safety_factor: record?.safety_factor,
     },
   });
+}
+
+function contextTemperature(context: any, basis: unknown) {
+  const minimum = numberOrNull(context?.design_temperature_min_c);
+  const maximum = numberOrNull(context?.design_temperature_max_c);
+  if (String(basis || '').toUpperCase() === 'AVERAGE') {
+    return minimum != null && maximum != null ? (minimum + maximum) / 2 : null;
+  }
+  return minimum;
 }
 
 function getPath(value: any, path: string): any {
@@ -656,18 +668,24 @@ async function linkedVolumeContext(systemId: string, designBookId: string, runne
       exhibit_code: link.exhibit_code,
       exhibit_name: link.exhibit_name,
       water_type: exhibit?.water_type || link.water_type,
+      design_temperature_min_c: numberOrNull(exhibit?.design_temperature_min),
+      design_temperature_max_c: numberOrNull(exhibit?.design_temperature_max),
       operating_volume_m3: Number(calculation.results.operating_volume_m3) > 0
         ? calculation.results.operating_volume_m3
         : null,
     };
   });
   const usable = linkedExhibits.every(item => item.operating_volume_m3 != null && item.operating_volume_m3 > 0);
+  const temperatureMinimums = linkedExhibits.map(item => item.design_temperature_min_c).filter(value => value != null) as number[];
+  const temperatureMaximums = linkedExhibits.map(item => item.design_temperature_max_c).filter(value => value != null) as number[];
   return {
     system_water_type: system.rows[0].water_type,
     linked_exhibits: linkedExhibits,
     total_operating_volume_m3: usable
       ? linkedExhibits.reduce((sum, item) => sum + Number(item.operating_volume_m3), 0)
       : null,
+    design_temperature_min_c: temperatureMinimums.length === linkedExhibits.length ? Math.min(...temperatureMinimums) : null,
+    design_temperature_max_c: temperatureMaximums.length === linkedExhibits.length ? Math.max(...temperatureMaximums) : null,
     status: usable ? 'ready' : 'blocked',
     reasons: usable ? [] : ['Every linked exhibit needs a positive current operating water volume.'],
   };
@@ -699,17 +717,23 @@ async function caseResponse(systemId: string, designBookId: string) {
         exhibit_code: link.exhibit_code || exhibit?.exhibit_code,
         exhibit_name: exhibit?.exhibit_name,
         water_type: exhibit?.water_type,
+        design_temperature_min_c: numberOrNull(exhibit?.design_temperature_min),
+        design_temperature_max_c: numberOrNull(exhibit?.design_temperature_max),
         operating_volume_m3: Number.isFinite(volume) && volume > 0 ? volume : null,
       };
     });
     const usable = linkedExhibits.length > 0
       && linkedExhibits.every((item: any) => item.operating_volume_m3 != null);
+    const temperatureMinimums = linkedExhibits.map((item: any) => item.design_temperature_min_c).filter((value: any) => value != null);
+    const temperatureMaximums = linkedExhibits.map((item: any) => item.design_temperature_max_c).filter((value: any) => value != null);
     const context = {
       system_water_type: snapshotSystem.water_type,
       linked_exhibits: linkedExhibits,
       total_operating_volume_m3: usable
         ? linkedExhibits.reduce((sum: number, item: any) => sum + Number(item.operating_volume_m3), 0)
         : null,
+      design_temperature_min_c: temperatureMinimums.length === linkedExhibits.length ? Math.min(...temperatureMinimums) : null,
+      design_temperature_max_c: temperatureMaximums.length === linkedExhibits.length ? Math.max(...temperatureMaximums) : null,
       status: usable ? 'ready' : 'blocked',
       reasons: usable ? [] : ['The frozen package has no complete linked-exhibit operating water-volume context.'],
       source: 'frozen_design_book_package',
@@ -818,6 +842,7 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
   const reactorType = text(req.body.reactor_type);
   if (reactorType && reactorType.length > 120) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Reactor type must be 120 characters or fewer.' } });
   const calculationEngine = text(req.body.calculation_engine)?.toUpperCase() === 'AAT_CORE' ? 'AAT_CORE' : 'MASS_BALANCE';
+  const temperatureBasis = text(req.body.temperature_basis)?.toUpperCase() === 'AVERAGE' ? 'AVERAGE' : 'LOWEST';
   const mediaId = calculationEngine === 'MASS_BALANCE' ? text(req.body.media_profile_revision_id) : null;
   const tanId = calculationEngine === 'MASS_BALANCE' ? text(req.body.tan_generation_profile_revision_id) : null;
   const mediaError = await requireApprovedProfile('lss_biological_media_profiles', mediaId, 'Media profile');
@@ -859,16 +884,17 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
     const result = await query(
       `INSERT INTO lss_biological_media_cases
        (system_id, design_book_id, reactor_type, media_profile_revision_id, tan_generation_profile_revision_id, status, notes, created_by,
-         calculation_engine, biomass_method, water_volume_m3, stocking_density_kg_m3, feed_rate_pct_biomass_day, protein_pct,
+         calculation_engine, temperature_basis, biomass_method, water_volume_m3, stocking_density_kg_m3, feed_rate_pct_biomass_day, protein_pct,
          manual_daily_feed_kg_d, water_type, temperature_c, ph, salinity_ppt, max_tan_mg_n_l,
          max_tan_source, max_tan_profile_revision_id, do_in_mg_l,
          do_out_min_mg_l, alkalinity_mg_l_caco3, actual_flow_m3_h, safety_factor, preview_stale)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
        ON CONFLICT (system_id, design_book_id) DO UPDATE SET
          reactor_type=EXCLUDED.reactor_type,
          media_profile_revision_id=EXCLUDED.media_profile_revision_id,
          tan_generation_profile_revision_id=EXCLUDED.tan_generation_profile_revision_id,
-           status=EXCLUDED.status, notes=EXCLUDED.notes, calculation_engine=EXCLUDED.calculation_engine, biomass_method=EXCLUDED.biomass_method,
+           status=EXCLUDED.status, notes=EXCLUDED.notes, calculation_engine=EXCLUDED.calculation_engine,
+           temperature_basis=EXCLUDED.temperature_basis, biomass_method=EXCLUDED.biomass_method,
           water_volume_m3=EXCLUDED.water_volume_m3, stocking_density_kg_m3=EXCLUDED.stocking_density_kg_m3,
           feed_rate_pct_biomass_day=EXCLUDED.feed_rate_pct_biomass_day, protein_pct=EXCLUDED.protein_pct,
           manual_daily_feed_kg_d=EXCLUDED.manual_daily_feed_kg_d, water_type=EXCLUDED.water_type,
@@ -879,12 +905,13 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
           actual_flow_m3_h=EXCLUDED.actual_flow_m3_h, safety_factor=EXCLUDED.safety_factor,
           preview_stale=true, updated_at=NOW()
        RETURNING *`,
-      [systemId, designBookId, reactorType, mediaId, tanId, status, text(req.body.notes), req.user!.id, calculationEngine,
+      [systemId, designBookId, reactorType, mediaId, tanId, status, text(req.body.notes), req.user!.id, calculationEngine, temperatureBasis,
         text(req.body.biomass_method), numberOrNull(req.body.water_volume_m3)
           ?? (Number.isFinite(contextVolume) && contextVolume > 0 ? contextVolume : null),
         numberOrNull(req.body.stocking_density_kg_m3), numberOrNull(req.body.feed_rate_pct_biomass_day),
         numberOrNull(req.body.protein_pct), numberOrNull(req.body.manual_daily_feed_kg_d),
-        text(req.body.water_type) || context.system_water_type, numberOrNull(req.body.temperature_c),
+        text(req.body.water_type) || context.system_water_type,
+        calculationEngine === 'AAT_CORE' ? contextTemperature(context, temperatureBasis) : numberOrNull(req.body.temperature_c),
          numberOrNull(req.body.ph), numberOrNull(req.body.salinity_ppt), maximumTan.value,
          maximumTan.source, maximumTan.profile?.id || null,
         numberOrNull(req.body.do_in_mg_l), numberOrNull(req.body.do_out_min_mg_l),
@@ -948,6 +975,7 @@ router.post('/systems/:id/biological-media/preview', requireModuleManage('design
     });
   }
   const calculationEngine = text(req.body.calculation_engine)?.toUpperCase() === 'AAT_CORE' ? 'AAT_CORE' : 'MASS_BALANCE';
+  const temperatureBasis = text(req.body.temperature_basis)?.toUpperCase() === 'AVERAGE' ? 'AVERAGE' : 'LOWEST';
   const mediaId = calculationEngine === 'MASS_BALANCE' ? text(req.body.media_profile_revision_id) : null;
   const tanId = calculationEngine === 'MASS_BALANCE' ? text(req.body.tan_generation_profile_revision_id) : null;
   const currentCase = await query(
@@ -969,6 +997,7 @@ router.post('/systems/:id/biological-media/preview', requireModuleManage('design
   const body = {
     ...req.body,
     calculation_engine: calculationEngine,
+    temperature_basis: temperatureBasis,
     biomass: {
       ...(req.body.biomass || {}),
       method: req.body.biomass_method || req.body.biomass?.method,
@@ -987,7 +1016,9 @@ router.post('/systems/:id/biological-media/preview', requireModuleManage('design
     water: {
       ...(req.body.water || {}),
       water_type: context.system_water_type,
-      temperature_c: req.body.water?.temperature_c ?? req.body.temperature_c,
+      temperature_c: calculationEngine === 'AAT_CORE'
+        ? contextTemperature(context, temperatureBasis)
+        : req.body.water?.temperature_c ?? req.body.temperature_c,
       ph: req.body.water?.ph ?? req.body.ph,
       salinity_ppt: req.body.water?.salinity_ppt ?? req.body.salinity_ppt,
       tan_target_mg_n_l: maximumTan.value,

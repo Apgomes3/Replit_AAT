@@ -81,6 +81,7 @@ export function normalizeBiologicalMediaInput(input: any) {
     : Array.isArray(input?.species_rows) ? input.species_rows : [];
   return {
     calculation_engine: upper(first(input?.calculation_engine, input?.engine)) || 'MASS_BALANCE',
+    temperature_basis: upper(input?.temperature_basis) || 'LOWEST',
     biomass: {
       method,
       water_volume_m3: finite(first(biomass.water_volume_m3, input?.water_volume_m3)),
@@ -156,24 +157,25 @@ export function calculateAatCoreFoundation(input: any): any {
   const freshwater = ['FRESHWATER', 'FRESH_WATER'].includes(waterType || '');
   if (!marine && !freshwater) add(messages, 'AAT_003', 'AAT Core currently supports Marine and Freshwater exhibits.', 'water.water_type');
 
-  let rate: number | null = null;
+  let foundationPercentage: number | null = null;
   let rule: string | null = null;
   if (!messages.length) {
     if ((temperature as number) < 18) {
-      rate = 0.04;
+      foundationPercentage = 4;
       rule = 'Cold exhibit below 18°C';
     } else if (freshwater) {
-      rate = 0.035;
+      foundationPercentage = 3.5;
       rule = 'Freshwater exhibit';
     } else if ((volume as number) > 100) {
-      rate = 0.0225;
+      foundationPercentage = 2.25;
       rule = 'Marine exhibit over 100 m³';
     } else {
-      rate = 0.03;
+      foundationPercentage = 3;
       rule = 'Marine exhibit at or below 100 m³';
     }
   }
-  const mediaVolumeM3 = rate == null || volume == null ? null : volume * rate;
+  const rate = foundationPercentage == null ? null : foundationPercentage / 100;
+  const mediaVolumeM3 = rate == null || volume == null ? null : Number((volume * rate).toFixed(12));
   return {
     engine_version: AAT_CORE_ENGINE_VERSION,
     calculation_engine: 'AAT_CORE',
@@ -196,7 +198,7 @@ export function calculateAatCoreFoundation(input: any): any {
       installed_media_m3: mediaVolumeM3,
       installed_media_l: mediaVolumeM3 == null ? null : mediaVolumeM3 * 1000,
       foundation_rate: rate,
-      foundation_percentage: rate == null ? null : rate * 100,
+      foundation_percentage: foundationPercentage,
       foundation_rule: rule,
       net_volume_m3: volume,
       design_temperature_c: temperature,

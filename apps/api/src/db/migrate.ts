@@ -2368,9 +2368,13 @@ ALTER TABLE lss_max_tan_profiles ADD COLUMN IF NOT EXISTS edit_version INTEGER N
 
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS biomass_method VARCHAR(30);
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS calculation_engine VARCHAR(30) NOT NULL DEFAULT 'MASS_BALANCE';
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS temperature_basis VARCHAR(20) NOT NULL DEFAULT 'LOWEST';
 ALTER TABLE lss_biological_media_cases DROP CONSTRAINT IF EXISTS lss_biological_media_cases_calculation_engine_check;
 ALTER TABLE lss_biological_media_cases ADD CONSTRAINT lss_biological_media_cases_calculation_engine_check
   CHECK (calculation_engine IN ('MASS_BALANCE', 'AAT_CORE'));
+ALTER TABLE lss_biological_media_cases DROP CONSTRAINT IF EXISTS lss_biological_media_cases_temperature_basis_check;
+ALTER TABLE lss_biological_media_cases ADD CONSTRAINT lss_biological_media_cases_temperature_basis_check
+  CHECK (temperature_basis IN ('LOWEST', 'AVERAGE'));
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS water_volume_m3 NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS stocking_density_kg_m3 NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS feed_rate_pct_biomass_day NUMERIC;
