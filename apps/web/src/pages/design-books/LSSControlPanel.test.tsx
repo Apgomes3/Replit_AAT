@@ -62,6 +62,70 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toBeInTheDocument();
   });
 
+  it('toggles between list and card layouts while retaining edits and the save payload', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.put).mockResolvedValue({ data: {} });
+    renderPanel({
+      control: { panel_type: 'GPO' },
+      definitions: [{
+        id: 'pressure', name: 'Pressure transmitter', tag_code: 'PT',
+        signal_type: 'Analog', signal_direction: 'Input', minimum_quantity: 1,
+        allow_range_override: true, allow_calibration_override: true,
+      }],
+      instruments: [{ definition_id: 'pressure', tag: 'LSS-01-PT-01', quantity: 1, control_logic: 'Alarm high' }],
+    }, false);
+
+    const listButton = await screen.findByRole('button', { name: 'List' });
+    const cardsButton = screen.getByRole('button', { name: 'Cards' });
+    expect(listButton).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('table', { name: 'Field instrument definitions' })).toBeVisible();
+
+    const listLogic = screen.getByLabelText('Control logic for Pressure transmitter');
+    await user.clear(listLogic);
+    await user.type(listLogic, 'Trip pump on high pressure');
+    await user.click(cardsButton);
+
+    expect(cardsButton).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('table', { name: 'Field instrument definitions' })).not.toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Pressure transmitter' })).toBeVisible();
+    expect(screen.getByLabelText('Control logic for Pressure transmitter')).toHaveValue('Trip pump on high pressure');
+
+    await user.click(listButton);
+    expect(screen.getByLabelText('Control logic for Pressure transmitter')).toHaveValue('Trip pump on high pressure');
+    await user.click(screen.getByRole('button', { name: 'Save control configuration' }));
+    expect(vi.mocked(api.put)).toHaveBeenCalledWith('/systems/system-1/control', {
+      design_book_id: 'book-1',
+      panel_type: 'GPO',
+      instruments: [{
+        definition_id: 'pressure',
+        quantity: 1,
+        control_logic: 'Trip pump on high pressure',
+      }],
+    });
+  });
+
+  it('keeps permissions and frozen evidence states unchanged in card view', async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      frozen: true,
+      control: { panel_type: 'PLC' },
+      definitions: [],
+      instruments: [{
+        definition_id: 'retired', tag: 'LSS-01-PT-01', quantity: 1,
+        range_max: 16, datasheet_reference: 'DS-OLD',
+        definition_snapshot: { id: 'retired', name: 'Retired transmitter', allow_range_override: true, allow_calibration_override: true },
+      }],
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Cards' }));
+    expect(screen.getByRole('article', { name: 'Retired transmitter' })).toBeVisible();
+    expect(screen.getByLabelText('Quantity for Retired transmitter')).toBeDisabled();
+    expect(screen.getByLabelText('Range maximum for Retired transmitter')).toBeDisabled();
+    expect(screen.getByLabelText('Datasheet reference for Retired transmitter')).toBeDisabled();
+    expect(screen.getByText('Frozen definition evidence')).toBeVisible();
+    expect(screen.getByText('Frozen calibration and datasheet evidence')).toBeVisible();
+  });
+
   it('fetches and enables the product picker with PIM manage permission', async () => {
     renderPanel({
       control: { panel_type: 'GPO' },
