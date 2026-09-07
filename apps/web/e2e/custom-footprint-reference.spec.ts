@@ -11,8 +11,10 @@ test('a local reference image is painted behind interactive footprint geometry',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABQAAAAKAQMAAACOm+ylAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURf8AAP///0EdNBEAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gkHCR00OsVrqgAAAAxJREFUCNdjYCAOAAAAKAAB5Hdt2wAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wOS0wN1QwOToyOTo1MiswMDowMKFE3nQAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDktMDdUMDk6Mjk6NTIrMDA6MDDQGWbIAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA5LTA3VDA5OjI5OjUyKzAwOjAwhwxHFwAAAABJRU5ErkJggg==', 'base64'),
   });
   await expect(page.getByText('“reference.png” is ready to trace.')).toBeVisible();
-  const withReference = await surface.screenshot();
-  expect(withReference.equals(beforeReference)).toBe(false);
+  await expect.poll(async () => {
+    const withReference = await surface.screenshot();
+    return withReference.equals(beforeReference);
+  }).toBe(false);
 
   const image = page.getByTestId('footprint-reference-image');
   await expect(image).toBeVisible();

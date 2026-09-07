@@ -5,16 +5,32 @@ const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH |
 export default defineConfig({
   testDir: './apps/web/e2e',
   fullyParallel: true,
-  projects: [{
-    name: 'mobile-chromium',
-    use: {
-      ...devices['Desktop Chrome'],
-      hasTouch: true,
-      launchOptions: {
-        executablePath: chromiumExecutablePath,
+  projects: [
+    {
+      name: 'mobile-chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        hasTouch: true,
+        launchOptions: {
+          executablePath: chromiumExecutablePath,
+        },
       },
     },
-  }],
+    {
+      name: 'firefox',
+      testMatch: 'custom-footprint-reference.spec.ts',
+      use: {
+        ...devices['Desktop Firefox'],
+      },
+    },
+    {
+      name: 'webkit',
+      testMatch: 'custom-footprint-reference.spec.ts',
+      use: {
+        ...devices['Desktop Safari'],
+      },
+    },
+  ],
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
