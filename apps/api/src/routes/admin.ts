@@ -977,15 +977,38 @@ async function validateFieldInstrument(input: ReturnType<typeof fieldInstrumentI
 }
 router.get('/field-instruments', authenticate, async (req: AuthRequest, res: Response) => {
   const includeInactive = req.query.include_inactive === 'true';
-  const result = await query(
-    `SELECT d.*, pm.product_code AS default_product_code, pm.product_name AS default_product_name,
-            pm.status AS default_product_status
-     FROM field_instrument_definitions d
-     LEFT JOIN product_masters pm ON pm.id=d.default_product_master_id
-     ${includeInactive ? '' : 'WHERE d.is_active=true'}
-     ORDER BY d.sort_order, d.tag_code`,
-  );
-  res.json({ items: result.rows });
+  try {
+    const timedQuery = (text: string, values?: any[]) => pool.query({
+      text, values, query_timeout: 10_000,
+    } as any);
+    const [result, products] = await Promise.all([
+      timedQuery(
+        `SELECT d.*, pm.product_code AS default_product_code, pm.product_name AS default_product_name,
+                pm.status AS default_product_status
+         FROM field_instrument_definitions d
+         LEFT JOIN product_masters pm ON pm.id=d.default_product_master_id
+         ${includeInactive ? '' : 'WHERE d.is_active=true'}
+         ORDER BY d.sort_order, d.tag_code`,
+      ),
+      timedQuery(
+        `SELECT id,product_code,product_name,status
+         FROM product_masters WHERE status='Active' ORDER BY product_code`,
+      ),
+    ]);
+    res.json({ items: result.rows, products: products.rows });
+  } catch (error: any) {
+    const timedOut = error?.code === '57014' || /timeout|timed out/i.test(String(error?.message || ''));
+    if (timedOut) {
+      console.error('[field-instruments] catalogue load timed out', { code: error?.code });
+      return res.status(503).json({
+        error: {
+          code: 'FIELD_INSTRUMENT_LOAD_TIMEOUT',
+          message: 'Field Instruments are temporarily unavailable. Please retry.',
+        },
+      });
+    }
+    throw error;
+  }
 });
 router.post('/field-instruments', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const input = fieldInstrumentInput(req.body);

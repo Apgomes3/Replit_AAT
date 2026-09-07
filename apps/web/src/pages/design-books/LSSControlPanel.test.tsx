@@ -127,6 +127,23 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(api.get).toHaveBeenCalledTimes(2);
   });
 
+  it('cancels an obsolete control request when the panel unmounts', () => {
+    let requestSignal: AbortSignal | undefined;
+    vi.mocked(api.get).mockImplementation((_url: string, config: any) => {
+      requestSignal = config?.signal;
+      return new Promise(() => undefined);
+    });
+    const view = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <LSSControlPanel bookId="book-1" systemId="system-1" readOnly canOverrideProduct={false} />
+      </QueryClientProvider>,
+    );
+
+    expect(requestSignal?.aborted).toBe(false);
+    view.unmount();
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
   it('submits only intentional range and calibration evidence overrides', async () => {
     const user = userEvent.setup();
     vi.mocked(api.put).mockResolvedValue({ data: {} });
