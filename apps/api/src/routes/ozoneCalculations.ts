@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage, requireRole } from '../middleware/auth';
-import { calculateOzoneRequirement, selectOzoneGenerator } from '../lib/ozoneCalculations';
+import { calculateOzoneRequirement, evaluateOzoneGeneratorSelection, selectOzoneGenerator } from '../lib/ozoneCalculations';
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 
@@ -16,6 +16,15 @@ async function contextFor(book: any, systemId: string) {
   if (!system) return null;
   const pumpPackage = context.pump_selections?.find((item: any) => item.system_id === systemId);
   return { context, system, pumpLines: pumpPackage?.items || [] };
+}
+
+async function ozoneGeneratorProducts() {
+  return (await query(
+    `SELECT id, product_code, product_name, model, ozone_production_capacity_g_h
+     FROM product_masters
+     WHERE status='Active' AND product_category='Ozone Generators' AND ozone_production_capacity_g_h > 0
+     ORDER BY ozone_production_capacity_g_h, product_code`,
+  )).rows;
 }
 
 router.get('/systems/:id/ozone-calculation', async (req: AuthRequest, res: Response) => {
@@ -41,12 +50,9 @@ router.get('/systems/:id/ozone-calculation', async (req: AuthRequest, res: Respo
     pump_lines: live.pumpLines,
     ffvp_plenum_circuit_keys: keys,
   });
-  const allocation = result.status === 'ready'
-    ? selectOzoneGenerator(result.ozone_required_g_h, (await query(
-      `SELECT id, product_code, product_name, model, ozone_production_capacity_g_h
-       FROM product_masters
-       WHERE status='Active' AND product_category='Ozone Generators' AND ozone_production_capacity_g_h > 0`,
-    )).rows, { system_id: req.params.id, ffvp_plenum_circuit_keys: keys, calculation_version: result.calculation_version })
+  const products = await ozoneGeneratorProducts();
+  const recommendation = result.status === 'ready'
+    ? selectOzoneGenerator(result.ozone_required_g_h, products, { system_id: req.params.id, ffvp_plenum_circuit_keys: keys, calculation_version: result.calculation_version })
     : null;
   res.json({
     ...saved,
@@ -55,7 +61,9 @@ router.get('/systems/:id/ozone-calculation', async (req: AuthRequest, res: Respo
     ffvp_plenum_circuit_keys: keys,
     pump_lines: live.pumpLines.filter((line: any) => ['FFSP', 'FFVP'].includes(line.pump_duty_tag)),
     result,
-    allocation: saved?.allocation_snapshot || allocation,
+    allocation: saved?.allocation_snapshot || recommendation,
+    recommendation,
+    ozone_generator_products: products,
     frozen: false,
   });
 });
@@ -95,17 +103,31 @@ router.put('/systems/:id/ozone-calculation', requireRole('admin', 'engineer'), r
     ffsp_lines: result.ffsp_lines,
     applicable_ffvp_lines: result.applicable_ffvp_lines,
   };
-  const allocation = selectOzoneGenerator(result.ozone_required_g_h, (await query(
-    `SELECT id, product_code, product_name, model, ozone_production_capacity_g_h
-     FROM product_masters
-     WHERE status='Active' AND product_category='Ozone Generators' AND ozone_production_capacity_g_h > 0`,
-  )).rows, {
+  const products = await ozoneGeneratorProducts();
+  const recommendation: any = selectOzoneGenerator(result.ozone_required_g_h, products, {
     system_id: req.params.id,
     ffvp_plenum_circuit_keys: keys,
     calculation_version: result.calculation_version,
     ffsp_lines: result.ffsp_lines,
     applicable_ffvp_lines: result.applicable_ffvp_lines,
   });
+  const requestedProductId = String(req.body.ozone_generator_product_id || '');
+  const requestedProduct = products.find((product: any) => product.id === requestedProductId);
+  const allocation = requestedProduct
+    ? evaluateOzoneGeneratorSelection(result.ozone_required_g_h, requestedProduct, req.body.ozone_generator_quantity, {
+      system_id: req.params.id,
+      ffvp_plenum_circuit_keys: keys,
+      calculation_version: result.calculation_version,
+      ffsp_lines: result.ffsp_lines,
+      applicable_ffvp_lines: result.applicable_ffvp_lines,
+      selection_source: 'DESIGNER',
+      recommended_product_id: recommendation.product_id || null,
+      recommended_quantity: recommendation.quantity || null,
+    })
+    : recommendation;
+  if (allocation.validation_status === 'FAIL') {
+    return res.status(400).json({ error: { code: 'OZONE_SELECTION_INSUFFICIENT', message: allocation.reason } });
+  }
   const saved = (await query(
     `INSERT INTO design_book_ozone_calculations
        (design_book_id,system_id,target_concentration_mg_l,display_unit,ffvp_plenum_circuit_keys,
@@ -121,7 +143,7 @@ router.put('/systems/:id/ozone-calculation', requireRole('admin', 'engineer'), r
     [book.id, req.params.id, target, displayUnit, JSON.stringify(keys),
        JSON.stringify(inputSnapshot), JSON.stringify(result), JSON.stringify(allocation), req.user!.id],
   )).rows[0];
-  res.json({ ...saved, pump_lines: live.pumpLines.filter((line: any) => ['FFSP', 'FFVP'].includes(line.pump_duty_tag)), result, allocation });
+  res.json({ ...saved, pump_lines: live.pumpLines.filter((line: any) => ['FFSP', 'FFVP'].includes(line.pump_duty_tag)), result, allocation, recommendation, ozone_generator_products: products });
 });
 
 export default router;

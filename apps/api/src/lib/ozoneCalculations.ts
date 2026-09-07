@@ -68,6 +68,42 @@ export type OzoneGeneratorProduct = {
   ozone_production_capacity_g_h: number | string | null;
 };
 
+export function evaluateOzoneGeneratorSelection(
+  requiredGPerHour: unknown,
+  product: OzoneGeneratorProduct,
+  quantityValue: unknown,
+  context: Record<string, unknown> = {},
+) {
+  const required = positive(requiredGPerHour);
+  const capacity = positive(product.ozone_production_capacity_g_h);
+  const quantity = Number(quantityValue);
+  if (required == null || capacity == null || !Number.isInteger(quantity) || quantity < 1) {
+    return { validation_status: 'FAIL', reason: 'A valid ozone generator and positive whole-number quantity are required.', calculation_selection_version: OZONE_SELECTION_VERSION, ...context };
+  }
+  const total = capacity * quantity;
+  const ratio = total / required;
+  const oversize = (ratio - 1) * 100;
+  return {
+    product_id: product.id,
+    product_code: product.product_code,
+    product_name: product.product_name,
+    model: product.model || null,
+    per_unit_capacity_g_h: capacity,
+    quantity,
+    total_installed_capacity_g_h: total,
+    required_capacity_g_h: required,
+    capacity_ratio: ratio,
+    oversize_percent: oversize,
+    validation_status: total >= required ? 'PASS' : 'FAIL',
+    advisory_note: oversize > 30
+      ? `Selected ozone generator configuration provides ${oversize.toFixed(1)}% more capacity than the calculated requirement.`
+      : null,
+    reason: total < required ? 'Selected installed capacity is below the calculated ozone requirement.' : null,
+    calculation_selection_version: OZONE_SELECTION_VERSION,
+    ...context,
+  };
+}
+
 /** Select one PIM generator model repeated as necessary. Product capacity is authoritative. */
 export function selectOzoneGenerator(requiredGPerHour: unknown, products: OzoneGeneratorProduct[], context: Record<string, unknown> = {}) {
   const required = positive(requiredGPerHour);
@@ -79,18 +115,7 @@ export function selectOzoneGenerator(requiredGPerHour: unknown, products: OzoneG
     .filter((product): product is OzoneGeneratorProduct & { capacity: number } => product.capacity != null)
     .map(product => {
       const quantity = Math.ceil(required / product.capacity);
-      const total = product.capacity * quantity;
-      const ratio = total / required;
-      const oversize = (ratio - 1) * 100;
-      return {
-        product_id: product.id, product_code: product.product_code, product_name: product.product_name,
-        model: product.model || null, per_unit_capacity_g_h: product.capacity, quantity,
-        total_installed_capacity_g_h: total, required_capacity_g_h: required, capacity_ratio: ratio,
-        oversize_percent: oversize, validation_status: 'PASS',
-        advisory_note: oversize > 30
-          ? `Closest available ozone generator configuration provides ${oversize.toFixed(1)}% more capacity than the calculated requirement.`
-          : null,
-      };
+      return evaluateOzoneGeneratorSelection(required, product, quantity) as any;
     })
     .sort((a, b) =>
       a.total_installed_capacity_g_h - b.total_installed_capacity_g_h
@@ -100,5 +125,14 @@ export function selectOzoneGenerator(requiredGPerHour: unknown, products: OzoneG
   if (!candidates.length) {
     return { validation_status: 'FAIL', reason: 'No active PIM ozone generator has a positive ozone production capacity.', required_capacity_g_h: required, calculation_selection_version: OZONE_SELECTION_VERSION, ...context };
   }
-  return { ...candidates[0], calculation_selection_version: OZONE_SELECTION_VERSION, ...context };
+  const selected = candidates[0];
+  return {
+    ...selected,
+    advisory_note: selected.oversize_percent > 30
+      ? `Closest available ozone generator configuration provides ${selected.oversize_percent.toFixed(1)}% more capacity than the calculated requirement.`
+      : null,
+    calculation_selection_version: OZONE_SELECTION_VERSION,
+    selection_source: 'RECOMMENDED',
+    ...context,
+  };
 }

@@ -26,6 +26,8 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
   const [target, setTarget] = useState('0.05');
   const [unit, setUnit] = useState('g/h');
   const [plenumKeys, setPlenumKeys] = useState<string[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [selectedQuantity, setSelectedQuantity] = useState('1');
   const [saving, setSaving] = useState(false);
   const { data, isLoading, isError } = useQuery({
     queryKey: ['ozone-calculation', systemId, bookId],
@@ -37,6 +39,9 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
     setTarget(String(data.target_concentration_mg_l ?? data.input_snapshot?.target_concentration_mg_l ?? 0.05));
     setUnit(data.display_unit || data.input_snapshot?.display_unit || 'g/h');
     setPlenumKeys(data.ffvp_plenum_circuit_keys || data.input_snapshot?.ffvp_plenum_circuit_keys || []);
+    const initialSelection = data.allocation_snapshot || data.allocation || data.recommendation;
+    setSelectedProductId(initialSelection?.product_id || '');
+    setSelectedQuantity(String(initialSelection?.quantity || 1));
   }, [data]);
 
   const ffspLines = useMemo(() => (data?.pump_lines || data?.input_snapshot?.ffsp_lines || [])
@@ -62,6 +67,24 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
   const result = data?.frozen ? frozenResult : preview;
   // Allocation and validation always originate from the server-side selection.
   const allocation = data?.allocation_snapshot || data?.allocation;
+  const recommendation = data?.recommendation;
+  const displayedRecommendation = recommendation || allocation;
+  const generatorProducts = data?.ozone_generator_products || [];
+  const selectedProduct = generatorProducts.find((product: any) => product.id === selectedProductId);
+  const quantityNumber = Number(selectedQuantity);
+  const selectedCapacity = Number(selectedProduct?.ozone_production_capacity_g_h || allocation?.per_unit_capacity_g_h || 0);
+  const selectedInstalled = selectedCapacity * quantityNumber;
+  const selectedOversize = preview.ozone_required_g_h > 0
+    ? ((selectedInstalled / preview.ozone_required_g_h) - 1) * 100
+    : 0;
+  const selectionIsValid = Boolean(selectedProductId) && Number.isInteger(quantityNumber) && quantityNumber > 0
+    && selectedInstalled >= preview.ozone_required_g_h;
+  const displayedSelectionStatus = data?.frozen ? displayedRecommendation?.validation_status : (selectionIsValid ? 'PASS' : 'FAIL');
+  const displayedAdvisory = data?.frozen
+    ? displayedRecommendation?.advisory_note
+    : selectedOversize > 30
+      ? `Selected ozone generator configuration provides ${selectedOversize.toFixed(1)}% more capacity than the calculated requirement.`
+      : null;
 
   const save = async () => {
     setSaving(true);
@@ -71,6 +94,8 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
         target_concentration_mg_l: numericTarget,
         display_unit: unit,
         ffvp_plenum_circuit_keys: plenumKeys,
+        ozone_generator_product_id: selectedProductId,
+        ozone_generator_quantity: quantityNumber,
       });
       await queryClient.invalidateQueries({ queryKey: ['ozone-calculation', systemId, bookId] });
       await queryClient.invalidateQueries({ queryKey: ['design-book', bookId] });
@@ -154,28 +179,41 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
         ) : (
           <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><AlertCircle className="h-5 w-5 shrink-0" />Save a positive FFSP flow in Pump Selection before calculating ozone demand.</div>
         )}
-        {allocation && (
-          <div className={`rounded-xl border p-4 ${allocation.validation_status === 'PASS' ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+        {displayedRecommendation && (
+          <div className={`rounded-xl border p-4 ${displayedRecommendation.validation_status === 'PASS' ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-stone-600">Automatic ozone generator selection</div>
-                {allocation.product_id
-                  ? <div className="mt-1 text-sm font-semibold text-stone-900">{allocation.quantity} × {allocation.product_code}{allocation.model ? ` · ${allocation.model}` : ''} — {allocation.product_name}</div>
-                  : <div className="mt-1 text-sm font-semibold text-red-800">{allocation.reason || 'No suitable ozone generator is available.'}</div>}
+                <div className="text-xs font-semibold uppercase tracking-wide text-stone-600">Recommended ozone generator configuration</div>
+                {displayedRecommendation?.product_id
+                  ? <div className="mt-1 text-sm font-semibold text-stone-900">{displayedRecommendation.quantity} × {displayedRecommendation.product_code}{displayedRecommendation.model ? ` · ${displayedRecommendation.model}` : ''} — {displayedRecommendation.product_name}</div>
+                  : <div className="mt-1 text-sm font-semibold text-red-800">{displayedRecommendation.reason || 'No suitable ozone generator is available.'}</div>}
               </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-stone-800 ring-1 ring-black/5">{allocation.validation_status}</span>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-stone-800 ring-1 ring-black/5">{displayedSelectionStatus}</span>
             </div>
-            {allocation.product_id && <div className="mt-3 grid gap-2 text-xs text-stone-700 sm:grid-cols-4">
-              <span>Unit: <b>{number(allocation.per_unit_capacity_g_h)} g/h</b></span>
-              <span>Installed: <b>{number(allocation.total_installed_capacity_g_h)} g/h</b></span>
-              <span>Required: <b>{number(allocation.required_capacity_g_h)} g/h</b></span>
-              <span>Oversize: <b>{number(allocation.oversize_percent)}%</b></span>
+            {!data?.frozen && <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_8rem]">
+              <label className="text-xs font-medium text-stone-700">Designer-selected model
+                <select aria-label="Ozone generator model" value={selectedProductId} disabled={readOnly} onChange={event => setSelectedProductId(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm">
+                  {generatorProducts.map((product: any) => <option key={product.id} value={product.id}>{product.product_code}{product.model ? ` · ${product.model}` : ''} — {number(product.ozone_production_capacity_g_h)} g/h</option>)}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-stone-700">Quantity
+                <input aria-label="Ozone generator quantity" type="number" min="1" step="1" value={selectedQuantity} disabled={readOnly}
+                  onChange={event => setSelectedQuantity(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm" />
+              </label>
             </div>}
-            {allocation.advisory_note && <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">{allocation.advisory_note}</p>}
+            {(data?.frozen ? allocation?.product_id : selectedProductId) && <div className="mt-3 grid gap-2 text-xs text-stone-700 sm:grid-cols-4">
+              <span>Unit: <b>{number(data?.frozen ? allocation.per_unit_capacity_g_h : selectedCapacity)} g/h</b></span>
+              <span>Installed: <b>{number(data?.frozen ? allocation.total_installed_capacity_g_h : selectedInstalled)} g/h</b></span>
+              <span>Required: <b>{number(data?.frozen ? allocation.required_capacity_g_h : preview.ozone_required_g_h)} g/h</b></span>
+              <span>Oversize: <b>{number(data?.frozen ? allocation.oversize_percent : selectedOversize)}%</b></span>
+            </div>}
+            {displayedAdvisory && <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">{displayedAdvisory}</p>}
             <p className="mt-3 text-xs text-stone-600">PASS: installed capacity meets or exceeds demand. FAIL: no ozone generator capacity is available.</p>
           </div>
         )}
-        {!readOnly && !data?.frozen && <div className="flex justify-end"><button type="button" onClick={save} disabled={saving || totalFlow <= 0 || !targetIsValid}
+        {!readOnly && !data?.frozen && <div className="flex justify-end"><button type="button" onClick={save} disabled={saving || totalFlow <= 0 || !targetIsValid || !selectionIsValid}
           className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save ozone calculation'}</button></div>}
       </div>
     </section>

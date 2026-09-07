@@ -14,3 +14,9 @@ Generator capacity comes from the dedicated numeric PIM g/h value, never by pars
 **Why:** Product names are not controlled calculation data, and later PIM edits must not silently rewrite reviewed equipment evidence.
 
 **How to apply:** Recalculate live drafts from active PIM products, perform validation on the server, and retain the saved allocation snapshot for review and release.
+
+The automatic generator result is a recommendation, not a locked allocation. Designers may select any active Ozone Generators PIM model and whole-number quantity, provided installed capacity meets demand; the server recalculates and freezes the chosen evidence.
+
+**Why:** Engineering may have practical model or quantity constraints that the capacity-only recommendation cannot know.
+
+**How to apply:** Show the closest-capacity recommendation beside editable model and quantity controls. Keep recommendation and final designer selection distinct in the saved snapshot.

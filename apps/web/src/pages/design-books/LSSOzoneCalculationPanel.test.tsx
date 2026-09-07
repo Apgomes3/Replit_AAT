@@ -31,6 +31,14 @@ describe('LSS ozone calculation', () => {
         { circuit_key: 'ff:1', circuit_name: 'Foam Fractionator', pump_duty_tag: 'FFSP', flow_m3h: 100 },
         { circuit_key: 'ff:1', circuit_name: 'Foam Fractionator', pump_duty_tag: 'FFVP', venturi_flow_m3h: 25 },
       ],
+      ozone_generator_products: [
+        { id: 'oz-7', product_code: 'OZ-07', product_name: 'Ozone Generator', model: 'OZ 07', ozone_production_capacity_g_h: 7 },
+      ],
+      recommendation: {
+        product_id: 'oz-7', product_code: 'OZ-07', product_name: 'Ozone Generator', model: 'OZ 07',
+        per_unit_capacity_g_h: 7, quantity: 1, total_installed_capacity_g_h: 7,
+        required_capacity_g_h: 5, oversize_percent: 40, validation_status: 'PASS',
+      },
     } } as any);
     apiPut.mockResolvedValue({ data: {} } as any);
   });
@@ -43,7 +51,7 @@ describe('LSS ozone calculation', () => {
 
     await user.click(screen.getByRole('checkbox'));
     expect(screen.getByText('125 m³/h')).toBeInTheDocument();
-    expect(screen.getByText('6.25 g/h')).toBeInTheDocument();
+    expect(screen.getAllByText('6.25 g/h')).toHaveLength(2);
 
     await user.click(screen.getByRole('button', { name: 'mg/h' }));
     expect(screen.getByText('6,250 mg/h')).toBeInTheDocument();
@@ -53,6 +61,8 @@ describe('LSS ozone calculation', () => {
       target_concentration_mg_l: 0.05,
       display_unit: 'mg/h',
       ffvp_plenum_circuit_keys: ['ff:1'],
+      ozone_generator_product_id: 'oz-7',
+      ozone_generator_quantity: 1,
     }));
   });
 
@@ -65,11 +75,44 @@ describe('LSS ozone calculation', () => {
     await user.clear(numericInput);
     await user.type(numericInput, '0.075');
     expect(slider).toHaveValue('0.075');
-    expect(screen.getByText('7.5 g/h')).toBeInTheDocument();
+    expect(screen.getAllByText('7.5 g/h')).toHaveLength(2);
 
     fireEvent.change(slider, { target: { value: '0.1' } });
     expect((numericInput as HTMLInputElement).value).toBe('0.1');
-    expect(screen.getByText('10 g/h')).toBeInTheDocument();
+    expect(screen.getAllByText('10 g/h')).toHaveLength(2);
+  });
+
+  it('lets the designer override the recommended model and quantity', async () => {
+    const user = userEvent.setup();
+    apiGet.mockResolvedValueOnce({ data: {
+      target_concentration_mg_l: 0.05,
+      display_unit: 'g/h',
+      ffvp_plenum_circuit_keys: [],
+      frozen: false,
+      pump_lines: [{ circuit_key: 'ff:1', pump_duty_tag: 'FFSP', flow_m3h: 100 }],
+      ozone_generator_products: [
+        { id: 'oz-7', product_code: 'OZ-07', product_name: 'Ozone 7', ozone_production_capacity_g_h: 7 },
+        { id: 'oz-3', product_code: 'OZ-03', product_name: 'Ozone 3', ozone_production_capacity_g_h: 3 },
+      ],
+      recommendation: {
+        product_id: 'oz-7', product_code: 'OZ-07', product_name: 'Ozone 7',
+        per_unit_capacity_g_h: 7, quantity: 1, total_installed_capacity_g_h: 7,
+        required_capacity_g_h: 5, oversize_percent: 40, validation_status: 'PASS',
+      },
+    } } as any);
+    renderPanel();
+
+    await user.selectOptions(await screen.findByLabelText('Ozone generator model'), 'oz-3');
+    const quantity = screen.getByLabelText('Ozone generator quantity');
+    await user.clear(quantity);
+    await user.type(quantity, '2');
+    expect(screen.getByText(/Installed:/)).toHaveTextContent('6 g/h');
+
+    await user.click(screen.getByRole('button', { name: 'Save ozone calculation' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/systems/system-1/ozone-calculation', expect.objectContaining({
+      ozone_generator_product_id: 'oz-3',
+      ozone_generator_quantity: 2,
+    })));
   });
 
   it('renders server-selected generator evidence and its validation status', async () => {
@@ -85,7 +128,7 @@ describe('LSS ozone calculation', () => {
       },
     } } as any);
     renderPanel();
-    expect(await screen.findByText(/Automatic ozone generator selection/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Recommended ozone generator configuration/i)).toBeInTheDocument();
     expect(screen.getByText(/1 × OZ-07/)).toBeInTheDocument();
     expect(screen.getByText('PASS')).toBeInTheDocument();
     expect(screen.getByText(/Oversize:/)).toHaveTextContent('40%');
