@@ -45,3 +45,4 @@
 - [LSS control loading boundary](lss-control-loading-boundary.md) — load one control panel with targeted, bounded queries; cancel obsolete browser requests rather than retrying indefinitely.
 - [Instrument calibration evidence](instrument-calibration-evidence.md) — range, unit, calibration, and datasheet values become saved instance evidence and obey release immutability.
 - [Exhibit pipe sizing evidence](exhibit-pipe-sizing-evidence.md) — recommend the smallest in-band DN; freeze resolved pipe evidence and revalidate it whenever exhibit flow changes.
+- [PostgreSQL concurrency test synchronization](postgres-concurrency-test-synchronization.md) — correlate blocked work to the exact blocker PID instead of relying on timing or visible SQL text.
