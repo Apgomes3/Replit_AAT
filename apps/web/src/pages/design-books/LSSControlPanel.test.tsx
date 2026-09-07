@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LSSControlPanel from './LSSControlPanel';
 import api from '../../lib/api';
+import { exportCsv } from '../../lib/exportCsv';
 
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(), put: vi.fn() } }));
+vi.mock('../../lib/exportCsv', () => ({ exportCsv: vi.fn() }));
 
 function renderPanel(data: any, readOnly = true, canOverrideProduct = !readOnly) {
   vi.mocked(api.get).mockImplementation((url: string) => {
@@ -66,10 +68,10 @@ describe('LSSControlPanel frozen evidence', () => {
       }],
     });
 
-    expect(await screen.findByText('Pressure transmitter')).toBeVisible();
-    expect(screen.getByText('Frozen definition evidence')).toBeVisible();
+    expect(await screen.findAllByText('Pressure transmitter')).toHaveLength(2);
+    expect(screen.getAllByText('Frozen definition evidence')).toHaveLength(1);
     expect(screen.getByRole('option', { name: /PT-100 — Historic transmitter \(Retired\) \(frozen snapshot\)/ })).toBeInTheDocument();
-    expect(screen.getByText('Frozen product evidence')).toBeVisible();
+    expect(screen.getAllByText('Frozen product evidence')).toHaveLength(1);
     expect(screen.getByDisplayValue('Stop pump on high pressure.')).toBeDisabled();
     expect(vi.mocked(api.get)).not.toHaveBeenCalledWith('/products/masters', expect.anything());
   });
@@ -101,5 +103,83 @@ describe('LSSControlPanel frozen evidence', () => {
         control_logic: 'Revised interlock logic',
       }],
     });
+  });
+});
+
+describe('LSSControlPanel I/O schedule preview', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('groups saved instances by panel and direction, ordered by direction then tag, with all review fields', async () => {
+    renderPanel({
+      frozen: true,
+      control: { panel_type: 'PLC' },
+      definitions: [],
+      instruments: [
+        {
+          definition_id: 'output', tag: 'LSS-02-AO-02', control_logic: 'Modulate valve',
+          definition_snapshot: { id: 'output', name: 'Valve actuator', signal_type: 'Analog', signal_direction: 'Output' },
+          product_snapshot: { product_code: 'VA-10', product_name: 'Historic actuator', status: 'Retired' },
+        },
+        {
+          definition_id: 'input-2', tag: 'LSS-02-PT-02', control_logic: 'Alarm high',
+          definition_snapshot: { id: 'input-2', name: 'Pressure transmitter', signal_type: 'Analog', signal_direction: 'Input' },
+        },
+        {
+          definition_id: 'input-1', tag: 'LSS-02-FS-01', control_logic: 'Stop pump',
+          definition_snapshot: { id: 'input-1', name: 'Flow switch', signal_type: 'Digital', signal_direction: 'Input' },
+        },
+      ],
+    });
+
+    expect(await screen.findByRole('heading', { name: 'PLC panel · Input signals' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'PLC panel · Output signals' })).toBeVisible();
+    const inputTable = screen.getByRole('table', { name: 'PLC Input I/O schedule' });
+    expect(within(inputTable).getAllByRole('row').slice(1).map(row => within(row).getAllByRole('cell')[0].textContent))
+      .toEqual(['LSS-02-FS-01', 'LSS-02-PT-02']);
+    const outputRow = within(screen.getByRole('table', { name: 'PLC Output I/O schedule' })).getAllByRole('row')[1];
+    expect(within(outputRow).getAllByRole('cell').map(cell => cell.textContent))
+      .toEqual(['LSS-02-AO-02', 'Valve actuator', 'Analog', 'Output', 'VA-10 — Historic actuator (Retired)', 'Modulate valve']);
+    expect(screen.getAllByText('Frozen definition evidence')).toHaveLength(3);
+  });
+
+  it('exports the saved schedule as CSV and requests its PDF with the design book', async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:io-schedule');
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/systems/system-1/control') return Promise.resolve({ data: {
+        control: { panel_type: 'GPO' },
+        definitions: [{ id: 'flow', name: 'Flow switch', signal_type: 'Digital', signal_direction: 'Input' }],
+        instruments: [{ definition_id: 'flow', tag: '=FS-01', control_logic: '@Stop' }],
+      } });
+      if (url === '/systems/system-1/control/io-schedule.pdf') return Promise.resolve({ data: new Blob(['pdf']) });
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <LSSControlPanel bookId="book-1" systemId="system-1" readOnly canOverrideProduct={false} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findAllByText('=FS-01')).not.toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(exportCsv).toHaveBeenCalledWith('io-schedule-system-1.csv', expect.arrayContaining([
+      expect.objectContaining({ header: 'Tag' }),
+      expect.objectContaining({ header: 'Saved control logic' }),
+    ]), [expect.objectContaining({ tag: '=FS-01', controlLogic: '@Stop' })]);
+
+    await user.click(screen.getByRole('button', { name: 'Download PDF' }));
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/systems/system-1/control/io-schedule.pdf', {
+      params: { design_book_id: 'book-1' },
+      responseType: 'blob',
+    });
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:io-schedule');
+    click.mockRestore();
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
   });
 });

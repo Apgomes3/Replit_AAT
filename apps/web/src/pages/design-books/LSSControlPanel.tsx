@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Save, SlidersHorizontal } from 'lucide-react';
+import { Download, Save, SlidersHorizontal } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
+import { exportCsv } from '../../lib/exportCsv';
 
 type Props = {
   bookId: string;
@@ -22,6 +23,16 @@ type DraftInstrument = {
   control_logic_supplied: boolean;
 };
 
+type IOScheduleRow = {
+  panel: string;
+  direction: string;
+  tag: string;
+  instrument: string;
+  signalType: string;
+  product: string;
+  controlLogic: string;
+};
+
 const inputClass = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:bg-stone-50 disabled:text-stone-400';
 
 function definitionId(item: any) {
@@ -38,11 +49,50 @@ function productLabel(product: any) {
   return `${product.product_code ? `${product.product_code} — ` : ''}${name}${product.status ? ` (${product.status})` : ''}`;
 }
 
+function signalDirection(value: any) {
+  return value || 'Unspecified';
+}
+
+function scheduleRows(control: any, savedInstruments: any[], definitions: any[], products: any[]): IOScheduleRow[] {
+  const definitionsById = new Map(definitions.map(definition => [definitionId(definition), definition]));
+  const rows = savedInstruments.flatMap(item => {
+    const definition = definitionsById.get(definitionId(item)) || item.definition_snapshot || {};
+    const quantity = Math.max(1, Number(item.quantity || 1));
+    // Older responses can return an aggregated saved selection. Expand it so
+    // the preview remains an instance schedule rather than a definition list.
+    const tags = Array.isArray(item.tags) ? item.tags : [item.tag || item.instrument_tag || 'Unallocated'];
+    const panel = item.panel_type || item.panel || control?.control?.panel_type || control?.panel_type || 'GPO';
+    const direction = signalDirection(item.signal_direction || definition.signal_direction);
+    const assignedProductId = productId(item);
+    const product = item.product_snapshot || definition.product_snapshot
+      || products.find(candidate => candidate.id === assignedProductId)
+      || (item.product_name ? item : null);
+    return Array.from({ length: quantity }, (_, index) => ({
+      panel,
+      direction,
+      tag: tags[index] || (quantity === 1 ? tags[0] : `Unallocated ${index + 1}`),
+      instrument: item.instrument_name || definition.name || 'Historical field instrument',
+      signalType: item.signal_type || definition.signal_type || 'Unspecified',
+      product: productLabel(product),
+      // This is intentionally the instance value only: a catalogue default
+      // may have changed since this saved/frozen instance was configured.
+      controlLogic: item.control_logic || '—',
+    }));
+  });
+  const directionOrder = (direction: string) => direction.toLowerCase() === 'input' ? 0 : direction.toLowerCase() === 'output' ? 1 : 2;
+  return rows.sort((a, b) => a.panel.localeCompare(b.panel)
+    || directionOrder(a.direction) - directionOrder(b.direction)
+    || a.direction.localeCompare(b.direction)
+    || a.tag.localeCompare(b.tag)
+    || a.instrument.localeCompare(b.instrument));
+}
+
 export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrideProduct }: Props) {
   const qc = useQueryClient();
   const [panelType, setPanelType] = useState<'GPO' | 'PLC'>('GPO');
   const [instruments, setInstruments] = useState<DraftInstrument[]>([]);
   const [saving, setSaving] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['lss-control', bookId, systemId],
     queryFn: () => api.get(`/systems/${systemId}/control`, { params: { design_book_id: bookId } }).then(response => response.data),
@@ -71,6 +121,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
     return [...known.values()];
   }, [control, savedInstruments]);
   const products: any[] = control?.products || control?.product_masters || productData?.items || productData || [];
+  const ioSchedule = useMemo(() => scheduleRows(control, savedInstruments, definitions, products), [control, savedInstruments, definitions, products]);
 
   useEffect(() => {
     if (!control) return;
@@ -129,6 +180,28 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
       toast.error(err?.response?.data?.error?.message || 'Failed to save control configuration');
     } finally { setSaving(false); }
   };
+  const downloadPdf = async () => {
+    if (pdfLoading || ioSchedule.length === 0) return;
+    setPdfLoading(true);
+    try {
+      const response = await api.get(`/systems/${systemId}/control/io-schedule.pdf`, {
+        params: { design_book_id: bookId },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `io-schedule-${systemId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Could not download the I/O schedule PDF.');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   if (isLoading) return <div className="rounded-xl border border-stone-200 bg-white p-10 text-center text-sm text-stone-400" role="status">Loading control configuration…</div>;
   if (isError) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">Control configuration could not be loaded: {(error as any)?.response?.data?.error?.message || 'Try again.'}</div>;
@@ -168,6 +241,33 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
           })}
         </div>}
         {!readOnly && <div className="flex justify-end border-t border-stone-100 bg-stone-50/40 px-5 py-3"><button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? 'Saving…' : 'Save control configuration'}</button></div>}
+      </section>
+      <section className="overflow-hidden rounded-xl border border-stone-200 bg-white" aria-labelledby="io-schedule-heading">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
+          <div><h2 id="io-schedule-heading" className="text-sm font-semibold text-stone-700">I/O schedule preview</h2><p className="mt-0.5 text-xs text-stone-400">Saved instrument instances, grouped by panel and signal direction.</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen saved-instance evidence</p>}</div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => exportCsv(`io-schedule-${systemId}.csv`, [
+              { header: 'Panel', value: row => row.panel }, { header: 'Direction', value: row => row.direction },
+              { header: 'Tag', value: row => row.tag }, { header: 'Instrument', value: row => row.instrument },
+              { header: 'Signal type', value: row => row.signalType }, { header: 'Assigned product', value: row => row.product },
+              { header: 'Saved control logic', value: row => row.controlLogic },
+            ], ioSchedule)} disabled={ioSchedule.length === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />Export CSV</button>
+            <button type="button" onClick={() => void downloadPdf()} disabled={ioSchedule.length === 0 || pdfLoading} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />{pdfLoading ? 'Preparing PDF…' : 'Download PDF'}</button>
+          </div>
+        </div>
+        {ioSchedule.length === 0 ? <div className="p-8 text-center text-sm text-stone-400" role="status">No saved instrument instances are available for this I/O schedule.</div> : <div className="overflow-x-auto">
+          {Array.from(new Map(ioSchedule.map(row => [`${row.panel}::${row.direction}`, { panel: row.panel, direction: row.direction }])).values()).map(group => {
+            const rows = ioSchedule.filter(row => row.panel === group.panel && row.direction === group.direction);
+            return <div key={`${group.panel}-${group.direction}`} className="border-b border-stone-100 last:border-0">
+              <h3 className="bg-stone-50 px-5 py-2 text-xs font-semibold text-stone-600">{group.panel} panel · {group.direction} signals</h3>
+              <table className="w-full min-w-[760px] text-left text-xs text-stone-600" aria-label={`${group.panel} ${group.direction} I/O schedule`}>
+                <caption className="sr-only">{group.panel} panel {group.direction} signal I/O schedule</caption>
+                <thead className="border-y border-stone-100 text-[10px] uppercase tracking-wide text-stone-400"><tr><th className="px-5 py-2 font-medium">Tag</th><th className="px-3 py-2 font-medium">Instrument</th><th className="px-3 py-2 font-medium">Signal type</th><th className="px-3 py-2 font-medium">Direction</th><th className="px-3 py-2 font-medium">Assigned product</th><th className="px-3 py-2 font-medium">Saved control logic</th></tr></thead>
+                <tbody>{rows.map((row, index) => <tr key={`${row.tag}-${row.instrument}-${index}`} className="border-b border-stone-100 last:border-0"><td className="whitespace-nowrap px-5 py-3 font-mono text-stone-700">{row.tag}</td><td className="px-3 py-3 font-medium text-stone-700">{row.instrument}</td><td className="px-3 py-3">{row.signalType}</td><td className="px-3 py-3">{row.direction}</td><td className="px-3 py-3">{row.product}</td><td className="px-3 py-3">{row.controlLogic}</td></tr>)}</tbody>
+              </table>
+            </div>;
+          })}
+        </div>}
       </section>
     </div>
   );

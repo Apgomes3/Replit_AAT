@@ -9,6 +9,7 @@ import {
   initialInstrumentControlLogic, initialInstrumentProduct,
 } from '../lib/lssControls';
 import { logAudit } from '../db/audit';
+import { projectLssIoSchedule, renderLssIoSchedulePdf } from '../lib/lssIoSchedule';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -93,21 +94,87 @@ async function bookAndSystem(bookId: string, systemId: string) {
   return { book: context, system };
 }
 
+router.get('/systems/:id/control/io-schedule.pdf', async (req: AuthRequest, res: Response) => {
+  const bookId = String(req.query.design_book_id || '');
+  if (!bookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
+  // Keep the same source-of-truth rule as the control screen: draft books
+  // render saved live instances, while review/released books render only the
+  // frozen package captured for that state.
+  // Determine frozen state before loading the live aggregate. In particular,
+  // loadReleaseContext's live aggregate joins current PIM product rows, which
+  // must never be consulted while rendering a frozen book.
+  const stored = (await query(
+    'SELECT id,book_code,book_title,project_id,status,review_snapshot,release_snapshot FROM design_books WHERE id=$1',
+    [bookId],
+  )).rows[0];
+  if (!stored) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book not found.' } });
+  const frozenStatus = stored.status === 'Released' || ['For Review', 'Approved'].includes(stored.status);
+  const frozenSnapshot = stored.status === 'Released' ? stored.release_snapshot
+    : ['For Review', 'Approved'].includes(stored.status) ? stored.review_snapshot : null;
+  if (frozenStatus && !frozenSnapshot) {
+    return res.status(409).json({
+      error: {
+        code: 'DESIGN_BOOK_SNAPSHOT_MISSING',
+        message: 'The frozen Design Book evidence required for this I/O schedule is unavailable.',
+      },
+    });
+  }
+  const book = frozenSnapshot ? stored : await loadReleaseContext(bookId, query, false, true);
+  const source = frozenSnapshot || book;
+  // Resolve issued work from the frozen package itself. A renamed, retired, or
+  // removed live system must not change whether an issued schedule can export.
+  const selectedSystem = (source.systems || []).find((system: any) => system.id === req.params.id);
+  if (!selectedSystem || !isLifeSupportSystem(selectedSystem)) {
+    return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Life Support System not found in Design Book project.' } });
+  }
+  const systems = [selectedSystem];
+  const controls = (source.lss_controls || []).filter((item: any) =>
+    item.system_id === selectedSystem.id);
+  // Some older snapshots retained the flat compatibility arrays only.
+  const packages = controls.length
+    ? controls
+    : [{
+      system_id: selectedSystem.id,
+      control: (source.lss_control_configurations || []).find((item: any) => item.system_id === selectedSystem.id) || null,
+      instruments: (source.lss_instrument_instances || []).filter((item: any) => item.system_id === selectedSystem.id),
+    }];
+  const pdf = await renderLssIoSchedulePdf(book, projectLssIoSchedule(systems, packages));
+  const safeBookCode = String(book.book_code || 'lss-io-schedule').replace(/[^a-z0-9_.-]/gi, '-');
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${safeBookCode}-lss-io-schedule.pdf"`,
+    'Cache-Control': 'no-store',
+  });
+  return res.send(pdf);
+});
+
 router.get('/systems/:id/control', async (req: AuthRequest, res: Response) => {
   const bookId = String(req.query.design_book_id || '');
   if (!bookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
+  const stored = (await query(
+    'SELECT id,status,review_snapshot,release_snapshot FROM design_books WHERE id=$1',
+    [bookId],
+  )).rows[0];
+  if (!stored) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book not found.' } });
+  if (stored.status === 'Released' || ['For Review', 'Approved'].includes(stored.status)) {
+    const snapshot = stored.status === 'Released' ? stored.release_snapshot : stored.review_snapshot;
+    if (!snapshot) {
+      return res.status(409).json({
+        error: {
+          code: 'DESIGN_BOOK_SNAPSHOT_MISSING',
+          message: 'The frozen Design Book evidence required for this control configuration is unavailable.',
+        },
+      });
+    }
+    const system = (snapshot.systems || []).find((value: any) => value.id === req.params.id);
+    if (!system || !isLifeSupportSystem(system)) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Life Support System not found in Design Book project.' } });
+    }
+    const saved = snapshot.lss_controls?.find((item: any) => item.system_id === system.id);
+    return res.json(frozenPayload(saved, snapshot, system.id));
+  }
   const { book, system } = await bookAndSystem(bookId, String(req.params.id));
   if (!book || !system || !isLifeSupportSystem(system)) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Life Support System not found in Design Book project.' } });
-  if (book.status === 'Released' && book.release_snapshot) {
-    const saved = book.release_snapshot.lss_controls?.find((item: any) => item.system_id === system.id);
-    const snapshot = book.release_snapshot;
-    return res.json(frozenPayload(saved, snapshot, system.id));
-  }
-  if (['For Review', 'Approved'].includes(book.status) && book.review_snapshot) {
-    const saved = book.review_snapshot.lss_controls?.find((item: any) => item.system_id === system.id);
-    const snapshot = book.review_snapshot;
-    return res.json(frozenPayload(saved, snapshot, system.id));
-  }
   if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
   res.json(await responsePayload(query, bookId, system));
 });

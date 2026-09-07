@@ -41,3 +41,4 @@
 - [AAT Core biological media](aat-core-biological-media.md) — selectable volume-percentage engine; below 18°C overrides water type and size at 4%.
 - [Ozone treatment flow](ozone-treatment-flow.md) — dose from governed FFSP flow; add FFVP only when its circuit is explicitly marked as direct-plenum.
 - [LSS controls workspace](lss-controls-workspace.md) — manage controls and instruments as a Design Book main tab after Friction Loss, with per-LSS drill-in.
+- [LSS I/O schedule evidence](lss-io-schedule-evidence.md) — schedules are instance-based; issued previews and exports must fail closed unless frozen evidence exists.
