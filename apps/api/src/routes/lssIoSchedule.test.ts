@@ -1,11 +1,21 @@
 // @vitest-environment node
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { describe, expect, it, vi } from 'vitest';
 import { projectLssIoSchedule, renderLssIoSchedulePdf } from '../lib/lssIoSchedule';
 
 const secret = 'lss-io-schedule-test';
+const execFileAsync = promisify(execFile);
+const frozenTag = 'LSS-01-PS-HISTORIC-01';
+const frozenInstrument = 'Retired pressure switch';
+const frozenProduct = 'P-OLD — Frozen assigned product';
+const frozenLogic = 'Frozen trip logic retained after issue';
 const frozenBook = {
   id: 'book-1', book_code: 'BOOK-01', book_title: 'Frozen controls',
   project_id: 'project-1', status: 'Released',
@@ -13,14 +23,15 @@ const frozenBook = {
     systems: [{ id: 'system-1', system_code: 'LSS-01', system_name: 'Frozen LSS', system_type: 'Life Support System' }],
     lss_control_configurations: [{ system_id: 'system-1', panel_type: 'PLC' }],
     lss_instrument_instances: [{
-      id: 'frozen-instance', system_id: 'system-1', tag: 'LSS-01-PS-01', sequence_number: 1,
-      control_logic: 'Frozen trip logic',
-      definition_snapshot: { name: 'Frozen pressure switch', tag_code: 'PS', sort_order: 1, signal_type: 'digital', signal_direction: 'input' },
+      id: 'frozen-instance', system_id: 'system-1', tag: frozenTag, sequence_number: 1,
+      control_logic: frozenLogic,
+      definition_snapshot: { name: frozenInstrument, tag_code: 'PS', sort_order: 1, signal_type: 'digital', signal_direction: 'input' },
       product_snapshot: { product_code: 'P-OLD', product_name: 'Frozen assigned product' },
     }],
   },
 };
-const query = vi.fn(async (sql: string) => {
+const query = vi.fn(async (statement: string | { text: string }) => {
+  const sql = typeof statement === 'string' ? statement : statement.text;
   if (sql.includes('role_module_access')) return { rows: [] };
   if (sql.includes('FROM design_books')) return { rows: [frozenBook] };
   throw new Error(`Unexpected mutable query: ${sql}`);
@@ -48,6 +59,18 @@ function get(app: express.Express, path = '/api/v1/systems/system-1/control/io-s
       request.end();
     });
   });
+}
+
+async function extractPdfText(pdf: Buffer) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'lss-io-schedule-'));
+  const pdfPath = path.join(directory, 'schedule.pdf');
+  try {
+    await writeFile(pdfPath, pdf);
+    const { stdout } = await execFileAsync('pdftotext', [pdfPath, '-']);
+    return stdout;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 describe('LSS I/O schedule', () => {
@@ -101,6 +124,11 @@ describe('LSS I/O schedule', () => {
     expect(response.headers['content-disposition']).toContain('attachment; filename="BOOK-01-lss-io-schedule.pdf"');
     expect(response.body.subarray(0, 5).toString()).toBe('%PDF-');
     expect(response.body.length).toBeGreaterThan(1000);
+    const pdfText = await extractPdfText(response.body);
+    expect(pdfText).toContain(frozenTag);
+    expect(pdfText).toContain(frozenInstrument);
+    expect(pdfText).toContain(frozenProduct);
+    expect(pdfText).toContain(frozenLogic);
     expect(query.mock.calls.map(([sql]) => sql)).not.toContain(expect.stringContaining('product_masters'));
     expect(query.mock.calls.map(([sql]) => sql)).not.toContain(expect.stringContaining('FROM systems'));
   });
@@ -116,8 +144,8 @@ describe('LSS I/O schedule', () => {
     expect(response.status).toBe(200);
     expect(payload.frozen).toBe(true);
     expect(payload.instruments[0]).toMatchObject({
-      tag: 'LSS-01-PS-01',
-      control_logic: 'Frozen trip logic',
+      tag: frozenTag,
+      control_logic: frozenLogic,
       product_snapshot: { product_name: 'Frozen assigned product' },
     });
     expect(query.mock.calls.map(([sql]) => sql)).not.toContain(expect.stringContaining('FROM systems'));

@@ -1,4 +1,10 @@
+import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { expect, test, type Page } from '@playwright/test';
+import PDFDocument from 'pdfkit';
+
+const execFileAsync = promisify(execFile);
 
 const viewports = [
   { name: 'phone', width: 390, height: 844 },
@@ -39,6 +45,23 @@ const issuedProduct = 'HPT-1987 — Heritage pressure transmitter for seawater c
 const issuedProcedure = 'CAL-PRESSURE-ARCHIVE-1987-REVISION-VERY-LONG';
 const issuedDatasheet = 'ARCHIVE/DATASHEETS/PRESSURE/HPT-1987-SEA-WATER-CIRCULATION-TRANSMITTER-REV-12.pdf';
 const issuedTag = 'LSS-ISSUED-ARCHIVE-PT-0001';
+const issuedControlLogic = 'Alarm and stop the circulation pump when archived high-pressure limits are exceeded.';
+
+function issuedSchedulePdf() {
+  const doc = new PDFDocument();
+  const chunks: Buffer[] = [];
+  doc.on('data', chunk => chunks.push(Buffer.from(chunk)));
+  const completed = new Promise<Buffer>((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+  doc.text(issuedTag);
+  doc.text(issuedInstrumentName);
+  doc.text(issuedProduct);
+  doc.text(issuedControlLogic);
+  doc.end();
+  return completed;
+}
 
 async function openIssuedWorkspace(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height });
@@ -70,7 +93,7 @@ async function openIssuedWorkspace(page: Page, width: number, height: number) {
         },
         tag: issuedTag,
         quantity: 1,
-        control_logic: 'Alarm and stop the circulation pump when archived high-pressure limits are exceeded.',
+        control_logic: issuedControlLogic,
         range_min: -12.5,
         range_max: 9876.543,
         unit: 'kilopascals gauge (historic calibration basis)',
@@ -182,6 +205,12 @@ for (const viewport of viewports) {
 
   test(`${viewport.name}: issued I/O schedule remains scrollable with exports reachable`, async ({ page }) => {
     await openIssuedWorkspace(page, viewport.width, viewport.height);
+    const pdf = await issuedSchedulePdf();
+    await page.route('**/api/v1/systems/system-1/control/io-schedule.pdf**', route => route.fulfill({
+      contentType: 'application/pdf',
+      headers: { 'Content-Disposition': 'attachment; filename="BOOK-ISSUED-lss-io-schedule.pdf"' },
+      body: pdf,
+    }));
 
     const schedule = page.getByRole('table', { name: 'PLC Input I/O schedule' });
     const scroller = schedule.locator('xpath=../..');
@@ -221,7 +250,7 @@ for (const viewport of viewports) {
     });
     expect(finalScrollLeft).toBeGreaterThan(0);
     await expect(schedule.getByText(issuedProduct)).toBeVisible();
-    const savedLogic = schedule.getByRole('cell', { name: 'Alarm and stop the circulation pump when archived high-pressure limits are exceeded.' });
+    const savedLogic = schedule.getByRole('cell', { name: issuedControlLogic });
     await expect(savedLogic).toBeVisible();
     const [scrollerBounds, savedLogicBounds] = await Promise.all([scroller.boundingBox(), savedLogic.boundingBox()]);
     expect(scrollerBounds && savedLogicBounds
@@ -233,5 +262,29 @@ for (const viewport of viewports) {
       && bounds.x >= 0
       && bounds.x + bounds.width <= viewport.width
       && bounds.height >= 44)).toBe(true);
+
+    const csvDownloadPromise = page.waitForEvent('download');
+    await csvExport.tap();
+    const csvDownload = await csvDownloadPromise;
+    expect(csvDownload.suggestedFilename()).toBe('io-schedule-system-1.csv');
+    const csvPath = await csvDownload.path();
+    expect(csvPath).not.toBeNull();
+    const csv = await readFile(csvPath!, 'utf8');
+    expect(csv).toContain(issuedTag);
+    expect(csv).toContain(issuedInstrumentName);
+    expect(csv).toContain(issuedProduct);
+    expect(csv).toContain(issuedControlLogic);
+
+    const pdfDownloadPromise = page.waitForEvent('download');
+    await pdfExport.tap();
+    const pdfDownload = await pdfDownloadPromise;
+    expect(pdfDownload.suggestedFilename()).toBe('io-schedule-system-1.pdf');
+    const pdfPath = await pdfDownload.path();
+    expect(pdfPath).not.toBeNull();
+    const { stdout: pdfText } = await execFileAsync('pdftotext', [pdfPath!, '-']);
+    expect(pdfText).toContain(issuedTag);
+    expect(pdfText).toContain(issuedInstrumentName);
+    expect(pdfText).toContain(issuedProduct);
+    expect(pdfText).toContain(issuedControlLogic);
   });
 }
