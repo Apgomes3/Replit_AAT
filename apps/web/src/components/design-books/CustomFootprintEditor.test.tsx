@@ -49,14 +49,42 @@ describe('CustomFootprintEditor', () => {
     const first = new File(['first'], 'plan-one.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Choose reference image'), first);
     expect(screen.getByText('plan-one.png')).toBeInTheDocument();
+    const drawingSurface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    let image = screen.getByTestId('footprint-reference-image');
+    expect(image).toHaveAttribute('href', 'blob:test-1');
+    expect(image).toHaveAttribute('xlink:href', 'blob:test-1');
+    expect(image).toHaveAttribute('preserveAspectRatio', 'xMidYMid meet');
+    expect(image).toHaveAttribute('pointer-events', 'none');
+    expect(image.nextElementSibling?.tagName.toLowerCase()).toBe('path');
+    expect(drawingSurface.firstElementChild).toBe(image);
     fireEvent.change(screen.getByLabelText('Reference image opacity'), { target: { value: '60' } });
     expect(screen.getByText('Reference image opacity: 60%')).toBeInTheDocument();
+    expect(image).toHaveAttribute('opacity', '0.6');
     const second = new File(['second'], 'plan-two.jpg', { type: 'image/jpeg' });
     await user.upload(screen.getByLabelText('Replace reference image'), second);
     expect(screen.getByText('plan-two.jpg')).toBeInTheDocument();
+    image = screen.getByTestId('footprint-reference-image');
+    expect(image).toHaveAttribute('href', 'blob:test-2');
+    expect(image).toHaveAttribute('xlink:href', 'blob:test-2');
     expect(revoke).toHaveBeenCalledWith('blob:test-1');
     await user.click(screen.getByRole('button', { name: 'Remove' }));
     expect(screen.queryByText('plan-two.jpg')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('footprint-reference-image')).not.toBeInTheDocument();
+    expect(revoke).toHaveBeenCalledWith('blob:test-2');
+  });
+
+  it('releases the active reference image when the editor unmounts', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:active-reference');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.stubGlobal('Image', class {
+      onload: null | (() => void) = null;
+      set src(_value: string) { this.onload?.(); }
+    });
+    const { unmount } = render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    await user.upload(screen.getByLabelText('Choose reference image'), new File(['plan'], 'plan.png', { type: 'image/png' }));
+    unmount();
+    expect(revoke).toHaveBeenCalledWith('blob:active-reference');
   });
 
   it('reports unsupported and unreadable images without removing the current reference', async () => {
