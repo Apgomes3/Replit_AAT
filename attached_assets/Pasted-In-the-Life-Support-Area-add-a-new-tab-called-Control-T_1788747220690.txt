@@ -1,0 +1,60 @@
+In the Life Support Area, add a new tab called Control.
+
+This tab must include the following sections:
+
+1. Control Panel Type
+
+Allow the user to select the control panel type:
+
+• GPO
+• PLC
+
+2. Field Instrument Selection
+
+Allow the user to select the instruments required for each Life Support System.
+
+A new Field Instrument Management area must also be created in Platform Admin. For each instrument type, the administrator must be able to define:
+
+• Instrument name
+• Tag code and numbering logic
+• Description
+• Signal type: analog or digital
+• Signal direction: input or output
+• Default linked PIM product
+• Whether the instrument is mandatory or optional
+
+Each selected instrument must receive a unique tag based on the LSS system number and sequential instrument number.
+
+For example, a flow switch connected to LSS 01 would use the following tags:
+
+01-FS-01
+01-FS-02
+
+The first number identifies the LSS system. The final number identifies the individual instrument.
+
+3. Available Field Instruments
+Instrument	Tag Example	Requirement
+Flow switch	01-FS-01	Mandatory under AAT rules. One flow switch must be added for each pump
+High level float switch	01-FLS-HL-01	User selectable
+Low level float switch	01-FLS-LL-01	User selectable
+Additional float level switch	01-FLS-01	User selectable
+Temperature sensor	01-TS-01	User selectable
+pH sensor	01-pH-01	User selectable
+ORP sensor	01-ORP-01	User selectable
+Pressure sensor	01-PS-01	User selectable
+Flow meter	01-FM-01	User selectable
+Three way control valve	01-3EBV-01	User selectable
+Two way control valve	01-2BV-01	User selectable
+Ultrasonic level sensor	01-ULS-01	User selectable
+Conductivity sensor	01-CON-01	User selectable
+Dissolved oxygen sensor	01-DO-01	User selectable
+Water level detector	01-WLD-01	User selectable
+Ozone detector	01-O3D-01	User selectable
+
+If more than one instrument of the same type is selected, the final number must increase automatically. For example:
+
+01-TS-01
+01-TS-02
+01-TS-03
+
+The platform must automatically assign the default AAT PIM product associated with each instrument. The user may then review or change the selected product if permitted.
