@@ -808,8 +808,33 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
   res.json(result.rows[0]);
 });
 
+const TANK_DESIGN_SHEET_QUERY_TIMEOUT_MS = 8_000;
+
+class TankDesignSheetQueryTimeoutError extends Error {
+  code = 'TANK_DESIGN_SHEET_QUERY_TIMEOUT';
+
+  constructor() {
+    super('Timed out while loading tank design-sheet evidence.');
+  }
+}
+
+async function boundedTankDesignSheetQuery(text: string, params?: any[]) {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      query(text, params),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new TankDesignSheetQueryTimeoutError()), TANK_DESIGN_SHEET_QUERY_TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function tankDesignSheetModel(projectIdentifier: string, tankId: string) {
-  const tankResult = await query(
+  const tankResult = await boundedTankDesignSheetQuery(
     `SELECT t.*, p.project_code, p.project_name,
             COALESCE(t.shape_type, pm.shape_type) AS eff_shape,
             COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm,
@@ -833,13 +858,13 @@ async function tankDesignSheetModel(projectIdentifier: string, tankId: string) {
   // must never become a design basis.
   let chemicalParameters: any[] = [];
   try {
-    chemicalParameters = (await query('SELECT * FROM water_density_parameters WHERE is_active=true')).rows;
+    chemicalParameters = (await boundedTankDesignSheetQuery('SELECT * FROM water_density_parameters WHERE is_active=true')).rows;
   } catch (error: any) {
     if (error?.code !== '42P01') throw error;
   }
   // A standalone tank has no system_id; its exhibit's linked LSS systems are
   // still legitimate Thermal sources.  Prefer the directly assigned system.
-  const thermalCalculations = (await query(
+  const thermalCalculations = (await boundedTankDesignSheetQuery(
     `SELECT tc.*
      FROM design_book_thermal_calculations tc
      JOIN design_books db ON db.id=tc.design_book_id
@@ -853,6 +878,19 @@ async function tankDesignSheetModel(projectIdentifier: string, tankId: string) {
     [tank.project_id, tank.system_id || null, tank.exhibit_id || null],
   )).rows;
   return buildTankDesignSheet({ tank, exhibit: tank, project: tank, chemicalParameters, thermalCalculations });
+}
+
+function sendTankDesignSheetLoadError(res: Response, error: any) {
+  const timedOut = error?.code === 'TANK_DESIGN_SHEET_QUERY_TIMEOUT';
+  console.error('[tank-design-sheet] Failed to load design-sheet evidence', error);
+  return res.status(timedOut ? 503 : 500).json({
+    error: {
+      code: timedOut ? 'DESIGN_SHEET_SOURCE_TIMEOUT' : 'DESIGN_SHEET_LOAD_FAILED',
+      message: timedOut
+        ? 'Design-sheet evidence is temporarily busy. Please retry.'
+        : 'Design-sheet evidence could not be loaded.',
+    },
+  });
 }
 
 export function renderTankDesignSheetPdf(model: any): Promise<Buffer> {
@@ -889,31 +927,39 @@ export function renderTankDesignSheetPdf(model: any): Promise<Buffer> {
 }
 
 router.get('/projects/:projectId/tanks/:tankId/design-sheet', authenticate, async (req: AuthRequest, res: Response) => {
-  const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
-  if (!model) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
-  res.json(model);
+  try {
+    const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
+    if (!model) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
+    res.json(model);
+  } catch (error) {
+    return sendTankDesignSheetLoadError(res, error);
+  }
 });
 
 router.get('/projects/:projectId/tanks/:tankId/design-sheet.pdf', authenticate, async (req: AuthRequest, res: Response) => {
-  const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
-  if (!model) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
-  if (!model.validation.valid) {
-    return res.status(422).json({
-      error: { code: 'DESIGN_SHEET_INCOMPLETE', message: 'Tank design sheet has required unresolved design inputs.', validation: model.validation },
-      design_sheet: model,
+  try {
+    const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
+    if (!model) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
+    if (!model.validation.valid) {
+      return res.status(422).json({
+        error: { code: 'DESIGN_SHEET_INCOMPLETE', message: 'Tank design sheet has required unresolved design inputs.', validation: model.validation },
+        design_sheet: model,
+      });
+    }
+    const pdf = await renderTankDesignSheetPdf(model);
+    const safeCode = String(model.tank.tank_code || req.params.tankId).replace(/[^A-Za-z0-9._-]/g, '_');
+    const filename = `${safeCode}-tank-design-sheet.pdf`;
+    await logAudit(req.user!.id, 'tank', String(req.params.tankId), 'GENERATE_DESIGN_SHEET_PDF', {
+      summary: `Generated tank design sheet PDF for ${safeCode}`,
+      calculation_version: model.calculation_version,
+      validation_valid: model.validation.valid,
     });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
+  } catch (error) {
+    return sendTankDesignSheetLoadError(res, error);
   }
-  const pdf = await renderTankDesignSheetPdf(model);
-  const safeCode = String(model.tank.tank_code || req.params.tankId).replace(/[^A-Za-z0-9._-]/g, '_');
-  const filename = `${safeCode}-tank-design-sheet.pdf`;
-  await logAudit(req.user!.id, 'tank', String(req.params.tankId), 'GENERATE_DESIGN_SHEET_PDF', {
-    summary: `Generated tank design sheet PDF for ${safeCode}`,
-    calculation_version: model.calculation_version,
-    validation_valid: model.validation.valid,
-  });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.send(pdf);
 });
 
 router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {

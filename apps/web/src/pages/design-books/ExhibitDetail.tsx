@@ -568,7 +568,7 @@ function TankDesignSheetDetails({ tank, projectId, overflowLevel, onOverflowChan
 }) {
   const [expanded, setExpanded] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const { data: preview, isLoading, isError, error } = useQuery({
+  const { data: preview, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['tank-design-sheet-preview', projectId, tank.id],
     queryFn: () => api.get(`/projects/${projectId}/tanks/${tank.id}/design-sheet`).then(response => response.data),
     enabled: expanded && Boolean(projectId),
@@ -594,6 +594,7 @@ function TankDesignSheetDetails({ tank, projectId, overflowLevel, onOverflowChan
   const pressure = values.design_pressure_kpa ?? values.design_pressure?.kpa ?? values.design_pressure?.value ?? hydrostatic.pressure_kpa ?? values.design_pressure;
   const pressureBasis = values.pressure_basis || values.design_pressure_basis || hydrostatic.formula
     || 'Hydrodynamic load at maximum water level + 20% allowance';
+  const previewInvalid = model.validation?.valid === false;
 
   const downloadPdf = async () => {
     if (pdfLoading) return;
@@ -640,8 +641,12 @@ function TankDesignSheetDetails({ tank, projectId, overflowLevel, onOverflowChan
           </div>
         </div>
         {isLoading && <p role="status" className="text-sm text-stone-400">Loading canonical design-sheet preview…</p>}
-        {isError && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          Design-sheet preview could not be loaded: {(error as any)?.response?.data?.error?.message || 'Please retry before creating the sheet.'}
+        {isError && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <span>Design-sheet preview could not be loaded: {(error as any)?.response?.data?.error?.message || 'Please retry before creating the sheet.'}</span>
+          <button type="button" onClick={() => void refetch()} disabled={isFetching}
+            className="shrink-0 rounded-md border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50">
+            {isFetching ? 'Retrying…' : 'Retry preview'}
+          </button>
         </div>}
         {!isLoading && !isError && (
           <>
@@ -665,9 +670,10 @@ function TankDesignSheetDetails({ tank, projectId, overflowLevel, onOverflowChan
             {validationWarnings.length > 0 && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><p className="font-semibold">Design-sheet validation warnings</p><ul className="mt-1 list-disc pl-4">{validationWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>}
           </>
         )}
-        <button type="button" onClick={() => void downloadPdf()} disabled={pdfLoading}
+        <button type="button" onClick={() => void downloadPdf()} disabled={pdfLoading || isLoading || isFetching || isError || !preview || previewInvalid}
           className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
-          <ArrowDownToLine className="h-3.5 w-3.5" />{pdfLoading ? 'Preparing design sheet…' : 'Create tank design sheet'}
+          <ArrowDownToLine className="h-3.5 w-3.5" />
+          {pdfLoading ? 'Preparing design sheet…' : previewInvalid ? 'Resolve required inputs to create sheet' : 'Create tank design sheet'}
         </button>
       </div>
     </details>
