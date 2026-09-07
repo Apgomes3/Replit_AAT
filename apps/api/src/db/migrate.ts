@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS tanks (
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS system_id UUID REFERENCES systems(id) ON DELETE SET NULL;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS custom_footprint JSONB;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS overflow_level_mm NUMERIC;
 
 CREATE TABLE IF NOT EXISTS tank_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -3102,6 +3103,34 @@ UPDATE field_instrument_definitions
 SET default_control_logic='Prove pump flow; alarm and inhibit the associated pump on loss of flow.'
 WHERE tag_code='FS' AND requirement_rule='pump_linked'
   AND NULLIF(BTRIM(default_control_logic),'') IS NULL;
+
+-- Governed nominal water-density design parameters.  These values are managed
+-- only through Platform Administration and deliberately remain a compact,
+-- controlled water-type set.
+CREATE TABLE IF NOT EXISTS water_density_parameters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  water_type VARCHAR(20) NOT NULL UNIQUE
+    CHECK (water_type IN ('Freshwater', 'Brackish', 'Seawater')),
+  density_kg_m3 NUMERIC(10,3) NOT NULL CHECK (density_kg_m3 > 0),
+  conditions TEXT NOT NULL,
+  unit VARCHAR(20) NOT NULL DEFAULT 'kg/m3' CHECK (unit = 'kg/m3'),
+  source TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+INSERT INTO water_density_parameters
+  (water_type, density_kg_m3, conditions, unit, source, is_active)
+VALUES
+  ('Freshwater', 998.2, '20 °C; practical salinity 0 PSU', 'kg/m3',
+   'NIST Chemistry WebBook, thermophysical properties of water', true),
+  ('Brackish', 1011.0, '20 °C; practical salinity 15 PSU', 'kg/m3',
+   'UNESCO (1983), Algorithms for computation of fundamental properties of seawater', true),
+  ('Seawater', 1024.8, '20 °C; practical salinity 35 PSU', 'kg/m3',
+   'UNESCO (1983), Algorithms for computation of fundamental properties of seawater', true)
+ON CONFLICT (water_type) DO NOTHING;
 `;
 
 async function migrate() {

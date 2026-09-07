@@ -27,6 +27,8 @@ import {
 } from '../lib/systemLifecycle';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 import { resolveLoopFlows } from '../lib/flowRoute';
+import PDFDocument from 'pdfkit';
+import { buildTankDesignSheet } from '../lib/tankDesignSheet';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -70,6 +72,7 @@ const tankNumericFields = {
   width_mm: 'Width',
   height_mm: 'Height',
   design_water_level_mm: 'Water level',
+  overflow_level_mm: 'Overflow level',
   gross_volume_m3: 'Gross volume',
   operating_volume_m3: 'Operating volume',
   surface_area_m2: 'Water-surface area',
@@ -104,6 +107,20 @@ function tankDatabaseResponse(error: any) {
       : 'The tank could not be saved. Check the tank details and try again.',
     ...(field ? { field } : {}),
   };
+}
+
+function overflowLevelValidation(overflow: unknown, effectiveWaterLevel: unknown) {
+  if (overflow === undefined || overflow === null || overflow === '') return null;
+  const level = Number(overflow);
+  if (!Number.isFinite(level) || level < 0) {
+    return { code: 'VALIDATION', field: 'overflow_level_mm', message: 'Overflow level must be a non-negative number.' };
+  }
+  const maximum = effectiveWaterLevel === undefined || effectiveWaterLevel === null || effectiveWaterLevel === ''
+    ? null : Number(effectiveWaterLevel);
+  if (maximum != null && Number.isFinite(maximum) && level <= maximum) {
+    return { code: 'VALIDATION', field: 'overflow_level_mm', message: 'Overflow level must be above the effective maximum/design water level.' };
+  }
+  return null;
 }
 
 const FLOW_SIDE_STREAM_PRESETS = ['Thermal', 'UV', 'Custom'] as const;
@@ -791,9 +808,117 @@ router.get('/tanks/:id', authenticate, async (req: AuthRequest, res: Response) =
   res.json(result.rows[0]);
 });
 
+async function tankDesignSheetModel(projectIdentifier: string, tankId: string) {
+  const tankResult = await query(
+    `SELECT t.*, p.project_code, p.project_name,
+            COALESCE(t.shape_type, pm.shape_type) AS eff_shape,
+            COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm,
+            COALESCE(t.width_mm, pm.width_mm) AS eff_width_mm,
+            COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
+            COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
+            COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
+            COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
+            e.id AS exhibit_id, e.exhibit_code, e.exhibit_name, e.water_type,
+            e.design_temperature_min, e.design_temperature_max
+     FROM tanks t
+     JOIN projects p ON p.id=t.project_id
+     LEFT JOIN product_masters pm ON pm.id=t.product_master_id
+     LEFT JOIN exhibits e ON e.id=t.exhibit_id
+     WHERE (p.id::text=$1 OR p.project_code=$1) AND t.id=$2`,
+    [projectIdentifier, tankId],
+  );
+  const tank = tankResult.rows[0];
+  if (!tank) return null;
+  // Explicit active filter is important: superseded physical-property values
+  // must never become a design basis.
+  let chemicalParameters: any[] = [];
+  try {
+    chemicalParameters = (await query('SELECT * FROM water_density_parameters WHERE is_active=true')).rows;
+  } catch (error: any) {
+    if (error?.code !== '42P01') throw error;
+  }
+  // A standalone tank has no system_id; its exhibit's linked LSS systems are
+  // still legitimate Thermal sources.  Prefer the directly assigned system.
+  const thermalCalculations = (await query(
+    `SELECT tc.*
+     FROM design_book_thermal_calculations tc
+     JOIN design_books db ON db.id=tc.design_book_id
+     LEFT JOIN system_exhibit_links sel ON sel.system_id=tc.system_id
+     WHERE db.project_id=$1
+       AND ($2::uuid IS NOT NULL AND tc.system_id=$2
+            OR $3::uuid IS NOT NULL AND sel.exhibit_id=$3)
+       AND tc.status='Ready'
+       AND tc.freshness='fresh'
+     ORDER BY (tc.system_id=$2) DESC, tc.calculated_at DESC`,
+    [tank.project_id, tank.system_id || null, tank.exhibit_id || null],
+  )).rows;
+  return buildTankDesignSheet({ tank, exhibit: tank, project: tank, chemicalParameters, thermalCalculations });
+}
+
+export function renderTankDesignSheetPdf(model: any): Promise<Buffer> {
+  const doc = new PDFDocument({ size: 'A4', margin: 48, info: { Title: 'Tank Design Sheet' } });
+  const chunks: Buffer[] = [];
+  doc.on('data', chunk => chunks.push(Buffer.from(chunk)));
+  const completed = new Promise<Buffer>((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+  const value = (item: any, unit = '') => item == null ? 'TBC' : `${item}${unit ? ` ${unit}` : ''}`;
+  doc.fontSize(18).text('Tank Design Sheet');
+  doc.moveDown(0.5).fontSize(10)
+    .text(`Generated: ${model.generated_at}`)
+    .text(`Project: ${model.project.project_code || 'TBC'} — ${model.project.project_name || 'TBC'}`)
+    .text(`Exhibit: ${model.exhibit.exhibit_code || 'TBC'} — ${model.exhibit.exhibit_name || 'TBC'}`)
+    .text(`Tank: ${model.tank.tank_code || 'TBC'} — ${model.tank.tank_name || 'TBC'}`)
+    .text(`Shape: ${model.tank.shape_type || 'TBC'}; dimensions: ${value(model.tank.dimensions_mm.length, 'mm')} × ${value(model.tank.dimensions_mm.width, 'mm')} × ${value(model.tank.dimensions_mm.height, 'mm')}`)
+    .text(`Gross / operating volume: ${value(model.tank.gross_volume_m3, 'm³')} / ${value(model.tank.operating_volume_m3, 'm³')}`)
+    .text(`Calculation basis: ${model.calculation_version}`)
+    .text(`Required life: ${model.design_basis.required_life_years} years`)
+    .text(`Atmosphere: ${model.design_basis.atmosphere}; external pressure: ${model.design_basis.external_pressure}; vacuum: ${model.design_basis.vacuum}`)
+    .moveDown()
+    .text(`Water type: ${model.design_basis.water_type || 'TBC'}; water temperature: ${value(model.exhibit.water_temperature_min_c, '°C')} to ${value(model.exhibit.water_temperature_max_c, '°C')}`)
+    .text(`Density: ${value(model.design_basis.density_kg_m3, model.design_basis.density_provenance.unit)}; parameter: ${model.design_basis.density_provenance.parameter_id || 'TBC'}; active: ${model.design_basis.density_provenance.is_active}`)
+    .text(`Density conditions: ${model.design_basis.density_provenance.conditions || 'TBC'}; source: ${model.design_basis.density_provenance.catalog_source || 'TBC'}`)
+    .text(`Ambient: ${value(model.design_basis.ambient_air_temperature_c, '°C')} (${model.design_basis.ambient_temperature_source})`)
+    .text(`Maximum water level: ${value(model.tank.maximum_water_level_mm, 'mm')}; overflow: ${value(model.tank.overflow_level_mm, 'mm')}`)
+    .text(`Hydrostatic pressure: ${value(model.hydrostatic_pressure.pressure_kpa, 'kPa')}`)
+    .text(`Formula: ${model.hydrostatic_pressure.formula}; g=${model.hydrostatic_pressure.gravity_m_s2} m/s²; factor=${model.hydrostatic_pressure.load_factor}`);
+  if (model.tbcs.length) doc.moveDown().fontSize(11).text('TBC items').fontSize(9).list(model.tbcs);
+  doc.end();
+  return completed;
+}
+
+router.get('/projects/:projectId/tanks/:tankId/design-sheet', authenticate, async (req: AuthRequest, res: Response) => {
+  const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
+  if (!model) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
+  res.json(model);
+});
+
+router.get('/projects/:projectId/tanks/:tankId/design-sheet.pdf', authenticate, async (req: AuthRequest, res: Response) => {
+  const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
+  if (!model) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
+  if (!model.validation.valid) {
+    return res.status(422).json({
+      error: { code: 'DESIGN_SHEET_INCOMPLETE', message: 'Tank design sheet has required unresolved design inputs.', validation: model.validation },
+      design_sheet: model,
+    });
+  }
+  const pdf = await renderTankDesignSheetPdf(model);
+  const safeCode = String(model.tank.tank_code || req.params.tankId).replace(/[^A-Za-z0-9._-]/g, '_');
+  const filename = `${safeCode}-tank-design-sheet.pdf`;
+  await logAudit(req.user!.id, 'tank', String(req.params.tankId), 'GENERATE_DESIGN_SHEET_PDF', {
+    summary: `Generated tank design sheet PDF for ${safeCode}`,
+    calculation_version: model.calculation_version,
+    validation_valid: model.validation.valid,
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(pdf);
+});
+
 router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   try {
-  const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, custom_footprint } = req.body;
+  const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, primary_material, status, notes, custom_footprint } = req.body;
   const tankCode = String(tank_code ?? '').trim();
   const tankName = String(tank_name ?? '').trim();
   if (!tankCode) return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_code', message: 'Tank code is required.' } });
@@ -805,6 +930,8 @@ router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireMod
     const validationError = tankNumberError(req.body[field], field);
     if (validationError) return res.status(400).json({ error: validationError });
   }
+  const overflowValidation = overflowLevelValidation(overflow_level_mm, design_water_level_mm);
+  if (overflowValidation) return res.status(400).json({ error: overflowValidation });
   if (product_master_id && exhibit_id) {
     return res.status(400).json({
       error: {
@@ -834,7 +961,7 @@ router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireMod
       });
     }
     const product = await query(
-      `SELECT id FROM product_masters
+      `SELECT id, design_water_level_mm FROM product_masters
        WHERE id=$1 AND product_category='Tank'`,
       [product_master_id],
     );
@@ -843,6 +970,12 @@ router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireMod
         error: { code: 'INVALID_PIM_TANK', message: 'The selected item is not a valid PIM tank.' },
       });
     }
+    const pimOverflowValidation = overflowLevelValidation(
+      overflow_level_mm,
+      design_water_level_mm === undefined || design_water_level_mm === null || design_water_level_mm === ''
+        ? product.rows[0].design_water_level_mm : design_water_level_mm,
+    );
+    if (pimOverflowValidation) return res.status(400).json({ error: pimOverflowValidation });
   }
   const qty = Math.max(1, parseInt(quantity) || 1);
   const l = length_mm ? parseFloat(length_mm) : null;
@@ -887,8 +1020,8 @@ router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireMod
       ? null
       : calculateWaterSurfaceAreaM2(shape_type, l, w);
   const result = await query(
-    'INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, custom_footprint, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *',
-     [tankCode, project_id, exhibit_id || null, system_id || null, qty, tankName, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, normalizedFootprint, primary_material || null, status || 'Active', notes || null]);
+    'INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, custom_footprint, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *',
+     [tankCode, project_id, exhibit_id || null, system_id || null, qty, tankName, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, overflow_level_mm === '' || overflow_level_mm == null ? null : Number(overflow_level_mm), normalizedFootprint, primary_material || null, status || 'Active', notes || null]);
   const tank = result.rows[0];
   if (qty > 1) {
     const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -1366,8 +1499,8 @@ router.post('/tanks/:id/duplicate', authenticate, requireRole('admin', 'engineer
   while (usedCodes.has(newCode.toUpperCase())) { n++; newCode = `${t.tank_code}-${n}`; }
   const qty = t.quantity ?? 1;
   const result = await query(
-    'INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, custom_footprint, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *',
-    [newCode.toUpperCase(), t.project_id, t.system_id, qty, `${t.tank_name} (Copy)`, t.tank_type, t.product_master_id, t.shape_type, t.gross_volume_m3, t.operating_volume_m3, t.surface_area_m2, t.custom_footprint, t.length_mm, t.width_mm, t.height_mm, t.design_water_level_mm, t.primary_material, t.status || 'Active', t.notes]);
+    'INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, custom_footprint, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *',
+    [newCode.toUpperCase(), t.project_id, t.system_id, qty, `${t.tank_name} (Copy)`, t.tank_type, t.product_master_id, t.shape_type, t.gross_volume_m3, t.operating_volume_m3, t.surface_area_m2, t.custom_footprint, t.length_mm, t.width_mm, t.height_mm, t.design_water_level_mm, t.overflow_level_mm, t.primary_material, t.status || 'Active', t.notes]);
   const newTank = result.rows[0];
   if (qty > 1) {
     const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -1429,7 +1562,7 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
   try {
   const {
     tank_code, tank_name, tank_type, shape_type,
-    length_mm, width_mm, height_mm, design_water_level_mm,
+    length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm,
     primary_material, status, notes, quantity,
     gross_volume_m3, operating_volume_m3, system_id, exhibit_id,
     product_master_id,
@@ -1451,6 +1584,7 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
   }
   const hasExhibit = 'exhibit_id' in req.body;
   const hasProductMaster = 'product_master_id' in req.body;
+  const hasOverflowLevel = Object.prototype.hasOwnProperty.call(req.body, 'overflow_level_mm');
   if (hasProductMaster && product_master_id) {
     return res.status(400).json({
       error: {
@@ -1474,6 +1608,20 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
       });
     }
   }
+  const currentTankLevels = await query(
+    `SELECT t.overflow_level_mm,
+            COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS effective_water_level_mm
+     FROM tanks t LEFT JOIN product_masters pm ON pm.id=t.product_master_id WHERE t.id=$1`,
+    [req.params.id],
+  );
+  if (!currentTankLevels.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+  const overflowValidation = overflowLevelValidation(
+    hasOverflowLevel ? overflow_level_mm : currentTankLevels.rows[0].overflow_level_mm,
+    design_water_level_mm === undefined || design_water_level_mm === null || design_water_level_mm === ''
+      ? currentTankLevels.rows[0].effective_water_level_mm
+      : design_water_level_mm,
+  );
+  if (overflowValidation) return res.status(400).json({ error: overflowValidation });
   const currentSystemLink = await query('SELECT system_id FROM tanks WHERE id=$1', [req.params.id]);
   if (!currentSystemLink.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   for (const linkedSystemId of new Set([currentSystemLink.rows[0].system_id, system_id].filter(Boolean))) {
@@ -1534,17 +1682,18 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
   const result = await query(
     `UPDATE tanks SET
       tank_code=COALESCE($1, tank_code), tank_name=$2, tank_type=$3, shape_type=$4,
-      length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
-      gross_volume_m3=$9, operating_volume_m3=$10, surface_area_m2=$11,
-      custom_footprint=$12, primary_material=$13, status=$14, notes=$15, quantity=$16,
-      system_id=$17, material_id=$18, wall_thickness_mm=$19,
-      inner_length_mm=$20, inner_width_mm=$21, inner_height_mm=$22,
-      product_master_id=CASE WHEN $23 THEN $24 ELSE product_master_id END,
-      exhibit_id=CASE WHEN $25 THEN $26 ELSE exhibit_id END,
+       length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
+       overflow_level_mm=CASE WHEN $9 THEN $10 ELSE overflow_level_mm END,
+       gross_volume_m3=$11, operating_volume_m3=$12, surface_area_m2=$13,
+       custom_footprint=$14, primary_material=$15, status=$16, notes=$17, quantity=$18,
+       system_id=$19, material_id=$20, wall_thickness_mm=$21,
+       inner_length_mm=$22, inner_width_mm=$23, inner_height_mm=$24,
+       product_master_id=CASE WHEN $25 THEN $26 ELSE product_master_id END,
+       exhibit_id=CASE WHEN $27 THEN $28 ELSE exhibit_id END,
       updated_at=NOW()
-    WHERE id=$27 RETURNING *`,
+    WHERE id=$29 RETURNING *`,
     [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
-     l, w, h, wl, calcGross, calcOp, surfaceAreaM2, normalizedFootprint,
+     l, w, h, wl, hasOverflowLevel, overflow_level_mm === '' || overflow_level_mm == null ? null : Number(overflow_level_mm), calcGross, calcOp, surfaceAreaM2, normalizedFootprint,
      primary_material || null, status || 'Active', notes || null, qty,
      system_id || null,
      material_id || null, wall_thickness_mm ?? null,

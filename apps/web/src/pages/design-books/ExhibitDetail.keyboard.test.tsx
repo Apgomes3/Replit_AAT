@@ -447,22 +447,123 @@ describe('ExhibitDetail Escape navigation', () => {
     })));
   });
 
-  it('places the URL-addressable Lights tab immediately after Weir Design in both navigation surfaces', async () => {
+  it('persists the tank-owned overflow level from Advanced Details', async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        ...book,
+        tanks: [{
+          id: 'tank-1', exhibit_id: 'exhibit-1', tank_code: 'TK-01', tank_name: 'Main Tank',
+          shape_type: 'Rectangular', length_mm: 5000, width_mm: 3000, height_mm: 2500,
+          design_water_level_mm: 2200, overflow_level_mm: 2250, status: 'Active',
+        }],
+      },
+    });
+    const user = userEvent.setup();
+    renderExhibit();
+
+    await user.click((await screen.findAllByRole('button', { name: 'Edit' }))[0]);
+    await user.click(screen.getByText('Advanced Details'));
+    const overflow = screen.getByLabelText('Overflow level (mm)');
+    await user.clear(overflow);
+    await user.type(overflow, '2300');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/tanks/tank-1', expect.objectContaining({
+      overflow_level_mm: '2300',
+    })));
+  });
+
+  it('loads the canonical preview and clearly reports missing Thermal ambient data', async () => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/design-books/')) return {
+        data: { ...book, tanks: [{ id: 'tank-1', exhibit_id: 'exhibit-1', tank_code: 'TK-01', tank_name: 'Main Tank', status: 'Active' }] },
+      } as any;
+      if (url === '/projects/project-1/tanks/tank-1/design-sheet') return {
+        data: {
+          calculation_version: 'aat-tank-design-sheet-v1',
+          design_basis: {
+            density_kg_m3: 1025,
+             density_provenance: {
+               parameter_id: 'density-seawater',
+               catalog_source: 'Chemical parameters · Seawater',
+               conditions: '20 °C; practical salinity 35 PSU',
+               unit: 'kg/m3',
+               is_active: true,
+             },
+            ambient_air_temperature_c: null,
+            water_temperature_c: 24,
+            required_life_years: 50,
+          },
+          hydrostatic_pressure: {
+            pressure_kpa: 26.5,
+            formula: 'rho × g × maximum water depth × 1.2',
+          },
+          tbcs: ['Ambient temperature is TBC (no applicable Thermal calculation).'],
+          validation: {
+            valid: false,
+            errors: [{ field: 'ambient_temperature', message: 'Ambient temperature has no applicable Thermal calculation.' }],
+          },
+        },
+      } as any;
+      return { data: { items: [] } } as any;
+    });
+    const user = userEvent.setup();
+    renderExhibit();
+
+    await user.click(await screen.findByText('Advanced Details'));
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/projects/project-1/tanks/tank-1/design-sheet'));
+    expect(await screen.findByText(/Source: Chemical parameters · Seawater/)).toBeInTheDocument();
+    expect(screen.getByText(/Conditions: 20 °C; practical salinity 35 PSU/)).toBeInTheDocument();
+    expect(screen.getByText('No value')).toBeInTheDocument();
+    expect(screen.getByText(/Ambient temperature has no applicable Thermal calculation/i)).toBeInTheDocument();
+    expect(apiGet).toHaveBeenCalledWith('/projects/project-1/tanks/tank-1/design-sheet');
+  });
+
+  it('requests an authorized tank design-sheet PDF', async () => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/design-books/')) return {
+        data: { ...book, tanks: [{ id: 'tank-1', exhibit_id: 'exhibit-1', tank_code: 'TK-01', tank_name: 'Main Tank', status: 'Active' }] },
+      } as any;
+      if (url === '/projects/project-1/tanks/tank-1/design-sheet') return { data: {} } as any;
+      if (url === '/projects/project-1/tanks/tank-1/design-sheet.pdf') return {
+        data: new Blob(['pdf'], { type: 'application/pdf' }),
+        headers: { 'content-disposition': 'attachment; filename="TK-01-design-sheet.pdf"' },
+      } as any;
+      return { data: { items: [] } } as any;
+    });
+    const createObjectURL = vi.fn(() => 'blob:design-sheet');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderExhibit();
+
+    await user.click(await screen.findByText('Advanced Details'));
+    await user.click(screen.getByRole('button', { name: 'Create tank design sheet' }));
+
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/projects/project-1/tanks/tank-1/design-sheet.pdf', { responseType: 'blob' }));
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(click).toHaveBeenCalled();
+    click.mockRestore();
+  });
+
+  it('places the URL-addressable Lights tab after Pipe Sizing in both navigation surfaces', async () => {
     const user = userEvent.setup();
     renderExhibit([`${currentPath}?tab=lights`]);
 
     expect(await screen.findByRole('heading', { name: 'Exhibit Lighting Schedule' })).toBeInTheDocument();
     const tabButtons = screen.getAllByRole('button').filter(button =>
-      ['Tank', 'Species', 'Water Flow', 'Weir Design', 'Lights'].includes(button.textContent?.trim() || ''),
+      ['Tank', 'Species', 'Water Flow', 'Weir Design', 'Pipe Sizing', 'Lights'].includes(button.textContent?.trim() || ''),
     );
-    expect(tabButtons.slice(-5).map(button => button.textContent?.trim())).toEqual([
-      'Tank', 'Species', 'Water Flow', 'Weir Design', 'Lights',
+    expect(tabButtons.slice(-6).map(button => button.textContent?.trim())).toEqual([
+      'Tank', 'Species', 'Water Flow', 'Weir Design', 'Pipe Sizing', 'Lights',
     ]);
 
     await user.click(screen.getByRole('button', { name: 'Open exhibit tools' }));
     const menu = screen.getByRole('menu', { name: 'Exhibit tools' });
     expect(Array.from(menu.querySelectorAll('[role="menuitem"]')).map(item => item.textContent?.trim())).toEqual([
-      'Back to Design Book', 'Tank', 'Species', 'Water Flow', 'Weir Design', 'Lights',
+      'Back to Design Book', 'Tank', 'Species', 'Water Flow', 'Weir Design', 'Pipe Sizing', 'Lights',
     ]);
   });
 

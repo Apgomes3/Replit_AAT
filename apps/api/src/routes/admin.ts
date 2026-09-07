@@ -1143,6 +1143,84 @@ router.delete('/pipe-sizing-standards/:id', authenticate, requireRole('admin'), 
   }
 });
 
+const WATER_TYPES = ['Freshwater', 'Brackish', 'Seawater'] as const;
+
+function validateWaterDensityParameter(body: any) {
+  const waterType = typeof body.water_type === 'string' ? body.water_type.trim() : '';
+  const density = Number(body.density_kg_m3);
+  const conditions = typeof body.conditions === 'string' ? body.conditions.trim() : '';
+  const unit = typeof body.unit === 'string' ? body.unit.trim() : '';
+  const source = typeof body.source === 'string' ? body.source.trim() : '';
+  if (!WATER_TYPES.includes(waterType as typeof WATER_TYPES[number])) {
+    return { error: 'Water type must be Freshwater, Brackish, or Seawater.' };
+  }
+  if (!Number.isFinite(density) || density <= 0 || density > 2000) {
+    return { error: 'Density must be a positive number no greater than 2000 kg/m3.' };
+  }
+  if (!conditions || conditions.length > 2000) return { error: 'Conditions are required and must be 2000 characters or fewer.' };
+  if (unit !== 'kg/m3') return { error: 'Unit must be kg/m3.' };
+  if (!source || source.length > 2000) return { error: 'Source is required and must be 2000 characters or fewer.' };
+  if (body.is_active !== undefined && typeof body.is_active !== 'boolean') return { error: 'is_active must be boolean.' };
+  return { value: { waterType, density, conditions, unit, source, isActive: body.is_active !== false } };
+}
+
+router.get('/chemical-parameters/water-density', authenticate, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
+  const result = await query(
+    `SELECT wdp.*, creator.email AS created_by_email, updater.email AS updated_by_email
+     FROM water_density_parameters wdp
+     LEFT JOIN users creator ON creator.id=wdp.created_by
+     LEFT JOIN users updater ON updater.id=wdp.updated_by
+     ORDER BY CASE wdp.water_type WHEN 'Freshwater' THEN 1 WHEN 'Brackish' THEN 2 ELSE 3 END`,
+  );
+  res.json({ items: result.rows });
+});
+
+router.post('/chemical-parameters/water-density', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const parsed = validateWaterDensityParameter(req.body);
+  if (parsed.error) return res.status(400).json({ error: { code: 'VALIDATION', message: parsed.error } });
+  const value = parsed.value!;
+  try {
+    const result = await query(
+      `INSERT INTO water_density_parameters
+       (water_type, density_kg_m3, conditions, unit, source, is_active, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING *`,
+      [value.waterType, value.density, value.conditions, value.unit, value.source, value.isActive, req.user!.id],
+    );
+    await logAudit(req.user!.id, 'water_density_parameter', result.rows[0].id, 'CREATE', { summary: `Water density parameter created for ${value.waterType}`, after: result.rows[0] });
+    res.status(201).json(result.rows[0]);
+  } catch (error: any) {
+    if (error.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: `A parameter for ${value.waterType} already exists.` } });
+    throw error;
+  }
+});
+
+router.put('/chemical-parameters/water-density/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const parsed = validateWaterDensityParameter(req.body);
+  if (parsed.error) return res.status(400).json({ error: { code: 'VALIDATION', message: parsed.error } });
+  const value = parsed.value!;
+  const existing = await query('SELECT * FROM water_density_parameters WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Water density parameter not found.' } });
+  try {
+    const result = await query(
+      `UPDATE water_density_parameters SET water_type=$1, density_kg_m3=$2, conditions=$3, unit=$4, source=$5,
+       is_active=$6, updated_at=NOW(), updated_by=$7 WHERE id=$8 RETURNING *`,
+      [value.waterType, value.density, value.conditions, value.unit, value.source, value.isActive, req.user!.id, req.params.id],
+    );
+    await logAudit(req.user!.id, 'water_density_parameter', result.rows[0].id, 'UPDATE', { summary: `Water density parameter updated for ${value.waterType}`, before: existing.rows[0], after: result.rows[0] });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    if (error.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: `A parameter for ${value.waterType} already exists.` } });
+    throw error;
+  }
+});
+
+router.delete('/chemical-parameters/water-density/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const result = await query('DELETE FROM water_density_parameters WHERE id=$1 RETURNING *', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Water density parameter not found.' } });
+  await logAudit(req.user!.id, 'water_density_parameter', result.rows[0].id, 'DELETE', { summary: `Water density parameter deleted for ${result.rows[0].water_type}`, before: result.rows[0] });
+  res.status(204).end();
+});
+
 router.get('/tank-cost-rates', authenticate, async (_req, res: Response) => {
   const result = await query('SELECT * FROM tank_cost_rates ORDER BY material_code NULLS LAST, label');
   res.json({ items: result.rows });

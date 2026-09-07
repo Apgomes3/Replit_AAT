@@ -555,7 +555,126 @@ function DimTile({ label, val, inner }: { label: string; val: string; inner?: bo
   );
 }
 
-function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: any; substrateData?: any | null; onRefresh: () => void; readOnly?: boolean }) {
+function tankSheetValue(value: any, suffix = '') {
+  return value === null || value === undefined || value === '' ? 'No value' : `${value}${suffix}`;
+}
+
+function TankDesignSheetDetails({ tank, projectId, overflowLevel, onOverflowChange, readOnly = false }: {
+  tank: any;
+  projectId: string;
+  overflowLevel?: any;
+  onOverflowChange?: (value: string) => void;
+  readOnly?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const { data: preview, isLoading, isError, error } = useQuery({
+    queryKey: ['tank-design-sheet-preview', projectId, tank.id],
+    queryFn: () => api.get(`/projects/${projectId}/tanks/${tank.id}/design-sheet`).then(response => response.data),
+    enabled: expanded && Boolean(projectId),
+    retry: false,
+  });
+  const model = preview?.design_sheet || preview?.data || preview || {};
+  const values = model.values || model.inputs || model;
+  const rawWarnings = model.validation_warnings || model.warnings || model.reasons || model.validation?.errors || [];
+  const validationWarnings: string[] = (Array.isArray(rawWarnings) ? rawWarnings : [rawWarnings])
+    .map(warning => typeof warning === 'string' ? warning : warning?.message || String(warning));
+  const rawTbc = model.tbc_items || model.tbc || model.tbcs;
+  const tbcItems: string[] = Array.isArray(rawTbc) ? rawTbc : rawTbc ? [String(rawTbc)] : [
+    'Seismic loads', 'Wind loads', 'Access platform loads', 'Nozzle sizes and loads', 'Supports and anchorage',
+  ];
+  const basis = model.design_basis || values.design_basis || {};
+  const hydrostatic = model.hydrostatic_pressure || values.hydrostatic_pressure || {};
+  const densityProvenance = basis.density_provenance || {};
+  const source = values.density_source || values.liquid_density_source || values.density?.source ||
+    values.liquid_density?.source || densityProvenance.catalog_source || basis.density_source;
+  const density = values.liquid_density_kg_m3 ?? values.density_kg_m3 ?? values.density?.value ?? values.liquid_density?.value ?? basis.density_kg_m3;
+  const ambient = values.ambient_temperature_c ?? values.ambient_temp_c ?? values.ambient_temperature?.value ?? basis.ambient_air_temperature_c;
+  const waterTemperature = values.water_temperature_c ?? values.exhibit_water_temperature_c ?? basis.water_temperature_c;
+  const pressure = values.design_pressure_kpa ?? values.design_pressure?.kpa ?? values.design_pressure?.value ?? hydrostatic.pressure_kpa ?? values.design_pressure;
+  const pressureBasis = values.pressure_basis || values.design_pressure_basis || hydrostatic.formula
+    || 'Hydrodynamic load at maximum water level + 20% allowance';
+
+  const downloadPdf = async () => {
+    if (pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      const response = await api.get(`/projects/${projectId}/tanks/${tank.id}/design-sheet.pdf`, { responseType: 'blob' });
+      const disposition = response.headers?.['content-disposition'] || response.headers?.['Content-Disposition'] || '';
+      const filename = disposition.match(/filename\*?=(?:UTF-8''|")?([^";\n]+)/i)?.[1]?.replace(/"/g, '')
+        || `tank-design-sheet-${tank.tank_code || tank.id}.pdf`;
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: String(response.headers?.['content-type'] || 'application/pdf') });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = decodeURIComponent(filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Could not create the tank design sheet PDF.');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  return (
+    <details className="rounded-xl border border-indigo-200 bg-indigo-50/30" onToggle={event => setExpanded(event.currentTarget.open)}>
+      <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-indigo-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40">
+        Advanced Details <span className="ml-1 text-xs font-normal text-indigo-600">Design-sheet basis and tank overflow</span>
+      </summary>
+      <div className="space-y-4 border-t border-indigo-100 bg-white p-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="text-xs font-medium text-stone-600">Overflow level (mm)
+            <input aria-label="Overflow level (mm)" type="number" min="0" step="any" disabled={readOnly || !onOverflowChange}
+              value={overflowLevel ?? tank.overflow_level_mm ?? ''}
+              onChange={event => onOverflowChange?.(event.target.value)}
+              className="mt-1 block w-full rounded-lg border border-stone-200 px-3 py-2 text-sm disabled:bg-stone-50 disabled:text-stone-400" />
+          </label>
+          <div className="rounded-lg border border-stone-100 bg-stone-50 px-3 py-2 text-xs text-stone-600">
+            <p className="font-medium text-stone-700">Source-owned values</p>
+            <p className="mt-1">Dimensions, working volume, maximum water level, and water temperature are read-only here.</p>
+          </div>
+        </div>
+        {isLoading && <p role="status" className="text-sm text-stone-400">Loading canonical design-sheet preview…</p>}
+        {isError && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          Design-sheet preview could not be loaded: {(error as any)?.response?.data?.error?.message || 'Please retry before creating the sheet.'}
+        </div>}
+        {!isLoading && !isError && (
+          <>
+            <div className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-lg bg-stone-50 p-3">
+                <span className="block text-stone-400">Liquid density</span>
+                <strong>{tankSheetValue(density, density != null ? ` ${densityProvenance.unit || 'kg/m³'}` : '')}</strong>
+                <span className="mt-1 block text-stone-500">Source: {tankSheetValue(source)}</span>
+                {densityProvenance.conditions && <span className="mt-1 block text-stone-500">Conditions: {densityProvenance.conditions}</span>}
+                {densityProvenance.parameter_id && <span className="mt-1 block font-mono text-[10px] text-stone-400">Reference: {densityProvenance.parameter_id}</span>}
+              </div>
+              <div className="rounded-lg bg-stone-50 p-3"><span className="block text-stone-400">Ambient temperature</span><strong>{tankSheetValue(ambient, ambient != null ? ' °C' : '')}</strong><span className="mt-1 block text-stone-500">Water temperature: {tankSheetValue(waterTemperature, waterTemperature != null ? ' °C' : '')}</span></div>
+              <div className="rounded-lg bg-stone-50 p-3"><span className="block text-stone-400">Design pressure</span><strong>{tankSheetValue(pressure, pressure != null ? ' kPa' : '')}</strong><span className="mt-1 block text-stone-500">{pressureBasis}</span></div>
+            </div>
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 text-xs text-indigo-900">
+              <p className="font-semibold">Design assumptions</p>
+              <p className="mt-1">{values.design_assumptions || values.assumptions || 'Open to atmosphere · external pressure atmospheric · no vacuum · hydrostatic design pressure at maximum water level plus 20%.'}</p>
+              <p className="mt-1 font-medium">Required design life: {values.design_life_years ?? basis.required_life_years ?? 50} years</p>
+            </div>
+            <div className="text-xs text-stone-600"><span className="font-semibold">TBC:</span> {tbcItems.join(' · ')}</div>
+            {validationWarnings.length > 0 && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><p className="font-semibold">Design-sheet validation warnings</p><ul className="mt-1 list-disc pl-4">{validationWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>}
+          </>
+        )}
+        <button type="button" onClick={() => void downloadPdf()} disabled={pdfLoading}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+          <ArrowDownToLine className="h-3.5 w-3.5" />{pdfLoading ? 'Preparing design sheet…' : 'Create tank design sheet'}
+        </button>
+      </div>
+    </details>
+  );
+}
+
+function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false }: { tank: any; projectId: string; substrateData?: any | null; onRefresh: () => void; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<any>({});
@@ -578,12 +697,15 @@ function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: 
       tank_type:             tank.tank_type || '',
       shape_type:            tank.shape_type || '',
       material_id:           '',
-      primary_material:      tank.primary_material || tank.material_name || tank.eff_primary_material || '',
+      // Do not turn a PIM material default into a project override when an
+      // unrelated field is saved. The select's placeholder presents it instead.
+      primary_material:      tank.primary_material || tank.material_name || '',
       wall_thickness_mm:     tank.wall_thickness_mm ?? '',
       length_mm:             tank.length_mm ?? '',
       width_mm:              tank.width_mm  ?? '',
       height_mm:             tank.height_mm ?? '',
       design_water_level_mm: tank.design_water_level_mm ?? '',
+      overflow_level_mm:     tank.overflow_level_mm ?? '',
       inner_length_mm:       tank.inner_length_mm ?? '',
       inner_width_mm:        tank.inner_width_mm  ?? '',
       inner_height_mm:       tank.inner_height_mm ?? '',
@@ -648,6 +770,7 @@ function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: 
         width_mm:              form.width_mm  || null,
         height_mm:             form.height_mm || null,
         design_water_level_mm: form.design_water_level_mm || null,
+        overflow_level_mm:     form.overflow_level_mm || null,
         inner_length_mm:       overrideInner ? (form.inner_length_mm || null) : null,
         inner_width_mm:        overrideInner ? (form.inner_width_mm  || null) : null,
         inner_height_mm:       overrideInner ? (form.inner_height_mm || null) : null,
@@ -882,6 +1005,7 @@ function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: 
                )}
              </div>
            )}
+            <TankDesignSheetDetails tank={tank} projectId={projectId} readOnly={readOnly} />
 
           {/* System link */}
           {tank.system_code && (
@@ -1149,6 +1273,13 @@ function TankCard({ tank, substrateData, onRefresh, readOnly = false }: { tank: 
             })()}
           </div>
         )}
+        <TankDesignSheetDetails
+          tank={tank}
+          projectId={projectId}
+          overflowLevel={form.overflow_level_mm}
+          onOverflowChange={value => setF('overflow_level_mm', value)}
+          readOnly={readOnly}
+        />
 
         {/* Status */}
         <div>
@@ -3737,6 +3868,7 @@ export default function ExhibitDetail() {
             <TankCard
               key={exhibitTank.id}
               tank={exhibitTank}
+              projectId={book.project_id}
               substrateData={substrateData}
               onRefresh={refresh}
               readOnly={readOnly}

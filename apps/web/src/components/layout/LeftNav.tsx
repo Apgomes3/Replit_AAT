@@ -54,6 +54,7 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'uv-engineering', to: '/admin/uv-engineering', icon: Sun, label: 'UV Engineering Products' },
   { id: 'thermal-wall-constructions', to: '/admin/thermal-wall-constructions', icon: Layers, label: 'Thermal Wall Constructions' },
   { id: 'evaporation-correlations', to: '/admin/evaporation-correlations', icon: Wind, label: 'Evaporation Correlations' },
+  { id: 'chemical-parameters', to: '/admin/chemical-parameters', icon: Pipette, label: 'Chemical Parameters' },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
   { id: 'po-stage-roles', to: '/admin/po-stage-roles', icon: GitBranch, label: 'PO Stage Roles' },
   { id: 'roles', to: '/admin/roles', icon: Users, label: 'Roles' },
@@ -217,7 +218,7 @@ function DraggableSection({ section, savedOrder, onOrderChange, collapsed }: {
 }
 
 const ADMIN_GROUPS = [
-  { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families', 'tank-cost-rates', 'system-types', 'pump-duty-types', 'field-instruments', 'pipe-sizing-standards', 'biological-media-profiles', 'uv-engineering', 'thermal-wall-constructions', 'evaporation-correlations'].includes(i.id)) },
+  { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families', 'tank-cost-rates', 'system-types', 'pump-duty-types', 'field-instruments', 'pipe-sizing-standards', 'biological-media-profiles', 'uv-engineering', 'thermal-wall-constructions', 'evaporation-correlations', 'chemical-parameters'].includes(i.id)) },
   { label: 'Documents', items: ADMIN_ITEMS.filter(i => ['document-register'].includes(i.id)) },
   { label: 'Order Management', items: ADMIN_ITEMS.filter(i => ['po-stage-roles'].includes(i.id)) },
   { label: 'System', items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import', 'audit-log'].includes(i.id)) },

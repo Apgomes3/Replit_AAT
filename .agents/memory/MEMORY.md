@@ -46,3 +46,4 @@
 - [Instrument calibration evidence](instrument-calibration-evidence.md) — range, unit, calibration, and datasheet values become saved instance evidence and obey release immutability.
 - [Exhibit pipe sizing evidence](exhibit-pipe-sizing-evidence.md) — recommend the smallest in-band DN; freeze resolved pipe evidence and revalidate it whenever exhibit flow changes.
 - [PostgreSQL concurrency test synchronization](postgres-concurrency-test-synchronization.md) — correlate blocked work to the exact blocker PID instead of relying on timing or visible SQL text.
+- [Tank design-sheet basis](tank-design-sheet-basis.md) — resolve density and Thermal evidence through governed active/current sources; keep missing ambient and structural loads explicit.
