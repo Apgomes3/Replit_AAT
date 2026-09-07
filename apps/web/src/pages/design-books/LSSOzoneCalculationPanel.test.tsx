@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,5 +54,21 @@ describe('LSS ozone calculation', () => {
       display_unit: 'mg/h',
       ffvp_plenum_circuit_keys: ['ff:1'],
     }));
+  });
+
+  it('keeps manual concentration entry and the slider synchronized', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    const numericInput = await screen.findByLabelText('Target ozone concentration value');
+    const slider = screen.getByLabelText('Target ozone concentration');
+
+    await user.clear(numericInput);
+    await user.type(numericInput, '0.075');
+    expect(slider).toHaveValue('0.075');
+    expect(screen.getByText('7.5 g/h')).toBeInTheDocument();
+
+    fireEvent.change(slider, { target: { value: '0.1' } });
+    expect((numericInput as HTMLInputElement).value).toBe('0.1');
+    expect(screen.getByText('10 g/h')).toBeInTheDocument();
   });
 });

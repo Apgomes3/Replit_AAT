@@ -23,7 +23,7 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [target, setTarget] = useState(0.05);
+  const [target, setTarget] = useState('0.05');
   const [unit, setUnit] = useState('g/h');
   const [plenumKeys, setPlenumKeys] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -34,7 +34,7 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
 
   useEffect(() => {
     if (!data) return;
-    setTarget(Number(data.target_concentration_mg_l ?? data.input_snapshot?.target_concentration_mg_l ?? 0.05));
+    setTarget(String(data.target_concentration_mg_l ?? data.input_snapshot?.target_concentration_mg_l ?? 0.05));
     setUnit(data.display_unit || data.input_snapshot?.display_unit || 'g/h');
     setPlenumKeys(data.ffvp_plenum_circuit_keys || data.input_snapshot?.ffvp_plenum_circuit_keys || []);
   }, [data]);
@@ -51,7 +51,9 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
   const ffspFlow = data?.frozen ? Number(frozenResult?.ffsp_flow_m3h || 0) : liveFfspFlow;
   const ffvpFlow = data?.frozen ? Number(frozenResult?.applicable_ffvp_flow_m3h || 0) : liveFfvpFlow;
   const totalFlow = ffspFlow + ffvpFlow;
-  const previewMgH = target * totalFlow * 1_000;
+  const numericTarget = Number(target);
+  const targetIsValid = Number.isFinite(numericTarget) && numericTarget >= 0.01 && numericTarget <= 0.2;
+  const previewMgH = (targetIsValid ? numericTarget : 0) * totalFlow * 1_000;
   const preview = {
     ozone_required_mg_h: previewMgH,
     ozone_required_g_h: previewMgH / 1_000,
@@ -64,7 +66,7 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
     try {
       await api.put(`/systems/${systemId}/ozone-calculation`, {
         design_book_id: bookId,
-        target_concentration_mg_l: target,
+        target_concentration_mg_l: numericTarget,
         display_unit: unit,
         ffvp_plenum_circuit_keys: plenumKeys,
       });
@@ -91,10 +93,23 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
         <div>
           <div className="mb-2 flex items-center justify-between text-sm">
             <label htmlFor="ozone-target" className="font-medium text-stone-700">Target ozone concentration</label>
-            <span className="font-mono font-semibold text-indigo-700">{target.toFixed(3)} mg/L</span>
+            <span className="flex items-center gap-1 font-mono font-semibold text-indigo-700">
+              <input
+                aria-label="Target ozone concentration value"
+                type="number"
+                min="0.01"
+                max="0.2"
+                step="0.005"
+                value={target}
+                disabled={readOnly || data?.frozen}
+                onChange={event => setTarget(event.target.value)}
+                className="w-24 rounded-md border border-indigo-200 bg-white px-2 py-1 text-right font-mono text-sm font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/40 disabled:bg-stone-50"
+              />
+              mg/L
+            </span>
           </div>
           <input id="ozone-target" aria-label="Target ozone concentration" type="range" min="0.01" max="0.2" step="0.005"
-            value={target} disabled={readOnly || data?.frozen} onChange={event => setTarget(Number(event.target.value))}
+            value={targetIsValid ? numericTarget : 0.01} disabled={readOnly || data?.frozen} onChange={event => setTarget(event.target.value)}
             className="w-full accent-indigo-600" />
           <div className="flex justify-between text-[10px] text-stone-400"><span>0.010</span><span>Default 0.050</span><span>0.200 mg/L</span></div>
         </div>
@@ -132,12 +147,12 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold ${unit === option ? 'bg-emerald-700 text-white' : 'text-stone-600 hover:bg-stone-50'}`}>{option}</button>)}
               </div>
             </div>
-            <p className="mt-3 text-xs text-emerald-800">{target.toFixed(3)} mg/L × {number(totalFlow)} m³/h × 1,000 L/m³</p>
+            <p className="mt-3 text-xs text-emerald-800">{targetIsValid ? numericTarget.toFixed(3) : '—'} mg/L × {number(totalFlow)} m³/h × 1,000 L/m³</p>
           </div>
         ) : (
           <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><AlertCircle className="h-5 w-5 shrink-0" />Save a positive FFSP flow in Pump Selection before calculating ozone demand.</div>
         )}
-        {!readOnly && !data?.frozen && <div className="flex justify-end"><button type="button" onClick={save} disabled={saving || totalFlow <= 0}
+        {!readOnly && !data?.frozen && <div className="flex justify-end"><button type="button" onClick={save} disabled={saving || totalFlow <= 0 || !targetIsValid}
           className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save ozone calculation'}</button></div>}
       </div>
     </section>
