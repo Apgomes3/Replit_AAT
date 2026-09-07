@@ -374,7 +374,30 @@ describe('CustomFootprintEditor', () => {
     await user.click(screen.getByRole('button', { name: 'Select and edit' }));
     await user.click(screen.getByRole('button', { name: 'Select segment 2 from segment list' }));
     expect(screen.getByRole('button', { name: 'Delete selected segment' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Delete selected segment' })).toHaveAttribute('title', 'Close the outline before deleting a segment');
+    expect(screen.getByRole('button', { name: 'Delete selected segment' })).toHaveAttribute('title', 'Only segments beside the open gap can be deleted');
+  });
+
+  it('deletes additional segments from either side of an open gap', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={onAccept} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Select and edit' }));
+    await user.click(screen.getByRole('button', { name: 'Select segment 1 from segment list' }));
+    await user.click(screen.getByRole('button', { name: 'Delete selected segment' }));
+    expect(screen.getByText('3')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Select segment 1 from segment list' }));
+    expect(screen.getByRole('button', { name: 'Delete selected segment' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Delete selected segment' }));
+    expect(screen.getByText('2')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close outline' }));
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    expect(onAccept).toHaveBeenCalledWith(expect.objectContaining({
+      closed: true,
+      segments: expect.arrayContaining([expect.any(Object)]),
+    }));
+    expect(onAccept.mock.calls[0][0].segments).toHaveLength(3);
   });
 
   it.each(['Enter', ' '])('selects an on-canvas segment with %s without showing the placement marker', key => {

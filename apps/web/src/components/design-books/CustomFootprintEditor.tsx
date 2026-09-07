@@ -558,8 +558,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   };
   const deleteSelected = () => {
     if (selectedSegment === null) return;
-    if (!document.closed) {
-      setSegmentEditNotice('Close the outline before deleting an interior segment so the replacement span has one unambiguous gap.');
+    const selectedBordersOpenGap = selectedSegment === 0 || selectedSegment === document.segments.length - 1;
+    if (!document.closed && !selectedBordersOpenGap) {
+      setSegmentEditNotice('Only a segment beside the open gap can be deleted. Delete from either end, or close the outline first.');
       return;
     }
     const removedIndex = selectedSegment;
@@ -572,11 +573,10 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     }
     const next = { ...document, closed: false, segments };
     commit(next);
-    const replacementStart = segments.length ? segmentEnd(segments[segments.length - 1]) : null;
-    setPendingStart(replacementStart);
-    setMode('line');
+    setPendingStart(null);
+    setMode('select');
     setSelectedSegment(null);
-    setSegmentEditNotice(`Segment ${removedIndex + 1} deleted. The outline is open; draw the replacement span, then close it.`);
+    setSegmentEditNotice(`Segment ${removedIndex + 1} deleted. You can delete another segment beside the gap, or choose a drawing tool to rebuild the span.`);
   };
   const addPoint = (point: FootprintPoint) => {
     if (document.closed || mode === 'select') return;
@@ -989,7 +989,16 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
               <div className="mt-2 grid gap-2">
                 <button type="button" disabled={selectedSegment === null || document.segments[selectedSegment]?.type === 'freehand' && (document.segments[selectedSegment] as Extract<FootprintSegment, { type: 'freehand' }>).points.length < 3} onClick={insertPointOnSelected} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-40" aria-label="Insert point on selected segment"><Scissors className="h-4 w-4" />Insert point</button>
                 <button type="button" disabled={selectedSegment === null || document.segments[selectedSegment]?.type !== 'line'} onClick={convertSelectedToCurve} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-40" aria-label="Convert selected segment to quadratic curve"><GitBranch className="h-4 w-4" />Convert to curve</button>
-                <button type="button" disabled={selectedSegment === null || !document.closed} onClick={deleteSelected} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-40" aria-label="Delete selected segment" title={!document.closed ? 'Close the outline before deleting a segment' : undefined}><Trash2 className="h-4 w-4" />Delete segment</button>
+                <button type="button"
+                  disabled={selectedSegment === null || (!document.closed && selectedSegment !== 0 && selectedSegment !== document.segments.length - 1)}
+                  onClick={deleteSelected}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-40"
+                  aria-label="Delete selected segment"
+                  title={!document.closed && selectedSegment !== null && selectedSegment !== 0 && selectedSegment !== document.segments.length - 1
+                    ? 'Only segments beside the open gap can be deleted'
+                    : undefined}>
+                  <Trash2 className="h-4 w-4" />Delete segment
+                </button>
               </div>
             </div>}
             <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
