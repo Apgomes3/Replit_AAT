@@ -719,10 +719,12 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
   const {
     product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
     design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
-    shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3,
+     shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, ozone_production_capacity_g_h,
      manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count,
   } = req.body;
   if (!product_code || !product_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_code and product_name required' } });
+  const ozoneCapacity = ozone_production_capacity_g_h == null || ozone_production_capacity_g_h === '' ? null : Number(ozone_production_capacity_g_h);
+  if (ozoneCapacity != null && (!Number.isFinite(ozoneCapacity) || ozoneCapacity <= 0)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'ozone_production_capacity_g_h must be a positive number or blank' } });
   const surfaceAreaM2 = calculateWaterSurfaceAreaM2(
     shape_type,
     length_mm ? parseFloat(length_mm) : null,
@@ -737,8 +739,8 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
           (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
            design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
            shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, surface_area_m2, cost,
-             manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
+              manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count, ozone_production_capacity_g_h)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30) RETURNING *`,
         [
           product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
           linkedFlow, design_pressure_bar || null, design_head_m || null, power_kw || null,
@@ -748,6 +750,7 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
           manufacturer || null, model || null, configuration || null, control_type || null,
            signal_type || null, Boolean(control_type_optional),
            lamp_count == null || lamp_count === '' ? null : Number(lamp_count),
+           ozoneCapacity,
         ]);
       await client.query(
         'INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, friction_loss_mh2o, updated_at) VALUES ($1,$2,$3,NOW())',
@@ -801,9 +804,12 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, signal_type, control_type_optional, status, lamp_count } = req.body;
+  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, signal_type, control_type_optional, status, lamp_count, ozone_production_capacity_g_h } = req.body;
   const hasPowerKw = Object.prototype.hasOwnProperty.call(req.body, 'power_kw');
   const hasLampCount = Object.prototype.hasOwnProperty.call(req.body, 'lamp_count');
+  const hasOzoneCapacity = Object.prototype.hasOwnProperty.call(req.body, 'ozone_production_capacity_g_h');
+  const ozoneCapacity = ozone_production_capacity_g_h == null || ozone_production_capacity_g_h === '' ? null : Number(ozone_production_capacity_g_h);
+  if (hasOzoneCapacity && ozoneCapacity != null && (!Number.isFinite(ozoneCapacity) || ozoneCapacity <= 0)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'ozone_production_capacity_g_h must be a positive number or blank' } });
   const lampCountValue = lamp_count == null || lamp_count === '' ? null : Number(lamp_count);
   if (hasLampCount && lampCountValue != null && (!Number.isInteger(lampCountValue) || lampCountValue <= 0)) {
     return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'lamp_count must be a positive integer or blank' } });
@@ -857,8 +863,8 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
               ? Number(previousProductFlow)
               : null;
       const result = await client.query(
-        `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=CASE WHEN $33 THEN $6 ELSE power_kw END, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), lamp_count=CASE WHEN $34 THEN $35 ELSE lamp_count END, updated_at=NOW() WHERE id=$31 RETURNING *`,
-        [product_name, product_category, application_type, linkedDesignFlow, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, configuration || null, control_type || null, status || null, req.params.id, newCode, hasPowerKw, hasLampCount, lampCountValue]);
+        `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=CASE WHEN $33 THEN $6 ELSE power_kw END, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), lamp_count=CASE WHEN $34 THEN $35 ELSE lamp_count END, ozone_production_capacity_g_h=CASE WHEN $36 THEN $37 ELSE ozone_production_capacity_g_h END, updated_at=NOW() WHERE id=$31 RETURNING *`,
+        [product_name, product_category, application_type, linkedDesignFlow, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, configuration || null, control_type || null, status || null, req.params.id, newCode, hasPowerKw, hasLampCount, lampCountValue, hasOzoneCapacity, ozoneCapacity]);
       const metadataResult = await client.query(
         `UPDATE product_masters
          SET signal_type=CASE WHEN $2 THEN $3 ELSE signal_type END,

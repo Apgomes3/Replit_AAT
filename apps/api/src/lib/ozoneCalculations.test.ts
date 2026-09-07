@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateOzoneRequirement, convertOzoneRate } from './ozoneCalculations';
+import { calculateOzoneRequirement, convertOzoneRate, selectOzoneGenerator } from './ozoneCalculations';
 
 describe('ozone requirement', () => {
   const lines = [
@@ -34,5 +34,29 @@ describe('ozone requirement', () => {
   it('converts display units without changing the mg/h basis', () => {
     expect(convertOzoneRate(6_250, 'g/h')).toBe(6.25);
     expect(convertOzoneRate(453_592.37, 'lb/h')).toBeCloseTo(1);
+  });
+});
+
+describe('ozone generator selection', () => {
+  const products = [
+    { id: '7', product_code: 'OZ-07', product_name: 'Ozone 7', ozone_production_capacity_g_h: 7 },
+    { id: '11', product_code: 'OZ-11', product_name: 'Ozone 11', ozone_production_capacity_g_h: 11 },
+    { id: '20', product_code: 'OZ-20', product_name: 'Ozone 20', ozone_production_capacity_g_h: 20 },
+  ];
+
+  it('prefers a PASS, then fewest units, then smallest excess', () => {
+    expect(selectOzoneGenerator(20, products)).toMatchObject({
+      product_id: '20', quantity: 1, total_installed_capacity_g_h: 20, validation_status: 'PASS',
+    });
+    expect(selectOzoneGenerator(18, products.filter(product => product.id === '7'))).toMatchObject({
+      quantity: 3, total_installed_capacity_g_h: 21, validation_status: 'PASS',
+    });
+  });
+
+  it('retains an oversized selection as a warning and fails without capacity', () => {
+    expect(selectOzoneGenerator(11, products.filter(product => product.id === '20'))).toMatchObject({
+      validation_status: 'WARNING', oversize_percent: expect.any(Number),
+    });
+    expect(selectOzoneGenerator(11, [])).toMatchObject({ validation_status: 'FAIL' });
   });
 });

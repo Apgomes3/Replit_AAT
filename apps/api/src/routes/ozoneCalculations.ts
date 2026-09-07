@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage, requireRole } from '../middleware/auth';
-import { calculateOzoneRequirement } from '../lib/ozoneCalculations';
+import { calculateOzoneRequirement, selectOzoneGenerator } from '../lib/ozoneCalculations';
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 
@@ -41,6 +41,12 @@ router.get('/systems/:id/ozone-calculation', async (req: AuthRequest, res: Respo
     pump_lines: live.pumpLines,
     ffvp_plenum_circuit_keys: keys,
   });
+  const allocation = result.status === 'ready'
+    ? selectOzoneGenerator(result.ozone_required_g_h, (await query(
+      `SELECT id, product_code, product_name, model, ozone_production_capacity_g_h
+       FROM product_masters WHERE status='Active' AND ozone_production_capacity_g_h > 0`,
+    )).rows, { system_id: req.params.id, ffvp_plenum_circuit_keys: keys, calculation_version: result.calculation_version })
+    : null;
   res.json({
     ...saved,
     target_concentration_mg_l: Number(target),
@@ -48,6 +54,7 @@ router.get('/systems/:id/ozone-calculation', async (req: AuthRequest, res: Respo
     ffvp_plenum_circuit_keys: keys,
     pump_lines: live.pumpLines.filter((line: any) => ['FFSP', 'FFVP'].includes(line.pump_duty_tag)),
     result,
+    allocation: saved?.allocation_snapshot || allocation,
     frozen: false,
   });
 });
@@ -87,22 +94,32 @@ router.put('/systems/:id/ozone-calculation', requireRole('admin', 'engineer'), r
     ffsp_lines: result.ffsp_lines,
     applicable_ffvp_lines: result.applicable_ffvp_lines,
   };
+  const allocation = selectOzoneGenerator(result.ozone_required_g_h, (await query(
+    `SELECT id, product_code, product_name, model, ozone_production_capacity_g_h
+     FROM product_masters WHERE status='Active' AND ozone_production_capacity_g_h > 0`,
+  )).rows, {
+    system_id: req.params.id,
+    ffvp_plenum_circuit_keys: keys,
+    calculation_version: result.calculation_version,
+    ffsp_lines: result.ffsp_lines,
+    applicable_ffvp_lines: result.applicable_ffvp_lines,
+  });
   const saved = (await query(
     `INSERT INTO design_book_ozone_calculations
        (design_book_id,system_id,target_concentration_mg_l,display_unit,ffvp_plenum_circuit_keys,
-        input_snapshot,result_snapshot,calculated_by,calculated_at)
-     VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,NOW())
+         input_snapshot,result_snapshot,allocation_snapshot,calculated_by,calculated_at)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8::jsonb,$9,NOW())
      ON CONFLICT (design_book_id,system_id) DO UPDATE SET
        target_concentration_mg_l=EXCLUDED.target_concentration_mg_l,
        display_unit=EXCLUDED.display_unit,
        ffvp_plenum_circuit_keys=EXCLUDED.ffvp_plenum_circuit_keys,
-       input_snapshot=EXCLUDED.input_snapshot,result_snapshot=EXCLUDED.result_snapshot,
+        input_snapshot=EXCLUDED.input_snapshot,result_snapshot=EXCLUDED.result_snapshot,allocation_snapshot=EXCLUDED.allocation_snapshot,
        calculated_by=EXCLUDED.calculated_by,calculated_at=NOW(),updated_at=NOW()
      RETURNING *`,
     [book.id, req.params.id, target, displayUnit, JSON.stringify(keys),
-      JSON.stringify(inputSnapshot), JSON.stringify(result), req.user!.id],
+       JSON.stringify(inputSnapshot), JSON.stringify(result), JSON.stringify(allocation), req.user!.id],
   )).rows[0];
-  res.json({ ...saved, pump_lines: live.pumpLines.filter((line: any) => ['FFSP', 'FFVP'].includes(line.pump_duty_tag)), result });
+  res.json({ ...saved, pump_lines: live.pumpLines.filter((line: any) => ['FFSP', 'FFVP'].includes(line.pump_duty_tag)), result, allocation });
 });
 
 export default router;

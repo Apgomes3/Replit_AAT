@@ -1,4 +1,5 @@
 export const OZONE_CALCULATION_VERSION = 'OZONE_1_0';
+export const OZONE_SELECTION_VERSION = 'OZONE_SELECTION_1_0';
 
 export type OzonePumpLine = {
   circuit_key?: string | null;
@@ -57,4 +58,45 @@ export function calculateOzoneRequirement(input: {
     ffvp_lines: ffvpLines,
     applicable_ffvp_lines: applicableFfvp,
   };
+}
+
+export type OzoneGeneratorProduct = {
+  id: string;
+  product_code: string;
+  product_name: string;
+  model?: string | null;
+  ozone_production_capacity_g_h: number | string | null;
+};
+
+/** Select one PIM generator model repeated as necessary. Product capacity is authoritative. */
+export function selectOzoneGenerator(requiredGPerHour: unknown, products: OzoneGeneratorProduct[], context: Record<string, unknown> = {}) {
+  const required = positive(requiredGPerHour);
+  if (required == null) {
+    return { validation_status: 'FAIL', reason: 'A positive required ozone capacity is required.', calculation_selection_version: OZONE_SELECTION_VERSION, ...context };
+  }
+  const candidates = products
+    .map(product => ({ ...product, capacity: positive(product.ozone_production_capacity_g_h) }))
+    .filter((product): product is OzoneGeneratorProduct & { capacity: number } => product.capacity != null)
+    .map(product => {
+      const quantity = Math.ceil(required / product.capacity);
+      const total = product.capacity * quantity;
+      const ratio = total / required;
+      const oversize = (ratio - 1) * 100;
+      return {
+        product_id: product.id, product_code: product.product_code, product_name: product.product_name,
+        model: product.model || null, per_unit_capacity_g_h: product.capacity, quantity,
+        total_installed_capacity_g_h: total, required_capacity_g_h: required, capacity_ratio: ratio,
+        oversize_percent: oversize, validation_status: oversize <= 30 ? 'PASS' : 'WARNING',
+      };
+    })
+    .sort((a, b) =>
+      (a.validation_status === 'PASS' ? 0 : 1) - (b.validation_status === 'PASS' ? 0 : 1)
+      || a.quantity - b.quantity
+      || a.total_installed_capacity_g_h - b.total_installed_capacity_g_h
+      || a.product_code.localeCompare(b.product_code)
+      || a.product_id.localeCompare(b.product_id));
+  if (!candidates.length) {
+    return { validation_status: 'FAIL', reason: 'No active PIM ozone generator has a positive ozone production capacity.', required_capacity_g_h: required, calculation_selection_version: OZONE_SELECTION_VERSION, ...context };
+  }
+  return { ...candidates[0], calculation_selection_version: OZONE_SELECTION_VERSION, ...context };
 }

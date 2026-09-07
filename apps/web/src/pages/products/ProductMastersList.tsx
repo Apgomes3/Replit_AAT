@@ -236,6 +236,7 @@ export default function ProductMastersList() {
       notes: (row as any).notes || '',
       manufacturer: (row as any).manufacturer || '',
       model: (row as any).model || '',
+      ozone_production_capacity_g_h: (row as any).ozone_production_capacity_g_h != null ? String((row as any).ozone_production_capacity_g_h) : '',
     });
   };
 
@@ -259,6 +260,7 @@ export default function ProductMastersList() {
         product_family_id: (editRow as any).product_family_id || null,
         manufacturer: editForm.manufacturer || null,
         model: editForm.model || null,
+        ozone_production_capacity_g_h: editForm.ozone_production_capacity_g_h === '' ? null : Number(editForm.ozone_production_capacity_g_h),
       });
       toast.success('Product updated');
       setEditRow(null);
@@ -570,6 +572,7 @@ export default function ProductMastersList() {
             { name: 'application_type', label: 'Application Type' },
             { name: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Grundfos' },
             { name: 'model', label: 'Model', placeholder: 'e.g. CR 5-10' },
+             { name: 'ozone_production_capacity_g_h', label: 'Ozone Production Capacity (g/h)', type: 'number' },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
             { name: 'primary_material_code', label: 'Primary Material', options: materialOptions, onCreateOption: openMaterialManagement },
             { name: 'standard_status', label: 'Status', options: STATUSES },
@@ -677,6 +680,11 @@ export default function ProductMastersList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
                 <input value={editForm.model} onChange={e => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
                   placeholder="e.g. CR 5-10"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Ozone Production Capacity (g/h)</label>
+                <input aria-label="Ozone Production Capacity (g/h)" type="number" min="0" step="any" value={editForm.ozone_production_capacity_g_h} onChange={e => setEditForm((f: any) => ({ ...f, ozone_production_capacity_g_h: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
               <div className="col-span-2">

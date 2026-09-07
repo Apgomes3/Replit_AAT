@@ -347,6 +347,7 @@ export default function ProductMasterDetail() {
     control_type: (product as any).control_type || null,
     signal_type: (product as any).signal_type || null,
     control_type_optional: Boolean((product as any).control_type_optional),
+    ozone_production_capacity_g_h: (product as any).ozone_production_capacity_g_h ?? null,
     cost: (product as any).cost ?? null,
     sell_price: (product as any).sell_price ?? null,
     currency: (product as any).currency || 'USD',
@@ -371,6 +372,7 @@ export default function ProductMasterDetail() {
       currency: (product as any).currency || 'USD',
       manufacturer: (product as any).manufacturer || '',
       model: (product as any).model || '',
+      ozone_production_capacity_g_h: (product as any).ozone_production_capacity_g_h != null ? String((product as any).ozone_production_capacity_g_h) : '',
     });
     setEditing(true);
   };
@@ -396,6 +398,7 @@ export default function ProductMasterDetail() {
         currency: editForm.currency || 'USD',
         manufacturer: editForm.manufacturer || null,
         model: editForm.model || null,
+        ozone_production_capacity_g_h: editForm.ozone_production_capacity_g_h === '' ? null : Number(editForm.ozone_production_capacity_g_h),
       }));
       toast.success('Product updated');
       setEditing(false);
@@ -1154,6 +1157,7 @@ export default function ProductMasterDetail() {
                 { label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null },
                 { label: 'Manufacturer', value: (product as any).manufacturer },
                 { label: 'Model', value: (product as any).model },
+               ...((product as any).ozone_production_capacity_g_h != null ? [{ label: 'Ozone Production Capacity', value: `${(product as any).ozone_production_capacity_g_h} g/h` }] : []),
                 { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
                 ...(() => {
                   const shape = product.shape_type || 'Rectangular';
@@ -1260,6 +1264,11 @@ export default function ProductMasterDetail() {
                     placeholder="e.g. CR 5-10"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Ozone Production Capacity (g/h)</label>
+                  <input aria-label="Ozone Production Capacity (g/h)" type="number" min="0" step="any" value={editForm.ozone_production_capacity_g_h} onChange={e => setEditForm((f: any) => ({ ...f, ozone_production_capacity_g_h: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
@@ -1280,6 +1289,7 @@ export default function ProductMasterDetail() {
               { label: 'Category', value: product.product_category },
               { label: 'Manufacturer', value: (product as any).manufacturer },
               { label: 'Model', value: (product as any).model },
+              ...((product as any).ozone_production_capacity_g_h != null ? [{ label: 'Ozone Production Capacity', value: `${(product as any).ozone_production_capacity_g_h} g/h` }] : []),
               ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
                ...(isUvProduct ? [
                  { label: 'Configuration', value: product.configuration },
@@ -1411,6 +1421,11 @@ export default function ProductMasterDetail() {
                   <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
                   <input value={editForm.model} onChange={e => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
                     placeholder="e.g. CR 5-10"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Ozone Production Capacity (g/h)</label>
+                  <input aria-label="Ozone Production Capacity (g/h)" type="number" min="0" step="any" value={editForm.ozone_production_capacity_g_h} onChange={e => setEditForm((f: any) => ({ ...f, ozone_production_capacity_g_h: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
                 <div className="col-span-2">

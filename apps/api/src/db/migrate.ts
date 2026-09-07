@@ -1842,12 +1842,16 @@ CREATE TABLE IF NOT EXISTS design_book_ozone_calculations (
     CHECK (jsonb_typeof(input_snapshot) = 'object'),
   result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
     CHECK (jsonb_typeof(result_snapshot) = 'object'),
+  allocation_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(allocation_snapshot) = 'object'),
   calculated_by UUID REFERENCES users(id) ON DELETE SET NULL,
   calculated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(design_book_id, system_id)
 );
+ALTER TABLE design_book_ozone_calculations ADD COLUMN IF NOT EXISTS allocation_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+  CHECK (jsonb_typeof(allocation_snapshot) = 'object');
 CREATE INDEX IF NOT EXISTS idx_design_book_ozone_calculations_book
   ON design_book_ozone_calculations(design_book_id, system_id);
 DROP TRIGGER IF EXISTS guard_released_design_book_ozone_calculation ON design_book_ozone_calculations;
@@ -2536,6 +2540,20 @@ ALTER TABLE uv_engineering_revisions ADD CONSTRAINT uv_engineering_positive_valu
 -- UV governance: PIM owns product identity/material/power/lamp count; engineering
 -- revisions own the approved reactor and irradiance evidence.
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS lamp_count INTEGER;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS ozone_production_capacity_g_h NUMERIC
+  CHECK (ozone_production_capacity_g_h IS NULL OR ozone_production_capacity_g_h > 0);
+UPDATE product_masters
+SET ozone_production_capacity_g_h = CASE product_code
+  WHEN 'PM-OZ-2' THEN 2
+  WHEN 'PM-OZ-3' THEN 3
+  WHEN 'PM-OZ-5' THEN 5
+  WHEN 'PM-OZ-7' THEN 7
+  WHEN 'PM-OZ-10' THEN 10
+  WHEN 'PM-OZ-15' THEN 15
+  WHEN 'PM-OZ-20' THEN 20
+END
+WHERE product_code IN ('PM-OZ-2', 'PM-OZ-3', 'PM-OZ-5', 'PM-OZ-7', 'PM-OZ-10', 'PM-OZ-15', 'PM-OZ-20')
+  AND ozone_production_capacity_g_h IS NULL;
 ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis VARCHAR(100) NOT NULL DEFAULT 'AAT Foundations';
 ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis_verified BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE uv_engineering_revisions ALTER COLUMN source_basis SET DEFAULT 'AAT Foundations';

@@ -71,4 +71,22 @@ describe('LSS ozone calculation', () => {
     expect((numericInput as HTMLInputElement).value).toBe('0.1');
     expect(screen.getByText('10 g/h')).toBeInTheDocument();
   });
+
+  it('renders server-selected generator evidence and its validation status', async () => {
+    apiGet.mockResolvedValueOnce({ data: {
+      target_concentration_mg_l: 0.05, display_unit: 'g/h', frozen: true,
+      input_snapshot: { ffvp_plenum_circuit_keys: [] },
+      result_snapshot: { ffsp_flow_m3h: 100, applicable_ffvp_flow_m3h: 0, ozone_required_g_h: 5 },
+      allocation_snapshot: {
+        product_id: 'oz-7', product_code: 'OZ-07', product_name: 'Ozone Generator',
+        per_unit_capacity_g_h: 7, quantity: 1, total_installed_capacity_g_h: 7,
+        required_capacity_g_h: 5, oversize_percent: 40, validation_status: 'WARNING',
+      },
+    } } as any);
+    renderPanel();
+    expect(await screen.findByText(/Automatic ozone generator selection/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 × OZ-07/)).toBeInTheDocument();
+    expect(screen.getByText('WARNING')).toBeInTheDocument();
+    expect(screen.getByText(/Oversize:/)).toHaveTextContent('40%');
+  });
 });

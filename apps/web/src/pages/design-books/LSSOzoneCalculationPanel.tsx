@@ -60,6 +60,8 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
     ozone_required_lb_h: previewMgH / 453_592.37,
   };
   const result = data?.frozen ? frozenResult : preview;
+  // Allocation and validation always originate from the server-side selection.
+  const allocation = data?.allocation_snapshot || data?.allocation;
 
   const save = async () => {
     setSaving(true);
@@ -151,6 +153,26 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
           </div>
         ) : (
           <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><AlertCircle className="h-5 w-5 shrink-0" />Save a positive FFSP flow in Pump Selection before calculating ozone demand.</div>
+        )}
+        {allocation && (
+          <div className={`rounded-xl border p-4 ${allocation.validation_status === 'PASS' ? 'border-emerald-200 bg-emerald-50' : allocation.validation_status === 'WARNING' ? 'border-amber-200 bg-amber-50' : 'border-red-200 bg-red-50'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-stone-600">Automatic ozone generator selection</div>
+                {allocation.product_id
+                  ? <div className="mt-1 text-sm font-semibold text-stone-900">{allocation.quantity} × {allocation.product_code}{allocation.model ? ` · ${allocation.model}` : ''} — {allocation.product_name}</div>
+                  : <div className="mt-1 text-sm font-semibold text-red-800">{allocation.reason || 'No suitable ozone generator is available.'}</div>}
+              </div>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-stone-800 ring-1 ring-black/5">{allocation.validation_status}</span>
+            </div>
+            {allocation.product_id && <div className="mt-3 grid gap-2 text-xs text-stone-700 sm:grid-cols-4">
+              <span>Unit: <b>{number(allocation.per_unit_capacity_g_h)} g/h</b></span>
+              <span>Installed: <b>{number(allocation.total_installed_capacity_g_h)} g/h</b></span>
+              <span>Required: <b>{number(allocation.required_capacity_g_h)} g/h</b></span>
+              <span>Oversize: <b>{number(allocation.oversize_percent)}%</b></span>
+            </div>}
+            <p className="mt-3 text-xs text-stone-600">PASS: installed capacity meets demand within 30%. WARNING: engineering review required for oversizing above 30%. FAIL: no compliant capacity is available.</p>
+          </div>
         )}
         {!readOnly && !data?.frozen && <div className="flex justify-end"><button type="button" onClick={save} disabled={saving || totalFlow <= 0 || !targetIsValid}
           className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save ozone calculation'}</button></div>}
