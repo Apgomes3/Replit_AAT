@@ -438,15 +438,15 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
       </section>
       <section className="overflow-hidden rounded-xl border border-stone-200 bg-white" aria-labelledby="io-schedule-heading">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
-          <div><h2 id="io-schedule-heading" className="text-sm font-semibold text-stone-700">I/O schedule preview</h2><p className="mt-0.5 text-xs text-stone-400">Saved instrument instances, grouped by panel and signal direction.</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen saved-instance evidence</p>}</div>
-          <div className="flex gap-2">
+          <div className="min-w-0"><h2 id="io-schedule-heading" className="text-sm font-semibold text-stone-700">I/O schedule preview</h2><p className="mt-0.5 text-xs text-stone-400">Saved instrument instances, grouped by panel and signal direction.</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen saved-instance evidence</p>}</div>
+          <div className="flex min-w-0 flex-wrap gap-2">
             <button type="button" onClick={() => exportCsv(`io-schedule-${systemId}.csv`, [
               { header: 'Panel', value: row => row.panel }, { header: 'Direction', value: row => row.direction },
               { header: 'Tag', value: row => row.tag }, { header: 'Instrument', value: row => row.instrument },
               { header: 'Signal type', value: row => row.signalType }, { header: 'Assigned product', value: row => row.product },
               { header: 'Saved control logic', value: row => row.controlLogic },
-            ], ioSchedule)} disabled={ioSchedule.length === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />Export CSV</button>
-            <button type="button" onClick={() => void downloadPdf()} disabled={ioSchedule.length === 0 || pdfLoading} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />{pdfLoading ? 'Preparing PDF…' : 'Download PDF'}</button>
+            ], ioSchedule)} disabled={ioSchedule.length === 0} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />Export CSV</button>
+            <button type="button" onClick={() => void downloadPdf()} disabled={ioSchedule.length === 0 || pdfLoading} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />{pdfLoading ? 'Preparing PDF…' : 'Download PDF'}</button>
           </div>
         </div>
         {ioSchedule.length === 0 ? <div className="p-8 text-center text-sm text-stone-400" role="status">No saved instrument instances are available for this I/O schedule.</div> : <div className="overflow-x-auto">

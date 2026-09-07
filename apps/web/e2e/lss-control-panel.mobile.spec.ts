@@ -179,4 +179,59 @@ for (const viewport of viewports) {
     await expect(table).toBeVisible();
     await expect(table.getByText(issuedTag)).toBeVisible();
   });
+
+  test(`${viewport.name}: issued I/O schedule remains scrollable with exports reachable`, async ({ page }) => {
+    await openIssuedWorkspace(page, viewport.width, viewport.height);
+
+    const schedule = page.getByRole('table', { name: 'PLC Input I/O schedule' });
+    const scroller = schedule.locator('xpath=../..');
+    const csvExport = page.getByRole('button', { name: 'Export CSV' });
+    const pdfExport = page.getByRole('button', { name: 'Download PDF' });
+
+    await expect(page.getByRole('heading', { name: 'I/O schedule preview' })).toBeVisible();
+    await expect(page.getByText('Frozen saved-instance evidence')).toBeVisible();
+    await expect(csvExport).toBeVisible();
+    await expect(csvExport).toBeEnabled();
+    await expect(pdfExport).toBeVisible();
+    await expect(pdfExport).toBeEnabled();
+
+    for (const column of ['Tag', 'Instrument', 'Signal type', 'Direction', 'Assigned product', 'Saved control logic']) {
+      await expect(schedule.getByRole('columnheader', { name: column, exact: true })).toBeAttached();
+    }
+    await expect(schedule.getByText(issuedTag)).toBeVisible();
+    await expect(schedule.getByText(issuedInstrumentName)).toBeVisible();
+    await expect(schedule.getByText('4–20 mA analogue input with archived isolation requirements')).toBeVisible();
+    await expect(schedule.getByText('Input', { exact: true })).toBeVisible();
+
+    const initialMetrics = await scroller.evaluate(element => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      overflowX: getComputedStyle(element).overflowX,
+      left: element.getBoundingClientRect().left,
+      right: element.getBoundingClientRect().right,
+    }));
+    expect(initialMetrics.scrollWidth).toBeGreaterThan(initialMetrics.clientWidth);
+    expect(initialMetrics.overflowX).toBe('auto');
+    expect(initialMetrics.left).toBeGreaterThanOrEqual(0);
+    expect(initialMetrics.right).toBeLessThanOrEqual(viewport.width);
+
+    const finalScrollLeft = await scroller.evaluate(element => {
+      element.scrollLeft = element.scrollWidth;
+      return element.scrollLeft;
+    });
+    expect(finalScrollLeft).toBeGreaterThan(0);
+    await expect(schedule.getByText(issuedProduct)).toBeVisible();
+    const savedLogic = schedule.getByRole('cell', { name: 'Alarm and stop the circulation pump when archived high-pressure limits are exceeded.' });
+    await expect(savedLogic).toBeVisible();
+    const [scrollerBounds, savedLogicBounds] = await Promise.all([scroller.boundingBox(), savedLogic.boundingBox()]);
+    expect(scrollerBounds && savedLogicBounds
+      && savedLogicBounds.x >= scrollerBounds.x
+      && savedLogicBounds.x + savedLogicBounds.width <= scrollerBounds.x + scrollerBounds.width).toBe(true);
+
+    const controlsBounds = await Promise.all([csvExport, pdfExport].map(button => button.boundingBox()));
+    expect(controlsBounds.every(bounds => bounds
+      && bounds.x >= 0
+      && bounds.x + bounds.width <= viewport.width
+      && bounds.height >= 44)).toBe(true);
+  });
 }
