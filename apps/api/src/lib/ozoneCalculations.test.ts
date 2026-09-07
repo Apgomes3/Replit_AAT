@@ -44,7 +44,7 @@ describe('ozone generator selection', () => {
     { id: '20', product_code: 'OZ-20', product_name: 'Ozone 20', ozone_production_capacity_g_h: 20 },
   ];
 
-  it('prefers a PASS, then fewest units, then smallest excess', () => {
+  it('prefers the closest installed capacity above demand, then fewer units', () => {
     expect(selectOzoneGenerator(20, products)).toMatchObject({
       product_id: '20', quantity: 1, total_installed_capacity_g_h: 20, validation_status: 'PASS',
     });
@@ -53,10 +53,21 @@ describe('ozone generator selection', () => {
     });
   });
 
-  it('retains an oversized selection as a warning and fails without capacity', () => {
+  it('allows an oversized selection with an advisory and fails without capacity', () => {
     expect(selectOzoneGenerator(11, products.filter(product => product.id === '20'))).toMatchObject({
-      validation_status: 'WARNING', oversize_percent: expect.any(Number),
+      validation_status: 'PASS',
+      oversize_percent: expect.any(Number),
+      advisory_note: expect.stringContaining('more capacity than the calculated requirement'),
     });
     expect(selectOzoneGenerator(11, [])).toMatchObject({ validation_status: 'FAIL' });
+  });
+
+  it('chooses a closer multi-unit configuration over a larger single unit', () => {
+    expect(selectOzoneGenerator(12, [
+      { id: '7', product_code: 'OZ-07', product_name: 'Ozone 7', ozone_production_capacity_g_h: 7 },
+      { id: '20', product_code: 'OZ-20', product_name: 'Ozone 20', ozone_production_capacity_g_h: 20 },
+    ])).toMatchObject({
+      product_id: '7', quantity: 2, total_installed_capacity_g_h: 14, validation_status: 'PASS',
+    });
   });
 });

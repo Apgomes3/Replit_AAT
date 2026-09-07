@@ -80,13 +80,15 @@ describe('LSS ozone calculation', () => {
       allocation_snapshot: {
         product_id: 'oz-7', product_code: 'OZ-07', product_name: 'Ozone Generator',
         per_unit_capacity_g_h: 7, quantity: 1, total_installed_capacity_g_h: 7,
-        required_capacity_g_h: 5, oversize_percent: 40, validation_status: 'WARNING',
+        required_capacity_g_h: 5, oversize_percent: 40, validation_status: 'PASS',
+        advisory_note: 'Closest available ozone generator configuration provides 40.0% more capacity than the calculated requirement.',
       },
     } } as any);
     renderPanel();
     expect(await screen.findByText(/Automatic ozone generator selection/i)).toBeInTheDocument();
     expect(screen.getByText(/1 × OZ-07/)).toBeInTheDocument();
-    expect(screen.getByText('WARNING')).toBeInTheDocument();
+    expect(screen.getByText('PASS')).toBeInTheDocument();
     expect(screen.getByText(/Oversize:/)).toHaveTextContent('40%');
+    expect(screen.getByText(/provides 40.0% more capacity/i)).toBeInTheDocument();
   });
 });

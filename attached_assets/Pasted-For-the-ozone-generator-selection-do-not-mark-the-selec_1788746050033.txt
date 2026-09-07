@@ -1,0 +1,60 @@
+For the ozone generator selection, do not mark the selection as invalid when the next available unit exceeds the required ozone capacity by more than 30%.
+
+Instead, the system should select the most appropriate available ozone generator configuration and display a note showing how much the selected capacity exceeds the required capacity.
+
+The selection logic should consider both the generator model and the quantity of generators required.
+
+For each available ozone generator model:
+
+1. Read the ozone production capacity of the unit from the PIM product model.
+
+Example:
+
+OZ 07 = 7 g/hr
+OZ 11 = 11 g/hr
+OZ 20 = 20 g/hr
+
+2. Calculate the total installed ozone capacity:
+
+Total Installed Capacity = Unit Capacity × Quantity
+
+Example:
+
+2 × OZ 11 = 22 g/hr
+
+3. The total installed capacity must be equal to or greater than the calculated ozone requirement.
+
+4. The system should evaluate different combinations of unit size and quantity to find the closest available capacity above the required ozone demand.
+
+5. Calculate the percentage above the required capacity:
+
+Oversizing % = ((Installed Capacity ÷ Required Capacity) − 1) × 100
+
+Example:
+
+Required ozone = 18 g/hr
+
+Selected configuration = 2 × OZ 11
+
+Installed capacity = 22 g/hr
+
+Oversizing = ((22 ÷ 18) − 1) × 100 = 22.2%
+
+The displayed selection should therefore show:
+
+Selected Ozone Generator: OZ 11
+Quantity: 2
+Capacity per Unit: 11 g/hr
+Total Installed Capacity: 22 g/hr
+Required Capacity: 18 g/hr
+Oversizing: 22.2%
+
+If the closest available configuration is more than 30% above the required ozone capacity, the selection should still be allowed.
+
+Do not show an invalid warning.
+
+Instead, display an advisory note such as:
+
+"Closest available ozone generator configuration provides 38% more capacity than the calculated requirement."
+
+The selected equipment allocation, including the PIM product, model, quantity, capacity per unit, total installed capacity, required capacity and oversizing percentage, should then be saved against the system.

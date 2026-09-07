@@ -86,13 +86,15 @@ export function selectOzoneGenerator(requiredGPerHour: unknown, products: OzoneG
         product_id: product.id, product_code: product.product_code, product_name: product.product_name,
         model: product.model || null, per_unit_capacity_g_h: product.capacity, quantity,
         total_installed_capacity_g_h: total, required_capacity_g_h: required, capacity_ratio: ratio,
-        oversize_percent: oversize, validation_status: oversize <= 30 ? 'PASS' : 'WARNING',
+        oversize_percent: oversize, validation_status: 'PASS',
+        advisory_note: oversize > 30
+          ? `Closest available ozone generator configuration provides ${oversize.toFixed(1)}% more capacity than the calculated requirement.`
+          : null,
       };
     })
     .sort((a, b) =>
-      (a.validation_status === 'PASS' ? 0 : 1) - (b.validation_status === 'PASS' ? 0 : 1)
+      a.total_installed_capacity_g_h - b.total_installed_capacity_g_h
       || a.quantity - b.quantity
-      || a.total_installed_capacity_g_h - b.total_installed_capacity_g_h
       || a.product_code.localeCompare(b.product_code)
       || a.product_id.localeCompare(b.product_id));
   if (!candidates.length) {

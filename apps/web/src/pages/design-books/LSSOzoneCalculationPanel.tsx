@@ -155,7 +155,7 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
           <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><AlertCircle className="h-5 w-5 shrink-0" />Save a positive FFSP flow in Pump Selection before calculating ozone demand.</div>
         )}
         {allocation && (
-          <div className={`rounded-xl border p-4 ${allocation.validation_status === 'PASS' ? 'border-emerald-200 bg-emerald-50' : allocation.validation_status === 'WARNING' ? 'border-amber-200 bg-amber-50' : 'border-red-200 bg-red-50'}`}>
+          <div className={`rounded-xl border p-4 ${allocation.validation_status === 'PASS' ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-stone-600">Automatic ozone generator selection</div>
@@ -171,7 +171,8 @@ export default function LSSOzoneCalculationPanel({ bookId, systemId, readOnly }:
               <span>Required: <b>{number(allocation.required_capacity_g_h)} g/h</b></span>
               <span>Oversize: <b>{number(allocation.oversize_percent)}%</b></span>
             </div>}
-            <p className="mt-3 text-xs text-stone-600">PASS: installed capacity meets demand within 30%. WARNING: engineering review required for oversizing above 30%. FAIL: no compliant capacity is available.</p>
+            {allocation.advisory_note && <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">{allocation.advisory_note}</p>}
+            <p className="mt-3 text-xs text-stone-600">PASS: installed capacity meets or exceeds demand. FAIL: no ozone generator capacity is available.</p>
           </div>
         )}
         {!readOnly && !data?.frozen && <div className="flex justify-end"><button type="button" onClick={save} disabled={saving || totalFlow <= 0 || !targetIsValid}

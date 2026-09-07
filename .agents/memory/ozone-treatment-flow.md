@@ -9,7 +9,7 @@ Ozone treatment flow is the sum of governed FFSP flow and only those FFVP flows 
 
 **How to apply:** Calculate mg/h as concentration in mg/L × treatment flow in m³/h × 1,000 L/m³. Freeze source pump lines and direct-plenum choices; derive g/h and lb/h from the same mg/h result.
 
-Generator capacity comes from the dedicated numeric PIM g/h value, never by parsing the model name. Select one model and the required integer quantity; prefer PASS (meets demand with no more than 30% oversizing), then the fewest units, then the least excess capacity. Capacity above 30% is WARNING; missing or insufficient capacity is FAIL. Freeze the selected product evidence and validation with the Design Book calculation.
+Generator capacity comes from the dedicated numeric PIM g/h value, never by parsing the model name. Select one model and the required integer quantity that gives the closest installed capacity at or above demand; use fewer units to break equal-capacity ties. Capacity above 30% remains valid and receives an advisory note rather than a warning; missing capacity is FAIL. Freeze the selected product evidence and validation with the Design Book calculation.
 
 **Why:** Product names are not controlled calculation data, and later PIM edits must not silently rewrite reviewed equipment evidence.
 
