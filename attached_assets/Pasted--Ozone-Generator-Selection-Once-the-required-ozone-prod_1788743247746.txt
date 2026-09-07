@@ -1,0 +1,169 @@
+### Ozone Generator Selection
+
+Once the required ozone production has been calculated, the application should automatically select the appropriate ozone generator from the PIM product database.
+
+### 1. PIM Product Identification
+
+Ozone generators are classified using the following model format:
+
+**OZ XX**
+
+The XX value represents the nominal ozone production capacity of one unit in **g/h**.
+
+Examples:
+
+**OZ 07 = 7 g/h**
+
+**OZ 11 = 11 g/h**
+
+**OZ 20 = 20 g/h**
+
+The PIM database should contain a dedicated field for:
+
+**Ozone Production Capacity in g/h**
+
+The application should preferably use this numerical database field for calculations rather than relying only on reading the model name.
+
+### 2. Required Ozone Capacity
+
+The ozone calculation provides:
+
+**Required Ozone Capacity, g/h**
+
+For example:
+
+Required ozone capacity = **11 g/h**
+
+### 3. Generator Selection Rule
+
+The total installed ozone generator capacity should be **equal to or greater than the calculated ozone requirement**.
+
+Therefore:
+
+**Installed Capacity ≥ Required Capacity**
+
+The selected capacity should normally not exceed the required capacity by more than **30%**.
+
+Maximum preferred capacity:
+
+**Maximum Preferred Capacity = Required Capacity × 1.30**
+
+For an 11 g/h requirement:
+
+**Minimum Capacity = 11 g/h**
+
+**Preferred Maximum Capacity = 14.3 g/h**
+
+A total installed capacity between **11 and 14.3 g/h** would therefore be considered the preferred selection range.
+
+An undersized system should not be automatically accepted.
+
+### 4. Multiple Unit Selection
+
+The application must be able to use multiple ozone generators when one individual generator cannot provide an appropriate capacity.
+
+Total installed capacity:
+
+**Total Installed Capacity = Unit Capacity × Quantity**
+
+Example:
+
+Required capacity = **18 g/h**
+
+Available generator = **OZ 07**
+
+Using three units:
+
+**3 × 7 = 21 g/h**
+
+Oversizing:
+
+**(21 ÷ 18) − 1 = 16.7%**
+
+Therefore three OZ 07 units would be an acceptable selection.
+
+### 5. Selection Validation
+
+After the generator or generators have been selected, the application should perform a validation calculation.
+
+**Capacity Ratio = Total Installed Capacity ÷ Required Capacity**
+
+And:
+
+**Oversizing Percentage = ((Total Installed Capacity ÷ Required Capacity) − 1) × 100**
+
+The result can then be classified as:
+
+**PASS**
+
+Installed capacity is equal to or greater than required capacity and oversizing is no more than 30%.
+
+**WARNING**
+
+Installed capacity is greater than the requirement by more than 30%.
+
+The system can still show the selection, but it should be flagged for engineering review.
+
+**FAIL**
+
+Installed capacity is below the required ozone production capacity.
+
+### 6. Selection Priority
+
+When several combinations are possible, the automatic selection should prioritize:
+
+1. A solution that meets or exceeds the required ozone capacity.
+
+2. A solution with no more than 30% oversizing.
+
+3. The lowest practical number of ozone generators.
+
+4. The combination with the smallest excess capacity.
+
+For example, if the requirement is 20 g/h and the available options include:
+
+OZ 07
+
+OZ 11
+
+OZ 20
+
+The preferred selection would be:
+
+**1 × OZ 20 = 20 g/h**
+
+rather than:
+
+**2 × OZ 11 = 22 g/h**
+
+or:
+
+**3 × OZ 07 = 21 g/h**
+
+because a single OZ 20 meets the requirement exactly with the lowest equipment quantity.
+
+### 7. Equipment Allocation
+
+Once the selection has been validated, the equipment allocation should be saved against the relevant LSS system.
+
+The saved allocation should include:
+
+Ozone generator PIM Product ID
+
+Ozone generator model
+
+Nominal capacity per unit in g/h
+
+Quantity
+
+Total installed ozone capacity in g/h
+
+Calculated required ozone capacity in g/h
+
+Oversizing percentage
+
+Validation status
+
+Associated FFSP or ozone treatment circuit
+
+The saved equipment allocation should then be available for downstream equipment schedules, BOM generation, costing and design documentation.
