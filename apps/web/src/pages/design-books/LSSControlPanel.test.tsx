@@ -38,6 +38,30 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(vi.mocked(api.get)).not.toHaveBeenCalledWith('/products/masters', expect.anything());
   });
 
+  it('renders compact comparison rows with row-associated detail controls', async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      control: { panel_type: 'GPO' },
+      definitions: [
+        { id: 'flow', name: 'Flow switch', tag_code: 'FS', signal_type: 'Digital', signal_direction: 'Input', minimum_quantity: 1 },
+        { id: 'pressure', name: 'Pressure transmitter', tag_code: 'PT', signal_type: 'Analog', signal_direction: 'Input' },
+      ],
+      instruments: [{ definition_id: 'flow', tag: 'LSS-01-FS-01', quantity: 1 }],
+    }, false);
+
+    const table = await screen.findByRole('table', { name: 'Field instrument definitions' });
+    expect(within(table).getAllByRole('rowheader').map(cell => cell.textContent))
+      .toEqual(expect.arrayContaining([expect.stringContaining('Flow switch'), expect.stringContaining('Pressure transmitter')]));
+    expect(within(table).getByText('Required · min 1')).toBeVisible();
+    expect(within(table).getByText('LSS-01-FS-01')).toBeVisible();
+
+    const details = screen.getByText('Control, range, calibration & datasheet details for Pressure transmitter');
+    expect(details.closest('details')).not.toHaveAttribute('open');
+    await user.click(details);
+    expect(details.closest('details')).toHaveAttribute('open');
+    expect(screen.getByLabelText('Control logic for Pressure transmitter')).toBeInTheDocument();
+  });
+
   it('fetches and enables the product picker with PIM manage permission', async () => {
     renderPanel({
       control: { panel_type: 'GPO' },

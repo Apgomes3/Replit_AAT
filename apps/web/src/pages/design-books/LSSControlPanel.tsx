@@ -287,8 +287,20 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
       </section>
       <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5"><h2 className="text-sm font-semibold text-stone-700">Field instruments</h2><p className="mt-0.5 text-xs text-stone-400">Mandatory quantities are enforced by the governed catalog and pump configuration. Tags are allocated when saved.</p></div>
-        {definitions.length === 0 ? <div className="p-8 text-center text-sm text-stone-400">No active field instrument definitions are available.</div> : <div className="divide-y divide-stone-100">
-          {definitions.map(definition => {
+        {definitions.length === 0 ? <div className="p-8 text-center text-sm text-stone-400">No active field instrument definitions are available.</div> : <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] table-fixed text-left text-xs text-stone-600" aria-label="Field instrument definitions">
+            <caption className="sr-only">Field instrument definitions and saved instance evidence</caption>
+            <thead className="border-b border-stone-200 bg-stone-50 text-[10px] uppercase tracking-wide text-stone-400">
+              <tr>
+                <th scope="col" className="w-[28%] px-5 py-2.5 font-medium">Instrument</th>
+                <th scope="col" className="w-[13%] px-3 py-2.5 font-medium">Signal</th>
+                <th scope="col" className="w-[13%] px-3 py-2.5 font-medium">Requirement</th>
+                <th scope="col" className="w-[10%] px-3 py-2.5 font-medium">Quantity</th>
+                <th scope="col" className="w-[25%] px-3 py-2.5 font-medium">Effective PIM product</th>
+                <th scope="col" className="w-[11%] px-3 py-2.5 font-medium">Saved tags</th>
+              </tr>
+            </thead>
+            {definitions.map(definition => {
             const id = definitionId(definition);
             const quantity = currentQuantity(definition);
             const minimum = minQuantity(definition);
@@ -309,11 +321,23 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
             const calibrationInterval = draft ? draft.calibration_interval_days : String(definition.default_calibration_interval_days ?? '');
             const calibrationProcedure = draft ? draft.calibration_procedure : definition.default_calibration_procedure || '';
             const datasheetReference = draft ? draft.datasheet_reference : definition.default_datasheet_reference || '';
-            return <div key={id} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_110px_minmax(190px,0.8fr)]">
-              <div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-stone-800">{definition.name || 'Historical field instrument'}</h3><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span><span className="text-[10px] uppercase tracking-wide text-stone-400">{definition.signal_type} {definition.signal_direction}</span>{minimum > 0 && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Required · min {minimum}</span>}</div><p className="mt-1 text-xs text-stone-500">{definition.description || 'No catalog description.'}</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen definition evidence</p>}{instances.length > 0 && <p className="mt-1 font-mono text-[11px] text-stone-500">Tags: {instances.map(item => item.tag || item.instrument_tag).filter(Boolean).join(', ') || 'Allocated on save'}</p>}</div>
-              <label className="text-xs font-medium text-stone-500">Quantity<input aria-label={`Quantity for ${definition.name}`} type="number" min={minimum} step="1" disabled={readOnly} value={quantity} onChange={event => update(id, { quantity: Math.max(minimum, Number(event.target.value || 0)) })} className={inputClass} /></label>
-              <label className="text-xs font-medium text-stone-500">Effective PIM product<select aria-label={`Product for ${definition.name}`} disabled={readOnly || !canOverrideProduct} value={selectedProduct || ''} onChange={event => update(id, { product_master_id: event.target.value || null, product_supplied: true })} className={inputClass}><option value="">— No product linked —</option>{historicProduct && !products.some(product => product.id === selectedProduct) && <option value={selectedProduct}>{productLabel(historicProduct)} (frozen snapshot)</option>}{selectedProductMissing && <option value={selectedProduct}>Historical product unavailable ({selectedProduct})</option>}{products.map(product => <option key={product.id} value={product.id}>{productLabel(product)}</option>)}</select>{control?.frozen && historicProduct && <span className="mt-1 block text-[10px] font-normal text-stone-400">Frozen product evidence</span>}{!canOverrideProduct && !readOnly && <span className="mt-1 block text-[10px] font-normal text-stone-400">PIM is hidden for your role, so the product cannot be changed.</span>}</label>
-              <label className="text-xs font-medium text-stone-500 md:col-span-3">Control logic<textarea aria-label={`Control logic for ${definition.name}`} disabled={readOnly} value={selectedLogic} onChange={event => update(id, { control_logic: event.target.value || null, control_logic_supplied: true })} rows={2} placeholder="Describe the functional control logic" className={inputClass} />{!selectedLogic && quantity > 0 && <span className="mt-1 block text-[10px] font-normal text-amber-700">Control logic is required because this catalog definition has no default.</span>}{instances.length > 1 && <span className="mt-1 block text-[10px] font-normal text-stone-400">This logic applies to the {instances.length} saved instances of this type.</span>}</label>
+            const instrumentName = definition.name || 'Historical field instrument';
+            const savedTags = instances.map(item => item.tag || item.instrument_tag).filter(Boolean);
+            return <tbody key={id} className="border-b border-stone-100 last:border-0">
+              <tr className="align-top">
+                <th scope="row" className="px-5 py-3 font-normal"><div className="flex items-center gap-2"><span className="font-semibold text-stone-800">{instrumentName}</span><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span></div><p className="mt-1 line-clamp-2 text-[11px] text-stone-500">{definition.description || 'No catalog description.'}</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen definition evidence</p>}</th>
+                <td className="px-3 py-3"><span className="block font-medium text-stone-700">{definition.signal_type || 'Unspecified'}</span><span className="text-[10px] uppercase tracking-wide text-stone-400">{signalDirection(definition.signal_direction)}</span></td>
+                <td className="px-3 py-3">{minimum > 0 ? <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Required · min {minimum}</span> : <span className="text-stone-400">Optional</span>}</td>
+                <td className="px-3 py-3"><label className="sr-only" htmlFor={`instrument-quantity-${id}`}>Quantity for {instrumentName}</label><input id={`instrument-quantity-${id}`} aria-label={`Quantity for ${instrumentName}`} type="number" min={minimum} step="1" disabled={readOnly} value={quantity} onChange={event => update(id, { quantity: Math.max(minimum, Number(event.target.value || 0)) })} className={`${inputClass} mt-0 px-2 py-1.5`} /></td>
+                <td className="px-3 py-3"><label className="sr-only" htmlFor={`instrument-product-${id}`}>Product for {instrumentName}</label><select id={`instrument-product-${id}`} aria-label={`Product for ${instrumentName}`} disabled={readOnly || !canOverrideProduct} value={selectedProduct || ''} onChange={event => update(id, { product_master_id: event.target.value || null, product_supplied: true })} className={`${inputClass} mt-0 px-2 py-1.5`}><option value="">— No product linked —</option>{historicProduct && !products.some(product => product.id === selectedProduct) && <option value={selectedProduct}>{productLabel(historicProduct)} (frozen snapshot)</option>}{selectedProductMissing && <option value={selectedProduct}>Historical product unavailable ({selectedProduct})</option>}{products.map(product => <option key={product.id} value={product.id}>{productLabel(product)}</option>)}</select>{control?.frozen && historicProduct && <span className="mt-1 block text-[10px] text-stone-400">Frozen product evidence</span>}{!canOverrideProduct && !readOnly && <span className="mt-1 block text-[10px] text-stone-400">PIM is hidden for your role, so the product cannot be changed.</span>}</td>
+                <td className="break-words px-3 py-3 font-mono text-[11px] text-stone-500">{savedTags.join(', ') || (instances.length > 0 ? 'Allocated on save' : '—')}</td>
+              </tr>
+              <tr>
+                <td colSpan={6} className="px-5 pb-3 pt-0">
+                  <details className="group rounded-lg border border-stone-200 bg-stone-50/40" open={definitions.length === 1}>
+                    <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40">Control, range, calibration &amp; datasheet details for {instrumentName}</summary>
+                    <div className="grid gap-3 border-t border-stone-200 bg-white p-3 md:grid-cols-3">
+              <label className="text-xs font-medium text-stone-500 md:col-span-3">Control logic<textarea aria-label={`Control logic for ${instrumentName}`} disabled={readOnly} value={selectedLogic} onChange={event => update(id, { control_logic: event.target.value || null, control_logic_supplied: true })} rows={2} placeholder="Describe the functional control logic" className={inputClass} />{!selectedLogic && quantity > 0 && <span className="mt-1 block text-[10px] font-normal text-amber-700">Control logic is required because this catalog definition has no default.</span>}{instances.length > 1 && <span className="mt-1 block text-[10px] font-normal text-stone-400">This logic applies to the {instances.length} saved instances of this type.</span>}</label>
               <fieldset className="grid gap-3 rounded-lg border border-stone-200 p-3 md:col-span-3 md:grid-cols-3"><legend className="px-1 text-xs font-semibold text-stone-600">Effective measurement range</legend>
                 <label className="text-xs font-medium text-stone-500">Minimum<input aria-label={`Range minimum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMin} onChange={event => update(id, { range_min: event.target.value, range_supplied: true })} className={inputClass} /></label>
                 <label className="text-xs font-medium text-stone-500">Maximum<input aria-label={`Range maximum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMax} onChange={event => update(id, { range_max: event.target.value, range_supplied: true })} className={inputClass} /></label>
@@ -325,8 +349,13 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
                 <label className="text-xs font-medium text-stone-500 md:col-span-3">Procedure<input aria-label={`Calibration procedure for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={calibrationProcedure} onChange={event => update(id, { calibration_procedure: event.target.value, calibration_supplied: true })} className={inputClass} /></label>
                 <label className="text-xs font-medium text-stone-500 md:col-span-3">Datasheet reference<input aria-label={`Datasheet reference for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={datasheetReference} onChange={event => update(id, { datasheet_reference: event.target.value, calibration_supplied: true })} placeholder="Document number, URL, or unavailable historical reference" className={inputClass} />{control?.frozen && <span className="mt-1 block text-[10px] font-normal text-stone-400">Frozen calibration and datasheet evidence</span>}</label>
               </fieldset>
-            </div>;
+                    </div>
+                  </details>
+                </td>
+              </tr>
+            </tbody>;
           })}
+          </table>
         </div>}
         {!readOnly && <div className="flex justify-end border-t border-stone-100 bg-stone-50/40 px-5 py-3"><button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? 'Saving…' : 'Save control configuration'}</button></div>}
       </section>
