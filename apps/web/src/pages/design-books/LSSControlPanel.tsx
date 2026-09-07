@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Save, SlidersHorizontal } from 'lucide-react';
+import { Download, RefreshCw, Save, SlidersHorizontal } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { exportCsv } from '../../lib/exportCsv';
@@ -34,6 +34,7 @@ type IOScheduleRow = {
 };
 
 const inputClass = 'mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:bg-stone-50 disabled:text-stone-400';
+const CONTROL_LOAD_TIMEOUT_MS = 10_000;
 
 function definitionId(item: any) {
   return item?.definition_id || item?.field_instrument_definition_id || item?.id || item?.definition_snapshot?.id;
@@ -93,17 +94,28 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
   const [instruments, setInstruments] = useState<DraftInstrument[]>([]);
   const [saving, setSaving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['lss-control', bookId, systemId],
-    queryFn: () => api.get(`/systems/${systemId}/control`, { params: { design_book_id: bookId } }).then(response => response.data),
+    queryFn: ({ signal }) => api.get(`/systems/${systemId}/control`, {
+      params: { design_book_id: bookId },
+      signal,
+      timeout: CONTROL_LOAD_TIMEOUT_MS,
+    }).then(response => response.data),
+    enabled: Boolean(bookId && systemId),
+    retry: false,
   });
   const { data: productData = { items: [] } } = useQuery({
     queryKey: ['field-instrument-product-picker'],
-    queryFn: () => api.get('/products/masters', { params: { limit: 1000, status: 'Active' } }).then(response => response.data),
+    queryFn: ({ signal }) => api.get('/products/masters', {
+      params: { limit: 1000, status: 'Active' },
+      signal,
+      timeout: CONTROL_LOAD_TIMEOUT_MS,
+    }).then(response => response.data),
     // The PIM endpoint allows module view access. A hidden PIM module must not
     // trigger a picker request, while Design Book editors can still select a
     // product without being allowed to administer the PIM catalogue.
-    enabled: !readOnly && canOverrideProduct,
+    enabled: Boolean(control) && !readOnly && canOverrideProduct,
+    retry: false,
   });
   const control = data;
   const savedInstruments: any[] = control?.instruments || control?.instrument_instances || [];
@@ -204,7 +216,23 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
   };
 
   if (isLoading) return <div className="rounded-xl border border-stone-200 bg-white p-10 text-center text-sm text-stone-400" role="status">Loading control configuration…</div>;
-  if (isError) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">Control configuration could not be loaded: {(error as any)?.response?.data?.error?.message || 'Try again.'}</div>;
+  if (isError) return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-800" role="alert">
+      <p className="font-semibold">Control configuration could not be loaded</p>
+      <p className="mt-1">{(error as any)?.response?.data?.error?.message || ((error as any)?.code === 'ECONNABORTED'
+        ? 'The request took too long. Please retry.'
+        : 'The request failed. Please retry.')}</p>
+      <button
+        type="button"
+        onClick={() => void refetch()}
+        disabled={isFetching}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50"
+      >
+        <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+        {isFetching ? 'Retrying…' : 'Retry'}
+      </button>
+    </div>
+  );
 
   return (
     <div id="control" className="space-y-5">

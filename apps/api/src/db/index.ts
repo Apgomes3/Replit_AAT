@@ -3,6 +3,9 @@ import { Pool, PoolClient } from 'pg';
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Do not let HTTP requests wait indefinitely when every database connection
+  // is occupied (for example while a migration is holding catalogue locks).
+  connectionTimeoutMillis: 10_000,
 });
 
 export const query = (text: string, params?: any[]) => pool.query(text, params);

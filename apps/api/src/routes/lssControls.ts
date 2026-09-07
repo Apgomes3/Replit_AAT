@@ -14,6 +14,48 @@ import { projectLssIoSchedule, renderLssIoSchedulePdf } from '../lib/lssIoSchedu
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
 
+type DbRunner = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
+const CONTROL_QUERY_TIMEOUT_MS = 10_000;
+const controlQuery: DbRunner = (text, params) => pool.query({
+  text,
+  values: params,
+  query_timeout: CONTROL_QUERY_TIMEOUT_MS,
+} as any) as any;
+
+async function controlStage<T>(stage: string, work: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    const result = await work();
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > 1_000) {
+      console.warn('[lss-control] slow load stage', { stage, durationMs });
+    }
+    return result;
+  } catch (error: any) {
+    console.error('[lss-control] load stage failed', {
+      stage,
+      durationMs: Date.now() - startedAt,
+      code: error?.code,
+      message: error?.message,
+    });
+    throw error;
+  }
+}
+
+function controlLoadFailure(res: Response, error: any) {
+  const timedOut = error?.code === '57014'
+    || /timeout|timed out/i.test(String(error?.message || ''));
+  if (timedOut) {
+    return res.status(503).json({
+      error: {
+        code: 'CONTROL_LOAD_TIMEOUT',
+        message: 'Control configuration is temporarily unavailable. Please retry.',
+      },
+    });
+  }
+  throw error;
+}
+
 const productSnapshot = async (runner: any, id: string | null) => {
   if (!id) return null;
   return (await runner('SELECT id, product_code, product_name, status FROM product_masters WHERE id=$1', [id])).rows[0] || null;
@@ -88,10 +130,20 @@ async function responsePayload(runner: any, bookId: string, system: any, frozen 
     pump_linked_fs_minimum: await pumpMinimum(runner, system.id), frozen,
   };
 }
-async function bookAndSystem(bookId: string, systemId: string) {
-  const context = await loadReleaseContext(bookId, query, false, true);
-  const system = context?.systems?.find((value: any) => value.id === systemId);
-  return { book: context, system };
+async function bookAndSystem(bookId: string, systemId: string, runner: DbRunner = controlQuery) {
+  // Control editing needs only the parent book and selected system. Loading the
+  // full Design Book aggregate here used to execute every engineering package
+  // query and made this small panel vulnerable to unrelated catalogue locks.
+  const book = (await runner(
+    'SELECT id,project_id,status,review_snapshot,release_snapshot FROM design_books WHERE id=$1',
+    [bookId],
+  )).rows[0] || null;
+  if (!book) return { book: null, system: null };
+  const system = (await runner(
+    'SELECT * FROM systems WHERE id=$1 AND project_id=$2',
+    [systemId, book.project_id],
+  )).rows[0] || null;
+  return { book, system };
 }
 
 router.get('/systems/:id/control/io-schedule.pdf', async (req: AuthRequest, res: Response) => {
@@ -151,32 +203,41 @@ router.get('/systems/:id/control/io-schedule.pdf', async (req: AuthRequest, res:
 router.get('/systems/:id/control', async (req: AuthRequest, res: Response) => {
   const bookId = String(req.query.design_book_id || '');
   if (!bookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
-  const stored = (await query(
-    'SELECT id,status,review_snapshot,release_snapshot FROM design_books WHERE id=$1',
-    [bookId],
-  )).rows[0];
-  if (!stored) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book not found.' } });
-  if (stored.status === 'Released' || ['For Review', 'Approved'].includes(stored.status)) {
-    const snapshot = stored.status === 'Released' ? stored.release_snapshot : stored.review_snapshot;
-    if (!snapshot) {
-      return res.status(409).json({
-        error: {
-          code: 'DESIGN_BOOK_SNAPSHOT_MISSING',
-          message: 'The frozen Design Book evidence required for this control configuration is unavailable.',
-        },
-      });
+  try {
+    const { book: stored, system: liveSystem } = await controlStage(
+      'book-and-system',
+      () => bookAndSystem(bookId, String(req.params.id)),
+    );
+    if (!stored) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book not found.' } });
+    if (stored.status === 'Released' || ['For Review', 'Approved'].includes(stored.status)) {
+      const snapshot = stored.status === 'Released' ? stored.release_snapshot : stored.review_snapshot;
+      if (!snapshot) {
+        return res.status(409).json({
+          error: {
+            code: 'DESIGN_BOOK_SNAPSHOT_MISSING',
+            message: 'The frozen Design Book evidence required for this control configuration is unavailable.',
+          },
+        });
+      }
+      const system = (snapshot.systems || []).find((value: any) => value.id === req.params.id);
+      if (!system || !isLifeSupportSystem(system)) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Life Support System not found in Design Book project.' } });
+      }
+      const saved = snapshot.lss_controls?.find((item: any) => item.system_id === system.id);
+      return res.json(frozenPayload(saved, snapshot, system.id));
     }
-    const system = (snapshot.systems || []).find((value: any) => value.id === req.params.id);
-    if (!system || !isLifeSupportSystem(system)) {
+    if (!liveSystem || !isLifeSupportSystem(liveSystem)) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Life Support System not found in Design Book project.' } });
     }
-    const saved = snapshot.lss_controls?.find((item: any) => item.system_id === system.id);
-    return res.json(frozenPayload(saved, snapshot, system.id));
+    if (isRetiredSystem(liveSystem)) return res.status(409).json({ error: systemLifecycleError(liveSystem) });
+    const payload = await controlStage(
+      'configuration-payload',
+      () => responsePayload(controlQuery, bookId, liveSystem),
+    );
+    return res.json(payload);
+  } catch (error) {
+    return controlLoadFailure(res, error);
   }
-  const { book, system } = await bookAndSystem(bookId, String(req.params.id));
-  if (!book || !system || !isLifeSupportSystem(system)) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Life Support System not found in Design Book project.' } });
-  if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
-  res.json(await responsePayload(query, bookId, system));
 });
 
 router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {

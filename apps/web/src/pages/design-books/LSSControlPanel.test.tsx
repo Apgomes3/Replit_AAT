@@ -35,9 +35,7 @@ describe('LSSControlPanel frozen evidence', () => {
     }, false, false);
 
     expect(await screen.findByLabelText('Product for Flow switch')).toBeDisabled();
-    expect(vi.mocked(api.get)).not.toHaveBeenCalledWith('/products/masters', {
-      params: { limit: 1000, status: 'Active' },
-    });
+    expect(vi.mocked(api.get)).not.toHaveBeenCalledWith('/products/masters', expect.anything());
   });
 
   it('fetches and enables the product picker with PIM manage permission', async () => {
@@ -48,9 +46,11 @@ describe('LSSControlPanel frozen evidence', () => {
     }, false, true);
 
     expect(await screen.findByLabelText('Product for Flow switch')).toBeEnabled();
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/products/masters', {
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/products/masters', expect.objectContaining({
       params: { limit: 1000, status: 'Active' },
-    });
+      signal: expect.any(AbortSignal),
+      timeout: 10_000,
+    }));
   });
 
   it('renders frozen definition and product snapshots without live catalogue records', async () => {
@@ -103,6 +103,28 @@ describe('LSSControlPanel frozen evidence', () => {
         control_logic: 'Revised interlock logic',
       }],
     });
+  });
+
+  it('stops after one failed load and lets the user retry successfully', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get)
+      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ECONNABORTED' }))
+      .mockResolvedValueOnce({ data: {
+        control: { panel_type: 'PLC' },
+        definitions: [],
+        instruments: [],
+      } });
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <LSSControlPanel bookId="book-1" systemId="system-1" readOnly canOverrideProduct={false} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The request took too long');
+    expect(api.get).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('No active field instrument definitions are available.')).toBeVisible();
+    expect(api.get).toHaveBeenCalledTimes(2);
   });
 });
 
