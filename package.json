@@ -8,6 +8,7 @@
     "seed": "tsx apps/api/src/db/seed.ts",
     "species:catalog:seed": "tsx apps/api/src/db/seedSpeciesCatalogCli.ts",
     "species:catalog:generate": "tsx apps/api/src/db/generateSpeciesCatalogArtifact.ts",
+    "test:browser": "playwright test",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -44,6 +45,7 @@
     "vitest": "^4.1.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@tanstack/react-query": "^5.0.0",
     "@types/bcryptjs": "^2.4.6",

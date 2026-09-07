@@ -291,11 +291,11 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
           <div><h2 className="text-sm font-semibold text-stone-700">Field instruments</h2><p className="mt-0.5 text-xs text-stone-400">Mandatory quantities are enforced by the governed catalog and pump configuration. Tags are allocated when saved.</p></div>
           <div className="inline-flex rounded-lg border border-stone-200 bg-white p-1" role="group" aria-label="Field instrument view">
             <button type="button" onClick={() => setInstrumentView('list')} aria-pressed={instrumentView === 'list'}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${instrumentView === 'list' ? 'bg-blue-50 text-blue-700' : 'text-stone-500 hover:bg-stone-50'}`}>
+              className={`inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium ${instrumentView === 'list' ? 'bg-blue-50 text-blue-700' : 'text-stone-500 hover:bg-stone-50'}`}>
               <List className="h-3.5 w-3.5" /> List
             </button>
             <button type="button" onClick={() => setInstrumentView('card')} aria-pressed={instrumentView === 'card'}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${instrumentView === 'card' ? 'bg-blue-50 text-blue-700' : 'text-stone-500 hover:bg-stone-50'}`}>
+              className={`inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium ${instrumentView === 'card' ? 'bg-blue-50 text-blue-700' : 'text-stone-500 hover:bg-stone-50'}`}>
               <LayoutGrid className="h-3.5 w-3.5" /> Cards
             </button>
           </div>
@@ -394,9 +394,9 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
             return <article key={id} className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm" aria-labelledby={`instrument-card-${id}`}>
               <div className="border-b border-stone-100 bg-stone-50/50 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2"><h3 id={`instrument-card-${id}`} className="font-semibold text-stone-800">{instrumentName}</h3><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span></div>
-                    <p className="mt-1 text-xs text-stone-500">{definition.description || 'No catalog description.'}</p>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2"><h3 id={`instrument-card-${id}`} className="break-words font-semibold text-stone-800">{instrumentName}</h3><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span></div>
+                    <p className="mt-1 break-words text-xs text-stone-500">{definition.description || 'No catalog description.'}</p>
                     {control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen definition evidence</p>}
                   </div>
                   <div className="text-right text-xs"><span className="block font-medium text-stone-700">{definition.signal_type || 'Unspecified'}</span><span className="text-[10px] uppercase tracking-wide text-stone-400">{signalDirection(definition.signal_direction)}</span></div>

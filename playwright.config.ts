@@ -1,0 +1,16 @@
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './apps/web/e2e',
+  fullyParallel: true,
+  use: {
+    baseURL: 'http://127.0.0.1:4173',
+    hasTouch: true,
+    trace: 'retain-on-failure',
+  },
+  webServer: {
+    command: 'npx vite --config apps/web/vite.config.ts --port 4173',
+    url: 'http://127.0.0.1:4173/e2e/fixtures/instrument-workspace.html',
+    reuseExistingServer: !process.env.CI,
+  },
+});
