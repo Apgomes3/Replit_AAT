@@ -47,7 +47,7 @@ const contentLines = (content: AnyRecord, document: AnyRecord, revision: AnyReco
   addFields('Classification', sections.classification);
   addFields('Engineering values', sections.engineering_values);
   addFields('Materials', sections.materials);
-  ['dimensions', 'electrical', 'hydraulic', 'pneumatic'].forEach(key => {
+  ['dimensions', 'electrical', 'hydraulic', 'pneumatic', 'tank_engineering'].forEach(key => {
     addFields(labelFor(key), sections[key]);
   });
 

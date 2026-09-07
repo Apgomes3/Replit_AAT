@@ -329,6 +329,9 @@ export default function ProductMasterDetail() {
     standard_status: product.standard_status,
     image_url: product.image_url,
     notes: product.notes,
+    product_description: (product as any).product_description ?? null,
+    tank_classification: (product as any).tank_classification ?? null,
+    tank_engineering_details: (product as any).tank_engineering_details || {},
     shape_type: product.shape_type,
     length_mm: product.length_mm,
     width_mm: product.width_mm,
@@ -366,6 +369,22 @@ export default function ProductMasterDetail() {
       control_type_optional: Boolean(product.control_type_optional),
       primary_material_code: product.primary_material_code || '',
       notes: product.notes || '',
+      product_description: (product as any).product_description || '',
+      tank_classification: (product as any).tank_classification || '',
+      tank_engineering_details: {
+        construction_type: (product as any).tank_engineering_details?.construction_type || '',
+        fabrication_method: (product as any).tank_engineering_details?.fabrication_method || '',
+        service_medium: (product as any).tank_engineering_details?.service_medium || '',
+        operating_temperature_min_c: (product as any).tank_engineering_details?.operating_temperature_min_c ?? '',
+        operating_temperature_max_c: (product as any).tank_engineering_details?.operating_temperature_max_c ?? '',
+        max_operating_pressure_bar: (product as any).tank_engineering_details?.max_operating_pressure_bar ?? '',
+        max_possible_pressure_bar: (product as any).tank_engineering_details?.max_possible_pressure_bar ?? '',
+        vacuum_condition: (product as any).tank_engineering_details?.vacuum_condition || '',
+        service_pressure_mode: (product as any).tank_engineering_details?.service_pressure_mode || '',
+        proposed_design_standard: (product as any).tank_engineering_details?.proposed_design_standard || '',
+        required_astm_tests: (product as any).tank_engineering_details?.required_astm_tests || '',
+        certification_inspection_requirements: (product as any).tank_engineering_details?.certification_inspection_requirements || '',
+      },
       tank_family_id: (product as any).tank_family_id || '',
       cost: (product as any).cost != null ? String((product as any).cost) : '',
       sell_price: (product as any).sell_price != null ? String((product as any).sell_price) : '',
@@ -379,6 +398,18 @@ export default function ProductMasterDetail() {
 
   const handleSave = async () => {
     if (!editForm.product_code?.trim()) { toast.error('Product code is required'); return; }
+    if (isTank) {
+      const details = editForm.tank_engineering_details || {};
+      const has = (value: any) => value !== '' && value != null;
+      if (has(details.operating_temperature_min_c) && has(details.operating_temperature_max_c) &&
+          Number(details.operating_temperature_min_c) > Number(details.operating_temperature_max_c)) {
+        toast.error('Minimum operating temperature cannot exceed maximum operating temperature'); return;
+      }
+      if (has(details.max_operating_pressure_bar) && has(details.max_possible_pressure_bar) &&
+          Number(details.max_operating_pressure_bar) > Number(details.max_possible_pressure_bar)) {
+        toast.error('Maximum operating pressure cannot exceed maximum possible pressure'); return;
+      }
+    }
     setSaving(true);
     try {
       const { data: updated } = await api.put(`/product-masters/${id}`, productPutPayload({
@@ -392,6 +423,12 @@ export default function ProductMasterDetail() {
         signal_type: isUvProduct ? editForm.signal_type || null : product.signal_type || null,
         control_type_optional: isUvProduct ? Boolean(editForm.control_type_optional) : Boolean(product.control_type_optional),
         notes: editForm.notes || null,
+        product_description: isTank ? editForm.product_description || null : (product as any).product_description || null,
+        tank_classification: isTank ? editForm.tank_classification || null : (product as any).tank_classification || null,
+        tank_engineering_details: isTank ? Object.fromEntries(Object.entries(editForm.tank_engineering_details || {}).map(([key, value]) => {
+          const numeric = ['operating_temperature_min_c', 'operating_temperature_max_c', 'max_operating_pressure_bar', 'max_possible_pressure_bar'].includes(key);
+          return [key, value === '' ? null : numeric ? Number(value) : value];
+        })) : (product as any).tank_engineering_details || {},
         tank_family_id: editForm.tank_family_id || null,
         cost: editForm.cost !== '' ? parseFloat(editForm.cost) : null,
         sell_price: editForm.sell_price !== '' ? parseFloat(editForm.sell_price) : null,
@@ -1158,6 +1195,20 @@ export default function ProductMasterDetail() {
                 { label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null },
                 { label: 'Manufacturer', value: (product as any).manufacturer },
                 { label: 'Model', value: (product as any).model },
+                 { label: 'Classification', value: (product as any).tank_classification },
+                 { label: 'Product Description', value: (product as any).product_description },
+                 { label: 'Construction', value: (product as any).tank_engineering_details?.construction_type },
+                 { label: 'Fabrication Method', value: (product as any).tank_engineering_details?.fabrication_method },
+                 { label: 'Service Medium', value: (product as any).tank_engineering_details?.service_medium },
+                 { label: 'Operating Temperature', value: (product as any).tank_engineering_details?.operating_temperature_min_c != null || (product as any).tank_engineering_details?.operating_temperature_max_c != null
+                   ? `${(product as any).tank_engineering_details?.operating_temperature_min_c ?? '—'} to ${(product as any).tank_engineering_details?.operating_temperature_max_c ?? '—'} °C` : null },
+                 { label: 'Maximum Operating Pressure', value: (product as any).tank_engineering_details?.max_operating_pressure_bar != null ? `${(product as any).tank_engineering_details.max_operating_pressure_bar} bar` : null },
+                 { label: 'Maximum Possible Pressure', value: (product as any).tank_engineering_details?.max_possible_pressure_bar != null ? `${(product as any).tank_engineering_details.max_possible_pressure_bar} bar` : null },
+                 { label: 'Vacuum Condition', value: (product as any).tank_engineering_details?.vacuum_condition },
+                 { label: 'Service Type', value: (product as any).tank_engineering_details?.service_pressure_mode },
+                 { label: 'Proposed Design Standard', value: (product as any).tank_engineering_details?.proposed_design_standard },
+                 { label: 'Required ASTM Tests', value: (product as any).tank_engineering_details?.required_astm_tests },
+                 { label: 'Certification / Third-party Inspection', value: (product as any).tank_engineering_details?.certification_inspection_requirements },
                ...(isOzoneGenerator && (product as any).ozone_production_capacity_g_h != null ? [{ label: 'Ozone Production Capacity', value: `${(product as any).ozone_production_capacity_g_h} g/h` }] : []),
                 { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
                 ...(() => {
@@ -1218,6 +1269,81 @@ export default function ProductMasterDetail() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tank Classification</label>
+                  <select value={editForm.tank_classification ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_classification: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="">— Select —</option>
+                    {['Cylindrical atmospheric FRP tank', 'Rectangular atmospheric FRP tank', 'Atmospheric FRP steel tank'].map(value => <option key={value}>{value}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Product Description</label>
+                  <textarea rows={2} value={editForm.product_description ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, product_description: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Construction</label>
+                  <select value={editForm.tank_engineering_details?.construction_type ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, construction_type: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="">— Select —</option><option>FRP</option><option>FRP with SHS steel</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Fabrication Method</label>
+                  <select value={editForm.tank_engineering_details?.fabrication_method ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, fabrication_method: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="">— Select —</option><option>Contact moulded</option><option>Filament wound</option><option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Service Medium</label>
+                  <select value={editForm.tank_engineering_details?.service_medium ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, service_medium: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="">— Select —</option><option>Freshwater</option><option>Seawater</option><option>Chemical</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Atmospheric / Pressurised Service</label>
+                  <select value={editForm.tank_engineering_details?.service_pressure_mode ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, service_pressure_mode: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="">— Select —</option><option>Atmospheric</option><option>Pressurised</option>
+                  </select>
+                </div>
+                {[
+                  ['operating_temperature_min_c', 'Operating Temperature Min (°C)'],
+                  ['operating_temperature_max_c', 'Operating Temperature Max (°C)'],
+                  ['max_operating_pressure_bar', 'Maximum Operating Pressure (bar)'],
+                  ['max_possible_pressure_bar', 'Maximum Possible Pressure (bar)'],
+                ].map(([key, label]) => <div key={key}>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
+                  <input type="number" step="any" min={key.includes('pressure') ? 0 : undefined}
+                    value={editForm.tank_engineering_details?.[key] ?? ''}
+                    onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, [key]: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                </div>)}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Possible Vacuum Condition</label>
+                  <select value={editForm.tank_engineering_details?.vacuum_condition ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, vacuum_condition: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+                    <option value="">— Select —</option><option>None</option><option>Partial vacuum</option><option>Full vacuum</option><option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Proposed Design Standard</label>
+                  <input value={editForm.tank_engineering_details?.proposed_design_standard ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, proposed_design_standard: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Required ASTM Tests</label>
+                  <textarea rows={2} value={editForm.tank_engineering_details?.required_astm_tests ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, required_astm_tests: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Required Certification / Third-party Inspection</label>
+                  <textarea rows={2} value={editForm.tank_engineering_details?.certification_inspection_requirements ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, tank_engineering_details: { ...f.tank_engineering_details, certification_inspection_requirements: e.target.value } }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <div className="col-span-2">
                   {(() => {

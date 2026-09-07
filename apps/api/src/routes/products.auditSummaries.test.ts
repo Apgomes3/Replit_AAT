@@ -242,6 +242,42 @@ describe('persisted audit summaries for product mutations', () => {
     }]);
   });
 
+  it('applies the same tank engineering validation when a product is created', async () => {
+    const invalidClassification = await request(app, 'POST', '/api/v1/product-masters', token, {
+      product_code: 'TNK-INVALID-CLASS',
+      product_name: 'Invalid Tank',
+      product_category: 'Tank',
+      tank_classification: 'Uncontrolled classification',
+    });
+    expect(invalidClassification.status).toBe(400);
+
+    const invalidPressure = await request(app, 'POST', '/api/v1/product-masters', token, {
+      product_code: 'TNK-INVALID-PRESSURE',
+      product_name: 'Invalid Pressure Tank',
+      product_category: 'Tank',
+      tank_classification: 'Cylindrical atmospheric FRP tank',
+      tank_engineering_details: {
+        max_operating_pressure_bar: 2,
+        max_possible_pressure_bar: 1,
+      },
+    });
+    expect(invalidPressure.status).toBe(400);
+
+    const valid = await request(app, 'POST', '/api/v1/product-masters', token, {
+      product_code: 'TNK-VALID',
+      product_name: 'Valid Tank',
+      product_category: 'Tank',
+      tank_classification: 'Atmospheric FRP steel tank',
+      tank_engineering_details: {
+        construction_type: 'FRP with SHS steel',
+        service_medium: 'Seawater',
+        max_operating_pressure_bar: 0.5,
+        max_possible_pressure_bar: 1,
+      },
+    });
+    expect(valid.status).toBe(201);
+  });
+
   it('keeps readable summaries for component create, update, delete, and status changes', async () => {
     expect((await request(app, 'POST', '/api/v1/components', token, {
       component_code: 'C-100',

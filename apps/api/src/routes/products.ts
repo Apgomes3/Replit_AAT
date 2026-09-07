@@ -242,6 +242,9 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
     power_kw: product.power_kw,
     primary_material_code: product.primary_material_code,
     image_url: product.image_url,
+    product_description: product.product_description,
+    tank_classification: product.tank_classification,
+    tank_engineering_details: product.tank_engineering_details,
     notes: product.notes,
     dimensions: specificationRows.dimensions,
     electrical: specificationRows.electrical,
@@ -267,12 +270,14 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
         manufacturer: product.manufacturer ?? null,
         model: product.model ?? null,
         image_url: product.image_url ?? null,
+        product_description: product.product_description ?? null,
       },
       classification: {
         product_category: product.product_category ?? null,
         application_type: product.application_type ?? null,
         product_family: product.product_family_name ?? null,
         standard_status: product.standard_status ?? null,
+        tank_classification: product.tank_classification ?? null,
         classifier_values: classifiers.rows,
       },
       engineering_values: {
@@ -293,6 +298,7 @@ const readPimTdsSource = async (client: DbClient, productId: string) => {
       electrical: specificationRows.electrical,
       hydraulic: specificationRows.hydraulic,
       pneumatic: specificationRows.pneumatic,
+      tank_engineering: product.product_category === 'Tank' ? (product.tank_engineering_details || {}) : null,
       bill_of_materials: boms.rows,
       vendors: vendors.rows,
       linked_context: sourceSnapshot.linked_context,
@@ -715,14 +721,56 @@ router.post('/product-masters/bulk-import', authenticate, async (req: AuthReques
   res.json({ created: created.length, linked: linked.length, errors, created_codes: created, linked_codes: linked });
 });
 
+const TANK_CLASSIFICATIONS = [
+  'Cylindrical atmospheric FRP tank',
+  'Rectangular atmospheric FRP tank',
+  'Atmospheric FRP steel tank',
+] as const;
+
+function validateTankEngineeringPayload(category: unknown, classification: unknown, input: unknown) {
+  const hasTankPayload = Boolean(classification) ||
+    (input != null && typeof input === 'object' && !Array.isArray(input) && Object.keys(input as object).length > 0);
+  if (String(category || '').toLowerCase() !== 'tank' && hasTankPayload) {
+    return { error: 'Tank classification and engineering details can only be saved on Tank products.', details: {} };
+  }
+  if (classification && !TANK_CLASSIFICATIONS.includes(classification as any)) {
+    return { error: 'Unsupported tank classification.', details: {} };
+  }
+  if (input != null && (typeof input !== 'object' || Array.isArray(input))) {
+    return { error: 'tank_engineering_details must be an object.', details: {} };
+  }
+  const details: Record<string, any> = input ? { ...(input as Record<string, any>) } : {};
+  for (const key of ['operating_temperature_min_c', 'operating_temperature_max_c', 'max_operating_pressure_bar', 'max_possible_pressure_bar']) {
+    if (details[key] != null && details[key] !== '' && !Number.isFinite(Number(details[key]))) {
+      return { error: `${key} must be a finite number or blank.`, details };
+    }
+  }
+  if (details.operating_temperature_min_c != null && details.operating_temperature_max_c != null &&
+      Number(details.operating_temperature_min_c) > Number(details.operating_temperature_max_c)) {
+    return { error: 'Minimum operating temperature cannot exceed maximum operating temperature.', details };
+  }
+  if ((details.max_operating_pressure_bar != null && Number(details.max_operating_pressure_bar) < 0) ||
+      (details.max_possible_pressure_bar != null && Number(details.max_possible_pressure_bar) < 0)) {
+    return { error: 'Tank pressures must be non-negative.', details };
+  }
+  if (details.max_operating_pressure_bar != null && details.max_possible_pressure_bar != null &&
+      Number(details.max_operating_pressure_bar) > Number(details.max_possible_pressure_bar)) {
+    return { error: 'Maximum operating pressure cannot exceed maximum possible pressure.', details };
+  }
+  return { error: null, details };
+}
+
 router.post('/product-masters', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const {
     product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
     design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
      shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, ozone_production_capacity_g_h,
      manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count,
+     product_description, tank_classification, tank_engineering_details,
   } = req.body;
   if (!product_code || !product_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'product_code and product_name required' } });
+  const tankValidation = validateTankEngineeringPayload(product_category, tank_classification, tank_engineering_details);
+  if (tankValidation.error) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: tankValidation.error } });
   const ozoneCapacity = ozone_production_capacity_g_h == null || ozone_production_capacity_g_h === '' ? null : Number(ozone_production_capacity_g_h);
   if (ozoneCapacity != null && (!Number.isFinite(ozoneCapacity) || ozoneCapacity <= 0)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'ozone_production_capacity_g_h must be a positive number or blank' } });
   const surfaceAreaM2 = calculateWaterSurfaceAreaM2(
@@ -739,8 +787,9 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
           (product_code, product_family_id, tank_family_id, product_name, product_category, application_type,
            design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes,
            shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, surface_area_m2, cost,
-              manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count, ozone_production_capacity_g_h)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30) RETURNING *`,
+               manufacturer, model, configuration, control_type, signal_type, control_type_optional, lamp_count, ozone_production_capacity_g_h,
+               product_description, tank_classification, tank_engineering_details)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33::jsonb) RETURNING *`,
         [
           product_code, product_family_id || null, tank_family_id || null, product_name, product_category, application_type,
           linkedFlow, design_pressure_bar || null, design_head_m || null, power_kw || null,
@@ -751,6 +800,8 @@ router.post('/product-masters', authenticate, async (req: AuthRequest, res: Resp
            signal_type || null, Boolean(control_type_optional),
            lamp_count == null || lamp_count === '' ? null : Number(lamp_count),
            ozoneCapacity,
+            product_description || null, tank_classification || null,
+            JSON.stringify(tankValidation.details),
         ]);
       await client.query(
         'INSERT INTO product_hydraulic (product_master_id, design_flow_m3h, friction_loss_mh2o, updated_at) VALUES ($1,$2,$3,NOW())',
@@ -804,7 +855,10 @@ router.delete('/product-masters/:id', authenticate, async (req: AuthRequest, res
 });
 
 router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, signal_type, control_type_optional, status, lamp_count, ozone_production_capacity_g_h } = req.body;
+  const { product_code, product_name, product_category, application_type, design_flow_m3h, design_head_m, power_kw, primary_material_code, standard_status, image_url, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, wall_thickness_mm, weight_kg, product_family_id, tank_family_id, synonyms, cost, sell_price, currency, manufacturer, model, configuration, control_type, signal_type, control_type_optional, status, lamp_count, ozone_production_capacity_g_h, product_description, tank_classification, tank_engineering_details } = req.body;
+  const tankValidation = validateTankEngineeringPayload(product_category, tank_classification, tank_engineering_details);
+  if (tankValidation.error) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: tankValidation.error } });
+  const tankDetails = tankValidation.details;
   const hasPowerKw = Object.prototype.hasOwnProperty.call(req.body, 'power_kw');
   const hasLampCount = Object.prototype.hasOwnProperty.call(req.body, 'lamp_count');
   const hasOzoneCapacity = Object.prototype.hasOwnProperty.call(req.body, 'ozone_production_capacity_g_h');
@@ -869,6 +923,9 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
         `UPDATE product_masters
          SET signal_type=CASE WHEN $2 THEN $3 ELSE signal_type END,
              control_type_optional=CASE WHEN $4 THEN $5 ELSE control_type_optional END,
+             product_description=CASE WHEN $6 THEN $7 ELSE product_description END,
+             tank_classification=CASE WHEN $8 THEN $9 ELSE tank_classification END,
+             tank_engineering_details=CASE WHEN $10 THEN $11::jsonb ELSE tank_engineering_details END,
              updated_at=NOW()
          WHERE id=$1
          RETURNING *`,
@@ -878,6 +935,12 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
           signal_type || null,
           Object.prototype.hasOwnProperty.call(req.body, 'control_type_optional'),
           Boolean(control_type_optional),
+          Object.prototype.hasOwnProperty.call(req.body, 'product_description'),
+          product_description || null,
+          Object.prototype.hasOwnProperty.call(req.body, 'tank_classification'),
+          tank_classification || null,
+          Object.prototype.hasOwnProperty.call(req.body, 'tank_engineering_details'),
+          JSON.stringify(tankDetails),
         ],
       );
       if (!result.rows[0]) {
@@ -956,9 +1019,9 @@ router.post('/product-masters/:id/duplicate', authenticate, requireModuleManage(
     const applyAatFrictionDefault = isAatSandFilter({ manufacturer: src.manufacturer, product_name: src.product_name, model: src.model });
     const created = await withProductTransaction(async client => {
       const result = await client.query(
-        `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type, signal_type, control_type_optional)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
-        [newCode, newFamilyId, newName, src.product_category, src.application_type, linkedFlow, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null, src.configuration || null, src.control_type || null, src.signal_type || null, Boolean(src.control_type_optional)]);
+        `INSERT INTO product_masters (product_code, product_family_id, product_name, product_category, application_type, design_flow_m3h, design_pressure_bar, design_head_m, power_kw, primary_material_code, standard_status, notes, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, gross_volume_m3, operating_volume_m3, synonyms, manufacturer, model, wall_thickness_mm, weight_kg, tank_family_id, configuration, control_type, signal_type, control_type_optional, product_description, tank_classification, tank_engineering_details)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32::jsonb) RETURNING *`,
+        [newCode, newFamilyId, newName, src.product_category, src.application_type, linkedFlow, src.design_pressure_bar, src.design_head_m, src.power_kw, src.primary_material_code, newStatus, src.notes, src.shape_type, src.length_mm, src.width_mm, src.height_mm, src.design_water_level_mm, src.gross_volume_m3, src.operating_volume_m3, src.synonyms || [], src.manufacturer || null, src.model || null, src.wall_thickness_mm || null, src.weight_kg || null, src.tank_family_id || null, src.configuration || null, src.control_type || null, src.signal_type || null, Boolean(src.control_type_optional), src.product_description || null, src.tank_classification || null, JSON.stringify(src.tank_engineering_details || {})]);
       await client.query(
         `INSERT INTO product_hydraulic
            (product_master_id, design_flow_m3h, min_flow_m3h, max_flow_m3h, venturi_flow_m3h,

@@ -221,6 +221,12 @@ CREATE TABLE IF NOT EXISTS product_variants (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Tank-specific procurement and design-basis information. Shape remains governed
+-- by the existing shape_type field rather than being duplicated here.
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS product_description TEXT;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_classification VARCHAR(100);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_engineering_details JSONB NOT NULL DEFAULT '{}'::jsonb;
+
 CREATE TABLE IF NOT EXISTS standard_boms (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   bom_code VARCHAR(50) NOT NULL,
@@ -1507,8 +1513,10 @@ ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS calculation_
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS override_reason TEXT;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS inlet_pipe_dn INTEGER;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS discharge_pipe_dn INTEGER;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS bottom_drain_pipe_dn INTEGER;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS inlet_pipe_evidence JSONB;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS discharge_pipe_evidence JSONB;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS bottom_drain_pipe_evidence JSONB;
 
 -- Authoritative internal diameters are governed separately from nominal DN.
 CREATE TABLE IF NOT EXISTS pipe_sizing_standards (
@@ -1539,6 +1547,11 @@ DO $$ BEGIN
     ALTER TABLE design_book_exhibit_hydraulics
       ADD CONSTRAINT fk_exhibit_hydraulics_discharge_pipe_dn
       FOREIGN KEY (discharge_pipe_dn) REFERENCES pipe_sizing_standards(dn) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_exhibit_hydraulics_bottom_drain_pipe_dn') THEN
+    ALTER TABLE design_book_exhibit_hydraulics
+      ADD CONSTRAINT fk_exhibit_hydraulics_bottom_drain_pipe_dn
+      FOREIGN KEY (bottom_drain_pipe_dn) REFERENCES pipe_sizing_standards(dn) ON UPDATE RESTRICT ON DELETE RESTRICT;
   END IF;
 END $$;
 

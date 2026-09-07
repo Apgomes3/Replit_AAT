@@ -97,8 +97,8 @@ describe('design-book hydraulics weir persistence', () => {
 
     expect(response.status).toBe(200);
     const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'))!;
-    expect(call.sql).toContain('CASE WHEN $20');
-    expect(call.params.slice(17, 26)).toEqual([false, false, false, false, false, false, false, false, false]);
+    expect(call.sql).toContain('CASE WHEN $23');
+    expect(call.params.slice(19, 29)).toEqual([false, false, false, false, false, false, false, false, false, false]);
   });
 
   it('updates all Francis basis fields when they are explicitly supplied', async () => {
@@ -117,7 +117,7 @@ describe('design-book hydraulics weir persistence', () => {
 
     expect(response.status).toBe(200);
     const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'))!;
-    expect(call.params.slice(19, 26)).toEqual([true, true, true, true, true, true, true]);
+    expect(call.params.slice(22, 29)).toEqual([true, true, true, true, true, true, true]);
   });
 
   it('accepts the Bazin alternative as an explicit saved method', async () => {
@@ -146,6 +146,6 @@ describe('design-book hydraulics weir persistence', () => {
     expect(response.status).toBe(200);
     const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'))!;
     expect(call.params[8]).toBeNull();
-    expect(call.params[21]).toBe(true);
+    expect(call.params[24]).toBe(true);
   });
 });

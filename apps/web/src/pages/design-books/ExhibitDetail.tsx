@@ -2230,26 +2230,27 @@ export function PipeSizingSection({ bookId, exhibitId, hydraulics, calculation, 
     const value = q / 3600 / (Math.PI * d * d / 4);
     return Number.isFinite(value) ? value : null;
   };
-  const renderPipe = (key: 'inlet' | 'discharge', title: string, flow: any) => {
+  const renderPipe = (key: 'inlet' | 'discharge' | 'bottom_drain', title: string, flow: any) => {
+    const pressureService = key === 'inlet';
     const savedDn = hydraulics?.[`${key}_pipe_dn`];
     const savedEvidence = hydraulics?.[`${key}_pipe_evidence`] || null;
     const recommended = standards.find(item => {
       const value = velocity(flow, item.internal_diameter_mm);
-      const min = Number(item[key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
-      const max = Number(item[key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+       const min = Number(item[pressureService ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+       const max = Number(item[pressureService ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
       return value != null && value >= min && value <= max;
     }) || null;
     const selected = savedEvidence ? {
       dn: savedEvidence.dn,
       internal_diameter_mm: savedEvidence.internal_diameter_mm,
-      [key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']: savedEvidence.velocity_min_m_s,
-      [key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']: savedEvidence.velocity_max_m_s,
+      [pressureService ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']: savedEvidence.velocity_min_m_s,
+      [pressureService ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']: savedEvidence.velocity_max_m_s,
     } : allStandards.find(item => Number(item.dn) === Number(savedDn)) || null;
     const hasSavedSelection = savedEvidence != null || savedDn != null;
     const current = selected || recommended;
     const next = current ? standards.find(item => Number(item.dn) > Number(current.dn)) || null : null;
-    const minimumVelocity = Number(current?.[key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
-    const maximumVelocity = Number(current?.[key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+    const minimumVelocity = Number(current?.[pressureService ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+    const maximumVelocity = Number(current?.[pressureService ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
     const currentVelocity = savedEvidence
       ? Number(savedEvidence.computed_velocity_m_s)
       : current ? velocity(flow, current.internal_diameter_mm) : null;
@@ -2258,8 +2259,8 @@ export function PipeSizingSection({ bookId, exhibitId, hydraulics, calculation, 
       : currentVelocity != null && currentVelocity >= minimumVelocity && currentVelocity <= maximumVelocity;
     const displayedFlow = savedEvidence ? Number(savedEvidence.authoritative_flow_m3h) : Number(flow);
     const nextVelocity = next ? velocity(flow, next.internal_diameter_mm) : null;
-    const nextMinimumVelocity = Number(next?.[key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
-    const nextMaximumVelocity = Number(next?.[key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+    const nextMinimumVelocity = Number(next?.[pressureService ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+    const nextMaximumVelocity = Number(next?.[pressureService ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
     const nextWithinBand = nextVelocity != null && nextVelocity >= nextMinimumVelocity && nextVelocity <= nextMaximumVelocity;
     const save = async (dn: number) => {
       setSaving(key);
@@ -2277,7 +2278,7 @@ export function PipeSizingSection({ bookId, exhibitId, hydraulics, calculation, 
     };
     return <div className="rounded-xl border border-stone-200 p-4 space-y-3" key={key}>
       <div className="flex justify-between gap-3"><div><h3 className="font-semibold text-stone-800">{title}</h3>
-        <p className="text-xs text-stone-500">{key === 'inlet' ? 'Exhibit design flow · pressure' : 'Weir discharge flow · gravity'}{current && Number.isFinite(minimumVelocity) && Number.isFinite(maximumVelocity) ? ` · target ${minimumVelocity.toFixed(1)}–${maximumVelocity.toFixed(1)} m/s` : ''}</p></div>
+        <p className="text-xs text-stone-500">{key === 'inlet' ? 'Exhibit design flow · pressure' : key === 'discharge' ? 'Weir discharge flow · gravity' : 'Bottom-drain flow · gravity'}{current && Number.isFinite(minimumVelocity) && Number.isFinite(maximumVelocity) ? ` · target ${minimumVelocity.toFixed(1)}–${maximumVelocity.toFixed(1)} m/s` : ''}</p></div>
         <div className="text-right text-sm font-mono text-blue-700">{Number.isFinite(displayedFlow) ? `${displayedFlow.toFixed(3)} m³/h` : 'Flow unavailable'}</div></div>
       {!current ? <p className="text-sm text-amber-700">No active standard is within the velocity band for this flow.</p> : <>
         <div className="flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2 text-sm">
@@ -2295,10 +2296,11 @@ export function PipeSizingSection({ bookId, exhibitId, hydraulics, calculation, 
     </div>;
   };
   return <div className="bg-white rounded-xl border border-stone-200 overflow-hidden"><div className="px-5 py-3.5 border-b border-stone-100 bg-blue-50/40">
-    <span className="text-sm font-semibold text-blue-800">Inlet &amp; Discharge Pipe Sizing</span>
-  </div><div className="p-5 grid gap-4 md:grid-cols-2">
+    <span className="text-sm font-semibold text-blue-800">Exhibit Pipe Sizing</span>
+  </div><div className="p-5 grid gap-4 md:grid-cols-3">
     {renderPipe('inlet', 'Inlet pipe', calculation?.results?.total_return_flow_m3h)}
     {renderPipe('discharge', 'Discharge after weir', calculation?.results?.surface_skim_flow_m3h)}
+    {renderPipe('bottom_drain', 'Bottom drain pipe', calculation?.results?.bottom_drain_flow_m3h)}
   </div></div>;
 }
 

@@ -46,7 +46,7 @@ function renderSizing(readOnly = false, hydraulics: any = {
         bookId="book-1"
         exhibitId="exhibit-1"
         hydraulics={hydraulics}
-        calculation={{ results: { total_return_flow_m3h: 10, surface_skim_flow_m3h: 3 } }}
+        calculation={{ results: { total_return_flow_m3h: 10, surface_skim_flow_m3h: 3, bottom_drain_flow_m3h: 7 } }}
         readOnly={readOnly}
         onRefresh={vi.fn()}
       />
@@ -72,12 +72,17 @@ describe('exhibit pipe sizing', () => {
 
     expect(api.put).toHaveBeenCalledWith('/design-books/book-1/exhibits/exhibit-1/hydraulics',
       expect.objectContaining({ inlet_pipe_dn: 50 }));
+    expect(screen.getByText('Bottom drain pipe')).toBeVisible();
+    expect(screen.getAllByText(/Recommendation/)[2]).toHaveTextContent('DN 50');
+    await user.click(screen.getByRole('button', { name: /Go one size up · DN 65/ }));
+    expect(api.put).toHaveBeenCalledWith('/design-books/book-1/exhibits/exhibit-1/hydraulics',
+      expect.objectContaining({ bottom_drain_pipe_dn: 65 }));
   });
 
   it('does not offer save controls on a read-only revision', async () => {
     renderSizing(true);
 
-    expect(await screen.findAllByText(/Recommendation/)).toHaveLength(2);
+    expect(await screen.findAllByText(/Recommendation/)).toHaveLength(3);
     expect(screen.queryByRole('button', { name: /Save recommendation/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Go one size up/ })).not.toBeInTheDocument();
   });
