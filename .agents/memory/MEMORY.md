@@ -39,3 +39,4 @@
 - [Exhibit environmental inheritance](exhibit-environmental-inheritance.md) — new exhibits may copy water type and temperature range once; the source remains independent.
 - [Biological media compatibility options](biological-media-compatibility-options.md) — use shared controlled labels and normalize historical saltwater aliases when matching profiles.
 - [AAT Core biological media](aat-core-biological-media.md) — selectable volume-percentage engine; below 18°C overrides water type and size at 4%.
+- [Ozone treatment flow](ozone-treatment-flow.md) — dose from governed FFSP flow; add FFVP only when its circuit is explicitly marked as direct-plenum.

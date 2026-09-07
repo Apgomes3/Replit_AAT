@@ -1827,6 +1827,33 @@ CREATE TABLE IF NOT EXISTS design_book_thermal_selections (
 );
 CREATE INDEX IF NOT EXISTS idx_design_book_thermal_selections_book
   ON design_book_thermal_selections(design_book_id, system_id);
+
+CREATE TABLE IF NOT EXISTS design_book_ozone_calculations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  target_concentration_mg_l NUMERIC NOT NULL DEFAULT 0.05
+    CHECK (target_concentration_mg_l BETWEEN 0.01 AND 0.20),
+  display_unit VARCHAR(10) NOT NULL DEFAULT 'g/h'
+    CHECK (display_unit IN ('mg/h','g/h','lb/h')),
+  ffvp_plenum_circuit_keys JSONB NOT NULL DEFAULT '[]'::jsonb
+    CHECK (jsonb_typeof(ffvp_plenum_circuit_keys) = 'array'),
+  input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(input_snapshot) = 'object'),
+  result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(result_snapshot) = 'object'),
+  calculated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  calculated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id)
+);
+CREATE INDEX IF NOT EXISTS idx_design_book_ozone_calculations_book
+  ON design_book_ozone_calculations(design_book_id, system_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_ozone_calculation ON design_book_ozone_calculations;
+CREATE TRIGGER guard_released_design_book_ozone_calculation
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_ozone_calculations
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 DROP TRIGGER IF EXISTS guard_released_design_book_thermal_selection ON design_book_thermal_selections;
 CREATE TRIGGER guard_released_design_book_thermal_selection
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_selections

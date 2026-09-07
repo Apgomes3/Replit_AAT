@@ -26,6 +26,7 @@ import {
 import { summarizeFiltration } from './LSSCompactUnitsCatalog';
 import LSSPumpSelectionPanel from './LSSPumpSelectionPanel';
 import LSSThermalSelectionPanel from './LSSThermalSelectionPanel';
+import LSSOzoneCalculationPanel from './LSSOzoneCalculationPanel';
 import NewRevisionModal from './NewRevisionModal';
 import {
   BIOLOGICAL_MEDIA_REACTOR_TYPES,
@@ -5705,10 +5706,7 @@ export default function DesignBookLSSDetail() {
         tabIndex={0}
         hidden={activeTab !== 'ozone'}
       >
-        <EquipmentEmptyState
-          title="Ozone Selection"
-          description="Ozone equipment selection is not configured for this system yet."
-        />
+        <LSSOzoneCalculationPanel bookId={bookId} systemId={systemId} readOnly={readOnly} />
       </div>
       <div
         id="lss-panel-other"

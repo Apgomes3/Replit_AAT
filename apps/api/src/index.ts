@@ -25,6 +25,7 @@ import speciesCatalogRoutes from './routes/speciesCatalog';
 import biologicalMediaRoutes from './routes/biologicalMedia';
 import pumpSelectionRoutes from './routes/pumpSelections';
 import frictionLossRoutes from './routes/frictionLoss';
+import ozoneCalculationRoutes from './routes/ozoneCalculations';
 import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
 import { errorHandler, notFound } from './middleware/errors';
 
@@ -62,6 +63,7 @@ app.use('/api/v1', speciesCatalogRoutes);
 app.use('/api/v1', biologicalMediaRoutes);
 app.use('/api/v1', pumpSelectionRoutes);
 app.use('/api/v1', frictionLossRoutes);
+app.use('/api/v1', ozoneCalculationRoutes);
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
