@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import CustomFootprintEditor, { FootprintPrompt } from './CustomFootprintEditor';
 
@@ -38,6 +39,7 @@ describe('CustomFootprintEditor', () => {
 
   it('loads, adjusts, replaces, and removes a session-only reference image', async () => {
     const user = userEvent.setup();
+    const onAccept = vi.fn();
     const urls: string[] = [];
     vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:test-${urls.push('created')}`);
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
@@ -45,18 +47,21 @@ describe('CustomFootprintEditor', () => {
       onload: null | (() => void) = null;
       set src(_value: string) { this.onload?.(); }
     });
-    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    render(<StrictMode><CustomFootprintEditor initialValue={rectangle} onAccept={onAccept} onCancel={vi.fn()} /></StrictMode>);
     const first = new File(['first'], 'plan-one.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Choose reference image'), first);
     expect(screen.getByText('plan-one.png')).toBeInTheDocument();
     const drawingSurface = screen.getByRole('img', { name: 'Footprint drawing surface' });
     let image = screen.getByTestId('footprint-reference-image');
     expect(image).toHaveAttribute('href', 'blob:test-1');
-    expect(image).toHaveAttribute('xlink:href', 'blob:test-1');
     expect(image).toHaveAttribute('preserveAspectRatio', 'xMidYMid meet');
     expect(image).toHaveAttribute('pointer-events', 'none');
     expect(image.nextElementSibling?.tagName.toLowerCase()).toBe('path');
     expect(drawingSurface.firstElementChild).toBe(image);
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    const accepted = onAccept.mock.calls[0][0];
+    expect(accepted).toMatchObject({ closed: true, units: 'mm', segments: rectangle.segments });
+    expect(accepted).not.toHaveProperty('referenceImage');
     fireEvent.change(screen.getByLabelText('Reference image opacity'), { target: { value: '60' } });
     expect(screen.getByText('Reference image opacity: 60%')).toBeInTheDocument();
     expect(image).toHaveAttribute('opacity', '0.6');
@@ -65,7 +70,6 @@ describe('CustomFootprintEditor', () => {
     expect(screen.getByText('plan-two.jpg')).toBeInTheDocument();
     image = screen.getByTestId('footprint-reference-image');
     expect(image).toHaveAttribute('href', 'blob:test-2');
-    expect(image).toHaveAttribute('xlink:href', 'blob:test-2');
     expect(revoke).toHaveBeenCalledWith('blob:test-1');
     await user.click(screen.getByRole('button', { name: 'Remove' }));
     expect(screen.queryByText('plan-two.jpg')).not.toBeInTheDocument();
@@ -81,7 +85,7 @@ describe('CustomFootprintEditor', () => {
       onload: null | (() => void) = null;
       set src(_value: string) { this.onload?.(); }
     });
-    const { unmount } = render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    const { unmount } = render(<StrictMode><CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} /></StrictMode>);
     await user.upload(screen.getByLabelText('Choose reference image'), new File(['plan'], 'plan.png', { type: 'image/png' }));
     unmount();
     expect(revoke).toHaveBeenCalledWith('blob:active-reference');
@@ -96,11 +100,61 @@ describe('CustomFootprintEditor', () => {
       onerror: null | (() => void) = null;
       set src(_value: string) { this.onerror?.(); }
     });
-    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    render(<StrictMode><CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} /></StrictMode>);
     await user.upload(screen.getByLabelText('Choose reference image'), new File(['bad'], 'bad.png', { type: 'image/png' }));
     expect(screen.getByRole('alert')).toHaveTextContent('could not be read');
     fireEvent.change(screen.getByLabelText('Choose reference image'), { target: { files: [new File(['text'], 'plan.txt', { type: 'text/plain' })] } });
     expect(screen.getByRole('alert')).toHaveTextContent('PNG, JPEG, WebP, or GIF');
+  });
+
+  it('announces loading, disables conflicting choices, and ignores a stale decode after unmount', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:pending');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    let finishDecode: (() => void) | null = null;
+    vi.stubGlobal('Image', class {
+      onload: null | (() => void) = null;
+      set src(_value: string) { finishDecode = this.onload; }
+    });
+    const { unmount } = render(<StrictMode><CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} /></StrictMode>);
+
+    await user.upload(screen.getByLabelText('Choose reference image'), new File(['plan'], 'pending-plan.png', { type: 'image/png' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Loading “pending-plan.png”');
+    expect(screen.getByLabelText('Choose reference image')).toBeDisabled();
+    expect(screen.queryByTestId('footprint-reference-image')).not.toBeInTheDocument();
+
+    unmount();
+    finishDecode?.();
+    expect(revoke).toHaveBeenCalledWith('blob:pending');
+  });
+
+  it('keeps a ready image visible when its replacement fails to decode', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(URL, 'createObjectURL')
+      .mockReturnValueOnce('blob:ready')
+      .mockReturnValueOnce('blob:failed');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const decodes: Array<{ load: () => void; error: () => void }> = [];
+    vi.stubGlobal('Image', class {
+      onload: null | (() => void) = null;
+      onerror: null | (() => void) = null;
+      set src(_value: string) {
+        decodes.push({ load: () => this.onload?.(), error: () => this.onerror?.() });
+      }
+    });
+    render(<StrictMode><CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} /></StrictMode>);
+
+    await user.upload(screen.getByLabelText('Choose reference image'), new File(['one'], 'ready.png', { type: 'image/png' }));
+    act(() => decodes[0].load());
+    expect(await screen.findByText('“ready.png” is ready to trace.')).toBeInTheDocument();
+    await user.upload(screen.getByLabelText('Replace reference image'), new File(['two'], 'broken.png', { type: 'image/png' }));
+    expect(screen.getByText('Loading “broken.png”…')).toBeInTheDocument();
+    expect(screen.getByTestId('footprint-reference-image')).toHaveAttribute('href', 'blob:ready');
+    act(() => decodes[1].error());
+    expect(await screen.findByRole('alert')).toHaveTextContent('broken.png');
+    expect(screen.getByTestId('footprint-reference-image')).toHaveAttribute('href', 'blob:ready');
+    expect(revoke).toHaveBeenCalledWith('blob:failed');
+    expect(revoke).not.toHaveBeenCalledWith('blob:ready');
   });
 
   it('measures two points at the active scale, replaces the result, and keeps accepted geometry isolated', async () => {

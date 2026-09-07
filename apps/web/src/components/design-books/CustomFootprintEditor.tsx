@@ -322,12 +322,15 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const [calibrationError, setCalibrationError] = useState('');
   const [segmentEditNotice, setSegmentEditNotice] = useState('');
   const [referenceImage, setReferenceImage] = useState<{ url: string; name: string } | null>(null);
+  const [pendingReference, setPendingReference] = useState<{ url: string; name: string } | null>(null);
   const [referenceOpacity, setReferenceOpacity] = useState(35);
   const [referenceError, setReferenceError] = useState('');
   const [measurementMode, setMeasurementMode] = useState(false);
   const [measurementPoints, setMeasurementPoints] = useState<FootprintPoint[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
   const referenceImageRef = useRef<{ url: string; name: string } | null>(null);
+  const pendingReferenceRef = useRef<{ url: string; name: string } | null>(null);
+  const referenceRequestRef = useRef(0);
   const mountedRef = useRef(true);
   const dragOrigin = useRef<CustomFootprintDocument | null>(null);
   const mmPerUnit = Math.max(0.000001, document.calibration.mm_per_unit || 1);
@@ -351,9 +354,14 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   useEffect(() => {
     referenceImageRef.current = referenceImage;
   }, [referenceImage]);
-  useEffect(() => () => {
-    mountedRef.current = false;
-    if (referenceImageRef.current) URL.revokeObjectURL(referenceImageRef.current.url);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      referenceRequestRef.current += 1;
+      if (referenceImageRef.current) URL.revokeObjectURL(referenceImageRef.current.url);
+      if (pendingReferenceRef.current) URL.revokeObjectURL(pendingReferenceRef.current.url);
+    };
   }, []);
 
   const commit = (next: CustomFootprintDocument) => {
@@ -598,32 +606,50 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     event.target.value = '';
     if (!file) return;
     if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
-      setReferenceError('Choose a readable PNG, JPEG, WebP, or GIF image.');
+      setReferenceError(`“${file.name}” was not accepted. Choose a readable PNG, JPEG, WebP, or GIF image.`);
       return;
     }
     const url = URL.createObjectURL(file);
+    const request = referenceRequestRef.current + 1;
+    referenceRequestRef.current = request;
+    if (pendingReferenceRef.current) URL.revokeObjectURL(pendingReferenceRef.current.url);
+    const pending = { url, name: file.name };
+    pendingReferenceRef.current = pending;
+    setPendingReference(pending);
+    setReferenceError('');
     const probe = new Image();
     probe.onload = () => {
-      if (!mountedRef.current) {
+      if (!mountedRef.current || referenceRequestRef.current !== request) {
         URL.revokeObjectURL(url);
         return;
       }
+      pendingReferenceRef.current = null;
+      setPendingReference(null);
       setReferenceImage(previous => {
         if (previous) URL.revokeObjectURL(previous.url);
-        return { url, name: file.name };
+        const ready = { url, name: file.name };
+        referenceImageRef.current = ready;
+        return ready;
       });
       setReferenceError('');
     };
     probe.onerror = () => {
       URL.revokeObjectURL(url);
-      if (!mountedRef.current) return;
-      setReferenceError('That image could not be read. The current reference image was kept.');
+      if (!mountedRef.current || referenceRequestRef.current !== request) return;
+      pendingReferenceRef.current = null;
+      setPendingReference(null);
+      setReferenceError(`“${file.name}” could not be read. Choose another supported image. The current reference image was kept.`);
     };
     probe.src = url;
   };
   const removeReferenceImage = () => {
+    referenceRequestRef.current += 1;
+    if (pendingReferenceRef.current) URL.revokeObjectURL(pendingReferenceRef.current.url);
+    pendingReferenceRef.current = null;
+    setPendingReference(null);
     setReferenceImage(previous => {
       if (previous) URL.revokeObjectURL(previous.url);
+      referenceImageRef.current = null;
       return null;
     });
     setReferenceError('');
@@ -770,7 +796,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
             </div>
             <div className="relative overflow-hidden rounded-xl border border-sky-200 bg-[linear-gradient( to right,rgba(14,116,144,.08)_1px,transparent_1px),linear-gradient(to bottom,rgba(14,116,144,.08)_1px,transparent_1px)] bg-[size:32px_32px]">
               <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
-                {referenceImage && <image data-testid="footprint-reference-image" href={referenceImage.url} xlinkHref={referenceImage.url} x={box.x} y={box.y} width={box.width} height={box.height} preserveAspectRatio="xMidYMid meet" opacity={referenceOpacity / 100} pointerEvents="none" aria-hidden="true" />}
+                {referenceImage && <image data-testid="footprint-reference-image" href={referenceImage.url} x={box.x} y={box.y} width={box.width} height={box.height} preserveAspectRatio="xMidYMid meet" opacity={referenceOpacity / 100} pointerEvents="none" aria-hidden="true" />}
                 <path d={pathFor(displayDocument)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={Math.max(3, box.width / 180)} strokeLinejoin="round" strokeLinecap="round" />
                 {activeFreehand && <polyline points={activeFreehand.map(point => mapPoint(point, 1 / mmPerUnit)).map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={Math.max(3, box.width / 180)} />}
                 {displayDocument.segments.map((segment, index) => {
@@ -823,12 +849,14 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
             <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-700"><ImageIcon className="h-4 w-4" />Reference image</div>
               <p className="mt-1 text-xs text-stone-500">Session-only tracing aid. It is never saved with the footprint.</p>
-              <label className="mt-2 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700">
-                {referenceImage ? 'Replace image' : 'Choose image'}
-                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" aria-label={referenceImage ? 'Replace reference image' : 'Choose reference image'} onChange={selectReferenceImage} />
+              <label className={`mt-2 inline-flex min-h-10 items-center justify-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 ${pendingReference ? 'cursor-wait opacity-60' : 'cursor-pointer'}`}>
+                {pendingReference ? 'Loading image…' : referenceImage ? 'Replace image' : 'Choose image'}
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" aria-label={referenceImage ? 'Replace reference image' : 'Choose reference image'} onChange={selectReferenceImage} disabled={!!pendingReference} />
               </label>
+              {pendingReference && <p className="mt-2 text-xs font-medium text-sky-700" role="status" aria-live="polite">Loading “{pendingReference.name}”…</p>}
               {referenceImage && <>
                 <div className="mt-2 flex items-center justify-between gap-2 text-xs text-stone-600"><span className="truncate" title={referenceImage.name}>{referenceImage.name}</span><button type="button" onClick={removeReferenceImage} className="font-semibold text-red-700">Remove</button></div>
+                <p className="mt-1 text-xs font-medium text-emerald-700" role="status">“{referenceImage.name}” is ready to trace.</p>
                 <label className="mt-2 block text-xs font-medium text-stone-600" htmlFor="reference-opacity">Reference image opacity: {referenceOpacity}%</label>
                 <input id="reference-opacity" aria-label="Reference image opacity" type="range" min="10" max="80" value={referenceOpacity} onChange={event => setReferenceOpacity(Number(event.target.value))} className="mt-1 w-full" />
               </>}
