@@ -481,7 +481,17 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
             <button type="button" onClick={() => void downloadPdf()} disabled={ioSchedule.length === 0 || pdfLoading} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />{pdfLoading ? 'Preparing PDF…' : 'Download PDF'}</button>
           </div>
         </div>
-        {ioSchedule.length === 0 ? <div className="p-8 text-center text-sm text-stone-400" role="status">No saved instrument instances are available for this I/O schedule.</div> : <div className="overflow-x-auto">
+        {ioSchedule.length === 0 ? <div className="p-8 text-center text-sm text-stone-400" role="status">No saved instrument instances are available for this I/O schedule.</div> : <div
+          className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+          tabIndex={0}
+          role="region"
+          aria-label="I/O schedule columns"
+          onKeyDown={event => {
+            if (event.key !== 'Home' && event.key !== 'End') return;
+            event.preventDefault();
+            event.currentTarget.scrollLeft = event.key === 'Home' ? 0 : event.currentTarget.scrollWidth;
+          }}
+        >
           {Array.from(new Map(ioSchedule.map(row => [`${row.panel}::${row.direction}`, { panel: row.panel, direction: row.direction }])).values()).map(group => {
             const rows = ioSchedule.filter(row => row.panel === group.panel && row.direction === group.direction);
             return <div key={`${group.panel}-${group.direction}`} className="border-b border-stone-100 last:border-0">

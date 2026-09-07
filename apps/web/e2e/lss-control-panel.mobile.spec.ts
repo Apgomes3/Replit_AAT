@@ -213,7 +213,7 @@ for (const viewport of viewports) {
     }));
 
     const schedule = page.getByRole('table', { name: 'PLC Input I/O schedule' });
-    const scroller = schedule.locator('xpath=../..');
+    const scroller = page.getByRole('region', { name: 'I/O schedule columns' });
     const csvExport = page.getByRole('button', { name: 'Export CSV' });
     const pdfExport = page.getByRole('button', { name: 'Download PDF' });
 
@@ -244,11 +244,13 @@ for (const viewport of viewports) {
     expect(initialMetrics.left).toBeGreaterThanOrEqual(0);
     expect(initialMetrics.right).toBeLessThanOrEqual(viewport.width);
 
-    const finalScrollLeft = await scroller.evaluate(element => {
-      element.scrollLeft = element.scrollWidth;
-      return element.scrollLeft;
-    });
-    expect(finalScrollLeft).toBeGreaterThan(0);
+    await pdfExport.focus();
+    await page.keyboard.press('Tab');
+    await expect(scroller).toBeFocused();
+    expect(await scroller.evaluate(element => getComputedStyle(element).boxShadow)).not.toBe('none');
+    await scroller.press('End');
+    await expect.poll(() => scroller.evaluate(element => element.scrollLeft))
+      .toBe(initialMetrics.scrollWidth - initialMetrics.clientWidth);
     await expect(schedule.getByText(issuedProduct)).toBeVisible();
     const savedLogic = schedule.getByRole('cell', { name: issuedControlLogic });
     await expect(savedLogic).toBeVisible();
@@ -256,6 +258,14 @@ for (const viewport of viewports) {
     expect(scrollerBounds && savedLogicBounds
       && savedLogicBounds.x >= scrollerBounds.x
       && savedLogicBounds.x + savedLogicBounds.width <= scrollerBounds.x + scrollerBounds.width).toBe(true);
+
+    await scroller.press('Home');
+    await expect.poll(() => scroller.evaluate(element => element.scrollLeft)).toBe(0);
+    const firstTag = schedule.getByRole('cell', { name: issuedTag });
+    const [firstScrollerBounds, firstTagBounds] = await Promise.all([scroller.boundingBox(), firstTag.boundingBox()]);
+    expect(firstScrollerBounds && firstTagBounds
+      && firstTagBounds.x >= firstScrollerBounds.x
+      && firstTagBounds.x + firstTagBounds.width <= firstScrollerBounds.x + firstScrollerBounds.width).toBe(true);
 
     const controlsBounds = await Promise.all([csvExport, pdfExport].map(button => button.boundingBox()));
     expect(controlsBounds.every(bounds => bounds
