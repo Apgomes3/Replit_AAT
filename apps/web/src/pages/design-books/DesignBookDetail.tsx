@@ -4584,6 +4584,13 @@ function ThermalTab({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
+export function getSearchParamsForTabChange(searchParams: URLSearchParams, nextTab: Tab) {
+  const nextParams = new URLSearchParams(searchParams);
+  nextParams.set('tab', nextTab);
+  if (nextTab === 'control') nextParams.delete('system');
+  return nextParams;
+}
+
 export default function DesignBookDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -4622,9 +4629,7 @@ export default function DesignBookDetail() {
   };
 
   const handleTabChange = (nextTab: Tab) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('tab', nextTab);
-    setSearchParams(nextParams);
+    setSearchParams(getSearchParamsForTabChange(searchParams, nextTab));
   };
 
   if (isLoading) return <div className="p-8 text-center text-stone-400">Loading…</div>;

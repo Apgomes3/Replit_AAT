@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import api from '../../lib/api';
 import ControlFieldInstrumentsTab, { getControlPanelType, getLssSystems } from './ControlFieldInstrumentsTab';
+import { getSearchParamsForTabChange } from './DesignBookDetail';
 
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(), put: vi.fn() } }));
 
@@ -12,7 +13,7 @@ function LocationDisplay() {
   return <output data-testid="location">{useLocation().search}</output>;
 }
 
-function renderTab() {
+function renderTab(initialEntry = '/design-books/book-1?tab=control') {
   vi.mocked(api.get).mockImplementation((url: string) => {
     if (url === '/systems/system-1/control') {
       return Promise.resolve({ data: { control: { panel_type: 'GPO' }, definitions: [], instruments: [], products: [] } });
@@ -21,7 +22,7 @@ function renderTab() {
   });
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/design-books/book-1?tab=control']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <ControlFieldInstrumentsTab
           book={{ id: 'book-1', systems: [
             { id: 'system-1', system_code: '1', system_name: 'Main LSS', system_type: 'Life Support', water_type: 'Freshwater', status: 'Draft' },
@@ -41,6 +42,15 @@ function renderTab() {
 }
 
 describe('ControlFieldInstrumentsTab', () => {
+  it('clears a retained system when the Control tab is clicked and preserves unrelated query parameters', () => {
+    const nextParams = getSearchParamsForTabChange(
+      new URLSearchParams('tab=thermal&system=system-1&revision=revision-2'),
+      'control',
+    );
+
+    expect(nextParams.toString()).toBe('tab=control&revision=revision-2');
+  });
+
   it('identifies only Life Support Systems for the Control count', () => {
     expect(getLssSystems([
       { id: 'system-1', system_type: 'Life Support' },
@@ -92,6 +102,14 @@ describe('ControlFieldInstrumentsTab', () => {
       signal: expect.any(AbortSignal),
       timeout: 10_000,
     }));
+  });
+
+  it('opens an explicitly linked LSS control workspace', async () => {
+    renderTab('/design-books/book-1?tab=control&system=system-1');
+
+    expect(await screen.findByText('Main LSS')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Control panel' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('?tab=control&system=system-1');
   });
 
   it('defaults to list view and allows switching to cards', async () => {
