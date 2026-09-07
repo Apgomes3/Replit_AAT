@@ -545,8 +545,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     }
     setSnapTarget(false);
     if (drag) {
-      if (dragOrigin.current) {
-        setPast(previous => [...previous.slice(-49), dragOrigin.current!]);
+      const origin = dragOrigin.current;
+      if (origin) {
+        setPast(previous => [...previous.slice(-49), origin]);
         setFuture([]);
       }
       dragOrigin.current = null;
@@ -764,6 +765,10 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
       ? `Curve ${index + 1} updated and connected.`
       : `Curve ${index + 1} updated, but validation needs attention: ${nextValidation.message}`);
   };
+  const activeQuadraticIndex = displayDocument.segments.reduce(
+    (latest, segment, index) => segment.type === 'quadratic' ? index : latest,
+    -1,
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="footprint-editor-title">
@@ -809,10 +814,11 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                       <circle cx={end.x} cy={end.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index + 1)} />
                       <circle cx={end.x} cy={end.y} r={Math.max(7, box.width / 82)} fill="#fff" stroke="#0e7490" strokeWidth="2" pointerEvents="none" />
                     </>}
-                    {mode === 'select' && !calibrationMode && !measurementMode && segment.type === 'quadratic' && <>
+                    {(mode === 'select' || (mode === 'curve' && index === activeQuadraticIndex))
+                      && !calibrationMode && !measurementMode && segment.type === 'quadratic' && <>
                       <line x1={segment.start.x} y1={segment.start.y} x2={segment.control.x} y2={segment.control.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
                       <line x1={segment.control.x} y1={segment.control.y} x2={segment.end.x} y2={segment.end.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
-                      <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(16, box.width / 32)} fill="transparent" onPointerDown={event => startDrag(event, 'control', index)} aria-label={`Drag curve handle ${index + 1}`} />
+                      <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(16, box.width / 32)} fill="transparent" onPointerDown={event => startDrag(event, 'control', index)} aria-label={`Drag yellow curve handle ${index + 1} to adjust the curve`} />
                       <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(9, box.width / 68)} fill="#fef08a" stroke="#a16207" strokeWidth="3" pointerEvents="none" />
                     </>}
                   </g>;
@@ -843,7 +849,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 {document.closed ? 'Outline closed. Use Select and edit to refine it.' : canClose ? 'Click near the highlighted start point to snap closed, or use Close outline.' : mode === 'select' ? 'Drag blue vertices or yellow curve handles to edit.' : pendingStart ? 'Click the next point to add a segment.' : 'Click or drag to start the next segment.'}
               </span>
             </div>
-            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Keyboard: focus the drawing surface, move the orange cursor with Arrow keys, press Enter to add, C to close, and Ctrl/Cmd+Z or Y to undo/redo.</p>
+            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Keyboard: focus the drawing surface, move the orange cursor with Arrow keys, press Enter to add, C to close, and Ctrl/Cmd+Z or Y to undo/redo. With Quadratic curve active, drag the yellow handle to adjust the latest curve.</p>
           </div>
           <aside className="space-y-3">
             <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">

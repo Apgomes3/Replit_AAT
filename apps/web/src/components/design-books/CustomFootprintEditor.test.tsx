@@ -350,6 +350,37 @@ describe('CustomFootprintEditor', () => {
     expect(accepted.segments[1].start).toEqual(accepted.segments[0].end);
   });
 
+  it('adjusts the latest quadratic handle while drawing without appending geometry and undoes the drag', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    const openCurve = { ...curved, closed: false, segments: curved.segments.slice(0, 3) };
+    render(<CustomFootprintEditor initialValue={openCurve} onAccept={onAccept} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Quadratic curve' }));
+    expect(screen.getByText(/drag the yellow handle to adjust the latest curve/i)).toBeInTheDocument();
+
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, toJSON: () => ({}),
+    });
+    const handle = screen.getByLabelText('Drag yellow curve handle 1 to adjust the curve');
+    Object.defineProperty(handle, 'setPointerCapture', { value: vi.fn() });
+    const originalControl = (openCurve.segments[0] as any).control;
+    pointer(handle, 'pointerdown', 500, 125, 7);
+    pointer(surface, 'pointermove', 600, 200, 7);
+    pointer(screen.getByLabelText('Drag yellow curve handle 1 to adjust the curve'), 'pointerup', 600, 200, 7);
+
+    const adjustedHandleX = screen.getByLabelText('Drag yellow curve handle 1 to adjust the curve').getAttribute('cx');
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByLabelText('Drag yellow curve handle 1 to adjust the curve')).not.toHaveAttribute('cx', adjustedHandleX);
+    await user.click(screen.getByRole('button', { name: 'Redo' }));
+    await user.click(screen.getByRole('button', { name: 'Select and edit' }));
+    await user.click(screen.getByRole('button', { name: 'Close outline' }));
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    const adjusted = onAccept.mock.calls[0][0];
+    expect(adjusted.segments).toHaveLength(4);
+    expect(adjusted.segments[0].control).not.toEqual(originalControl);
+  });
+
   it.each(['0', '180', '179'])('rejects the singular %s degree curve angle and retains valid geometry', async angleValue => {
     const user = userEvent.setup();
     const onAccept = vi.fn();
