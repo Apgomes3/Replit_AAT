@@ -844,6 +844,7 @@ export default function ProductMasterDetail() {
   const isTank = product.product_category === 'Tank';
   const isPneumatic = String(product.product_category || '').toLowerCase() === 'pneumatic';
   const isThermal = String(product.product_category || '').toLowerCase() === 'thermal';
+  const isOzoneGenerator = String(product.product_category || '').trim().toLowerCase() === 'ozone generators';
   const productFamilyCode = String(product.product_family_code || '').trim().toUpperCase();
   const productCode = String(product.product_code || '').trim().toUpperCase();
   const isUvProduct = productFamilyCode === 'PFM-UV'
@@ -1157,7 +1158,7 @@ export default function ProductMasterDetail() {
                 { label: 'Tank Family', value: tankFamilies.find((f: any) => f.id === (product as any).tank_family_id)?.name ?? null },
                 { label: 'Manufacturer', value: (product as any).manufacturer },
                 { label: 'Model', value: (product as any).model },
-               ...((product as any).ozone_production_capacity_g_h != null ? [{ label: 'Ozone Production Capacity', value: `${(product as any).ozone_production_capacity_g_h} g/h` }] : []),
+               ...(isOzoneGenerator && (product as any).ozone_production_capacity_g_h != null ? [{ label: 'Ozone Production Capacity', value: `${(product as any).ozone_production_capacity_g_h} g/h` }] : []),
                 { label: 'Primary Material', value: product.primary_material_code ? <Link to="/knowledge/materials" className="inline-flex items-center gap-1.5 hover:underline"><EntityCode code={product.primary_material_code} />{product.material_name && <span className="text-slate-500 text-xs">{product.material_name}</span>}</Link> : null },
                 ...(() => {
                   const shape = product.shape_type || 'Rectangular';
@@ -1264,11 +1265,11 @@ export default function ProductMasterDetail() {
                     placeholder="e.g. CR 5-10"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
-                <div>
+                 {isOzoneGenerator && <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Ozone Production Capacity (g/h)</label>
                   <input aria-label="Ozone Production Capacity (g/h)" type="number" min="0" step="any" value={editForm.ozone_production_capacity_g_h} onChange={e => setEditForm((f: any) => ({ ...f, ozone_production_capacity_g_h: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                </div>
+                 </div>}
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
@@ -1289,7 +1290,7 @@ export default function ProductMasterDetail() {
               { label: 'Category', value: product.product_category },
               { label: 'Manufacturer', value: (product as any).manufacturer },
               { label: 'Model', value: (product as any).model },
-              ...((product as any).ozone_production_capacity_g_h != null ? [{ label: 'Ozone Production Capacity', value: `${(product as any).ozone_production_capacity_g_h} g/h` }] : []),
+              ...(isOzoneGenerator && (product as any).ozone_production_capacity_g_h != null ? [{ label: 'Ozone Production Capacity', value: `${(product as any).ozone_production_capacity_g_h} g/h` }] : []),
               ...(!isPiping ? [{ label: 'Application', value: product.application_type }] : []),
                ...(isUvProduct ? [
                  { label: 'Configuration', value: product.configuration },
@@ -1423,11 +1424,11 @@ export default function ProductMasterDetail() {
                     placeholder="e.g. CR 5-10"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
-                <div>
+                {isOzoneGenerator && <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Ozone Production Capacity (g/h)</label>
                   <input aria-label="Ozone Production Capacity (g/h)" type="number" min="0" step="any" value={editForm.ozone_production_capacity_g_h} onChange={e => setEditForm((f: any) => ({ ...f, ozone_production_capacity_g_h: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-                </div>
+                </div>}
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}

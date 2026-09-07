@@ -572,7 +572,12 @@ export default function ProductMastersList() {
             { name: 'application_type', label: 'Application Type' },
             { name: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Grundfos' },
             { name: 'model', label: 'Model', placeholder: 'e.g. CR 5-10' },
-             { name: 'ozone_production_capacity_g_h', label: 'Ozone Production Capacity (g/h)', type: 'number' },
+            {
+              name: 'ozone_production_capacity_g_h',
+              label: 'Ozone Production Capacity (g/h)',
+              type: 'number',
+              visibleWhen: values => String(values.product_category || '').trim().toLowerCase() === 'ozone generators',
+            },
             { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
             { name: 'primary_material_code', label: 'Primary Material', options: materialOptions, onCreateOption: openMaterialManagement },
             { name: 'standard_status', label: 'Status', options: STATUSES },
@@ -682,11 +687,11 @@ export default function ProductMastersList() {
                   placeholder="e.g. CR 5-10"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
-              <div>
+              {String(editForm.product_category || '').trim().toLowerCase() === 'ozone generators' && <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Ozone Production Capacity (g/h)</label>
                 <input aria-label="Ozone Production Capacity (g/h)" type="number" min="0" step="any" value={editForm.ozone_production_capacity_g_h} onChange={e => setEditForm((f: any) => ({ ...f, ozone_production_capacity_g_h: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
-              </div>
+              </div>}
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                 <textarea rows={2} value={editForm.notes} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}

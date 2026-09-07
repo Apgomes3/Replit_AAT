@@ -11,6 +11,7 @@ interface Field {
   placeholder?: string;
   options?: string[];
   onCreateOption?: (label: string, currentValues?: Record<string, any>) => Promise<string>;
+  visibleWhen?: (currentValues: Record<string, any>) => boolean;
 }
 
 interface NewEntityModalProps {
@@ -77,7 +78,7 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
           <button aria-label="Close dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
-          {fields.map(field => (
+          {fields.filter(field => field.visibleWhen?.(values) !== false).map(field => (
             <div key={field.name}>
               <label htmlFor={`new-entity-${field.name}`} className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
                 {field.label}{field.required && <span className="text-red-400 ml-1">*</span>}

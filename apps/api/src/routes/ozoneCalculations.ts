@@ -44,7 +44,8 @@ router.get('/systems/:id/ozone-calculation', async (req: AuthRequest, res: Respo
   const allocation = result.status === 'ready'
     ? selectOzoneGenerator(result.ozone_required_g_h, (await query(
       `SELECT id, product_code, product_name, model, ozone_production_capacity_g_h
-       FROM product_masters WHERE status='Active' AND ozone_production_capacity_g_h > 0`,
+       FROM product_masters
+       WHERE status='Active' AND product_category='Ozone Generators' AND ozone_production_capacity_g_h > 0`,
     )).rows, { system_id: req.params.id, ffvp_plenum_circuit_keys: keys, calculation_version: result.calculation_version })
     : null;
   res.json({
@@ -96,7 +97,8 @@ router.put('/systems/:id/ozone-calculation', requireRole('admin', 'engineer'), r
   };
   const allocation = selectOzoneGenerator(result.ozone_required_g_h, (await query(
     `SELECT id, product_code, product_name, model, ozone_production_capacity_g_h
-     FROM product_masters WHERE status='Active' AND ozone_production_capacity_g_h > 0`,
+     FROM product_masters
+     WHERE status='Active' AND product_category='Ozone Generators' AND ozone_production_capacity_g_h > 0`,
   )).rows, {
     system_id: req.params.id,
     ffvp_plenum_circuit_keys: keys,

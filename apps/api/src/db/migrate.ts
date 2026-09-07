@@ -532,6 +532,7 @@ INSERT INTO product_categories (name, code, description, is_system, sort_order) 
   ('Filtration', 'FILTRATION', 'Filtration systems and equipment', true, 10),
   ('Pumping', 'PUMPING', 'Pumps, blowers and fluid movers', true, 20),
   ('Disinfection', 'DISINFECTION', 'UV, ozone and chemical dosing', true, 30),
+  ('Ozone Generators', 'OZONE_GENERATORS', 'Ozone generation equipment', true, 35),
   ('Thermal', 'THERMAL', 'Heating and chilling equipment', true, 40),
   ('Pneumatic', 'PNEUMATIC', 'Pneumatic air and gas handling equipment', true, 45),
   ('Piping', 'PIPING', 'Pipes, fittings, valves and flanges', true, 50),
@@ -2554,6 +2555,10 @@ SET ozone_production_capacity_g_h = CASE product_code
 END
 WHERE product_code IN ('PM-OZ-2', 'PM-OZ-3', 'PM-OZ-5', 'PM-OZ-7', 'PM-OZ-10', 'PM-OZ-15', 'PM-OZ-20')
   AND ozone_production_capacity_g_h IS NULL;
+UPDATE product_masters
+SET product_category = 'Ozone Generators'
+WHERE product_code IN ('PM-OZ-2', 'PM-OZ-3', 'PM-OZ-5', 'PM-OZ-7', 'PM-OZ-10', 'PM-OZ-15', 'PM-OZ-20')
+  AND product_category = 'Disinfection';
 ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis VARCHAR(100) NOT NULL DEFAULT 'AAT Foundations';
 ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis_verified BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE uv_engineering_revisions ALTER COLUMN source_basis SET DEFAULT 'AAT Foundations';
