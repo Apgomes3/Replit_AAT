@@ -1505,6 +1505,42 @@ ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS calculation_
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS last_calculated_at TIMESTAMPTZ;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS calculation_inputs JSONB;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS override_reason TEXT;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS inlet_pipe_dn INTEGER;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS discharge_pipe_dn INTEGER;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS inlet_pipe_evidence JSONB;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS discharge_pipe_evidence JSONB;
+
+-- Authoritative internal diameters are governed separately from nominal DN.
+CREATE TABLE IF NOT EXISTS pipe_sizing_standards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  dn INTEGER NOT NULL UNIQUE CHECK (dn > 0),
+  internal_diameter_mm NUMERIC(8,2) NOT NULL CHECK (internal_diameter_mm > 0),
+  pressure_velocity_min_m_s NUMERIC(6,3) NOT NULL DEFAULT 1.5 CHECK (pressure_velocity_min_m_s >= 0),
+  pressure_velocity_max_m_s NUMERIC(6,3) NOT NULL DEFAULT 3.0 CHECK (pressure_velocity_max_m_s > 0),
+  gravity_velocity_min_m_s NUMERIC(6,3) NOT NULL DEFAULT 0.1 CHECK (gravity_velocity_min_m_s >= 0),
+  gravity_velocity_max_m_s NUMERIC(6,3) NOT NULL DEFAULT 1.5 CHECK (gravity_velocity_max_m_s > 0),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (pressure_velocity_min_m_s <= pressure_velocity_max_m_s),
+  CHECK (gravity_velocity_min_m_s <= gravity_velocity_max_m_s)
+);
+INSERT INTO pipe_sizing_standards (dn, internal_diameter_mm) VALUES
+  (15,15),(20,20),(25,25),(32,32),(40,40),(50,50),(65,65),(80,80),
+  (100,100),(125,125),(150,150),(200,200),(250,250),(300,300),(350,350),(400,400)
+ON CONFLICT (dn) DO NOTHING;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_exhibit_hydraulics_inlet_pipe_dn') THEN
+    ALTER TABLE design_book_exhibit_hydraulics
+      ADD CONSTRAINT fk_exhibit_hydraulics_inlet_pipe_dn
+      FOREIGN KEY (inlet_pipe_dn) REFERENCES pipe_sizing_standards(dn) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_exhibit_hydraulics_discharge_pipe_dn') THEN
+    ALTER TABLE design_book_exhibit_hydraulics
+      ADD CONSTRAINT fk_exhibit_hydraulics_discharge_pipe_dn
+      FOREIGN KEY (discharge_pipe_dn) REFERENCES pipe_sizing_standards(dn) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  END IF;
+END $$;
 
 -- DESIGN BOOK: Exhibit Theming & Substrate
 CREATE TABLE IF NOT EXISTS design_book_exhibit_substrate (

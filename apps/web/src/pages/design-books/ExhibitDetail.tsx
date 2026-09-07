@@ -8,7 +8,7 @@ import {
   SquarePlus, X, Droplets, Pencil, Save, Gauge, ArrowDownToLine,
   ArrowUpToLine, Wind, BookOpen, Mountain, Palette, Calculator,
   ArrowRight, ArrowLeft, AlertTriangle, MoreHorizontal, LockKeyhole,
-  LibraryBig, Lightbulb, Search,
+  LibraryBig, Lightbulb, Search, Pipette,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -31,10 +31,10 @@ import {
   WeirMethod,
 } from '../../lib/weir';
 
-type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir' | 'lights';
+type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir' | 'pipes' | 'lights';
 
 function isExhibitTab(value: string | null): value is ExhibitTab {
-  return value === 'tank' || value === 'species' || value === 'flow' || value === 'weir' || value === 'lights';
+  return value === 'tank' || value === 'species' || value === 'flow' || value === 'weir' || value === 'pipes' || value === 'lights';
 }
 
 function isEditingField(target: EventTarget | null): boolean {
@@ -2213,6 +2213,95 @@ function fmtWeir(L: number, unit: ResultUnit): string {
   }
 }
 
+export function PipeSizingSection({ bookId, exhibitId, hydraulics, calculation, readOnly, onRefresh }: {
+  bookId: string; exhibitId: string; hydraulics: any | null; calculation: any | null; readOnly: boolean; onRefresh: () => void;
+}) {
+  const [saving, setSaving] = useState<string | null>(null);
+  const { data } = useQuery({
+    queryKey: ['pipe-sizing-standards'],
+    queryFn: () => api.get('/admin/pipe-sizing-standards').then(response => response.data),
+    staleTime: 60_000,
+  });
+  const allStandards: any[] = (data?.items || [])
+    .sort((a: any, b: any) => Number(a.dn) - Number(b.dn));
+  const standards = allStandards.filter((item: any) => item.is_active !== false);
+  const velocity = (flow: any, diameter: any) => {
+    const q = Number(flow); const d = Number(diameter) / 1000;
+    const value = q / 3600 / (Math.PI * d * d / 4);
+    return Number.isFinite(value) ? value : null;
+  };
+  const renderPipe = (key: 'inlet' | 'discharge', title: string, flow: any) => {
+    const savedDn = hydraulics?.[`${key}_pipe_dn`];
+    const savedEvidence = hydraulics?.[`${key}_pipe_evidence`] || null;
+    const recommended = standards.find(item => {
+      const value = velocity(flow, item.internal_diameter_mm);
+      const min = Number(item[key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+      const max = Number(item[key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+      return value != null && value >= min && value <= max;
+    }) || null;
+    const selected = savedEvidence ? {
+      dn: savedEvidence.dn,
+      internal_diameter_mm: savedEvidence.internal_diameter_mm,
+      [key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']: savedEvidence.velocity_min_m_s,
+      [key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']: savedEvidence.velocity_max_m_s,
+    } : allStandards.find(item => Number(item.dn) === Number(savedDn)) || null;
+    const hasSavedSelection = savedEvidence != null || savedDn != null;
+    const current = selected || recommended;
+    const next = current ? standards.find(item => Number(item.dn) > Number(current.dn)) || null : null;
+    const minimumVelocity = Number(current?.[key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+    const maximumVelocity = Number(current?.[key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+    const currentVelocity = savedEvidence
+      ? Number(savedEvidence.computed_velocity_m_s)
+      : current ? velocity(flow, current.internal_diameter_mm) : null;
+    const currentWithinBand = savedEvidence
+      ? savedEvidence.within_band === true
+      : currentVelocity != null && currentVelocity >= minimumVelocity && currentVelocity <= maximumVelocity;
+    const displayedFlow = savedEvidence ? Number(savedEvidence.authoritative_flow_m3h) : Number(flow);
+    const nextVelocity = next ? velocity(flow, next.internal_diameter_mm) : null;
+    const nextMinimumVelocity = Number(next?.[key === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+    const nextMaximumVelocity = Number(next?.[key === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+    const nextWithinBand = nextVelocity != null && nextVelocity >= nextMinimumVelocity && nextVelocity <= nextMaximumVelocity;
+    const save = async (dn: number) => {
+      setSaving(key);
+      try {
+        await api.put(`/design-books/${bookId}/exhibits/${exhibitId}/hydraulics`, {
+          target_turnover_rate: hydraulics?.target_turnover_rate ?? null,
+          surface_skim_pct: hydraulics?.surface_skim_pct ?? 30,
+          bottom_drain_pct: hydraulics?.bottom_drain_pct ?? 70,
+          notes: hydraulics?.notes ?? null,
+          [`${key}_pipe_dn`]: dn,
+        });
+        toast.success(`${title} DN ${dn} saved`);
+        onRefresh();
+      } catch { toast.error('Failed to save pipe selection'); } finally { setSaving(null); }
+    };
+    return <div className="rounded-xl border border-stone-200 p-4 space-y-3" key={key}>
+      <div className="flex justify-between gap-3"><div><h3 className="font-semibold text-stone-800">{title}</h3>
+        <p className="text-xs text-stone-500">{key === 'inlet' ? 'Exhibit design flow · pressure' : 'Weir discharge flow · gravity'}{current && Number.isFinite(minimumVelocity) && Number.isFinite(maximumVelocity) ? ` · target ${minimumVelocity.toFixed(1)}–${maximumVelocity.toFixed(1)} m/s` : ''}</p></div>
+        <div className="text-right text-sm font-mono text-blue-700">{Number.isFinite(displayedFlow) ? `${displayedFlow.toFixed(3)} m³/h` : 'Flow unavailable'}</div></div>
+      {!current ? <p className="text-sm text-amber-700">No active standard is within the velocity band for this flow.</p> : <>
+        <div className="flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2 text-sm">
+          <span>{hasSavedSelection ? 'Saved selection' : 'Recommendation'}: <b>DN {current.dn}</b> ({Number(current.internal_diameter_mm).toFixed(1)} mm ID)</span>
+          <span className={`font-mono ${currentWithinBand ? '' : 'text-amber-700'}`}>{currentVelocity?.toFixed(3)} m/s{currentWithinBand ? '' : ' · outside target'}</span>
+        </div>
+        {hasSavedSelection && !recommended && <p className="text-xs text-amber-700">The saved engineering basis is retained, but no currently active standard is within the target band.</p>}
+        {!hasSavedSelection && recommended && !readOnly && <button onClick={() => save(Number(recommended.dn))} disabled={saving === key}
+          className="text-xs rounded-lg bg-blue-600 px-3 py-2 font-medium text-white disabled:opacity-50">Save recommendation</button>}
+        {next && !readOnly && <button onClick={() => save(Number(next.dn))} disabled={saving === key}
+          className="ml-2 text-xs rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 font-medium text-blue-700 disabled:opacity-50">
+          Go one size up · DN {next.dn} ({nextVelocity?.toFixed(3)} m/s{nextWithinBand ? '' : ', outside target'})
+        </button>}
+      </>}
+    </div>;
+  };
+  return <div className="bg-white rounded-xl border border-stone-200 overflow-hidden"><div className="px-5 py-3.5 border-b border-stone-100 bg-blue-50/40">
+    <span className="text-sm font-semibold text-blue-800">Inlet &amp; Discharge Pipe Sizing</span>
+  </div><div className="p-5 grid gap-4 md:grid-cols-2">
+    {renderPipe('inlet', 'Inlet pipe', calculation?.results?.total_return_flow_m3h)}
+    {renderPipe('discharge', 'Discharge after weir', calculation?.results?.surface_skim_flow_m3h)}
+  </div></div>;
+}
+
 function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateData, calculation, onRefresh }: {
   bookId: string;
   exhibitId: string;
@@ -3468,6 +3557,7 @@ export default function ExhibitDetail() {
     { id: 'species', label: 'Species',      icon: <Fish       className="w-3.5 h-3.5" />, badge: species.length || undefined },
     { id: 'flow',    label: 'Water Flow',   icon: <Gauge      className="w-3.5 h-3.5" /> },
     { id: 'weir',    label: 'Weir Design',  icon: <Calculator className="w-3.5 h-3.5" /> },
+    { id: 'pipes',   label: 'Pipe Sizing',  icon: <Pipette className="w-3.5 h-3.5" /> },
     { id: 'lights',  label: 'Lights',        icon: <Lightbulb  className="w-3.5 h-3.5" />, badge: lights.length || undefined },
   ] as const;
 
@@ -3693,6 +3783,10 @@ export default function ExhibitDetail() {
           calculation={engineeringCalculation}
           onRefresh={refresh}
         />
+      )}
+      {activeTab === 'pipes' && (
+        <PipeSizingSection bookId={book.id} exhibitId={exhibitId!} hydraulics={hydraulics}
+          calculation={engineeringCalculation} readOnly={readOnly} onRefresh={refresh} />
       )}
 
       {activeTab === 'lights' && (

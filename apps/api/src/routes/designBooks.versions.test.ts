@@ -91,6 +91,18 @@ const baseContext = () => ({
     calculation_version: 'aquarium-v1',
     calculation_inputs: { turnover_unit: 'cycles_per_hour' },
     override_reason: 'Approved engineering deviation',
+    inlet_pipe_dn: 100,
+    inlet_pipe_evidence: {
+      standard_id: 'pipe-100',
+      dn: 100,
+      internal_diameter_mm: 102.3,
+      velocity_min_m_s: 1.5,
+      velocity_max_m_s: 3,
+      authoritative_flow_m3h: 60,
+      computed_velocity_m_s: 2.028,
+      within_band: true,
+      selection_mode: 'recommended',
+    },
   }],
   substrate: [{
     id: 'substrate-1',
@@ -342,7 +354,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(10);
+    expect(snapshot.schema_version).toBe(11);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -350,6 +362,12 @@ describe('Design Book version snapshots', () => {
       calculation_version: 'aquarium-v1',
       calculation_inputs: { turnover_unit: 'cycles_per_hour' },
       override_reason: 'Approved engineering deviation',
+      inlet_pipe_dn: 100,
+      inlet_pipe_evidence: expect.objectContaining({
+        internal_diameter_mm: 102.3,
+        computed_velocity_m_s: 2.028,
+        within_band: true,
+      }),
     });
     expect(snapshot.frozen.substrate[0]).toMatchObject({
       substrate_height_mm: '80',
@@ -482,7 +500,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(10);
+    expect(insertParams[6]).toBe(11);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 

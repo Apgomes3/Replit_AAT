@@ -1064,6 +1064,85 @@ router.put('/field-instruments/:id', authenticate, requireRole('admin'), async (
 });
 
 // ── Tank Cost Rates ──────────────────────────────────────────────────────────
+// Pipe sizing standards are platform-governed inputs. DN and internal diameter
+// are deliberately stored together; calculations never infer one from the other.
+router.get('/pipe-sizing-standards', authenticate, async (_req, res: Response) => {
+  const result = await query('SELECT * FROM pipe_sizing_standards ORDER BY dn');
+  res.json({ items: result.rows });
+});
+router.post('/pipe-sizing-standards', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const body = req.body || {};
+  const fields = ['dn', 'internal_diameter_mm', 'pressure_velocity_min_m_s', 'pressure_velocity_max_m_s', 'gravity_velocity_min_m_s', 'gravity_velocity_max_m_s'];
+  if (fields.some(field => !Number.isFinite(Number(body[field]))) ||
+      Number(body.dn) <= 0 || !Number.isInteger(Number(body.dn)) || Number(body.internal_diameter_mm) <= 0 ||
+      Number(body.pressure_velocity_min_m_s) < 0 || Number(body.gravity_velocity_min_m_s) < 0 ||
+      Number(body.pressure_velocity_min_m_s) > Number(body.pressure_velocity_max_m_s) ||
+      Number(body.gravity_velocity_min_m_s) > Number(body.gravity_velocity_max_m_s)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Enter a positive DN/diameter and valid minimum/maximum velocity bands.' } });
+  }
+  try {
+    const result = await query(
+      `INSERT INTO pipe_sizing_standards
+       (dn, internal_diameter_mm, pressure_velocity_min_m_s, pressure_velocity_max_m_s, gravity_velocity_min_m_s, gravity_velocity_max_m_s, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [...fields.map(field => Number(body[field])), body.is_active !== false],
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error: any) {
+    if (error.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'That DN already exists.' } });
+    throw error;
+  }
+});
+router.put('/pipe-sizing-standards/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const body = req.body || {};
+  const fields = ['dn', 'internal_diameter_mm', 'pressure_velocity_min_m_s', 'pressure_velocity_max_m_s', 'gravity_velocity_min_m_s', 'gravity_velocity_max_m_s'];
+  if (fields.some(field => !Number.isFinite(Number(body[field]))) || Number(body.dn) <= 0 || !Number.isInteger(Number(body.dn)) ||
+      Number(body.internal_diameter_mm) <= 0 || Number(body.pressure_velocity_min_m_s) < 0 || Number(body.gravity_velocity_min_m_s) < 0 ||
+      Number(body.pressure_velocity_min_m_s) > Number(body.pressure_velocity_max_m_s) || Number(body.gravity_velocity_min_m_s) > Number(body.gravity_velocity_max_m_s)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Enter a positive DN/diameter and valid minimum/maximum velocity bands.' } });
+  }
+  const existing = await query('SELECT dn FROM pipe_sizing_standards WHERE id=$1', [req.params.id]);
+  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pipe sizing standard not found.' } });
+  if (Number(existing.rows[0].dn) !== Number(body.dn)) {
+    const inUse = await query('SELECT 1 FROM design_book_exhibit_hydraulics WHERE inlet_pipe_dn=$1 OR discharge_pipe_dn=$1 LIMIT 1', [existing.rows[0].dn]);
+    if (inUse.rows[0]) return res.status(409).json({ error: { code: 'IN_USE', message: 'Cannot change DN while saved exhibit choices use this standard.' } });
+  }
+  try {
+    const result = await query(
+      `UPDATE pipe_sizing_standards SET dn=$1, internal_diameter_mm=$2, pressure_velocity_min_m_s=$3,
+         pressure_velocity_max_m_s=$4, gravity_velocity_min_m_s=$5, gravity_velocity_max_m_s=$6,
+         is_active=$7, updated_at=NOW() WHERE id=$8 RETURNING *`,
+      [...fields.map(field => Number(body[field])), body.is_active !== false, req.params.id],
+    );
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    if (error.code === '23503') {
+      return res.status(409).json({ error: {
+        code: 'IN_USE',
+        message: 'This DN is used by a saved exhibit and cannot be renamed. Its diameter and velocity bands can still be updated.',
+      } });
+    }
+    if (error.code === '23505') {
+      return res.status(409).json({ error: { code: 'CONFLICT', message: 'That DN already exists.' } });
+    }
+    throw error;
+  }
+});
+router.delete('/pipe-sizing-standards/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const inUse = await query('SELECT 1 FROM design_book_exhibit_hydraulics WHERE inlet_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) OR discharge_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) LIMIT 1', [req.params.id]);
+  if (inUse.rows[0]) return res.status(409).json({ error: { code: 'IN_USE', message: 'A saved exhibit choice uses this DN; deactivate it instead.' } });
+  try {
+    const result = await query('DELETE FROM pipe_sizing_standards WHERE id=$1 RETURNING id', [req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pipe sizing standard not found.' } });
+    res.status(204).end();
+  } catch (error: any) {
+    if (error.code === '23503') {
+      return res.status(409).json({ error: { code: 'IN_USE', message: 'A saved exhibit choice uses this DN; deactivate it instead.' } });
+    }
+    throw error;
+  }
+});
+
 router.get('/tank-cost-rates', authenticate, async (_req, res: Response) => {
   const result = await query('SELECT * FROM tank_cost_rates ORDER BY material_code NULLS LAST, label');
   res.json({ items: result.rows });

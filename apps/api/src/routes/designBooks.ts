@@ -46,6 +46,7 @@ import {
   UV_CALCULATION_VERSION,
   UVStreamInput,
 } from '../lib/uvCalculations';
+import { pipeVelocity } from '../lib/pipeSizing';
 
 const router = Router();
 router.use(authenticate, (req: AuthRequest, res: Response, next) => {
@@ -3366,6 +3367,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, req
     target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
     weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry,
     weir_end_contractions, weir_discharge_condition, weir_downstream_head_mm,
+    inlet_pipe_dn, discharge_pipe_dn,
   } = req.body;
   const hasField = (field: string) => Object.prototype.hasOwnProperty.call(req.body, field);
   const hasWeirHead = hasField('weir_head_mm');
@@ -3375,6 +3377,70 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, req
   const hasWeirContractions = hasField('weir_end_contractions');
   const hasWeirDischarge = hasField('weir_discharge_condition');
   const hasWeirDownstreamHead = hasField('weir_downstream_head_mm');
+  const hasInletPipeDn = hasField('inlet_pipe_dn');
+  const hasDischargePipeDn = hasField('discharge_pipe_dn');
+  for (const [label, value] of [['Inlet pipe DN', inlet_pipe_dn], ['Discharge pipe DN', discharge_pipe_dn]] as const) {
+    if (value != null && (!Number.isInteger(Number(value)) || Number(value) <= 0)) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a positive whole DN.` } });
+    }
+  }
+  const existingPipeResult = await query(
+    `SELECT inlet_pipe_dn, discharge_pipe_dn, inlet_pipe_evidence, discharge_pipe_evidence
+     FROM design_book_exhibit_hydraulics WHERE design_book_id=$1 AND exhibit_id=$2`,
+    [req.params.id, req.params.exhibitId],
+  );
+  const existingPipe = existingPipeResult.rows[0] || {};
+  const effectiveInletPipeDn = hasInletPipeDn ? inlet_pipe_dn : existingPipe.inlet_pipe_dn;
+  const effectiveDischargePipeDn = hasDischargePipeDn ? discharge_pipe_dn : existingPipe.discharge_pipe_dn;
+  const requestedDns = [effectiveInletPipeDn, effectiveDischargePipeDn].filter(value => value != null).map(Number);
+  let inletPipeEvidence: any = null;
+  let dischargePipeEvidence: any = null;
+  if (requestedDns.length) {
+    const standards = await query(`SELECT id, dn, internal_diameter_mm, is_active,
+      pressure_velocity_min_m_s, pressure_velocity_max_m_s, gravity_velocity_min_m_s, gravity_velocity_max_m_s
+      FROM pipe_sizing_standards WHERE is_active=true OR dn=ANY($1::int[])`, [requestedDns]);
+    const explicitlyRequestedDns = [hasInletPipeDn ? inlet_pipe_dn : null, hasDischargePipeDn ? discharge_pipe_dn : null]
+      .filter(value => value != null).map(Number);
+    if (explicitlyRequestedDns.some(dn => !standards.rows.some(row => Number(row.dn) === dn))) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: 'Saved pipe DN must exist in the pipe sizing standards.' } });
+    }
+    if (standards.rows.some(row => pipeVelocity(1, row.internal_diameter_mm) == null)) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pipe standard has an invalid internal diameter.' } });
+    }
+    const context = await loadReleaseContext(routeParam(req.params.id), query, false, true);
+    const exhibit = context.exhibits.find((item: any) => item.id === req.params.exhibitId);
+    if (!exhibit) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found in this Design Book project.' } });
+    const existing = context.hydraulics.find((item: any) => item.exhibit_id === exhibit.id) || {};
+    const source = { ...existing, target_turnover_rate: target_turnover_rate ?? existing.target_turnover_rate,
+      surface_skim_pct: surface_skim_pct ?? existing.surface_skim_pct, bottom_drain_pct: bottom_drain_pct ?? existing.bottom_drain_pct };
+    const calculated = calculateExhibitHydraulics(exhibit, context.tanks.filter((tank: any) => tank.exhibit_id === exhibit.id),
+      source, context.substrate.find((item: any) => item.exhibit_id === exhibit.id), new Date().toISOString());
+    const evidenceFor = (dn: any, service: 'inlet' | 'discharge') => {
+      if (dn == null) return null;
+      const standard = standards.rows.find(row => Number(row.dn) === Number(dn));
+      const flow = service === 'inlet' ? calculated.results.total_return_flow_m3h : calculated.results.surface_skim_flow_m3h;
+      const min = Number(standard[service === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+      const max = Number(standard[service === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+      const computed = pipeVelocity(flow, standard.internal_diameter_mm);
+      if (computed == null) return null;
+      const active = standards.rows.filter(row => row.is_active !== false).sort((a, b) => Number(a.dn) - Number(b.dn));
+      const recommended = active.find(row => {
+        const v = pipeVelocity(flow, row.internal_diameter_mm);
+        const candidateMin = Number(row[service === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+        const candidateMax = Number(row[service === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+        return v != null && v >= candidateMin && v <= candidateMax;
+      });
+      return { standard_id: standard.id, dn: Number(standard.dn), internal_diameter_mm: Number(standard.internal_diameter_mm),
+        velocity_min_m_s: min, velocity_max_m_s: max, authoritative_flow_m3h: Number(flow),
+        computed_velocity_m_s: computed, within_band: computed >= min && computed <= max,
+        selection_mode: Number(recommended?.dn) === Number(dn) ? 'recommended' : 'explicit' };
+    };
+    inletPipeEvidence = evidenceFor(effectiveInletPipeDn, 'inlet');
+    dischargePipeEvidence = evidenceFor(effectiveDischargePipeDn, 'discharge');
+    if ((hasInletPipeDn && !inletPipeEvidence) || (hasDischargePipeDn && !dischargePipeEvidence)) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: 'Current exhibit flow is unavailable; a finite pipe velocity cannot be saved.' } });
+    }
+  }
   if (weir_formula_method != null && !['francis_184', 'bazin_1888'].includes(weir_formula_method)) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Unsupported weir formula method' } });
   }
@@ -3424,22 +3490,26 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, req
        (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
         weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
         weir_discharge_condition, weir_downstream_head_mm,
-        calculation_version, last_calculated_at, calculation_inputs)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-        '${AQUARIUM_CALCULATION_VERSION}',NOW(),$21)
+          inlet_pipe_dn, discharge_pipe_dn, inlet_pipe_evidence, discharge_pipe_evidence, calculation_version, last_calculated_at, calculation_inputs)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,
+          '${AQUARIUM_CALCULATION_VERSION}',NOW(),$27)
      ON CONFLICT (design_book_id, exhibit_id)
      DO UPDATE SET
        target_turnover_rate = EXCLUDED.target_turnover_rate,
        surface_skim_pct     = EXCLUDED.surface_skim_pct,
        bottom_drain_pct     = EXCLUDED.bottom_drain_pct,
        notes                = EXCLUDED.notes,
-       weir_head_mm = CASE WHEN $14 THEN EXCLUDED.weir_head_mm ELSE design_book_exhibit_hydraulics.weir_head_mm END,
-       weir_length_mm = CASE WHEN $15 THEN EXCLUDED.weir_length_mm ELSE design_book_exhibit_hydraulics.weir_length_mm END,
-       weir_formula_method = CASE WHEN $16 THEN EXCLUDED.weir_formula_method ELSE design_book_exhibit_hydraulics.weir_formula_method END,
-       weir_geometry = CASE WHEN $17 THEN EXCLUDED.weir_geometry ELSE design_book_exhibit_hydraulics.weir_geometry END,
-       weir_end_contractions = CASE WHEN $18 THEN EXCLUDED.weir_end_contractions ELSE design_book_exhibit_hydraulics.weir_end_contractions END,
-       weir_discharge_condition = CASE WHEN $19 THEN EXCLUDED.weir_discharge_condition ELSE design_book_exhibit_hydraulics.weir_discharge_condition END,
-       weir_downstream_head_mm = CASE WHEN $20 THEN EXCLUDED.weir_downstream_head_mm ELSE design_book_exhibit_hydraulics.weir_downstream_head_mm END,
+          weir_head_mm = CASE WHEN $20 THEN EXCLUDED.weir_head_mm ELSE design_book_exhibit_hydraulics.weir_head_mm END,
+          weir_length_mm = CASE WHEN $21 THEN EXCLUDED.weir_length_mm ELSE design_book_exhibit_hydraulics.weir_length_mm END,
+          weir_formula_method = CASE WHEN $22 THEN EXCLUDED.weir_formula_method ELSE design_book_exhibit_hydraulics.weir_formula_method END,
+          weir_geometry = CASE WHEN $23 THEN EXCLUDED.weir_geometry ELSE design_book_exhibit_hydraulics.weir_geometry END,
+          weir_end_contractions = CASE WHEN $24 THEN EXCLUDED.weir_end_contractions ELSE design_book_exhibit_hydraulics.weir_end_contractions END,
+          weir_discharge_condition = CASE WHEN $25 THEN EXCLUDED.weir_discharge_condition ELSE design_book_exhibit_hydraulics.weir_discharge_condition END,
+          weir_downstream_head_mm = CASE WHEN $26 THEN EXCLUDED.weir_downstream_head_mm ELSE design_book_exhibit_hydraulics.weir_downstream_head_mm END,
+         inlet_pipe_dn = CASE WHEN $18 THEN EXCLUDED.inlet_pipe_dn ELSE design_book_exhibit_hydraulics.inlet_pipe_dn END,
+         discharge_pipe_dn = CASE WHEN $19 THEN EXCLUDED.discharge_pipe_dn ELSE design_book_exhibit_hydraulics.discharge_pipe_dn END,
+          inlet_pipe_evidence = EXCLUDED.inlet_pipe_evidence,
+          discharge_pipe_evidence = EXCLUDED.discharge_pipe_evidence,
        calculation_version   = EXCLUDED.calculation_version,
        last_calculated_at    = EXCLUDED.last_calculated_at,
        calculation_inputs    = EXCLUDED.calculation_inputs,
@@ -3449,7 +3519,9 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, req
      target_turnover_rate ?? null, savedSurfacePct, savedBottomPct,
      notes ?? null, weir_head_mm ?? null, weir_length_mm ?? null, weir_formula_method ?? null,
      weir_geometry ?? null, weir_end_contractions ?? null,
-     weir_discharge_condition ?? null, weir_downstream_head_mm ?? null,
+      weir_discharge_condition ?? null, weir_downstream_head_mm ?? null, inlet_pipe_dn ?? null, discharge_pipe_dn ?? null,
+      inletPipeEvidence ? JSON.stringify(inletPipeEvidence) : null, dischargePipeEvidence ? JSON.stringify(dischargePipeEvidence) : null,
+      hasInletPipeDn, hasDischargePipeDn,
      hasWeirHead, hasWeirLength, hasWeirMethod, hasWeirGeometry, hasWeirContractions,
      hasWeirDischarge, hasWeirDownstreamHead,
      JSON.stringify({
@@ -3864,13 +3936,13 @@ router.post(
              (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
               weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
               weir_discharge_condition, weir_downstream_head_mm, calculation_version, last_calculated_at,
-              calculation_inputs, override_reason)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+               calculation_inputs, override_reason, inlet_pipe_dn, discharge_pipe_dn, inlet_pipe_evidence, discharge_pipe_evidence)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
           [
             next.id, row.exhibit_id, row.target_turnover_rate, row.surface_skim_pct, row.bottom_drain_pct, row.notes,
             row.weir_head_mm, row.weir_length_mm, row.weir_formula_method, row.weir_geometry, row.weir_end_contractions,
             row.weir_discharge_condition, row.weir_downstream_head_mm, row.calculation_version, row.last_calculated_at,
-            row.calculation_inputs, row.override_reason,
+             row.calculation_inputs, row.override_reason, row.inlet_pipe_dn, row.discharge_pipe_dn, row.inlet_pipe_evidence, row.discharge_pipe_evidence,
           ],
         );
       }
@@ -3939,7 +4011,7 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
-const VERSION_SNAPSHOT_SCHEMA = 10;
+const VERSION_SNAPSHOT_SCHEMA = 11;
 const VERSION_REFERENCE_FIELDS = {
   project: ['id', 'project_code', 'project_name'],
   exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -4485,14 +4557,16 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
            (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
             weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
             weir_discharge_condition, weir_downstream_head_mm, calculation_version, last_calculated_at,
-            calculation_inputs, override_reason)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)`,
+             calculation_inputs, override_reason, inlet_pipe_dn, discharge_pipe_dn, inlet_pipe_evidence, discharge_pipe_evidence)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb,$21::jsonb)`,
         [req.params.id, h.exhibit_id, h.target_turnover_rate ?? null, h.surface_skim_pct ?? 30,
           h.bottom_drain_pct ?? 70, h.notes ?? null, h.weir_head_mm ?? null, h.weir_length_mm ?? null,
           h.weir_formula_method ?? null, h.weir_geometry ?? null, h.weir_end_contractions ?? null,
           h.weir_discharge_condition ?? null, h.weir_downstream_head_mm ?? null, h.calculation_version ?? null,
           h.last_calculated_at ?? null, h.calculation_inputs ? JSON.stringify(h.calculation_inputs) : null,
-          h.override_reason ?? null],
+           h.override_reason ?? null, h.inlet_pipe_dn ?? null, h.discharge_pipe_dn ?? null,
+           h.inlet_pipe_evidence ? JSON.stringify(h.inlet_pipe_evidence) : null,
+           h.discharge_pipe_evidence ? JSON.stringify(h.discharge_pipe_evidence) : null],
       );
     }
     await client.query('DELETE FROM design_book_exhibit_substrate WHERE design_book_id=$1', [req.params.id]);
