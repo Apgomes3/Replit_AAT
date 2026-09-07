@@ -14,6 +14,12 @@ export function getLssSystems(systems: any[]) {
   return (systems || []).filter(isLssSystem);
 }
 
+export function getControlPanelType(lssControls: any[], systemId: string) {
+  const item = (lssControls || []).find(control => String(control?.system_id) === String(systemId));
+  const panelType = item?.control?.panel_type;
+  return panelType ? String(panelType).toUpperCase() : 'Not configured';
+}
+
 type Props = {
   book: any;
   readOnly: boolean;
@@ -29,6 +35,10 @@ export default function ControlFieldInstrumentsTab({ book, readOnly, canOverride
   const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<'list' | 'card'>('list');
   const systems = getLssSystems(book.systems);
+  const lssControls = book.lss_controls || (book.lss_control_configurations || []).map((control: any) => ({
+    system_id: control.system_id,
+    control,
+  }));
   const selectedSystemId = searchParams.get('system');
   const selectedSystem = systems.find((system: any) => String(system.id) === selectedSystemId);
 
@@ -99,13 +109,14 @@ export default function ControlFieldInstrumentsTab({ book, readOnly, canOverride
       {view === 'list' ? <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
-            <tr><th className="px-4 py-3">LSS system</th><th className="px-4 py-3">Water type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr>
+            <tr><th className="px-4 py-3">Code</th><th className="px-4 py-3">LSS system</th><th className="px-4 py-3">Control panel type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
             {systems.map((system: any) => (
               <tr key={system.id}>
-                <td className="px-4 py-3"><div className="font-semibold text-stone-800">{system.system_name}</div><EntityCode code={system.system_code} /></td>
-                <td className="px-4 py-3 text-stone-600">{system.water_type || '—'}</td>
+                <td className="px-4 py-3 font-mono text-xs text-stone-700">{system.system_code || '—'}</td>
+                <td className="px-4 py-3 font-semibold text-stone-800">{system.system_name}</td>
+                <td className="px-4 py-3 text-stone-600">{getControlPanelType(lssControls, system.id)}</td>
                 <td className="px-4 py-3 text-stone-600">{system.status || '—'}</td>
                 <td className="px-4 py-3 text-right">
                   <button type="button" onClick={() => selectSystem(system.id)}
@@ -123,12 +134,12 @@ export default function ControlFieldInstrumentsTab({ book, readOnly, canOverride
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="font-semibold text-stone-800">{system.system_name}</h3>
-                <EntityCode code={system.system_code} />
+                <span className="font-mono text-xs text-stone-600">{system.system_code || '—'}</span>
               </div>
               <SlidersHorizontal className="h-5 w-5 shrink-0 text-blue-500" />
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="text-xs text-stone-400">Water type</dt><dd className="mt-0.5 text-stone-700">{system.water_type || '—'}</dd></div>
+              <div><dt className="text-xs text-stone-400">Control panel type</dt><dd className="mt-0.5 text-stone-700">{getControlPanelType(lssControls, system.id)}</dd></div>
               <div><dt className="text-xs text-stone-400">Status</dt><dd className="mt-0.5 text-stone-700">{system.status || '—'}</dd></div>
             </dl>
             <button type="button" onClick={() => selectSystem(system.id)}

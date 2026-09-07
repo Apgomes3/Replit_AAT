@@ -178,7 +178,7 @@ export async function loadPumpSelections(runner: DbRunner, systems: any[]) {
   });
 }
 
-export async function loadLssControls(runner: DbRunner, designBookId: string, systems: any[]) {
+export async function loadLssControlSummaries(runner: DbRunner, designBookId: string, systems: any[]) {
   const lssSystems = systems.filter(isLifeSupportSystem);
   if (!lssSystems.length) return [];
   const ids = lssSystems.map(system => system.id);
@@ -186,6 +186,16 @@ export async function loadLssControls(runner: DbRunner, designBookId: string, sy
     'SELECT * FROM design_book_lss_controls WHERE design_book_id=$1 AND system_id=ANY($2::uuid[])',
     [designBookId, ids],
   )).rows;
+  return lssSystems.map(system => ({
+    system_id: system.id,
+    control: controls.find(control => control.system_id === system.id) || null,
+  }));
+}
+
+export async function loadLssControls(runner: DbRunner, designBookId: string, systems: any[]) {
+  const summaries = await loadLssControlSummaries(runner, designBookId, systems);
+  if (!summaries.length) return [];
+  const ids = summaries.map(item => item.system_id);
   const instruments = (await runner(
     `SELECT i.*, pm.product_code, pm.product_name, pm.status AS product_status
      FROM design_book_lss_instruments i LEFT JOIN product_masters pm ON pm.id=i.product_master_id
@@ -196,10 +206,9 @@ export async function loadLssControls(runner: DbRunner, designBookId: string, sy
   const definitions = (await runner(
     `SELECT * FROM field_instrument_definitions WHERE is_active=true ORDER BY sort_order, tag_code`,
   )).rows;
-  return lssSystems.map(system => ({
-    system_id: system.id,
-    control: controls.find(control => control.system_id === system.id) || null,
-    instruments: instruments.filter(instrument => instrument.system_id === system.id),
+  return summaries.map(item => ({
+    ...item,
+    instruments: instruments.filter(instrument => instrument.system_id === item.system_id),
     definitions,
   }));
 }
@@ -2722,6 +2731,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
   });
   const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(query);
   const pumpSelections = await loadPumpSelections(query, currentSystems);
+  const lssControls = await loadLssControlSummaries(query, routeParam(req.params.id), currentSystems);
   const uvSelections = currentSystems.length
     ? (await query(
       `SELECT * FROM design_book_uv_selections
@@ -2771,6 +2781,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
     thermal_selections: thermalSelections,
     thermal_construction_defaults: thermalConstructionDefaults,
     pump_selections: pumpSelections,
+    lss_controls: lssControls,
     friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
