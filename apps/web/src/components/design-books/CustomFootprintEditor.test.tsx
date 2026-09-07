@@ -169,11 +169,11 @@ describe('CustomFootprintEditor', () => {
     });
     pointer(surface, 'pointerdown', 100, 100);
     pointer(surface, 'pointerdown', 200, 100);
-    expect(screen.getByRole('status')).toHaveTextContent('248.0 mm');
+    expect(screen.getByRole('status')).toHaveTextContent('296.0 mm');
     pointer(surface, 'pointerdown', 300, 100);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     pointer(surface, 'pointerdown', 350, 100);
-    expect(screen.getByRole('status')).toHaveTextContent('124.0 mm');
+    expect(screen.getByRole('status')).toHaveTextContent('148.0 mm');
     await user.click(screen.getByText('Clear measurement'));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Leave measurement mode' }));
@@ -244,12 +244,147 @@ describe('CustomFootprintEditor', () => {
     vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, toJSON: () => ({}),
     });
-    pointer(surface, 'pointermove', 97, 81);
+    pointer(surface, 'pointermove', 162, 81);
     expect(screen.getByText('Release to close')).toBeInTheDocument();
-    pointer(surface, 'pointerdown', 97, 81);
+    pointer(surface, 'pointerdown', 162, 81);
     expect(screen.queryByText('Closed and measurable')).not.toBeInTheDocument();
-    pointer(surface, 'pointerup', 97, 81);
+    pointer(surface, 'pointerup', 162, 81);
     expect(screen.getByText('Closed and measurable')).toBeInTheDocument();
+  });
+
+  it('keeps a stable viewport, maps through letterboxing, and aligns pointer guides', () => {
+    render(<CustomFootprintEditor initialValue={openRectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, toJSON: () => ({}),
+    });
+    const initialViewBox = surface.getAttribute('viewBox');
+    pointer(surface, 'pointermove', 500, 250);
+    const horizontal = screen.getByTestId('pointer-guide-horizontal');
+    const vertical = screen.getByTestId('pointer-guide-vertical');
+    expect(horizontal).toHaveAttribute('y1', horizontal.getAttribute('y2'));
+    expect(vertical).toHaveAttribute('x1', vertical.getAttribute('x2'));
+    pointer(surface, 'pointerdown', 700, 250);
+    expect(surface).toHaveAttribute('viewBox', initialViewBox);
+    fireEvent.pointerLeave(surface);
+    expect(screen.queryByTestId('pointer-guide-horizontal')).not.toBeInTheDocument();
+  });
+
+  it('places the first, second, third, and later points in one stable coordinate frame', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    render(<CustomFootprintEditor onAccept={onAccept} onCancel={vi.fn()} />);
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, toJSON: () => ({}),
+    });
+    const stableViewBox = surface.getAttribute('viewBox');
+    const at = (x: number, y: number) => ({
+      x: 107.143 + (x + 1000) * (500 / 14000),
+      y: (y + 1000) * (500 / 14000),
+    });
+    [at(0, 0), at(6000, 0), at(6000, 4000), at(0, 4000)].forEach(point => {
+      pointer(surface, 'pointerdown', point.x, point.y);
+      expect(surface).toHaveAttribute('viewBox', stableViewBox);
+    });
+    await user.click(screen.getByRole('button', { name: 'Close outline' }));
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    const accepted = onAccept.mock.calls[0][0];
+    const points = [
+      accepted.segments[0].start,
+      accepted.segments[0].end,
+      accepted.segments[1].end,
+      accepted.segments[2].end,
+    ];
+    [[0, 0], [6000, 0], [6000, 4000], [0, 4000]].forEach(([x, y], index) => {
+      expect(points[index].x).toBeCloseTo(x, 2);
+      expect(points[index].y).toBeCloseTo(y, 2);
+    });
+  });
+
+  it('maps portrait letterboxing and ignores pointer input in its empty bars', () => {
+    render(<CustomFootprintEditor onAccept={vi.fn()} onCancel={vi.fn()} />);
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 500, bottom: 1000, width: 500, height: 1000, toJSON: () => ({}),
+    });
+    pointer(surface, 'pointermove', 10, 10);
+    expect(screen.queryByTestId('pointer-guide-horizontal')).not.toBeInTheDocument();
+    pointer(surface, 'pointermove', 45.455, 386.364);
+    expect(Number(screen.getByTestId('pointer-guide-horizontal').getAttribute('y1'))).toBeCloseTo(1000, 1);
+    expect(Number(screen.getByTestId('pointer-guide-vertical').getAttribute('x1'))).toBeCloseTo(1000, 1);
+  });
+
+  it('does not show the keyboard marker during pointer drawing and anchors it after keyboard placement starts', () => {
+    render(<CustomFootprintEditor initialValue={openRectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    expect(screen.queryByTestId('keyboard-position-marker')).not.toBeInTheDocument();
+    fireEvent.keyDown(surface, { key: 'ArrowRight' });
+    const marker = screen.getByTestId('keyboard-position-marker');
+    const coordinate = `${marker.getAttribute('cx')},${marker.getAttribute('cy')}`;
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    expect(`${screen.getByTestId('keyboard-position-marker').getAttribute('cx')},${screen.getByTestId('keyboard-position-marker').getAttribute('cy')}`).toBe(coordinate);
+  });
+
+  it('selects, splits, converts, deletes, recloses, and histories structural segment edits', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={onAccept} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Select and edit' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Select segment 1, line' }));
+    expect(screen.getAllByText('Segment 1 · line')).not.toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Insert point on selected segment' }));
+    expect(screen.getByText('5')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByText('4')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(screen.getByText('5')).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Select segment 1, line' }));
+    await user.click(screen.getByRole('button', { name: 'Convert selected segment to quadratic curve' }));
+    expect(screen.getAllByText('Segment 1 · quadratic')).not.toHaveLength(0);
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Select segment 1, quadratic' }));
+    await user.click(screen.getByRole('button', { name: 'Delete selected segment' }));
+    expect(screen.getByText('Open outline')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use this footprint' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Close outline' }));
+    expect(screen.getByText('Closed and measurable')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    expect(onAccept).toHaveBeenCalledWith(expect.objectContaining({ closed: true }));
+  });
+
+  it('lets keyboard-only designers select a segment and use its actions', async () => {
+    const user = userEvent.setup();
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Select and edit' }));
+    const listSelection = screen.getByRole('button', { name: 'Select segment 2 from segment list' });
+    listSelection.focus();
+    await user.keyboard('{Enter}');
+    expect(listSelection).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Insert point on selected segment' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Convert selected segment to quadratic curve' }));
+    expect(screen.getByRole('button', { name: 'Select segment 2, quadratic' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('prevents deleting a middle segment while an outline is already open', async () => {
+    const user = userEvent.setup();
+    render(<CustomFootprintEditor initialValue={openRectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Select and edit' }));
+    await user.click(screen.getByRole('button', { name: 'Select segment 2 from segment list' }));
+    expect(screen.getByRole('button', { name: 'Delete selected segment' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete selected segment' })).toHaveAttribute('title', 'Close the outline before deleting a segment');
+  });
+
+  it.each(['Enter', ' '])('selects an on-canvas segment with %s without showing the placement marker', key => {
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select and edit' }));
+    const segment = screen.getByRole('button', { name: 'Select segment 1, line' });
+    segment.focus();
+    fireEvent.keyDown(segment, { key });
+    expect(segment).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByTestId('keyboard-position-marker')).not.toBeInTheDocument();
   });
 
   it('applies and persists a numeric scale while keeping canonical millimetre geometry', async () => {

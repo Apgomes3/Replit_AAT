@@ -9,10 +9,14 @@ Drawing calibration is editor metadata only: persisted segments remain canonical
 
 Reference images and ad-hoc distance measurements are session-only editor aids. They must never enter geometry history, accepted footprint documents, snapshots, or reopen state; measured spans use the active drawing scale only for their temporary millimetre display.
 
+The tracing viewport is an interaction frame, not a geometry-derived preview: freeze it when editing begins, map pointers through the SVG's rendered `meet` content area, and ignore its letterbox bars. Geometry commits and handle drags must never reframe the drawing or reference image.
+
 **Why:** Designers may intentionally defer drawing an irregular outline. A labelled rectangular Thermal default keeps calculations usable without presenting the approximation as measured geometry, while an explicit reviewed override supports known irregular wall areas.
 
 **Why:** Keeping calibration separate from model-space geometry lets existing footprints reopen consistently without storing viewport pixels, while deriving one authoritative scale prevents contradictory metadata from changing future measurements.
 
 **Why:** Tracing sources may be sensitive or disposable, and temporary measurement marks are drafting context rather than governed tank geometry.
 
-**How to apply:** Preserve accepted geometry and server-derived area through duplication and Design Book snapshots. Prefer stored/custom area over rectangular fallbacks; otherwise show the calculated default beside an optional override and recalculate after the override changes. Clear custom geometry when shape changes away from Custom, and keep project-tank identity and explicitly entered volume independent of the 2D outline. Keep tracing and measuring state outside document commits, undo/redo, accept, and persistence.
+**Why:** Recomputing framing from edited geometry moves the coordinate basis under the pointer, causing later clicks and drags to land somewhere other than the designer indicated.
+
+**How to apply:** Preserve accepted geometry and server-derived area through duplication and Design Book snapshots. Prefer stored/custom area over rectangular fallbacks; otherwise show the calculated default beside an optional override and recalculate after the override changes. Clear custom geometry when shape changes away from Custom, and keep project-tank identity and explicitly entered volume independent of the 2D outline. Keep tracing and measuring state outside document commits, undo/redo, accept, and persistence. Keep cursor guides and keyboard markers anchored in that same frozen display coordinate frame.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronLeft, Crosshair, GitBranch, Image as ImageIcon, MousePointer2, PenLine, Redo2, Ruler, RotateCcw, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, Crosshair, GitBranch, Image as ImageIcon, MousePointer2, PenLine, Redo2, Ruler, RotateCcw, Scissors, Trash2, Undo2, X } from 'lucide-react';
 
 export type FootprintPoint = { x: number; y: number };
 export type FootprintSegment =
@@ -261,13 +261,17 @@ function controlFromMetrics(
 }
 function viewBox(document: CustomFootprintDocument) {
   const points = sample(document);
-  const all = points.length ? points : [{ x: 0, y: 0 }, { x: 600, y: 400 }];
+  if (!points.length) return { x: -1000, y: -1000, width: 22000, height: 14000 };
+  const all = points;
   const minX = Math.min(...all.map(point => point.x));
   const maxX = Math.max(...all.map(point => point.x));
   const minY = Math.min(...all.map(point => point.y));
   const maxY = Math.max(...all.map(point => point.y));
   const pad = Math.max(80, Math.max(maxX - minX, maxY - minY) * 0.12);
   return { x: minX - pad, y: minY - pad, width: Math.max(500, maxX - minX + pad * 2), height: Math.max(360, maxY - minY + pad * 2) };
+}
+function pointOnQuadratic(segment: Extract<FootprintSegment, { type: 'quadratic' }>, t: number) {
+  return lerp(lerp(segment.start, segment.control, t), lerp(segment.control, segment.end, t), t);
 }
 function pathFor(document: CustomFootprintDocument) {
   return document.segments.map((segment, index) => {
@@ -327,6 +331,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const [referenceError, setReferenceError] = useState('');
   const [measurementMode, setMeasurementMode] = useState(false);
   const [measurementPoints, setMeasurementPoints] = useState<FootprintPoint[]>([]);
+  const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
+  const [pointerPoint, setPointerPoint] = useState<FootprintPoint | null>(null);
+  const [keyboardPlacement, setKeyboardPlacement] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const referenceImageRef = useRef<{ url: string; name: string } | null>(null);
   const pendingReferenceRef = useRef<{ url: string; name: string } | null>(null);
@@ -335,7 +342,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const dragOrigin = useRef<CustomFootprintDocument | null>(null);
   const mmPerUnit = Math.max(0.000001, document.calibration.mm_per_unit || 1);
   const displayDocument = useMemo(() => mapDocumentPoints(document, 1 / mmPerUnit), [document, mmPerUnit]);
-  const box = useMemo(() => viewBox(displayDocument), [displayDocument]);
+  const [box] = useState(() => viewBox(mapDocumentPoints(documentFrom(initialValue), 1 / Math.max(0.000001, documentFrom(initialValue).calibration.mm_per_unit || 1))));
   const measurement = useMemo(() => measure(document), [document]);
   const validation = useMemo(() => validateEditorDocument(document), [document]);
   const sampled = measurement.points;
@@ -369,11 +376,18 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     setFuture([]);
     setDocument(next);
   };
-  const pointFromEvent = (event: React.PointerEvent<SVGSVGElement>): FootprintPoint => {
+  const pointFromEvent = (event: React.PointerEvent<SVGSVGElement>): FootprintPoint | null => {
     const rect = svgRef.current!.getBoundingClientRect();
+    const scale = Math.min(rect.width / box.width, rect.height / box.height);
+    const renderedWidth = box.width * scale;
+    const renderedHeight = box.height * scale;
+    const left = rect.left + (rect.width - renderedWidth) / 2;
+    const top = rect.top + (rect.height - renderedHeight) / 2;
+    if (event.clientX < left || event.clientX > left + renderedWidth
+      || event.clientY < top || event.clientY > top + renderedHeight) return null;
     return {
-      x: box.x + ((event.clientX - rect.left) / rect.width) * box.width,
-      y: box.y + ((event.clientY - rect.top) / rect.height) * box.height,
+      x: box.x + (event.clientX - left) / scale,
+      y: box.y + (event.clientY - top) / scale,
     };
   };
   const modelPointFromDisplay = (point: FootprintPoint) => mapPoint(point, mmPerUnit);
@@ -487,6 +501,83 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
       ? `Segment ${segmentIndex + 1} updated and connections preserved.`
       : `Segment ${segmentIndex + 1} updated, but validation needs attention: ${nextValidation.message}`);
   };
+  const selectSegment = (event: React.PointerEvent<SVGPathElement>, index: number) => {
+    event.stopPropagation();
+    if (mode !== 'select' || calibrationMode || measurementMode) return;
+    setSelectedSegment(index);
+    setSegmentEditNotice(`Segment ${index + 1} selected.`);
+  };
+  const insertPointOnSelected = () => {
+    if (selectedSegment === null) return;
+    const segment = document.segments[selectedSegment];
+    if (!segment) return;
+    let replacements: FootprintSegment[];
+    if (segment.type === 'line') {
+      const middle = lerp(segment.start, segment.end, 0.5);
+      replacements = [
+        { type: 'line', start: segment.start, end: middle },
+        { type: 'line', start: middle, end: segment.end },
+      ];
+    } else if (segment.type === 'quadratic') {
+      const leftControl = lerp(segment.start, segment.control, 0.5);
+      const rightControl = lerp(segment.control, segment.end, 0.5);
+      const middle = pointOnQuadratic(segment, 0.5);
+      replacements = [
+        { type: 'quadratic', start: segment.start, control: leftControl, end: middle },
+        { type: 'quadratic', start: middle, control: rightControl, end: segment.end },
+      ];
+    } else {
+      const middleIndex = Math.max(1, Math.min(segment.points.length - 2, Math.floor(segment.points.length / 2)));
+      if (segment.points.length < 3) return;
+      replacements = [
+        { type: 'freehand', points: segment.points.slice(0, middleIndex + 1) },
+        { type: 'freehand', points: segment.points.slice(middleIndex) },
+      ];
+    }
+    commit({ ...document, segments: [...document.segments.slice(0, selectedSegment), ...replacements, ...document.segments.slice(selectedSegment + 1)] });
+    setSegmentEditNotice(`Point inserted on segment ${selectedSegment + 1}; the outline shape was preserved.`);
+  };
+  const convertSelectedToCurve = () => {
+    if (selectedSegment === null) return;
+    const segment = document.segments[selectedSegment];
+    if (segment?.type !== 'line') return;
+    const middle = lerp(segment.start, segment.end, 0.5);
+    const chord = distance(segment.start, segment.end);
+    const dx = segment.end.x - segment.start.x;
+    const dy = segment.end.y - segment.start.y;
+    const control = chord > 0
+      ? { x: middle.x - dy * 0.15, y: middle.y + dx * 0.15 }
+      : middle;
+    commit({
+      ...document,
+      segments: document.segments.map((item, index) => index === selectedSegment
+        ? { type: 'quadratic', start: segment.start, control, end: segment.end }
+        : item),
+    });
+    setSegmentEditNotice(`Segment ${selectedSegment + 1} converted to a quadratic curve with its endpoints preserved.`);
+  };
+  const deleteSelected = () => {
+    if (selectedSegment === null) return;
+    if (!document.closed) {
+      setSegmentEditNotice('Close the outline before deleting an interior segment so the replacement span has one unambiguous gap.');
+      return;
+    }
+    const removedIndex = selectedSegment;
+    let segments = document.segments.filter((_, index) => index !== removedIndex);
+    if (document.closed && segments.length) {
+      segments = [
+        ...document.segments.slice(removedIndex + 1),
+        ...document.segments.slice(0, removedIndex),
+      ];
+    }
+    const next = { ...document, closed: false, segments };
+    commit(next);
+    const replacementStart = segments.length ? segmentEnd(segments[segments.length - 1]) : null;
+    setPendingStart(replacementStart);
+    setMode('line');
+    setSelectedSegment(null);
+    setSegmentEditNotice(`Segment ${removedIndex + 1} deleted. The outline is open; draw the replacement span, then close it.`);
+  };
   const addPoint = (point: FootprintPoint) => {
     if (document.closed || mode === 'select') return;
     if (mode === 'freehand') setActiveFreehand(lastPoint ? [lastPoint, point] : [point]);
@@ -502,6 +593,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   };
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     const displayPoint = pointFromEvent(event);
+    setKeyboardPlacement(false);
+    setPointerPoint(displayPoint);
+    if (!displayPoint) return;
     if (measurementMode) {
       event.preventDefault();
       setMeasurementPoints(points => {
@@ -524,11 +618,16 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
       event.currentTarget.setPointerCapture?.(event.pointerId);
       return;
     }
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     addPoint(modelPointFromDisplay(displayPoint));
   };
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const displayPoint = pointFromEvent(event);
+    if (!calibrationMode && !measurementMode) setPointerPoint(displayPoint);
+    if (!displayPoint) {
+      setSnapTarget(false);
+      return;
+    }
     if (pendingStart && displayFirstPoint && canClose) setSnapTarget(distance(displayPoint, displayFirstPoint) <= snapTolerance);
     if (activeFreehand) setActiveFreehand(points => points ? [...points, modelPointFromDisplay(displayPoint)] : points);
     if (drag) {
@@ -584,6 +683,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     setPast(next => next.slice(0, -1));
     setDocument(previous);
     setPendingStart(null);
+    setSelectedSegment(null);
   };
   const redo = () => {
     const next = future[0];
@@ -592,6 +692,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     setFuture(previous => previous.slice(1));
     setDocument(next);
     setPendingStart(null);
+    setSelectedSegment(null);
   };
   const accept = () => {
     if (!validation.valid) return;
@@ -701,9 +802,12 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     };
     if (delta[event.key]) {
       event.preventDefault();
+      setKeyboardPlacement(true);
+      setPointerPoint(null);
       setKeyboardPoint(point => ({ x: point.x + delta[event.key].x, y: point.y + delta[event.key].y }));
     } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
+      setKeyboardPlacement(true);
       if (measurementMode) {
         setMeasurementPoints(points => {
           if (points.length >= 2) return [keyboardPoint];
@@ -789,7 +893,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 ['freehand', PenLine, 'Freehand segment'],
                 ['select', MousePointer2, 'Select and edit'],
               ] as const).map(([value, Icon, label]) => (
-                <button key={value} type="button" aria-pressed={!measurementMode && mode === value} onClick={() => { setMeasurementMode(false); setCalibrationMode(false); setCalibrationPoints([]); setMode(value); setPendingStart(value === 'freehand' || value === 'select' ? null : lastPoint); }} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${!measurementMode && mode === value ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}><Icon className="h-3.5 w-3.5" />{label}</button>
+                <button key={value} type="button" aria-pressed={!measurementMode && mode === value} onClick={() => { setMeasurementMode(false); setCalibrationMode(false); setCalibrationPoints([]); setMode(value); setSelectedSegment(null); setPendingStart(value === 'freehand' || value === 'select' ? null : lastPoint); }} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${!measurementMode && mode === value ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}><Icon className="h-3.5 w-3.5" />{label}</button>
               ))}
               <button type="button" aria-pressed={measurementMode} onClick={toggleMeasurementMode} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${measurementMode ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}><Ruler className="h-3.5 w-3.5" />Measure</button>
               <span className="ml-auto flex items-center gap-1">
@@ -800,14 +904,41 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
               </span>
             </div>
             <div className="relative overflow-hidden rounded-xl border border-sky-200 bg-[linear-gradient( to right,rgba(14,116,144,.08)_1px,transparent_1px),linear-gradient(to bottom,rgba(14,116,144,.08)_1px,transparent_1px)] bg-[size:32px_32px]">
-              <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
+              <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} preserveAspectRatio="xMidYMid meet" data-testid="footprint-drawing-surface" className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={() => { if (!drag && !activeFreehand) setPointerPoint(null); setSnapTarget(false); }} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
                 {referenceImage && <image data-testid="footprint-reference-image" href={referenceImage.url} x={box.x} y={box.y} width={box.width} height={box.height} preserveAspectRatio="xMidYMid meet" opacity={referenceOpacity / 100} pointerEvents="none" aria-hidden="true" />}
+                {pointerPoint && !calibrationMode && !measurementMode && <>
+                  <line data-testid="pointer-guide-horizontal" x1={box.x} y1={pointerPoint.y} x2={box.x + box.width} y2={pointerPoint.y} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, box.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
+                  <line data-testid="pointer-guide-vertical" x1={pointerPoint.x} y1={box.y} x2={pointerPoint.x} y2={box.y + box.height} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, box.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
+                </>}
                 <path d={pathFor(displayDocument)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={Math.max(3, box.width / 180)} strokeLinejoin="round" strokeLinecap="round" />
                 {activeFreehand && <polyline points={activeFreehand.map(point => mapPoint(point, 1 / mmPerUnit)).map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={Math.max(3, box.width / 180)} />}
                 {displayDocument.segments.map((segment, index) => {
                   const start = segmentStart(segment);
                   const end = segmentEnd(segment);
+                  const segmentPath = pathFor({ ...displayDocument, closed: false, segments: [segment] });
                   return <g key={`${segment.type}-${index}`}>
+                    {mode === 'select' && !calibrationMode && !measurementMode && <path
+                      d={segmentPath}
+                      fill="none"
+                      stroke={selectedSegment === index ? '#f59e0b' : 'transparent'}
+                      strokeWidth={selectedSegment === index ? Math.max(7, box.width / 100) : Math.max(22, box.width / 28)}
+                      strokeOpacity={selectedSegment === index ? 0.9 : 1}
+                      strokeLinecap="round"
+                      pointerEvents="stroke"
+                      onPointerDown={event => selectSegment(event, index)}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setSelectedSegment(index);
+                          setSegmentEditNotice(`Segment ${index + 1} selected.`);
+                        }
+                      }}
+                      aria-label={`Select segment ${index + 1}, ${segment.type}`}
+                      aria-pressed={selectedSegment === index}
+                      tabIndex={0}
+                      role="button"
+                    />}
                     {mode === 'select' && !calibrationMode && !measurementMode && <>
                       <circle cx={start.x} cy={start.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index)} />
                       <circle cx={start.x} cy={start.y} r={Math.max(8, box.width / 72)} fill="#fff" stroke="#0369a1" strokeWidth="3" pointerEvents="none" />
@@ -837,7 +968,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 </g>)}
                 {measurementPoints.length === 2 && <line x1={measurementPoints[0].x} y1={measurementPoints[0].y} x2={measurementPoints[1].x} y2={measurementPoints[1].y} stroke="#7c3aed" strokeWidth={Math.max(3, box.width / 180)} strokeDasharray="8 5" pointerEvents="none" />}
                 {measurementPoints.map((point, index) => <circle key={`measurement-${index}`} cx={point.x} cy={point.y} r={Math.max(9, box.width / 65)} fill="#8b5cf6" stroke="#fff" strokeWidth="3" pointerEvents="none" />)}
-                <circle cx={keyboardPoint.x} cy={keyboardPoint.y} r={Math.max(5, box.width / 110)} fill="#f97316" stroke="#fff" strokeWidth="2" pointerEvents="none" />
+                {keyboardPlacement && <circle data-testid="keyboard-position-marker" cx={keyboardPoint.x} cy={keyboardPoint.y} r={Math.max(5, box.width / 110)} fill="#f97316" stroke="#fff" strokeWidth="2" pointerEvents="none" />}
               </svg>
               {!document.segments.length && !calibrationMode && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-xs text-stone-500">Choose Straight, Curve, or Freehand, then draw connected segments here.</div>}
               {calibrationMode && <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-orange-50/95 px-3 py-2 text-xs font-semibold text-orange-800 shadow-sm">{calibrationPoints.length === 0 ? 'Select calibration point 1' : calibrationPoints.length === 1 ? 'Select calibration point 2' : 'Two points selected — enter the known distance'}</div>}
@@ -849,9 +980,18 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 {document.closed ? 'Outline closed. Use Select and edit to refine it.' : canClose ? 'Click near the highlighted start point to snap closed, or use Close outline.' : mode === 'select' ? 'Drag blue vertices or yellow curve handles to edit.' : pendingStart ? 'Click the next point to add a segment.' : 'Click or drag to start the next segment.'}
               </span>
             </div>
-            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Keyboard: focus the drawing surface, move the orange cursor with Arrow keys, press Enter to add, C to close, and Ctrl/Cmd+Z or Y to undo/redo. With Quadratic curve active, drag the yellow handle to adjust the latest curve.</p>
+            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Keyboard placement: focus the drawing surface and press an Arrow key to show and move the orange position marker; press Enter to place at that exact drawing coordinate, C to close, and Ctrl/Cmd+Z or Y to undo/redo. With Quadratic curve active, drag the yellow handle to adjust the latest curve.</p>
           </div>
           <aside className="space-y-3">
+            {mode === 'select' && document.segments.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Selected segment</div>
+              <p className="mt-1 text-xs text-stone-600">{selectedSegment === null ? 'Select a segment directly on the outline.' : `Segment ${selectedSegment + 1} · ${document.segments[selectedSegment]?.type}`}</p>
+              <div className="mt-2 grid gap-2">
+                <button type="button" disabled={selectedSegment === null || document.segments[selectedSegment]?.type === 'freehand' && (document.segments[selectedSegment] as Extract<FootprintSegment, { type: 'freehand' }>).points.length < 3} onClick={insertPointOnSelected} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-40" aria-label="Insert point on selected segment"><Scissors className="h-4 w-4" />Insert point</button>
+                <button type="button" disabled={selectedSegment === null || document.segments[selectedSegment]?.type !== 'line'} onClick={convertSelectedToCurve} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-40" aria-label="Convert selected segment to quadratic curve"><GitBranch className="h-4 w-4" />Convert to curve</button>
+                <button type="button" disabled={selectedSegment === null || !document.closed} onClick={deleteSelected} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-40" aria-label="Delete selected segment" title={!document.closed ? 'Close the outline before deleting a segment' : undefined}><Trash2 className="h-4 w-4" />Delete segment</button>
+              </div>
+            </div>}
             <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-700"><ImageIcon className="h-4 w-4" />Reference image</div>
               <p className="mt-1 text-xs text-stone-500">Session-only tracing aid. It is never saved with the footprint.</p>
@@ -918,9 +1058,11 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                     const length = segmentLength(segment, document.sampling.quadratic_steps);
                     const metrics = segment.type === 'quadratic' ? curveMetrics(segment) : null;
                     return (
-                      <div key={`edit-point-${index}`} className="rounded-lg border border-stone-200 p-2">
+                      <div key={`edit-point-${index}`} className={`rounded-lg border p-2 ${mode === 'select' && selectedSegment === index ? 'border-amber-400 bg-amber-50/50' : 'border-stone-200'}`}>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-stone-700">Segment {index + 1} · {segment.type}</span>
+                          {mode === 'select'
+                            ? <button type="button" aria-pressed={selectedSegment === index} onClick={() => { setSelectedSegment(index); setSegmentEditNotice(`Segment ${index + 1} selected.`); }} className="rounded px-1 text-left text-xs font-semibold text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-400" aria-label={`Select segment ${index + 1} from segment list`}>Segment {index + 1} · {segment.type}</button>
+                            : <span className="text-xs font-semibold text-stone-700">Segment {index + 1} · {segment.type}</span>}
                           <span className="font-mono text-xs text-stone-500">{length.toFixed(1)} mm</span>
                         </div>
                         <label className="mt-1.5 block text-[11px] font-medium text-stone-500" htmlFor={`segment-length-${index}`}>Real-world length (mm)</label>
