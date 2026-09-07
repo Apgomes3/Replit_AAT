@@ -9,6 +9,8 @@ import {
 } from '../lib/pumpSelections';
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
+import { isLifeSupportSystem } from '../lib/lssSystems';
+import { PumpLinkedInstrumentValidationError, reconcilePumpLinkedInstruments } from '../lib/lssControls';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -239,7 +241,11 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
     pump_quantity: pumpQuantity,
   });
 
-  await query(
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`lss-pump:${system.id}`]);
+    await client.query(
     `INSERT INTO system_pump_selections
        (system_id,circuit_key,project_equipment_item_id,
         design_head_m,pump_efficiency_pct,motor_efficiency_pct,
@@ -277,7 +283,22 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
       JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
        input.installation_location,
     ],
-  );
+    );
+    if (isLifeSupportSystem(system)) {
+      await reconcilePumpLinkedInstruments(client.query.bind(client), {
+        projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user!.id,
+      });
+    }
+    await client.query('COMMIT');
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error instanceof PumpLinkedInstrumentValidationError) {
+      return res.status(400).json({ error: { code: error.code, message: error.message, definition_id: error.definition.id } });
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 
   const updatedLines = await liveItems(query, system);
   const item = updatedLines.find(value => value.circuit_key === input.circuit_key && value.pump_role === pumpRole);
@@ -372,6 +393,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
       'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
       [`${system.id}:${circuitKey}:${pumpRole}`],
     );
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`lss-pump:${system.id}`]);
     const lockedSelection = (await client.query(
       `SELECT * FROM system_pump_selections
        WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3
@@ -414,7 +436,12 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
           pumpRole,
         ],
       );
-      await client.query('COMMIT');
+       if (isLifeSupportSystem(system)) {
+         await reconcilePumpLinkedInstruments(client.query.bind(client), {
+           projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user!.id,
+         });
+       }
+       await client.query('COMMIT');
       const circuit = allLines.find(item =>
         item.circuit_key === circuitKey && item.pump_role === PUMP_ROLE_PRIMARY)!;
       return res.status(200).json({
@@ -534,6 +561,11 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
         dutyType.id || null, JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
       ],
     );
+    if (isLifeSupportSystem(system)) {
+      await reconcilePumpLinkedInstruments(client.query.bind(client), {
+        projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user!.id,
+      });
+    }
     await client.query('COMMIT');
     res.status(reusedExistingCode ? 200 : 201).json({ project_equipment_item: pei, pump_line: buildPumpLineItem(circuit, {
       project_equipment_item_id: pei.id,
@@ -549,6 +581,9 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     }, pumpRole), ...(reusedExistingCode ? { reassigned_existing_code: true } : {}) });
   } catch (error: any) {
     await client.query('ROLLBACK');
+    if (error instanceof PumpLinkedInstrumentValidationError) {
+      return res.status(400).json({ error: { code: error.code, message: error.message, definition_id: error.definition.id } });
+    }
     if (error?.code === '23505') {
       return res.status(409).json({ error: { code: 'DUPLICATE_PUMP_LINE', message: 'A pump line with this role or equipment code already exists.' } });
     }
@@ -597,11 +632,27 @@ router.delete('/systems/:id/pump-lines', requireRole('admin', 'engineer'), requi
     return res.status(400).json({ error: { code: 'INVALID_CIRCUIT', message: 'The venturi line belongs to an active Foam Fractionator circuit.' } });
   }
 
-  await query(
-    'DELETE FROM system_pump_selections WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3',
-    [req.params.id, circuitKey, pumpRole],
-  );
-  res.json({ ok: true });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`lss-pump:${system.id}`]);
+    await client.query(
+      'DELETE FROM system_pump_selections WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3',
+      [req.params.id, circuitKey, pumpRole],
+    );
+    if (isLifeSupportSystem(system)) {
+      await reconcilePumpLinkedInstruments(client.query.bind(client), {
+        projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user!.id,
+      });
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 });
 
 // ---------------------------------------------------------------------------

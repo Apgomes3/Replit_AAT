@@ -195,19 +195,21 @@ describe('Design Book Thermal navigation', () => {
       linked_tanks: [{ tank_id: 'custom-1', shape: 'custom', surface_area_m2: '12.5' }],
     })).toBe(12.5);
   });
-  it('places Thermal immediately after Life Support Systems', () => {
+  it('places Control and Field Instruments immediately after Friction Loss', () => {
     expect(DESIGN_BOOK_TAB_ORDER).toEqual([
       'exhibits',
       'lss',
       'thermal',
       'piping',
+      'control',
       'review',
       'versions',
     ]);
   });
 
-  it('accepts the URL-addressable Thermal tab without conflating LSS detail tabs', () => {
+  it('accepts URL-addressable Design Book tabs without conflating LSS detail tabs', () => {
     expect(isDesignBookTab('thermal')).toBe(true);
+    expect(isDesignBookTab('control')).toBe(true);
     expect(isDesignBookTab('thermal-selection')).toBe(false);
   });
 

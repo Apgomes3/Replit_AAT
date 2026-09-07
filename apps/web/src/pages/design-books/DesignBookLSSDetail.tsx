@@ -2487,9 +2487,11 @@ export default function DesignBookLSSDetail() {
     }
     return `/design-books/${bookId}/exhibits/${encodeURIComponent(normalizedId)}`;
   };
-  const canManageProjects = user?.moduleAccess?.projects !== 'view'
-    && user?.moduleAccess?.projects !== 'hidden';
-  const canEdit = (user?.role === 'admin' || user?.role === 'engineer') && canManageProjects;
+  // Match the Control PUT guard: Design Book manage access (with an absent
+  // legacy module row treated as allowed) and a designer role.
+  const canManageDesignBooks = user?.moduleAccess?.design_books !== 'view'
+    && user?.moduleAccess?.design_books !== 'hidden';
+  const canEdit = (user?.role === 'admin' || user?.role === 'engineer') && canManageDesignBooks;
   const canCreateRevision = book?.status === 'Released'
     && (user?.role === 'admin' || user?.role === 'engineer');
   const retired = ['Archived', 'Decommissioned', 'Superseded'].includes(system.status);

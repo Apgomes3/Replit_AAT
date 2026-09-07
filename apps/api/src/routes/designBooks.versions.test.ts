@@ -147,6 +147,39 @@ const baseContext = () => ({
       }],
     },
   }],
+  lss_control_configurations: [{
+    id: 'control-1',
+    design_book_id: 'book-1',
+    system_id: 'system-1',
+    panel_type: 'PLC',
+    catalog_snapshot: {
+      name: 'PLC control panel',
+      source: 'field-instrument catalog',
+      version: 3,
+    },
+  }],
+  lss_instrument_instances: [{
+    id: 'instrument-1',
+    design_book_id: 'book-1',
+    system_id: 'system-1',
+    instrument_definition_id: 'definition-ts',
+    tag: '01-TS-01',
+    quantity: 1,
+    catalog_snapshot: {
+      name: 'Temperature sensor',
+      tag_code: 'TS',
+      signal_type: 'analog',
+      signal_direction: 'input',
+      requirement_rule: 'optional',
+      version: 2,
+    },
+    product_snapshot: {
+      id: 'pim-ts-1',
+      product_code: 'TS-100',
+      product_name: 'AAT temperature probe',
+      status: 'Active',
+    },
+  }],
 });
 
 describe('Design Book version snapshots', () => {
@@ -309,7 +342,7 @@ describe('Design Book version snapshots', () => {
   it('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
     const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
 
-    expect(snapshot.schema_version).toBe(9);
+    expect(snapshot.schema_version).toBe(10);
     expect(versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
     expect(snapshot.frozen.hydraulics[0]).toMatchObject({
       weir_formula_method: 'francis_184',
@@ -377,6 +410,21 @@ describe('Design Book version snapshots', () => {
       loop1_bio_degas_pct: '30',
       loop1_bio_degas_m3h: '12.5',
     });
+    expect(snapshot.frozen.lss_control_configurations).toEqual([
+      expect.objectContaining({ panel_type: 'PLC' }),
+    ]);
+    expect(snapshot.frozen.lss_instrument_instances[0]).toMatchObject({
+      tag: '01-TS-01',
+      catalog_snapshot: expect.objectContaining({
+        name: 'Temperature sensor',
+        tag_code: 'TS',
+        signal_type: 'analog',
+      }),
+      product_snapshot: expect.objectContaining({
+        product_code: 'TS-100',
+        product_name: 'AAT temperature probe',
+      }),
+    });
   });
 
   it('detects tampering and reports changed, added, removed, and unresolved project references', () => {
@@ -434,7 +482,7 @@ describe('Design Book version snapshots', () => {
     expect(calls[2]).toContain('INSERT INTO design_book_versions');
     expect(result.version_number).toBe(8);
     const insertParams = runner.mock.calls[2][1] as any[];
-    expect(insertParams[6]).toBe(9);
+    expect(insertParams[6]).toBe(10);
     expect(insertParams[7]).toBe(snapshot.integrity.digest);
   });
 
@@ -450,12 +498,26 @@ describe('Design Book version snapshots', () => {
     const frozen = versionSnapshotTestUtils.frozenFromSnapshot(legacy);
     expect(Object.prototype.hasOwnProperty.call(frozen, 'review_handovers')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(frozen, 'lights')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(frozen, 'lss_control_configurations')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(frozen, 'lss_instrument_instances')).toBe(false);
 
     const before = baseContext();
     const previewToken = versionSnapshotTestUtils.currentRestoreStateDigest(before);
     const edited = baseContext();
     (edited.species[0] as any).quantity = 12;
     expect(versionSnapshotTestUtils.currentRestoreStateDigest(edited)).not.toBe(previewToken);
+  });
+
+  it('makes a restore preview stale when frozen LSS control evidence changes', () => {
+    const before = baseContext();
+    const previewToken = versionSnapshotTestUtils.currentRestoreStateDigest(before);
+    const edited = baseContext();
+    edited.lss_instrument_instances[0].product_snapshot.product_name = 'Superseded probe';
+
+    expect(versionSnapshotTestUtils.currentRestoreStateDigest(edited)).not.toBe(previewToken);
+    const snapshot = versionSnapshotTestUtils.makeVersionSnapshot(before);
+    expect(snapshot.frozen.lss_instrument_instances[0].product_snapshot.product_name)
+      .toBe('AAT temperature probe');
   });
 
   it('creates under a real PostgreSQL parent lock and rolls back a failed checkpoint transaction', async () => {

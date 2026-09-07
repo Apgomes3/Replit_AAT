@@ -2910,6 +2910,97 @@ ALTER TABLE system_pump_selections
   DROP CONSTRAINT IF EXISTS uq_system_pump_selections_circuit_role;
 ALTER TABLE system_pump_selections
   ADD CONSTRAINT uq_system_pump_selections_circuit_role UNIQUE (system_id, circuit_key, pump_role);
+
+-- Governed field instrumentation and design-book specific control evidence.
+CREATE TABLE IF NOT EXISTS field_instrument_definitions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  tag_code VARCHAR(20) NOT NULL UNIQUE CHECK (tag_code ~ '^[A-Za-z0-9-]+$'),
+  numbering_rule VARCHAR(100) NOT NULL DEFAULT 'system-type-sequence',
+  signal_type VARCHAR(20) NOT NULL CHECK (signal_type IN ('analog', 'digital')),
+  signal_direction VARCHAR(20) NOT NULL CHECK (signal_direction IN ('input', 'output')),
+  requirement_rule VARCHAR(30) NOT NULL DEFAULT 'optional'
+    CHECK (requirement_rule IN ('optional', 'mandatory', 'pump_linked')),
+  default_control_logic TEXT,
+  default_product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS design_book_lss_controls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  panel_type VARCHAR(10) NOT NULL CHECK (panel_type IN ('GPO', 'PLC')),
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id)
+);
+CREATE TABLE IF NOT EXISTS design_book_lss_instruments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  definition_id UUID REFERENCES field_instrument_definitions(id) ON DELETE SET NULL,
+  tag VARCHAR(100) NOT NULL,
+  sequence_number INTEGER NOT NULL CHECK (sequence_number BETWEEN 1 AND 99),
+  control_logic TEXT,
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
+  definition_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  product_snapshot JSONB,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id, tag),
+  UNIQUE(design_book_id, system_id, definition_id, sequence_number)
+);
+CREATE INDEX IF NOT EXISTS idx_design_book_lss_instruments_system
+  ON design_book_lss_instruments(design_book_id, system_id);
+-- The CREATE TABLE clauses cover clean installs; these preserve the new
+-- governed/default evidence fields for databases upgraded from task 242.
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_control_logic TEXT;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS control_logic TEXT;
+ALTER TABLE field_instrument_definitions
+  DROP CONSTRAINT IF EXISTS field_instrument_definitions_tag_code_check;
+ALTER TABLE field_instrument_definitions
+  ADD CONSTRAINT field_instrument_definitions_tag_code_check
+  CHECK (tag_code ~ '^[A-Za-z0-9-]+$');
+-- Correct the originally seeded all-caps pH code without conflating tag
+-- families: PostgreSQL's unique constraint remains case-sensitive.
+UPDATE field_instrument_definitions SET tag_code='pH'
+WHERE tag_code='PH'
+  AND NOT EXISTS (SELECT 1 FROM field_instrument_definitions WHERE tag_code='pH');
+UPDATE field_instrument_definitions SET name='High level float switch' WHERE tag_code='FLS-HL';
+UPDATE field_instrument_definitions SET name='Low level float switch' WHERE tag_code='FLS-LL';
+UPDATE field_instrument_definitions SET name='Additional float level switch' WHERE tag_code='FLS';
+UPDATE field_instrument_definitions SET name='Pressure sensor' WHERE tag_code='PS';
+INSERT INTO field_instrument_definitions
+  (name, tag_code, signal_type, signal_direction, requirement_rule, default_control_logic, sort_order)
+VALUES
+  ('Flow Switch', 'FS', 'digital', 'input', 'pump_linked', 'Prove pump flow; alarm and inhibit the associated pump on loss of flow.', 10),
+  ('High level float switch', 'FLS-HL', 'digital', 'input', 'optional', NULL, 20),
+  ('Low level float switch', 'FLS-LL', 'digital', 'input', 'optional', NULL, 30),
+  ('Additional float level switch', 'FLS', 'digital', 'input', 'optional', NULL, 40),
+  ('Temperature Sensor', 'TS', 'analog', 'input', 'optional', NULL, 50),
+  ('pH Sensor', 'pH', 'analog', 'input', 'optional', NULL, 60),
+  ('ORP Sensor', 'ORP', 'analog', 'input', 'optional', NULL, 70),
+  ('Pressure sensor', 'PS', 'digital', 'input', 'optional', NULL, 80),
+  ('Flow Meter', 'FM', 'analog', 'input', 'optional', NULL, 90),
+  ('3-way Electric Ball Valve', '3EBV', 'digital', 'output', 'optional', NULL, 100),
+  ('2-way Ball Valve', '2BV', 'digital', 'output', 'optional', NULL, 110),
+  ('Ultrasonic Level Sensor', 'ULS', 'analog', 'input', 'optional', NULL, 120),
+  ('Conductivity Sensor', 'CON', 'analog', 'input', 'optional', NULL, 130),
+  ('Dissolved Oxygen Sensor', 'DO', 'analog', 'input', 'optional', NULL, 140),
+  ('Water Leak Detector', 'WLD', 'digital', 'input', 'optional', NULL, 150),
+  ('Ozone Detector', 'O3D', 'analog', 'input', 'optional', NULL, 160)
+ON CONFLICT (tag_code) DO NOTHING;
+UPDATE field_instrument_definitions
+SET default_control_logic='Prove pump flow; alarm and inhibit the associated pump on loss of flow.'
+WHERE tag_code='FS' AND requirement_rule='pump_linked'
+  AND NULLIF(BTRIM(default_control_logic),'') IS NULL;
 `;
 
 async function migrate() {

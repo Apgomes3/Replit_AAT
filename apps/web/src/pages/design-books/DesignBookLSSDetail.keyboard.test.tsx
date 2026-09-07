@@ -82,6 +82,15 @@ describe('DesignBookLSSDetail Escape navigation', () => {
       if (url === '/biological-media/media-profiles') return Promise.resolve({ data: { items: [] } });
       if (url === '/biological-media/tan-profiles') return Promise.resolve({ data: { items: [] } });
       if (url === '/lss-compact-units') return Promise.resolve({ data: [] });
+      if (url === '/products/masters') return Promise.resolve({ data: { items: [] } });
+      if (url === '/systems/system-1/control') return Promise.resolve({
+        data: {
+          control: { panel_type: 'GPO' },
+          definitions: [{ id: 'instrument-1', name: 'Flow Switch', tag_code: 'FS', signal_type: 'Digital', signal_direction: 'Input', requirement_rule: 'Mandatory', minimum_quantity: 1 }],
+          instruments: [{ definition_id: 'instrument-1', tag: '01-FS-01' }],
+          products: [],
+        },
+      });
       return Promise.reject(new Error(`Unexpected GET ${url}`));
     });
     useAuthStore.setState({
@@ -151,5 +160,18 @@ describe('DesignBookLSSDetail Escape navigation', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(currentPath);
     expect(nameInput).toHaveValue('Primary Life Support revised');
     expect(screen.getByDisplayValue('Draft')).toBeInTheDocument();
+  });
+
+  it('does not expose Control as an individual LSS tool tab', async () => {
+    const user = userEvent.setup();
+    renderLSS([`${currentPath}?tab=control`]);
+
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    expect(screen.queryByRole('tab', { name: 'Control' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Control panel' })).not.toBeInTheDocument();
+
+    screen.getByRole('tab', { name: 'System Overview' }).focus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('tab', { name: 'Flow Route' })).toHaveAttribute('aria-selected', 'true');
   });
 });

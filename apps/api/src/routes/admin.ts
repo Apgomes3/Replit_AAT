@@ -930,6 +930,86 @@ router.delete('/pump-duty-types/:id', authenticate, requireRole('admin'), async 
   res.status(204).end();
 });
 
+// ── FIELD INSTRUMENT CATALOG ─────────────────────────────────────────────────
+const fieldInstrumentInput = (body: any) => ({
+  name: String(body?.name || '').trim(),
+  description: String(body?.description || '').trim() || null,
+  tag_code: String(body?.tag_code || '').trim(),
+  numbering_rule: String(body?.numbering_rule || 'system-type-sequence').trim(),
+  signal_type: String(body?.signal_type || '').trim().toLowerCase(),
+  signal_direction: String(body?.signal_direction || '').trim().toLowerCase(),
+  requirement_rule: String(body?.requirement_rule || 'optional').trim().toLowerCase(),
+  default_control_logic: String(body?.default_control_logic || '').trim() || null,
+  default_product_master_id: body?.default_product_master_id || null,
+  sort_order: Number.isInteger(Number(body?.sort_order)) ? Number(body.sort_order) : 0,
+  is_active: body?.is_active !== false,
+});
+async function validateFieldInstrument(input: ReturnType<typeof fieldInstrumentInput>) {
+  if (!input.name || !/^[A-Za-z0-9-]+$/.test(input.tag_code) ||
+      !['analog', 'digital'].includes(input.signal_type) ||
+      !['input', 'output'].includes(input.signal_direction) ||
+      !['optional', 'mandatory', 'pump_linked'].includes(input.requirement_rule)) {
+    return 'Name, tag code, signal type/direction, and requirement rule are required.';
+  }
+  if (input.default_product_master_id) {
+    const product = await query('SELECT id FROM product_masters WHERE id=$1 AND status=\'Active\'', [input.default_product_master_id]);
+    if (!product.rows[0]) return 'Default PIM product must be an active product.';
+  }
+  return null;
+}
+router.get('/field-instruments', authenticate, async (req: AuthRequest, res: Response) => {
+  const includeInactive = req.query.include_inactive === 'true';
+  const result = await query(
+    `SELECT d.*, pm.product_code AS default_product_code, pm.product_name AS default_product_name,
+            pm.status AS default_product_status
+     FROM field_instrument_definitions d
+     LEFT JOIN product_masters pm ON pm.id=d.default_product_master_id
+     ${includeInactive ? '' : 'WHERE d.is_active=true'}
+     ORDER BY d.sort_order, d.tag_code`,
+  );
+  res.json({ items: result.rows });
+});
+router.post('/field-instruments', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const input = fieldInstrumentInput(req.body);
+  const error = await validateFieldInstrument(input);
+  if (error) return res.status(400).json({ error: { code: 'INVALID', message: error } });
+  try {
+    const result = await query(
+      `INSERT INTO field_instrument_definitions
+       (name,description,tag_code,numbering_rule,signal_type,signal_direction,requirement_rule,default_control_logic,default_product_master_id,sort_order,is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
+         input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_product_master_id, input.sort_order, input.is_active],
+    );
+    await logAudit(req.user!.id, 'field_instrument_definition', result.rows[0].id, 'CREATE', { definition: result.rows[0] });
+    res.status(201).json(result.rows[0]);
+  } catch (error: any) {
+    if (error.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE', message: 'That instrument tag code already exists.' } });
+    throw error;
+  }
+});
+router.put('/field-instruments/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const input = fieldInstrumentInput(req.body);
+  const error = await validateFieldInstrument(input);
+  if (error) return res.status(400).json({ error: { code: 'INVALID', message: error } });
+  try {
+    const result = await query(
+      `UPDATE field_instrument_definitions SET
+       name=$1,description=$2,tag_code=$3,numbering_rule=$4,signal_type=$5,signal_direction=$6,
+        requirement_rule=$7,default_control_logic=$8,default_product_master_id=$9,sort_order=$10,is_active=$11,updated_at=NOW()
+        WHERE id=$12 RETURNING *`,
+      [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
+         input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_product_master_id, input.sort_order, input.is_active, req.params.id],
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Field instrument not found.' } });
+    await logAudit(req.user!.id, 'field_instrument_definition', result.rows[0].id, 'UPDATE', { definition: result.rows[0] });
+    res.json(result.rows[0]);
+  } catch (error: any) {
+    if (error.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE', message: 'That instrument tag code already exists.' } });
+    throw error;
+  }
+});
+
 // ── Tank Cost Rates ──────────────────────────────────────────────────────────
 router.get('/tank-cost-rates', authenticate, async (_req, res: Response) => {
   const result = await query('SELECT * FROM tank_cost_rates ORDER BY material_code NULLS LAST, label');

@@ -177,6 +177,32 @@ export async function loadPumpSelections(runner: DbRunner, systems: any[]) {
   });
 }
 
+export async function loadLssControls(runner: DbRunner, designBookId: string, systems: any[]) {
+  const lssSystems = systems.filter(isLifeSupportSystem);
+  if (!lssSystems.length) return [];
+  const ids = lssSystems.map(system => system.id);
+  const controls = (await runner(
+    'SELECT * FROM design_book_lss_controls WHERE design_book_id=$1 AND system_id=ANY($2::uuid[])',
+    [designBookId, ids],
+  )).rows;
+  const instruments = (await runner(
+    `SELECT i.*, pm.product_code, pm.product_name, pm.status AS product_status
+     FROM design_book_lss_instruments i LEFT JOIN product_masters pm ON pm.id=i.product_master_id
+     WHERE i.design_book_id=$1 AND i.system_id=ANY($2::uuid[])
+     ORDER BY i.system_id, i.definition_snapshot->>'tag_code', i.sequence_number`,
+    [designBookId, ids],
+  )).rows;
+  const definitions = (await runner(
+    `SELECT * FROM field_instrument_definitions WHERE is_active=true ORDER BY sort_order, tag_code`,
+  )).rows;
+  return lssSystems.map(system => ({
+    system_id: system.id,
+    control: controls.find(control => control.system_id === system.id) || null,
+    instruments: instruments.filter(instrument => instrument.system_id === system.id),
+    definitions,
+  }));
+}
+
 export async function loadFrictionLossPackages(
   runner: DbRunner,
   designBookId: string,
@@ -1633,6 +1659,7 @@ export async function loadReleaseContext(
   });
   const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);
   const pumpSelections = await loadPumpSelections(runner, currentSystems);
+  const lssControls = await loadLssControls(runner, id, currentSystems);
   const thermalCalculations = await loadThermalCalculations(
     runner,
     id,
@@ -1668,6 +1695,14 @@ export async function loadReleaseContext(
     thermal_calculations: thermalCalculations,
     thermal_construction_defaults: thermalConstructionDefaults,
     pump_selections: pumpSelections,
+    lss_controls: lssControls,
+    // Flat evidence arrays are retained for version snapshot/restore code;
+    // the grouped form above is convenient for Design Book aggregate clients.
+    lss_control_configurations: lssControls.map(item => ({
+      system_id: item.system_id,
+      ...(item.control || {}),
+    })).filter(item => !!item.id),
+    lss_instrument_instances: lssControls.flatMap(item => item.instruments),
     friction_loss_calculations: frictionLossCalculations,
     engineering_calculations: {
       calculation_version: AQUARIUM_CALCULATION_VERSION,
@@ -3904,7 +3939,7 @@ router.post(
 
 // ─── Versions ────────────────────────────────────────────────────────────────
 
-const VERSION_SNAPSHOT_SCHEMA = 9;
+const VERSION_SNAPSHOT_SCHEMA = 10;
 const VERSION_REFERENCE_FIELDS = {
   project: ['id', 'project_code', 'project_name'],
   exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -3999,6 +4034,15 @@ function frozenFromSnapshot(snapshot: any) {
     ...(Array.isArray(snapshot?.uv_selections) ? { uv_selections: snapshot.uv_selections } : {}),
     ...(Array.isArray(snapshot?.thermal_selections) ? { thermal_selections: snapshot.thermal_selections } : {}),
     ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
+    // Control configuration deliberately contains catalog and product snapshots,
+    // rather than only their live foreign keys.  An instrument definition or
+    // product may be retired after a version is captured.
+    ...(Array.isArray(snapshot?.lss_control_configurations)
+      ? { lss_control_configurations: snapshot.lss_control_configurations }
+      : {}),
+    ...(Array.isArray(snapshot?.lss_instrument_instances)
+      ? { lss_instrument_instances: snapshot.lss_instrument_instances }
+      : {}),
   };
 }
 
@@ -4072,10 +4116,12 @@ function makeVersionSnapshot(context: any, capturedAt = new Date().toISOString()
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
       friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
+      lss_control_configurations: jsonCopy(context.lss_control_configurations || []),
+      lss_instrument_instances: jsonCopy(context.lss_instrument_instances || []),
     },
     live_references: liveReferencesFromContext(context),
       scope: {
-        frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'Thermal selections', 'thermal calculations', 'friction loss calculations', 'review handovers'],
+        frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'Thermal selections', 'thermal calculations', 'friction loss calculations', 'review handovers', 'LSS control-panel selections and field-instrument catalog/product evidence'],
       live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
       restore_target: 'working_copy',
     },
@@ -4096,6 +4142,8 @@ function currentRestoreStateDigest(context: any) {
       thermal_calculations: jsonCopy(context.thermal_calculations || []),
       friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
       review_handovers: jsonCopy(context.review_handovers || []),
+      lss_control_configurations: jsonCopy(context.lss_control_configurations || []),
+      lss_instrument_instances: jsonCopy(context.lss_instrument_instances || []),
     },
     live_references: liveReferencesFromContext(context),
   })).digest('hex');
@@ -4125,6 +4173,10 @@ function versionPresentation(version: any, currentContext: any) {
         0,
       ),
       review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
+      lss_control_configurations: Array.isArray(frozen.lss_control_configurations)
+        ? frozen.lss_control_configurations.length : null,
+      lss_instrument_instances: Array.isArray(frozen.lss_instrument_instances)
+        ? frozen.lss_instrument_instances.length : null,
     },
     live_references: {
       exhibits: (referencesFromSnapshot(snapshot).exhibits || []).length,
@@ -4137,11 +4189,19 @@ function versionPresentation(version: any, currentContext: any) {
       ...(Array.isArray(frozen.lights) ? ['lighting schedule'] : []),
       ...(Array.isArray(frozen.uv_selections) ? ['UV selections'] : []),
       ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
+       ...(Array.isArray(frozen.lss_control_configurations)
+         ? ['LSS control-panel selections'] : []),
+       ...(Array.isArray(frozen.lss_instrument_instances)
+         ? ['LSS field instruments with catalog/product evidence'] : []),
     ],
     preserved_records: [
       ...(!Array.isArray(frozen.lights) ? ['lighting schedule (not captured by this older version)'] : []),
       ...(!Array.isArray(frozen.uv_selections) ? ['UV selections (not captured by this older version)'] : []),
       ...(!Array.isArray(frozen.review_handovers) ? ['review handovers (not captured by this older version)'] : []),
+       ...(!Array.isArray(frozen.lss_control_configurations)
+         ? ['LSS control-panel selections (not captured by this older version)'] : []),
+       ...(!Array.isArray(frozen.lss_instrument_instances)
+         ? ['LSS field instruments (not captured by this older version)'] : []),
     ],
     live_reference_records: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
   };
@@ -4163,6 +4223,8 @@ function versionPresentation(version: any, currentContext: any) {
         uv_selections: (currentContext.uv_selections || []).length,
         thermal_calculations: (currentContext.thermal_calculations || []).length,
         review_handovers: (currentContext.review_handovers || []).length,
+        lss_control_configurations: (currentContext.lss_control_configurations || []).length,
+        lss_instrument_instances: (currentContext.lss_instrument_instances || []).length,
       },
       after: {
         book_title: frozen.design_book?.book_title,
@@ -4184,6 +4246,14 @@ function versionPresentation(version: any, currentContext: any) {
           ? frozen.review_handovers.length
           : (currentContext.review_handovers || []).length,
         review_handovers_preserved: !Array.isArray(frozen.review_handovers),
+        lss_control_configurations: Array.isArray(frozen.lss_control_configurations)
+          ? frozen.lss_control_configurations.length
+          : (currentContext.lss_control_configurations || []).length,
+        lss_control_configurations_preserved: !Array.isArray(frozen.lss_control_configurations),
+        lss_instrument_instances: Array.isArray(frozen.lss_instrument_instances)
+          ? frozen.lss_instrument_instances.length
+          : (currentContext.lss_instrument_instances || []).length,
+        lss_instrument_instances_preserved: !Array.isArray(frozen.lss_instrument_instances),
       },
       token: currentRestoreStateDigest(currentContext),
       generated_at: new Date().toISOString(),
@@ -4535,6 +4605,37 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
             handover.purpose ?? null, handover.discussion_summary ?? null, handover.decisions ?? null,
             handover.action_items ?? null, handover.open_items ?? null, handover.acceptance_notes ?? null,
             handover.created_by ?? null, handover.created_at ?? null],
+        );
+      }
+    }
+    if (Array.isArray(frozen.lss_control_configurations)) {
+      await client.query('DELETE FROM design_book_lss_controls WHERE design_book_id=$1', [req.params.id]);
+      for (const control of frozen.lss_control_configurations) {
+        await client.query(
+          `INSERT INTO design_book_lss_controls
+             (design_book_id,system_id,panel_type,updated_by,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,COALESCE($5,NOW()),COALESCE($6,NOW()))`,
+          [req.params.id, control.system_id, control.panel_type, control.updated_by ?? null,
+            control.created_at ?? null, control.updated_at ?? null],
+        );
+      }
+    }
+    if (Array.isArray(frozen.lss_instrument_instances)) {
+      await client.query('DELETE FROM design_book_lss_instruments WHERE design_book_id=$1', [req.params.id]);
+      for (const instrument of frozen.lss_instrument_instances) {
+        await client.query(
+          `INSERT INTO design_book_lss_instruments
+              (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,product_master_id,
+               definition_snapshot,product_snapshot,created_by,updated_by,created_at,updated_at)
+            VALUES ($1,$2,
+              (SELECT id FROM field_instrument_definitions WHERE id=$3),
+              $4,$5,$6,
+              (SELECT id FROM product_masters WHERE id=$7),
+              $8::jsonb,$9::jsonb,$10,$11,COALESCE($12,NOW()),COALESCE($13,NOW()))`,
+          [req.params.id, instrument.system_id, instrument.definition_id ?? null, instrument.tag,
+             instrument.sequence_number, instrument.control_logic ?? null, instrument.product_master_id ?? null,
+            JSON.stringify(instrument.definition_snapshot || {}), JSON.stringify(instrument.product_snapshot || null),
+             instrument.created_by ?? null, instrument.updated_by ?? null, instrument.created_at ?? null, instrument.updated_at ?? null],
         );
       }
     }

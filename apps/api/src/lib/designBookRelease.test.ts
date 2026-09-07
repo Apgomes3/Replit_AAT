@@ -87,6 +87,64 @@ describe('Design Book release policy', () => {
     expect(checklist.every(check => check.status === 'pass')).toBe(true);
   });
 
+  it('blocks release when active mandatory and pump-linked instrument definitions are under-counted', () => {
+    const context = readyContext();
+    context.pump_selections![0].items[0].pump_quantity = 2;
+    context.lss_controls = [{
+      system_id: 'system-1',
+      definitions: [
+        { id: 'mandatory-definition', name: 'High level switch', requirement_rule: 'mandatory' },
+        { id: 'pump-definition', name: 'Flow switch', requirement_rule: 'pump_linked' },
+      ],
+      instruments: [{ definition_id: 'pump-definition' }],
+    }];
+
+    const check = buildDesignBookReleaseChecklist(context)
+      .find(item => item.key === 'lss_field_instruments');
+
+    expect(check).toMatchObject({
+      status: 'blocked',
+      affected_ids: ['system-1'],
+    });
+    expect(check?.message).toContain('High level switch');
+    expect(check?.message).toContain('Flow switch');
+  });
+
+  it('blocks required instrument evidence with blank logic and links directly to its control tab', () => {
+    const context = readyContext();
+    context.lss_controls = [{
+      system_id: 'system-1',
+      definitions: [{ id: 'flow-switch', name: 'Flow switch', requirement_rule: 'pump_linked' }],
+      instruments: [{ definition_id: 'flow-switch', control_logic: '  ' }],
+    }];
+
+    const check = buildDesignBookReleaseChecklist(context)
+      .find(item => item.key === 'lss_field_instruments');
+
+    expect(check).toMatchObject({
+      status: 'blocked',
+      href: '/design-books/book-1?tab=control&system=system-1',
+      affected_ids: ['system-1'],
+    });
+    expect(check?.message).toContain('blank control logic');
+  });
+
+  it('blocks blank logic on retained required evidence from a now-inactive definition snapshot', () => {
+    const context = readyContext();
+    context.lss_controls = [{
+      system_id: 'system-1',
+      definitions: [],
+      instruments: [{
+        definition_id: 'retired-flow-switch',
+        control_logic: null,
+        definition_snapshot: { id: 'retired-flow-switch', name: 'Retired flow switch', requirement_rule: 'pump_linked' },
+      }],
+    }];
+
+    expect(buildDesignBookReleaseChecklist(context)
+      .find(item => item.key === 'lss_field_instruments')).toMatchObject({ status: 'blocked' });
+  });
+
   it('blocks a current release package that includes a retired LSS', () => {
     const context = readyContext();
     context.systems![0].status = 'Superseded';

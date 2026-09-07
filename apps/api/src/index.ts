@@ -24,6 +24,7 @@ import lssCompactUnitRoutes from './routes/lssCompactUnits';
 import speciesCatalogRoutes from './routes/speciesCatalog';
 import biologicalMediaRoutes from './routes/biologicalMedia';
 import pumpSelectionRoutes from './routes/pumpSelections';
+import lssControlRoutes from './routes/lssControls';
 import frictionLossRoutes from './routes/frictionLoss';
 import ozoneCalculationRoutes from './routes/ozoneCalculations';
 import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
@@ -62,6 +63,7 @@ app.use('/api/v1', lssCompactUnitRoutes);
 app.use('/api/v1', speciesCatalogRoutes);
 app.use('/api/v1', biologicalMediaRoutes);
 app.use('/api/v1', pumpSelectionRoutes);
+app.use('/api/v1', lssControlRoutes);
 app.use('/api/v1', frictionLossRoutes);
 app.use('/api/v1', ozoneCalculationRoutes);
 

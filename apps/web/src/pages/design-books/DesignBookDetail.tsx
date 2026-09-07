@@ -21,14 +21,15 @@ import { useAuthStore } from '../../store/authStore';
 import ActivityLog from '../../components/ui/ActivityLog';
 import ModalDialog from '../../components/ui/ModalDialog';
 import FrictionLossTab from './FrictionLossTab';
+import ControlFieldInstrumentsTab, { getLssSystems } from './ControlFieldInstrumentsTab';
 import NewRevisionModal from './NewRevisionModal';
 
-type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'review' | 'versions';
+type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'control' | 'review' | 'versions';
 
-export const DESIGN_BOOK_TAB_ORDER: Tab[] = ['exhibits', 'lss', 'thermal', 'piping', 'review', 'versions'];
+export const DESIGN_BOOK_TAB_ORDER: Tab[] = ['exhibits', 'lss', 'thermal', 'piping', 'control', 'review', 'versions'];
 
 export function isDesignBookTab(value: string | null): value is Tab {
-  return value === 'exhibits' || value === 'lss' || value === 'thermal' || value === 'piping' || value === 'review' || value === 'versions';
+  return value === 'exhibits' || value === 'lss' || value === 'thermal' || value === 'piping' || value === 'control' || value === 'review' || value === 'versions';
 }
 
 function WaterTypeBadge({ type }: { type?: string }) {
@@ -4632,9 +4633,19 @@ export default function DesignBookDetail() {
   const exhibits: any[] = book.exhibits || [];
   const tanks: any[] = book.tanks || [];
   const systems: any[] = book.systems || [];
+  const controlSystems = getLssSystems(systems);
   const isReleased = book.status === 'Released';
   const isDesignReadOnly = !['Draft', 'In Progress'].includes(book.status);
   const isDesigner = user?.role === 'admin' || user?.role === 'engineer';
+  // An absent module-access row is a legacy account and remains manageable,
+  // matching the backend requireModuleManage guard.
+  const canManageDesignBooks = !user?.moduleAccess?.design_books
+    || user.moduleAccess.design_books === 'manage';
+  const canEditControl = isDesigner && canManageDesignBooks;
+  // Product overrides are separately governed by PIM. Unlike legacy Design
+  // Book access, PIM overrides require an explicit manage grant for non-admins.
+  const canOverrideControlProduct = user?.role === 'admin'
+    || user?.moduleAccess?.pim === 'manage';
   const isManager = user?.role === 'admin' || user?.role === 'hq_manager' || user?.role === 'pmo';
   const canSubmitReview = isDesigner && (book.status === 'Draft' || book.status === 'In Progress');
   const canApprove = isManager && book.status === 'For Review';
@@ -4726,14 +4737,15 @@ export default function DesignBookDetail() {
     lss: 'Life Support Systems',
     thermal: 'Thermal',
     piping: 'Friction Loss',
+    control: 'Control and Field Instruments',
     review: 'Review & Handover',
     versions: 'Versions',
   };
   const TABS: { key: Tab; label: string; count?: number }[] = DESIGN_BOOK_TAB_ORDER.map(key => ({
     key,
     label: tabLabels[key],
-    ...(['exhibits', 'lss', 'thermal', 'piping'].includes(key)
-      ? { count: key === 'exhibits' ? exhibits.length : key === 'thermal' ? (book.thermal_calculations || []).length : key === 'piping' ? (book.friction_loss_calculations || []).length : systems.length }
+    ...(['exhibits', 'lss', 'thermal', 'piping', 'control'].includes(key)
+      ? { count: key === 'exhibits' ? exhibits.length : key === 'thermal' ? (book.thermal_calculations || []).length : key === 'piping' ? (book.friction_loss_calculations || []).length : key === 'control' ? controlSystems.length : systems.length }
       : {}),
   }));
 
@@ -4983,6 +4995,14 @@ export default function DesignBookDetail() {
 
       {tab === 'piping' && (
         <FrictionLossTab book={book} readOnly={isDesignReadOnly} onRefresh={refresh} />
+      )}
+
+      {tab === 'control' && (
+        <ControlFieldInstrumentsTab
+          book={book}
+          readOnly={isDesignReadOnly || !canEditControl}
+          canOverrideProduct={canOverrideControlProduct}
+        />
       )}
 
       {tab === 'review' && (
