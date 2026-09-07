@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronLeft, Crosshair, GitBranch, MousePointer2, PenLine, Redo2, Ruler, RotateCcw, Undo2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Check, ChevronLeft, Crosshair, GitBranch, Image as ImageIcon, MousePointer2, PenLine, Redo2, Ruler, RotateCcw, Undo2, X } from 'lucide-react';
 
 export type FootprintPoint = { x: number; y: number };
 export type FootprintSegment =
@@ -321,7 +321,14 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const [knownDistance, setKnownDistance] = useState('');
   const [calibrationError, setCalibrationError] = useState('');
   const [segmentEditNotice, setSegmentEditNotice] = useState('');
+  const [referenceImage, setReferenceImage] = useState<{ url: string; name: string } | null>(null);
+  const [referenceOpacity, setReferenceOpacity] = useState(35);
+  const [referenceError, setReferenceError] = useState('');
+  const [measurementMode, setMeasurementMode] = useState(false);
+  const [measurementPoints, setMeasurementPoints] = useState<FootprintPoint[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
+  const referenceImageRef = useRef<{ url: string; name: string } | null>(null);
+  const mountedRef = useRef(true);
   const dragOrigin = useRef<CustomFootprintDocument | null>(null);
   const mmPerUnit = Math.max(0.000001, document.calibration.mm_per_unit || 1);
   const displayDocument = useMemo(() => mapDocumentPoints(document, 1 / mmPerUnit), [document, mmPerUnit]);
@@ -337,6 +344,17 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const displayFirstPoint = firstPoint ? mapPoint(firstPoint, 1 / mmPerUnit) : null;
   const displayLastPoint = lastPoint ? mapPoint(lastPoint, 1 / mmPerUnit) : null;
   const snapTolerance = Math.max(18, box.width / 55);
+  const temporaryDistanceMm = measurementPoints.length === 2
+    ? distance(measurementPoints[0], measurementPoints[1]) * mmPerUnit
+    : null;
+
+  useEffect(() => {
+    referenceImageRef.current = referenceImage;
+  }, [referenceImage]);
+  useEffect(() => () => {
+    mountedRef.current = false;
+    if (referenceImageRef.current) URL.revokeObjectURL(referenceImageRef.current.url);
+  }, []);
 
   const commit = (next: CustomFootprintDocument) => {
     setPast(previous => [...previous.slice(-49), clone(document)]);
@@ -476,6 +494,15 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   };
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     const displayPoint = pointFromEvent(event);
+    if (measurementMode) {
+      event.preventDefault();
+      setMeasurementPoints(points => {
+        if (points.length >= 2) return [displayPoint];
+        if (points.length === 1 && distance(points[0], displayPoint) < 0.0001) return points;
+        return [...points, displayPoint];
+      });
+      return;
+    }
     if (calibrationMode) {
       event.preventDefault();
       setCalibrationPoints(points => points.length >= 2 ? [displayPoint] : [...points, displayPoint]);
@@ -521,7 +548,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   };
   const startDrag = (event: React.PointerEvent<SVGCircleElement>, kind: 'vertex' | 'control', segment: number) => {
     event.stopPropagation();
-    if (document.closed && mode !== 'select') return;
+    if (measurementMode || calibrationMode || (document.closed && mode !== 'select')) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragOrigin.current = clone(document);
     setDrag({ kind, segment });
@@ -566,9 +593,61 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     if (changed && !window.confirm('Discard the footprint changes you have not accepted?')) return;
     onCancel();
   };
+  const selectReferenceImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+      setReferenceError('Choose a readable PNG, JPEG, WebP, or GIF image.');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const probe = new Image();
+    probe.onload = () => {
+      if (!mountedRef.current) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setReferenceImage(previous => {
+        if (previous) URL.revokeObjectURL(previous.url);
+        return { url, name: file.name };
+      });
+      setReferenceError('');
+    };
+    probe.onerror = () => {
+      URL.revokeObjectURL(url);
+      if (!mountedRef.current) return;
+      setReferenceError('That image could not be read. The current reference image was kept.');
+    };
+    probe.src = url;
+  };
+  const removeReferenceImage = () => {
+    setReferenceImage(previous => {
+      if (previous) URL.revokeObjectURL(previous.url);
+      return null;
+    });
+    setReferenceError('');
+  };
+  const toggleMeasurementMode = () => {
+    setMeasurementMode(active => {
+      const next = !active;
+      if (next) {
+        setCalibrationMode(false);
+        setCalibrationPoints([]);
+        setCalibrationError('');
+        setActiveFreehand(null);
+        setSnapTarget(false);
+      }
+      return next;
+    });
+  };
   const onCanvasKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (measurementMode) {
+        setMeasurementMode(false);
+        return;
+      }
       requestCancel();
       return;
     }
@@ -598,6 +677,14 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
       setKeyboardPoint(point => ({ x: point.x + delta[event.key].x, y: point.y + delta[event.key].y }));
     } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
+      if (measurementMode) {
+        setMeasurementPoints(points => {
+          if (points.length >= 2) return [keyboardPoint];
+          if (points.length === 1 && distance(points[0], keyboardPoint) < 0.0001) return points;
+          return [...points, keyboardPoint];
+        });
+        return;
+      }
       if (mode === 'freehand') {
         const keyboardModelPoint = modelPointFromDisplay(keyboardPoint);
         const from = lastPoint || keyboardModelPoint;
@@ -671,8 +758,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 ['freehand', PenLine, 'Freehand segment'],
                 ['select', MousePointer2, 'Select and edit'],
               ] as const).map(([value, Icon, label]) => (
-                <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setPendingStart(value === 'freehand' || value === 'select' ? null : lastPoint); }} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${mode === value ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}><Icon className="h-3.5 w-3.5" />{label}</button>
+                <button key={value} type="button" aria-pressed={!measurementMode && mode === value} onClick={() => { setMeasurementMode(false); setCalibrationMode(false); setCalibrationPoints([]); setMode(value); setPendingStart(value === 'freehand' || value === 'select' ? null : lastPoint); }} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${!measurementMode && mode === value ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}><Icon className="h-3.5 w-3.5" />{label}</button>
               ))}
+              <button type="button" aria-pressed={measurementMode} onClick={toggleMeasurementMode} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${measurementMode ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}><Ruler className="h-3.5 w-3.5" />Measure</button>
               <span className="ml-auto flex items-center gap-1">
                 <button type="button" onClick={undo} disabled={!past.length} className="rounded-lg border border-stone-200 p-2 text-stone-600 disabled:opacity-30" aria-label="Undo"><Undo2 className="h-4 w-4" /></button>
                 <button type="button" onClick={redo} disabled={!future.length} className="rounded-lg border border-stone-200 p-2 text-stone-600 disabled:opacity-30" aria-label="Redo"><Redo2 className="h-4 w-4" /></button>
@@ -681,20 +769,21 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
               </span>
             </div>
             <div className="relative overflow-hidden rounded-xl border border-sky-200 bg-[linear-gradient( to right,rgba(14,116,144,.08)_1px,transparent_1px),linear-gradient(to bottom,rgba(14,116,144,.08)_1px,transparent_1px)] bg-[size:32px_32px]">
-              <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
+              <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
+                {referenceImage && <image href={referenceImage.url} x={box.x} y={box.y} width={box.width} height={box.height} preserveAspectRatio="xMidYMid meet" opacity={referenceOpacity / 100} pointerEvents="none" aria-hidden="true" />}
                 <path d={pathFor(displayDocument)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={Math.max(3, box.width / 180)} strokeLinejoin="round" strokeLinecap="round" />
                 {activeFreehand && <polyline points={activeFreehand.map(point => mapPoint(point, 1 / mmPerUnit)).map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={Math.max(3, box.width / 180)} />}
                 {displayDocument.segments.map((segment, index) => {
                   const start = segmentStart(segment);
                   const end = segmentEnd(segment);
                   return <g key={`${segment.type}-${index}`}>
-                    {mode === 'select' && !calibrationMode && <>
+                    {mode === 'select' && !calibrationMode && !measurementMode && <>
                       <circle cx={start.x} cy={start.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index)} />
                       <circle cx={start.x} cy={start.y} r={Math.max(8, box.width / 72)} fill="#fff" stroke="#0369a1" strokeWidth="3" pointerEvents="none" />
                       <circle cx={end.x} cy={end.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index + 1)} />
                       <circle cx={end.x} cy={end.y} r={Math.max(7, box.width / 82)} fill="#fff" stroke="#0e7490" strokeWidth="2" pointerEvents="none" />
                     </>}
-                    {mode === 'select' && !calibrationMode && segment.type === 'quadratic' && <>
+                    {mode === 'select' && !calibrationMode && !measurementMode && segment.type === 'quadratic' && <>
                       <line x1={segment.start.x} y1={segment.start.y} x2={segment.control.x} y2={segment.control.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
                       <line x1={segment.control.x} y1={segment.control.y} x2={segment.end.x} y2={segment.end.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
                       <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(16, box.width / 32)} fill="transparent" onPointerDown={event => startDrag(event, 'control', index)} aria-label={`Drag curve handle ${index + 1}`} />
@@ -714,10 +803,13 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                   <circle cx={point.x} cy={point.y} r={Math.max(10, box.width / 60)} fill="#fb923c" stroke="#fff" strokeWidth="3" />
                   <text x={point.x} y={point.y - Math.max(14, box.width / 72)} textAnchor="middle" fill="#9a3412" fontSize={Math.max(12, box.width / 65)} fontWeight="700">{index + 1}</text>
                 </g>)}
+                {measurementPoints.length === 2 && <line x1={measurementPoints[0].x} y1={measurementPoints[0].y} x2={measurementPoints[1].x} y2={measurementPoints[1].y} stroke="#7c3aed" strokeWidth={Math.max(3, box.width / 180)} strokeDasharray="8 5" pointerEvents="none" />}
+                {measurementPoints.map((point, index) => <circle key={`measurement-${index}`} cx={point.x} cy={point.y} r={Math.max(9, box.width / 65)} fill="#8b5cf6" stroke="#fff" strokeWidth="3" pointerEvents="none" />)}
                 <circle cx={keyboardPoint.x} cy={keyboardPoint.y} r={Math.max(5, box.width / 110)} fill="#f97316" stroke="#fff" strokeWidth="2" pointerEvents="none" />
               </svg>
               {!document.segments.length && !calibrationMode && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-xs text-stone-500">Choose Straight, Curve, or Freehand, then draw connected segments here.</div>}
               {calibrationMode && <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-orange-50/95 px-3 py-2 text-xs font-semibold text-orange-800 shadow-sm">{calibrationPoints.length === 0 ? 'Select calibration point 1' : calibrationPoints.length === 1 ? 'Select calibration point 2' : 'Two points selected — enter the known distance'}</div>}
+              {measurementMode && <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-violet-50/95 px-3 py-2 text-xs font-semibold text-violet-800 shadow-sm">{measurementPoints.length === 0 ? 'Select measurement point 1' : measurementPoints.length === 1 ? 'Select measurement point 2' : `${temporaryDistanceMm!.toFixed(1)} mm`}</div>}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button type="button" onClick={close} disabled={!canClose} className="inline-flex min-h-11 min-w-44 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-40" title={canClose ? 'Connect the last point exactly to the first point' : 'Draw at least two connected segments first'}><Check className="h-4 w-4" />Close outline</button>
@@ -728,6 +820,26 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
             <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Keyboard: focus the drawing surface, move the orange cursor with Arrow keys, press Enter to add, C to close, and Ctrl/Cmd+Z or Y to undo/redo.</p>
           </div>
           <aside className="space-y-3">
+            <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-700"><ImageIcon className="h-4 w-4" />Reference image</div>
+              <p className="mt-1 text-xs text-stone-500">Session-only tracing aid. It is never saved with the footprint.</p>
+              <label className="mt-2 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700">
+                {referenceImage ? 'Replace image' : 'Choose image'}
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" aria-label={referenceImage ? 'Replace reference image' : 'Choose reference image'} onChange={selectReferenceImage} />
+              </label>
+              {referenceImage && <>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs text-stone-600"><span className="truncate" title={referenceImage.name}>{referenceImage.name}</span><button type="button" onClick={removeReferenceImage} className="font-semibold text-red-700">Remove</button></div>
+                <label className="mt-2 block text-xs font-medium text-stone-600" htmlFor="reference-opacity">Reference image opacity: {referenceOpacity}%</label>
+                <input id="reference-opacity" aria-label="Reference image opacity" type="range" min="10" max="80" value={referenceOpacity} onChange={event => setReferenceOpacity(Number(event.target.value))} className="mt-1 w-full" />
+              </>}
+              {referenceError && <p className="mt-2 text-xs font-medium text-red-700" role="alert">{referenceError}</p>}
+            </div>
+            <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-800"><Ruler className="h-4 w-4" />Temporary measurement</div>
+              <button type="button" aria-pressed={measurementMode} onClick={toggleMeasurementMode} className="mt-2 min-h-10 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-800">{measurementMode ? 'Leave measurement mode' : 'Measure two points'}</button>
+              {temporaryDistanceMm !== null && <p className="mt-2 text-sm font-bold text-violet-900" role="status">{temporaryDistanceMm.toFixed(1)} mm</p>}
+              {measurementPoints.length > 0 && <button type="button" onClick={() => setMeasurementPoints([])} className="mt-2 text-xs font-semibold text-violet-700">Clear measurement</button>}
+            </div>
             <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-sky-800"><Ruler className="h-4 w-4" />Drawing scale</div>
               <div className="mt-2 rounded-lg bg-white px-3 py-2 text-sm font-bold text-sky-800" aria-label="Active drawing scale">Active: 1 : {Number(mmPerUnit.toFixed(6))} <span className="text-xs font-normal text-stone-500">({Number(mmPerUnit.toFixed(6))} mm per drawing unit)</span></div>
@@ -737,7 +849,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 <input id="footprint-scale-ratio" type="number" min="0.000001" step="any" value={calibrationRatio} onChange={event => setCalibrationRatio(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-stone-200 px-2 py-1.5 text-sm" />
                 <button type="button" onClick={applyNumericScale} className="rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white">Apply</button>
               </div>
-              <button type="button" aria-pressed={calibrationMode} onClick={() => { setCalibrationMode(value => !value); setCalibrationPoints([]); setCalibrationError(''); }} className={`mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${calibrationMode ? 'border-orange-400 bg-orange-50 text-orange-800' : 'border-stone-200 bg-white text-stone-700'}`}><Crosshair className="h-4 w-4" />{calibrationMode ? 'Stop selecting points' : 'Calibrate from two points'}</button>
+              <button type="button" aria-pressed={calibrationMode} onClick={() => { setMeasurementMode(false); setCalibrationMode(value => !value); setCalibrationPoints([]); setCalibrationError(''); }} className={`mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${calibrationMode ? 'border-orange-400 bg-orange-50 text-orange-800' : 'border-stone-200 bg-white text-stone-700'}`}><Crosshair className="h-4 w-4" />{calibrationMode ? 'Stop selecting points' : 'Calibrate from two points'}</button>
               {calibrationPoints.length === 2 && (
                 <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-2">
                   <label className="block text-xs font-medium text-orange-900" htmlFor="known-calibration-distance">Known distance (mm)</label>

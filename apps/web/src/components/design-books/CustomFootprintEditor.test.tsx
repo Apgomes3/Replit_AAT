@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import CustomFootprintEditor, { FootprintPrompt } from './CustomFootprintEditor';
 
 const rectangle = {
@@ -31,6 +31,73 @@ function pointer(element: Element, type: 'pointerdown' | 'pointermove' | 'pointe
 }
 
 describe('CustomFootprintEditor', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('loads, adjusts, replaces, and removes a session-only reference image', async () => {
+    const user = userEvent.setup();
+    const urls: string[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:test-${urls.push('created')}`);
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.stubGlobal('Image', class {
+      onload: null | (() => void) = null;
+      set src(_value: string) { this.onload?.(); }
+    });
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    const first = new File(['first'], 'plan-one.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('Choose reference image'), first);
+    expect(screen.getByText('plan-one.png')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Reference image opacity'), { target: { value: '60' } });
+    expect(screen.getByText('Reference image opacity: 60%')).toBeInTheDocument();
+    const second = new File(['second'], 'plan-two.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText('Replace reference image'), second);
+    expect(screen.getByText('plan-two.jpg')).toBeInTheDocument();
+    expect(revoke).toHaveBeenCalledWith('blob:test-1');
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.queryByText('plan-two.jpg')).not.toBeInTheDocument();
+  });
+
+  it('reports unsupported and unreadable images without removing the current reference', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.stubGlobal('Image', class {
+      onload: null | (() => void) = null;
+      onerror: null | (() => void) = null;
+      set src(_value: string) { this.onerror?.(); }
+    });
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    await user.upload(screen.getByLabelText('Choose reference image'), new File(['bad'], 'bad.png', { type: 'image/png' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('could not be read');
+    fireEvent.change(screen.getByLabelText('Choose reference image'), { target: { files: [new File(['text'], 'plan.txt', { type: 'text/plain' })] } });
+    expect(screen.getByRole('alert')).toHaveTextContent('PNG, JPEG, WebP, or GIF');
+  });
+
+  it('measures two points at the active scale, replaces the result, and keeps accepted geometry isolated', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    const scaled = { ...rectangle, calibration: { model_unit: 'mm', mm_per_unit: 2, method: 'ratio', ratio: 2 } };
+    render(<CustomFootprintEditor initialValue={scaled} onAccept={onAccept} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Measure two points' }));
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, toJSON: () => ({}),
+    });
+    pointer(surface, 'pointerdown', 100, 100);
+    pointer(surface, 'pointerdown', 200, 100);
+    expect(screen.getByRole('status')).toHaveTextContent('248.0 mm');
+    pointer(surface, 'pointerdown', 300, 100);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    pointer(surface, 'pointerdown', 350, 100);
+    expect(screen.getByRole('status')).toHaveTextContent('124.0 mm');
+    await user.click(screen.getByText('Clear measurement'));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Leave measurement mode' }));
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    expect(onAccept).toHaveBeenCalledWith(scaled);
+  });
   it('offers the accessible launch and decline choices', async () => {
     const user = userEvent.setup();
     const onLaunch = vi.fn();
