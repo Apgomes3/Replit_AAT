@@ -894,34 +894,220 @@ function sendTankDesignSheetLoadError(res: Response, error: any) {
 }
 
 export function renderTankDesignSheetPdf(model: any): Promise<Buffer> {
-  const doc = new PDFDocument({ size: 'A4', margin: 48, info: { Title: 'Tank Design Sheet' } });
+  const doc = new PDFDocument({
+    size: 'A4',
+    margin: 36,
+    bufferPages: true,
+    info: {
+      Title: 'Tank and Filter Design Data Sheet',
+      Subject: 'Supplier request for quotation',
+      Author: 'Advanced Aquarium Technologies',
+    },
+  });
   const chunks: Buffer[] = [];
   doc.on('data', chunk => chunks.push(Buffer.from(chunk)));
   const completed = new Promise<Buffer>((resolve, reject) => {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
   });
-  const value = (item: any, unit = '') => item == null ? 'TBC' : `${item}${unit ? ` ${unit}` : ''}`;
-  doc.fontSize(18).text('Tank Design Sheet');
-  doc.moveDown(0.5).fontSize(10)
-    .text(`Generated: ${model.generated_at}`)
-    .text(`Project: ${model.project.project_code || 'TBC'} — ${model.project.project_name || 'TBC'}`)
-    .text(`Exhibit: ${model.exhibit.exhibit_code || 'TBC'} — ${model.exhibit.exhibit_name || 'TBC'}`)
-    .text(`Tank: ${model.tank.tank_code || 'TBC'} — ${model.tank.tank_name || 'TBC'}`)
-    .text(`Shape: ${model.tank.shape_type || 'TBC'}; dimensions: ${value(model.tank.dimensions_mm.length, 'mm')} × ${value(model.tank.dimensions_mm.width, 'mm')} × ${value(model.tank.dimensions_mm.height, 'mm')}`)
-    .text(`Gross / operating volume: ${value(model.tank.gross_volume_m3, 'm³')} / ${value(model.tank.operating_volume_m3, 'm³')}`)
-    .text(`Calculation basis: ${model.calculation_version}`)
-    .text(`Required life: ${model.design_basis.required_life_years} years`)
-    .text(`Atmosphere: ${model.design_basis.atmosphere}; external pressure: ${model.design_basis.external_pressure}; vacuum: ${model.design_basis.vacuum}`)
-    .moveDown()
-    .text(`Water type: ${model.design_basis.water_type || 'TBC'}; water temperature: ${value(model.exhibit.water_temperature_min_c, '°C')} to ${value(model.exhibit.water_temperature_max_c, '°C')}`)
-    .text(`Density: ${value(model.design_basis.density_kg_m3, model.design_basis.density_provenance.unit)}; parameter: ${model.design_basis.density_provenance.parameter_id || 'TBC'}; active: ${model.design_basis.density_provenance.is_active}`)
-    .text(`Density conditions: ${model.design_basis.density_provenance.conditions || 'TBC'}; source: ${model.design_basis.density_provenance.catalog_source || 'TBC'}`)
-    .text(`Ambient: ${value(model.design_basis.ambient_air_temperature_c, '°C')} (${model.design_basis.ambient_temperature_source})`)
-    .text(`Maximum water level: ${value(model.tank.maximum_water_level_mm, 'mm')}; overflow: ${value(model.tank.overflow_level_mm, 'mm')}`)
-    .text(`Hydrostatic pressure: ${value(model.hydrostatic_pressure.pressure_kpa, 'kPa')}`)
-    .text(`Formula: ${model.hydrostatic_pressure.formula}; g=${model.hydrostatic_pressure.gravity_m_s2} m/s²; factor=${model.hydrostatic_pressure.load_factor}`);
-  if (model.tbcs.length) doc.moveDown().fontSize(11).text('TBC items').fontSize(9).list(model.tbcs);
+
+  // The reference sheet is intentionally a controlled data sheet: short rows,
+  // explicit units and a traceable basis column are easier to review than prose.
+  const navy = '#18324A';
+  const ink = '#243746';
+  const muted = '#5B6B78';
+  const rule = '#AAB8C2';
+  const pale = '#EAF1F4';
+  const tbcFill = '#FFF3D6';
+  const left = 36;
+  const right = 559;
+  const contentTop = 92;
+  const contentBottom = 776;
+  const value = (item: any) => item === null || item === undefined || item === '' ? 'TBC' : String(item);
+  const basis = (item: any) => item === null || item === undefined || item === '' ? 'Open item — supplier / designer confirmation required' : String(item);
+  const pages: number[] = [];
+
+  const section = (title: string) => {
+    ensure(28);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(navy)
+      .text(title.toUpperCase(), left, doc.y, { width: right - left });
+    doc.moveTo(left, doc.y + 4).lineTo(right, doc.y + 4).strokeColor(navy).lineWidth(1).stroke();
+    doc.y += 10;
+  };
+  const ensure = (height: number) => {
+    if (doc.y + height <= contentBottom) return;
+    doc.addPage();
+    doc.y = contentTop;
+  };
+  type Row = { no?: string; label: string; value: any; unit?: string; basis?: any };
+  const table = (rows: Row[], widths = [34, 173, 112, 44, 160]) => {
+    const x = left;
+    const headers = ['No.', 'Design parameter', 'Designer input', 'Unit', 'Basis, source or supplier confirmation'];
+    const total = widths.reduce((a, b) => a + b, 0);
+    const drawRow = (cells: string[], header = false, fill?: string) => {
+      const font = header ? 'Helvetica-Bold' : 'Helvetica';
+      const size = header ? 7.2 : 7.5;
+      const padding = 4;
+      doc.font(font).fontSize(size);
+      const heights = cells.map((cell, i) => doc.heightOfString(cell, { width: widths[i] - padding * 2 }));
+      const h = Math.max(19, Math.min(58, Math.max(...heights) + padding * 2));
+      ensure(h);
+      const rowY = doc.y;
+      if (fill) doc.rect(x, rowY, total, h).fill(fill);
+      let cursor = x;
+      cells.forEach((cell, i) => {
+        doc.rect(cursor, rowY, widths[i], h).strokeColor(rule).lineWidth(0.35).stroke();
+        doc.font(font).fontSize(size).fillColor(header ? navy : ink)
+          .text(cell, cursor + padding, rowY + padding, {
+            width: widths[i] - padding * 2,
+            height: h - padding * 2,
+            ellipsis: false,
+            lineBreak: false,
+          });
+        cursor += widths[i];
+      });
+      doc.y = rowY + h;
+    };
+    drawRow(headers, true, pale);
+    rows.forEach(row => {
+      const v = value(row.value);
+      drawRow([row.no || '', row.label, v, row.unit || '', basis(row.basis)], false, v === 'TBC' ? tbcFill : undefined);
+    });
+    doc.y += 8;
+  };
+  const note = (text: string, fill = '#F4F7F8') => {
+    doc.font('Helvetica').fontSize(7.5);
+    const h = Math.max(25, doc.heightOfString(text, { width: right - left - 18 }) + 14);
+    ensure(h);
+    const noteY = doc.y;
+    doc.roundedRect(left, noteY, right - left, h, 2).fill(fill);
+    doc.font('Helvetica').fontSize(7.5).fillColor(ink)
+      .text(text, left + 9, noteY + 7, { width: right - left - 18, height: h - 14, lineBreak: false });
+    doc.y = noteY + h + 9;
+  };
+
+  doc.y = contentTop;
+  section('A. Document control');
+  table([
+    { label: 'Project', value: `${value(model.project.project_code)} — ${value(model.project.project_name)}`, basis: 'Project record' },
+    { label: 'Exhibit', value: `${value(model.exhibit.exhibit_code)} — ${value(model.exhibit.exhibit_name)}`, basis: 'Exhibit record' },
+    { label: 'Equipment tag', value: value(model.tank.tank_code), basis: 'Tank record' },
+    { label: 'Equipment description', value: value(model.tank.tank_name), basis: 'Tank record' },
+    { label: 'Document number', value: 'TBC', basis: 'To be allocated under project document control' },
+    { label: 'Revision / issue purpose', value: 'TBC / For quotation', basis: 'Controlled issue information' },
+    { label: 'Design status', value: 'TBC', basis: 'Concept / Tender / Detailed — confirm at issue' },
+    { label: 'Prepared / checked / approved', value: 'TBC / TBC / TBC', basis: 'Signatures and dates required before issue' },
+    { label: 'Generated', value: value(model.generated_at), basis: model.calculation_version },
+  ], [100, 175, 116, 44, 88]);
+  note('PURPOSE  Complete this sheet before requesting a supplier quotation. TBC means the design input is not governed or available in the current record; it is not an assumed value.', '#E8F1F5');
+
+  section('B. Equipment classification and design basis');
+  table([
+    { no: 'B1', label: 'Equipment category', value: `${value(model.tank.shape_type)} tank`, basis: 'Tank geometry record' },
+    { no: 'B2', label: 'Configuration', value: value(model.tank.shape_type), basis: 'Effective tank shape' },
+    { no: 'B3', label: 'Required structural design life', value: model.design_basis.required_life_years, unit: 'years', basis: 'Governed design-sheet basis' },
+    { no: 'B4', label: 'Atmosphere / external pressure', value: `${value(model.design_basis.atmosphere)} / ${value(model.design_basis.external_pressure)}`, basis: 'Design basis' },
+    { no: 'B5', label: 'Vacuum case', value: value(model.design_basis.vacuum), basis: 'Design basis' },
+    { no: 'B6', label: 'Calculation version', value: value(model.calculation_version), basis: 'Canonical model version' },
+  ]);
+  note('ISSUE GATE  Designer and checker must agree the load combinations, pressure cases, water-level datum and supplier scope before this document is issued for quotation.');
+
+  section('1. Tank dimensions, volume and water levels');
+  table([
+    { no: '1', label: 'Internal plan shape', value: value(model.tank.shape_type), basis: 'Effective tank shape' },
+    { no: '1', label: 'Internal length', value: model.tank.dimensions_mm.length, unit: 'mm', basis: 'Tank / product geometry' },
+    { no: '1', label: 'Internal width', value: model.tank.dimensions_mm.width, unit: 'mm', basis: 'Tank / product geometry' },
+    { no: '1', label: 'Internal height / shell height', value: model.tank.dimensions_mm.height, unit: 'mm', basis: 'Tank / product geometry' },
+    { no: '2', label: 'Gross volume', value: model.tank.gross_volume_m3, unit: 'm³', basis: 'Tank / product geometry' },
+    { no: '2', label: 'Normal working / operating volume', value: model.tank.operating_volume_m3, unit: 'm³', basis: 'Effective operating volume' },
+    { no: '3', label: 'Maximum permitted water level', value: model.tank.maximum_water_level_mm, unit: 'mm', basis: 'Relative datum not recorded — confirm' },
+    { no: '4', label: 'Overflow operating level', value: model.tank.overflow_level_mm, unit: 'mm', basis: 'Crest / pipe invert to be confirmed' },
+    { label: '', value: 'TBC', unit: 'mm', basis: 'Freeboard above maximum water level — supplier to confirm adequacy' },
+    { label: 'Water level datum', value: 'TBC', basis: 'Finished floor or tank internal base to be defined' },
+  ]);
+
+  section('2. Liquid and temperature design conditions');
+  table([
+    { no: '5', label: 'Liquid description', value: model.design_basis.water_type, basis: 'Exhibit water type / active parameter lookup' },
+    { no: '5', label: 'Maximum design liquid density', value: model.design_basis.density_kg_m3, unit: 'kg/m³', basis: model.design_basis.density_provenance?.catalog_source || model.design_basis.density_provenance?.source },
+    { no: '6', label: 'Water temperature range', value: `${value(model.exhibit.water_temperature_min_c)} to ${value(model.exhibit.water_temperature_max_c)}`, unit: '°C', basis: 'Exhibit design temperatures' },
+    { no: '7', label: 'Ambient air temperature', value: model.design_basis.ambient_air_temperature_c, unit: '°C', basis: model.design_basis.ambient_temperature_source },
+    { no: '7', label: 'Salinity / pH / humidity', value: 'TBC', basis: 'Not present in governed tank record' },
+    { no: '7', label: 'Chemical exposure and cleaning', value: 'TBC', basis: 'Supplier / designer confirmation required' },
+  ]);
+
+  section('3. Hydrostatic load case');
+  table([
+    { no: '8', label: 'Maximum water depth', value: model.hydrostatic_pressure.maximum_water_depth_m, unit: 'm', basis: 'Maximum permitted water level' },
+    { no: '8', label: 'Hydrostatic pressure at design level', value: model.hydrostatic_pressure.pressure_kpa, unit: 'kPa', basis: 'Calculated with 1.2 load factor' },
+    { no: '8', label: 'Water density / gravity', value: `${value(model.design_basis.density_kg_m3)} / ${value(model.hydrostatic_pressure.gravity_m_s2)}`, unit: 'kg/m³ / m/s²', basis: model.hydrostatic_pressure.formula },
+    { no: '8', label: 'Load factor', value: model.hydrostatic_pressure.load_factor, basis: 'Hydrostatic load factor' },
+  ]);
+
+  section('4. Openings, nozzles and access');
+  table([
+    { no: '9', label: 'Nozzle schedule, sizes and loads', value: 'TBC', basis: 'Supplier to confirm connection, rating, location and allowable loads' },
+    { no: '10', label: 'Manways and access openings', value: 'TBC', basis: 'Supplier to confirm clear opening, cover, seal and safety requirements' },
+    { no: '11', label: 'Lifting points / handling', value: 'TBC', basis: 'Supplier to confirm operating and empty handling arrangements' },
+  ]);
+
+  section('5. Supports and anchorage');
+  table([
+    { no: '12', label: 'Support arrangement and foundation', value: 'TBC', basis: 'Skirt / legs / saddle / flat base and supporting structure' },
+    { no: '13', label: 'Anchor bolt arrangement', value: 'TBC', basis: 'Supplier to provide final anchor plan' },
+    { no: '14', label: 'Required supplier reactions', value: 'TBC', unit: 'kN, kN·m', basis: 'Vertical, shear, uplift and moment for governing combinations' },
+    { no: '15', label: 'Seismic and wind loads', value: 'TBC', basis: 'Not governed in current model' },
+  ]);
+
+  section('6. Materials and fabrication');
+  table([
+    { no: '16', label: 'Construction / material system', value: 'TBC', basis: 'FRP / steel / composite — supplier proposal and compliance review' },
+    { no: '17', label: 'Coating, lining or corrosion protection', value: 'TBC', basis: 'Service and chemical exposure to be confirmed' },
+    { no: '18', label: 'Inspection, testing and certification', value: 'TBC', basis: 'Supplier to submit proposed ITP and quality records' },
+  ]);
+
+  section('7. Required design life and operation');
+  table([
+    { no: '19', label: 'Structural design life', value: model.design_basis.required_life_years, unit: 'years', basis: 'Governed design-sheet basis' },
+    { no: '20', label: 'Operating hours / fill-drain cycles', value: 'TBC', basis: 'Operating profile not present' },
+    { no: '21', label: 'Inspection interval / component life', value: 'TBC', basis: 'Supplier recommendation and project maintenance basis' },
+  ]);
+
+  section('C. Required supplier response and deliverables');
+  table([
+    { no: '1', label: 'Completed confirmation column for every applicable item', value: 'TBC', basis: 'Supplier response required' },
+    { no: '2', label: 'Pressure, vacuum, hydrostatic, seismic, wind and support calculations', value: 'TBC', basis: 'Supplier response required as applicable' },
+    { no: '3', label: 'General arrangement drawing with levels, openings and supports', value: 'TBC', basis: 'Supplier response required' },
+    { no: '4', label: 'Material, thickness, lining and corrosion protection schedule', value: 'TBC', basis: 'Supplier response required' },
+    { no: '5', label: 'Anchor layout and governing support reactions', value: 'TBC', basis: 'For structural engineer coordination' },
+    { no: '6', label: 'Fabrication, inspection, testing and certificates', value: 'TBC', basis: 'Supplier response required' },
+    { no: '7', label: 'Exclusions, assumptions, clarifications and deviations', value: 'TBC', basis: 'Supplier response required' },
+  ]);
+
+  section('D. Open items, deviations and approval');
+  table([
+    { no: '1', label: 'Unresolved design inputs', value: `${model.tbcs.length} open items`, basis: model.tbcs.join(' ') },
+    { no: '2', label: 'Prepared / checked / approved', value: 'TBC / TBC / TBC', basis: 'Name, signature and date required' },
+    { no: '3', label: 'Release condition', value: 'TBC', basis: 'Resolve critical TBCs and accept supplier deviations before purchase order' },
+  ]);
+  note('CONTROLLED RELEASE  Do not issue the supplier purchase order until all critical TBC items have been resolved and supplier deviations have been reviewed and accepted by AAT Engineering.', '#FFF3D6');
+
+  // Apply the same document-control header and footer to every generated page.
+  const pageCount = doc.bufferedPageRange().count;
+  for (let i = 0; i < pageCount; i += 1) {
+    doc.switchToPage(i);
+    doc.save();
+    doc.rect(left, 28, right - left, 42).fill(navy);
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#FFFFFF')
+      .text('ADVANCED AQUARIUM TECHNOLOGIES', left + 10, 39);
+    doc.font('Helvetica').fontSize(7).fillColor('#DCE8ED')
+      .text('TANK AND FILTER DESIGN DATA SHEET  |  SUPPLIER REQUEST FOR QUOTATION', left + 10, 53);
+    doc.restore();
+    doc.moveTo(left, 788).lineTo(right, 788).strokeColor(rule).lineWidth(0.5).stroke();
+    doc.font('Helvetica').fontSize(7).fillColor(muted)
+      .text(`AAT controlled engineering deliverable  |  ${value(model.tank.tank_code)}  |  ${value(model.calculation_version)}`, left, 796, { width: 390, lineBreak: false })
+      .text(`Page ${i + 1} of ${pageCount}`, 455, 796, { width: 104, align: 'right', lineBreak: false });
+  }
   doc.end();
   return completed;
 }
