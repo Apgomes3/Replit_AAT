@@ -940,6 +940,15 @@ const fieldInstrumentInput = (body: any) => ({
   signal_direction: String(body?.signal_direction || '').trim().toLowerCase(),
   requirement_rule: String(body?.requirement_rule || 'optional').trim().toLowerCase(),
   default_control_logic: String(body?.default_control_logic || '').trim() || null,
+  default_range_min: body?.default_range_min === '' || body?.default_range_min == null ? null : Number(body.default_range_min),
+  default_range_max: body?.default_range_max === '' || body?.default_range_max == null ? null : Number(body.default_range_max),
+  default_unit: String(body?.default_unit || '').trim() || null,
+  allow_range_override: body?.allow_range_override !== false,
+  default_calibration_required: body?.default_calibration_required === true,
+  default_calibration_interval_days: body?.default_calibration_interval_days === '' || body?.default_calibration_interval_days == null ? null : Number(body.default_calibration_interval_days),
+  default_calibration_procedure: String(body?.default_calibration_procedure || '').trim() || null,
+  default_datasheet_reference: String(body?.default_datasheet_reference || '').trim() || null,
+  allow_calibration_override: body?.allow_calibration_override !== false,
   default_product_master_id: body?.default_product_master_id || null,
   sort_order: Number.isInteger(Number(body?.sort_order)) ? Number(body.sort_order) : 0,
   is_active: body?.is_active !== false,
@@ -954,6 +963,15 @@ async function validateFieldInstrument(input: ReturnType<typeof fieldInstrumentI
   if (input.default_product_master_id) {
     const product = await query('SELECT id FROM product_masters WHERE id=$1 AND status=\'Active\'', [input.default_product_master_id]);
     if (!product.rows[0]) return 'Default PIM product must be an active product.';
+  }
+  if ((input.default_range_min != null && !Number.isFinite(input.default_range_min)) ||
+      (input.default_range_max != null && !Number.isFinite(input.default_range_max)) ||
+      (input.default_range_min != null && input.default_range_max != null && input.default_range_min > input.default_range_max)) {
+    return 'Measurement range must contain valid numbers and minimum cannot exceed maximum.';
+  }
+  if (input.default_calibration_interval_days != null &&
+      (!Number.isInteger(input.default_calibration_interval_days) || input.default_calibration_interval_days < 1)) {
+    return 'Calibration interval must be a positive whole number of days.';
   }
   return null;
 }
@@ -976,10 +994,16 @@ router.post('/field-instruments', authenticate, requireRole('admin'), async (req
   try {
     const result = await query(
       `INSERT INTO field_instrument_definitions
-       (name,description,tag_code,numbering_rule,signal_type,signal_direction,requirement_rule,default_control_logic,default_product_master_id,sort_order,is_active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        (name,description,tag_code,numbering_rule,signal_type,signal_direction,requirement_rule,default_control_logic,
+         default_range_min,default_range_max,default_unit,allow_range_override,default_calibration_required,
+         default_calibration_interval_days,default_calibration_procedure,default_datasheet_reference,allow_calibration_override,
+         default_product_master_id,sort_order,is_active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
       [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
-         input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_product_master_id, input.sort_order, input.is_active],
+         input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_range_min,
+         input.default_range_max, input.default_unit, input.allow_range_override, input.default_calibration_required,
+         input.default_calibration_interval_days, input.default_calibration_procedure, input.default_datasheet_reference,
+         input.allow_calibration_override, input.default_product_master_id, input.sort_order, input.is_active],
     );
     await logAudit(req.user!.id, 'field_instrument_definition', result.rows[0].id, 'CREATE', { definition: result.rows[0] });
     res.status(201).json(result.rows[0]);
@@ -996,10 +1020,16 @@ router.put('/field-instruments/:id', authenticate, requireRole('admin'), async (
     const result = await query(
       `UPDATE field_instrument_definitions SET
        name=$1,description=$2,tag_code=$3,numbering_rule=$4,signal_type=$5,signal_direction=$6,
-        requirement_rule=$7,default_control_logic=$8,default_product_master_id=$9,sort_order=$10,is_active=$11,updated_at=NOW()
-        WHERE id=$12 RETURNING *`,
+         requirement_rule=$7,default_control_logic=$8,default_range_min=$9,default_range_max=$10,default_unit=$11,
+         allow_range_override=$12,default_calibration_required=$13,default_calibration_interval_days=$14,
+         default_calibration_procedure=$15,default_datasheet_reference=$16,allow_calibration_override=$17,
+         default_product_master_id=$18,sort_order=$19,is_active=$20,updated_at=NOW()
+         WHERE id=$21 RETURNING *`,
       [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
-         input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_product_master_id, input.sort_order, input.is_active, req.params.id],
+         input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_range_min,
+         input.default_range_max, input.default_unit, input.allow_range_override, input.default_calibration_required,
+         input.default_calibration_interval_days, input.default_calibration_procedure, input.default_datasheet_reference,
+         input.allow_calibration_override, input.default_product_master_id, input.sort_order, input.is_active, req.params.id],
     );
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Field instrument not found.' } });
     await logAudit(req.user!.id, 'field_instrument_definition', result.rows[0].id, 'UPDATE', { definition: result.rows[0] });

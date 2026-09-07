@@ -244,7 +244,7 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
   const input = req.body || {};
   const bookId = String(input.design_book_id || '');
   if (!bookId || !['GPO', 'PLC'].includes(input.panel_type)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id and panel_type (GPO or PLC) are required.' } });
-  const { book, system } = await bookAndSystem(bookId, String(req.params.id));
+  const { book, system } = await bookAndSystem(bookId, String(req.params.id), query);
   if (!book || !system || !isLifeSupportSystem(system)) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Life Support System not found in Design Book project.' } });
   if (!['Draft', 'In Progress'].includes(book.status)) return res.status(409).json({ error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Design Book is not editable.' } });
   if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
@@ -258,11 +258,17 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
       const requested = new Map<string, {
         quantity: number; product_master_id: string | null; product_supplied: boolean;
         control_logic: string | null; control_logic_supplied: boolean;
+        range_min: number | null; range_max: number | null; unit: string | null; range_supplied: boolean;
+        calibration_required: boolean; calibration_interval_days: number | null;
+        calibration_procedure: string | null; datasheet_reference: string | null; calibration_supplied: boolean;
       }>();
     for (const item of input.instruments) {
       const definition = definitions.find((value: any) => value.id === item.definition_id);
       const quantity = Number(item.quantity);
       const productSupplied = hasExplicitInstrumentProductOverride(item);
+      const rangeSupplied = ['range_min', 'range_max', 'unit'].some(key => Object.prototype.hasOwnProperty.call(item, key));
+      const calibrationSupplied = ['calibration_required', 'calibration_interval_days', 'calibration_procedure', 'datasheet_reference']
+        .some(key => Object.prototype.hasOwnProperty.call(item, key));
       if (!definition || !Number.isInteger(quantity) || quantity < 0 || quantity > 99) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Each instrument needs an active definition and quantity from 0 to 99.' } });
@@ -270,6 +276,20 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
       if (requested.has(definition.id)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Each instrument definition may be supplied once.' } });
+      }
+      const rangeMin = item.range_min === '' || item.range_min == null ? null : Number(item.range_min);
+      const rangeMax = item.range_max === '' || item.range_max == null ? null : Number(item.range_max);
+      const interval = item.calibration_interval_days === '' || item.calibration_interval_days == null
+        ? null : Number(item.calibration_interval_days);
+      if ((rangeSupplied && !definition.allow_range_override) || (calibrationSupplied && !definition.allow_calibration_override)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: { code: 'INSTRUMENT_OVERRIDE_NOT_PERMITTED', message: `${definition.name} does not permit this evidence override.` } });
+      }
+      if ((rangeMin != null && !Number.isFinite(rangeMin)) || (rangeMax != null && !Number.isFinite(rangeMax)) ||
+          (rangeMin != null && rangeMax != null && rangeMin > rangeMax) ||
+          (interval != null && (!Number.isInteger(interval) || interval < 1))) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: { code: 'VALIDATION', message: `${definition.name} has an invalid range or calibration interval.` } });
       }
       // Supplying null is a deliberate product override too: clearing a
       // product must have the same PIM-manage permission as changing it.
@@ -291,6 +311,11 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         product_supplied: productSupplied,
           control_logic: String(item.control_logic || '').trim() || null,
           control_logic_supplied: Object.prototype.hasOwnProperty.call(item, 'control_logic'),
+          range_min: rangeMin, range_max: rangeMax, unit: String(item.unit || '').trim() || null, range_supplied: rangeSupplied,
+          calibration_required: item.calibration_required === true, calibration_interval_days: interval,
+          calibration_procedure: String(item.calibration_procedure || '').trim() || null,
+          datasheet_reference: String(item.datasheet_reference || '').trim() || null,
+          calibration_supplied: calibrationSupplied,
       });
     }
     const minimum = await pumpMinimum(client.query.bind(client), system.id);
@@ -366,6 +391,13 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
           definition.default_control_logic,
           requestedProduct,
         );
+        const rangeMin = requestedProduct?.range_supplied ? requestedProduct.range_min : definition.default_range_min;
+        const rangeMax = requestedProduct?.range_supplied ? requestedProduct.range_max : definition.default_range_max;
+        const unit = requestedProduct?.range_supplied ? requestedProduct.unit : definition.default_unit;
+        const calibrationRequired = requestedProduct?.calibration_supplied ? requestedProduct.calibration_required : definition.default_calibration_required;
+        const calibrationInterval = requestedProduct?.calibration_supplied ? requestedProduct.calibration_interval_days : definition.default_calibration_interval_days;
+        const calibrationProcedure = requestedProduct?.calibration_supplied ? requestedProduct.calibration_procedure : definition.default_calibration_procedure;
+        const datasheetReference = requestedProduct?.calibration_supplied ? requestedProduct.datasheet_reference : definition.default_datasheet_reference;
         if (desired > rows.length && !controlLogic) {
           await client.query('ROLLBACK');
           return res.status(400).json({
@@ -379,10 +411,13 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         const product = await productSnapshot(client.query.bind(client), selectedProduct);
         await client.query(
           `INSERT INTO design_book_lss_instruments
-           (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,product_master_id,definition_snapshot,product_snapshot,created_by,updated_by)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$10)`,
+            (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,range_min,range_max,unit,
+             calibration_required,calibration_interval_days,calibration_procedure,datasheet_reference,
+             product_master_id,definition_snapshot,product_snapshot,created_by,updated_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$17)`,
           [bookId, system.id, definition.id, buildInstrumentTag(system.system_code, definition.tag_code, sequence),
-             sequence, controlLogic, selectedProduct, JSON.stringify(definition), JSON.stringify(product), req.user!.id],
+             sequence, controlLogic, rangeMin, rangeMax, unit, calibrationRequired, calibrationInterval,
+             calibrationProcedure, datasheetReference, selectedProduct, JSON.stringify(definition), JSON.stringify(product), req.user!.id],
         );
       }
       if (rows.length && requestedProduct?.product_supplied) {
@@ -396,6 +431,21 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         await client.query(
           'UPDATE design_book_lss_instruments SET control_logic=$1,updated_by=$2,updated_at=NOW() WHERE id=ANY($3::uuid[])',
           [requestedProduct.control_logic, req.user!.id, rows.slice(0, desired).map(row => row.id)],
+        );
+      }
+      if (rows.length && requestedProduct?.range_supplied) {
+        await client.query(
+          'UPDATE design_book_lss_instruments SET range_min=$1,range_max=$2,unit=$3,updated_by=$4,updated_at=NOW() WHERE id=ANY($5::uuid[])',
+          [requestedProduct.range_min, requestedProduct.range_max, requestedProduct.unit, req.user!.id, rows.slice(0, desired).map(row => row.id)],
+        );
+      }
+      if (rows.length && requestedProduct?.calibration_supplied) {
+        await client.query(
+          `UPDATE design_book_lss_instruments SET calibration_required=$1,calibration_interval_days=$2,
+           calibration_procedure=$3,datasheet_reference=$4,updated_by=$5,updated_at=NOW() WHERE id=ANY($6::uuid[])`,
+          [requestedProduct.calibration_required, requestedProduct.calibration_interval_days,
+            requestedProduct.calibration_procedure, requestedProduct.datasheet_reference, req.user!.id,
+            rows.slice(0, desired).map(row => row.id)],
         );
       }
     }

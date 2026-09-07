@@ -126,6 +126,73 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(await screen.findByText('No active field instrument definitions are available.')).toBeVisible();
     expect(api.get).toHaveBeenCalledTimes(2);
   });
+
+  it('submits only intentional range and calibration evidence overrides', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.put).mockResolvedValue({ data: {} });
+    renderPanel({
+      control: { panel_type: 'GPO' },
+      definitions: [{
+        id: 'definition-1', name: 'Pressure transmitter', tag_code: 'PT',
+        default_range_min: 0, default_range_max: 6, default_unit: 'bar',
+        allow_range_override: true, default_calibration_required: true,
+        default_calibration_interval_days: 365, default_calibration_procedure: 'CAL-PT-01',
+        default_datasheet_reference: 'DS-PT-100', allow_calibration_override: true,
+      }],
+      instruments: [],
+    }, false);
+
+    await user.type(await screen.findByLabelText('Quantity for Pressure transmitter'), '1');
+    await user.clear(screen.getByLabelText('Range maximum for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Range maximum for Pressure transmitter'), '10');
+    await user.clear(screen.getByLabelText('Datasheet reference for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Datasheet reference for Pressure transmitter'), 'DS-PT-200');
+    await user.click(screen.getByRole('button', { name: 'Save control configuration' }));
+
+    expect(vi.mocked(api.put)).toHaveBeenCalledWith('/systems/system-1/control', {
+      design_book_id: 'book-1',
+      panel_type: 'GPO',
+      instruments: [{
+        definition_id: 'definition-1',
+        quantity: 1,
+        range_min: 0,
+        range_max: 10,
+        unit: 'bar',
+        calibration_required: true,
+        calibration_interval_days: 365,
+        calibration_procedure: 'CAL-PT-01',
+        datasheet_reference: 'DS-PT-200',
+      }],
+    });
+  });
+
+  it('keeps frozen historical range and unavailable datasheet evidence inspectable', async () => {
+    renderPanel({
+      frozen: true,
+      control: { panel_type: 'PLC' },
+      definitions: [],
+      instruments: [{
+        definition_id: 'retired-definition',
+        tag: 'LSS-01-PT-01',
+        range_min: '0',
+        range_max: '16',
+        unit: 'bar',
+        calibration_required: true,
+        calibration_interval_days: 180,
+        calibration_procedure: 'Historical procedure unavailable',
+        datasheet_reference: 'DS-OLD-404 (unavailable)',
+        definition_snapshot: {
+          id: 'retired-definition', name: 'Retired pressure transmitter', tag_code: 'PT',
+          allow_range_override: true, allow_calibration_override: true,
+        },
+      }],
+    });
+
+    expect(await screen.findByDisplayValue('DS-OLD-404 (unavailable)')).toBeDisabled();
+    expect(screen.getByDisplayValue('Historical procedure unavailable')).toBeDisabled();
+    expect(screen.getByLabelText('Range maximum for Retired pressure transmitter')).toHaveValue(16);
+    expect(screen.getByText('Frozen calibration and datasheet evidence')).toBeVisible();
+  });
 });
 
 describe('LSSControlPanel I/O schedule preview', () => {

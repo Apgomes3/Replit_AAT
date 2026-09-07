@@ -21,6 +21,15 @@ type DraftInstrument = {
   control_logic: string | null;
   /** Retains an imported default until a designer intentionally edits it. */
   control_logic_supplied: boolean;
+  range_min: string;
+  range_max: string;
+  unit: string;
+  range_supplied: boolean;
+  calibration_required: boolean;
+  calibration_interval_days: string;
+  calibration_procedure: string;
+  datasheet_reference: string;
+  calibration_supplied: boolean;
 };
 
 type IOScheduleRow = {
@@ -104,6 +113,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
     enabled: Boolean(bookId && systemId),
     retry: false,
   });
+  const control = data;
   const { data: productData = { items: [] } } = useQuery({
     queryKey: ['field-instrument-product-picker'],
     queryFn: ({ signal }) => api.get('/products/masters', {
@@ -117,7 +127,6 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
     enabled: Boolean(control) && !readOnly && canOverrideProduct,
     retry: false,
   });
-  const control = data;
   const savedInstruments: any[] = control?.instruments || control?.instrument_instances || [];
   const definitions: any[] = useMemo(() => {
     const active = control?.definitions || control?.field_instrument_definitions || [];
@@ -150,6 +159,15 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
         product_supplied: false,
         control_logic: item.control_logic || null,
         control_logic_supplied: false,
+        range_min: String(item.range_min ?? ''),
+        range_max: String(item.range_max ?? ''),
+        unit: item.unit || '',
+        range_supplied: false,
+        calibration_required: item.calibration_required === true,
+        calibration_interval_days: String(item.calibration_interval_days ?? ''),
+        calibration_procedure: item.calibration_procedure || '',
+        datasheet_reference: item.datasheet_reference || '',
+        calibration_supplied: false,
       });
     });
     setInstruments([...grouped.values()]);
@@ -159,11 +177,22 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
   const update = (id: string, changes: Partial<DraftInstrument>) => {
     setInstruments(current => {
       const currentItem = current.find(item => item.definition_id === id);
+      const definition = definitions.find(item => definitionId(item) === id) || {};
       return currentItem
         ? current.map(item => item.definition_id === id ? { ...item, ...changes } : item)
         : [...current, {
           definition_id: id, quantity: 1, product_master_id: null, product_supplied: false,
-          control_logic: null, control_logic_supplied: false, ...changes,
+          control_logic: definition.default_control_logic || null, control_logic_supplied: false,
+          range_min: String(definition.default_range_min ?? ''),
+          range_max: String(definition.default_range_max ?? ''),
+          unit: definition.default_unit || '',
+          range_supplied: false,
+          calibration_required: definition.default_calibration_required === true,
+          calibration_interval_days: String(definition.default_calibration_interval_days ?? ''),
+          calibration_procedure: definition.default_calibration_procedure || '',
+          datasheet_reference: definition.default_datasheet_reference || '',
+          calibration_supplied: false,
+          ...changes,
         }];
     });
   };
@@ -179,10 +208,23 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
         panel_type: panelType,
         instruments: instruments
           .filter(item => item.quantity > 0)
-          .map(({ product_supplied, control_logic_supplied, product_master_id, control_logic, ...item }) => ({
+          .map(({ product_supplied, control_logic_supplied, range_supplied, calibration_supplied,
+            product_master_id, control_logic, range_min, range_max, unit, calibration_required,
+            calibration_interval_days, calibration_procedure, datasheet_reference, ...item }) => ({
             ...item,
             ...(product_supplied ? { product_master_id } : {}),
             ...(control_logic_supplied ? { control_logic } : {}),
+            ...(range_supplied ? {
+              range_min: range_min === '' ? null : Number(range_min),
+              range_max: range_max === '' ? null : Number(range_max),
+              unit: unit || null,
+            } : {}),
+            ...(calibration_supplied ? {
+              calibration_required,
+              calibration_interval_days: calibration_interval_days === '' ? null : Number(calibration_interval_days),
+              calibration_procedure: calibration_procedure || null,
+              datasheet_reference: datasheet_reference || null,
+            } : {}),
           })),
       });
       toast.success('Control configuration saved');
@@ -260,11 +302,29 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
             // display a subsequently edited catalogue default as its logic.
             const draft = drafts.get(id);
             const selectedLogic = draft ? draft.control_logic || '' : definition.default_control_logic || '';
+            const rangeMin = draft ? draft.range_min : String(definition.default_range_min ?? '');
+            const rangeMax = draft ? draft.range_max : String(definition.default_range_max ?? '');
+            const unit = draft ? draft.unit : definition.default_unit || '';
+            const calibrationRequired = draft ? draft.calibration_required : definition.default_calibration_required === true;
+            const calibrationInterval = draft ? draft.calibration_interval_days : String(definition.default_calibration_interval_days ?? '');
+            const calibrationProcedure = draft ? draft.calibration_procedure : definition.default_calibration_procedure || '';
+            const datasheetReference = draft ? draft.datasheet_reference : definition.default_datasheet_reference || '';
             return <div key={id} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_110px_minmax(190px,0.8fr)]">
               <div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-stone-800">{definition.name || 'Historical field instrument'}</h3><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span><span className="text-[10px] uppercase tracking-wide text-stone-400">{definition.signal_type} {definition.signal_direction}</span>{minimum > 0 && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Required · min {minimum}</span>}</div><p className="mt-1 text-xs text-stone-500">{definition.description || 'No catalog description.'}</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen definition evidence</p>}{instances.length > 0 && <p className="mt-1 font-mono text-[11px] text-stone-500">Tags: {instances.map(item => item.tag || item.instrument_tag).filter(Boolean).join(', ') || 'Allocated on save'}</p>}</div>
               <label className="text-xs font-medium text-stone-500">Quantity<input aria-label={`Quantity for ${definition.name}`} type="number" min={minimum} step="1" disabled={readOnly} value={quantity} onChange={event => update(id, { quantity: Math.max(minimum, Number(event.target.value || 0)) })} className={inputClass} /></label>
               <label className="text-xs font-medium text-stone-500">Effective PIM product<select aria-label={`Product for ${definition.name}`} disabled={readOnly || !canOverrideProduct} value={selectedProduct || ''} onChange={event => update(id, { product_master_id: event.target.value || null, product_supplied: true })} className={inputClass}><option value="">— No product linked —</option>{historicProduct && !products.some(product => product.id === selectedProduct) && <option value={selectedProduct}>{productLabel(historicProduct)} (frozen snapshot)</option>}{selectedProductMissing && <option value={selectedProduct}>Historical product unavailable ({selectedProduct})</option>}{products.map(product => <option key={product.id} value={product.id}>{productLabel(product)}</option>)}</select>{control?.frozen && historicProduct && <span className="mt-1 block text-[10px] font-normal text-stone-400">Frozen product evidence</span>}{!canOverrideProduct && !readOnly && <span className="mt-1 block text-[10px] font-normal text-stone-400">PIM is hidden for your role, so the product cannot be changed.</span>}</label>
               <label className="text-xs font-medium text-stone-500 md:col-span-3">Control logic<textarea aria-label={`Control logic for ${definition.name}`} disabled={readOnly} value={selectedLogic} onChange={event => update(id, { control_logic: event.target.value || null, control_logic_supplied: true })} rows={2} placeholder="Describe the functional control logic" className={inputClass} />{!selectedLogic && quantity > 0 && <span className="mt-1 block text-[10px] font-normal text-amber-700">Control logic is required because this catalog definition has no default.</span>}{instances.length > 1 && <span className="mt-1 block text-[10px] font-normal text-stone-400">This logic applies to the {instances.length} saved instances of this type.</span>}</label>
+              <fieldset className="grid gap-3 rounded-lg border border-stone-200 p-3 md:col-span-3 md:grid-cols-3"><legend className="px-1 text-xs font-semibold text-stone-600">Effective measurement range</legend>
+                <label className="text-xs font-medium text-stone-500">Minimum<input aria-label={`Range minimum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMin} onChange={event => update(id, { range_min: event.target.value, range_supplied: true })} className={inputClass} /></label>
+                <label className="text-xs font-medium text-stone-500">Maximum<input aria-label={`Range maximum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMax} onChange={event => update(id, { range_max: event.target.value, range_supplied: true })} className={inputClass} /></label>
+                <label className="text-xs font-medium text-stone-500">Unit<input aria-label={`Range unit for ${definition.name}`} disabled={readOnly || definition.allow_range_override === false} value={unit} onChange={event => update(id, { unit: event.target.value, range_supplied: true })} className={inputClass} /></label>
+              </fieldset>
+              <fieldset className="grid gap-3 rounded-lg border border-stone-200 p-3 md:col-span-3 md:grid-cols-3"><legend className="px-1 text-xs font-semibold text-stone-600">Calibration and datasheet evidence</legend>
+                <label className="flex items-center gap-2 text-xs text-stone-700"><input aria-label={`Calibration required for ${definition.name}`} type="checkbox" disabled={readOnly || definition.allow_calibration_override === false} checked={calibrationRequired} onChange={event => update(id, { calibration_required: event.target.checked, calibration_supplied: true })} />Calibration required</label>
+                <label className="text-xs font-medium text-stone-500">Interval (days)<input aria-label={`Calibration interval for ${definition.name}`} type="number" min="1" disabled={readOnly || definition.allow_calibration_override === false} value={calibrationInterval} onChange={event => update(id, { calibration_interval_days: event.target.value, calibration_supplied: true })} className={inputClass} /></label>
+                <label className="text-xs font-medium text-stone-500 md:col-span-3">Procedure<input aria-label={`Calibration procedure for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={calibrationProcedure} onChange={event => update(id, { calibration_procedure: event.target.value, calibration_supplied: true })} className={inputClass} /></label>
+                <label className="text-xs font-medium text-stone-500 md:col-span-3">Datasheet reference<input aria-label={`Datasheet reference for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={datasheetReference} onChange={event => update(id, { datasheet_reference: event.target.value, calibration_supplied: true })} placeholder="Document number, URL, or unavailable historical reference" className={inputClass} />{control?.frozen && <span className="mt-1 block text-[10px] font-normal text-stone-400">Frozen calibration and datasheet evidence</span>}</label>
+              </fieldset>
             </div>;
           })}
         </div>}

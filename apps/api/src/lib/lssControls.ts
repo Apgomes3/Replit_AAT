@@ -138,12 +138,16 @@ export async function reconcilePumpLinkedInstruments(
       for (const sequence of sequences) {
         await runner(
           `INSERT INTO design_book_lss_instruments
-           (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,product_master_id,definition_snapshot,product_snapshot,created_by,updated_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$10)`,
+            (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,range_min,range_max,unit,
+             calibration_required,calibration_interval_days,calibration_procedure,datasheet_reference,
+             product_master_id,definition_snapshot,product_snapshot,created_by,updated_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$17)`,
           [book.id, input.systemId, definition.id,
             buildInstrumentTag(input.systemCode, definition.tag_code, sequence),
-            sequence, controlLogic, definition.default_product_master_id || null,
-            JSON.stringify(definition), JSON.stringify(product), input.userId],
+            sequence, controlLogic, definition.default_range_min, definition.default_range_max, definition.default_unit,
+            definition.default_calibration_required, definition.default_calibration_interval_days,
+            definition.default_calibration_procedure, definition.default_datasheet_reference,
+            definition.default_product_master_id || null, JSON.stringify(definition), JSON.stringify(product), input.userId],
         );
       }
     }

@@ -4625,15 +4625,19 @@ router.post('/design-books/:id/versions/:versionId/restore', authenticate, requi
       for (const instrument of frozen.lss_instrument_instances) {
         await client.query(
           `INSERT INTO design_book_lss_instruments
-              (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,product_master_id,
+              (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,range_min,range_max,unit,
+               calibration_required,calibration_interval_days,calibration_procedure,datasheet_reference,product_master_id,
                definition_snapshot,product_snapshot,created_by,updated_by,created_at,updated_at)
             VALUES ($1,$2,
               (SELECT id FROM field_instrument_definitions WHERE id=$3),
-              $4,$5,$6,
-              (SELECT id FROM product_masters WHERE id=$7),
-              $8::jsonb,$9::jsonb,$10,$11,COALESCE($12,NOW()),COALESCE($13,NOW()))`,
+              $4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+              (SELECT id FROM product_masters WHERE id=$14),
+              $15::jsonb,$16::jsonb,$17,$18,COALESCE($19,NOW()),COALESCE($20,NOW()))`,
           [req.params.id, instrument.system_id, instrument.definition_id ?? null, instrument.tag,
-             instrument.sequence_number, instrument.control_logic ?? null, instrument.product_master_id ?? null,
+             instrument.sequence_number, instrument.control_logic ?? null, instrument.range_min ?? null,
+             instrument.range_max ?? null, instrument.unit ?? null, instrument.calibration_required === true,
+             instrument.calibration_interval_days ?? null, instrument.calibration_procedure ?? null,
+             instrument.datasheet_reference ?? null, instrument.product_master_id ?? null,
             JSON.stringify(instrument.definition_snapshot || {}), JSON.stringify(instrument.product_snapshot || null),
              instrument.created_by ?? null, instrument.updated_by ?? null, instrument.created_at ?? null, instrument.updated_at ?? null],
         );

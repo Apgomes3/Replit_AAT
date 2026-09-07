@@ -8,6 +8,12 @@ const secret = 'lss-control-permission-test';
 
 vi.mock('../db', () => {
   const query = vi.fn(async (sql: string) => {
+    if (sql.includes('FROM design_books')) {
+      return { rows: [{ id: 'book-1', project_id: 'project-1', status: 'Draft' }] };
+    }
+    if (sql.includes('FROM systems')) {
+      return { rows: [{ id: 'lss-1', project_id: 'project-1', system_code: 'LSS-01', system_type: 'Life Support' }] };
+    }
     if (sql.includes('FROM field_instrument_definitions')) {
       return { rows: [{
         id: 'optional-definition', name: 'Optional sensor', tag_code: 'OS',

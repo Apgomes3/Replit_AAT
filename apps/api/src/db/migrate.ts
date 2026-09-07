@@ -2923,6 +2923,15 @@ CREATE TABLE IF NOT EXISTS field_instrument_definitions (
   requirement_rule VARCHAR(30) NOT NULL DEFAULT 'optional'
     CHECK (requirement_rule IN ('optional', 'mandatory', 'pump_linked')),
   default_control_logic TEXT,
+  default_range_min NUMERIC,
+  default_range_max NUMERIC,
+  default_unit VARCHAR(50),
+  allow_range_override BOOLEAN NOT NULL DEFAULT true,
+  default_calibration_required BOOLEAN NOT NULL DEFAULT false,
+  default_calibration_interval_days INTEGER CHECK (default_calibration_interval_days IS NULL OR default_calibration_interval_days > 0),
+  default_calibration_procedure TEXT,
+  default_datasheet_reference TEXT,
+  allow_calibration_override BOOLEAN NOT NULL DEFAULT true,
   default_product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -2947,6 +2956,13 @@ CREATE TABLE IF NOT EXISTS design_book_lss_instruments (
   tag VARCHAR(100) NOT NULL,
   sequence_number INTEGER NOT NULL CHECK (sequence_number BETWEEN 1 AND 99),
   control_logic TEXT,
+  range_min NUMERIC,
+  range_max NUMERIC,
+  unit VARCHAR(50),
+  calibration_required BOOLEAN NOT NULL DEFAULT false,
+  calibration_interval_days INTEGER CHECK (calibration_interval_days IS NULL OR calibration_interval_days > 0),
+  calibration_procedure TEXT,
+  datasheet_reference TEXT,
   product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
   definition_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
   product_snapshot JSONB,
@@ -2959,10 +2975,46 @@ CREATE TABLE IF NOT EXISTS design_book_lss_instruments (
 );
 CREATE INDEX IF NOT EXISTS idx_design_book_lss_instruments_system
   ON design_book_lss_instruments(design_book_id, system_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_lss_controls ON design_book_lss_controls;
+CREATE TRIGGER guard_released_design_book_lss_controls
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_lss_controls
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+DROP TRIGGER IF EXISTS guard_released_design_book_lss_instruments ON design_book_lss_instruments;
+CREATE TRIGGER guard_released_design_book_lss_instruments
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_lss_instruments
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 -- The CREATE TABLE clauses cover clean installs; these preserve the new
 -- governed/default evidence fields for databases upgraded from task 242.
 ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_control_logic TEXT;
 ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS control_logic TEXT;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_range_min NUMERIC;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_range_max NUMERIC;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_unit VARCHAR(50);
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS allow_range_override BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_calibration_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_calibration_interval_days INTEGER;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_calibration_procedure TEXT;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_datasheet_reference TEXT;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS allow_calibration_override BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS range_min NUMERIC;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS range_max NUMERIC;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS unit VARCHAR(50);
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS calibration_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS calibration_interval_days INTEGER;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS calibration_procedure TEXT;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS datasheet_reference TEXT;
+ALTER TABLE field_instrument_definitions DROP CONSTRAINT IF EXISTS field_instrument_range_check;
+ALTER TABLE field_instrument_definitions ADD CONSTRAINT field_instrument_range_check
+  CHECK (default_range_min IS NULL OR default_range_max IS NULL OR default_range_min <= default_range_max);
+ALTER TABLE field_instrument_definitions DROP CONSTRAINT IF EXISTS field_instrument_calibration_interval_check;
+ALTER TABLE field_instrument_definitions ADD CONSTRAINT field_instrument_calibration_interval_check
+  CHECK (default_calibration_interval_days IS NULL OR default_calibration_interval_days > 0);
+ALTER TABLE design_book_lss_instruments DROP CONSTRAINT IF EXISTS design_book_lss_instrument_range_check;
+ALTER TABLE design_book_lss_instruments ADD CONSTRAINT design_book_lss_instrument_range_check
+  CHECK (range_min IS NULL OR range_max IS NULL OR range_min <= range_max);
+ALTER TABLE design_book_lss_instruments DROP CONSTRAINT IF EXISTS design_book_lss_instrument_calibration_interval_check;
+ALTER TABLE design_book_lss_instruments ADD CONSTRAINT design_book_lss_instrument_calibration_interval_check
+  CHECK (calibration_interval_days IS NULL OR calibration_interval_days > 0);
 ALTER TABLE field_instrument_definitions
   DROP CONSTRAINT IF EXISTS field_instrument_definitions_tag_code_check;
 ALTER TABLE field_instrument_definitions

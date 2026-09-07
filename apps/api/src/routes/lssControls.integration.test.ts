@@ -81,8 +81,11 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
     )).rows[0].id;
     ids.optional = (await database.query(
       `INSERT INTO field_instrument_definitions
-       (name,tag_code,signal_type,signal_direction,requirement_rule,default_control_logic,default_product_master_id,sort_order)
-       VALUES('Integration imported sensor',$1,'analog','input','optional','Read A',$2,9990) RETURNING id`,
+        (name,tag_code,signal_type,signal_direction,requirement_rule,default_control_logic,default_product_master_id,
+         default_range_min,default_range_max,default_unit,default_calibration_required,
+         default_calibration_interval_days,default_calibration_procedure,default_datasheet_reference,sort_order)
+        VALUES('Integration imported sensor',$1,'analog','input','optional','Read A',$2,
+         0,6,'bar',true,365,'CAL-A','DS-A',9990) RETURNING id`,
       [`IT-${suffix.slice(-6)}`, ids.productA],
     )).rows[0].id;
     ids.pumpLinked = (await database.query(
@@ -145,7 +148,9 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
 
   it('reloads panel and editable imported evidence without replacing historic product snapshots', async () => {
     await database.query(
-      `UPDATE field_instrument_definitions SET default_product_master_id=$1,default_control_logic='Read B' WHERE id=$2`,
+      `UPDATE field_instrument_definitions SET default_product_master_id=$1,default_control_logic='Read B',
+       default_range_max=10,default_unit='kPa',default_calibration_interval_days=180,
+       default_calibration_procedure='CAL-B',default_datasheet_reference='DS-B' WHERE id=$2`,
       [ids.productB, ids.optional],
     );
     await database.query(`UPDATE product_masters SET product_name='Product A renamed after import' WHERE id=$1`, [ids.productA]);
@@ -161,6 +166,14 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
     expect(imported.map((item: any) => item.control_logic)).toEqual(['Read A', 'Read B']);
     expect(imported[0].product_snapshot).toMatchObject({ id: ids.productA, product_name: 'Snapshot product A' });
     expect(imported[1].product_snapshot).toMatchObject({ id: ids.productB, product_name: 'Snapshot product B' });
+    expect(imported[0]).toMatchObject({
+      range_min: '0', range_max: '6', unit: 'bar', calibration_required: true,
+      calibration_interval_days: 365, calibration_procedure: 'CAL-A', datasheet_reference: 'DS-A',
+    });
+    expect(imported[1]).toMatchObject({
+      range_min: '0', range_max: '10', unit: 'kPa', calibration_required: true,
+      calibration_interval_days: 180, calibration_procedure: 'CAL-B', datasheet_reference: 'DS-B',
+    });
   });
 
   it('reconciles pump-driven FS evidence and creates none when no pumps are configured', async () => {
@@ -208,6 +221,10 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
     await database.query(
       `UPDATE design_books SET status='Released',release_snapshot=$1::jsonb WHERE id=$2`,
       [JSON.stringify({
+        systems: [{
+          id: ids.system, system_code: `LSS-${ids.system}`, system_name: 'Control LSS',
+          system_type: 'Life Support System', water_type: 'Freshwater', status: 'Draft',
+        }],
         lss_controls: [{ system_id: ids.system, control: { system_id: ids.system, panel_type: 'PLC' } }],
         lss_instrument_instances: [{
           system_id: ids.system, definition_id: ids.optional, tag: 'FROZEN-IT-01',
@@ -222,5 +239,15 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
       frozen: true, control: { panel_type: 'PLC' },
       instruments: [{ tag: 'FROZEN-IT-01', control_logic: 'Frozen logic', product_snapshot: { product_name: 'Frozen product evidence' } }],
     });
+    await expect(database.query(
+      `UPDATE design_book_lss_instruments SET datasheet_reference='tampered'
+       WHERE design_book_id=$1`,
+      [ids.book],
+    )).rejects.toMatchObject({ code: '55000' });
+    await expect(database.query(
+      `UPDATE design_book_lss_controls SET panel_type='PLC'
+       WHERE design_book_id=$1`,
+      [ids.book],
+    )).rejects.toMatchObject({ code: '55000' });
   });
 });
