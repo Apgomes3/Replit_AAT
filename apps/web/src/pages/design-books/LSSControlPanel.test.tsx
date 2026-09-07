@@ -62,6 +62,39 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toBeInTheDocument();
   });
 
+  it.each([
+    { layout: 'List', switchLayout: false },
+    { layout: 'Cards', switchLayout: true },
+  ])('allows a required quantity to be cleared and replaced in $layout view', async ({ switchLayout }) => {
+    const user = userEvent.setup();
+    renderPanel({
+      control: { panel_type: 'GPO' },
+      definitions: [
+        { id: 'flow', name: 'Flow switch', tag_code: 'FS', minimum_quantity: 1 },
+      ],
+      instruments: [{ definition_id: 'flow', tag: 'LSS-01-FS-01', quantity: 1 }],
+    }, false);
+
+    if (switchLayout) {
+      await user.click(await screen.findByRole('button', { name: 'Cards' }));
+    }
+
+    const quantity = await screen.findByLabelText('Quantity for Flow switch');
+    await user.clear(quantity);
+    expect(quantity).toHaveDisplayValue('');
+    await user.type(quantity, '3');
+    expect(quantity).toHaveDisplayValue('3');
+
+    await user.clear(quantity);
+    expect(quantity).toHaveDisplayValue('');
+    await user.tab();
+    expect(quantity).toHaveDisplayValue('1');
+
+    await user.clear(quantity);
+    await user.type(quantity, '0');
+    expect(quantity).toHaveDisplayValue('1');
+  });
+
   it('retains every instrument edit across repeated layout switches and saves each edit once', async () => {
     const user = userEvent.setup();
     vi.mocked(api.put).mockResolvedValue({ data: {} });

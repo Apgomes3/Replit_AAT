@@ -79,7 +79,39 @@ function signalDirection(value: any) {
 }
 
 function InstrumentQuantityField({ id, instrumentName, quantity, minimum, readOnly, update, compact = false }: Pick<InstrumentFieldProps, 'id' | 'instrumentName' | 'quantity' | 'minimum' | 'readOnly' | 'update'> & { compact?: boolean }) {
-  return <input id={`instrument-quantity-${id}`} aria-label={`Quantity for ${instrumentName}`} type="number" min={minimum} step="1" disabled={readOnly} value={quantity} onChange={event => update(id, { quantity: Math.max(minimum, Number(event.target.value || 0)) })} className={`${inputClass} ${compact ? 'mt-0 px-2 py-1.5' : ''}`} />;
+  const [displayValue, setDisplayValue] = useState(String(quantity));
+
+  useEffect(() => {
+    setDisplayValue(String(quantity));
+  }, [quantity]);
+
+  const commitMinimum = () => {
+    if (displayValue !== '') return;
+    setDisplayValue(String(minimum));
+    update(id, { quantity: minimum });
+  };
+
+  return <input
+    id={`instrument-quantity-${id}`}
+    aria-label={`Quantity for ${instrumentName}`}
+    type="number"
+    min={minimum}
+    step="1"
+    disabled={readOnly}
+    value={displayValue}
+    onChange={event => {
+      const nextValue = event.target.value;
+      if (nextValue === '') {
+        setDisplayValue('');
+        return;
+      }
+      const governedValue = Math.max(minimum, Number(nextValue));
+      setDisplayValue(String(governedValue));
+      update(id, { quantity: governedValue });
+    }}
+    onBlur={commitMinimum}
+    className={`${inputClass} ${compact ? 'mt-0 px-2 py-1.5' : ''}`}
+  />;
 }
 
 function InstrumentProductField({ id, definition, instrumentName, instances, draft, products, readOnly, canOverrideProduct, frozen, update, compact = false, visibleLabel = false }: InstrumentFieldProps & { compact?: boolean; visibleLabel?: boolean }) {
