@@ -7,6 +7,7 @@ import '../../src/index.css';
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });
+const readOnly = new URLSearchParams(window.location.search).get('mode') === 'issued';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -16,7 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <LSSControlPanel
           bookId="book-1"
           systemId="system-1"
-          readOnly={false}
+          readOnly={readOnly}
           canOverrideProduct={false}
         />
       </main>
