@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Gauge, LayoutGrid, List, Plus, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
+import NewEntityModal from '../../components/ui/NewEntityModal';
 
 type PumpCandidate = {
   id: string;
@@ -135,6 +136,7 @@ function PumpLineCard({
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
+  const [newPumpInitialValues, setNewPumpInitialValues] = useState<Record<string, any> | null>(null);
   const pumpRole = line.pump_role || 'primary';
   const isVenturi = pumpRole === 'venturi';
 
@@ -193,9 +195,7 @@ function PumpLineCard({
     }
   };
 
-  const addDraftPumpImmediately = async () => {
-    if (creatingDraft) return;
-    setCreatingDraft(true);
+  const openNewPumpProduct = () => {
     const dutyToken = String(line.pump_duty_tag || pumpRole || 'PUMP')
       .replace(/[^A-Z0-9]+/gi, '-')
       .replace(/^-|-$/g, '')
@@ -206,14 +206,31 @@ function PumpLineCard({
       .toUpperCase();
     const productCode = `PUMP-${dutyToken}-${circuitToken}-${Date.now().toString(36).toUpperCase()}`;
     const productName = `Draft ${line.pump_role_name || line.circuit_name || 'Pump'}`;
+    setNewPumpInitialValues({
+      product_code: productCode,
+      product_name: productName,
+      design_flow_m3h: perPumpFlow == null ? '' : numberText(perPumpFlow),
+      design_head_m: requiredHead == null ? '' : numberText(requiredHead),
+      manufacturer: '',
+      model: '',
+      power_kw: '',
+    });
+  };
+
+  const createAndLinkPumpProduct = async (formData: Record<string, any>) => {
+    if (creatingDraft) return;
+    setCreatingDraft(true);
     try {
       const created = await api.post('/product-masters', {
-        product_code: productCode,
-        product_name: productName,
+        product_code: String(formData.product_code || '').trim().toUpperCase(),
+        product_name: String(formData.product_name || '').trim(),
         product_category: 'Pumping',
         application_type: 'Pump',
-        design_flow_m3h: perPumpFlow == null ? null : Number(perPumpFlow),
-        design_head_m: requiredHead == null ? null : Number(requiredHead),
+        manufacturer: String(formData.manufacturer || '').trim() || null,
+        model: String(formData.model || '').trim() || null,
+        design_flow_m3h: formData.design_flow_m3h === '' ? null : Number(formData.design_flow_m3h),
+        design_head_m: formData.design_head_m === '' ? null : Number(formData.design_head_m),
+        power_kw: formData.power_kw === '' ? null : Number(formData.power_kw),
         standard_status: 'Draft',
       });
       const productMasterId = created.data?.id;
@@ -224,7 +241,8 @@ function PumpLineCard({
       if (!projectEquipmentItemId) return;
       setForm(current => ({ ...current, project_equipment_item_id: projectEquipmentItemId }));
       await queryClient.invalidateQueries({ queryKey: ['product-masters'] });
-      toast.success(`${productCode} added. Edit the remaining pump details in PIM when ready.`);
+      setNewPumpInitialValues(null);
+      toast.success(`${String(formData.product_code).trim().toUpperCase()} added to PIM and linked to this pump duty.`);
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Unable to add draft pump');
     } finally {
@@ -414,7 +432,7 @@ function PumpLineCard({
                 </p>
                 <button
                   type="button"
-                  onClick={addDraftPumpImmediately}
+                  onClick={openNewPumpProduct}
                   disabled={creatingDraft}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
                 >
@@ -422,6 +440,24 @@ function PumpLineCard({
                   {creatingDraft ? 'Adding…' : 'Add a pump'}
                 </button>
               </div>
+              {newPumpInitialValues && (
+                <NewEntityModal
+                  title="Add pump to Product Master"
+                  initialValues={newPumpInitialValues}
+                  fields={[
+                    { name: 'product_code', label: 'Product Code', required: true },
+                    { name: 'product_name', label: 'Product Name', required: true },
+                    { name: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Grundfos' },
+                    { name: 'model', label: 'Model', placeholder: 'e.g. CR 5-10' },
+                    { name: 'design_flow_m3h', label: 'Design Flow (m³/h)', type: 'number' },
+                    { name: 'design_head_m', label: 'Design Head (m)', type: 'number' },
+                    { name: 'power_kw', label: 'Rated Power (kW)', type: 'number' },
+                  ]}
+                  submitLabel="Create and link pump"
+                  onClose={() => setNewPumpInitialValues(null)}
+                  onSubmit={createAndLinkPumpProduct}
+                />
+              )}
             </div>
           )}
         </div>
