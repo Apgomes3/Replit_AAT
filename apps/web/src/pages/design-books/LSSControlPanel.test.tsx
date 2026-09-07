@@ -62,17 +62,41 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toBeInTheDocument();
   });
 
-  it('toggles between list and card layouts while retaining edits and the save payload', async () => {
+  it('retains every instrument edit across repeated layout switches and saves each edit once', async () => {
     const user = userEvent.setup();
     vi.mocked(api.put).mockResolvedValue({ data: {} });
     renderPanel({
       control: { panel_type: 'GPO' },
-      definitions: [{
-        id: 'pressure', name: 'Pressure transmitter', tag_code: 'PT',
-        signal_type: 'Analog', signal_direction: 'Input', minimum_quantity: 1,
-        allow_range_override: true, allow_calibration_override: true,
+      definitions: [
+        {
+          id: 'pressure', name: 'Pressure transmitter', tag_code: 'PT',
+          signal_type: 'Analog', signal_direction: 'Input', minimum_quantity: 1,
+          allow_range_override: true, allow_calibration_override: true,
+        },
+        {
+          id: 'flow', name: 'Flow switch', tag_code: 'FS',
+          signal_type: 'Digital', signal_direction: 'Input',
+          allow_range_override: false, allow_calibration_override: false,
+        },
+      ],
+      products: [
+        { id: 'product-original', product_code: 'PT-100', product_name: 'Original transmitter', status: 'Active' },
+        { id: 'product-revised', product_code: 'PT-200', product_name: 'Revised transmitter', status: 'Active' },
+      ],
+      instruments: [{
+        definition_id: 'pressure',
+        tag: 'LSS-01-PT-01',
+        quantity: 1,
+        product_master_id: 'product-original',
+        control_logic: 'Alarm high',
+        range_min: 0,
+        range_max: 6,
+        unit: 'bar',
+        calibration_required: true,
+        calibration_interval_days: 365,
+        calibration_procedure: 'CAL-PT-01',
+        datasheet_reference: 'DS-PT-100',
       }],
-      instruments: [{ definition_id: 'pressure', tag: 'LSS-01-PT-01', quantity: 1, control_logic: 'Alarm high' }],
     }, false);
 
     const listButton = await screen.findByRole('button', { name: 'List' });
@@ -80,26 +104,71 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(listButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('table', { name: 'Field instrument definitions' })).toBeVisible();
 
-    const listLogic = screen.getByLabelText('Control logic for Pressure transmitter');
-    await user.clear(listLogic);
-    await user.type(listLogic, 'Trip pump on high pressure');
+    await user.click(screen.getByLabelText('Quantity for Pressure transmitter'));
+    await user.keyboard('{Control>}a{/Control}3');
+    await user.selectOptions(screen.getByLabelText('Product for Pressure transmitter'), 'product-revised');
+    await user.clear(screen.getByLabelText('Control logic for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Control logic for Pressure transmitter'), 'Trip pump on high pressure');
+    await user.clear(screen.getByLabelText('Range minimum for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Range minimum for Pressure transmitter'), '-1');
+    expect(screen.getByLabelText('Range minimum for Flow switch')).toBeDisabled();
+    expect(screen.getByLabelText('Calibration procedure for Flow switch')).toBeDisabled();
+
     await user.click(cardsButton);
 
     expect(cardsButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('table', { name: 'Field instrument definitions' })).not.toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Pressure transmitter' })).toBeVisible();
+    expect(screen.getByLabelText('Quantity for Pressure transmitter')).toHaveValue(3);
+    expect(screen.getByLabelText('Product for Pressure transmitter')).toHaveValue('product-revised');
+    expect(screen.getByLabelText('Control logic for Pressure transmitter')).toHaveValue('Trip pump on high pressure');
+    expect(screen.getByLabelText('Range minimum for Pressure transmitter')).toHaveValue(-1);
+    expect(screen.getByLabelText('Range minimum for Flow switch')).toBeDisabled();
+    expect(screen.getByLabelText('Calibration procedure for Flow switch')).toBeDisabled();
+
+    await user.clear(screen.getByLabelText('Range maximum for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Range maximum for Pressure transmitter'), '16');
+    await user.clear(screen.getByLabelText('Range unit for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Range unit for Pressure transmitter'), 'psi');
+    await user.click(screen.getByLabelText('Calibration required for Pressure transmitter'));
+    await user.clear(screen.getByLabelText('Calibration interval for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Calibration interval for Pressure transmitter'), '180');
+    await user.click(listButton);
+
+    expect(screen.getByLabelText('Range maximum for Pressure transmitter')).toHaveValue(16);
+    expect(screen.getByLabelText('Range unit for Pressure transmitter')).toHaveValue('psi');
+    expect(screen.getByLabelText('Calibration required for Pressure transmitter')).not.toBeChecked();
+    expect(screen.getByLabelText('Calibration interval for Pressure transmitter')).toHaveValue(180);
+    await user.clear(screen.getByLabelText('Calibration procedure for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Calibration procedure for Pressure transmitter'), 'CAL-PT-02');
+    await user.clear(screen.getByLabelText('Datasheet reference for Pressure transmitter'));
+    await user.type(screen.getByLabelText('Datasheet reference for Pressure transmitter'), 'DS-PT-200');
+
+    await user.click(cardsButton);
+    expect(screen.getByLabelText('Calibration procedure for Pressure transmitter')).toHaveValue('CAL-PT-02');
+    expect(screen.getByLabelText('Datasheet reference for Pressure transmitter')).toHaveValue('DS-PT-200');
+    await user.click(listButton);
+    expect(screen.getByLabelText('Quantity for Pressure transmitter')).toHaveValue(3);
+    expect(screen.getByLabelText('Product for Pressure transmitter')).toHaveValue('product-revised');
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toHaveValue('Trip pump on high pressure');
 
-    await user.click(listButton);
-    expect(screen.getByLabelText('Control logic for Pressure transmitter')).toHaveValue('Trip pump on high pressure');
     await user.click(screen.getByRole('button', { name: 'Save control configuration' }));
+    expect(vi.mocked(api.put)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(api.put)).toHaveBeenCalledWith('/systems/system-1/control', {
       design_book_id: 'book-1',
       panel_type: 'GPO',
       instruments: [{
         definition_id: 'pressure',
-        quantity: 1,
+        quantity: 3,
+        product_master_id: 'product-revised',
         control_logic: 'Trip pump on high pressure',
+        range_min: -1,
+        range_max: 16,
+        unit: 'psi',
+        calibration_required: false,
+        calibration_interval_days: 180,
+        calibration_procedure: 'CAL-PT-02',
+        datasheet_reference: 'DS-PT-200',
       }],
     });
   });
