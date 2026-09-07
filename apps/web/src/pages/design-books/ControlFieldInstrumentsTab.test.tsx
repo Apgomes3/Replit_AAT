@@ -55,8 +55,24 @@ describe('ControlFieldInstrumentsTab', () => {
 
     expect(await screen.findByRole('heading', { name: 'Control panel' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('?tab=control&system=system-1');
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/systems/system-1/control', {
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/systems/system-1/control', expect.objectContaining({
       params: { design_book_id: 'book-1' },
-    });
+      signal: expect.any(AbortSignal),
+      timeout: 10_000,
+    }));
+  });
+
+  it('defaults to list view and allows switching to cards', async () => {
+    const user = userEvent.setup();
+    renderTab();
+
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('table')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cards' }));
+
+    expect(screen.getByRole('button', { name: 'Cards' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('article')).toHaveTextContent('Main LSS');
   });
 });
