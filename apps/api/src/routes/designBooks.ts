@@ -323,10 +323,15 @@ export async function loadFrictionLossPackages(
           : pumpSelection?.status === 'incompatible' ? 'incompatible' : 'stale';
         const pumpFreshness = pumpReady ? pumpSelection.freshness : 'stale';
         if (!row) {
+          const tankBoundaries = {
+            start: { tank_id: '', base_elevation_fl0_m: 0, water_depth_m: '', pump_draw_height_m: '', open_to_atmosphere: true, gauge_pressure_kpa: 0 },
+            end: { tank_id: '', base_elevation_fl0_m: '', water_depth_m: '', open_to_atmosphere: true, gauge_pressure_kpa: 0 },
+          };
           const preview = calculateFrictionLoss({
             flow_m3h: circuit.flow_m3h,
             selected_pump: currentPump,
             components: [],
+            tank_boundaries: tankBoundaries,
           });
           const reasons = [...new Set([
             ...pumpReasons,
@@ -347,6 +352,7 @@ export async function loadFrictionLossPackages(
             pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
             pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
             pump_selection_reasons: pumpReasons,
+            tank_boundaries: tankBoundaries,
           };
         }
         const currentComponents = components.filter(component => component.calculation_id === row.id)
@@ -385,6 +391,7 @@ export async function loadFrictionLossPackages(
           circuit,
           currentPump,
           currentComponents.map(({ reference_valid, ...item }) => item),
+          row.input_snapshot?.tank_boundaries,
         );
         const currentFingerprint = frictionSourceFingerprint(currentSource);
         const stale = circuit.circuit_kind === 'orphaned' ||
@@ -420,6 +427,7 @@ export async function loadFrictionLossPackages(
           pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
           pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
           pump_selection_reasons: pumpReasons,
+          tank_boundaries: row.input_snapshot?.tank_boundaries || row.result_snapshot?.inputs?.tank_boundaries,
           components: row.result_snapshot?.components || currentComponents,
           source_fingerprint: row.source_fingerprint,
           current_source_fingerprint: currentFingerprint,

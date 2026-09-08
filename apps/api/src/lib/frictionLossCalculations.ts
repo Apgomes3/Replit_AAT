@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { GRAVITY_M_S2, WATER_DENSITY_KG_M3 } from './pumpSelections';
 
-export const FRICTION_LOSS_CALCULATION_VERSION = 'friction-loss-v1';
+export const FRICTION_LOSS_CALCULATION_VERSION = 'friction-loss-v2';
 export const WATER_DYNAMIC_VISCOSITY_PA_S = 0.001002;
 
 export type FrictionSide = 'suction' | 'discharge';
@@ -89,7 +89,7 @@ export function frictionPipingSource(item: any) {
   };
 }
 
-export function frictionSourceSnapshot(circuit: any, pump: any, components: FrictionLossComponentInput[]) {
+export function frictionSourceSnapshot(circuit: any, pump: any, components: FrictionLossComponentInput[], tankBoundaries?: any) {
   return {
     circuit: frictionCircuitSource(circuit),
     selected_pump: frictionPumpSource(pump),
@@ -106,6 +106,7 @@ export function frictionSourceSnapshot(circuit: any, pump: any, components: Fric
       fitting_k_value: finite(component.fitting_k_value),
       quantity: finite(component.quantity),
     })),
+    tank_boundaries: tankBoundaries || null,
   };
 }
 
@@ -113,11 +114,32 @@ export function calculateFrictionLoss(input: {
   flow_m3h?: unknown;
   selected_pump?: any;
   components?: FrictionLossComponentInput[];
+  tank_boundaries?: any;
   calculated_at?: string;
 }) {
   const flowM3h = positive(input.flow_m3h);
   const components = Array.isArray(input.components) ? input.components : [];
   const reasons: string[] = [];
+  const boundaries = input.tank_boundaries || {};
+  const start = boundaries.start || {};
+  const end = boundaries.end || {};
+  const startBase = finite(start.base_elevation_fl0_m);
+  const startDepth = nonNegative(start.water_depth_m);
+  const drawHeight = nonNegative(start.pump_draw_height_m);
+  const endBase = finite(end.base_elevation_fl0_m);
+  const endDepth = nonNegative(end.water_depth_m);
+  const startPressure = start.open_to_atmosphere === false ? finite(start.gauge_pressure_kpa) : 0;
+  const endPressure = end.open_to_atmosphere === false ? finite(end.gauge_pressure_kpa) : 0;
+  if (!start.tank_id) reasons.push('Select a start tank.');
+  if (!end.tank_id) reasons.push('Select a receiving tank.');
+  if (startBase == null) reasons.push('Start tank base elevation relative to FL0 is required.');
+  if (startDepth == null) reasons.push('Start tank water depth must be zero or greater.');
+  if (drawHeight == null) reasons.push('Pump draw height must be zero or greater.');
+  if (drawHeight != null && startDepth != null && drawHeight > startDepth) reasons.push('Pump draw height cannot be above the start tank water level.');
+  if (endBase == null) reasons.push('Receiving tank base elevation relative to FL0 is required.');
+  if (endDepth == null) reasons.push('Receiving tank water depth must be zero or greater.');
+  if (start.open_to_atmosphere === false && startPressure == null) reasons.push('Start tank gauge pressure is required when it is not open to atmosphere.');
+  if (end.open_to_atmosphere === false && endPressure == null) reasons.push('Receiving tank gauge pressure is required when it is not open to atmosphere.');
   if (flowM3h == null) reasons.push('Circuit flow is missing or must be greater than zero.');
   if (!input.selected_pump?.project_equipment_item_id && !input.selected_pump?.id) {
     reasons.push('Select a pump assigned to this LSS system.');
@@ -218,6 +240,14 @@ export function calculateFrictionLoss(input: {
     sideTotals.discharge.total_head_loss_m == null
     ? null
     : sideTotals.suction.total_head_loss_m + sideTotals.discharge.total_head_loss_m;
+  const startSurface = startBase == null || startDepth == null ? null : startBase + startDepth;
+  const endSurface = endBase == null || endDepth == null ? null : endBase + endDepth;
+  const elevationHead = startSurface == null || endSurface == null ? null : endSurface - startSurface;
+  const pressureHead = startPressure == null || endPressure == null
+    ? null
+    : (endPressure - startPressure) * 1000 / (WATER_DENSITY_KG_M3 * GRAVITY_M_S2);
+  const staticHead = elevationHead == null || pressureHead == null ? null : elevationHead + pressureHead;
+  const totalDynamicHead = combinedHead == null || staticHead == null ? null : combinedHead + staticHead;
 
   return {
     calculation_version: FRICTION_LOSS_CALCULATION_VERSION,
@@ -232,9 +262,11 @@ export function calculateFrictionLoss(input: {
     formulas: {
       major: 'h_f = f × (L / D) × (v² / 2g)',
       minor: 'h_m = K × quantity × (v² / 2g)',
+      static: 'h_static = (receiving free-surface FL − start free-surface FL) + (receiving gauge pressure − start gauge pressure) / ρg',
+      total_dynamic_head: 'TDH = suction friction + discharge friction + static head',
       friction_factor: '64 / Re for laminar flow; Swamee–Jain approximation for turbulent flow',
     },
-    inputs: { flow_m3h: flowM3h, selected_pump: input.selected_pump || null },
+    inputs: { flow_m3h: flowM3h, selected_pump: input.selected_pump || null, tank_boundaries: boundaries },
     components: componentResults,
     side_totals: sideTotals,
     results: {
@@ -242,6 +274,12 @@ export function calculateFrictionLoss(input: {
       combined_pressure_drop_kpa: combinedHead == null
         ? null
         : round(WATER_DENSITY_KG_M3 * GRAVITY_M_S2 * combinedHead / 1000),
+      start_free_surface_fl0_m: round(startSurface),
+      receiving_free_surface_fl0_m: round(endSurface),
+      elevation_static_head_m: round(elevationHead),
+      pressure_head_m: round(pressureHead),
+      static_head_m: round(staticHead),
+      total_dynamic_head_m: round(totalDynamicHead),
     },
   };
 }

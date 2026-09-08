@@ -186,6 +186,7 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
   });
   const [circuitKey, setCircuitKey] = useState('');
   const [components, setComponents] = useState<any[]>([]);
+  const [tankBoundaries, setTankBoundaries] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const item = data?.items?.find((entry: any) => entry.circuit_key === circuitKey);
 
@@ -199,6 +200,10 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
       ...component,
       key: component.id || `${item.circuit_key}-${index}`,
     })));
+    setTankBoundaries(item.tank_boundaries || item.result?.inputs?.tank_boundaries || {
+      start: { tank_id: '', base_elevation_fl0_m: '0', water_depth_m: '', pump_draw_height_m: '', open_to_atmosphere: true, gauge_pressure_kpa: '0' },
+      end: { tank_id: '', base_elevation_fl0_m: '', water_depth_m: '', open_to_atmosphere: true, gauge_pressure_kpa: '0' },
+    });
   }, [item?.circuit_key, item?.source_fingerprint]);
 
   const pumpSelectionReady = item?.pump_selection_ready ?? (
@@ -223,6 +228,7 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
         circuit_key: circuitKey,
         project_equipment_item_id: item.project_equipment_item_id,
         components: components.map(({ key, piping_snapshot, reasons, ...component }) => component),
+        tank_boundaries: tankBoundaries,
       });
       toast.success('Friction Loss calculated and saved');
       onSaved();
@@ -261,6 +267,38 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         Authoritative circuit flow: <strong>{numberText(item?.flow_m3h)} m³/h</strong>. Darcy–Weisbach is used for straight pipe and K-values for fittings.
       </div>
+      {tankBoundaries && <section className="rounded-xl border border-stone-200 bg-stone-50/50 p-4">
+        <h4 className="font-semibold text-stone-900">Tank boundaries and static head</h4>
+        <p className="text-xs text-stone-500">Levels are metres relative to FL0. Static head uses the free surfaces; pump draw height is retained for suction/NPSH review.</p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {(['start', 'end'] as const).map(side => {
+            const boundary = tankBoundaries[side] || {};
+            const title = side === 'start' ? 'Start tank' : 'Receiving tank';
+            const updateBoundary = (key: string, value: any) => setTankBoundaries((current: any) => ({
+              ...current,
+              [side]: { ...current[side], [key]: value },
+            }));
+            return <div key={side} className="rounded-xl border border-stone-200 bg-white p-4">
+              <h5 className="font-semibold text-stone-800">{title}</h5>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="sm:col-span-2">
+                  <span className="mb-1 block text-xs font-medium text-stone-600">Tank</span>
+                  <select aria-label={title} value={boundary.tank_id || ''} onChange={event => updateBoundary('tank_id', event.target.value)} disabled={readOnly} className={fieldClass}>
+                    <option value="">Select tank</option>
+                    {boundary.tank_id && !(data?.tank_candidates || []).some((tank: any) => tank.id === boundary.tank_id) && <option value={boundary.tank_id}>{boundary.tank_snapshot?.tank_code || 'Saved tank'} · {boundary.tank_snapshot?.tank_name || 'Frozen evidence'}</option>}
+                    {(data?.tank_candidates || []).map((tank: any) => <option key={tank.id} value={tank.id}>{tank.tank_code} · {tank.tank_name}</option>)}
+                  </select>
+                </label>
+                <label><span className="mb-1 block text-xs font-medium text-stone-600">Tank base (m FL0)</span><input aria-label={`${title} base elevation`} type="number" step="any" value={boundary.base_elevation_fl0_m ?? ''} onChange={event => updateBoundary('base_elevation_fl0_m', event.target.value)} disabled={readOnly} className={fieldClass} /></label>
+                <label><span className="mb-1 block text-xs font-medium text-stone-600">Water depth (m)</span><input aria-label={`${title} water depth`} type="number" min="0" step="any" value={boundary.water_depth_m ?? ''} onChange={event => updateBoundary('water_depth_m', event.target.value)} disabled={readOnly} className={fieldClass} /></label>
+                {side === 'start' && <label><span className="mb-1 block text-xs font-medium text-stone-600">Pump draw above tank base (m)</span><input aria-label="Pump draw height" type="number" min="0" step="any" value={boundary.pump_draw_height_m ?? ''} onChange={event => updateBoundary('pump_draw_height_m', event.target.value)} disabled={readOnly} className={fieldClass} /></label>}
+                <label className="flex items-center gap-2 self-end pb-2 text-sm text-stone-700"><input aria-label={`${title} open to atmosphere`} type="checkbox" checked={boundary.open_to_atmosphere !== false} onChange={event => updateBoundary('open_to_atmosphere', event.target.checked)} disabled={readOnly} />Open to atmosphere</label>
+                {boundary.open_to_atmosphere === false && <label><span className="mb-1 block text-xs font-medium text-stone-600">Gauge pressure (kPa)</span><input aria-label={`${title} gauge pressure`} type="number" step="any" value={boundary.gauge_pressure_kpa ?? ''} onChange={event => updateBoundary('gauge_pressure_kpa', event.target.value)} disabled={readOnly} className={fieldClass} /></label>}
+              </div>
+            </div>;
+          })}
+        </div>
+      </section>}
       {!readOnly && !pumpSelectionReady && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
           <div className="font-semibold">Pump Selection is required before friction loss can be calculated.</div>
@@ -276,8 +314,8 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
       <SideSchedule side="suction" rows={components.filter(row => row.side === 'suction')} candidates={data?.piping_candidates || []} readOnly={readOnly} onChange={rows => setComponents([...rows, ...components.filter(row => row.side === 'discharge')])} />
       <SideSchedule side="discharge" rows={components.filter(row => row.side === 'discharge')} candidates={data?.piping_candidates || []} readOnly={readOnly} onChange={rows => setComponents([...components.filter(row => row.side === 'suction'), ...rows])} />
       {!!item?.reasons?.length && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-900"><AlertTriangle className="h-4 w-4" />Action required</div><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">{item.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul></div>}
-      {result?.side_totals && <div className="grid gap-3 sm:grid-cols-3">{(['suction', 'discharge'] as Side[]).map(side => <div key={side} className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs capitalize text-stone-500">{side} subtotal</div><div className="font-mono text-lg font-bold">{numberText(result.side_totals[side]?.total_head_loss_m)} m</div><div className="text-xs text-stone-500">{numberText(result.side_totals[side]?.pressure_drop_kpa)} kPa</div></div>)}<div className="rounded-xl bg-stone-900 px-4 py-3 text-white"><div className="text-xs text-stone-300">Combined friction loss</div><div className="font-mono text-lg font-bold">{numberText(result.results?.combined_head_loss_m)} m</div><div className="text-xs text-stone-300">{numberText(result.results?.combined_pressure_drop_kpa)} kPa</div></div></div>}
-       <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v1'} · inputs and item identities are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving || !pumpSelectionReady} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
+      {result?.side_totals && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{(['suction', 'discharge'] as Side[]).map(side => <div key={side} className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs capitalize text-stone-500">{side} friction</div><div className="font-mono text-lg font-bold">{numberText(result.side_totals[side]?.total_head_loss_m)} m</div><div className="text-xs text-stone-500">{numberText(result.side_totals[side]?.pressure_drop_kpa)} kPa</div></div>)}<div className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs text-stone-500">Combined friction</div><div className="font-mono text-lg font-bold">{numberText(result.results?.combined_head_loss_m)} m</div></div><div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3"><div className="text-xs text-blue-700">Static head</div><div className="font-mono text-lg font-bold text-blue-950">{numberText(result.results?.static_head_m)} m</div></div><div className="rounded-xl bg-stone-900 px-4 py-3 text-white"><div className="text-xs text-stone-300">Total dynamic head</div><div className="font-mono text-lg font-bold">{numberText(result.results?.total_dynamic_head_m)} m</div></div></div>}
+       <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v2'} · inputs and item identities are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving || !pumpSelectionReady} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
     </div>
   );
 }

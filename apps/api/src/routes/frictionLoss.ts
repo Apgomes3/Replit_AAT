@@ -101,6 +101,10 @@ router.get('/design-books/:bookId/friction-loss/:systemId', async (req: AuthRequ
     ...item,
     pump_candidates: frozen ? [] : await pumpCandidates(query, context.project_id, systemId),
     piping_candidates: frozen ? [] : await pipingCandidates(query, context.project_id, systemId),
+    tank_candidates: frozen ? [] : (context.tanks || []).map((tank: any) => ({
+      id: tank.id, tank_code: tank.tank_code, tank_name: tank.tank_name,
+      design_water_level_mm: tank.design_water_level_mm, height_mm: tank.height_mm,
+    })),
     frozen,
   });
 });
@@ -177,17 +181,41 @@ router.put(
         return res.status(400).json({ error: { code: 'INELIGIBLE_PIPING_ITEM', message: 'Every pipe or fitting must be assigned to this project and LSS system.' } });
       }
       const calculatedAt = new Date().toISOString();
+      const findTank = (id: unknown) => (context.tanks || []).find((tank: any) => tank.id === id);
+      const requestedBoundaries = req.body.tank_boundaries || {};
+      const startTank = findTank(requestedBoundaries.start?.tank_id);
+      const endTank = findTank(requestedBoundaries.end?.tank_id);
+      const tankBoundaries = {
+        start: {
+          tank_id: startTank?.id || null,
+          tank_snapshot: startTank ? { tank_id: startTank.id, tank_code: startTank.tank_code, tank_name: startTank.tank_name } : null,
+          base_elevation_fl0_m: requestedBoundaries.start?.base_elevation_fl0_m,
+          water_depth_m: requestedBoundaries.start?.water_depth_m,
+          pump_draw_height_m: requestedBoundaries.start?.pump_draw_height_m,
+          open_to_atmosphere: requestedBoundaries.start?.open_to_atmosphere !== false,
+          gauge_pressure_kpa: requestedBoundaries.start?.open_to_atmosphere === false ? requestedBoundaries.start?.gauge_pressure_kpa : 0,
+        },
+        end: {
+          tank_id: endTank?.id || null,
+          tank_snapshot: endTank ? { tank_id: endTank.id, tank_code: endTank.tank_code, tank_name: endTank.tank_name } : null,
+          base_elevation_fl0_m: requestedBoundaries.end?.base_elevation_fl0_m,
+          water_depth_m: requestedBoundaries.end?.water_depth_m,
+          open_to_atmosphere: requestedBoundaries.end?.open_to_atmosphere !== false,
+          gauge_pressure_kpa: requestedBoundaries.end?.open_to_atmosphere === false ? requestedBoundaries.end?.gauge_pressure_kpa : 0,
+        },
+      };
       const calculation = calculateFrictionLoss({
         flow_m3h: circuit.flow_m3h,
         selected_pump: selectedPump,
         components,
+        tank_boundaries: tankBoundaries,
         calculated_at: calculatedAt,
       });
       if (calculation.status !== 'ready') {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'VALIDATION', message: calculation.reasons.join(' '), reasons: calculation.reasons } });
       }
-      const sourceSnapshot = frictionSourceSnapshot(circuit, selectedPump, components);
+      const sourceSnapshot = frictionSourceSnapshot(circuit, selectedPump, components, tankBoundaries);
       const sourceFingerprint = frictionSourceFingerprint(sourceSnapshot);
       const saved = await runner(
       `INSERT INTO design_book_friction_loss_calculations
@@ -206,7 +234,7 @@ router.put(
       [
         context.id, system.id, circuit.circuit_key, selectedPump.project_equipment_item_id,
         FRICTION_LOSS_CALCULATION_VERSION, sourceFingerprint, JSON.stringify(sourceSnapshot),
-        JSON.stringify({ flow_m3h: circuit.flow_m3h, components }),
+         JSON.stringify({ flow_m3h: circuit.flow_m3h, components, tank_boundaries: tankBoundaries }),
         JSON.stringify(calculation), req.user!.id, calculatedAt,
       ],
     );

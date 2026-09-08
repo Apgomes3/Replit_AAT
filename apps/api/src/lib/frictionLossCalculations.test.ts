@@ -22,12 +22,17 @@ const fitting = {
   fitting_k_value: 0.9,
   quantity: 2,
 };
+const tankBoundaries = {
+  start: { tank_id: 'tank-1', base_elevation_fl0_m: 0, water_depth_m: 3, pump_draw_height_m: 0.5, open_to_atmosphere: true },
+  end: { tank_id: 'tank-2', base_elevation_fl0_m: 5, water_depth_m: 2, open_to_atmosphere: true },
+};
 
 describe('calculateFrictionLoss', () => {
   it('calculates separate Darcy-Weisbach and K-value side totals', () => {
     const result = calculateFrictionLoss({
       flow_m3h: 36,
       selected_pump: pump,
+      tank_boundaries: tankBoundaries,
       components: [
         { ...pipe, side: 'suction' },
         { ...fitting, side: 'discharge' },
@@ -45,6 +50,8 @@ describe('calculateFrictionLoss', () => {
       5,
     );
     expect(result.results.combined_pressure_drop_kpa).toBeGreaterThan(0);
+    expect(result.results.static_head_m).toBe(4);
+    expect(result.results.total_dynamic_head_m).toBeCloseTo(result.results.combined_head_loss_m + 4, 5);
   });
 
   it('returns specific readiness reasons instead of zero defaults', () => {
@@ -67,6 +74,7 @@ describe('calculateFrictionLoss', () => {
     const result = calculateFrictionLoss({
       flow_m3h: 10,
       selected_pump: pump,
+      tank_boundaries: tankBoundaries,
       components: [
         { ...fitting, side: 'suction', quantity: 0 },
         { ...fitting, side: 'discharge', fitting_k_value: null },
@@ -75,5 +83,20 @@ describe('calculateFrictionLoss', () => {
     expect(result.status).toBe('incomplete');
     expect(result.reasons.some(reason => reason.includes('quantity must be greater than zero'))).toBe(true);
     expect(result.reasons.some(reason => reason.includes('K-value must be zero or greater'))).toBe(true);
+  });
+
+  it('uses free surfaces for static head and keeps pump draw height out of TDH', () => {
+    const first = calculateFrictionLoss({
+      flow_m3h: 36, selected_pump: pump, tank_boundaries: tankBoundaries,
+      components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+    });
+    const second = calculateFrictionLoss({
+      flow_m3h: 36, selected_pump: pump,
+      tank_boundaries: { ...tankBoundaries, start: { ...tankBoundaries.start, pump_draw_height_m: 2.5 } },
+      components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+    });
+    expect(first.results.static_head_m).toBe(4);
+    expect(second.results.static_head_m).toBe(4);
+    expect(second.results.total_dynamic_head_m).toBe(first.results.total_dynamic_head_m);
   });
 });

@@ -54,6 +54,10 @@ const detail = {
     { id: 'pipe-1', piping_code: 'PI-101', product_name: 'PVC pipe' },
     { id: 'fit-1', piping_code: 'FI-101', product_name: 'Elbow' },
   ],
+  tank_candidates: [
+    { id: 'tank-1', tank_code: 'TK-01', tank_name: 'Main tank' },
+    { id: 'tank-2', tank_code: 'TK-02', tank_name: 'Receiving tank' },
+  ],
   frozen: false,
 };
 const readyDetail = {
@@ -90,6 +94,9 @@ describe('FrictionLossTab', () => {
     expect(await screen.findByText('Suction side')).toBeInTheDocument();
     expect(screen.getByText('Discharge side')).toBeInTheDocument();
     expect(screen.getByText(/Authoritative circuit flow:/)).toHaveTextContent('72.000 m³/h');
+    expect(await screen.findByRole('combobox', { name: 'Start tank' })).toHaveValue('');
+    expect(screen.getByRole('spinbutton', { name: 'Start tank base elevation' })).toHaveValue(0);
+    expect(screen.getByRole('checkbox', { name: 'Start tank open to atmosphere' })).toBeChecked();
     expect(screen.getByRole('link', { name: 'Open LSS Pump Selection' })).toHaveAttribute(
       'href',
       '/design-books/book-1/lss/system-1?tab=pump#pump-selection',
@@ -105,6 +112,12 @@ describe('FrictionLossTab', () => {
     await screen.findByText('Suction side');
     expect(screen.getByText('P-101 · Duty pump')).toBeInTheDocument();
     expect(screen.getByText(/read-only from Pump Selection/)).toBeInTheDocument();
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Start tank' }), 'tank-1');
+    await user.type(screen.getByRole('spinbutton', { name: 'Start tank water depth' }), '3');
+    await user.type(screen.getByRole('spinbutton', { name: 'Pump draw height' }), '0.5');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Receiving tank' }), 'tank-2');
+    await user.type(screen.getByRole('spinbutton', { name: 'Receiving tank base elevation' }), '5');
+    await user.type(screen.getByRole('spinbutton', { name: 'Receiving tank water depth' }), '2');
 
     const suction = screen.getByText('Suction side').closest('section')!;
     await user.click(within(suction).getByRole('button', { name: 'Pipe' }));
@@ -132,6 +145,10 @@ describe('FrictionLossTab', () => {
       expect.objectContaining({
         circuit_key: 'loop:1',
         project_equipment_item_id: 'pump-1',
+        tank_boundaries: expect.objectContaining({
+          start: expect.objectContaining({ tank_id: 'tank-1', base_elevation_fl0_m: '0', water_depth_m: '3', pump_draw_height_m: '0.5', open_to_atmosphere: true }),
+          end: expect.objectContaining({ tank_id: 'tank-2', base_elevation_fl0_m: '5', water_depth_m: '2', open_to_atmosphere: true }),
+        }),
         components: expect.arrayContaining([
           expect.objectContaining({
             side: 'suction',
