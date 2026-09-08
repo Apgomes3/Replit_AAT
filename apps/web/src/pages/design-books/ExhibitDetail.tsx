@@ -738,6 +738,7 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
   const effectiveEditShape = form.shape_type || tank.eff_shape || 'Rectangular';
   const isCyl  = effectiveEditShape.toLowerCase() === 'cylindrical';
   const isCust = effectiveEditShape.toLowerCase() === 'custom';
+  const hasAcceptedCustomFootprint = isCust && !!form.custom_footprint;
   const outerLengthForArea = Number(form.length_mm || tank.eff_length_mm || tank.product_length_mm);
   const outerWidthForArea = Number(form.width_mm || tank.eff_width_mm || tank.product_width_mm);
 
@@ -1068,7 +1069,7 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-stone-500 mb-1">Shape</label>
-            <select value={form.shape_type} onChange={e => handleShapeChange(e.target.value)}
+            <select aria-label="Shape" value={form.shape_type} onChange={e => handleShapeChange(e.target.value)}
               className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30">
               {tank.product_master_id && <option value="">Use PIM default ({tank.eff_shape || 'not set'})</option>}
               {TANK_SHAPES.map(s => <option key={s}>{s}</option>)}
@@ -1099,26 +1100,28 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
             {!isCyl && (
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Length</label>
-                <input type="number" placeholder={tank.product_master_id && tank.eff_length_mm ? String(tank.eff_length_mm) : '0'} value={form.length_mm}
+                <input type="number" aria-label="Length" placeholder={tank.product_master_id && tank.eff_length_mm ? String(tank.eff_length_mm) : '0'} value={form.length_mm}
+                  disabled={hasAcceptedCustomFootprint}
                   onChange={e => setF('length_mm', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400 disabled:border-stone-200" />
               </div>
             )}
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">{isCyl ? 'Diameter' : 'Width'}</label>
-              <input type="number" placeholder={tank.product_master_id && tank.eff_width_mm ? String(tank.eff_width_mm) : '0'} value={form.width_mm}
+              <input type="number" aria-label={isCyl ? 'Diameter' : 'Width'} placeholder={tank.product_master_id && tank.eff_width_mm ? String(tank.eff_width_mm) : '0'} value={form.width_mm}
+                disabled={hasAcceptedCustomFootprint}
                 onChange={e => setF('width_mm', e.target.value)}
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400 disabled:border-stone-200" />
             </div>
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">Height</label>
-              <input type="number" placeholder={tank.product_master_id && tank.eff_height_mm ? String(tank.eff_height_mm) : '0'} value={form.height_mm}
+              <input type="number" aria-label="Height" placeholder={tank.product_master_id && tank.eff_height_mm ? String(tank.eff_height_mm) : '0'} value={form.height_mm}
                 onChange={e => setF('height_mm', e.target.value)}
                 className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
             </div>
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">Water Level</label>
-              <input type="number" placeholder={tank.product_master_id && tank.eff_water_level_mm ? String(tank.eff_water_level_mm) : '0'} value={form.design_water_level_mm}
+              <input type="number" aria-label="Water Level" placeholder={tank.product_master_id && tank.eff_water_level_mm ? String(tank.eff_water_level_mm) : '0'} value={form.design_water_level_mm}
                 onChange={e => setF('design_water_level_mm', e.target.value)}
                 className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
             </div>
@@ -1545,6 +1548,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
   };
 
   const isCyl = newForm.shape_type === 'Cylindrical';
+  const hasAcceptedNewCustomFootprint = newForm.shape_type === 'Custom' && !!newForm.custom_footprint;
   const newFootprintMeasurement = footprintMeasurement(newForm.custom_footprint);
   const newSurfaceArea = newForm.shape_type === 'Custom' && newFootprintMeasurement
     ? newFootprintMeasurement.area
@@ -1829,18 +1833,20 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
                 <div>
                   <label htmlFor="new-tank-length" className="block text-xs text-stone-500 mb-1">Length (mm)</label>
                   <input id="new-tank-length" type="number" min="0" placeholder="0" value={newForm.length_mm} onChange={e => setF('length_mm', e.target.value)}
+                    disabled={hasAcceptedNewCustomFootprint}
                     aria-invalid={!!newFieldErrors.length_mm}
                     aria-describedby={newFieldErrors.length_mm ? 'new-tank-length_mm-error' : undefined}
-                    className={newInputClass('length_mm')} />
+                    className={newInputClass('length_mm', 'disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400 disabled:border-stone-200')} />
                   {fieldError('length_mm')}
                 </div>
               )}
               <div>
                 <label htmlFor="new-tank-width" className="block text-xs text-stone-500 mb-1">{isCyl ? 'Diameter (mm)' : 'Width (mm)'}</label>
                 <input id="new-tank-width" type="number" min="0" placeholder="0" value={newForm.width_mm} onChange={e => setF('width_mm', e.target.value)}
+                  disabled={hasAcceptedNewCustomFootprint}
                   aria-invalid={!!newFieldErrors.width_mm}
                   aria-describedby={newFieldErrors.width_mm ? 'new-tank-width_mm-error' : undefined}
-                  className={newInputClass('width_mm')} />
+                  className={newInputClass('width_mm', 'disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400 disabled:border-stone-200')} />
                 {fieldError('width_mm')}
               </div>
               <div>

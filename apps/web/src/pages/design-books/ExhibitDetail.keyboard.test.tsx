@@ -16,6 +16,33 @@ vi.mock('../../lib/api', () => ({
   },
 }));
 
+vi.mock('../../components/design-books/CustomFootprintEditor', () => ({
+  default: ({ onAccept }: { onAccept: (value: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() => onAccept({
+        schema_version: 1,
+        units: 'mm',
+        calibration: { model_unit: 'mm', mm_per_unit: 1 },
+        closed: true,
+        segments: [
+          { type: 'line', start: { x: 0, y: 0 }, end: { x: 1000, y: 0 } },
+          { type: 'line', start: { x: 1000, y: 0 }, end: { x: 0, y: 1000 } },
+          { type: 'line', start: { x: 0, y: 1000 }, end: { x: 0, y: 0 } },
+        ],
+        sampling: { quadratic_steps: 24, freehand_step_mm: 25 },
+      })}
+    >
+      Accept test footprint
+    </button>
+  ),
+  FootprintPreview: () => null,
+  footprintMeasurement: (value: any) => value ? ({ area: 0.5, perimeter: 3414.2, approximate: false }) : null,
+  FootprintPrompt: ({ onLaunch }: { onLaunch: () => void }) => (
+    <button type="button" onClick={onLaunch}>Open footprint tool</button>
+  ),
+}));
+
 const apiGet = vi.mocked(api.get);
 const apiPost = vi.mocked(api.post);
 const apiPut = vi.mocked(api.put);
@@ -445,6 +472,92 @@ describe('ExhibitDetail Escape navigation', () => {
       height_mm: null,
       design_water_level_mm: null,
     })));
+  });
+
+  it('disables only plan dimensions after accepting a new tank footprint and restores them after leaving Custom', async () => {
+    const user = userEvent.setup();
+    renderExhibit();
+
+    await user.click(await screen.findByRole('button', { name: 'Create New Tank' }));
+    const shape = screen.getByLabelText('Shape');
+    const length = screen.getByLabelText('Length (mm)');
+    const width = screen.getByLabelText('Width (mm)');
+    const height = screen.getByLabelText('Height (mm)');
+    const waterLevel = screen.getByLabelText('Water Level (mm)');
+
+    await user.selectOptions(shape, 'Custom');
+    expect(length).toBeEnabled();
+    expect(width).toBeEnabled();
+    expect(height).toBeEnabled();
+    expect(waterLevel).toBeEnabled();
+    await user.click(screen.getAllByRole('button', { name: 'Open footprint tool' }).at(-1)!);
+    await user.click(screen.getByRole('button', { name: 'Accept test footprint' }));
+
+    expect(length).toBeDisabled();
+    expect(width).toBeDisabled();
+    expect(height).toBeEnabled();
+    expect(waterLevel).toBeEnabled();
+
+    await user.selectOptions(shape, 'Rectangular');
+    expect(length).toBeEnabled();
+    expect(width).toBeEnabled();
+    expect(height).toBeEnabled();
+    expect(waterLevel).toBeEnabled();
+  });
+
+  it('disables only plan dimensions for an existing accepted custom footprint and restores them after a shape change', async () => {
+    apiGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/design-books/')) return {
+        data: {
+          ...book,
+          tanks: [{
+            id: 'tank-1',
+            exhibit_id: 'exhibit-1',
+            tank_code: 'TK-01',
+            tank_name: 'Custom Tank',
+            shape_type: 'Custom',
+            length_mm: 5000,
+            width_mm: 3000,
+            height_mm: 2500,
+            design_water_level_mm: 2200,
+            custom_footprint: {
+              schema_version: 1,
+              units: 'mm',
+              calibration: { model_unit: 'mm', mm_per_unit: 1 },
+              closed: true,
+              segments: [
+                { type: 'line', start: { x: 0, y: 0 }, end: { x: 1000, y: 0 } },
+                { type: 'line', start: { x: 1000, y: 0 }, end: { x: 0, y: 1000 } },
+                { type: 'line', start: { x: 0, y: 1000 }, end: { x: 0, y: 0 } },
+              ],
+              sampling: { quadratic_steps: 24, freehand_step_mm: 25 },
+            },
+            status: 'Active',
+          }],
+        },
+      } as any;
+      return { data: { items: [] } } as any;
+    });
+    const user = userEvent.setup();
+    renderExhibit();
+
+    await user.click((await screen.findAllByRole('button', { name: 'Edit' }))[0]);
+    const shape = screen.getByLabelText('Shape');
+    const length = screen.getByLabelText('Length');
+    const width = screen.getByLabelText('Width');
+    const height = screen.getByLabelText('Height');
+    const waterLevel = screen.getByLabelText('Water Level');
+
+    expect(length).toBeDisabled();
+    expect(width).toBeDisabled();
+    expect(height).toBeEnabled();
+    expect(waterLevel).toBeEnabled();
+
+    await user.selectOptions(shape, 'Rectangular');
+    expect(length).toBeEnabled();
+    expect(width).toBeEnabled();
+    expect(height).toBeEnabled();
+    expect(waterLevel).toBeEnabled();
   });
 
   it('persists the tank-owned overflow level from Advanced Details', async () => {
