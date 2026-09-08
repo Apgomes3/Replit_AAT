@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronLeft, Crosshair, GitBranch, Image as ImageIcon, MousePointer2, PenLine, Redo2, Ruler, RotateCcw, Scissors, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, Crosshair, GitBranch, Image as ImageIcon, MousePointer2, PenLine, Redo2, Ruler, RotateCcw, Scissors, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
 
 export type FootprintPoint = { x: number; y: number };
 export type FootprintSegment =
@@ -361,6 +361,8 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const mmPerUnit = Math.max(0.000001, document.calibration.mm_per_unit || 1);
   const displayDocument = useMemo(() => mapDocumentPoints(document, 1 / mmPerUnit), [document, mmPerUnit]);
   const [box] = useState(() => viewBox(mapDocumentPoints(documentFrom(initialValue), 1 / Math.max(0.000001, documentFrom(initialValue).calibration.mm_per_unit || 1))));
+  const [viewport, setViewport] = useState(box);
+  const zoomLevel = box.width / viewport.width;
   const measurement = useMemo(() => measure(document), [document]);
   const validation = useMemo(() => validateEditorDocument(document), [document]);
   const sampled = measurement.points;
@@ -371,7 +373,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const canClose = !!firstPoint && !!lastPoint && document.segments.length >= 2 && !document.closed;
   const displayFirstPoint = firstPoint ? mapPoint(firstPoint, 1 / mmPerUnit) : null;
   const displayLastPoint = lastPoint ? mapPoint(lastPoint, 1 / mmPerUnit) : null;
-  const snapTolerance = Math.max(18, box.width / 55);
+  const snapTolerance = Math.max(18 / zoomLevel, viewport.width / 55);
   const temporaryDistanceMm = measurementPoints.length === 2
     ? distance(measurementPoints[0], measurementPoints[1]) * mmPerUnit
     : null;
@@ -394,19 +396,49 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     setFuture([]);
     setDocument(next);
   };
-  const pointFromEvent = (event: React.PointerEvent<SVGSVGElement>): FootprintPoint | null => {
+  const pointFromClient = (clientX: number, clientY: number): FootprintPoint | null => {
     const rect = svgRef.current!.getBoundingClientRect();
-    const scale = Math.min(rect.width / box.width, rect.height / box.height);
-    const renderedWidth = box.width * scale;
-    const renderedHeight = box.height * scale;
+    const scale = Math.min(rect.width / viewport.width, rect.height / viewport.height);
+    const renderedWidth = viewport.width * scale;
+    const renderedHeight = viewport.height * scale;
     const left = rect.left + (rect.width - renderedWidth) / 2;
     const top = rect.top + (rect.height - renderedHeight) / 2;
-    if (event.clientX < left || event.clientX > left + renderedWidth
-      || event.clientY < top || event.clientY > top + renderedHeight) return null;
+    if (clientX < left || clientX > left + renderedWidth
+      || clientY < top || clientY > top + renderedHeight) return null;
     return {
-      x: box.x + (event.clientX - left) / scale,
-      y: box.y + (event.clientY - top) / scale,
+      x: viewport.x + (clientX - left) / scale,
+      y: viewport.y + (clientY - top) / scale,
     };
+  };
+  const pointFromEvent = (event: React.PointerEvent<SVGSVGElement>): FootprintPoint | null =>
+    pointFromClient(event.clientX, event.clientY);
+  const setZoom = (nextZoom: number, anchor?: FootprintPoint) => {
+    const clampedZoom = Math.min(8, Math.max(1, nextZoom));
+    if (clampedZoom === 1) {
+      setViewport(box);
+      setPointerPoint(null);
+      return;
+    }
+    const focus = anchor ?? {
+      x: viewport.x + viewport.width / 2,
+      y: viewport.y + viewport.height / 2,
+    };
+    const focusX = (focus.x - viewport.x) / viewport.width;
+    const focusY = (focus.y - viewport.y) / viewport.height;
+    const width = box.width / clampedZoom;
+    const height = box.height / clampedZoom;
+    setViewport({
+      x: focus.x - focusX * width,
+      y: focus.y - focusY * height,
+      width,
+      height,
+    });
+    setPointerPoint(null);
+  };
+  const onWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    const anchor = pointFromClient(event.clientX, event.clientY);
+    setZoom(zoomLevel * (event.deltaY < 0 ? 1.25 : 0.8), anchor ?? undefined);
   };
   const modelPointFromDisplay = (point: FootprintPoint) => mapPoint(point, mmPerUnit);
   const setCalibration = (
@@ -941,6 +973,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
               ))}
               <button type="button" aria-pressed={measurementMode} onClick={toggleMeasurementMode} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${measurementMode ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}><Ruler className="h-3.5 w-3.5" />Measure</button>
               <span className="ml-auto flex items-center gap-1">
+                <button type="button" onClick={() => setZoom(zoomLevel / 2)} disabled={zoomLevel <= 1} className="rounded-lg border border-stone-200 p-2 text-stone-600 disabled:opacity-30" aria-label="Zoom out"><ZoomOut className="h-4 w-4" /></button>
+                <button type="button" onClick={() => setZoom(1)} disabled={zoomLevel <= 1} className="min-w-12 rounded-lg border border-stone-200 px-2 py-2 text-xs font-semibold text-stone-600 disabled:opacity-50" aria-label="Reset zoom">{Math.round(zoomLevel * 100)}%</button>
+                <button type="button" onClick={() => setZoom(zoomLevel * 2)} disabled={zoomLevel >= 8} className="rounded-lg border border-stone-200 p-2 text-stone-600 disabled:opacity-30" aria-label="Zoom in"><ZoomIn className="h-4 w-4" /></button>
                 <button type="button" onClick={undo} disabled={!past.length} className="rounded-lg border border-stone-200 p-2 text-stone-600 disabled:opacity-30" aria-label="Undo"><Undo2 className="h-4 w-4" /></button>
                 <button type="button" onClick={redo} disabled={!future.length} className="rounded-lg border border-stone-200 p-2 text-stone-600 disabled:opacity-30" aria-label="Redo"><Redo2 className="h-4 w-4" /></button>
                 <button type="button" onClick={reset} className={`rounded-lg border px-2 py-2 text-xs ${resetConfirm ? 'border-red-300 bg-red-50 text-red-700' : 'border-stone-200 text-stone-600'}`} aria-label="Reset footprint">{resetConfirm ? 'Confirm reset' : <RotateCcw className="h-4 w-4" />}</button>
@@ -948,11 +983,11 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
               </span>
             </div>
             <div className="relative overflow-hidden rounded-xl border border-sky-200 bg-[linear-gradient( to right,rgba(14,116,144,.08)_1px,transparent_1px),linear-gradient(to bottom,rgba(14,116,144,.08)_1px,transparent_1px)] bg-[size:32px_32px]">
-              <svg ref={svgRef} viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} preserveAspectRatio="xMidYMid meet" data-testid="footprint-drawing-surface" className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={() => { if (!drag && !activeFreehand) setPointerPoint(null); setSnapTarget(false); }} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
+              <svg ref={svgRef} viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`} preserveAspectRatio="xMidYMid meet" data-testid="footprint-drawing-surface" className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={() => { if (!drag && !activeFreehand) setPointerPoint(null); setSnapTarget(false); }} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
                 {referenceImage && <image data-testid="footprint-reference-image" href={referenceImage.url} x={box.x} y={box.y} width={box.width} height={box.height} preserveAspectRatio="xMidYMid meet" opacity={referenceOpacity / 100} pointerEvents="none" aria-hidden="true" />}
                 {pointerPoint && !calibrationMode && !measurementMode && <>
-                  <line data-testid="pointer-guide-horizontal" x1={box.x} y1={pointerPoint.y} x2={box.x + box.width} y2={pointerPoint.y} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, box.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
-                  <line data-testid="pointer-guide-vertical" x1={pointerPoint.x} y1={box.y} x2={pointerPoint.x} y2={box.y + box.height} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, box.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
+                  <line data-testid="pointer-guide-horizontal" x1={viewport.x} y1={pointerPoint.y} x2={viewport.x + viewport.width} y2={pointerPoint.y} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, viewport.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
+                  <line data-testid="pointer-guide-vertical" x1={pointerPoint.x} y1={viewport.y} x2={pointerPoint.x} y2={viewport.y + viewport.height} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, viewport.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
                 </>}
                 <path d={pathFor(displayDocument)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={Math.max(3, box.width / 180)} strokeLinejoin="round" strokeLinecap="round" />
                 {activeFreehand && <polyline points={activeFreehand.map(point => mapPoint(point, 1 / mmPerUnit)).map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={Math.max(3, box.width / 180)} />}
@@ -1024,7 +1059,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 {document.closed ? 'Outline closed. Use Select and edit to refine it.' : canClose ? 'Click near the highlighted start point to snap closed, or use Close outline.' : mode === 'select' ? 'Drag blue vertices or yellow curve handles to edit.' : pendingStart ? 'Click the next point to add a segment.' : 'Click or drag to start the next segment.'}
               </span>
             </div>
-            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Keyboard placement: focus the drawing surface and press an Arrow key to show and move the orange position marker; press Enter to place at that exact drawing coordinate, C to close, and Ctrl/Cmd+Z or Y to undo/redo. With Quadratic curve active, drag the yellow handle to adjust the latest curve.</p>
+            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Zoom with the controls or mouse wheel over the detail you want to inspect. Keyboard placement: focus the drawing surface and press an Arrow key to show and move the orange position marker; press Enter to place at that exact drawing coordinate, C to close, and Ctrl/Cmd+Z or Y to undo/redo. With Quadratic curve active, drag the yellow handle to adjust the latest curve.</p>
           </div>
           <aside className="space-y-3">
             {mode === 'select' && document.segments.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">

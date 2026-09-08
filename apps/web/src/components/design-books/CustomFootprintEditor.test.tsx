@@ -302,6 +302,38 @@ describe('CustomFootprintEditor', () => {
     expect(screen.queryByTestId('pointer-guide-horizontal')).not.toBeInTheDocument();
   });
 
+  it('zooms into drawing details without changing the footprint geometry', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={onAccept} onCancel={vi.fn()} />);
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    const initialViewBox = surface.getAttribute('viewBox')!.split(' ').map(Number);
+
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const zoomedViewBox = surface.getAttribute('viewBox')!.split(' ').map(Number);
+    expect(zoomedViewBox[2]).toBeCloseTo(initialViewBox[2] / 2);
+    expect(zoomedViewBox[3]).toBeCloseTo(initialViewBox[3] / 2);
+    expect(screen.getByRole('button', { name: 'Reset zoom' })).toHaveTextContent('200%');
+
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    expect(onAccept).toHaveBeenCalledWith(expect.objectContaining({ segments: rectangle.segments }));
+  });
+
+  it('zooms toward the mouse position with the wheel and resets to the full view', async () => {
+    const user = userEvent.setup();
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, toJSON: () => ({}),
+    });
+    const initialViewBox = surface.getAttribute('viewBox');
+    fireEvent.wheel(surface, { clientX: 800, clientY: 250, deltaY: -100 });
+    expect(surface.getAttribute('viewBox')).not.toBe(initialViewBox);
+    expect(screen.getByRole('button', { name: 'Reset zoom' })).toHaveTextContent('125%');
+    await user.click(screen.getByRole('button', { name: 'Reset zoom' }));
+    expect(surface).toHaveAttribute('viewBox', initialViewBox);
+  });
+
   it('places the first, second, third, and later points in one stable coordinate frame', async () => {
     const user = userEvent.setup();
     const onAccept = vi.fn();
