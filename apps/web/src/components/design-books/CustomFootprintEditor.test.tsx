@@ -321,6 +321,18 @@ describe('CustomFootprintEditor', () => {
     expect(onAccept).toHaveBeenCalledWith(expect.objectContaining({ segments: rectangle.segments }));
   });
 
+  it('keeps segment handles proportionate while zooming in', async () => {
+    const user = userEvent.setup();
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Select and edit' }));
+    const handle = screen.getByTestId('segment-start-handle-0');
+    const initialRadius = Number(handle.getAttribute('r'));
+    const initialStroke = Number(handle.getAttribute('stroke-width'));
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(Number(handle.getAttribute('r'))).toBeCloseTo(initialRadius / 2);
+    expect(Number(handle.getAttribute('stroke-width'))).toBeCloseTo(initialStroke / 2);
+  });
+
   it('zooms toward the mouse position with the wheel and resets to the full view', async () => {
     const user = userEvent.setup();
     render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);

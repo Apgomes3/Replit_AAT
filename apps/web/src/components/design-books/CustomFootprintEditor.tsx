@@ -369,6 +369,9 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const [box] = useState(() => viewBox(mapDocumentPoints(documentFrom(initialValue), 1 / Math.max(0.000001, documentFrom(initialValue).calibration.mm_per_unit || 1))));
   const [viewport, setViewport] = useState(box);
   const zoomLevel = box.width / viewport.width;
+  const visualSize = (minimum: number, divisor: number) =>
+    Math.max(minimum, box.width / divisor) / zoomLevel;
+  const visualStroke = (width: number) => width / zoomLevel;
   const measurement = useMemo(() => measure(document), [document]);
   const validation = useMemo(() => validateEditorDocument(document), [document]);
   const sampled = measurement.points;
@@ -1025,8 +1028,8 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                   <line data-testid="pointer-guide-horizontal" x1={viewport.x} y1={pointerPoint.y} x2={viewport.x + viewport.width} y2={pointerPoint.y} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, viewport.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
                   <line data-testid="pointer-guide-vertical" x1={pointerPoint.x} y1={viewport.y} x2={pointerPoint.x} y2={viewport.y + viewport.height} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, viewport.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
                 </>}
-                <path d={pathFor(displayDocument)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={Math.max(3, box.width / 180)} strokeLinejoin="round" strokeLinecap="round" />
-                {activeFreehand && <polyline points={activeFreehand.map(point => mapPoint(point, 1 / mmPerUnit)).map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={Math.max(3, box.width / 180)} />}
+                <path d={pathFor(displayDocument)} fill={document.closed ? '#bae6fd' : 'none'} fillOpacity=".65" stroke="#0369a1" strokeWidth={visualSize(3, 180)} strokeLinejoin="round" strokeLinecap="round" />
+                {activeFreehand && <polyline points={activeFreehand.map(point => mapPoint(point, 1 / mmPerUnit)).map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#0284c7" strokeWidth={visualSize(3, 180)} />}
                 {displayDocument.segments.map((segment, index) => {
                   const start = segmentStart(segment);
                   const end = segmentEnd(segment);
@@ -1036,7 +1039,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                       d={segmentPath}
                       fill="none"
                       stroke={selectedSegment === index ? '#f59e0b' : 'transparent'}
-                      strokeWidth={selectedSegment === index ? Math.max(7, box.width / 100) : Math.max(22, box.width / 28)}
+                      strokeWidth={selectedSegment === index ? visualSize(7, 100) : visualSize(22, 28)}
                       strokeOpacity={selectedSegment === index ? 0.9 : 1}
                       strokeLinecap="round"
                       pointerEvents="stroke"
@@ -1055,35 +1058,35 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                       role="button"
                     />}
                     {mode === 'select' && !calibrationMode && !measurementMode && <>
-                      <circle cx={start.x} cy={start.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index)} />
-                      <circle cx={start.x} cy={start.y} r={Math.max(8, box.width / 72)} fill="#fff" stroke="#0369a1" strokeWidth="3" pointerEvents="none" />
-                      <circle cx={end.x} cy={end.y} r={Math.max(14, box.width / 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index + 1)} />
-                      <circle cx={end.x} cy={end.y} r={Math.max(7, box.width / 82)} fill="#fff" stroke="#0e7490" strokeWidth="2" pointerEvents="none" />
+                      <circle cx={start.x} cy={start.y} r={visualSize(14, 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index)} />
+                      <circle data-testid={`segment-start-handle-${index}`} cx={start.x} cy={start.y} r={visualSize(8, 72)} fill="#fff" stroke="#0369a1" strokeWidth={visualStroke(3)} pointerEvents="none" />
+                      <circle cx={end.x} cy={end.y} r={visualSize(14, 34)} fill="transparent" onPointerDown={event => startDrag(event, 'vertex', index + 1)} />
+                      <circle cx={end.x} cy={end.y} r={visualSize(7, 82)} fill="#fff" stroke="#0e7490" strokeWidth={visualStroke(2)} pointerEvents="none" />
                     </>}
                     {(mode === 'select' || (mode === 'curve' && index === activeQuadraticIndex))
                       && !calibrationMode && !measurementMode && segment.type === 'quadratic' && <>
-                      <line x1={segment.start.x} y1={segment.start.y} x2={segment.control.x} y2={segment.control.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
-                      <line x1={segment.control.x} y1={segment.control.y} x2={segment.end.x} y2={segment.end.y} stroke="#38bdf8" strokeDasharray="5 4" pointerEvents="none" />
-                      <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(16, box.width / 32)} fill="transparent" onPointerDown={event => startDrag(event, 'control', index)} aria-label={`Drag yellow curve handle ${index + 1} to adjust the curve`} />
-                      <circle cx={segment.control.x} cy={segment.control.y} r={Math.max(9, box.width / 68)} fill="#fef08a" stroke="#a16207" strokeWidth="3" pointerEvents="none" />
+                      <line x1={segment.start.x} y1={segment.start.y} x2={segment.control.x} y2={segment.control.y} stroke="#38bdf8" strokeWidth={visualStroke(1)} strokeDasharray={`${visualStroke(5)} ${visualStroke(4)}`} pointerEvents="none" />
+                      <line x1={segment.control.x} y1={segment.control.y} x2={segment.end.x} y2={segment.end.y} stroke="#38bdf8" strokeWidth={visualStroke(1)} strokeDasharray={`${visualStroke(5)} ${visualStroke(4)}`} pointerEvents="none" />
+                      <circle cx={segment.control.x} cy={segment.control.y} r={visualSize(16, 32)} fill="transparent" onPointerDown={event => startDrag(event, 'control', index)} aria-label={`Drag yellow curve handle ${index + 1} to adjust the curve`} />
+                      <circle cx={segment.control.x} cy={segment.control.y} r={visualSize(9, 68)} fill="#fef08a" stroke="#a16207" strokeWidth={visualStroke(3)} pointerEvents="none" />
                     </>}
                   </g>;
                 })}
                 {pendingStart && (() => {
                   const point = mapPoint(pendingStart, 1 / mmPerUnit);
-                  return <circle cx={point.x} cy={point.y} r={Math.max(7, box.width / 85)} fill="#fef08a" stroke="#a16207" strokeWidth="3" />;
+                  return <circle cx={point.x} cy={point.y} r={visualSize(7, 85)} fill="#fef08a" stroke="#a16207" strokeWidth={visualStroke(3)} />;
                 })()}
                 {displayFirstPoint && canClose && <>
-                  <circle cx={displayFirstPoint.x} cy={displayFirstPoint.y} r={snapTarget ? Math.max(22, box.width / 28) : Math.max(16, box.width / 38)} fill={snapTarget ? '#bbf7d0' : '#e0f2fe'} fillOpacity=".8" stroke={snapTarget ? '#15803d' : '#0284c7'} strokeWidth="3" strokeDasharray={snapTarget ? undefined : '5 4'} pointerEvents="none" />
-                  {snapTarget && <text x={displayFirstPoint.x} y={displayFirstPoint.y - Math.max(26, box.width / 25)} textAnchor="middle" fill="#166534" fontSize={Math.max(13, box.width / 55)} fontWeight="700" pointerEvents="none">Release to close</text>}
+                  <circle cx={displayFirstPoint.x} cy={displayFirstPoint.y} r={snapTarget ? visualSize(22, 28) : visualSize(16, 38)} fill={snapTarget ? '#bbf7d0' : '#e0f2fe'} fillOpacity=".8" stroke={snapTarget ? '#15803d' : '#0284c7'} strokeWidth={visualStroke(3)} strokeDasharray={snapTarget ? undefined : `${visualStroke(5)} ${visualStroke(4)}`} pointerEvents="none" />
+                  {snapTarget && <text x={displayFirstPoint.x} y={displayFirstPoint.y - visualSize(26, 25)} textAnchor="middle" fill="#166534" fontSize={visualSize(13, 55)} fontWeight="700" pointerEvents="none">Release to close</text>}
                 </>}
                 {calibrationPoints.map((point, index) => <g key={`calibration-${index}`} pointerEvents="none">
-                  <circle cx={point.x} cy={point.y} r={Math.max(10, box.width / 60)} fill="#fb923c" stroke="#fff" strokeWidth="3" />
-                  <text x={point.x} y={point.y - Math.max(14, box.width / 72)} textAnchor="middle" fill="#9a3412" fontSize={Math.max(12, box.width / 65)} fontWeight="700">{index + 1}</text>
+                  <circle cx={point.x} cy={point.y} r={visualSize(10, 60)} fill="#fb923c" stroke="#fff" strokeWidth={visualStroke(3)} />
+                  <text x={point.x} y={point.y - visualSize(14, 72)} textAnchor="middle" fill="#9a3412" fontSize={visualSize(12, 65)} fontWeight="700">{index + 1}</text>
                 </g>)}
-                {measurementPoints.length === 2 && <line x1={measurementPoints[0].x} y1={measurementPoints[0].y} x2={measurementPoints[1].x} y2={measurementPoints[1].y} stroke="#7c3aed" strokeWidth={Math.max(3, box.width / 180)} strokeDasharray="8 5" pointerEvents="none" />}
-                {measurementPoints.map((point, index) => <circle key={`measurement-${index}`} cx={point.x} cy={point.y} r={Math.max(9, box.width / 65)} fill="#8b5cf6" stroke="#fff" strokeWidth="3" pointerEvents="none" />)}
-                {keyboardPlacement && <circle data-testid="keyboard-position-marker" cx={keyboardPoint.x} cy={keyboardPoint.y} r={Math.max(5, box.width / 110)} fill="#f97316" stroke="#fff" strokeWidth="2" pointerEvents="none" />}
+                {measurementPoints.length === 2 && <line x1={measurementPoints[0].x} y1={measurementPoints[0].y} x2={measurementPoints[1].x} y2={measurementPoints[1].y} stroke="#7c3aed" strokeWidth={visualSize(3, 180)} strokeDasharray={`${visualStroke(8)} ${visualStroke(5)}`} pointerEvents="none" />}
+                {measurementPoints.map((point, index) => <circle key={`measurement-${index}`} cx={point.x} cy={point.y} r={visualSize(9, 65)} fill="#8b5cf6" stroke="#fff" strokeWidth={visualStroke(3)} pointerEvents="none" />)}
+                {keyboardPlacement && <circle data-testid="keyboard-position-marker" cx={keyboardPoint.x} cy={keyboardPoint.y} r={visualSize(5, 110)} fill="#f97316" stroke="#fff" strokeWidth={visualStroke(2)} pointerEvents="none" />}
               </svg>
               {!document.segments.length && !calibrationMode && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-xs text-stone-500">Choose Straight, Curve, or Freehand, then draw connected segments here.</div>}
               {calibrationMode && <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-orange-50/95 px-3 py-2 text-xs font-semibold text-orange-800 shadow-sm">{calibrationPoints.length === 0 ? 'Select calibration point 1' : calibrationPoints.length === 1 ? 'Select calibration point 2' : 'Two points selected — enter the known distance'}</div>}
