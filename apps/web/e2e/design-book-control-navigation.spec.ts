@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { rejectUnexpectedApiRequests } from './fixtures/api-request-guard';
 
 const book = {
   id: 'book-1',
@@ -34,6 +35,7 @@ const book = {
 };
 
 async function openDesignBook(page: Page, target: string) {
+  await rejectUnexpectedApiRequests(page);
   await page.route('**/api/v1/thermal-correlations', route => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify({ items: [] }),
