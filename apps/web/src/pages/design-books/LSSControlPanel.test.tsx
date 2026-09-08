@@ -59,6 +59,8 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(details.closest('details')).not.toHaveAttribute('open');
     await user.click(details);
     expect(details.closest('details')).toHaveAttribute('open');
+    expect(screen.queryByLabelText('Control logic for Pressure transmitter')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toBeInTheDocument();
   });
 
@@ -137,8 +139,8 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(listButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('table', { name: 'Field instrument definitions' })).toBeVisible();
     expect(screen.queryByLabelText('Range minimum for Pressure transmitter')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Add measurement and evidence for Pressure transmitter' }));
-    await user.click(screen.getByRole('button', { name: 'Add measurement and evidence for Flow switch' }));
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Flow switch' }));
 
     await user.click(screen.getByLabelText('Quantity for Pressure transmitter'));
     await user.keyboard('{Control>}a{/Control}3');
@@ -155,8 +157,8 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(cardsButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('table', { name: 'Field instrument definitions' })).not.toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Pressure transmitter' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Add measurement and evidence for Pressure transmitter' }));
-    await user.click(screen.getByRole('button', { name: 'Add measurement and evidence for Flow switch' }));
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Flow switch' }));
     expect(screen.getByLabelText('Quantity for Pressure transmitter')).toHaveValue(3);
     expect(screen.getByLabelText('Product for Pressure transmitter')).toHaveValue('product-revised');
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toHaveValue('Trip pump on high pressure');
@@ -172,7 +174,7 @@ describe('LSSControlPanel frozen evidence', () => {
     await user.clear(screen.getByLabelText('Calibration interval for Pressure transmitter'));
     await user.type(screen.getByLabelText('Calibration interval for Pressure transmitter'), '180');
     await user.click(listButton);
-    await user.click(screen.getByRole('button', { name: 'Add measurement and evidence for Pressure transmitter' }));
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
 
     expect(screen.getByLabelText('Range maximum for Pressure transmitter')).toHaveValue(16);
     expect(screen.getByLabelText('Range unit for Pressure transmitter')).toHaveValue('psi');
@@ -184,10 +186,11 @@ describe('LSSControlPanel frozen evidence', () => {
     await user.type(screen.getByLabelText('Datasheet reference for Pressure transmitter'), 'DS-PT-200');
 
     await user.click(cardsButton);
-    await user.click(screen.getByRole('button', { name: 'Add measurement and evidence for Pressure transmitter' }));
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
     expect(screen.getByLabelText('Calibration procedure for Pressure transmitter')).toHaveValue('CAL-PT-02');
     expect(screen.getByLabelText('Datasheet reference for Pressure transmitter')).toHaveValue('DS-PT-200');
     await user.click(listButton);
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
     expect(screen.getByLabelText('Quantity for Pressure transmitter')).toHaveValue(3);
     expect(screen.getByLabelText('Product for Pressure transmitter')).toHaveValue('product-revised');
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toHaveValue('Trip pump on high pressure');
@@ -229,7 +232,7 @@ describe('LSSControlPanel frozen evidence', () => {
     await user.click(await screen.findByRole('button', { name: 'Cards' }));
     expect(screen.getByRole('article', { name: 'Retired transmitter' })).toBeVisible();
     expect(screen.queryByLabelText('Datasheet reference for Retired transmitter')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'View measurement and evidence for Retired transmitter' }));
+    await user.click(screen.getByRole('button', { name: 'View control details and evidence for Retired transmitter' }));
     expect(screen.getByLabelText('Quantity for Retired transmitter')).toBeDisabled();
     expect(screen.getByLabelText('Range maximum for Retired transmitter')).toBeDisabled();
     expect(screen.getByLabelText('Datasheet reference for Retired transmitter')).toBeDisabled();
@@ -253,6 +256,7 @@ describe('LSSControlPanel frozen evidence', () => {
   });
 
   it('renders frozen definition and product snapshots without live catalogue records', async () => {
+    const user = userEvent.setup();
     renderPanel({
       frozen: true,
       control: { panel_type: 'PLC' },
@@ -271,6 +275,7 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(screen.getAllByText('Frozen definition evidence')).toHaveLength(1);
     expect(screen.getByRole('option', { name: /PT-100 — Historic transmitter \(Retired\) \(frozen snapshot\)/ })).toBeInTheDocument();
     expect(screen.getAllByText('Frozen product evidence')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'View control details and evidence for Pressure transmitter' }));
     expect(screen.getByDisplayValue('Stop pump on high pressure.')).toBeDisabled();
     expect(vi.mocked(api.get)).not.toHaveBeenCalledWith('/products/masters', expect.anything());
   });
@@ -288,6 +293,7 @@ describe('LSSControlPanel frozen evidence', () => {
       }],
     }, false);
 
+    await user.click(await screen.findByRole('button', { name: 'Add control details and evidence for Flow switch' }));
     const logic = await screen.findByDisplayValue('Saved interlock logic');
     await user.clear(logic);
     await user.type(logic, 'Revised interlock logic');
@@ -359,7 +365,7 @@ describe('LSSControlPanel frozen evidence', () => {
     }, false);
 
     await user.type(await screen.findByLabelText('Quantity for Pressure transmitter'), '1');
-    await user.click(screen.getByRole('button', { name: 'Add measurement and evidence for Pressure transmitter' }));
+    await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
     await user.clear(screen.getByLabelText('Range maximum for Pressure transmitter'));
     await user.type(screen.getByLabelText('Range maximum for Pressure transmitter'), '10');
     await user.clear(screen.getByLabelText('Datasheet reference for Pressure transmitter'));
@@ -405,9 +411,9 @@ describe('LSSControlPanel frozen evidence', () => {
       }],
     });
 
-    expect(await screen.findByRole('button', { name: 'View measurement and evidence for Retired pressure transmitter' })).toBeVisible();
+    expect(await screen.findByRole('button', { name: 'View control details and evidence for Retired pressure transmitter' })).toBeVisible();
     expect(screen.queryByDisplayValue('DS-OLD-404 (unavailable)')).not.toBeInTheDocument();
-    await screen.findByRole('button', { name: 'View measurement and evidence for Retired pressure transmitter' }).then(button => button.click());
+    await screen.findByRole('button', { name: 'View control details and evidence for Retired pressure transmitter' }).then(button => button.click());
     expect(await screen.findByDisplayValue('DS-OLD-404 (unavailable)')).toBeDisabled();
     expect(screen.getByDisplayValue('Historical procedure unavailable')).toBeDisabled();
     expect(screen.getByLabelText('Range maximum for Retired pressure transmitter')).toHaveValue(16);
