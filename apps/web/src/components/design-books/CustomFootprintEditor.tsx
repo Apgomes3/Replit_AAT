@@ -304,6 +304,24 @@ type Props = {
   onCancel: () => void;
 };
 
+function staticGifFrame(probe: HTMLImageElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = probe.naturalWidth;
+    canvas.height = probe.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context || !canvas.width || !canvas.height) {
+      reject(new Error('GIF frame could not be drawn'));
+      return;
+    }
+    context.drawImage(probe, 0, 0);
+    canvas.toBlob(blob => {
+      if (blob) resolve(blob);
+      else reject(new Error('GIF frame could not be encoded'));
+    }, 'image/png');
+  });
+}
+
 export default function CustomFootprintEditor({ initialValue, onAccept, onCancel }: Props) {
   const [document, setDocument] = useState<CustomFootprintDocument>(() => documentFrom(initialValue));
   const initialDocument = useRef(documentFrom(initialValue));
@@ -723,6 +741,32 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     probe.onload = () => {
       if (!mountedRef.current || referenceRequestRef.current !== request) {
         URL.revokeObjectURL(url);
+        return;
+      }
+      if (file.type === 'image/gif') {
+        staticGifFrame(probe).then(frame => {
+          const readyUrl = URL.createObjectURL(frame);
+          URL.revokeObjectURL(url);
+          if (!mountedRef.current || referenceRequestRef.current !== request) {
+            URL.revokeObjectURL(readyUrl);
+            return;
+          }
+          pendingReferenceRef.current = null;
+          setPendingReference(null);
+          setReferenceImage(previous => {
+            if (previous) URL.revokeObjectURL(previous.url);
+            const ready = { url: readyUrl, name: file.name };
+            referenceImageRef.current = ready;
+            return ready;
+          });
+          setReferenceError('');
+        }).catch(() => {
+          URL.revokeObjectURL(url);
+          if (!mountedRef.current || referenceRequestRef.current !== request) return;
+          pendingReferenceRef.current = null;
+          setPendingReference(null);
+          setReferenceError(`“${file.name}” could not be read. Choose another supported image. The current reference image was kept.`);
+        });
         return;
       }
       pendingReferenceRef.current = null;

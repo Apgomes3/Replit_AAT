@@ -77,6 +77,38 @@ describe('CustomFootprintEditor', () => {
     expect(revoke).toHaveBeenCalledWith('blob:test-2');
   });
 
+  it('uses a static PNG object URL for a GIF reference and releases its animated source', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(URL, 'createObjectURL')
+      .mockReturnValueOnce('blob:animated-source')
+      .mockReturnValueOnce('blob:static-frame');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.stubGlobal('Image', class {
+      naturalWidth = 20;
+      naturalHeight = 10;
+      onload: null | (() => void) = null;
+      set src(_value: string) { this.onload?.(); }
+    });
+    const drawImage = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+      const element = originalCreateElement(tagName, options);
+      if (tagName === 'canvas') {
+        vi.spyOn(element as HTMLCanvasElement, 'getContext').mockReturnValue({ drawImage } as any);
+        vi.spyOn(element as HTMLCanvasElement, 'toBlob').mockImplementation(callback => callback(new Blob(['frame'], { type: 'image/png' })));
+      }
+      return element;
+    }) as typeof document.createElement);
+
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={vi.fn()} onCancel={vi.fn()} />);
+    await user.upload(screen.getByLabelText('Choose reference image'), new File(['gif'], 'moving-plan.gif', { type: 'image/gif' }));
+
+    expect(await screen.findByText('“moving-plan.gif” is ready to trace.')).toBeInTheDocument();
+    expect(screen.getByTestId('footprint-reference-image')).toHaveAttribute('href', 'blob:static-frame');
+    expect(drawImage).toHaveBeenCalledOnce();
+    expect(revoke).toHaveBeenCalledWith('blob:animated-source');
+  });
+
   it('releases the active reference image when the editor unmounts', async () => {
     const user = userEvent.setup();
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:active-reference');
