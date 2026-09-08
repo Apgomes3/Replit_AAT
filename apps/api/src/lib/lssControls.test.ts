@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildInstrumentTag, initialInstrumentControlLogic, initialInstrumentProduct,
-  hasExplicitInstrumentProductOverride, hasValidRetainedRequiredControlLogic,
-  PumpLinkedInstrumentValidationError, reconcilePumpLinkedInstruments, requiredPumpLinkedQuantity,
+  hasExplicitInstrumentProductOverride, reconcilePumpLinkedInstruments, requiredPumpLinkedQuantity,
 } from './lssControls';
 
 describe('LSS control instrument rules', () => {
@@ -39,18 +38,6 @@ describe('LSS control instrument rules', () => {
     expect(hasExplicitInstrumentProductOverride({})).toBe(false);
   });
 
-  it('does not allow retained mandatory or pump-linked evidence to have blank logic', () => {
-    const blank = [{ control_logic: '   ' }];
-    expect(hasValidRetainedRequiredControlLogic('mandatory', blank, undefined)).toBe(false);
-    expect(hasValidRetainedRequiredControlLogic('pump_linked', [{ control_logic: 'Existing logic' }], {
-      control_logic_supplied: true, control_logic: null,
-    })).toBe(false);
-    expect(hasValidRetainedRequiredControlLogic('mandatory', blank, {
-      control_logic_supplied: true, control_logic: 'Replacement logic',
-    })).toBe(true);
-    expect(hasValidRetainedRequiredControlLogic('optional', blank, undefined)).toBe(true);
-  });
-
   it('reconciles each editable design book using free sequences without changing existing evidence', async () => {
     const inserts: any[] = [];
     const runner = async (sql: string, params: any[] = []) => {
@@ -84,7 +71,8 @@ describe('LSS control instrument rules', () => {
     expect(inserts.every(params => params[5] === 'Prove flow.')).toBe(true);
   });
 
-  it('rejects automatic pump-linked evidence when governed logic is absent', async () => {
+  it('creates automatic pump-linked evidence when governed logic is absent', async () => {
+    const inserts: any[] = [];
     const runner = async (sql: string) => {
       if (sql.includes('FROM field_instrument_definitions')) {
         return { rows: [{ id: 'custom', name: 'Custom flow proof', tag_code: 'CFS', default_control_logic: null }] };
@@ -93,10 +81,15 @@ describe('LSS control instrument rules', () => {
       if (sql.includes('FROM design_books')) return { rows: [{ id: 'draft-a' }] };
       if (sql.includes('pg_advisory_xact_lock')) return { rows: [] };
       if (sql.includes('FROM design_book_lss_instruments')) return { rows: [] };
+      if (sql.includes('INSERT INTO design_book_lss_instruments')) {
+        inserts.push(sql);
+        return { rows: [] };
+      }
       throw new Error(`Unexpected SQL: ${sql}`);
     };
-    await expect(reconcilePumpLinkedInstruments(runner, {
+    await reconcilePumpLinkedInstruments(runner, {
       projectId: 'project', systemId: 'lss', systemCode: 'LSS-01', userId: 'engineer',
-    })).rejects.toBeInstanceOf(PumpLinkedInstrumentValidationError);
+    });
+    expect(inserts).toHaveLength(1);
   });
 });

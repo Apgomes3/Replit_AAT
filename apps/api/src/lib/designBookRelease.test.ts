@@ -110,7 +110,7 @@ describe('Design Book release policy', () => {
     expect(check?.message).toContain('Flow switch');
   });
 
-  it('blocks required instrument evidence with blank logic and links directly to its control tab', () => {
+  it('allows required instrument evidence with blank optional logic', () => {
     const context = readyContext();
     context.lss_controls = [{
       system_id: 'system-1',
@@ -121,15 +121,10 @@ describe('Design Book release policy', () => {
     const check = buildDesignBookReleaseChecklist(context)
       .find(item => item.key === 'lss_field_instruments');
 
-    expect(check).toMatchObject({
-      status: 'blocked',
-      href: '/design-books/book-1?tab=control&system=system-1',
-      affected_ids: ['system-1'],
-    });
-    expect(check?.message).toContain('blank control logic');
+    expect(check).toMatchObject({ status: 'pass' });
   });
 
-  it('blocks blank logic on retained required evidence from a now-inactive definition snapshot', () => {
+  it('allows blank optional logic on retained evidence from an inactive definition snapshot', () => {
     const context = readyContext();
     context.lss_controls = [{
       system_id: 'system-1',
@@ -142,7 +137,7 @@ describe('Design Book release policy', () => {
     }];
 
     expect(buildDesignBookReleaseChecklist(context)
-      .find(item => item.key === 'lss_field_instruments')).toMatchObject({ status: 'blocked' });
+      .find(item => item.key === 'lss_field_instruments')).toMatchObject({ status: 'pass' });
   });
 
   it('blocks a current release package that includes a retired LSS', () => {

@@ -170,16 +170,7 @@ export function buildDesignBookReleaseChecklist(context: DesignBookReleaseContex
         system_id: system.id, label,
         reason: `requires at least ${required} instrument${required === 1 ? '' : 's'} but has ${quantity}`,
       }] : [];
-      const blankLogic = ['mandatory', 'pump_linked'].includes(definition.requirement_rule)
-        ? definitionInstruments.filter((instrument: any) => !String(instrument.control_logic || '').trim())
-        : [];
-      return [
-        ...quantityIssue,
-        ...(blankLogic.length ? [{
-          system_id: system.id, label,
-          reason: `${blankLogic.length} required instrument${blankLogic.length === 1 ? ' has' : 's have'} blank control logic`,
-        }] : []),
-      ];
+      return quantityIssue;
     });
   });
   const exhibitIds = exhibits.map(exhibit => exhibit.id).filter(Boolean);

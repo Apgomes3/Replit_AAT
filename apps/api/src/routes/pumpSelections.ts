@@ -10,7 +10,7 @@ import {
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 import { isLifeSupportSystem } from '../lib/lssSystems';
-import { PumpLinkedInstrumentValidationError, reconcilePumpLinkedInstruments } from '../lib/lssControls';
+import { reconcilePumpLinkedInstruments } from '../lib/lssControls';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -292,9 +292,6 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
     await client.query('COMMIT');
   } catch (error: any) {
     await client.query('ROLLBACK');
-    if (error instanceof PumpLinkedInstrumentValidationError) {
-      return res.status(400).json({ error: { code: error.code, message: error.message, definition_id: error.definition.id } });
-    }
     throw error;
   } finally {
     client.release();
@@ -581,9 +578,6 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
     }, pumpRole), ...(reusedExistingCode ? { reassigned_existing_code: true } : {}) });
   } catch (error: any) {
     await client.query('ROLLBACK');
-    if (error instanceof PumpLinkedInstrumentValidationError) {
-      return res.status(400).json({ error: { code: error.code, message: error.message, definition_id: error.definition.id } });
-    }
     if (error?.code === '23505') {
       return res.status(409).json({ error: { code: 'DUPLICATE_PUMP_LINE', message: 'A pump line with this role or equipment code already exists.' } });
     }

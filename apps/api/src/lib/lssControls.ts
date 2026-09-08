@@ -50,27 +50,6 @@ export function hasExplicitInstrumentProductOverride(item: any) {
   return Object.prototype.hasOwnProperty.call(item || {}, 'product_master_id');
 }
 
-/** Required evidence may retain its historic logic, but it may not be blank. */
-export function hasValidRetainedRequiredControlLogic(
-  requirementRule: unknown,
-  rows: Array<{ control_logic?: unknown }>,
-  requestedLogic: { control_logic_supplied: boolean; control_logic: string | null } | undefined,
-) {
-  if (!['mandatory', 'pump_linked'].includes(String(requirementRule))) return true;
-  return rows.every(row => Boolean(
-    requestedLogic?.control_logic_supplied
-      ? requestedLogic.control_logic
-      : String(row.control_logic || '').trim(),
-  ));
-}
-
-export class PumpLinkedInstrumentValidationError extends Error {
-  code = 'INSTRUMENT_CONTROL_LOGIC_REQUIRED';
-  constructor(public definition: any) {
-    super(`${definition.name} has no governed default control logic. Set a default control logic before configuring pumps.`);
-  }
-}
-
 /**
  * Makes pump-linked instrument evidence follow configured pumps without
  * rewriting designer-owned evidence.  The caller must already be in the
@@ -118,8 +97,7 @@ export async function reconcilePumpLinkedInstruments(
       )).rows;
       const missing = pumpCount - rows.length;
       if (missing <= 0) continue;
-      const controlLogic = String(definition.default_control_logic || '').trim();
-      if (!controlLogic) throw new PumpLinkedInstrumentValidationError(definition);
+      const controlLogic = String(definition.default_control_logic || '').trim() || null;
 
       const used = new Set(rows.map((row: any) => Number(row.sequence_number)));
       const sequences: number[] = [];

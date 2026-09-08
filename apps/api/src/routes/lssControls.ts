@@ -5,7 +5,7 @@ import { loadReleaseContext } from './designBooks';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 import {
-  buildInstrumentTag, hasExplicitInstrumentProductOverride, hasValidRetainedRequiredControlLogic,
+  buildInstrumentTag, hasExplicitInstrumentProductOverride,
   initialInstrumentControlLogic, initialInstrumentProduct,
 } from '../lib/lssControls';
 import { logAudit } from '../db/audit';
@@ -340,43 +340,10 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
     const existing = (await client.query(
       'SELECT * FROM design_book_lss_instruments WHERE design_book_id=$1 AND system_id=$2 FOR UPDATE', [bookId, system.id],
     )).rows;
-    // Inactive definitions are intentionally retained as historical evidence.
-    // They are not editable in this form, so do not let a save silently retain
-    // an invalid required instance that has no control logic.
-    const inactiveRequiredWithoutLogic = existing.find(row =>
-      !definitions.some((definition: any) => definition.id === row.definition_id) &&
-      ['mandatory', 'pump_linked'].includes(String(row.definition_snapshot?.requirement_rule)) &&
-      !String(row.control_logic || '').trim());
-    if (inactiveRequiredWithoutLogic) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        error: {
-          code: 'INSTRUMENT_CONTROL_LOGIC_REQUIRED',
-          message: 'A retained required instrument instance has no control logic and cannot be saved.',
-          definition_id: inactiveRequiredWithoutLogic.definition_id,
-        },
-      });
-    }
       for (const definition of definitions) {
       const desired = requested.get(definition.id)?.quantity || 0;
       const rows = existing.filter(row => row.definition_id === definition.id).sort((a, b) => a.sequence_number - b.sequence_number);
-      const retainedRows = rows.slice(0, desired);
       const requestedInstrument = requested.get(definition.id);
-      // Required evidence must never be left without executable logic. A
-      // supplied value applies to every retained instance; otherwise each
-      // retained row keeps its own historic designer evidence.
-      if (!hasValidRetainedRequiredControlLogic(
-        definition.requirement_rule, retainedRows, requestedInstrument,
-      )) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          error: {
-            code: 'INSTRUMENT_CONTROL_LOGIC_REQUIRED',
-            message: `${definition.name} requires control logic for every retained instrument instance.`,
-            definition_id: definition.id,
-          },
-        });
-      }
       if (rows.length > desired) await client.query('DELETE FROM design_book_lss_instruments WHERE id = ANY($1::uuid[])', [rows.slice(desired).map(row => row.id)]);
       const requestedProduct = requestedInstrument;
         // Existing selections are frozen designer evidence. Each newly added
@@ -398,15 +365,6 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         const calibrationInterval = requestedProduct?.calibration_supplied ? requestedProduct.calibration_interval_days : definition.default_calibration_interval_days;
         const calibrationProcedure = requestedProduct?.calibration_supplied ? requestedProduct.calibration_procedure : definition.default_calibration_procedure;
         const datasheetReference = requestedProduct?.calibration_supplied ? requestedProduct.datasheet_reference : definition.default_datasheet_reference;
-        if (desired > rows.length && !controlLogic) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({
-            error: {
-              code: 'INSTRUMENT_CONTROL_LOGIC_REQUIRED',
-              message: `${definition.name} has no governed default control logic. Define its control logic in LSS Control before saving.`,
-            },
-          });
-        }
       for (let sequence = rows.length + 1; sequence <= desired; sequence++) {
         const product = await productSnapshot(client.query.bind(client), selectedProduct);
         await client.query(
