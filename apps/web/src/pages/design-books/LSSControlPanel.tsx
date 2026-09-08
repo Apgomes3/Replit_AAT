@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, LayoutGrid, List, RefreshCw, Save, SlidersHorizontal } from 'lucide-react';
+import { Download, LayoutGrid, List, Plus, RefreshCw, Save, SlidersHorizontal } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { exportCsv } from '../../lib/exportCsv';
@@ -127,6 +127,7 @@ function InstrumentProductField({ id, definition, instrumentName, instances, dra
 }
 
 function InstrumentDetailFields({ id, definition, instrumentName, quantity, instances, draft, readOnly, frozen, update, layout }: Pick<InstrumentFieldProps, 'id' | 'definition' | 'instrumentName' | 'quantity' | 'instances' | 'draft' | 'readOnly' | 'frozen' | 'update'> & { layout: 'list' | 'card' }) {
+  const [showOptionalDetails, setShowOptionalDetails] = useState(false);
   const selectedLogic = draft ? draft.control_logic || '' : definition.default_control_logic || '';
   const rangeMin = draft ? draft.range_min : String(definition.default_range_min ?? '');
   const rangeMax = draft ? draft.range_max : String(definition.default_range_max ?? '');
@@ -140,17 +141,25 @@ function InstrumentDetailFields({ id, definition, instrumentName, quantity, inst
   const fullSpan = layout === 'list' ? 'md:col-span-3' : 'sm:col-span-2';
   return <>
     <label className={`block text-xs font-medium text-stone-500 ${layout === 'list' ? 'md:col-span-3' : ''}`}>Control logic<textarea aria-label={`Control logic for ${instrumentName}`} disabled={readOnly} value={selectedLogic} onChange={event => update(id, { control_logic: event.target.value || null, control_logic_supplied: true })} rows={2} placeholder="Describe the functional control logic" className={inputClass} />{!selectedLogic && quantity > 0 && <span className="mt-1 block text-[10px] font-normal text-amber-700">Control logic is required because this catalog definition has no default.</span>}{instances.length > 1 && <span className="mt-1 block text-[10px] font-normal text-stone-400">This logic applies to the {instances.length} saved instances of this type.</span>}</label>
-    <fieldset className={`grid gap-3 rounded-lg border border-stone-200 p-3 ${columns} ${layout === 'list' ? 'md:col-span-3' : ''}`}><legend className="px-1 text-xs font-semibold text-stone-600">Effective measurement range</legend>
-      <label className="text-xs font-medium text-stone-500">Minimum<input aria-label={`Range minimum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMin} onChange={event => update(id, { range_min: event.target.value, range_supplied: true })} className={inputClass} /></label>
-      <label className="text-xs font-medium text-stone-500">Maximum<input aria-label={`Range maximum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMax} onChange={event => update(id, { range_max: event.target.value, range_supplied: true })} className={inputClass} /></label>
-      <label className="text-xs font-medium text-stone-500">Unit<input aria-label={`Range unit for ${definition.name}`} disabled={readOnly || definition.allow_range_override === false} value={unit} onChange={event => update(id, { unit: event.target.value, range_supplied: true })} className={inputClass} /></label>
-    </fieldset>
-    <fieldset className={`grid gap-3 rounded-lg border border-stone-200 p-3 ${evidenceColumns} ${layout === 'list' ? 'md:col-span-3' : ''}`}><legend className="px-1 text-xs font-semibold text-stone-600">Calibration and datasheet evidence</legend>
-      <label className="flex items-center gap-2 text-xs text-stone-700"><input aria-label={`Calibration required for ${definition.name}`} type="checkbox" disabled={readOnly || definition.allow_calibration_override === false} checked={calibrationRequired} onChange={event => update(id, { calibration_required: event.target.checked, calibration_supplied: true })} />Calibration required</label>
-      <label className="text-xs font-medium text-stone-500">Interval (days)<input aria-label={`Calibration interval for ${definition.name}`} type="number" min="1" disabled={readOnly || definition.allow_calibration_override === false} value={calibrationInterval} onChange={event => update(id, { calibration_interval_days: event.target.value, calibration_supplied: true })} className={inputClass} /></label>
-      <label className={`text-xs font-medium text-stone-500 ${fullSpan}`}>Procedure<input aria-label={`Calibration procedure for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={calibrationProcedure} onChange={event => update(id, { calibration_procedure: event.target.value, calibration_supplied: true })} className={inputClass} /></label>
-      <label className={`text-xs font-medium text-stone-500 ${fullSpan}`}>Datasheet reference<input aria-label={`Datasheet reference for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={datasheetReference} onChange={event => update(id, { datasheet_reference: event.target.value, calibration_supplied: true })} placeholder="Document number, URL, or unavailable historical reference" className={inputClass} />{frozen && <span className="mt-1 block text-[10px] font-normal text-stone-400">Frozen calibration and datasheet evidence</span>}</label>
-    </fieldset>
+    <div className={layout === 'list' ? 'md:col-span-3' : ''}>
+      <button type="button" aria-expanded={showOptionalDetails} aria-controls={`instrument-evidence-${id}-${layout}`} onClick={() => setShowOptionalDetails(value => !value)} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">
+        <Plus className={`h-3.5 w-3.5 transition-transform ${showOptionalDetails ? 'rotate-45' : ''}`} />
+        {readOnly ? 'View' : showOptionalDetails ? 'Hide' : 'Add'} measurement and evidence for {instrumentName}
+      </button>
+      {showOptionalDetails && <div id={`instrument-evidence-${id}-${layout}`} className="mt-3 grid gap-3">
+        <fieldset className={`grid gap-3 rounded-lg border border-stone-200 p-3 ${columns}`}><legend className="px-1 text-xs font-semibold text-stone-600">Effective measurement range</legend>
+          <label className="text-xs font-medium text-stone-500">Minimum<input aria-label={`Range minimum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMin} onChange={event => update(id, { range_min: event.target.value, range_supplied: true })} className={inputClass} /></label>
+          <label className="text-xs font-medium text-stone-500">Maximum<input aria-label={`Range maximum for ${definition.name}`} type="number" step="any" disabled={readOnly || definition.allow_range_override === false} value={rangeMax} onChange={event => update(id, { range_max: event.target.value, range_supplied: true })} className={inputClass} /></label>
+          <label className="text-xs font-medium text-stone-500">Unit<input aria-label={`Range unit for ${definition.name}`} disabled={readOnly || definition.allow_range_override === false} value={unit} onChange={event => update(id, { unit: event.target.value, range_supplied: true })} className={inputClass} /></label>
+        </fieldset>
+        <fieldset className={`grid gap-3 rounded-lg border border-stone-200 p-3 ${evidenceColumns}`}><legend className="px-1 text-xs font-semibold text-stone-600">Calibration and datasheet evidence</legend>
+          <label className="flex items-center gap-2 text-xs text-stone-700"><input aria-label={`Calibration required for ${definition.name}`} type="checkbox" disabled={readOnly || definition.allow_calibration_override === false} checked={calibrationRequired} onChange={event => update(id, { calibration_required: event.target.checked, calibration_supplied: true })} />Calibration required</label>
+          <label className="text-xs font-medium text-stone-500">Interval (days)<input aria-label={`Calibration interval for ${definition.name}`} type="number" min="1" disabled={readOnly || definition.allow_calibration_override === false} value={calibrationInterval} onChange={event => update(id, { calibration_interval_days: event.target.value, calibration_supplied: true })} className={inputClass} /></label>
+          <label className={`text-xs font-medium text-stone-500 ${fullSpan}`}>Procedure<input aria-label={`Calibration procedure for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={calibrationProcedure} onChange={event => update(id, { calibration_procedure: event.target.value, calibration_supplied: true })} className={inputClass} /></label>
+          <label className={`text-xs font-medium text-stone-500 ${fullSpan}`}>Datasheet reference<input aria-label={`Datasheet reference for ${definition.name}`} disabled={readOnly || definition.allow_calibration_override === false} value={datasheetReference} onChange={event => update(id, { datasheet_reference: event.target.value, calibration_supplied: true })} placeholder="Document number, URL, or unavailable historical reference" className={inputClass} />{frozen && <span className="mt-1 block text-[10px] font-normal text-stone-400">Frozen calibration and datasheet evidence</span>}</label>
+        </fieldset>
+      </div>}
+    </div>
   </>;
 }
 
