@@ -25,9 +25,11 @@ const curved = {
     ...rectangle.segments.slice(1),
   ],
 };
-function pointer(element: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientX: number, clientY: number, pointerId = 1) {
+function pointer(element: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientX: number, clientY: number, pointerId = 1, button = 0) {
   const event = new MouseEvent(type, { bubbles: true, clientX, clientY });
   Object.defineProperty(event, 'pointerId', { value: pointerId });
+  Object.defineProperty(event, 'button', { value: button });
+  Object.defineProperty(event, 'buttons', { value: type === 'pointerup' ? 0 : button === 2 ? 2 : button === 1 ? 4 : 1 });
   fireEvent(element, event);
 }
 
@@ -332,6 +334,27 @@ describe('CustomFootprintEditor', () => {
     expect(screen.getByRole('button', { name: 'Reset zoom' })).toHaveTextContent('125%');
     await user.click(screen.getByRole('button', { name: 'Reset zoom' }));
     expect(surface).toHaveAttribute('viewBox', initialViewBox);
+  });
+
+  it('pans a zoomed drawing with right-drag without changing its geometry', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    render(<CustomFootprintEditor initialValue={rectangle} onAccept={onAccept} onCancel={vi.fn()} />);
+    const surface = screen.getByRole('img', { name: 'Footprint drawing surface' });
+    vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, toJSON: () => ({}),
+    });
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const beforePan = surface.getAttribute('viewBox');
+    pointer(surface, 'pointerdown', 500, 250, 7, 2);
+    pointer(surface, 'pointermove', 400, 250, 7, 2);
+    expect(surface.getAttribute('viewBox')).not.toBe(beforePan);
+    expect(surface).toHaveClass('cursor-grabbing');
+    pointer(surface, 'pointerup', 400, 250, 7, 2);
+    expect(surface).not.toHaveClass('cursor-grabbing');
+
+    await user.click(screen.getByRole('button', { name: 'Use this footprint' }));
+    expect(onAccept).toHaveBeenCalledWith(expect.objectContaining({ segments: rectangle.segments }));
   });
 
   it('places the first, second, third, and later points in one stable coordinate frame', async () => {

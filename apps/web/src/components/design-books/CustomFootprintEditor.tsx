@@ -352,6 +352,12 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
   const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
   const [pointerPoint, setPointerPoint] = useState<FootprintPoint | null>(null);
   const [keyboardPlacement, setKeyboardPlacement] = useState(false);
+  const [pan, setPan] = useState<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    viewport: { x: number; y: number; width: number; height: number };
+  } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const referenceImageRef = useRef<{ url: string; name: string } | null>(null);
   const pendingReferenceRef = useRef<{ url: string; name: string } | null>(null);
@@ -642,6 +648,19 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     }
   };
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (zoomLevel > 1 && (event.button === 2 || event.button === 1)) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      setPan({
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        viewport,
+      });
+      setPointerPoint(null);
+      setSnapTarget(false);
+      return;
+    }
     const displayPoint = pointFromEvent(event);
     setKeyboardPlacement(false);
     setPointerPoint(displayPoint);
@@ -672,6 +691,18 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     addPoint(modelPointFromDisplay(displayPoint));
   };
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (pan && event.pointerId === pan.pointerId) {
+      const rect = svgRef.current!.getBoundingClientRect();
+      const scale = Math.min(rect.width / pan.viewport.width, rect.height / pan.viewport.height);
+      const nextX = pan.viewport.x - (event.clientX - pan.clientX) / scale;
+      const nextY = pan.viewport.y - (event.clientY - pan.clientY) / scale;
+      setViewport({
+        ...pan.viewport,
+        x: Math.min(box.x + box.width - pan.viewport.width, Math.max(box.x, nextX)),
+        y: Math.min(box.y + box.height - pan.viewport.height, Math.max(box.y, nextY)),
+      });
+      return;
+    }
     const displayPoint = pointFromEvent(event);
     if (!calibrationMode && !measurementMode) setPointerPoint(displayPoint);
     if (!displayPoint) {
@@ -686,6 +717,11 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
     }
   };
   const onPointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (pan && event.pointerId === pan.pointerId) {
+      setPan(null);
+      if (svgRef.current?.hasPointerCapture?.(event.pointerId)) svgRef.current.releasePointerCapture?.(event.pointerId);
+      return;
+    }
     if (snapTarget && !activeFreehand && !drag) close();
     if (activeFreehand) {
       if (activeFreehand.length > 1) commit({ ...document, segments: [...document.segments, { type: 'freehand', points: activeFreehand }] });
@@ -983,7 +1019,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
               </span>
             </div>
             <div className="relative overflow-hidden rounded-xl border border-sky-200 bg-[linear-gradient( to right,rgba(14,116,144,.08)_1px,transparent_1px),linear-gradient(to bottom,rgba(14,116,144,.08)_1px,transparent_1px)] bg-[size:32px_32px]">
-              <svg ref={svgRef} viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`} preserveAspectRatio="xMidYMid meet" data-testid="footprint-drawing-surface" className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={() => { if (!drag && !activeFreehand) setPointerPoint(null); setSnapTarget(false); }} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
+              <svg ref={svgRef} viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`} preserveAspectRatio="xMidYMid meet" data-testid="footprint-drawing-surface" className={`h-[min(58vh,520px)] w-full touch-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-500 ${pan ? 'cursor-grabbing' : calibrationMode || measurementMode ? 'cursor-crosshair' : mode === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onContextMenu={event => event.preventDefault()} onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerLeave={() => { if (!drag && !activeFreehand && !pan) setPointerPoint(null); setSnapTarget(false); }} onKeyDown={onCanvasKeyDown} tabIndex={0} role="img" aria-label="Footprint drawing surface" aria-describedby="footprint-keyboard-help">
                 {referenceImage && <image data-testid="footprint-reference-image" href={referenceImage.url} x={box.x} y={box.y} width={box.width} height={box.height} preserveAspectRatio="xMidYMid meet" opacity={referenceOpacity / 100} pointerEvents="none" aria-hidden="true" />}
                 {pointerPoint && !calibrationMode && !measurementMode && <>
                   <line data-testid="pointer-guide-horizontal" x1={viewport.x} y1={pointerPoint.y} x2={viewport.x + viewport.width} y2={pointerPoint.y} stroke="#64748b" strokeOpacity=".35" strokeWidth={Math.max(1, viewport.width / 700)} strokeDasharray="5 6" pointerEvents="none" aria-hidden="true" />
@@ -1059,7 +1095,7 @@ export default function CustomFootprintEditor({ initialValue, onAccept, onCancel
                 {document.closed ? 'Outline closed. Use Select and edit to refine it.' : canClose ? 'Click near the highlighted start point to snap closed, or use Close outline.' : mode === 'select' ? 'Drag blue vertices or yellow curve handles to edit.' : pendingStart ? 'Click the next point to add a segment.' : 'Click or drag to start the next segment.'}
               </span>
             </div>
-            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Zoom with the controls or mouse wheel over the detail you want to inspect. Keyboard placement: focus the drawing surface and press an Arrow key to show and move the orange position marker; press Enter to place at that exact drawing coordinate, C to close, and Ctrl/Cmd+Z or Y to undo/redo. With Quadratic curve active, drag the yellow handle to adjust the latest curve.</p>
+            <p id="footprint-keyboard-help" className="mt-2 text-xs text-stone-500">Zoom with the controls or mouse wheel over the detail you want to inspect. While zoomed, right-click and drag (or middle-drag) the drawing to pan without changing tools. Keyboard placement: focus the drawing surface and press an Arrow key to show and move the orange position marker; press Enter to place at that exact drawing coordinate, C to close, and Ctrl/Cmd+Z or Y to undo/redo. With Quadratic curve active, drag the yellow handle to adjust the latest curve.</p>
           </div>
           <aside className="space-y-3">
             {mode === 'select' && document.segments.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
