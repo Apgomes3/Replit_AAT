@@ -106,7 +106,11 @@ function SideSchedule({
         )}
       </div>
       <div className="mt-3 space-y-3">
-        {!rows.length && <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-5 text-center text-sm text-stone-500">No {side}-side components assigned.</div>}
+        {!rows.length && <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-5 text-center text-sm text-stone-500">
+          {candidates.length
+            ? `No ${side}-side components added yet. Use Pipe or Fitting to add one.`
+            : `No project pipes or fittings are assigned to this LSS system. Add one in Project Management → Piping & Fittings, assign it to this system, then return here.`}
+        </div>}
         {!!rows.length && (
           <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
             <table className="w-full min-w-[980px] text-xs">
@@ -131,7 +135,7 @@ function SideSchedule({
                     <tr key={row.key || `${side}-${index}`} className="align-top">
                       <td className="p-2">
                         <select aria-label={`Project pipe or fitting ${index + 1}`} value={row.project_piping_item_id || ''} onChange={event => update(index, 'project_piping_item_id', event.target.value)} disabled={readOnly} className={fieldClass}>
-                          <option value="">Select assigned item</option>
+                          <option value="">{candidates.length ? 'Select project item' : 'No assigned project items'}</option>
                           {candidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.piping_code} · {candidate.product_name || candidate.description || 'Piping item'}</option>)}
                         </select>
                       </td>

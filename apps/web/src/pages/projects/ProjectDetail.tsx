@@ -159,6 +159,7 @@ export default function ProjectDetail() {
   const [pipingQty, setPipingQty] = useState('1');
   const [pipingUnit, setPipingUnit] = useState('EA');
   const [pipingDesc, setPipingDesc] = useState('');
+  const [pipingSystemId, setPipingSystemId] = useState('');
   const [pipingSubmitting, setPipingSubmitting] = useState(false);
 
   const [pmEditMode, setPmEditMode] = useState<'pick' | 'manual'>('pick');
@@ -186,7 +187,7 @@ export default function ProjectDetail() {
   const { data: systems } = useQuery({
     queryKey: ['project-systems', id],
     queryFn: () => api.get(`/projects/${id}/systems`).then(r => r.data),
-    enabled: tab === 'systems',
+    enabled: !!id,
   });
 
 
@@ -896,6 +897,7 @@ export default function ProjectDetail() {
         description: pipingDesc.trim() || null,
         quantity: parseFloat(pipingQty) || 1,
         unit: pipingUnit,
+        system_id: pipingSystemId || null,
       });
       toast.success('Piping item added');
       setShowNewPiping(false);
@@ -1459,7 +1461,7 @@ export default function ProjectDetail() {
             <div className="ml-auto p-2 flex items-center gap-2 shrink-0">
               {tab === 'systems' && <Button size="sm" variant="primary" onClick={() => setShowNewSystem(true)}><Plus className="w-3.5 h-3.5" />System</Button>}
               {tab === 'tanks' && <span ref={addTankBtnRef}><Button size="sm" variant="primary" onClick={() => { resetTankForm(); setShowNewTank(true); }}><Plus className="w-3.5 h-3.5" />Add Tank</Button></span>}
-              {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
+              {tab === 'piping' && <Button size="sm" variant="primary" onClick={() => { setSelectedPipingProduct(null); setPipingProductSearch(''); setPipingCode(''); setPipingQty('1'); setPipingUnit('EA'); setPipingDesc(''); setPipingSystemId(''); setShowNewPiping(true); }}><Plus className="w-3.5 h-3.5" />Add Item</Button>}
               {tab === 'bom-release' && <Button size="sm" variant="primary" onClick={() => { setBomTitle(''); setBomRevision('A'); setBomNotes(''); setBomSections({ Products: true, Tank: true, Piping: true }); setShowNewBomRelease(true); }}><FileText className="w-3.5 h-3.5" />New Release</Button>}
             </div>
           </div>
@@ -2585,6 +2587,15 @@ export default function ProjectDetail() {
                   <input placeholder="Optional override description" value={pipingDesc} onChange={e => setPipingDesc(e.target.value)}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Assign to LSS system</label>
+                <select value={pipingSystemId} onChange={e => setPipingSystemId(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">Unassigned — assign later</option>
+                  {(systems?.items || []).map((system: any) => <option key={system.id} value={system.id}>{system.system_code} · {system.system_name}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">Assign it to the LSS system whose suction or discharge schedule will use it.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
