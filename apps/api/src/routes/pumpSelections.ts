@@ -35,6 +35,7 @@ async function candidates(runner: any, projectId: string, systemId: string) {
             pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
             COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
             COALESCE(ph.design_head_m, pm.design_head_m) AS design_head_m,
+            ph.npsh_required_m,
             COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
             pf.product_family_code, pm.product_category, pm.application_type,
             COALESCE(pei.status, pm.standard_status) AS status
@@ -64,7 +65,7 @@ async function candidates(runner: any, projectId: string, systemId: string) {
      UNION ALL
      SELECT pei.id, pei.id, pei.equip_code, pei.quantity, pei.description,
             NULL, NULL, NULL, NULL, NULL,
-            NULL, NULL, NULL, NULL, NULL, NULL, pei.status
+           NULL, NULL, NULL, NULL, NULL, NULL, NULL, pei.status
      FROM project_equipment_items pei
      WHERE pei.project_id=$1 AND pei.system_id=$2
        AND pei.product_master_id IS NULL
@@ -79,6 +80,7 @@ async function eligiblePumpProduct(runner: any, productMasterId: string) {
     `SELECT pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
             COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
             COALESCE(ph.design_head_m, pm.design_head_m) AS design_head_m,
+            ph.npsh_required_m,
             COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
             pm.product_category, pm.application_type, pm.standard_status
      FROM product_masters pm

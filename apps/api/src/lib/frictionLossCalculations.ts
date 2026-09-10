@@ -1,8 +1,11 @@
 import crypto from 'crypto';
 import { GRAVITY_M_S2, WATER_DENSITY_KG_M3 } from './pumpSelections';
 
-export const FRICTION_LOSS_CALCULATION_VERSION = 'friction-loss-v2';
+export const FRICTION_LOSS_CALCULATION_VERSION = 'friction-loss-v3';
 export const WATER_DYNAMIC_VISCOSITY_PA_S = 0.001002;
+export const STANDARD_ATMOSPHERIC_PRESSURE_KPA = 101.325;
+export const DEFAULT_WATER_TEMPERATURE_C = 20;
+export const DEFAULT_NPSH_SAFETY_MARGIN_M = 0.5;
 
 export type FrictionSide = 'suction' | 'discharge';
 export type FrictionComponentKind = 'pipe' | 'fitting';
@@ -70,6 +73,7 @@ export function frictionPumpSource(pump: any) {
     product_name: pump.product_name || null,
     manufacturer: pump.manufacturer || null,
     model: pump.model || null,
+    npsh_required_m: finite(pump.npsh_required_m),
   };
 }
 
@@ -130,6 +134,13 @@ export function calculateFrictionLoss(input: {
   const endDepth = nonNegative(end.water_depth_m);
   const startPressure = start.open_to_atmosphere === false ? finite(start.gauge_pressure_kpa) : 0;
   const endPressure = end.open_to_atmosphere === false ? finite(end.gauge_pressure_kpa) : 0;
+  const requestedAtmosphericPressure = finite(start.atmospheric_pressure_kpa);
+  const atmosphericPressure = requestedAtmosphericPressure ?? STANDARD_ATMOSPHERIC_PRESSURE_KPA;
+  const waterTemperature = finite(start.water_temperature_c) ?? DEFAULT_WATER_TEMPERATURE_C;
+  const requestedSafetyMargin = finite(start.npsh_safety_margin_m);
+  const safetyMargin = requestedSafetyMargin != null && requestedSafetyMargin >= 0
+    ? requestedSafetyMargin
+    : DEFAULT_NPSH_SAFETY_MARGIN_M;
   if (!start.tank_id) reasons.push('Select a start tank.');
   if (!end.tank_id) reasons.push('Select a receiving tank.');
   if (startBase == null) reasons.push('Start tank base elevation relative to FL0 is required.');
@@ -139,6 +150,12 @@ export function calculateFrictionLoss(input: {
   if (endBase == null) reasons.push('Receiving tank base elevation relative to FL0 is required.');
   if (endDepth == null) reasons.push('Receiving tank water depth must be zero or greater.');
   if (start.open_to_atmosphere === false && startPressure == null) reasons.push('Start tank gauge pressure is required when it is not open to atmosphere.');
+  if (
+    (start.atmospheric_pressure_kpa != null && requestedAtmosphericPressure == null) ||
+    (requestedAtmosphericPressure != null && requestedAtmosphericPressure <= 0)
+  ) reasons.push('Atmospheric pressure must be greater than zero.');
+  if (waterTemperature < 0 || waterTemperature > 100) reasons.push('Water temperature for NPSH must be between 0 and 100 °C.');
+  if (start.npsh_safety_margin_m != null && (requestedSafetyMargin == null || requestedSafetyMargin < 0)) reasons.push('NPSH safety margin must be zero or greater.');
   if (end.open_to_atmosphere === false && endPressure == null) reasons.push('Receiving tank gauge pressure is required when it is not open to atmosphere.');
   if (flowM3h == null) reasons.push('Circuit flow is missing or must be greater than zero.');
   if (!input.selected_pump?.project_equipment_item_id && !input.selected_pump?.id) {
@@ -248,6 +265,27 @@ export function calculateFrictionLoss(input: {
     : (endPressure - startPressure) * 1000 / (WATER_DENSITY_KG_M3 * GRAVITY_M_S2);
   const staticHead = elevationHead == null || pressureHead == null ? null : elevationHead + pressureHead;
   const totalDynamicHead = combinedHead == null || staticHead == null ? null : combinedHead + staticHead;
+  // NPSHA is evaluated at the pump draw point, while TDH remains based on
+  // the two tank free surfaces. The configured safety margin is deducted
+  // before comparing against the governed pump NPSH-required value.
+  const vaporPressureKpa = waterTemperature >= 0 && waterTemperature <= 100
+    ? 0.61078 * Math.exp((17.2694 * waterTemperature) / (waterTemperature + 237.29))
+    : null;
+  const startAbsolutePressureKpa = atmosphericPressure +
+    (start.open_to_atmosphere === false ? (startPressure || 0) : 0);
+  const npshPressureHead = vaporPressureKpa == null
+    ? null
+    : (startAbsolutePressureKpa - vaporPressureKpa) * 1000 / (WATER_DENSITY_KG_M3 * GRAVITY_M_S2);
+  const suctionLoss = sideTotals.suction.total_head_loss_m;
+  const npshAvailable = npshPressureHead == null || startDepth == null || drawHeight == null || suctionLoss == null
+    ? null
+    : npshPressureHead + startDepth - drawHeight - suctionLoss - safetyMargin;
+  const npshRequired = nonNegative(input.selected_pump?.npsh_required_m);
+  const npshStatus = npshAvailable == null
+    ? 'blocked'
+    : npshRequired == null
+      ? 'warning'
+      : npshAvailable >= npshRequired ? 'pass' : 'blocked';
 
   return {
     calculation_version: FRICTION_LOSS_CALCULATION_VERSION,
@@ -264,9 +302,22 @@ export function calculateFrictionLoss(input: {
       minor: 'h_m = K × quantity × (v² / 2g)',
       static: 'h_static = (receiving free-surface FL − start free-surface FL) + (receiving gauge pressure − start gauge pressure) / ρg',
       total_dynamic_head: 'TDH = suction friction + discharge friction + static head',
+      npsh_available: 'NPSHA = ((Psurface,absolute − Pvap) / ρg) + (start free surface − pump draw point) − suction loss − safety margin',
       friction_factor: '64 / Re for laminar flow; Swamee–Jain approximation for turbulent flow',
     },
-    inputs: { flow_m3h: flowM3h, selected_pump: input.selected_pump || null, tank_boundaries: boundaries },
+    inputs: {
+      flow_m3h: flowM3h,
+      selected_pump: input.selected_pump || null,
+      tank_boundaries: {
+        ...boundaries,
+        start: {
+          ...start,
+          atmospheric_pressure_kpa: atmosphericPressure,
+          water_temperature_c: waterTemperature,
+          npsh_safety_margin_m: safetyMargin,
+        },
+      },
+    },
     components: componentResults,
     side_totals: sideTotals,
     results: {
@@ -280,6 +331,20 @@ export function calculateFrictionLoss(input: {
       pressure_head_m: round(pressureHead),
       static_head_m: round(staticHead),
       total_dynamic_head_m: round(totalDynamicHead),
+      npsh_available_m: round(npshAvailable),
+      npsh_required_m: round(npshRequired),
+      npsh_margin_m: npshAvailable == null || npshRequired == null ? null : round(npshAvailable - npshRequired),
+      npsh_status: npshStatus,
+      npsh_inputs: {
+        atmospheric_pressure_kpa: round(atmosphericPressure),
+        start_absolute_pressure_kpa: round(startAbsolutePressureKpa),
+        vapor_pressure_kpa: round(vaporPressureKpa),
+        pressure_head_m: round(npshPressureHead),
+        free_surface_to_draw_point_m: startDepth == null || drawHeight == null ? null : round(startDepth - drawHeight),
+        suction_loss_m: round(suctionLoss),
+        safety_margin_m: round(safetyMargin),
+        water_temperature_c: round(waterTemperature),
+      },
     },
   };
 }

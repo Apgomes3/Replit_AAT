@@ -35,6 +35,11 @@ function statusClass(status?: string) {
   return 'border-red-200 bg-red-50 text-red-800';
 }
 
+function npshStatusClass(status?: string) {
+  if (status === 'pass') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (status === 'warning') return 'border-amber-200 bg-amber-50 text-amber-800';
+  return 'border-red-200 bg-red-50 text-red-800';
+}
 function blankComponent(side: Side, kind: 'pipe' | 'fitting') {
   const defaultMaterial = PIPE_MATERIALS[0];
   return {
@@ -204,10 +209,19 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
       ...component,
       key: component.id || `${item.circuit_key}-${index}`,
     })));
-    setTankBoundaries(item.tank_boundaries || item.result?.inputs?.tank_boundaries || {
-      start: { tank_id: '', base_elevation_fl0_m: '0', water_depth_m: '', pump_draw_height_m: '', open_to_atmosphere: true, gauge_pressure_kpa: '0' },
+    const savedBoundaries = item.tank_boundaries || item.result?.inputs?.tank_boundaries;
+    const defaults = {
+      start: { tank_id: '', base_elevation_fl0_m: '0', water_depth_m: '', pump_draw_height_m: '', open_to_atmosphere: true, gauge_pressure_kpa: '0', atmospheric_pressure_kpa: '101.325', water_temperature_c: '20', npsh_safety_margin_m: '0.5' },
       end: { tank_id: '', base_elevation_fl0_m: '', water_depth_m: '', open_to_atmosphere: true, gauge_pressure_kpa: '0' },
-    });
+    };
+    setTankBoundaries(savedBoundaries
+      ? {
+          ...defaults,
+          ...savedBoundaries,
+          start: { ...defaults.start, ...savedBoundaries.start },
+          end: { ...defaults.end, ...savedBoundaries.end },
+        }
+      : defaults);
   }, [item?.circuit_key, item?.source_fingerprint]);
 
   const pumpSelectionReady = item?.pump_selection_ready ?? (
@@ -298,6 +312,9 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
                 {side === 'start' && <label><span className="mb-1 block text-xs font-medium text-stone-600">Pump draw above tank base (m)</span><input aria-label="Pump draw height" type="number" min="0" step="any" value={boundary.pump_draw_height_m ?? ''} onChange={event => updateBoundary('pump_draw_height_m', event.target.value)} disabled={readOnly} className={fieldClass} /></label>}
                 <label className="flex items-center gap-2 self-end pb-2 text-sm text-stone-700"><input aria-label={`${title} open to atmosphere`} type="checkbox" checked={boundary.open_to_atmosphere !== false} onChange={event => updateBoundary('open_to_atmosphere', event.target.checked)} disabled={readOnly} />Open to atmosphere</label>
                 {boundary.open_to_atmosphere === false && <label><span className="mb-1 block text-xs font-medium text-stone-600">Gauge pressure (kPa)</span><input aria-label={`${title} gauge pressure`} type="number" step="any" value={boundary.gauge_pressure_kpa ?? ''} onChange={event => updateBoundary('gauge_pressure_kpa', event.target.value)} disabled={readOnly} className={fieldClass} /></label>}
+                {side === 'start' && <label><span className="mb-1 block text-xs font-medium text-stone-600">Atmospheric pressure (kPa abs)</span><input aria-label="Atmospheric pressure" type="number" min="0.01" step="any" value={boundary.atmospheric_pressure_kpa ?? '101.325'} onChange={event => updateBoundary('atmospheric_pressure_kpa', event.target.value)} disabled={readOnly} className={fieldClass} /></label>}
+                {side === 'start' && <label><span className="mb-1 block text-xs font-medium text-stone-600">Water temperature (°C)</span><input aria-label="NPSH water temperature" type="number" min="0" max="100" step="any" value={boundary.water_temperature_c ?? '20'} onChange={event => updateBoundary('water_temperature_c', event.target.value)} disabled={readOnly} className={fieldClass} /></label>}
+                {side === 'start' && <label><span className="mb-1 block text-xs font-medium text-stone-600">NPSH safety margin (m)</span><input aria-label="NPSH safety margin" type="number" min="0" step="any" value={boundary.npsh_safety_margin_m ?? '0.5'} onChange={event => updateBoundary('npsh_safety_margin_m', event.target.value)} disabled={readOnly} className={fieldClass} /></label>}
               </div>
             </div>;
           })}
@@ -319,7 +336,19 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
       <SideSchedule side="discharge" rows={components.filter(row => row.side === 'discharge')} candidates={data?.piping_candidates || []} readOnly={readOnly} onChange={rows => setComponents([...components.filter(row => row.side === 'suction'), ...rows])} />
       {!!item?.reasons?.length && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-900"><AlertTriangle className="h-4 w-4" />Action required</div><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">{item.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul></div>}
       {result?.side_totals && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{(['suction', 'discharge'] as Side[]).map(side => <div key={side} className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs capitalize text-stone-500">{side} friction</div><div className="font-mono text-lg font-bold">{numberText(result.side_totals[side]?.total_head_loss_m)} m</div><div className="text-xs text-stone-500">{numberText(result.side_totals[side]?.pressure_drop_kpa)} kPa</div></div>)}<div className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs text-stone-500">Combined friction</div><div className="font-mono text-lg font-bold">{numberText(result.results?.combined_head_loss_m)} m</div></div><div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3"><div className="text-xs text-blue-700">Static head</div><div className="font-mono text-lg font-bold text-blue-950">{numberText(result.results?.static_head_m)} m</div></div><div className="rounded-xl bg-stone-900 px-4 py-3 text-white"><div className="text-xs text-stone-300">Total dynamic head</div><div className="font-mono text-lg font-bold">{numberText(result.results?.total_dynamic_head_m)} m</div></div></div>}
-       <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v2'} · inputs and item identities are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving || !pumpSelectionReady} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
+      {result?.results?.npsh_status && <section className={`rounded-xl border p-4 ${npshStatusClass(result.results.npsh_status)}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><h4 className="font-semibold">Suction head / NPSH check</h4><p className="text-xs opacity-80">NPSHA includes free-surface pressure, draw-point elevation, suction losses, water vapour pressure, and the configured safety margin.</p></div>
+          <span className="rounded-full border border-current px-2.5 py-1 text-xs font-bold uppercase tracking-wide">{npshStatusLabel(result.results.npsh_status)}</span>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div><div className="text-xs opacity-75">NPSH available</div><div className="font-mono text-lg font-bold">{numberText(result.results.npsh_available_m)} m</div></div>
+          <div><div className="text-xs opacity-75">NPSH required</div><div className="font-mono text-lg font-bold">{numberText(result.results.npsh_required_m)} m</div></div>
+          <div><div className="text-xs opacity-75">Margin after safety</div><div className="font-mono text-lg font-bold">{numberText(result.results.npsh_margin_m)} m</div></div>
+        </div>
+        {result.results.npsh_status === 'warning' && <p className="mt-2 text-xs">The selected pump has no governed NPSH-required value, so this check is advisory until Product Master evidence is supplied.</p>}
+      </section>}
+       <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v3'} · inputs and item identities are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving || !pumpSelectionReady} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
     </div>
   );
 }
@@ -348,4 +377,10 @@ export default function FrictionLossTab({ book, readOnly, onRefresh }: any) {
       {selectedSystem && <SystemEditor bookId={book.id} systemId={selectedSystem} readOnly={readOnly} onClose={() => setSelectedSystem(null)} onSaved={refresh} />}
     </div>
   );
+}
+
+function npshStatusLabel(status?: string) {
+  if (status === 'pass') return 'Pass';
+  if (status === 'warning') return 'Warning';
+  return 'Blocked';
 }

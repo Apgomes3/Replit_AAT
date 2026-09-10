@@ -17,6 +17,7 @@ type PumpCandidate = {
   model?: string | null;
   design_flow_m3h?: number | string | null;
   design_head_m?: number | string | null;
+  npsh_required_m?: number | string | null;
   power_kw?: number | string | null;
   status?: string | null;
 };
@@ -88,10 +89,12 @@ function pumpCandidateLabel(candidate: PumpCandidate) {
   const flow = positiveNumber(candidate.design_flow_m3h);
   const head = positiveNumber(candidate.design_head_m);
   const power = positiveNumber(candidate.power_kw);
+  const npsh = positiveNumber(candidate.npsh_required_m);
   const ratings = [
     flow != null ? `${numberText(flow)} m³/h` : null,
     head != null ? `${numberText(head)} m head` : null,
     power != null ? `${numberText(power)} kW` : null,
+    npsh != null ? `NPSHr ${numberText(npsh)} m` : null,
   ].filter(Boolean).join(' · ');
   return `${identity} — ${name}${ratings ? ` · ${ratings}` : ''}`;
 }

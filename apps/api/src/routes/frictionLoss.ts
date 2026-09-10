@@ -3,9 +3,12 @@ import pool, { query } from '../db';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage, requireRole } from '../middleware/auth';
 import {
   calculateFrictionLoss,
+  DEFAULT_NPSH_SAFETY_MARGIN_M,
+  DEFAULT_WATER_TEMPERATURE_C,
   FRICTION_LOSS_CALCULATION_VERSION,
   frictionSourceFingerprint,
   frictionSourceSnapshot,
+  STANDARD_ATMOSPHERIC_PRESSURE_KPA,
 } from '../lib/frictionLossCalculations';
 import {
   pumpCircuits,
@@ -26,9 +29,11 @@ const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0]
 async function pumpCandidates(runner: any, projectId: string, systemId: string) {
   return (await runner(
     `SELECT pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.description,
-            pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model
+            pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
+            ph.npsh_required_m
      FROM project_equipment_items pei
      JOIN product_masters pm ON pm.id=pei.product_master_id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      LEFT JOIN product_families pf ON pf.id=pm.product_family_id
      WHERE pei.project_id=$1 AND pei.system_id=$2
        AND (pm.status IS NULL OR pm.status='Active')
@@ -194,6 +199,9 @@ router.put(
           pump_draw_height_m: requestedBoundaries.start?.pump_draw_height_m,
           open_to_atmosphere: requestedBoundaries.start?.open_to_atmosphere !== false,
           gauge_pressure_kpa: requestedBoundaries.start?.open_to_atmosphere === false ? requestedBoundaries.start?.gauge_pressure_kpa : 0,
+          atmospheric_pressure_kpa: requestedBoundaries.start?.atmospheric_pressure_kpa ?? STANDARD_ATMOSPHERIC_PRESSURE_KPA,
+          water_temperature_c: requestedBoundaries.start?.water_temperature_c ?? DEFAULT_WATER_TEMPERATURE_C,
+          npsh_safety_margin_m: requestedBoundaries.start?.npsh_safety_margin_m ?? DEFAULT_NPSH_SAFETY_MARGIN_M,
         },
         end: {
           tank_id: endTank?.id || null,
@@ -222,7 +230,7 @@ router.put(
          (design_book_id, system_id, circuit_key, project_equipment_item_id,
           calculation_version, status, freshness, source_fingerprint,
           source_snapshot, input_snapshot, result_snapshot, calculated_by, calculated_at)
-       VALUES ($1,$2,$3,$4,$5,'Ready','fresh',$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11)
+       VALUES ($1,$2,$3,$4,$5,$6,'fresh',$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12)
        ON CONFLICT (design_book_id, system_id, circuit_key) DO UPDATE SET
          project_equipment_item_id=EXCLUDED.project_equipment_item_id,
          calculation_version=EXCLUDED.calculation_version, status=EXCLUDED.status,
@@ -233,7 +241,11 @@ router.put(
        RETURNING *`,
       [
         context.id, system.id, circuit.circuit_key, selectedPump.project_equipment_item_id,
-        FRICTION_LOSS_CALCULATION_VERSION, sourceFingerprint, JSON.stringify(sourceSnapshot),
+        FRICTION_LOSS_CALCULATION_VERSION,
+        calculation.results.npsh_status === 'blocked'
+          ? 'Blocked'
+          : calculation.results.npsh_status === 'warning' ? 'Warning' : 'Ready',
+        sourceFingerprint, JSON.stringify(sourceSnapshot),
          JSON.stringify({ flow_m3h: circuit.flow_m3h, components, tank_boundaries: tankBoundaries }),
         JSON.stringify(calculation), req.user!.id, calculatedAt,
       ],

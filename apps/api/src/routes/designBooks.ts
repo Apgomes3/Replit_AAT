@@ -225,13 +225,14 @@ export async function loadFrictionLossPackages(
     `SELECT sps.system_id, sps.circuit_key,
             pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.description,
             pm.id AS product_master_id, pm.product_code, pm.product_name,
-            pm.manufacturer, pm.model
+            pm.manufacturer, pm.model, ph.npsh_required_m
      FROM system_pump_selections sps
      JOIN project_equipment_items pei
        ON pei.id=sps.project_equipment_item_id AND pei.system_id=sps.system_id
      JOIN systems current_system
        ON current_system.id=sps.system_id AND current_system.project_id=pei.project_id
      JOIN product_masters pm ON pm.id=pei.product_master_id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      LEFT JOIN product_families pf ON pf.id=pm.product_family_id
      WHERE sps.system_id = ANY($1::uuid[])
        AND (sps.pump_role='primary' OR sps.pump_role IS NULL)
@@ -324,7 +325,11 @@ export async function loadFrictionLossPackages(
         const pumpFreshness = pumpReady ? pumpSelection.freshness : 'stale';
         if (!row) {
           const tankBoundaries = {
-            start: { tank_id: '', base_elevation_fl0_m: 0, water_depth_m: '', pump_draw_height_m: '', open_to_atmosphere: true, gauge_pressure_kpa: 0 },
+            start: {
+              tank_id: '', base_elevation_fl0_m: 0, water_depth_m: '', pump_draw_height_m: '',
+              open_to_atmosphere: true, gauge_pressure_kpa: 0,
+              atmospheric_pressure_kpa: 101.325, water_temperature_c: 20, npsh_safety_margin_m: 0.5,
+            },
             end: { tank_id: '', base_elevation_fl0_m: '', water_depth_m: '', open_to_atmosphere: true, gauge_pressure_kpa: 0 },
           };
           const preview = calculateFrictionLoss({

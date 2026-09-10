@@ -23,7 +23,7 @@ const fitting = {
   quantity: 2,
 };
 const tankBoundaries = {
-  start: { tank_id: 'tank-1', base_elevation_fl0_m: 0, water_depth_m: 3, pump_draw_height_m: 0.5, open_to_atmosphere: true },
+  start: { tank_id: 'tank-1', base_elevation_fl0_m: 0, water_depth_m: 3, pump_draw_height_m: 0.5, open_to_atmosphere: true, atmospheric_pressure_kpa: 101.325, water_temperature_c: 20, npsh_safety_margin_m: 0.5 },
   end: { tank_id: 'tank-2', base_elevation_fl0_m: 5, water_depth_m: 2, open_to_atmosphere: true },
 };
 
@@ -98,5 +98,42 @@ describe('calculateFrictionLoss', () => {
     expect(first.results.static_head_m).toBe(4);
     expect(second.results.static_head_m).toBe(4);
     expect(second.results.total_dynamic_head_m).toBe(first.results.total_dynamic_head_m);
+  });
+
+  it('calculates NPSH available at the draw point without changing static head', () => {
+    const result = calculateFrictionLoss({
+      flow_m3h: 36,
+      selected_pump: { ...pump, npsh_required_m: 2 },
+      tank_boundaries: tankBoundaries,
+      components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+    });
+    expect(result.results.npsh_status).toBe('pass');
+    expect(result.results.npsh_available_m).toBeGreaterThan(2);
+    expect(result.results.npsh_required_m).toBe(2);
+    expect(result.results.npsh_inputs.suction_loss_m).toBe(result.side_totals.suction.total_head_loss_m);
+    expect(result.results.static_head_m).toBe(4);
+  });
+
+  it('blocks a selected pump when governed NPSH required exceeds available head', () => {
+    const result = calculateFrictionLoss({
+      flow_m3h: 36,
+      selected_pump: { ...pump, npsh_required_m: 20 },
+      tank_boundaries: tankBoundaries,
+      components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+    });
+    expect(result.results.npsh_status).toBe('blocked');
+    expect(result.status).toBe('ready');
+    expect(result.reasons).not.toContain(expect.stringContaining('NPSH available'));
+  });
+
+  it('warns when the pump has no governed NPSH-required evidence', () => {
+    const result = calculateFrictionLoss({
+      flow_m3h: 36,
+      selected_pump: pump,
+      tank_boundaries: tankBoundaries,
+      components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+    });
+    expect(result.results.npsh_status).toBe('warning');
+    expect(result.status).toBe('ready');
   });
 });
