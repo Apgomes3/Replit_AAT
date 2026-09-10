@@ -49,4 +49,4 @@
 - [Tank design-sheet basis](tank-design-sheet-basis.md) — resolve density and Thermal evidence through governed active/current sources; keep missing ambient and structural loads explicit.
 - [Friction Loss tank boundaries](friction-loss-tank-boundaries.md) — static head uses free surfaces; pump draw elevation is suction/NPSH evidence and never changes TDH directly.
 - [Friction Loss manual components](friction-loss-manual-components.md) — pipe and fitting rows are entered directly and must not require project-item or LSS assignments.
-- [Bio/Degas plenum crate sizing](bio-degas-plenum-crate-sizing.md) — derive whole AAT bio-crates per LSS from Biological Media volume at 0.238 m³ each; footprint is separate.
+- [Bio/Degas plenum crate sizing](bio-degas-plenum-crate-sizing.md) — use 0.238 m³ crates sized 1040×740×530 mm, stacked no more than four high.

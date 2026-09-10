@@ -476,12 +476,29 @@ const bioFormat = (value: any, decimals = 4) => value == null || !Number.isFinit
   ? '—' : Number(value).toFixed(decimals);
 
 export const BIO_CRATE_MEDIA_CAPACITY_M3 = 0.238;
+export const BIO_CRATE_LENGTH_M = 1.04;
+export const BIO_CRATE_WIDTH_M = 0.74;
+export const BIO_CRATE_HEIGHT_M = 0.53;
+export const BIO_CRATE_MAX_STACK = 4;
 
 export function calculateBioCrateCount(mediaVolumeM3: unknown) {
   const volume = Number(mediaVolumeM3);
   return Number.isFinite(volume) && volume > 0
     ? Math.ceil(volume / BIO_CRATE_MEDIA_CAPACITY_M3)
     : null;
+}
+
+export function calculateBioCrateSpatialBasis(crateCount: unknown) {
+  const count = Number(crateCount);
+  if (!Number.isInteger(count) || count <= 0) return null;
+  const stackPositions = Math.ceil(count / BIO_CRATE_MAX_STACK);
+  const tallestStackCrates = Math.min(count, BIO_CRATE_MAX_STACK);
+  return {
+    stack_positions: stackPositions,
+    crate_only_footprint_m2: Number((stackPositions * BIO_CRATE_LENGTH_M * BIO_CRATE_WIDTH_M).toFixed(6)),
+    tallest_stack_crates: tallestStackCrates,
+    tallest_stack_height_m: tallestStackCrates * BIO_CRATE_HEIGHT_M,
+  };
 }
 
 export function BioDegasPlenumPanel({ data }: { data: any }) {
@@ -497,6 +514,7 @@ export function BioDegasPlenumPanel({ data }: { data: any }) {
           : null;
   const crateCount = calculateBioCrateCount(installedMediaM3);
   const allocatedCapacityM3 = crateCount == null ? null : crateCount * BIO_CRATE_MEDIA_CAPACITY_M3;
+  const spatialBasis = calculateBioCrateSpatialBasis(crateCount);
   const stale = Boolean(preview?.is_stale);
 
   return (
@@ -532,10 +550,17 @@ export function BioDegasPlenumPanel({ data }: { data: any }) {
               </div>
             </div>
             <div className="overflow-hidden rounded-xl border border-stone-200">
-              <div className="grid gap-px bg-stone-200 sm:grid-cols-2">
+              <div className="grid gap-px bg-stone-200 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="bg-white p-4"><div className="text-xs text-stone-500">Allocated crate capacity</div><div className="mt-1 font-mono font-semibold text-stone-800">{bioFormat(allocatedCapacityM3, 3)} m³</div></div>
-                <div className="bg-white p-4"><div className="text-xs text-stone-500">Spatial footprint</div><div className="mt-1 font-semibold text-stone-500">Deferred to the next sizing phase</div></div>
+                <div className="bg-white p-4"><div className="text-xs text-stone-500">Crate dimensions (L × W × H)</div><div className="mt-1 font-mono font-semibold text-stone-800">1.040 × 0.740 × 0.530 m</div></div>
+                <div className="bg-white p-4"><div className="text-xs text-stone-500">Stack positions required</div><div className="mt-1 font-mono font-semibold text-stone-800">{spatialBasis?.stack_positions ?? '—'}</div><div className="mt-1 text-xs text-stone-400">Maximum {BIO_CRATE_MAX_STACK} crates per stack</div></div>
+                <div className="bg-white p-4"><div className="text-xs text-stone-500">Tallest crate stack</div><div className="mt-1 font-mono font-semibold text-stone-800">{bioFormat(spatialBasis?.tallest_stack_height_m, 3)} m</div><div className="mt-1 text-xs text-stone-400">{spatialBasis?.tallest_stack_crates ?? '—'} crates high</div></div>
               </div>
+            </div>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">Minimum crate-only footprint</div>
+              <div className="mt-1 font-mono text-2xl font-bold text-blue-950">{bioFormat(spatialBasis?.crate_only_footprint_m2, 3)} m²</div>
+              <p className="mt-1 text-xs text-blue-700">{spatialBasis?.stack_positions ?? '—'} stack positions × {(BIO_CRATE_LENGTH_M * BIO_CRATE_WIDTH_M).toFixed(4)} m² per crate footprint. Final chamber footprint must add layout, access, wall, pipework, and freeboard allowances.</p>
             </div>
             <p className="text-xs text-stone-500">Calculation: ceiling({bioFormat(installedMediaM3, 3)} m³ ÷ {BIO_CRATE_MEDIA_CAPACITY_M3.toFixed(3)} m³ per crate) = {crateCount} crates.</p>
           </div>
