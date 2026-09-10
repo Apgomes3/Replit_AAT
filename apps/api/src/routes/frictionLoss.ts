@@ -25,6 +25,8 @@ import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
 const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
+const nullableNumeric = (value: unknown) =>
+  value === '' || value === null || value === undefined ? null : value;
 
 async function pumpCandidates(runner: any, projectId: string, systemId: string) {
   return (await runner(
@@ -155,12 +157,12 @@ router.put(
           side: component.side,
           component_kind: component.component_kind,
           sort_order: index,
-          internal_diameter_mm: component.internal_diameter_mm,
-          straight_length_m: component.straight_length_m,
+          internal_diameter_mm: nullableNumeric(component.internal_diameter_mm),
+          straight_length_m: nullableNumeric(component.straight_length_m),
           material: component.material,
-          absolute_roughness_mm: component.absolute_roughness_mm,
-          fitting_k_value: component.fitting_k_value,
-          quantity: component.quantity,
+          absolute_roughness_mm: nullableNumeric(component.absolute_roughness_mm),
+          fitting_k_value: nullableNumeric(component.fitting_k_value),
+          quantity: nullableNumeric(component.quantity),
         }));
       const calculatedAt = new Date().toISOString();
       const findTank = (id: unknown) => (context.tanks || []).find((tank: any) => tank.id === id);
