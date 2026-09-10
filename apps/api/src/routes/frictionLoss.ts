@@ -51,19 +51,6 @@ async function pumpCandidates(runner: any, projectId: string, systemId: string) 
   )).rows;
 }
 
-async function pipingCandidates(runner: any, projectId: string, systemId: string) {
-  return (await runner(
-    `SELECT ppi.id, ppi.id AS project_piping_item_id, ppi.piping_code, ppi.description,
-            ppi.quantity AS project_quantity, ppi.unit, ppi.system_id,
-            pm.id AS product_master_id, pm.product_code, pm.product_name, pm.application_type
-     FROM project_piping_items ppi
-     LEFT JOIN product_masters pm ON pm.id=ppi.product_master_id
-     WHERE ppi.project_id=$1 AND ppi.system_id=$2
-     ORDER BY ppi.piping_code`,
-    [projectId, systemId],
-  )).rows;
-}
-
 router.get('/design-books/:bookId/friction-loss', async (req: AuthRequest, res: Response) => {
   const frozenResult = await query(
     'SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1',
@@ -95,7 +82,7 @@ router.get('/design-books/:bookId/friction-loss/:systemId', async (req: AuthRequ
   if (snapshot) {
     const item = (snapshot.friction_loss_calculations || []).find((entry: any) => entry.system_id === systemId);
     if (!item) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'LSS system not found in frozen Design Book package' } });
-    return res.json({ ...item, pump_candidates: [], piping_candidates: [], frozen: true });
+    return res.json({ ...item, pump_candidates: [], frozen: true });
   }
   const context = await loadReleaseContext(String(req.params.bookId), query, false, false);
   if (!context) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
@@ -105,7 +92,6 @@ router.get('/design-books/:bookId/friction-loss/:systemId', async (req: AuthRequ
   res.json({
     ...item,
     pump_candidates: frozen ? [] : await pumpCandidates(query, context.project_id, systemId),
-    piping_candidates: frozen ? [] : await pipingCandidates(query, context.project_id, systemId),
     tank_candidates: frozen ? [] : (context.tanks || []).map((tank: any) => ({
       id: tank.id, tank_code: tank.tank_code, tank_name: tank.tank_name,
       design_water_level_mm: tank.design_water_level_mm, height_mm: tank.height_mm,
@@ -162,14 +148,10 @@ router.put(
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'PUMP_SELECTION_NOT_READY', message: 'Select and recalculate the pump for this exact Flow Route circuit before calculating friction loss.' } });
       }
-      const piping = await pipingCandidates(runner, context.project_id, system.id);
       const requestedComponents = Array.isArray(req.body.components) ? req.body.components : [];
-      const components = requestedComponents.map((component: any, index: number) => {
-        const source = piping.find((entry: any) => entry.project_piping_item_id === component.project_piping_item_id);
-        if (!source) return null;
-        return {
-          project_piping_item_id: source.project_piping_item_id,
-          piping_snapshot: source,
+      const components = requestedComponents.map((component: any, index: number) => ({
+          project_piping_item_id: null,
+          piping_snapshot: null,
           side: component.side,
           component_kind: component.component_kind,
           sort_order: index,
@@ -179,12 +161,7 @@ router.put(
           absolute_roughness_mm: component.absolute_roughness_mm,
           fitting_k_value: component.fitting_k_value,
           quantity: component.quantity,
-        };
-      });
-      if (components.some((component: any) => !component)) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: { code: 'INELIGIBLE_PIPING_ITEM', message: 'Every pipe or fitting must be assigned to this project and LSS system.' } });
-      }
+        }));
       const calculatedAt = new Date().toISOString();
       const findTank = (id: unknown) => (context.tanks || []).find((tank: any) => tank.id === id);
       const requestedBoundaries = req.body.tank_boundaries || {};

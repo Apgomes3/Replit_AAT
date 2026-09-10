@@ -6,8 +6,6 @@ import {
 
 const pump = { id: 'pump-1', project_equipment_item_id: 'pump-1', equip_code: 'P-101' };
 const pipe = {
-  project_piping_item_id: 'pipe-1',
-  piping_snapshot: { piping_code: 'PIPE-1' },
   component_kind: 'pipe' as const,
   internal_diameter_mm: 100,
   straight_length_m: 10,
@@ -15,8 +13,6 @@ const pipe = {
   absolute_roughness_mm: 0.0015,
 };
 const fitting = {
-  project_piping_item_id: 'fit-1',
-  piping_snapshot: { piping_code: 'FIT-1' },
   component_kind: 'fitting' as const,
   internal_diameter_mm: 100,
   fitting_k_value: 0.9,

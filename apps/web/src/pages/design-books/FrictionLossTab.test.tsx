@@ -50,10 +50,6 @@ const packageItem = {
 const detail = {
   ...packageItem,
   pump_candidates: [{ id: 'pump-1', equip_code: 'P-101', product_code: 'PUMP-01', product_name: 'Duty pump' }],
-  piping_candidates: [
-    { id: 'pipe-1', piping_code: 'PI-101', product_name: 'PVC pipe' },
-    { id: 'fit-1', piping_code: 'FI-101', product_name: 'Elbow' },
-  ],
   tank_candidates: [
     { id: 'tank-1', tank_code: 'TK-01', tank_name: 'Main tank' },
     { id: 'tank-2', tank_code: 'TK-02', tank_name: 'Receiving tank' },
@@ -122,7 +118,6 @@ describe('FrictionLossTab', () => {
     const suction = screen.getByText('Suction side').closest('section')!;
     await user.click(within(suction).getByRole('button', { name: 'Pipe' }));
     expect(within(suction).getByRole('table')).toBeInTheDocument();
-    await user.selectOptions(within(suction).getByRole('combobox', { name: 'Project pipe or fitting 1' }), 'pipe-1');
     const suctionInputs = within(suction).getAllByRole('spinbutton');
     await user.type(suctionInputs[0], '100');
     await user.type(suctionInputs[1], '12');
@@ -132,7 +127,6 @@ describe('FrictionLossTab', () => {
 
     const discharge = screen.getByText('Discharge side').closest('section')!;
     await user.click(within(discharge).getByRole('button', { name: 'Fitting' }));
-    await user.selectOptions(within(discharge).getByRole('combobox', { name: 'Project pipe or fitting 1' }), 'fit-1');
     const dischargeInputs = within(discharge).getAllByRole('spinbutton');
     await user.type(dischargeInputs[0], '100');
     await user.type(dischargeInputs[1], '0.9');
@@ -153,11 +147,10 @@ describe('FrictionLossTab', () => {
           expect.objectContaining({
             side: 'suction',
             component_kind: 'pipe',
-            project_piping_item_id: 'pipe-1',
             material: 'HDPE',
             absolute_roughness_mm: 0.0015,
           }),
-          expect.objectContaining({ side: 'discharge', component_kind: 'fitting', project_piping_item_id: 'fit-1' }),
+          expect.objectContaining({ side: 'discharge', component_kind: 'fitting' }),
         ]),
       }),
     ));

@@ -182,9 +182,6 @@ export function calculateFrictionLoss(input: {
       ? null
       : WATER_DENSITY_KG_M3 * velocity * diameterM / WATER_DYNAMIC_VISCOSITY_PA_S;
     const rowReasons: string[] = [];
-    if (!component.project_piping_item_id || !component.piping_snapshot) {
-      rowReasons.push(`${label}: select a project piping item assigned to this system.`);
-    }
     if (diameterMm == null) rowReasons.push(`${label}: internal diameter must be greater than zero.`);
 
     let frictionFactor: number | null = null;

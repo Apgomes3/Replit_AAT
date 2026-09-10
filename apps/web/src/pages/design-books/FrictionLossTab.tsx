@@ -46,7 +46,6 @@ function blankComponent(side: Side, kind: 'pipe' | 'fitting') {
     key: `${side}-${kind}-${Date.now()}-${Math.random()}`,
     side,
     component_kind: kind,
-    project_piping_item_id: '',
     internal_diameter_mm: '',
     straight_length_m: '',
     material: kind === 'pipe' ? defaultMaterial.value : '',
@@ -59,13 +58,11 @@ function blankComponent(side: Side, kind: 'pipe' | 'fitting') {
 function SideSchedule({
   side,
   rows,
-  candidates,
   readOnly,
   onChange,
 }: {
   side: Side;
   rows: any[];
-  candidates: any[];
   readOnly: boolean;
   onChange: (rows: any[]) => void;
 }) {
@@ -111,17 +108,12 @@ function SideSchedule({
         )}
       </div>
       <div className="mt-3 space-y-3">
-        {!rows.length && <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-5 text-center text-sm text-stone-500">
-          {candidates.length
-            ? `No ${side}-side components added yet. Use Pipe or Fitting to add one.`
-            : `No project pipes or fittings are assigned to this LSS system. Add one in Project Management → Piping & Fittings, assign it to this system, then return here.`}
-        </div>}
+        {!rows.length && <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-5 text-center text-sm text-stone-500">No {side}-side components added yet. Use Pipe or Fitting to add one directly.</div>}
         {!!rows.length && (
           <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
-            <table className="w-full min-w-[980px] text-xs">
+            <table className="w-full min-w-[820px] text-xs">
               <thead className="bg-stone-50 text-left text-[10px] uppercase tracking-wide text-stone-500">
                 <tr>
-                  <th className="px-2.5 py-2">Project pipe / fitting</th>
                   <th className="px-2.5 py-2">Type</th>
                   <th className="px-2.5 py-2">Internal Ø (mm)</th>
                   <th className="px-2.5 py-2">Length / K-value</th>
@@ -138,12 +130,6 @@ function SideSchedule({
                   const isPipe = row.component_kind === 'pipe';
                   return (
                     <tr key={row.key || `${side}-${index}`} className="align-top">
-                      <td className="p-2">
-                        <select aria-label={`Project pipe or fitting ${index + 1}`} value={row.project_piping_item_id || ''} onChange={event => update(index, 'project_piping_item_id', event.target.value)} disabled={readOnly} className={fieldClass}>
-                          <option value="">{candidates.length ? 'Select project item' : 'No assigned project items'}</option>
-                          {candidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.piping_code} · {candidate.product_name || candidate.description || 'Piping item'}</option>)}
-                        </select>
-                      </td>
                       <td className="p-2">
                         <select aria-label={`Component type ${index + 1}`} value={row.component_kind} onChange={event => updateKind(index, event.target.value as 'pipe' | 'fitting')} disabled={readOnly} className={fieldClass}>
                           <option value="pipe">Straight pipe</option><option value="fitting">Fitting</option>
@@ -332,8 +318,8 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
           </a>
         </div>
       )}
-      <SideSchedule side="suction" rows={components.filter(row => row.side === 'suction')} candidates={data?.piping_candidates || []} readOnly={readOnly} onChange={rows => setComponents([...rows, ...components.filter(row => row.side === 'discharge')])} />
-      <SideSchedule side="discharge" rows={components.filter(row => row.side === 'discharge')} candidates={data?.piping_candidates || []} readOnly={readOnly} onChange={rows => setComponents([...components.filter(row => row.side === 'suction'), ...rows])} />
+      <SideSchedule side="suction" rows={components.filter(row => row.side === 'suction')} readOnly={readOnly} onChange={rows => setComponents([...rows, ...components.filter(row => row.side === 'discharge')])} />
+      <SideSchedule side="discharge" rows={components.filter(row => row.side === 'discharge')} readOnly={readOnly} onChange={rows => setComponents([...components.filter(row => row.side === 'suction'), ...rows])} />
       {!!item?.reasons?.length && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-900"><AlertTriangle className="h-4 w-4" />Action required</div><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">{item.reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul></div>}
       {result?.side_totals && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{(['suction', 'discharge'] as Side[]).map(side => <div key={side} className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs capitalize text-stone-500">{side} friction</div><div className="font-mono text-lg font-bold">{numberText(result.side_totals[side]?.total_head_loss_m)} m</div><div className="text-xs text-stone-500">{numberText(result.side_totals[side]?.pressure_drop_kpa)} kPa</div></div>)}<div className="rounded-xl border border-stone-200 px-4 py-3"><div className="text-xs text-stone-500">Combined friction</div><div className="font-mono text-lg font-bold">{numberText(result.results?.combined_head_loss_m)} m</div></div><div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3"><div className="text-xs text-blue-700">Static head</div><div className="font-mono text-lg font-bold text-blue-950">{numberText(result.results?.static_head_m)} m</div></div><div className="rounded-xl bg-stone-900 px-4 py-3 text-white"><div className="text-xs text-stone-300">Total dynamic head</div><div className="font-mono text-lg font-bold">{numberText(result.results?.total_dynamic_head_m)} m</div></div></div>}
       {result?.results?.npsh_status && <section className={`rounded-xl border p-4 ${npshStatusClass(result.results.npsh_status)}`}>
@@ -348,7 +334,7 @@ function SystemEditor({ bookId, systemId, readOnly, onClose, onSaved }: any) {
         </div>
         {result.results.npsh_status === 'warning' && <p className="mt-2 text-xs">The selected pump has no governed NPSH-required value, so this check is advisory until Product Master evidence is supplied.</p>}
       </section>}
-       <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v3'} · inputs and item identities are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving || !pumpSelectionReady} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
+       <div className="flex items-center justify-between border-t border-stone-100 pt-4"><p className="text-xs text-stone-500">{item?.calculation_version || 'friction-loss-v3'} · entered calculation inputs are captured for audit.</p>{!readOnly && <button type="button" onClick={save} disabled={saving || !pumpSelectionReady} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save className="mr-1.5 inline h-4 w-4" />{saving ? 'Calculating…' : 'Save & recalculate'}</button>}</div>
     </div>
   );
 }
