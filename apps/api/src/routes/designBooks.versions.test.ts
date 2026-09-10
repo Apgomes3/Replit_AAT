@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { versionSnapshotTestUtils } from './designBooks';
 import pool from '../db';
+import { calculateFrictionLoss } from '../lib/frictionLossCalculations';
 
 const baseContext = () => ({
   id: 'book-1',
@@ -204,6 +205,7 @@ const baseContext = () => ({
       status: 'Active',
     },
   }],
+  friction_loss_calculations: [],
 });
 
 describe('Design Book version snapshots', () => {
@@ -461,6 +463,118 @@ describe('Design Book version snapshots', () => {
         product_name: 'AAT temperature probe',
       }),
     });
+  });
+
+  it('keeps warning NPSH evidence unchanged in review and release snapshots after live sources change', () => {
+    const context = baseContext();
+    const warningResult = calculateFrictionLoss({
+      flow_m3h: 36,
+      selected_pump: {
+        id: 'pump-1',
+        project_equipment_item_id: 'pump-1',
+        equip_code: 'P-101',
+      },
+      tank_boundaries: {
+        start: {
+          tank_id: 'tank-1',
+          base_elevation_fl0_m: 0,
+          water_depth_m: 3,
+          pump_draw_height_m: 0.5,
+          open_to_atmosphere: true,
+          atmospheric_pressure_kpa: 101.325,
+          water_temperature_c: 20,
+          npsh_safety_margin_m: 0.5,
+        },
+        end: {
+          tank_id: 'tank-2',
+          base_elevation_fl0_m: 5,
+          water_depth_m: 2,
+          open_to_atmosphere: true,
+        },
+      },
+      components: [
+        {
+          project_piping_item_id: 'pipe-1',
+          piping_snapshot: { piping_code: 'PIPE-1' },
+          component_kind: 'pipe',
+          side: 'suction',
+          internal_diameter_mm: 100,
+          straight_length_m: 10,
+          material: 'PVC-U',
+          absolute_roughness_mm: 0.0015,
+        },
+        {
+          project_piping_item_id: 'fit-1',
+          piping_snapshot: { piping_code: 'FIT-1' },
+          component_kind: 'fitting',
+          side: 'discharge',
+          internal_diameter_mm: 100,
+          fitting_k_value: 0.9,
+          quantity: 2,
+        },
+      ],
+      calculated_at: '2026-09-10T10:00:00.000Z',
+    });
+    const savedEvidence = {
+      system_id: 'system-1',
+      items: [{
+        circuit_key: 'loop:1',
+        circuit_name: 'Main Filtration',
+        project_equipment_item_id: 'pump-1',
+        selected_pump: {
+          id: 'pump-1',
+          equip_code: 'P-101',
+          npsh_required_m: null,
+        },
+        status: 'ready',
+        freshness: 'fresh',
+        tank_boundaries: warningResult.inputs.tank_boundaries,
+        result: warningResult,
+      }],
+    };
+    context.friction_loss_calculations = [savedEvidence];
+
+    const reviewSnapshot = JSON.parse(JSON.stringify(context));
+    reviewSnapshot.status = 'For Review';
+    const releaseSnapshot = versionSnapshotTestUtils.makeVersionSnapshot(
+      reviewSnapshot,
+      '2026-09-10T11:00:00.000Z',
+    );
+    const expectedEvidence = JSON.parse(JSON.stringify(savedEvidence));
+
+    expect(expectedEvidence.items[0].result).toMatchObject({
+      status: 'ready',
+      results: {
+        npsh_status: 'warning',
+        npsh_required_m: null,
+        npsh_available_m: expect.any(Number),
+        npsh_margin_m: null,
+        npsh_inputs: {
+          atmospheric_pressure_kpa: 101.325,
+          water_temperature_c: 20,
+          safety_margin_m: 0.5,
+          suction_loss_m: expect.any(Number),
+        },
+      },
+      inputs: {
+        tank_boundaries: {
+          start: {
+            tank_id: 'tank-1',
+            pump_draw_height_m: 0.5,
+          },
+        },
+      },
+    });
+
+    (context.tanks[0] as any).eff_water_level_mm = '1200';
+    savedEvidence.items[0].selected_pump.npsh_required_m = 8;
+    savedEvidence.items[0].tank_boundaries.start.water_depth_m = 1.2;
+    savedEvidence.items[0].result.results.npsh_status = 'blocked';
+    savedEvidence.items[0].result.results.npsh_required_m = 8;
+
+    expect(reviewSnapshot.friction_loss_calculations[0]).toEqual(expectedEvidence);
+    expect(releaseSnapshot.frozen.friction_loss_calculations[0]).toEqual(expectedEvidence);
+    expect(versionSnapshotTestUtils.snapshotIntegrityStatus(releaseSnapshot)).toBe('verified');
   });
 
   it('detects tampering and reports changed, added, removed, and unresolved project references', () => {
