@@ -1869,6 +1869,7 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
   const isCustom = (shape_type || '').toLowerCase() === 'custom';
   const isCyl    = (shape_type || '').toLowerCase() === 'cylindrical';
   let normalizedFootprint: any = null;
+  let customFootprintAreaM2: number | null = null;
   if (isCustom && custom_footprint != null) {
     try {
       normalizedFootprint = normalizeCustomFootprint(custom_footprint);
@@ -1876,6 +1877,7 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
       if (!footprintSummary.valid) {
         return res.status(400).json({ error: { code: 'INVALID_CUSTOM_FOOTPRINT', field: 'custom_footprint', message: footprintSummary.message, validation: footprintSummary } });
       }
+      customFootprintAreaM2 = footprintSummary.area_m2;
     } catch (error: any) {
       if (error instanceof CustomFootprintValidationError) {
         return res.status(400).json({ error: { code: 'INVALID_CUSTOM_FOOTPRINT', field: 'custom_footprint', message: error.validation.message, validation: error.validation } });
@@ -1896,17 +1898,21 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
   const iw = w && t ? w - 2 * t : w;
   const ih = h && t ? h - t : h;
   const calcGross = isCustom
-    ? (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null)
+    ? (customFootprintAreaM2 && h
+      ? Math.round(customFootprintAreaM2 * h / 1000 * 1e6) / 1e6
+      : (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null))
     : isCyl
       ? (iw && ih ? Math.round(Math.PI * (iw / 2) * (iw / 2) * ih / 1e9 * 1e4) / 1e4 : null)
       : (il && iw && ih ? Math.round(il * iw * ih / 1e9 * 1e4) / 1e4 : null);
   const calcOp = isCustom
-    ? (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null)
+    ? (customFootprintAreaM2 && wl
+      ? Math.round(customFootprintAreaM2 * wl / 1000 * 1e6) / 1e6
+      : (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null))
     : isCyl
       ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
       : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
   const surfaceAreaM2 = normalizedFootprint
-    ? summarizeCustomFootprint(normalizedFootprint).area_m2
+    ? customFootprintAreaM2
     : isCustom
       ? null
     : calculateWaterSurfaceAreaM2(shape_type, isCyl ? null : l, w);

@@ -508,6 +508,13 @@ function calcInnerDims(
 function computeTankOpVol(tank: any): number | null {
   if (!tank) return null;
   const shape = (tank.eff_shape || tank.shape_type || '').toLowerCase();
+  if (shape === 'custom') {
+    const area = footprintMeasurement(tank.custom_footprint)?.area;
+    const waterLevelMm = parseFloat(tank.eff_water_level_mm ?? tank.design_water_level_mm) || null;
+    if (area && waterLevelMm) {
+      return Math.round(area * waterLevelMm / 1000 * 1e6) / 1e6;
+    }
+  }
   const projectStored = parseFloat(
     tank.project_operating_volume_m3 ?? tank.operating_volume_m3,
   ) || null;
@@ -738,7 +745,22 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
   const effectiveEditShape = form.shape_type || tank.eff_shape || 'Rectangular';
   const isCyl  = effectiveEditShape.toLowerCase() === 'cylindrical';
   const isCust = effectiveEditShape.toLowerCase() === 'custom';
-  const hasAcceptedCustomFootprint = isCust && !!form.custom_footprint;
+  const customFootprintMeasurement = isCust ? footprintMeasurement(form.custom_footprint) : null;
+  const hasAcceptedCustomFootprint = isCust && !!customFootprintMeasurement;
+  const customTankHeightMm = parseFloat(form.height_mm || tank.eff_height_mm) || null;
+  const customWaterLevelMm = parseFloat(form.design_water_level_mm || tank.eff_water_level_mm) || null;
+  const customGrossVolumeM3 = customFootprintMeasurement && customTankHeightMm
+    ? Math.round(customFootprintMeasurement.area * customTankHeightMm / 1000 * 1e6) / 1e6
+    : null;
+  const customOperatingVolumeM3 = customFootprintMeasurement && customWaterLevelMm
+    ? Math.round(customFootprintMeasurement.area * customWaterLevelMm / 1000 * 1e6) / 1e6
+    : null;
+  const savedDisplacementM3 =
+    (parseFloat(substrateData?.substrate_volume_m3 || '0') || 0)
+    + (parseFloat(substrateData?.theming_volume_m3 || '0') || 0);
+  const customNetVolumeM3 = customOperatingVolumeM3 != null
+    ? Math.max(0, customOperatingVolumeM3 - savedDisplacementM3)
+    : null;
   const outerLengthForArea = Number(form.length_mm || tank.eff_length_mm || tank.product_length_mm);
   const outerWidthForArea = Number(form.width_mm || tank.eff_width_mm || tank.product_width_mm);
 
@@ -781,9 +803,9 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
         inner_length_mm:       overrideInner ? (form.inner_length_mm || null) : null,
         inner_width_mm:        overrideInner ? (form.inner_width_mm  || null) : null,
         inner_height_mm:       overrideInner ? (form.inner_height_mm || null) : null,
-        gross_volume_m3:       isCust ? (form.gross_volume_m3 || null) : undefined,
-        operating_volume_m3:   isCust ? (form.operating_volume_m3 || null) : undefined,
-        surface_area_m2:       isCust ? (form.surface_area_m2 || null) : undefined,
+        gross_volume_m3:       isCust ? (customGrossVolumeM3 ?? (form.gross_volume_m3 || null)) : undefined,
+        operating_volume_m3:   isCust ? (customOperatingVolumeM3 ?? (form.operating_volume_m3 || null)) : undefined,
+        surface_area_m2:       isCust ? (customFootprintMeasurement?.area ?? (form.surface_area_m2 || null)) : undefined,
          custom_footprint:      isCust ? form.custom_footprint : null,
         status:                form.status,
       });
@@ -814,11 +836,20 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
     const hasInner = !!(viewInnerL || viewInnerW || viewInnerH);
 
     // Compute volumes — use inner dims when wall thickness is set, outer otherwise.
-    // For custom shapes always use the stored values.
+    // Custom tanks use their measured footprint area and design water level.
     const isCust = shape.toLowerCase() === 'custom';
+    const savedFootprintMeasurement = isCust ? footprintMeasurement(tank.custom_footprint) : null;
+    const customTankHeightMm = parseFloat(tank.eff_height_mm || tank.height_mm) || null;
+    const customWaterLevelMm = parseFloat(tank.eff_water_level_mm ?? tank.design_water_level_mm) || null;
+    const customGrossVolume = savedFootprintMeasurement && customTankHeightMm
+      ? Math.round(savedFootprintMeasurement.area * customTankHeightMm / 1000 * 1e6) / 1e6
+      : null;
+    const customOperatingVolume = savedFootprintMeasurement && customWaterLevelMm
+      ? Math.round(savedFootprintMeasurement.area * customWaterLevelMm / 1000 * 1e6) / 1e6
+      : null;
     const volCalc = isCust
-      ? { gross: parseFloat(String(tank.gross_volume_m3)) || null,
-          op:    parseFloat(String(tank.operating_volume_m3 ?? tank.design_volume_m3)) || null,
+      ? { gross: customGrossVolume ?? (parseFloat(String(tank.gross_volume_m3)) || null),
+          op:    customOperatingVolume ?? (parseFloat(String(tank.operating_volume_m3 ?? tank.design_volume_m3)) || null),
           fromInner: false }
       : (() => {
           const effL = thick && viewInnerL != null ? viewInnerL : outerL;
@@ -845,9 +876,10 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
     const grossVol = volCalc.gross;
     const opVol    = volCalc.op;
     const volFromInner = volCalc.fromInner;
-    const surfaceArea = tank.surface_area_m2 != null
-      ? Number(tank.surface_area_m2)
-      : waterSurfaceAreaM2(shape, viewIsCyl ? null : (thick ? viewInnerL : outerL), thick ? viewInnerW : outerW);
+    const surfaceArea = savedFootprintMeasurement?.area
+      ?? (tank.surface_area_m2 != null
+        ? Number(tank.surface_area_m2)
+        : waterSurfaceAreaM2(shape, viewIsCyl ? null : (thick ? viewInnerL : outerL), thick ? viewInnerW : outerW));
 
     const statusCls: Record<string, string> = {
       Active:         'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -857,7 +889,6 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
       Decommissioned: 'bg-stone-100 text-stone-500 border-stone-200',
     };
 
-    const savedFootprintMeasurement = isCust ? footprintMeasurement(tank.custom_footprint) : null;
     return (
       <div className="rounded-xl border border-blue-200 bg-white shadow-sm overflow-hidden">
         {/* Header */}
@@ -1202,20 +1233,41 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
         {/* Volumes */}
         {isCust ? (
           <div className="space-y-4">
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Volumes (m³) — direct input</p>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">
+              Volumes (m³) — calculated from custom footprint
+            </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Gross Volume</label>
-                <input type="number" placeholder="0.000" value={form.gross_volume_m3}
-                  onChange={e => setF('gross_volume_m3', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <div className="w-full border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-sm font-mono font-semibold text-blue-800">
+                  {customGrossVolumeM3 != null ? customGrossVolumeM3.toFixed(3) : '—'}
+                </div>
+                <p className="mt-1 text-xs text-stone-400">
+                  {customFootprintMeasurement && customTankHeightMm
+                    ? `${customFootprintMeasurement.area.toFixed(3)} m² × ${(customTankHeightMm / 1000).toFixed(3)} m tank height`
+                    : 'Add a custom footprint and tank height to calculate.'}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Operating Volume</label>
-                <input type="number" placeholder="0.000" value={form.operating_volume_m3}
-                  onChange={e => setF('operating_volume_m3', e.target.value)}
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                <div className="w-full border border-sky-200 bg-sky-50 rounded-lg px-3 py-2 text-sm font-mono font-semibold text-sky-800">
+                  {customOperatingVolumeM3 != null ? customOperatingVolumeM3.toFixed(3) : '—'}
+                </div>
+                <p className="mt-1 text-xs text-stone-400">
+                  {customFootprintMeasurement && customWaterLevelMm
+                    ? `${customFootprintMeasurement.area.toFixed(3)} m² × ${(customWaterLevelMm / 1000).toFixed(3)} m water level`
+                    : 'Add a custom footprint and operating water level to calculate.'}
+                </p>
               </div>
+            </div>
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+              <div className="text-xs text-teal-600">Net Volume</div>
+              <div className="font-mono text-sm font-semibold text-teal-800">
+                {customNetVolumeM3 != null ? `${customNetVolumeM3.toFixed(3)} m³` : '—'}
+              </div>
+              <p className="mt-0.5 text-xs text-teal-600">
+                Operating volume minus {savedDisplacementM3.toFixed(3)} m³ substrate and decoration.
+              </p>
             </div>
           </div>
         ) : (
@@ -1973,7 +2025,8 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
 
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  // Resolve tank inner footprint (L × W) for volume calculation
+  // Resolve the tank footprint for layer-volume calculations. Custom outlines
+  // already report their enclosed area in square metres.
   const wall   = parseFloat(tank?.wall_thickness_mm) || null;
   const outerL = parseFloat(tank?.eff_length_mm || tank?.length_mm) || null;
   const outerW = parseFloat(tank?.eff_width_mm  || tank?.width_mm)  || null;
@@ -1983,13 +2036,18 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   const tankInnerW: number | null = tank?.inner_width_mm
     ? parseFloat(tank.inner_width_mm)
     : (wall && outerW ? outerW - 2 * wall : outerW);
-  const hasTankFootprint = !!(tankInnerL && tankInnerW);
+  const customFootprintAreaM2 = footprintMeasurement(tank?.custom_footprint)?.area ?? null;
+  const rectangularFootprintAreaM2 = tankInnerL && tankInnerW
+    ? tankInnerL * tankInnerW / 1e6
+    : null;
+  const tankFootprintAreaM2 = customFootprintAreaM2 ?? rectangularFootprintAreaM2;
+  const hasTankFootprint = tankFootprintAreaM2 != null && tankFootprintAreaM2 > 0;
 
   const calcVol = (heightStr: string): number | null => {
     if (!heightStr) return null;                        // empty → no value
     const h = parseFloat(heightStr);
-    if (isNaN(h) || !tankInnerL || !tankInnerW) return null;
-    return h <= 0 ? 0 : Math.round(tankInnerL * tankInnerW * h / 1e9 * 1e6) / 1e6;
+    if (isNaN(h) || !hasTankFootprint) return null;
+    return h <= 0 ? 0 : Math.round(tankFootprintAreaM2! * h / 1000 * 1e6) / 1e6;
   };
 
   const subComputed  = calcVol(form.substrate_height_mm);
@@ -2134,7 +2192,10 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                     <div className="mt-1.5">
                       {hasTankFootprint && subComputed != null ? (
                         <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded font-mono">
-                          {(tankInnerL! / 1000).toFixed(3)} × {(tankInnerW! / 1000).toFixed(3)} × {(parseFloat(form.substrate_height_mm) / 1000).toFixed(3)} = {subComputed.toFixed(4)} m³
+                          {customFootprintAreaM2 != null
+                            ? `${customFootprintAreaM2.toFixed(3)} m² × ${(parseFloat(form.substrate_height_mm) / 1000).toFixed(3)} m`
+                            : `${(tankInnerL! / 1000).toFixed(3)} × ${(tankInnerW! / 1000).toFixed(3)} × ${(parseFloat(form.substrate_height_mm) / 1000).toFixed(3)}`}
+                          {' = '}{subComputed.toFixed(4)} m³
                         </span>
                       ) : (
                         <span className="text-xs text-stone-400">No tank footprint — enter volume directly below</span>
