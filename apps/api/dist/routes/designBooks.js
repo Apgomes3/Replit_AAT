@@ -39,6 +39,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.thermalSelectionTestUtils = exports.versionSnapshotTestUtils = exports.thermalCorrelationTestUtils = exports.thermalCalculationTestUtils = void 0;
 exports.isCurrentPumpSelectionReady = isCurrentPumpSelectionReady;
 exports.loadPumpSelections = loadPumpSelections;
+exports.loadLssControlSummaries = loadLssControlSummaries;
+exports.loadLssControls = loadLssControls;
 exports.loadFrictionLossPackages = loadFrictionLossPackages;
 exports.loadReleaseContext = loadReleaseContext;
 const express_1 = require("express");
@@ -57,6 +59,7 @@ const lssSystems_1 = require("../lib/lssSystems");
 const flowRoute_1 = require("../lib/flowRoute");
 const systemLifecycle_1 = require("../lib/systemLifecycle");
 const uvCalculations_1 = require("../lib/uvCalculations");
+const pipeSizing_1 = require("../lib/pipeSizing");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (req, res, next) => {
     // Platform Admin governs correlation evidence even when Design Books are
@@ -169,6 +172,33 @@ async function loadPumpSelections(runner, systems) {
         };
     });
 }
+async function loadLssControlSummaries(runner, designBookId, systems) {
+    const lssSystems = systems.filter(lssSystems_1.isLifeSupportSystem);
+    if (!lssSystems.length)
+        return [];
+    const ids = lssSystems.map(system => system.id);
+    const controls = (await runner('SELECT * FROM design_book_lss_controls WHERE design_book_id=$1 AND system_id=ANY($2::uuid[])', [designBookId, ids])).rows;
+    return lssSystems.map(system => ({
+        system_id: system.id,
+        control: controls.find(control => control.system_id === system.id) || null,
+    }));
+}
+async function loadLssControls(runner, designBookId, systems) {
+    const summaries = await loadLssControlSummaries(runner, designBookId, systems);
+    if (!summaries.length)
+        return [];
+    const ids = summaries.map(item => item.system_id);
+    const instruments = (await runner(`SELECT i.*, pm.product_code, pm.product_name, pm.status AS product_status
+     FROM design_book_lss_instruments i LEFT JOIN product_masters pm ON pm.id=i.product_master_id
+     WHERE i.design_book_id=$1 AND i.system_id=ANY($2::uuid[])
+     ORDER BY i.system_id, i.definition_snapshot->>'tag_code', i.sequence_number`, [designBookId, ids])).rows;
+    const definitions = (await runner(`SELECT * FROM field_instrument_definitions WHERE is_active=true ORDER BY sort_order, tag_code`)).rows;
+    return summaries.map(item => ({
+        ...item,
+        instruments: instruments.filter(instrument => instrument.system_id === item.system_id),
+        definitions,
+    }));
+}
 async function loadFrictionLossPackages(runner, designBookId, systems) {
     const lifeSupportSystems = systems.filter(lssSystems_1.isLifeSupportSystem);
     if (!lifeSupportSystems.length)
@@ -177,13 +207,14 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
     const eligibleCircuitPumps = (await runner(`SELECT sps.system_id, sps.circuit_key,
             pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.description,
             pm.id AS product_master_id, pm.product_code, pm.product_name,
-            pm.manufacturer, pm.model
+            pm.manufacturer, pm.model, ph.npsh_required_m
      FROM system_pump_selections sps
      JOIN project_equipment_items pei
        ON pei.id=sps.project_equipment_item_id AND pei.system_id=sps.system_id
      JOIN systems current_system
        ON current_system.id=sps.system_id AND current_system.project_id=pei.project_id
      JOIN product_masters pm ON pm.id=pei.product_master_id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      LEFT JOIN product_families pf ON pf.id=pm.product_family_id
      WHERE sps.system_id = ANY($1::uuid[])
        AND (sps.pump_role='primary' OR sps.pump_role IS NULL)
@@ -264,10 +295,19 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
                     : pumpSelection?.status === 'incompatible' ? 'incompatible' : 'stale';
                 const pumpFreshness = pumpReady ? pumpSelection.freshness : 'stale';
                 if (!row) {
+                    const tankBoundaries = {
+                        start: {
+                            tank_id: '', base_elevation_fl0_m: 0, water_depth_m: '', pump_draw_height_m: '',
+                            open_to_atmosphere: true, gauge_pressure_kpa: 0,
+                            atmospheric_pressure_kpa: 101.325, water_temperature_c: 20, npsh_safety_margin_m: 0.5,
+                        },
+                        end: { tank_id: '', base_elevation_fl0_m: '', water_depth_m: '', open_to_atmosphere: true, gauge_pressure_kpa: 0 },
+                    };
                     const preview = (0, frictionLossCalculations_1.calculateFrictionLoss)({
                         flow_m3h: circuit.flow_m3h,
                         selected_pump: currentPump,
                         components: [],
+                        tank_boundaries: tankBoundaries,
                     });
                     const reasons = [...new Set([
                             ...pumpReasons,
@@ -288,6 +328,7 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
                         pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
                         pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
                         pump_selection_reasons: pumpReasons,
+                        tank_boundaries: tankBoundaries,
                     };
                 }
                 const currentComponents = components.filter(component => component.calculation_id === row.id)
@@ -322,7 +363,7 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
                         reference_valid: !!currentSnapshot,
                     };
                 });
-                const currentSource = (0, frictionLossCalculations_1.frictionSourceSnapshot)(circuit, currentPump, currentComponents.map(({ reference_valid, ...item }) => item));
+                const currentSource = (0, frictionLossCalculations_1.frictionSourceSnapshot)(circuit, currentPump, currentComponents.map(({ reference_valid, ...item }) => item), row.input_snapshot?.tank_boundaries);
                 const currentFingerprint = (0, frictionLossCalculations_1.frictionSourceFingerprint)(currentSource);
                 const stale = circuit.circuit_kind === 'orphaned' ||
                     row.calculation_version !== frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION ||
@@ -357,6 +398,7 @@ async function loadFrictionLossPackages(runner, designBookId, systems) {
                     pump_selection_status: pumpSelection ? pumpStatus : 'incomplete',
                     pump_selection_freshness: pumpSelection ? pumpFreshness : 'unsaved',
                     pump_selection_reasons: pumpReasons,
+                    tank_boundaries: row.input_snapshot?.tank_boundaries || row.result_snapshot?.inputs?.tank_boundaries,
                     components: row.result_snapshot?.components || currentComponents,
                     source_fingerprint: row.source_fingerprint,
                     current_source_fingerprint: currentFingerprint,
@@ -1366,6 +1408,11 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
        WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])
        ORDER BY system_id`, [id, systems.map(system => system.id)])).rows
         : [];
+    const ozoneCalculations = systems.length
+        ? (await runner(`SELECT * FROM design_book_ozone_calculations
+       WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])
+       ORDER BY system_id`, [id, systems.map(system => system.id)])).rows
+        : [];
     const compactUnitIds = systems.map(system => system.compact_unit_id).filter(Boolean);
     const compactUnits = compactUnitIds.length
         ? (await runner(`SELECT lcu.*,
@@ -1390,6 +1437,7 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
     });
     const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(runner);
     const pumpSelections = await loadPumpSelections(runner, currentSystems);
+    const lssControls = await loadLssControls(runner, id, currentSystems);
     const thermalCalculations = await loadThermalCalculations(runner, id, currentSystems.filter(lssSystems_1.isLifeSupportSystem), links, exhibits, tanks, exhibitCalculations, thermalConstructionDefaults, lights, pumpSelections, uvSelections);
     const frictionLossCalculations = await loadFrictionLossPackages(runner, id, currentSystems);
     const liveContext = {
@@ -1408,9 +1456,18 @@ async function loadReleaseContext(id, runner = index_1.query, lock = false, live
         biological_media_runs: biologicalMediaRuns,
         uv_selections: uvSelections,
         thermal_selections: thermalSelections,
+        ozone_calculations: ozoneCalculations,
         thermal_calculations: thermalCalculations,
         thermal_construction_defaults: thermalConstructionDefaults,
         pump_selections: pumpSelections,
+        lss_controls: lssControls,
+        // Flat evidence arrays are retained for version snapshot/restore code;
+        // the grouped form above is convenient for Design Book aggregate clients.
+        lss_control_configurations: lssControls.map(item => ({
+            system_id: item.system_id,
+            ...(item.control || {}),
+        })).filter(item => !!item.id),
+        lss_instrument_instances: lssControls.flatMap(item => item.instruments),
         friction_loss_calculations: frictionLossCalculations,
         engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
@@ -2234,6 +2291,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
     });
     const thermalConstructionDefaults = await loadThermalWallConstructionDefaults(index_1.query);
     const pumpSelections = await loadPumpSelections(index_1.query, currentSystems);
+    const lssControls = await loadLssControlSummaries(index_1.query, routeParam(req.params.id), currentSystems);
     const uvSelections = currentSystems.length
         ? (await (0, index_1.query)(`SELECT * FROM design_book_uv_selections
        WHERE design_book_id=$1 AND system_id = ANY($2::uuid[])
@@ -2260,6 +2318,7 @@ router.get('/design-books/:id', auth_1.authenticate, async (req, res) => {
         thermal_selections: thermalSelections,
         thermal_construction_defaults: thermalConstructionDefaults,
         pump_selections: pumpSelections,
+        lss_controls: lssControls,
         friction_loss_calculations: frictionLossCalculations,
         engineering_calculations: {
             calculation_version: aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION,
@@ -2806,7 +2865,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', auth_1.authenticat
 router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), async (req, res) => {
     if (!await ensureBookEditable(routeParam(req.params.id), res))
         return;
-    const { target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes, weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions, weir_discharge_condition, weir_downstream_head_mm, } = req.body;
+    const { target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes, weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions, weir_discharge_condition, weir_downstream_head_mm, inlet_pipe_dn, discharge_pipe_dn, bottom_drain_pipe_dn, } = req.body;
     const hasField = (field) => Object.prototype.hasOwnProperty.call(req.body, field);
     const hasWeirHead = hasField('weir_head_mm');
     const hasWeirLength = hasField('weir_length_mm');
@@ -2815,6 +2874,78 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
     const hasWeirContractions = hasField('weir_end_contractions');
     const hasWeirDischarge = hasField('weir_discharge_condition');
     const hasWeirDownstreamHead = hasField('weir_downstream_head_mm');
+    const hasInletPipeDn = hasField('inlet_pipe_dn');
+    const hasDischargePipeDn = hasField('discharge_pipe_dn');
+    const hasBottomDrainPipeDn = hasField('bottom_drain_pipe_dn');
+    for (const [label, value] of [['Inlet pipe DN', inlet_pipe_dn], ['Discharge pipe DN', discharge_pipe_dn], ['Bottom drain pipe DN', bottom_drain_pipe_dn]]) {
+        if (value != null && (!Number.isInteger(Number(value)) || Number(value) <= 0)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `${label} must be a positive whole DN.` } });
+        }
+    }
+    const existingPipeResult = await (0, index_1.query)(`SELECT inlet_pipe_dn, discharge_pipe_dn, bottom_drain_pipe_dn,
+            inlet_pipe_evidence, discharge_pipe_evidence, bottom_drain_pipe_evidence
+     FROM design_book_exhibit_hydraulics WHERE design_book_id=$1 AND exhibit_id=$2`, [req.params.id, req.params.exhibitId]);
+    const existingPipe = existingPipeResult.rows[0] || {};
+    const effectiveInletPipeDn = hasInletPipeDn ? inlet_pipe_dn : existingPipe.inlet_pipe_dn;
+    const effectiveDischargePipeDn = hasDischargePipeDn ? discharge_pipe_dn : existingPipe.discharge_pipe_dn;
+    const effectiveBottomDrainPipeDn = hasBottomDrainPipeDn ? bottom_drain_pipe_dn : existingPipe.bottom_drain_pipe_dn;
+    const requestedDns = [effectiveInletPipeDn, effectiveDischargePipeDn, effectiveBottomDrainPipeDn].filter(value => value != null).map(Number);
+    let inletPipeEvidence = null;
+    let dischargePipeEvidence = null;
+    let bottomDrainPipeEvidence = null;
+    if (requestedDns.length) {
+        const standards = await (0, index_1.query)(`SELECT id, dn, internal_diameter_mm, is_active,
+      pressure_velocity_min_m_s, pressure_velocity_max_m_s, gravity_velocity_min_m_s, gravity_velocity_max_m_s
+      FROM pipe_sizing_standards WHERE is_active=true OR dn=ANY($1::int[])`, [requestedDns]);
+        const explicitlyRequestedDns = [hasInletPipeDn ? inlet_pipe_dn : null, hasDischargePipeDn ? discharge_pipe_dn : null,
+            hasBottomDrainPipeDn ? bottom_drain_pipe_dn : null]
+            .filter(value => value != null).map(Number);
+        if (explicitlyRequestedDns.some(dn => !standards.rows.some(row => Number(row.dn) === dn))) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'Saved pipe DN must exist in the pipe sizing standards.' } });
+        }
+        if (standards.rows.some(row => (0, pipeSizing_1.pipeVelocity)(1, row.internal_diameter_mm) == null)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'Pipe standard has an invalid internal diameter.' } });
+        }
+        const context = await loadReleaseContext(routeParam(req.params.id), index_1.query, false, true);
+        const exhibit = context.exhibits.find((item) => item.id === req.params.exhibitId);
+        if (!exhibit)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found in this Design Book project.' } });
+        const existing = context.hydraulics.find((item) => item.exhibit_id === exhibit.id) || {};
+        const source = { ...existing, target_turnover_rate: target_turnover_rate ?? existing.target_turnover_rate,
+            surface_skim_pct: surface_skim_pct ?? existing.surface_skim_pct, bottom_drain_pct: bottom_drain_pct ?? existing.bottom_drain_pct };
+        const calculated = (0, aquariumCalculations_1.calculateExhibitHydraulics)(exhibit, context.tanks.filter((tank) => tank.exhibit_id === exhibit.id), source, context.substrate.find((item) => item.exhibit_id === exhibit.id), new Date().toISOString());
+        const evidenceFor = (dn, service) => {
+            if (dn == null)
+                return null;
+            const standard = standards.rows.find(row => Number(row.dn) === Number(dn));
+            const flow = service === 'inlet' ? calculated.results.total_return_flow_m3h
+                : service === 'discharge' ? calculated.results.surface_skim_flow_m3h
+                    : calculated.results.bottom_drain_flow_m3h;
+            const min = Number(standard[service === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+            const max = Number(standard[service === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+            const computed = (0, pipeSizing_1.pipeVelocity)(flow, standard.internal_diameter_mm);
+            if (computed == null)
+                return null;
+            const active = standards.rows.filter(row => row.is_active !== false).sort((a, b) => Number(a.dn) - Number(b.dn));
+            const recommended = active.find(row => {
+                const v = (0, pipeSizing_1.pipeVelocity)(flow, row.internal_diameter_mm);
+                const candidateMin = Number(row[service === 'inlet' ? 'pressure_velocity_min_m_s' : 'gravity_velocity_min_m_s']);
+                const candidateMax = Number(row[service === 'inlet' ? 'pressure_velocity_max_m_s' : 'gravity_velocity_max_m_s']);
+                return v != null && v >= candidateMin && v <= candidateMax;
+            });
+            return { standard_id: standard.id, dn: Number(standard.dn), internal_diameter_mm: Number(standard.internal_diameter_mm),
+                velocity_min_m_s: min, velocity_max_m_s: max, authoritative_flow_m3h: Number(flow),
+                computed_velocity_m_s: computed, within_band: computed >= min && computed <= max,
+                selection_mode: Number(recommended?.dn) === Number(dn) ? 'recommended' : 'explicit' };
+        };
+        inletPipeEvidence = evidenceFor(effectiveInletPipeDn, 'inlet');
+        dischargePipeEvidence = evidenceFor(effectiveDischargePipeDn, 'discharge');
+        bottomDrainPipeEvidence = evidenceFor(effectiveBottomDrainPipeDn, 'bottom_drain');
+        if ((hasInletPipeDn && !inletPipeEvidence) || (hasDischargePipeDn && !dischargePipeEvidence) ||
+            (hasBottomDrainPipeDn && !bottomDrainPipeEvidence)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'Current exhibit flow is unavailable; a finite pipe velocity cannot be saved.' } });
+        }
+    }
     if (weir_formula_method != null && !['francis_184', 'bazin_1888'].includes(weir_formula_method)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Unsupported weir formula method' } });
     }
@@ -2863,22 +2994,30 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
        (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
         weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
         weir_discharge_condition, weir_downstream_head_mm,
-        calculation_version, last_calculated_at, calculation_inputs)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-        '${aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION}',NOW(),$21)
+           inlet_pipe_dn, discharge_pipe_dn, bottom_drain_pipe_dn,
+           inlet_pipe_evidence, discharge_pipe_evidence, bottom_drain_pipe_evidence,
+           calculation_version, last_calculated_at, calculation_inputs)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,$19::jsonb,
+           '${aquariumCalculations_1.AQUARIUM_CALCULATION_VERSION}',NOW(),$30)
      ON CONFLICT (design_book_id, exhibit_id)
      DO UPDATE SET
        target_turnover_rate = EXCLUDED.target_turnover_rate,
        surface_skim_pct     = EXCLUDED.surface_skim_pct,
        bottom_drain_pct     = EXCLUDED.bottom_drain_pct,
        notes                = EXCLUDED.notes,
-       weir_head_mm = CASE WHEN $14 THEN EXCLUDED.weir_head_mm ELSE design_book_exhibit_hydraulics.weir_head_mm END,
-       weir_length_mm = CASE WHEN $15 THEN EXCLUDED.weir_length_mm ELSE design_book_exhibit_hydraulics.weir_length_mm END,
-       weir_formula_method = CASE WHEN $16 THEN EXCLUDED.weir_formula_method ELSE design_book_exhibit_hydraulics.weir_formula_method END,
-       weir_geometry = CASE WHEN $17 THEN EXCLUDED.weir_geometry ELSE design_book_exhibit_hydraulics.weir_geometry END,
-       weir_end_contractions = CASE WHEN $18 THEN EXCLUDED.weir_end_contractions ELSE design_book_exhibit_hydraulics.weir_end_contractions END,
-       weir_discharge_condition = CASE WHEN $19 THEN EXCLUDED.weir_discharge_condition ELSE design_book_exhibit_hydraulics.weir_discharge_condition END,
-       weir_downstream_head_mm = CASE WHEN $20 THEN EXCLUDED.weir_downstream_head_mm ELSE design_book_exhibit_hydraulics.weir_downstream_head_mm END,
+           weir_head_mm = CASE WHEN $23 THEN EXCLUDED.weir_head_mm ELSE design_book_exhibit_hydraulics.weir_head_mm END,
+           weir_length_mm = CASE WHEN $24 THEN EXCLUDED.weir_length_mm ELSE design_book_exhibit_hydraulics.weir_length_mm END,
+           weir_formula_method = CASE WHEN $25 THEN EXCLUDED.weir_formula_method ELSE design_book_exhibit_hydraulics.weir_formula_method END,
+           weir_geometry = CASE WHEN $26 THEN EXCLUDED.weir_geometry ELSE design_book_exhibit_hydraulics.weir_geometry END,
+           weir_end_contractions = CASE WHEN $27 THEN EXCLUDED.weir_end_contractions ELSE design_book_exhibit_hydraulics.weir_end_contractions END,
+           weir_discharge_condition = CASE WHEN $28 THEN EXCLUDED.weir_discharge_condition ELSE design_book_exhibit_hydraulics.weir_discharge_condition END,
+           weir_downstream_head_mm = CASE WHEN $29 THEN EXCLUDED.weir_downstream_head_mm ELSE design_book_exhibit_hydraulics.weir_downstream_head_mm END,
+          inlet_pipe_dn = CASE WHEN $20 THEN EXCLUDED.inlet_pipe_dn ELSE design_book_exhibit_hydraulics.inlet_pipe_dn END,
+          discharge_pipe_dn = CASE WHEN $21 THEN EXCLUDED.discharge_pipe_dn ELSE design_book_exhibit_hydraulics.discharge_pipe_dn END,
+          bottom_drain_pipe_dn = CASE WHEN $22 THEN EXCLUDED.bottom_drain_pipe_dn ELSE design_book_exhibit_hydraulics.bottom_drain_pipe_dn END,
+          inlet_pipe_evidence = EXCLUDED.inlet_pipe_evidence,
+          discharge_pipe_evidence = EXCLUDED.discharge_pipe_evidence,
+           bottom_drain_pipe_evidence = EXCLUDED.bottom_drain_pipe_evidence,
        calculation_version   = EXCLUDED.calculation_version,
        last_calculated_at    = EXCLUDED.last_calculated_at,
        calculation_inputs    = EXCLUDED.calculation_inputs,
@@ -2887,7 +3026,11 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', auth_1.authentica
         target_turnover_rate ?? null, savedSurfacePct, savedBottomPct,
         notes ?? null, weir_head_mm ?? null, weir_length_mm ?? null, weir_formula_method ?? null,
         weir_geometry ?? null, weir_end_contractions ?? null,
-        weir_discharge_condition ?? null, weir_downstream_head_mm ?? null,
+        weir_discharge_condition ?? null, weir_downstream_head_mm ?? null, inlet_pipe_dn ?? null, discharge_pipe_dn ?? null,
+        bottom_drain_pipe_dn ?? null, inletPipeEvidence ? JSON.stringify(inletPipeEvidence) : null,
+        dischargePipeEvidence ? JSON.stringify(dischargePipeEvidence) : null,
+        bottomDrainPipeEvidence ? JSON.stringify(bottomDrainPipeEvidence) : null,
+        hasInletPipeDn, hasDischargePipeDn, hasBottomDrainPipeDn,
         hasWeirHead, hasWeirLength, hasWeirMethod, hasWeirGeometry, hasWeirContractions,
         hasWeirDischarge, hasWeirDownstreamHead,
         JSON.stringify({
@@ -3207,12 +3350,14 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
              (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
               weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
               weir_discharge_condition, weir_downstream_head_mm, calculation_version, last_calculated_at,
-              calculation_inputs, override_reason)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, [
+               calculation_inputs, override_reason, inlet_pipe_dn, discharge_pipe_dn, bottom_drain_pipe_dn,
+               inlet_pipe_evidence, discharge_pipe_evidence, bottom_drain_pipe_evidence)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`, [
                 next.id, row.exhibit_id, row.target_turnover_rate, row.surface_skim_pct, row.bottom_drain_pct, row.notes,
                 row.weir_head_mm, row.weir_length_mm, row.weir_formula_method, row.weir_geometry, row.weir_end_contractions,
                 row.weir_discharge_condition, row.weir_downstream_head_mm, row.calculation_version, row.last_calculated_at,
-                row.calculation_inputs, row.override_reason,
+                row.calculation_inputs, row.override_reason, row.inlet_pipe_dn, row.discharge_pipe_dn, row.bottom_drain_pipe_dn,
+                row.inlet_pipe_evidence, row.discharge_pipe_evidence, row.bottom_drain_pipe_evidence,
             ]);
         }
         for (const row of snapshot.substrate || []) {
@@ -3264,7 +3409,7 @@ router.post('/design-books/:id/revisions', auth_1.authenticate, (0, auth_1.requi
     }
 });
 // ─── Versions ────────────────────────────────────────────────────────────────
-const VERSION_SNAPSHOT_SCHEMA = 9;
+const VERSION_SNAPSHOT_SCHEMA = 12;
 const VERSION_REFERENCE_FIELDS = {
     project: ['id', 'project_code', 'project_name'],
     exhibits: ['id', 'project_id', 'exhibit_code', 'exhibit_name', 'water_type',
@@ -3356,6 +3501,15 @@ function frozenFromSnapshot(snapshot) {
         ...(Array.isArray(snapshot?.uv_selections) ? { uv_selections: snapshot.uv_selections } : {}),
         ...(Array.isArray(snapshot?.thermal_selections) ? { thermal_selections: snapshot.thermal_selections } : {}),
         ...(Array.isArray(snapshot?.review_handovers) ? { review_handovers: snapshot.review_handovers } : {}),
+        // Control configuration deliberately contains catalog and product snapshots,
+        // rather than only their live foreign keys.  An instrument definition or
+        // product may be retired after a version is captured.
+        ...(Array.isArray(snapshot?.lss_control_configurations)
+            ? { lss_control_configurations: snapshot.lss_control_configurations }
+            : {}),
+        ...(Array.isArray(snapshot?.lss_instrument_instances)
+            ? { lss_instrument_instances: snapshot.lss_instrument_instances }
+            : {}),
     };
 }
 function referencesFromSnapshot(snapshot) {
@@ -3429,10 +3583,12 @@ function makeVersionSnapshot(context, capturedAt = new Date().toISOString()) {
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
             friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
+            lss_control_configurations: jsonCopy(context.lss_control_configurations || []),
+            lss_instrument_instances: jsonCopy(context.lss_instrument_instances || []),
         },
         live_references: liveReferencesFromContext(context),
         scope: {
-            frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'Thermal selections', 'thermal calculations', 'friction loss calculations', 'review handovers'],
+            frozen: ['book metadata', 'species allocations', 'hydraulics', 'substrate and theming', 'lighting schedule', 'UV selections', 'Thermal selections', 'thermal calculations', 'friction loss calculations', 'review handovers', 'LSS control-panel selections and field-instrument catalog/product evidence'],
             live: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
             restore_target: 'working_copy',
         },
@@ -3452,6 +3608,8 @@ function currentRestoreStateDigest(context) {
             thermal_calculations: jsonCopy(context.thermal_calculations || []),
             friction_loss_calculations: jsonCopy(context.friction_loss_calculations || []),
             review_handovers: jsonCopy(context.review_handovers || []),
+            lss_control_configurations: jsonCopy(context.lss_control_configurations || []),
+            lss_instrument_instances: jsonCopy(context.lss_instrument_instances || []),
         },
         live_references: liveReferencesFromContext(context),
     })).digest('hex');
@@ -3473,6 +3631,10 @@ function versionPresentation(version, currentContext) {
             thermal_calculations: (frozen.thermal_calculations || []).length,
             friction_loss_calculations: (frozen.friction_loss_calculations || []).reduce((sum, group) => sum + (group.items || []).length, 0),
             review_handovers: Array.isArray(frozen.review_handovers) ? frozen.review_handovers.length : null,
+            lss_control_configurations: Array.isArray(frozen.lss_control_configurations)
+                ? frozen.lss_control_configurations.length : null,
+            lss_instrument_instances: Array.isArray(frozen.lss_instrument_instances)
+                ? frozen.lss_instrument_instances.length : null,
         },
         live_references: {
             exhibits: (referencesFromSnapshot(snapshot).exhibits || []).length,
@@ -3485,11 +3647,19 @@ function versionPresentation(version, currentContext) {
             ...(Array.isArray(frozen.lights) ? ['lighting schedule'] : []),
             ...(Array.isArray(frozen.uv_selections) ? ['UV selections'] : []),
             ...(Array.isArray(frozen.review_handovers) ? ['review handovers'] : []),
+            ...(Array.isArray(frozen.lss_control_configurations)
+                ? ['LSS control-panel selections'] : []),
+            ...(Array.isArray(frozen.lss_instrument_instances)
+                ? ['LSS field instruments with catalog/product evidence'] : []),
         ],
         preserved_records: [
             ...(!Array.isArray(frozen.lights) ? ['lighting schedule (not captured by this older version)'] : []),
             ...(!Array.isArray(frozen.uv_selections) ? ['UV selections (not captured by this older version)'] : []),
             ...(!Array.isArray(frozen.review_handovers) ? ['review handovers (not captured by this older version)'] : []),
+            ...(!Array.isArray(frozen.lss_control_configurations)
+                ? ['LSS control-panel selections (not captured by this older version)'] : []),
+            ...(!Array.isArray(frozen.lss_instrument_instances)
+                ? ['LSS field instruments (not captured by this older version)'] : []),
         ],
         live_reference_records: ['project', 'exhibits', 'tanks', 'LSS systems', 'system-exhibit links'],
     };
@@ -3511,6 +3681,8 @@ function versionPresentation(version, currentContext) {
                 uv_selections: (currentContext.uv_selections || []).length,
                 thermal_calculations: (currentContext.thermal_calculations || []).length,
                 review_handovers: (currentContext.review_handovers || []).length,
+                lss_control_configurations: (currentContext.lss_control_configurations || []).length,
+                lss_instrument_instances: (currentContext.lss_instrument_instances || []).length,
             },
             after: {
                 book_title: frozen.design_book?.book_title,
@@ -3532,6 +3704,14 @@ function versionPresentation(version, currentContext) {
                     ? frozen.review_handovers.length
                     : (currentContext.review_handovers || []).length,
                 review_handovers_preserved: !Array.isArray(frozen.review_handovers),
+                lss_control_configurations: Array.isArray(frozen.lss_control_configurations)
+                    ? frozen.lss_control_configurations.length
+                    : (currentContext.lss_control_configurations || []).length,
+                lss_control_configurations_preserved: !Array.isArray(frozen.lss_control_configurations),
+                lss_instrument_instances: Array.isArray(frozen.lss_instrument_instances)
+                    ? frozen.lss_instrument_instances.length
+                    : (currentContext.lss_instrument_instances || []).length,
+                lss_instrument_instances_preserved: !Array.isArray(frozen.lss_instrument_instances),
             },
             token: currentRestoreStateDigest(currentContext),
             generated_at: new Date().toISOString(),
@@ -3712,13 +3892,17 @@ router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate
            (design_book_id, exhibit_id, target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
             weir_head_mm, weir_length_mm, weir_formula_method, weir_geometry, weir_end_contractions,
             weir_discharge_condition, weir_downstream_head_mm, calculation_version, last_calculated_at,
-            calculation_inputs, override_reason)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)`, [req.params.id, h.exhibit_id, h.target_turnover_rate ?? null, h.surface_skim_pct ?? 30,
+              calculation_inputs, override_reason, inlet_pipe_dn, discharge_pipe_dn, bottom_drain_pipe_dn,
+              inlet_pipe_evidence, discharge_pipe_evidence, bottom_drain_pipe_evidence)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21::jsonb,$22::jsonb,$23::jsonb)`, [req.params.id, h.exhibit_id, h.target_turnover_rate ?? null, h.surface_skim_pct ?? 30,
                 h.bottom_drain_pct ?? 70, h.notes ?? null, h.weir_head_mm ?? null, h.weir_length_mm ?? null,
                 h.weir_formula_method ?? null, h.weir_geometry ?? null, h.weir_end_contractions ?? null,
                 h.weir_discharge_condition ?? null, h.weir_downstream_head_mm ?? null, h.calculation_version ?? null,
                 h.last_calculated_at ?? null, h.calculation_inputs ? JSON.stringify(h.calculation_inputs) : null,
-                h.override_reason ?? null]);
+                h.override_reason ?? null, h.inlet_pipe_dn ?? null, h.discharge_pipe_dn ?? null, h.bottom_drain_pipe_dn ?? null,
+                h.inlet_pipe_evidence ? JSON.stringify(h.inlet_pipe_evidence) : null,
+                h.discharge_pipe_evidence ? JSON.stringify(h.discharge_pipe_evidence) : null,
+                h.bottom_drain_pipe_evidence ? JSON.stringify(h.bottom_drain_pipe_evidence) : null]);
         }
         await client.query('DELETE FROM design_book_exhibit_substrate WHERE design_book_id=$1', [req.params.id]);
         for (const s of frozen.substrate || []) {
@@ -3807,6 +3991,35 @@ router.post('/design-books/:id/versions/:versionId/restore', auth_1.authenticate
                     handover.purpose ?? null, handover.discussion_summary ?? null, handover.decisions ?? null,
                     handover.action_items ?? null, handover.open_items ?? null, handover.acceptance_notes ?? null,
                     handover.created_by ?? null, handover.created_at ?? null]);
+            }
+        }
+        if (Array.isArray(frozen.lss_control_configurations)) {
+            await client.query('DELETE FROM design_book_lss_controls WHERE design_book_id=$1', [req.params.id]);
+            for (const control of frozen.lss_control_configurations) {
+                await client.query(`INSERT INTO design_book_lss_controls
+             (design_book_id,system_id,panel_type,updated_by,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,COALESCE($5,NOW()),COALESCE($6,NOW()))`, [req.params.id, control.system_id, control.panel_type, control.updated_by ?? null,
+                    control.created_at ?? null, control.updated_at ?? null]);
+            }
+        }
+        if (Array.isArray(frozen.lss_instrument_instances)) {
+            await client.query('DELETE FROM design_book_lss_instruments WHERE design_book_id=$1', [req.params.id]);
+            for (const instrument of frozen.lss_instrument_instances) {
+                await client.query(`INSERT INTO design_book_lss_instruments
+              (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,range_min,range_max,unit,
+               calibration_required,calibration_interval_days,calibration_procedure,datasheet_reference,product_master_id,
+               definition_snapshot,product_snapshot,created_by,updated_by,created_at,updated_at)
+            VALUES ($1,$2,
+              (SELECT id FROM field_instrument_definitions WHERE id=$3),
+              $4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+              (SELECT id FROM product_masters WHERE id=$14),
+              $15::jsonb,$16::jsonb,$17,$18,COALESCE($19,NOW()),COALESCE($20,NOW()))`, [req.params.id, instrument.system_id, instrument.definition_id ?? null, instrument.tag,
+                    instrument.sequence_number, instrument.control_logic ?? null, instrument.range_min ?? null,
+                    instrument.range_max ?? null, instrument.unit ?? null, instrument.calibration_required === true,
+                    instrument.calibration_interval_days ?? null, instrument.calibration_procedure ?? null,
+                    instrument.datasheet_reference ?? null, instrument.product_master_id ?? null,
+                    JSON.stringify(instrument.definition_snapshot || {}), JSON.stringify(instrument.product_snapshot || null),
+                    instrument.created_by ?? null, instrument.updated_by ?? null, instrument.created_at ?? null, instrument.updated_at ?? null]);
             }
         }
         await client.query(`INSERT INTO design_book_version_restores

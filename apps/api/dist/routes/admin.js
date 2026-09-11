@@ -852,7 +852,294 @@ router.delete('/pump-duty-types/:id', auth_1.authenticate, (0, auth_1.requireRol
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pump duty type not found.' } });
     res.status(204).end();
 });
+// ── FIELD INSTRUMENT CATALOG ─────────────────────────────────────────────────
+const fieldInstrumentInput = (body) => ({
+    name: String(body?.name || '').trim(),
+    description: String(body?.description || '').trim() || null,
+    tag_code: String(body?.tag_code || '').trim(),
+    numbering_rule: String(body?.numbering_rule || 'system-type-sequence').trim(),
+    signal_type: String(body?.signal_type || '').trim().toLowerCase(),
+    signal_direction: String(body?.signal_direction || '').trim().toLowerCase(),
+    requirement_rule: String(body?.requirement_rule || 'optional').trim().toLowerCase(),
+    default_control_logic: String(body?.default_control_logic || '').trim() || null,
+    default_range_min: body?.default_range_min === '' || body?.default_range_min == null ? null : Number(body.default_range_min),
+    default_range_max: body?.default_range_max === '' || body?.default_range_max == null ? null : Number(body.default_range_max),
+    default_unit: String(body?.default_unit || '').trim() || null,
+    allow_range_override: body?.allow_range_override !== false,
+    default_calibration_required: body?.default_calibration_required === true,
+    default_calibration_interval_days: body?.default_calibration_interval_days === '' || body?.default_calibration_interval_days == null ? null : Number(body.default_calibration_interval_days),
+    default_calibration_procedure: String(body?.default_calibration_procedure || '').trim() || null,
+    default_datasheet_reference: String(body?.default_datasheet_reference || '').trim() || null,
+    allow_calibration_override: body?.allow_calibration_override !== false,
+    default_product_master_id: body?.default_product_master_id || null,
+    sort_order: Number.isInteger(Number(body?.sort_order)) ? Number(body.sort_order) : 0,
+    is_active: body?.is_active !== false,
+});
+async function validateFieldInstrument(input) {
+    if (!input.name || !/^[A-Za-z0-9-]+$/.test(input.tag_code) ||
+        !['analog', 'digital'].includes(input.signal_type) ||
+        !['input', 'output'].includes(input.signal_direction) ||
+        !['optional', 'mandatory', 'pump_linked'].includes(input.requirement_rule)) {
+        return 'Name, tag code, signal type/direction, and requirement rule are required.';
+    }
+    if (input.default_product_master_id) {
+        const product = await (0, db_1.query)('SELECT id FROM product_masters WHERE id=$1 AND status=\'Active\'', [input.default_product_master_id]);
+        if (!product.rows[0])
+            return 'Default PIM product must be an active product.';
+    }
+    if ((input.default_range_min != null && !Number.isFinite(input.default_range_min)) ||
+        (input.default_range_max != null && !Number.isFinite(input.default_range_max)) ||
+        (input.default_range_min != null && input.default_range_max != null && input.default_range_min > input.default_range_max)) {
+        return 'Measurement range must contain valid numbers and minimum cannot exceed maximum.';
+    }
+    if (input.default_calibration_interval_days != null &&
+        (!Number.isInteger(input.default_calibration_interval_days) || input.default_calibration_interval_days < 1)) {
+        return 'Calibration interval must be a positive whole number of days.';
+    }
+    return null;
+}
+router.get('/field-instruments', auth_1.authenticate, async (req, res) => {
+    const includeInactive = req.query.include_inactive === 'true';
+    try {
+        const timedQuery = (text, values) => db_2.default.query({
+            text, values, query_timeout: 10000,
+        });
+        const [result, products] = await Promise.all([
+            timedQuery(`SELECT d.*, pm.product_code AS default_product_code, pm.product_name AS default_product_name,
+                pm.status AS default_product_status
+         FROM field_instrument_definitions d
+         LEFT JOIN product_masters pm ON pm.id=d.default_product_master_id
+         ${includeInactive ? '' : 'WHERE d.is_active=true'}
+         ORDER BY d.sort_order, d.tag_code`),
+            timedQuery(`SELECT id,product_code,product_name,status
+         FROM product_masters WHERE status='Active' ORDER BY product_code`),
+        ]);
+        res.json({ items: result.rows, products: products.rows });
+    }
+    catch (error) {
+        const timedOut = error?.code === '57014' || /timeout|timed out/i.test(String(error?.message || ''));
+        if (timedOut) {
+            console.error('[field-instruments] catalogue load timed out', { code: error?.code });
+            return res.status(503).json({
+                error: {
+                    code: 'FIELD_INSTRUMENT_LOAD_TIMEOUT',
+                    message: 'Field Instruments are temporarily unavailable. Please retry.',
+                },
+            });
+        }
+        throw error;
+    }
+});
+router.post('/field-instruments', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const input = fieldInstrumentInput(req.body);
+    const error = await validateFieldInstrument(input);
+    if (error)
+        return res.status(400).json({ error: { code: 'INVALID', message: error } });
+    try {
+        const result = await (0, db_1.query)(`INSERT INTO field_instrument_definitions
+        (name,description,tag_code,numbering_rule,signal_type,signal_direction,requirement_rule,default_control_logic,
+         default_range_min,default_range_max,default_unit,allow_range_override,default_calibration_required,
+         default_calibration_interval_days,default_calibration_procedure,default_datasheet_reference,allow_calibration_override,
+         default_product_master_id,sort_order,is_active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`, [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
+            input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_range_min,
+            input.default_range_max, input.default_unit, input.allow_range_override, input.default_calibration_required,
+            input.default_calibration_interval_days, input.default_calibration_procedure, input.default_datasheet_reference,
+            input.allow_calibration_override, input.default_product_master_id, input.sort_order, input.is_active]);
+        await (0, audit_1.logAudit)(req.user.id, 'field_instrument_definition', result.rows[0].id, 'CREATE', { definition: result.rows[0] });
+        res.status(201).json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23505')
+            return res.status(409).json({ error: { code: 'DUPLICATE', message: 'That instrument tag code already exists.' } });
+        throw error;
+    }
+});
+router.put('/field-instruments/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const input = fieldInstrumentInput(req.body);
+    const error = await validateFieldInstrument(input);
+    if (error)
+        return res.status(400).json({ error: { code: 'INVALID', message: error } });
+    try {
+        const result = await (0, db_1.query)(`UPDATE field_instrument_definitions SET
+       name=$1,description=$2,tag_code=$3,numbering_rule=$4,signal_type=$5,signal_direction=$6,
+         requirement_rule=$7,default_control_logic=$8,default_range_min=$9,default_range_max=$10,default_unit=$11,
+         allow_range_override=$12,default_calibration_required=$13,default_calibration_interval_days=$14,
+         default_calibration_procedure=$15,default_datasheet_reference=$16,allow_calibration_override=$17,
+         default_product_master_id=$18,sort_order=$19,is_active=$20,updated_at=NOW()
+         WHERE id=$21 RETURNING *`, [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
+            input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_range_min,
+            input.default_range_max, input.default_unit, input.allow_range_override, input.default_calibration_required,
+            input.default_calibration_interval_days, input.default_calibration_procedure, input.default_datasheet_reference,
+            input.allow_calibration_override, input.default_product_master_id, input.sort_order, input.is_active, req.params.id]);
+        if (!result.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Field instrument not found.' } });
+        await (0, audit_1.logAudit)(req.user.id, 'field_instrument_definition', result.rows[0].id, 'UPDATE', { definition: result.rows[0] });
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23505')
+            return res.status(409).json({ error: { code: 'DUPLICATE', message: 'That instrument tag code already exists.' } });
+        throw error;
+    }
+});
 // ── Tank Cost Rates ──────────────────────────────────────────────────────────
+// Pipe sizing standards are platform-governed inputs. DN and internal diameter
+// are deliberately stored together; calculations never infer one from the other.
+router.get('/pipe-sizing-standards', auth_1.authenticate, async (_req, res) => {
+    const result = await (0, db_1.query)('SELECT * FROM pipe_sizing_standards ORDER BY dn');
+    res.json({ items: result.rows });
+});
+router.post('/pipe-sizing-standards', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const body = req.body || {};
+    const fields = ['dn', 'internal_diameter_mm', 'pressure_velocity_min_m_s', 'pressure_velocity_max_m_s', 'gravity_velocity_min_m_s', 'gravity_velocity_max_m_s'];
+    if (fields.some(field => !Number.isFinite(Number(body[field]))) ||
+        Number(body.dn) <= 0 || !Number.isInteger(Number(body.dn)) || Number(body.internal_diameter_mm) <= 0 ||
+        Number(body.pressure_velocity_min_m_s) < 0 || Number(body.gravity_velocity_min_m_s) < 0 ||
+        Number(body.pressure_velocity_min_m_s) > Number(body.pressure_velocity_max_m_s) ||
+        Number(body.gravity_velocity_min_m_s) > Number(body.gravity_velocity_max_m_s)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Enter a positive DN/diameter and valid minimum/maximum velocity bands.' } });
+    }
+    try {
+        const result = await (0, db_1.query)(`INSERT INTO pipe_sizing_standards
+       (dn, internal_diameter_mm, pressure_velocity_min_m_s, pressure_velocity_max_m_s, gravity_velocity_min_m_s, gravity_velocity_max_m_s, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [...fields.map(field => Number(body[field])), body.is_active !== false]);
+        res.status(201).json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23505')
+            return res.status(409).json({ error: { code: 'CONFLICT', message: 'That DN already exists.' } });
+        throw error;
+    }
+});
+router.put('/pipe-sizing-standards/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const body = req.body || {};
+    const fields = ['dn', 'internal_diameter_mm', 'pressure_velocity_min_m_s', 'pressure_velocity_max_m_s', 'gravity_velocity_min_m_s', 'gravity_velocity_max_m_s'];
+    if (fields.some(field => !Number.isFinite(Number(body[field]))) || Number(body.dn) <= 0 || !Number.isInteger(Number(body.dn)) ||
+        Number(body.internal_diameter_mm) <= 0 || Number(body.pressure_velocity_min_m_s) < 0 || Number(body.gravity_velocity_min_m_s) < 0 ||
+        Number(body.pressure_velocity_min_m_s) > Number(body.pressure_velocity_max_m_s) || Number(body.gravity_velocity_min_m_s) > Number(body.gravity_velocity_max_m_s)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'Enter a positive DN/diameter and valid minimum/maximum velocity bands.' } });
+    }
+    const existing = await (0, db_1.query)('SELECT dn FROM pipe_sizing_standards WHERE id=$1', [req.params.id]);
+    if (!existing.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pipe sizing standard not found.' } });
+    if (Number(existing.rows[0].dn) !== Number(body.dn)) {
+        const inUse = await (0, db_1.query)('SELECT 1 FROM design_book_exhibit_hydraulics WHERE inlet_pipe_dn=$1 OR discharge_pipe_dn=$1 OR bottom_drain_pipe_dn=$1 LIMIT 1', [existing.rows[0].dn]);
+        if (inUse.rows[0])
+            return res.status(409).json({ error: { code: 'IN_USE', message: 'Cannot change DN while saved exhibit choices use this standard.' } });
+    }
+    try {
+        const result = await (0, db_1.query)(`UPDATE pipe_sizing_standards SET dn=$1, internal_diameter_mm=$2, pressure_velocity_min_m_s=$3,
+         pressure_velocity_max_m_s=$4, gravity_velocity_min_m_s=$5, gravity_velocity_max_m_s=$6,
+         is_active=$7, updated_at=NOW() WHERE id=$8 RETURNING *`, [...fields.map(field => Number(body[field])), body.is_active !== false, req.params.id]);
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23503') {
+            return res.status(409).json({ error: {
+                    code: 'IN_USE',
+                    message: 'This DN is used by a saved exhibit and cannot be renamed. Its diameter and velocity bands can still be updated.',
+                } });
+        }
+        if (error.code === '23505') {
+            return res.status(409).json({ error: { code: 'CONFLICT', message: 'That DN already exists.' } });
+        }
+        throw error;
+    }
+});
+router.delete('/pipe-sizing-standards/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const inUse = await (0, db_1.query)('SELECT 1 FROM design_book_exhibit_hydraulics WHERE inlet_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) OR discharge_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) OR bottom_drain_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) LIMIT 1', [req.params.id]);
+    if (inUse.rows[0])
+        return res.status(409).json({ error: { code: 'IN_USE', message: 'A saved exhibit choice uses this DN; deactivate it instead.' } });
+    try {
+        const result = await (0, db_1.query)('DELETE FROM pipe_sizing_standards WHERE id=$1 RETURNING id', [req.params.id]);
+        if (!result.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pipe sizing standard not found.' } });
+        res.status(204).end();
+    }
+    catch (error) {
+        if (error.code === '23503') {
+            return res.status(409).json({ error: { code: 'IN_USE', message: 'A saved exhibit choice uses this DN; deactivate it instead.' } });
+        }
+        throw error;
+    }
+});
+const WATER_TYPES = ['Freshwater', 'Brackish', 'Seawater'];
+function validateWaterDensityParameter(body) {
+    const waterType = typeof body.water_type === 'string' ? body.water_type.trim() : '';
+    const density = Number(body.density_kg_m3);
+    const conditions = typeof body.conditions === 'string' ? body.conditions.trim() : '';
+    const unit = typeof body.unit === 'string' ? body.unit.trim() : '';
+    const source = typeof body.source === 'string' ? body.source.trim() : '';
+    if (!WATER_TYPES.includes(waterType)) {
+        return { error: 'Water type must be Freshwater, Brackish, or Seawater.' };
+    }
+    if (!Number.isFinite(density) || density <= 0 || density > 2000) {
+        return { error: 'Density must be a positive number no greater than 2000 kg/m3.' };
+    }
+    if (!conditions || conditions.length > 2000)
+        return { error: 'Conditions are required and must be 2000 characters or fewer.' };
+    if (unit !== 'kg/m3')
+        return { error: 'Unit must be kg/m3.' };
+    if (!source || source.length > 2000)
+        return { error: 'Source is required and must be 2000 characters or fewer.' };
+    if (body.is_active !== undefined && typeof body.is_active !== 'boolean')
+        return { error: 'is_active must be boolean.' };
+    return { value: { waterType, density, conditions, unit, source, isActive: body.is_active !== false } };
+}
+router.get('/chemical-parameters/water-density', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (_req, res) => {
+    const result = await (0, db_1.query)(`SELECT wdp.*, creator.email AS created_by_email, updater.email AS updated_by_email
+     FROM water_density_parameters wdp
+     LEFT JOIN users creator ON creator.id=wdp.created_by
+     LEFT JOIN users updater ON updater.id=wdp.updated_by
+     ORDER BY CASE wdp.water_type WHEN 'Freshwater' THEN 1 WHEN 'Brackish' THEN 2 ELSE 3 END`);
+    res.json({ items: result.rows });
+});
+router.post('/chemical-parameters/water-density', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const parsed = validateWaterDensityParameter(req.body);
+    if (parsed.error)
+        return res.status(400).json({ error: { code: 'VALIDATION', message: parsed.error } });
+    const value = parsed.value;
+    try {
+        const result = await (0, db_1.query)(`INSERT INTO water_density_parameters
+       (water_type, density_kg_m3, conditions, unit, source, is_active, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING *`, [value.waterType, value.density, value.conditions, value.unit, value.source, value.isActive, req.user.id]);
+        await (0, audit_1.logAudit)(req.user.id, 'water_density_parameter', result.rows[0].id, 'CREATE', { summary: `Water density parameter created for ${value.waterType}`, after: result.rows[0] });
+        res.status(201).json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23505')
+            return res.status(409).json({ error: { code: 'CONFLICT', message: `A parameter for ${value.waterType} already exists.` } });
+        throw error;
+    }
+});
+router.put('/chemical-parameters/water-density/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const parsed = validateWaterDensityParameter(req.body);
+    if (parsed.error)
+        return res.status(400).json({ error: { code: 'VALIDATION', message: parsed.error } });
+    const value = parsed.value;
+    const existing = await (0, db_1.query)('SELECT * FROM water_density_parameters WHERE id=$1', [req.params.id]);
+    if (!existing.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Water density parameter not found.' } });
+    try {
+        const result = await (0, db_1.query)(`UPDATE water_density_parameters SET water_type=$1, density_kg_m3=$2, conditions=$3, unit=$4, source=$5,
+       is_active=$6, updated_at=NOW(), updated_by=$7 WHERE id=$8 RETURNING *`, [value.waterType, value.density, value.conditions, value.unit, value.source, value.isActive, req.user.id, req.params.id]);
+        await (0, audit_1.logAudit)(req.user.id, 'water_density_parameter', result.rows[0].id, 'UPDATE', { summary: `Water density parameter updated for ${value.waterType}`, before: existing.rows[0], after: result.rows[0] });
+        res.json(result.rows[0]);
+    }
+    catch (error) {
+        if (error.code === '23505')
+            return res.status(409).json({ error: { code: 'CONFLICT', message: `A parameter for ${value.waterType} already exists.` } });
+        throw error;
+    }
+});
+router.delete('/chemical-parameters/water-density/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin'), async (req, res) => {
+    const result = await (0, db_1.query)('DELETE FROM water_density_parameters WHERE id=$1 RETURNING *', [req.params.id]);
+    if (!result.rows[0])
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Water density parameter not found.' } });
+    await (0, audit_1.logAudit)(req.user.id, 'water_density_parameter', result.rows[0].id, 'DELETE', { summary: `Water density parameter deleted for ${result.rows[0].water_type}`, before: result.rows[0] });
+    res.status(204).end();
+});
 router.get('/tank-cost-rates', auth_1.authenticate, async (_req, res) => {
     const result = await (0, db_1.query)('SELECT * FROM tank_cost_rates ORDER BY material_code NULLS LAST, label');
     res.json({ items: result.rows });

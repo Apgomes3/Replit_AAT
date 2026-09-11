@@ -11,6 +11,7 @@ const frictionLossCalculations_1 = require("./frictionLossCalculations");
 const lssSystems_1 = require("./lssSystems");
 const systemLifecycle_1 = require("./systemLifecycle");
 const flowRoute_1 = require("./flowRoute");
+const lssControls_1 = require("./lssControls");
 const scopeMatches = (scopes, value) => scopes.some(scope => scope.toLowerCase().replace(/[\s_-]+/g, '') === value.toLowerCase().replace(/[\s_-]+/g, ''));
 function item(key, label, severity, ok, message, href, affected_ids) {
     return {
@@ -92,10 +93,39 @@ function buildDesignBookReleaseChecklist(context) {
     const biologicalMediaRuns = context.biological_media_runs || [];
     const thermalCalculations = context.thermal_calculations || [];
     const pumpSelections = context.pump_selections || [];
+    const lssControls = context.lss_controls || [];
     const hasFrictionLossPackage = Array.isArray(context.friction_loss_calculations);
     const frictionLossCalculations = context.friction_loss_calculations || [];
     const scopes = Array.isArray(context.project_scopes) ? context.project_scopes : [];
     const hasLssScope = scopeMatches(scopes, 'LSS');
+    const lssInstrumentIssues = lifeSupportSystems.flatMap(system => {
+        const control = lssControls.find((entry) => entry.system_id === system.id);
+        const instruments = control?.instruments || [];
+        // Definitions that have since been deactivated remain governed historical
+        // evidence in a Design Book through their instance snapshot.
+        const definitionMap = new Map((control?.definitions || []).map((definition) => [definition.id, definition]));
+        for (const instrument of instruments) {
+            const id = instrument.definition_id || instrument.definition_snapshot?.id;
+            if (id && !definitionMap.has(id) && instrument.definition_snapshot) {
+                definitionMap.set(id, { ...instrument.definition_snapshot, id });
+            }
+        }
+        const definitions = [...definitionMap.values()];
+        const pumpRows = pumpSelections.find((entry) => entry.system_id === system.id)?.items || [];
+        const minimum = (0, lssControls_1.requiredPumpLinkedQuantity)(pumpRows);
+        return definitions.flatMap((definition) => {
+            const definitionInstruments = instruments.filter((instrument) => instrument.definition_id === definition.id);
+            const quantity = definitionInstruments.length;
+            const required = definition.requirement_rule === 'mandatory' ? 1
+                : definition.requirement_rule === 'pump_linked' ? minimum : 0;
+            const label = `${system.system_code || system.system_name || system.id} · ${definition.name || definition.tag_code}`;
+            const quantityIssue = quantity < required ? [{
+                    system_id: system.id, label,
+                    reason: `requires at least ${required} instrument${required === 1 ? '' : 's'} but has ${quantity}`,
+                }] : [];
+            return quantityIssue;
+        });
+    });
     const exhibitIds = exhibits.map(exhibit => exhibit.id).filter(Boolean);
     const exhibitsWithoutTanks = exhibits.filter(exhibit => !tanks.some(tank => tank.exhibit_id === exhibit.id));
     const exhibitsWithoutSpecies = exhibits.filter(exhibit => !species.some(row => row.exhibit_id === exhibit.id));
@@ -309,6 +339,10 @@ function buildDesignBookReleaseChecklist(context) {
                 : thermalNotReady.length
                     ? `${thermalNotReady.length} LSS system${thermalNotReady.length === 1 ? ' needs' : 's need'} a current Ready thermal calculation.`
                     : 'Every Life Support system has a current Ready thermal calculation.', `/design-books/${context.id}?tab=thermal`, thermalNotReady.map(system => system.id)),
+        item('lss_field_instruments', 'LSS field instruments', hasLssScope ? 'blocker' : 'warning', !hasLssScope || lssInstrumentIssues.length === 0, !hasLssScope ? 'Field instruments are not required because LSS is outside project scope.'
+            : lssInstrumentIssues.length
+                ? `${lssInstrumentIssues.map((issue) => `${issue.label}: ${issue.reason}`).join('; ')}.`
+                : 'All mandatory and pump-linked field instrument quantities are satisfied.', `/design-books/${context.id}?tab=control${lssInstrumentIssues.length === 1 ? `&system=${encodeURIComponent(lssInstrumentIssues[0].system_id)}` : ''}`, [...new Set(lssInstrumentIssues.map((issue) => issue.system_id))]),
         item('pump_selections', 'Pump selections', hasLssScope ? 'blocker' : 'warning', !hasLssScope || pumpCircuitIssues.length === 0, !hasLssScope ? 'Pump selections are not required because LSS is outside project scope.'
             : pumpCircuitIssues.length
                 ? `${pumpCircuitIssues.map((issue) => `${issue.label}: ${issue.reason}`).join('; ')}.`

@@ -6,6 +6,9 @@ const pg_1 = require("pg");
 const pool = new pg_1.Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Do not let HTTP requests wait indefinitely when every database connection
+    // is occupied (for example while a migration is holding catalogue locks).
+    connectionTimeoutMillis: 10000,
 });
 const query = (text, params) => pool.query(text, params);
 exports.query = query;

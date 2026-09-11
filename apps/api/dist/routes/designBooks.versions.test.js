@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const designBooks_1 = require("./designBooks");
 const db_1 = __importDefault(require("../db"));
+const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
 const baseContext = () => ({
     id: 'book-1',
     book_code: 'DB-001',
@@ -95,6 +96,30 @@ const baseContext = () => ({
             calculation_version: 'aquarium-v1',
             calculation_inputs: { turnover_unit: 'cycles_per_hour' },
             override_reason: 'Approved engineering deviation',
+            inlet_pipe_dn: 100,
+            inlet_pipe_evidence: {
+                standard_id: 'pipe-100',
+                dn: 100,
+                internal_diameter_mm: 102.3,
+                velocity_min_m_s: 1.5,
+                velocity_max_m_s: 3,
+                authoritative_flow_m3h: 60,
+                computed_velocity_m_s: 2.028,
+                within_band: true,
+                selection_mode: 'recommended',
+            },
+            bottom_drain_pipe_dn: 125,
+            bottom_drain_pipe_evidence: {
+                standard_id: 'pipe-125',
+                dn: 125,
+                internal_diameter_mm: 128.2,
+                velocity_min_m_s: 0.1,
+                velocity_max_m_s: 1.5,
+                authoritative_flow_m3h: 42,
+                computed_velocity_m_s: 0.904,
+                within_band: true,
+                selection_mode: 'recommended',
+            },
         }],
     substrate: [{
             id: 'substrate-1',
@@ -151,6 +176,40 @@ const baseContext = () => ({
                     }],
             },
         }],
+    lss_control_configurations: [{
+            id: 'control-1',
+            design_book_id: 'book-1',
+            system_id: 'system-1',
+            panel_type: 'PLC',
+            catalog_snapshot: {
+                name: 'PLC control panel',
+                source: 'field-instrument catalog',
+                version: 3,
+            },
+        }],
+    lss_instrument_instances: [{
+            id: 'instrument-1',
+            design_book_id: 'book-1',
+            system_id: 'system-1',
+            instrument_definition_id: 'definition-ts',
+            tag: '01-TS-01',
+            quantity: 1,
+            catalog_snapshot: {
+                name: 'Temperature sensor',
+                tag_code: 'TS',
+                signal_type: 'analog',
+                signal_direction: 'input',
+                requirement_rule: 'optional',
+                version: 2,
+            },
+            product_snapshot: {
+                id: 'pim-ts-1',
+                product_code: 'TS-100',
+                product_name: 'AAT temperature probe',
+                status: 'Active',
+            },
+        }],
+    friction_loss_calculations: [],
 });
 (0, vitest_1.describe)('Design Book version snapshots', () => {
     (0, vitest_1.it)('loads saved UV selections into the release context for review snapshots', async () => {
@@ -299,7 +358,7 @@ const baseContext = () => ({
     });
     (0, vitest_1.it)('captures every supported hydraulic, theming, and exhibit-system link field with a valid checksum', () => {
         const snapshot = designBooks_1.versionSnapshotTestUtils.makeVersionSnapshot(baseContext(), '2026-08-27T10:00:00.000Z');
-        (0, vitest_1.expect)(snapshot.schema_version).toBe(9);
+        (0, vitest_1.expect)(snapshot.schema_version).toBe(12);
         (0, vitest_1.expect)(designBooks_1.versionSnapshotTestUtils.snapshotIntegrityStatus(snapshot)).toBe('verified');
         (0, vitest_1.expect)(snapshot.frozen.hydraulics[0]).toMatchObject({
             weir_formula_method: 'francis_184',
@@ -307,6 +366,18 @@ const baseContext = () => ({
             calculation_version: 'aquarium-v1',
             calculation_inputs: { turnover_unit: 'cycles_per_hour' },
             override_reason: 'Approved engineering deviation',
+            inlet_pipe_dn: 100,
+            inlet_pipe_evidence: vitest_1.expect.objectContaining({
+                internal_diameter_mm: 102.3,
+                computed_velocity_m_s: 2.028,
+                within_band: true,
+            }),
+            bottom_drain_pipe_dn: 125,
+            bottom_drain_pipe_evidence: vitest_1.expect.objectContaining({
+                authoritative_flow_m3h: 42,
+                computed_velocity_m_s: 0.904,
+                within_band: true,
+            }),
         });
         (0, vitest_1.expect)(snapshot.frozen.substrate[0]).toMatchObject({
             substrate_height_mm: '80',
@@ -367,6 +438,125 @@ const baseContext = () => ({
             loop1_bio_degas_pct: '30',
             loop1_bio_degas_m3h: '12.5',
         });
+        (0, vitest_1.expect)(snapshot.frozen.lss_control_configurations).toEqual([
+            vitest_1.expect.objectContaining({ panel_type: 'PLC' }),
+        ]);
+        (0, vitest_1.expect)(snapshot.frozen.lss_instrument_instances[0]).toMatchObject({
+            tag: '01-TS-01',
+            catalog_snapshot: vitest_1.expect.objectContaining({
+                name: 'Temperature sensor',
+                tag_code: 'TS',
+                signal_type: 'analog',
+            }),
+            product_snapshot: vitest_1.expect.objectContaining({
+                product_code: 'TS-100',
+                product_name: 'AAT temperature probe',
+            }),
+        });
+    });
+    (0, vitest_1.it)('keeps warning NPSH evidence unchanged in review and release snapshots after live sources change', () => {
+        const context = baseContext();
+        const warningResult = (0, frictionLossCalculations_1.calculateFrictionLoss)({
+            flow_m3h: 36,
+            selected_pump: {
+                id: 'pump-1',
+                project_equipment_item_id: 'pump-1',
+                equip_code: 'P-101',
+            },
+            tank_boundaries: {
+                start: {
+                    tank_id: 'tank-1',
+                    base_elevation_fl0_m: 0,
+                    water_depth_m: 3,
+                    pump_draw_height_m: 0.5,
+                    open_to_atmosphere: true,
+                    atmospheric_pressure_kpa: 101.325,
+                    water_temperature_c: 20,
+                    npsh_safety_margin_m: 0.5,
+                },
+                end: {
+                    tank_id: 'tank-2',
+                    base_elevation_fl0_m: 5,
+                    water_depth_m: 2,
+                    open_to_atmosphere: true,
+                },
+            },
+            components: [
+                {
+                    project_piping_item_id: 'pipe-1',
+                    piping_snapshot: { piping_code: 'PIPE-1' },
+                    component_kind: 'pipe',
+                    side: 'suction',
+                    internal_diameter_mm: 100,
+                    straight_length_m: 10,
+                    material: 'PVC-U',
+                    absolute_roughness_mm: 0.0015,
+                },
+                {
+                    project_piping_item_id: 'fit-1',
+                    piping_snapshot: { piping_code: 'FIT-1' },
+                    component_kind: 'fitting',
+                    side: 'discharge',
+                    internal_diameter_mm: 100,
+                    fitting_k_value: 0.9,
+                    quantity: 2,
+                },
+            ],
+            calculated_at: '2026-09-10T10:00:00.000Z',
+        });
+        const savedEvidence = {
+            system_id: 'system-1',
+            items: [{
+                    circuit_key: 'loop:1',
+                    circuit_name: 'Main Filtration',
+                    project_equipment_item_id: 'pump-1',
+                    selected_pump: {
+                        id: 'pump-1',
+                        equip_code: 'P-101',
+                        npsh_required_m: null,
+                    },
+                    status: 'ready',
+                    freshness: 'fresh',
+                    tank_boundaries: warningResult.inputs.tank_boundaries,
+                    result: warningResult,
+                }],
+        };
+        context.friction_loss_calculations = [savedEvidence];
+        const reviewSnapshot = JSON.parse(JSON.stringify(context));
+        reviewSnapshot.status = 'For Review';
+        const releaseSnapshot = designBooks_1.versionSnapshotTestUtils.makeVersionSnapshot(reviewSnapshot, '2026-09-10T11:00:00.000Z');
+        const expectedEvidence = JSON.parse(JSON.stringify(savedEvidence));
+        (0, vitest_1.expect)(expectedEvidence.items[0].result).toMatchObject({
+            status: 'ready',
+            results: {
+                npsh_status: 'warning',
+                npsh_required_m: null,
+                npsh_available_m: vitest_1.expect.any(Number),
+                npsh_margin_m: null,
+                npsh_inputs: {
+                    atmospheric_pressure_kpa: 101.325,
+                    water_temperature_c: 20,
+                    safety_margin_m: 0.5,
+                    suction_loss_m: vitest_1.expect.any(Number),
+                },
+            },
+            inputs: {
+                tank_boundaries: {
+                    start: {
+                        tank_id: 'tank-1',
+                        pump_draw_height_m: 0.5,
+                    },
+                },
+            },
+        });
+        context.tanks[0].eff_water_level_mm = '1200';
+        savedEvidence.items[0].selected_pump.npsh_required_m = 8;
+        savedEvidence.items[0].tank_boundaries.start.water_depth_m = 1.2;
+        savedEvidence.items[0].result.results.npsh_status = 'blocked';
+        savedEvidence.items[0].result.results.npsh_required_m = 8;
+        (0, vitest_1.expect)(reviewSnapshot.friction_loss_calculations[0]).toEqual(expectedEvidence);
+        (0, vitest_1.expect)(releaseSnapshot.frozen.friction_loss_calculations[0]).toEqual(expectedEvidence);
+        (0, vitest_1.expect)(designBooks_1.versionSnapshotTestUtils.snapshotIntegrityStatus(releaseSnapshot)).toBe('verified');
     });
     (0, vitest_1.it)('detects tampering and reports changed, added, removed, and unresolved project references', () => {
         const snapshot = designBooks_1.versionSnapshotTestUtils.makeVersionSnapshot(baseContext());
@@ -412,7 +602,7 @@ const baseContext = () => ({
         (0, vitest_1.expect)(calls[2]).toContain('INSERT INTO design_book_versions');
         (0, vitest_1.expect)(result.version_number).toBe(8);
         const insertParams = runner.mock.calls[2][1];
-        (0, vitest_1.expect)(insertParams[6]).toBe(9);
+        (0, vitest_1.expect)(insertParams[6]).toBe(12);
         (0, vitest_1.expect)(insertParams[7]).toBe(snapshot.integrity.digest);
     });
     (0, vitest_1.it)('preserves uncaptured handovers for legacy snapshots and invalidates stale restore previews', () => {
@@ -427,11 +617,23 @@ const baseContext = () => ({
         const frozen = designBooks_1.versionSnapshotTestUtils.frozenFromSnapshot(legacy);
         (0, vitest_1.expect)(Object.prototype.hasOwnProperty.call(frozen, 'review_handovers')).toBe(false);
         (0, vitest_1.expect)(Object.prototype.hasOwnProperty.call(frozen, 'lights')).toBe(false);
+        (0, vitest_1.expect)(Object.prototype.hasOwnProperty.call(frozen, 'lss_control_configurations')).toBe(false);
+        (0, vitest_1.expect)(Object.prototype.hasOwnProperty.call(frozen, 'lss_instrument_instances')).toBe(false);
         const before = baseContext();
         const previewToken = designBooks_1.versionSnapshotTestUtils.currentRestoreStateDigest(before);
         const edited = baseContext();
         edited.species[0].quantity = 12;
         (0, vitest_1.expect)(designBooks_1.versionSnapshotTestUtils.currentRestoreStateDigest(edited)).not.toBe(previewToken);
+    });
+    (0, vitest_1.it)('makes a restore preview stale when frozen LSS control evidence changes', () => {
+        const before = baseContext();
+        const previewToken = designBooks_1.versionSnapshotTestUtils.currentRestoreStateDigest(before);
+        const edited = baseContext();
+        edited.lss_instrument_instances[0].product_snapshot.product_name = 'Superseded probe';
+        (0, vitest_1.expect)(designBooks_1.versionSnapshotTestUtils.currentRestoreStateDigest(edited)).not.toBe(previewToken);
+        const snapshot = designBooks_1.versionSnapshotTestUtils.makeVersionSnapshot(before);
+        (0, vitest_1.expect)(snapshot.frozen.lss_instrument_instances[0].product_snapshot.product_name)
+            .toBe('AAT temperature probe');
     });
     (0, vitest_1.it)('creates under a real PostgreSQL parent lock and rolls back a failed checkpoint transaction', async () => {
         const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;

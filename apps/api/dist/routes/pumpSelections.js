@@ -39,6 +39,9 @@ const auth_1 = require("../middleware/auth");
 const pumpSelections_1 = require("../lib/pumpSelections");
 const designBooks_1 = require("./designBooks");
 const systemLifecycle_1 = require("../lib/systemLifecycle");
+const lssSystems_1 = require("../lib/lssSystems");
+const lssControls_1 = require("../lib/lssControls");
+const frictionLossCalculations_1 = require("../lib/frictionLossCalculations");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const numberOrNull = (value) => value === null || value === undefined || value === ''
@@ -59,6 +62,7 @@ async function candidates(runner, projectId, systemId) {
             pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
             COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
             COALESCE(ph.design_head_m, pm.design_head_m) AS design_head_m,
+            ph.npsh_required_m,
             COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
             pf.product_family_code, pm.product_category, pm.application_type,
             COALESCE(pei.status, pm.standard_status) AS status
@@ -88,17 +92,34 @@ async function candidates(runner, projectId, systemId) {
      UNION ALL
      SELECT pei.id, pei.id, pei.equip_code, pei.quantity, pei.description,
             NULL, NULL, NULL, NULL, NULL,
-            NULL, NULL, NULL, NULL, NULL, NULL, pei.status
+           NULL, NULL, NULL, NULL, NULL, NULL, NULL, pei.status
      FROM project_equipment_items pei
      WHERE pei.project_id=$1 AND pei.system_id=$2
        AND pei.product_master_id IS NULL
        AND UPPER(COALESCE(pei.description,'')) LIKE '%PUMP%'
      ORDER BY product_code NULLS LAST, equip_code NULLS LAST`, [projectId, systemId])).rows;
 }
+function candidatesWithNpshSuitability(pumpCandidates, frictionPackage) {
+    const circuitResults = new Map((frictionPackage?.items || []).map((item) => [
+        item.circuit_key,
+        item.result?.results || null,
+    ]));
+    return pumpCandidates.map(candidate => ({
+        ...candidate,
+        npsh_suitability_by_circuit: Object.fromEntries([...circuitResults.entries()].map(([circuitKey, results]) => [
+            circuitKey,
+            {
+                ...(0, frictionLossCalculations_1.evaluateNpshSuitability)(results?.npsh_available_m, candidate.npsh_required_m),
+                advisory: true,
+            },
+        ])),
+    }));
+}
 async function eligiblePumpProduct(runner, productMasterId) {
     return (await runner(`SELECT pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
             COALESCE(ph.design_flow_m3h, pm.design_flow_m3h) AS design_flow_m3h,
             COALESCE(ph.design_head_m, pm.design_head_m) AS design_head_m,
+            ph.npsh_required_m,
             COALESCE(pe.rated_power_kw, pm.power_kw) AS power_kw,
             pm.product_category, pm.application_type, pm.standard_status
      FROM product_masters pm
@@ -166,9 +187,11 @@ router.get('/systems/:id/pump-selections', async (req, res) => {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
     if ((0, systemLifecycle_1.isRetiredSystem)(system))
         return res.status(409).json({ error: (0, systemLifecycle_1.systemLifecycleError)(system) });
+    const pumpCandidates = await candidates(db_1.query, designBook.project_id, String(req.params.id));
+    const frictionPackage = context.friction_loss_calculations?.find((item) => item.system_id === system.id);
     res.json({
         items: await liveItems(db_1.query, system),
-        pump_candidates: await candidates(db_1.query, designBook.project_id, String(req.params.id)),
+        pump_candidates: candidatesWithNpshSuitability(pumpCandidates, frictionPackage),
         pump_duty_types: await activeDutyTypes(db_1.query),
         frozen: false,
     });
@@ -247,7 +270,11 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
         motor_efficiency_pct: numberOrNull(input.motor_efficiency_pct),
         pump_quantity: pumpQuantity,
     });
-    await (0, db_1.query)(`INSERT INTO system_pump_selections
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`lss-pump:${system.id}`]);
+        await client.query(`INSERT INTO system_pump_selections
        (system_id,circuit_key,project_equipment_item_id,
         design_head_m,pump_efficiency_pct,motor_efficiency_pct,
         source_fingerprint,pump_snapshot,calculation_version,result_snapshot,updated_by,
@@ -269,20 +296,34 @@ router.put('/systems/:id/pump-selections', (0, auth_1.requireRole)('admin', 'eng
         pump_duty_snapshot=EXCLUDED.pump_duty_snapshot,
         installation_location=EXCLUDED.installation_location,
        updated_at=NOW()`, [
-        system.id, input.circuit_key, selected?.project_equipment_item_id || null,
-        input.design_head_m, input.pump_efficiency_pct, input.motor_efficiency_pct,
-        (0, pumpSelections_1.pumpSourceFingerprint)(sourcePayload),
-        JSON.stringify(selected),
-        calculation.calculation_version,
-        JSON.stringify(calculation),
-        req.user.id,
-        pumpRole,
-        isVenturi ? totalFlow : null,
-        pumpQuantity,
-        dutyType.id || null,
-        JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
-        input.installation_location,
-    ]);
+            system.id, input.circuit_key, selected?.project_equipment_item_id || null,
+            input.design_head_m, input.pump_efficiency_pct, input.motor_efficiency_pct,
+            (0, pumpSelections_1.pumpSourceFingerprint)(sourcePayload),
+            JSON.stringify(selected),
+            calculation.calculation_version,
+            JSON.stringify(calculation),
+            req.user.id,
+            pumpRole,
+            isVenturi ? totalFlow : null,
+            pumpQuantity,
+            dutyType.id || null,
+            JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
+            input.installation_location,
+        ]);
+        if ((0, lssSystems_1.isLifeSupportSystem)(system)) {
+            await (0, lssControls_1.reconcilePumpLinkedInstruments)(client.query.bind(client), {
+                projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user.id,
+            });
+        }
+        await client.query('COMMIT');
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
     const updatedLines = await liveItems(db_1.query, system);
     const item = updatedLines.find(value => value.circuit_key === input.circuit_key && value.pump_role === pumpRole);
     res.json(item);
@@ -368,6 +409,7 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
     try {
         await client.query('BEGIN');
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`${system.id}:${circuitKey}:${pumpRole}`]);
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`lss-pump:${system.id}`]);
         const lockedSelection = (await client.query(`SELECT * FROM system_pump_selections
        WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3
        FOR UPDATE`, [system.id, circuitKey, pumpRole])).rows[0];
@@ -398,6 +440,11 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
                 circuitKey,
                 pumpRole,
             ]);
+            if ((0, lssSystems_1.isLifeSupportSystem)(system)) {
+                await (0, lssControls_1.reconcilePumpLinkedInstruments)(client.query.bind(client), {
+                    projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user.id,
+                });
+            }
             await client.query('COMMIT');
             const circuit = allLines.find(item => item.circuit_key === circuitKey && item.pump_role === pumpSelections_1.PUMP_ROLE_PRIMARY);
             return res.status(200).json({
@@ -504,6 +551,11 @@ router.post('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'enginee
             req.user.id, pumpRole, venturiFlow, pumpQuantity,
             dutyType.id || null, JSON.stringify({ tag: dutyType.tag, pump_name: dutyType.pump_name }),
         ]);
+        if ((0, lssSystems_1.isLifeSupportSystem)(system)) {
+            await (0, lssControls_1.reconcilePumpLinkedInstruments)(client.query.bind(client), {
+                projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user.id,
+            });
+        }
         await client.query('COMMIT');
         res.status(reusedExistingCode ? 200 : 201).json({ project_equipment_item: pei, pump_line: (0, pumpSelections_1.buildPumpLineItem)(circuit, {
                 project_equipment_item_id: pei.id,
@@ -564,8 +616,26 @@ router.delete('/systems/:id/pump-lines', (0, auth_1.requireRole)('admin', 'engin
     if (!circuit || !(0, pumpSelections_1.isFoamFractionatorCircuit)(circuit)) {
         return res.status(400).json({ error: { code: 'INVALID_CIRCUIT', message: 'The venturi line belongs to an active Foam Fractionator circuit.' } });
     }
-    await (0, db_1.query)('DELETE FROM system_pump_selections WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3', [req.params.id, circuitKey, pumpRole]);
-    res.json({ ok: true });
+    const client = await db_1.default.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`lss-pump:${system.id}`]);
+        await client.query('DELETE FROM system_pump_selections WHERE system_id=$1 AND circuit_key=$2 AND pump_role=$3', [req.params.id, circuitKey, pumpRole]);
+        if ((0, lssSystems_1.isLifeSupportSystem)(system)) {
+            await (0, lssControls_1.reconcilePumpLinkedInstruments)(client.query.bind(client), {
+                projectId: book.project_id, systemId: system.id, systemCode: system.system_code, userId: req.user.id,
+            });
+        }
+        await client.query('COMMIT');
+        res.json({ ok: true });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    finally {
+        client.release();
+    }
 });
 // ---------------------------------------------------------------------------
 // Helpers

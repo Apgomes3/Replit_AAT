@@ -80,6 +80,51 @@ function readyContext() {
         (0, vitest_1.expect)((0, designBookRelease_1.releaseBlockers)(checklist)).toEqual([]);
         (0, vitest_1.expect)(checklist.every(check => check.status === 'pass')).toBe(true);
     });
+    (0, vitest_1.it)('blocks release when active mandatory and pump-linked instrument definitions are under-counted', () => {
+        const context = readyContext();
+        context.pump_selections[0].items[0].pump_quantity = 2;
+        context.lss_controls = [{
+                system_id: 'system-1',
+                definitions: [
+                    { id: 'mandatory-definition', name: 'High level switch', requirement_rule: 'mandatory' },
+                    { id: 'pump-definition', name: 'Flow switch', requirement_rule: 'pump_linked' },
+                ],
+                instruments: [{ definition_id: 'pump-definition' }],
+            }];
+        const check = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(item => item.key === 'lss_field_instruments');
+        (0, vitest_1.expect)(check).toMatchObject({
+            status: 'blocked',
+            affected_ids: ['system-1'],
+        });
+        (0, vitest_1.expect)(check?.message).toContain('High level switch');
+        (0, vitest_1.expect)(check?.message).toContain('Flow switch');
+    });
+    (0, vitest_1.it)('allows required instrument evidence with blank optional logic', () => {
+        const context = readyContext();
+        context.lss_controls = [{
+                system_id: 'system-1',
+                definitions: [{ id: 'flow-switch', name: 'Flow switch', requirement_rule: 'pump_linked' }],
+                instruments: [{ definition_id: 'flow-switch', control_logic: '  ' }],
+            }];
+        const check = (0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(item => item.key === 'lss_field_instruments');
+        (0, vitest_1.expect)(check).toMatchObject({ status: 'pass' });
+    });
+    (0, vitest_1.it)('allows blank optional logic on retained evidence from an inactive definition snapshot', () => {
+        const context = readyContext();
+        context.lss_controls = [{
+                system_id: 'system-1',
+                definitions: [],
+                instruments: [{
+                        definition_id: 'retired-flow-switch',
+                        control_logic: null,
+                        definition_snapshot: { id: 'retired-flow-switch', name: 'Retired flow switch', requirement_rule: 'pump_linked' },
+                    }],
+            }];
+        (0, vitest_1.expect)((0, designBookRelease_1.buildDesignBookReleaseChecklist)(context)
+            .find(item => item.key === 'lss_field_instruments')).toMatchObject({ status: 'pass' });
+    });
     (0, vitest_1.it)('blocks a current release package that includes a retired LSS', () => {
         const context = readyContext();
         context.systems[0].status = 'Superseded';

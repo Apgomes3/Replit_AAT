@@ -13,11 +13,11 @@ const crypto_1 = __importDefault(require("crypto"));
 const tdsRenderer_1 = require("../lib/tdsRenderer");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('documents'));
-const uploadsDir = path_1.default.join(__dirname, '../../uploads');
-if (!fs_1.default.existsSync(uploadsDir))
-    fs_1.default.mkdirSync(uploadsDir, { recursive: true });
+const privateDocumentUploadsDir = path_1.default.join(__dirname, '../../private-uploads/documents');
+if (!fs_1.default.existsSync(privateDocumentUploadsDir))
+    fs_1.default.mkdirSync(privateDocumentUploadsDir, { recursive: true });
 const storage = multer_1.default.diskStorage({
-    destination: uploadsDir,
+    destination: privateDocumentUploadsDir,
     filename: (_, file, cb) => {
         const unique = `${Date.now()}-${crypto_1.default.randomBytes(6).toString('hex')}`;
         cb(null, `${unique}${path_1.default.extname(file.originalname)}`);
@@ -91,6 +91,31 @@ router.get('/documents/:id', auth_1.authenticate, async (req, res) => {
      FROM approvals a LEFT JOIN users u ON a.approver_id=u.id
      WHERE a.document_id=$1 ORDER BY a.acted_at DESC`, [docId]);
     res.json({ ...result.rows[0], projects: projects.rows, revisions: revisions.rows, approvals: approvals.rows });
+});
+router.get('/documents/:id/revisions/:revisionId/download', async (req, res) => {
+    const result = await (0, db_1.query)(`SELECT dr.file_path, dr.file_name
+     FROM document_revisions dr
+     JOIN documents d ON d.id = dr.document_id
+     WHERE d.id = $1 AND dr.id = $2`, [req.params.id, req.params.revisionId]);
+    const revision = result.rows[0];
+    if (!revision?.file_path) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document file not found' } });
+    }
+    const privatePrefix = 'private-uploads/documents/';
+    const publicPrefix = '/uploads/';
+    let filePath = null;
+    if (revision.file_path.startsWith(privatePrefix)) {
+        filePath = path_1.default.join(__dirname, '../../private-uploads/documents', path_1.default.basename(revision.file_path));
+    }
+    else if (revision.file_path.startsWith(publicPrefix)) {
+        filePath = path_1.default.join(__dirname, '../../uploads', path_1.default.basename(revision.file_path));
+    }
+    if (!filePath || !fs_1.default.existsSync(filePath)) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document file not found' } });
+    }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.download(filePath, revision.file_name || path_1.default.basename(filePath));
 });
 // PRODUCT LINK
 router.put('/documents/:id/product', auth_1.authenticate, (0, auth_1.requireModuleManage)('documents'), async (req, res) => {
@@ -186,7 +211,7 @@ router.post('/documents/:id/revisions', auth_1.authenticate, (0, auth_1.requireM
     }
     let file_path = null, file_name = null, file_size = null, mime_type = null, checksum = null;
     if (file) {
-        file_path = `/uploads/${file.filename}`;
+        file_path = `private-uploads/documents/${file.filename}`;
         file_name = file.originalname;
         file_size = file.size;
         mime_type = file.mimetype;

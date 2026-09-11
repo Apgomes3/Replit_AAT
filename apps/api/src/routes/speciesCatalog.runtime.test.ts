@@ -43,7 +43,7 @@ afterAll(async () => {
 });
 
 describe('compiled species catalog runtime', () => {
-  it('serves active shark and pelagic records through search and family facets', async () => {
+  it('serves active reviewed expansions through search and family and water-type facets', async () => {
     const admin = (await db.query(`SELECT id,email,role FROM users WHERE email='admin@edp.com'`)).rows[0];
     const auth = (user: any) => ({
       authorization: `Bearer ${jwt.sign(user, process.env.JWT_SECRET || 'edp-secret-change-in-production')}`,
@@ -86,6 +86,21 @@ describe('compiled species catalog runtime', () => {
         }),
       ]));
 
+      const koiSearch = await fetch(`${baseUrl}/species-catalog?q=Koi&limit=12`, {
+        headers: auth(admin),
+      });
+      const koiPayload = await koiSearch.json() as any;
+      expect(koiSearch.status).toBe(200);
+      expect(koiPayload.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          scientific_name: 'Cyprinus carpio',
+          common_name: 'Koi Fish',
+          family: 'Cyprinidae',
+          water_type: 'Freshwater',
+          active: true,
+        }),
+      ]));
+
       const inactiveSearch = await fetch(
         `${baseUrl}/species-catalog?q=${encodeURIComponent(inactiveName)}&limit=12`,
         { headers: auth(admin) },
@@ -106,9 +121,14 @@ describe('compiled species catalog runtime', () => {
         expect.objectContaining({ family: 'Carangidae' }),
         expect.objectContaining({ family: 'Scombridae' }),
         expect.objectContaining({ family: 'Rhincodontidae' }),
+        expect.objectContaining({ family: 'Cyprinidae' }),
+        expect.objectContaining({ family: 'Centrarchidae' }),
+        expect.objectContaining({ family: 'Percidae' }),
+        expect.objectContaining({ family: 'Salmonidae' }),
       ]));
       expect(facetsPayload.water_types).toEqual(expect.arrayContaining([
         expect.objectContaining({ water_type: 'Marine' }),
+        expect.objectContaining({ water_type: 'Freshwater' }),
       ]));
     } finally {
       await db.query('DELETE FROM aquarium_species_catalog WHERE scientific_name=$1', [inactiveName]);

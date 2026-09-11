@@ -61,6 +61,7 @@ const state = vitest_1.vi.hoisted(() => ({
         width_mm: '3000',
         height_mm: '2500',
         design_water_level_mm: '2200',
+        overflow_level_mm: '2300',
         gross_volume_m3: '37.5',
         operating_volume_m3: '33',
         primary_material: 'Acrylic',
@@ -145,6 +146,51 @@ vitest_1.vi.mock('../db', () => {
         }
         if (sql.includes('SELECT id, product_master_id FROM tanks WHERE id=$1')) {
             return { rows: [{ ...state.assignmentTank }] };
+        }
+        if (sql.includes('SELECT t.overflow_level_mm') && sql.includes('effective_water_level_mm')) {
+            return { rows: [{
+                        overflow_level_mm: state.sourceTank.overflow_level_mm,
+                        effective_water_level_mm: state.sourceTank.design_water_level_mm,
+                    }] };
+        }
+        if (sql === 'SELECT system_id FROM tanks WHERE id=$1') {
+            return { rows: [{ system_id: null }] };
+        }
+        if (sql.includes('FROM tanks t') && sql.includes('project_code')) {
+            return { rows: [{
+                        ...state.sourceTank,
+                        eff_shape: state.sourceTank.shape_type,
+                        eff_length_mm: state.sourceTank.length_mm,
+                        eff_width_mm: state.sourceTank.width_mm,
+                        eff_height_mm: state.sourceTank.height_mm,
+                        eff_water_level_mm: state.sourceTank.design_water_level_mm,
+                        exhibit_id: 'exhibit-1',
+                        exhibit_code: 'EX-1',
+                        exhibit_name: 'Main Exhibit',
+                        water_type: 'Freshwater',
+                        design_temperature_min: 20,
+                        design_temperature_max: 22,
+                        system_id: null,
+                    }] };
+        }
+        if (sql.includes('water_density_parameters')) {
+            return { rows: [{
+                        id: 'density-freshwater',
+                        water_type: 'Freshwater',
+                        density_kg_m3: 998.2,
+                        conditions: '20 °C',
+                        unit: 'kg/m3',
+                        source: 'NIST',
+                        is_active: true,
+                    }] };
+        }
+        if (sql.includes('design_book_thermal_calculations'))
+            return { rows: [] };
+        if (sql.includes('UPDATE tanks SET')) {
+            if (params[8]) {
+                state.sourceTank.overflow_level_mm = params[9] == null ? null : String(params[9]);
+            }
+            return { rows: [{ ...state.sourceTank, tank_name: params[1] }] };
         }
         if (sql.includes('SELECT id FROM exhibits WHERE id=$1 AND project_id=$2')) {
             return { rows: [{ id: params[0] }] };
@@ -308,6 +354,7 @@ function request(app, method, path, role, body = {}) {
     (0, vitest_1.beforeEach)(() => {
         state.calls.length = 0;
         state.sourceTank.product_master_id = null;
+        state.sourceTank.overflow_level_mm = '2300';
         state.promotedProduct = null;
         state.duplicatePimAssignment = null;
         state.libraryTank = {
@@ -533,6 +580,27 @@ function request(app, method, path, role, body = {}) {
         });
         (0, vitest_1.expect)(response.status).toBe(400);
         (0, vitest_1.expect)(response.body.error.code).toBe('INVALID_PIM_ASSIGNMENT');
+    });
+    (0, vitest_1.it)('preserves overflow when an existing edit omits it and clears only when explicit', async () => {
+        const unrelatedEdit = await request(app, 'PUT', `/api/v1/tanks/${tankId}`, 'engineer', {
+            tank_name: 'Renamed Main Display Tank',
+            design_water_level_mm: '2200',
+        });
+        (0, vitest_1.expect)(unrelatedEdit.status).toBe(200);
+        (0, vitest_1.expect)(unrelatedEdit.body.overflow_level_mm).toBe('2300');
+        const preservingUpdate = state.calls.find(call => call.sql.includes('UPDATE tanks SET'));
+        (0, vitest_1.expect)(preservingUpdate?.sql).toContain('overflow_level_mm=CASE WHEN $9 THEN $10 ELSE overflow_level_mm END');
+        (0, vitest_1.expect)(preservingUpdate?.params[8]).toBe(false);
+        const preview = await request(app, 'GET', '/api/v1/projects/project-1/tanks/tank-1/design-sheet', 'engineer');
+        (0, vitest_1.expect)(preview.status).toBe(200);
+        (0, vitest_1.expect)(preview.body.validation.valid).toBe(true);
+        const explicitClear = await request(app, 'PUT', `/api/v1/tanks/${tankId}`, 'engineer', {
+            tank_name: 'Renamed Main Display Tank',
+            design_water_level_mm: '2200',
+            overflow_level_mm: null,
+        });
+        (0, vitest_1.expect)(explicitClear.status).toBe(200);
+        (0, vitest_1.expect)(explicitClear.body.overflow_level_mm).toBeNull();
     });
     (0, vitest_1.it)('rejects linked assignment without project design-edit authority', async () => {
         state.moduleAccess.projects = 'view';

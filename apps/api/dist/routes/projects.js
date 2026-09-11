@@ -36,6 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.renderTankDesignSheetPdf = renderTankDesignSheetPdf;
 const express_1 = require("express");
 const db_1 = __importStar(require("../db"));
 const auth_1 = require("../middleware/auth");
@@ -50,9 +51,14 @@ const customFootprint_1 = require("../lib/customFootprint");
 const systemLifecycle_1 = require("../lib/systemLifecycle");
 const lssSystems_1 = require("../lib/lssSystems");
 const flowRoute_1 = require("../lib/flowRoute");
+const pdfkit_1 = __importDefault(require("pdfkit"));
+const tankDesignSheet_1 = require("../lib/tankDesignSheet");
 const uploadsDir = path_1.default.join(__dirname, '../../uploads');
 if (!fs_1.default.existsSync(uploadsDir))
     fs_1.default.mkdirSync(uploadsDir, { recursive: true });
+const privateDocumentUploadsDir = path_1.default.join(__dirname, '../../private-uploads/documents');
+if (!fs_1.default.existsSync(privateDocumentUploadsDir))
+    fs_1.default.mkdirSync(privateDocumentUploadsDir, { recursive: true });
 const logoStorage = multer_1.default.diskStorage({
     destination: uploadsDir,
     filename: (_, file, cb) => {
@@ -64,6 +70,28 @@ const uploadLogo = (0, multer_1.default)({
     storage: logoStorage,
     limits: { fileSize: 5 * 1024 * 1024 },
 });
+const documentStorage = multer_1.default.diskStorage({
+    destination: privateDocumentUploadsDir,
+    filename: (_, file, cb) => {
+        const unique = `${Date.now()}-${crypto_1.default.randomBytes(6).toString('hex')}`;
+        cb(null, `document-${unique}${path_1.default.extname(file.originalname)}`);
+    },
+});
+const uploadProjectDocument = (0, multer_1.default)({
+    storage: documentStorage,
+    limits: { fileSize: 100 * 1024 * 1024 },
+});
+function removeUploadedFile(file) {
+    if (!file)
+        return;
+    try {
+        fs_1.default.unlinkSync(file.path);
+    }
+    catch (error) {
+        if (error?.code !== 'ENOENT')
+            console.error('Failed to clean up project document upload', error);
+    }
+}
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate);
 router.use((req, res, next) => {
@@ -91,6 +119,7 @@ const tankNumericFields = {
     width_mm: 'Width',
     height_mm: 'Height',
     design_water_level_mm: 'Water level',
+    overflow_level_mm: 'Overflow level',
     gross_volume_m3: 'Gross volume',
     operating_volume_m3: 'Operating volume',
     surface_area_m2: 'Water-surface area',
@@ -124,6 +153,20 @@ function tankDatabaseResponse(error) {
             : 'The tank could not be saved. Check the tank details and try again.',
         ...(field ? { field } : {}),
     };
+}
+function overflowLevelValidation(overflow, effectiveWaterLevel) {
+    if (overflow === undefined || overflow === null || overflow === '')
+        return null;
+    const level = Number(overflow);
+    if (!Number.isFinite(level) || level < 0) {
+        return { code: 'VALIDATION', field: 'overflow_level_mm', message: 'Overflow level must be a non-negative number.' };
+    }
+    const maximum = effectiveWaterLevel === undefined || effectiveWaterLevel === null || effectiveWaterLevel === ''
+        ? null : Number(effectiveWaterLevel);
+    if (maximum != null && Number.isFinite(maximum) && level <= maximum) {
+        return { code: 'VALIDATION', field: 'overflow_level_mm', message: 'Overflow level must be above the effective maximum/design water level.' };
+    }
+    return null;
 }
 const FLOW_SIDE_STREAM_PRESETS = ['Thermal', 'UV', 'Custom'];
 function withoutStaleLinkedSystemFlow(system) {
@@ -490,8 +533,72 @@ router.get('/projects/:id/documents', auth_1.authenticate, async (req, res) => {
     const proj = await (0, db_1.query)('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
     if (!proj.rows[0])
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
-    const result = await (0, db_1.query)('SELECT * FROM documents WHERE project_id = $1 ORDER BY document_code', [proj.rows[0].id]);
+    const result = await (0, db_1.query)(`SELECT d.*
+     FROM documents d
+     JOIN document_project_links dpl ON dpl.document_id = d.id
+     WHERE dpl.project_id = $1
+     ORDER BY d.document_code`, [proj.rows[0].id]);
     res.json({ items: result.rows });
+});
+router.get('/document-classifications', async (_req, res) => {
+    const result = await (0, db_1.query)('SELECT code, display_name FROM document_classifications WHERE is_active = true ORDER BY display_order, display_name');
+    res.json({ items: result.rows });
+});
+router.post('/projects/:id/documents', (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), (0, auth_1.requireModuleManage)('documents'), uploadProjectDocument.single('file'), async (req, res) => {
+    const file = req.file;
+    const documentCode = String(req.body.document_code || '').trim();
+    const documentTitle = String(req.body.document_title || '').trim();
+    const classification = String(req.body.classification || '').trim();
+    try {
+        if (!file || !documentCode || !documentTitle || !classification) {
+            removeUploadedFile(file);
+            return res.status(400).json({
+                error: { code: 'INVALID_REQUEST', message: 'File, document title, document code, and classification are required' },
+            });
+        }
+        const project = await (0, db_1.query)('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
+        if (!project.rows[0]) {
+            removeUploadedFile(file);
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+        }
+        const allowedClassification = await (0, db_1.query)('SELECT code FROM document_classifications WHERE code = $1 AND is_active = true', [classification]);
+        if (!allowedClassification.rows[0]) {
+            removeUploadedFile(file);
+            return res.status(400).json({
+                error: { code: 'INVALID_CLASSIFICATION', message: 'Select an active document classification' },
+            });
+        }
+        const checksum = crypto_1.default.createHash('sha256').update(fs_1.default.readFileSync(file.path)).digest('hex');
+        const created = await (0, db_1.withTransaction)(async (client) => {
+            const document = await client.query(`INSERT INTO documents
+             (document_code, document_title, classification, current_revision, status, created_by)
+           VALUES ($1,$2,$3,'A','Draft',$4)
+           RETURNING *`, [documentCode, documentTitle, classification, req.user.id]);
+            await client.query(`INSERT INTO document_revisions
+             (document_id, revision_code, status, issued_by, file_path, file_name, file_size, mime_type, checksum, created_by)
+           VALUES ($1,'A','Draft',$2,$3,$4,$5,$6,$7,$2)`, [
+                document.rows[0].id,
+                req.user.id,
+                `private-uploads/documents/${file.filename}`,
+                file.originalname,
+                file.size,
+                file.mimetype,
+                checksum,
+            ]);
+            await client.query('INSERT INTO document_project_links (document_id, project_id, linked_by) VALUES ($1,$2,$3)', [document.rows[0].id, project.rows[0].id, req.user.id]);
+            await client.query('INSERT INTO lifecycle_transitions (entity_type, entity_id, to_state, actor_id, comment) VALUES ($1,$2,$3,$4,$5)', ['document', document.rows[0].id, 'Draft', req.user.id, 'Document uploaded from project']);
+            return document.rows[0];
+        });
+        res.status(201).json(created);
+    }
+    catch (error) {
+        removeUploadedFile(file);
+        if (error?.code === '23505') {
+            return res.status(409).json({ error: { code: 'DOCUMENT_CODE_EXISTS', message: 'A document with this code already exists' } });
+        }
+        console.error('Project document upload failed', error);
+        res.status(500).json({ error: { code: 'UPLOAD_FAILED', message: 'Document upload failed. No document was created.' } });
+    }
 });
 router.get('/projects/:id/change-requests', auth_1.authenticate, async (req, res) => {
     const proj = await (0, db_1.query)('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
@@ -745,9 +852,330 @@ router.get('/tanks/:id', auth_1.authenticate, async (req, res) => {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
     res.json(result.rows[0]);
 });
+const TANK_DESIGN_SHEET_QUERY_TIMEOUT_MS = 8000;
+class TankDesignSheetQueryTimeoutError extends Error {
+    constructor() {
+        super('Timed out while loading tank design-sheet evidence.');
+        this.code = 'TANK_DESIGN_SHEET_QUERY_TIMEOUT';
+    }
+}
+async function boundedTankDesignSheetQuery(text, params) {
+    let timer;
+    try {
+        return await Promise.race([
+            (0, db_1.query)(text, params),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new TankDesignSheetQueryTimeoutError()), TANK_DESIGN_SHEET_QUERY_TIMEOUT_MS);
+                timer.unref?.();
+            }),
+        ]);
+    }
+    finally {
+        if (timer)
+            clearTimeout(timer);
+    }
+}
+async function tankDesignSheetModel(projectIdentifier, tankId) {
+    const tankResult = await boundedTankDesignSheetQuery(`SELECT t.*, p.project_code, p.project_name,
+            COALESCE(t.shape_type, pm.shape_type) AS eff_shape,
+            COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm,
+            COALESCE(t.width_mm, pm.width_mm) AS eff_width_mm,
+            COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
+            COALESCE(t.gross_volume_m3, pm.gross_volume_m3) AS gross_volume_m3,
+            COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3,
+            COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
+            e.id AS exhibit_id, e.exhibit_code, e.exhibit_name, e.water_type,
+            e.design_temperature_min, e.design_temperature_max
+     FROM tanks t
+     JOIN projects p ON p.id=t.project_id
+     LEFT JOIN product_masters pm ON pm.id=t.product_master_id
+     LEFT JOIN exhibits e ON e.id=t.exhibit_id
+     WHERE (p.id::text=$1 OR p.project_code=$1) AND t.id=$2`, [projectIdentifier, tankId]);
+    const tank = tankResult.rows[0];
+    if (!tank)
+        return null;
+    // Explicit active filter is important: superseded physical-property values
+    // must never become a design basis.
+    let chemicalParameters = [];
+    try {
+        chemicalParameters = (await boundedTankDesignSheetQuery('SELECT * FROM water_density_parameters WHERE is_active=true')).rows;
+    }
+    catch (error) {
+        if (error?.code !== '42P01')
+            throw error;
+    }
+    // A standalone tank has no system_id; its exhibit's linked LSS systems are
+    // still legitimate Thermal sources.  Prefer the directly assigned system.
+    const thermalCalculations = (await boundedTankDesignSheetQuery(`SELECT tc.*
+     FROM design_book_thermal_calculations tc
+     JOIN design_books db ON db.id=tc.design_book_id
+     LEFT JOIN system_exhibit_links sel ON sel.system_id=tc.system_id
+     WHERE db.project_id=$1
+       AND ($2::uuid IS NOT NULL AND tc.system_id=$2
+            OR $3::uuid IS NOT NULL AND sel.exhibit_id=$3)
+       AND tc.status='Ready'
+       AND tc.freshness='fresh'
+     ORDER BY (tc.system_id=$2) DESC, tc.calculated_at DESC`, [tank.project_id, tank.system_id || null, tank.exhibit_id || null])).rows;
+    return (0, tankDesignSheet_1.buildTankDesignSheet)({ tank, exhibit: tank, project: tank, chemicalParameters, thermalCalculations });
+}
+function sendTankDesignSheetLoadError(res, error) {
+    const timedOut = error?.code === 'TANK_DESIGN_SHEET_QUERY_TIMEOUT';
+    console.error('[tank-design-sheet] Failed to load design-sheet evidence', error);
+    return res.status(timedOut ? 503 : 500).json({
+        error: {
+            code: timedOut ? 'DESIGN_SHEET_SOURCE_TIMEOUT' : 'DESIGN_SHEET_LOAD_FAILED',
+            message: timedOut
+                ? 'Design-sheet evidence is temporarily busy. Please retry.'
+                : 'Design-sheet evidence could not be loaded.',
+        },
+    });
+}
+function renderTankDesignSheetPdf(model) {
+    const doc = new pdfkit_1.default({
+        size: 'A4',
+        margin: 36,
+        bufferPages: true,
+        info: {
+            Title: 'Tank and Filter Design Data Sheet',
+            Subject: 'Supplier request for quotation',
+            Author: 'Advanced Aquarium Technologies',
+        },
+    });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    const completed = new Promise((resolve, reject) => {
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+    });
+    // The reference sheet is intentionally a controlled data sheet: short rows,
+    // explicit units and a traceable basis column are easier to review than prose.
+    const navy = '#18324A';
+    const ink = '#243746';
+    const muted = '#5B6B78';
+    const rule = '#AAB8C2';
+    const pale = '#EAF1F4';
+    const tbcFill = '#FFF3D6';
+    const left = 36;
+    const right = 559;
+    const contentTop = 92;
+    const contentBottom = 776;
+    const value = (item) => item === null || item === undefined || item === '' ? 'TBC' : String(item);
+    const basis = (item) => item === null || item === undefined || item === '' ? 'Open item — supplier / designer confirmation required' : String(item);
+    const pages = [];
+    const section = (title) => {
+        ensure(28);
+        doc.font('Helvetica-Bold').fontSize(11).fillColor(navy)
+            .text(title.toUpperCase(), left, doc.y, { width: right - left });
+        doc.moveTo(left, doc.y + 4).lineTo(right, doc.y + 4).strokeColor(navy).lineWidth(1).stroke();
+        doc.y += 10;
+    };
+    const ensure = (height) => {
+        if (doc.y + height <= contentBottom)
+            return;
+        doc.addPage();
+        doc.y = contentTop;
+    };
+    const table = (rows, widths = [34, 173, 112, 44, 160]) => {
+        const x = left;
+        const headers = ['No.', 'Design parameter', 'Designer input', 'Unit', 'Basis, source or supplier confirmation'];
+        const total = widths.reduce((a, b) => a + b, 0);
+        const drawRow = (cells, header = false, fill) => {
+            const font = header ? 'Helvetica-Bold' : 'Helvetica';
+            const size = header ? 7.2 : 7.5;
+            const padding = 4;
+            doc.font(font).fontSize(size);
+            const heights = cells.map((cell, i) => doc.heightOfString(cell, { width: widths[i] - padding * 2 }));
+            const h = Math.max(19, Math.min(58, Math.max(...heights) + padding * 2));
+            ensure(h);
+            const rowY = doc.y;
+            if (fill)
+                doc.rect(x, rowY, total, h).fill(fill);
+            let cursor = x;
+            cells.forEach((cell, i) => {
+                doc.rect(cursor, rowY, widths[i], h).strokeColor(rule).lineWidth(0.35).stroke();
+                doc.font(font).fontSize(size).fillColor(header ? navy : ink)
+                    .text(cell, cursor + padding, rowY + padding, {
+                    width: widths[i] - padding * 2,
+                    height: h - padding * 2,
+                    ellipsis: false,
+                    lineBreak: false,
+                });
+                cursor += widths[i];
+            });
+            doc.y = rowY + h;
+        };
+        drawRow(headers, true, pale);
+        rows.forEach(row => {
+            const v = value(row.value);
+            drawRow([row.no || '', row.label, v, row.unit || '', basis(row.basis)], false, v === 'TBC' ? tbcFill : undefined);
+        });
+        doc.y += 8;
+    };
+    const note = (text, fill = '#F4F7F8') => {
+        doc.font('Helvetica').fontSize(7.5);
+        const h = Math.max(25, doc.heightOfString(text, { width: right - left - 18 }) + 14);
+        ensure(h);
+        const noteY = doc.y;
+        doc.roundedRect(left, noteY, right - left, h, 2).fill(fill);
+        doc.font('Helvetica').fontSize(7.5).fillColor(ink)
+            .text(text, left + 9, noteY + 7, { width: right - left - 18, height: h - 14, lineBreak: false });
+        doc.y = noteY + h + 9;
+    };
+    doc.y = contentTop;
+    section('A. Document control');
+    table([
+        { label: 'Project', value: `${value(model.project.project_code)} — ${value(model.project.project_name)}`, basis: 'Project record' },
+        { label: 'Exhibit', value: `${value(model.exhibit.exhibit_code)} — ${value(model.exhibit.exhibit_name)}`, basis: 'Exhibit record' },
+        { label: 'Equipment tag', value: value(model.tank.tank_code), basis: 'Tank record' },
+        { label: 'Equipment description', value: value(model.tank.tank_name), basis: 'Tank record' },
+        { label: 'Document number', value: 'TBC', basis: 'To be allocated under project document control' },
+        { label: 'Revision / issue purpose', value: 'TBC / For quotation', basis: 'Controlled issue information' },
+        { label: 'Design status', value: 'TBC', basis: 'Concept / Tender / Detailed — confirm at issue' },
+        { label: 'Prepared / checked / approved', value: 'TBC / TBC / TBC', basis: 'Signatures and dates required before issue' },
+        { label: 'Generated', value: value(model.generated_at), basis: model.calculation_version },
+    ], [100, 175, 116, 44, 88]);
+    note('PURPOSE  Complete this sheet before requesting a supplier quotation. TBC means the design input is not governed or available in the current record; it is not an assumed value.', '#E8F1F5');
+    section('B. Equipment classification and design basis');
+    table([
+        { no: 'B1', label: 'Equipment category', value: `${value(model.tank.shape_type)} tank`, basis: 'Tank geometry record' },
+        { no: 'B2', label: 'Configuration', value: value(model.tank.shape_type), basis: 'Effective tank shape' },
+        { no: 'B3', label: 'Required structural design life', value: model.design_basis.required_life_years, unit: 'years', basis: 'Governed design-sheet basis' },
+        { no: 'B4', label: 'Atmosphere / external pressure', value: `${value(model.design_basis.atmosphere)} / ${value(model.design_basis.external_pressure)}`, basis: 'Design basis' },
+        { no: 'B5', label: 'Vacuum case', value: value(model.design_basis.vacuum), basis: 'Design basis' },
+        { no: 'B6', label: 'Calculation version', value: value(model.calculation_version), basis: 'Canonical model version' },
+    ]);
+    note('ISSUE GATE  Designer and checker must agree the load combinations, pressure cases, water-level datum and supplier scope before this document is issued for quotation.');
+    section('1. Tank dimensions, volume and water levels');
+    table([
+        { no: '1', label: 'Internal plan shape', value: value(model.tank.shape_type), basis: 'Effective tank shape' },
+        { no: '1', label: 'Internal length', value: model.tank.dimensions_mm.length, unit: 'mm', basis: 'Tank / product geometry' },
+        { no: '1', label: 'Internal width', value: model.tank.dimensions_mm.width, unit: 'mm', basis: 'Tank / product geometry' },
+        { no: '1', label: 'Internal height / shell height', value: model.tank.dimensions_mm.height, unit: 'mm', basis: 'Tank / product geometry' },
+        { no: '2', label: 'Gross volume', value: model.tank.gross_volume_m3, unit: 'm³', basis: 'Tank / product geometry' },
+        { no: '2', label: 'Normal working / operating volume', value: model.tank.operating_volume_m3, unit: 'm³', basis: 'Effective operating volume' },
+        { no: '3', label: 'Maximum permitted water level', value: model.tank.maximum_water_level_mm, unit: 'mm', basis: 'Relative datum not recorded — confirm' },
+        { no: '4', label: 'Overflow operating level', value: model.tank.overflow_level_mm, unit: 'mm', basis: 'Crest / pipe invert to be confirmed' },
+        { label: '', value: 'TBC', unit: 'mm', basis: 'Freeboard above maximum water level — supplier to confirm adequacy' },
+        { label: 'Water level datum', value: 'TBC', basis: 'Finished floor or tank internal base to be defined' },
+    ]);
+    section('2. Liquid and temperature design conditions');
+    table([
+        { no: '5', label: 'Liquid description', value: model.design_basis.water_type, basis: 'Exhibit water type / active parameter lookup' },
+        { no: '5', label: 'Maximum design liquid density', value: model.design_basis.density_kg_m3, unit: 'kg/m³', basis: model.design_basis.density_provenance?.catalog_source || model.design_basis.density_provenance?.source },
+        { no: '6', label: 'Water temperature range', value: `${value(model.exhibit.water_temperature_min_c)} to ${value(model.exhibit.water_temperature_max_c)}`, unit: '°C', basis: 'Exhibit design temperatures' },
+        { no: '7', label: 'Ambient air temperature', value: model.design_basis.ambient_air_temperature_c, unit: '°C', basis: model.design_basis.ambient_temperature_source },
+        { no: '7', label: 'Salinity / pH / humidity', value: 'TBC', basis: 'Not present in governed tank record' },
+        { no: '7', label: 'Chemical exposure and cleaning', value: 'TBC', basis: 'Supplier / designer confirmation required' },
+    ]);
+    section('3. Hydrostatic load case');
+    table([
+        { no: '8', label: 'Maximum water depth', value: model.hydrostatic_pressure.maximum_water_depth_m, unit: 'm', basis: 'Maximum permitted water level' },
+        { no: '8', label: 'Hydrostatic pressure at design level', value: model.hydrostatic_pressure.pressure_kpa, unit: 'kPa', basis: 'Calculated with 1.2 load factor' },
+        { no: '8', label: 'Water density / gravity', value: `${value(model.design_basis.density_kg_m3)} / ${value(model.hydrostatic_pressure.gravity_m_s2)}`, unit: 'kg/m³ / m/s²', basis: model.hydrostatic_pressure.formula },
+        { no: '8', label: 'Load factor', value: model.hydrostatic_pressure.load_factor, basis: 'Hydrostatic load factor' },
+    ]);
+    section('4. Openings, nozzles and access');
+    table([
+        { no: '9', label: 'Nozzle schedule, sizes and loads', value: 'TBC', basis: 'Supplier to confirm connection, rating, location and allowable loads' },
+        { no: '10', label: 'Manways and access openings', value: 'TBC', basis: 'Supplier to confirm clear opening, cover, seal and safety requirements' },
+        { no: '11', label: 'Lifting points / handling', value: 'TBC', basis: 'Supplier to confirm operating and empty handling arrangements' },
+    ]);
+    section('5. Supports and anchorage');
+    table([
+        { no: '12', label: 'Support arrangement and foundation', value: 'TBC', basis: 'Skirt / legs / saddle / flat base and supporting structure' },
+        { no: '13', label: 'Anchor bolt arrangement', value: 'TBC', basis: 'Supplier to provide final anchor plan' },
+        { no: '14', label: 'Required supplier reactions', value: 'TBC', unit: 'kN, kN·m', basis: 'Vertical, shear, uplift and moment for governing combinations' },
+        { no: '15', label: 'Seismic and wind loads', value: 'TBC', basis: 'Not governed in current model' },
+    ]);
+    section('6. Materials and fabrication');
+    table([
+        { no: '16', label: 'Construction / material system', value: 'TBC', basis: 'FRP / steel / composite — supplier proposal and compliance review' },
+        { no: '17', label: 'Coating, lining or corrosion protection', value: 'TBC', basis: 'Service and chemical exposure to be confirmed' },
+        { no: '18', label: 'Inspection, testing and certification', value: 'TBC', basis: 'Supplier to submit proposed ITP and quality records' },
+    ]);
+    section('7. Required design life and operation');
+    table([
+        { no: '19', label: 'Structural design life', value: model.design_basis.required_life_years, unit: 'years', basis: 'Governed design-sheet basis' },
+        { no: '20', label: 'Operating hours / fill-drain cycles', value: 'TBC', basis: 'Operating profile not present' },
+        { no: '21', label: 'Inspection interval / component life', value: 'TBC', basis: 'Supplier recommendation and project maintenance basis' },
+    ]);
+    section('C. Required supplier response and deliverables');
+    table([
+        { no: '1', label: 'Completed confirmation column for every applicable item', value: 'TBC', basis: 'Supplier response required' },
+        { no: '2', label: 'Pressure, vacuum, hydrostatic, seismic, wind and support calculations', value: 'TBC', basis: 'Supplier response required as applicable' },
+        { no: '3', label: 'General arrangement drawing with levels, openings and supports', value: 'TBC', basis: 'Supplier response required' },
+        { no: '4', label: 'Material, thickness, lining and corrosion protection schedule', value: 'TBC', basis: 'Supplier response required' },
+        { no: '5', label: 'Anchor layout and governing support reactions', value: 'TBC', basis: 'For structural engineer coordination' },
+        { no: '6', label: 'Fabrication, inspection, testing and certificates', value: 'TBC', basis: 'Supplier response required' },
+        { no: '7', label: 'Exclusions, assumptions, clarifications and deviations', value: 'TBC', basis: 'Supplier response required' },
+    ]);
+    section('D. Open items, deviations and approval');
+    table([
+        { no: '1', label: 'Unresolved design inputs', value: `${model.tbcs.length} open items`, basis: model.tbcs.join(' ') },
+        { no: '2', label: 'Prepared / checked / approved', value: 'TBC / TBC / TBC', basis: 'Name, signature and date required' },
+        { no: '3', label: 'Release condition', value: 'TBC', basis: 'Resolve critical TBCs and accept supplier deviations before purchase order' },
+    ]);
+    note('CONTROLLED RELEASE  Do not issue the supplier purchase order until all critical TBC items have been resolved and supplier deviations have been reviewed and accepted by AAT Engineering.', '#FFF3D6');
+    // Apply the same document-control header and footer to every generated page.
+    const pageCount = doc.bufferedPageRange().count;
+    for (let i = 0; i < pageCount; i += 1) {
+        doc.switchToPage(i);
+        doc.save();
+        doc.rect(left, 28, right - left, 42).fill(navy);
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#FFFFFF')
+            .text('ADVANCED AQUARIUM TECHNOLOGIES', left + 10, 39);
+        doc.font('Helvetica').fontSize(7).fillColor('#DCE8ED')
+            .text('TANK AND FILTER DESIGN DATA SHEET  |  SUPPLIER REQUEST FOR QUOTATION', left + 10, 53);
+        doc.restore();
+        doc.moveTo(left, 788).lineTo(right, 788).strokeColor(rule).lineWidth(0.5).stroke();
+        doc.font('Helvetica').fontSize(7).fillColor(muted)
+            .text(`AAT controlled engineering deliverable  |  ${value(model.tank.tank_code)}  |  ${value(model.calculation_version)}`, left, 796, { width: 390, lineBreak: false })
+            .text(`Page ${i + 1} of ${pageCount}`, 455, 796, { width: 104, align: 'right', lineBreak: false });
+    }
+    doc.end();
+    return completed;
+}
+router.get('/projects/:projectId/tanks/:tankId/design-sheet', auth_1.authenticate, async (req, res) => {
+    try {
+        const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
+        if (!model)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
+        res.json(model);
+    }
+    catch (error) {
+        return sendTankDesignSheetLoadError(res, error);
+    }
+});
+router.get('/projects/:projectId/tanks/:tankId/design-sheet.pdf', auth_1.authenticate, async (req, res) => {
+    try {
+        const model = await tankDesignSheetModel(String(req.params.projectId), String(req.params.tankId));
+        if (!model)
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found in project.' } });
+        if (!model.validation.valid) {
+            return res.status(422).json({
+                error: { code: 'DESIGN_SHEET_INCOMPLETE', message: 'Tank design sheet has required unresolved design inputs.', validation: model.validation },
+                design_sheet: model,
+            });
+        }
+        const pdf = await renderTankDesignSheetPdf(model);
+        const safeCode = String(model.tank.tank_code || req.params.tankId).replace(/[^A-Za-z0-9._-]/g, '_');
+        const filename = `${safeCode}-tank-design-sheet.pdf`;
+        await (0, audit_1.logAudit)(req.user.id, 'tank', String(req.params.tankId), 'GENERATE_DESIGN_SHEET_PDF', {
+            summary: `Generated tank design sheet PDF for ${safeCode}`,
+            calculation_version: model.calculation_version,
+            validation_valid: model.validation.valid,
+        });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(pdf);
+    }
+    catch (error) {
+        return sendTankDesignSheetLoadError(res, error);
+    }
+});
 router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     try {
-        const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, custom_footprint } = req.body;
+        const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, primary_material, status, notes, custom_footprint } = req.body;
         const tankCode = String(tank_code ?? '').trim();
         const tankName = String(tank_name ?? '').trim();
         if (!tankCode)
@@ -765,6 +1193,9 @@ router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'eng
             if (validationError)
                 return res.status(400).json({ error: validationError });
         }
+        const overflowValidation = overflowLevelValidation(overflow_level_mm, design_water_level_mm);
+        if (overflowValidation)
+            return res.status(400).json({ error: overflowValidation });
         if (product_master_id && exhibit_id) {
             return res.status(400).json({
                 error: {
@@ -792,13 +1223,17 @@ router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'eng
                     error: { code: 'MODULE_READ_ONLY', message: 'PIM manage access is required to create a linked project tank.' },
                 });
             }
-            const product = await (0, db_1.query)(`SELECT id FROM product_masters
+            const product = await (0, db_1.query)(`SELECT id, design_water_level_mm FROM product_masters
        WHERE id=$1 AND product_category='Tank'`, [product_master_id]);
             if (!product.rows[0]) {
                 return res.status(400).json({
                     error: { code: 'INVALID_PIM_TANK', message: 'The selected item is not a valid PIM tank.' },
                 });
             }
+            const pimOverflowValidation = overflowLevelValidation(overflow_level_mm, design_water_level_mm === undefined || design_water_level_mm === null || design_water_level_mm === ''
+                ? product.rows[0].design_water_level_mm : design_water_level_mm);
+            if (pimOverflowValidation)
+                return res.status(400).json({ error: pimOverflowValidation });
         }
         const qty = Math.max(1, parseInt(quantity) || 1);
         const l = length_mm ? parseFloat(length_mm) : null;
@@ -843,7 +1278,7 @@ router.post('/tanks', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'eng
             : isCustom
                 ? null
                 : (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, l, w);
-        const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, custom_footprint, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *', [tankCode, project_id, exhibit_id || null, system_id || null, qty, tankName, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, normalizedFootprint, primary_material || null, status || 'Active', notes || null]);
+        const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, exhibit_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, custom_footprint, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *', [tankCode, project_id, exhibit_id || null, system_id || null, qty, tankName, tank_type || null, product_master_id || null, shape_type || null, calcGross, calcOp, surfaceAreaM2, l, w, h, wl, overflow_level_mm === '' || overflow_level_mm == null ? null : Number(overflow_level_mm), normalizedFootprint, primary_material || null, status || 'Active', notes || null]);
         const tank = result.rows[0];
         if (qty > 1) {
             const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -1246,7 +1681,7 @@ router.post('/tanks/:id/duplicate', auth_1.authenticate, (0, auth_1.requireRole)
         newCode = `${t.tank_code}-${n}`;
     }
     const qty = t.quantity ?? 1;
-    const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, custom_footprint, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *', [newCode.toUpperCase(), t.project_id, t.system_id, qty, `${t.tank_name} (Copy)`, t.tank_type, t.product_master_id, t.shape_type, t.gross_volume_m3, t.operating_volume_m3, t.surface_area_m2, t.custom_footprint, t.length_mm, t.width_mm, t.height_mm, t.design_water_level_mm, t.primary_material, t.status || 'Active', t.notes]);
+    const result = await (0, db_1.query)('INSERT INTO tanks (tank_code, project_id, system_id, quantity, tank_name, tank_type, product_master_id, shape_type, gross_volume_m3, operating_volume_m3, surface_area_m2, custom_footprint, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, primary_material, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *', [newCode.toUpperCase(), t.project_id, t.system_id, qty, `${t.tank_name} (Copy)`, t.tank_type, t.product_master_id, t.shape_type, t.gross_volume_m3, t.operating_volume_m3, t.surface_area_m2, t.custom_footprint, t.length_mm, t.width_mm, t.height_mm, t.design_water_level_mm, t.overflow_level_mm, t.primary_material, t.status || 'Active', t.notes]);
     const newTank = result.rows[0];
     if (qty > 1) {
         const pad = qty > 99 ? 3 : qty > 9 ? 2 : 1;
@@ -1302,7 +1737,7 @@ router.patch('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin',
 });
 router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', 'engineer'), (0, auth_1.requireModuleManage)('projects'), async (req, res) => {
     try {
-        const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, product_master_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, surface_area_m2, custom_footprint, } = req.body;
+        const { tank_code, tank_name, tank_type, shape_type, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, primary_material, status, notes, quantity, gross_volume_m3, operating_volume_m3, system_id, exhibit_id, product_master_id, material_id, wall_thickness_mm, inner_length_mm, inner_width_mm, inner_height_mm, surface_area_m2, custom_footprint, } = req.body;
         if (!String(tank_name ?? '').trim()) {
             return res.status(400).json({ error: { code: 'VALIDATION', field: 'tank_name', message: 'Tank name is required.' } });
         }
@@ -1319,6 +1754,7 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
         }
         const hasExhibit = 'exhibit_id' in req.body;
         const hasProductMaster = 'product_master_id' in req.body;
+        const hasOverflowLevel = Object.prototype.hasOwnProperty.call(req.body, 'overflow_level_mm');
         if (hasProductMaster && product_master_id) {
             return res.status(400).json({
                 error: {
@@ -1340,6 +1776,16 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
                 });
             }
         }
+        const currentTankLevels = await (0, db_1.query)(`SELECT t.overflow_level_mm,
+            COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS effective_water_level_mm
+     FROM tanks t LEFT JOIN product_masters pm ON pm.id=t.product_master_id WHERE t.id=$1`, [req.params.id]);
+        if (!currentTankLevels.rows[0])
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
+        const overflowValidation = overflowLevelValidation(hasOverflowLevel ? overflow_level_mm : currentTankLevels.rows[0].overflow_level_mm, design_water_level_mm === undefined || design_water_level_mm === null || design_water_level_mm === ''
+            ? currentTankLevels.rows[0].effective_water_level_mm
+            : design_water_level_mm);
+        if (overflowValidation)
+            return res.status(400).json({ error: overflowValidation });
         const currentSystemLink = await (0, db_1.query)('SELECT system_id FROM tanks WHERE id=$1', [req.params.id]);
         if (!currentSystemLink.rows[0])
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
@@ -1358,6 +1804,7 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
         const isCustom = (shape_type || '').toLowerCase() === 'custom';
         const isCyl = (shape_type || '').toLowerCase() === 'cylindrical';
         let normalizedFootprint = null;
+        let customFootprintAreaM2 = null;
         if (isCustom && custom_footprint != null) {
             try {
                 normalizedFootprint = (0, customFootprint_1.normalizeCustomFootprint)(custom_footprint);
@@ -1365,6 +1812,7 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
                 if (!footprintSummary.valid) {
                     return res.status(400).json({ error: { code: 'INVALID_CUSTOM_FOOTPRINT', field: 'custom_footprint', message: footprintSummary.message, validation: footprintSummary } });
                 }
+                customFootprintAreaM2 = footprintSummary.area_m2;
             }
             catch (error) {
                 if (error instanceof customFootprint_1.CustomFootprintValidationError) {
@@ -1386,33 +1834,38 @@ router.put('/tanks/:id', auth_1.authenticate, (0, auth_1.requireRole)('admin', '
         const iw = w && t ? w - 2 * t : w;
         const ih = h && t ? h - t : h;
         const calcGross = isCustom
-            ? (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null)
+            ? (customFootprintAreaM2 && h
+                ? Math.round(customFootprintAreaM2 * h / 1000 * 1e6) / 1e6
+                : (gross_volume_m3 != null && gross_volume_m3 !== '' ? parseFloat(gross_volume_m3) : null))
             : isCyl
                 ? (iw && ih ? Math.round(Math.PI * (iw / 2) * (iw / 2) * ih / 1e9 * 1e4) / 1e4 : null)
                 : (il && iw && ih ? Math.round(il * iw * ih / 1e9 * 1e4) / 1e4 : null);
         const calcOp = isCustom
-            ? (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null)
+            ? (customFootprintAreaM2 && wl
+                ? Math.round(customFootprintAreaM2 * wl / 1000 * 1e6) / 1e6
+                : (operating_volume_m3 != null && operating_volume_m3 !== '' ? parseFloat(operating_volume_m3) : null))
             : isCyl
                 ? (iw && wl ? Math.round(Math.PI * (iw / 2) * (iw / 2) * wl / 1e9 * 1e4) / 1e4 : null)
                 : (il && iw && wl ? Math.round(il * iw * wl / 1e9 * 1e4) / 1e4 : null);
         const surfaceAreaM2 = normalizedFootprint
-            ? (0, customFootprint_1.summarizeCustomFootprint)(normalizedFootprint).area_m2
+            ? customFootprintAreaM2
             : isCustom
                 ? null
                 : (0, tankCalculations_1.calculateWaterSurfaceAreaM2)(shape_type, isCyl ? null : l, w);
         const qty = Math.max(1, parseInt(quantity) || 1);
         const result = await (0, db_1.query)(`UPDATE tanks SET
       tank_code=COALESCE($1, tank_code), tank_name=$2, tank_type=$3, shape_type=$4,
-      length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
-      gross_volume_m3=$9, operating_volume_m3=$10, surface_area_m2=$11,
-      custom_footprint=$12, primary_material=$13, status=$14, notes=$15, quantity=$16,
-      system_id=$17, material_id=$18, wall_thickness_mm=$19,
-      inner_length_mm=$20, inner_width_mm=$21, inner_height_mm=$22,
-      product_master_id=CASE WHEN $23 THEN $24 ELSE product_master_id END,
-      exhibit_id=CASE WHEN $25 THEN $26 ELSE exhibit_id END,
+       length_mm=$5, width_mm=$6, height_mm=$7, design_water_level_mm=$8,
+       overflow_level_mm=CASE WHEN $9 THEN $10 ELSE overflow_level_mm END,
+       gross_volume_m3=$11, operating_volume_m3=$12, surface_area_m2=$13,
+       custom_footprint=$14, primary_material=$15, status=$16, notes=$17, quantity=$18,
+       system_id=$19, material_id=$20, wall_thickness_mm=$21,
+       inner_length_mm=$22, inner_width_mm=$23, inner_height_mm=$24,
+       product_master_id=CASE WHEN $25 THEN $26 ELSE product_master_id END,
+       exhibit_id=CASE WHEN $27 THEN $28 ELSE exhibit_id END,
       updated_at=NOW()
-    WHERE id=$27 RETURNING *`, [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
-            l, w, h, wl, calcGross, calcOp, surfaceAreaM2, normalizedFootprint,
+    WHERE id=$29 RETURNING *`, [tank_code ? tank_code.trim().toUpperCase() : null, tank_name, tank_type || null, shape_type || null,
+            l, w, h, wl, hasOverflowLevel, overflow_level_mm === '' || overflow_level_mm == null ? null : Number(overflow_level_mm), calcGross, calcOp, surfaceAreaM2, normalizedFootprint,
             primary_material || null, status || 'Active', notes || null, qty,
             system_id || null,
             material_id || null, wall_thickness_mm ?? null,

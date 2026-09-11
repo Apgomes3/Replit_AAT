@@ -195,6 +195,15 @@ const completeMediaProfile = {
         })).toBe(true);
     });
 });
+(0, vitest_1.describe)('Biological Media run snapshot persistence', () => {
+    (0, vitest_1.it)('serializes array snapshots as JSON rather than PostgreSQL array literals', () => {
+        const species = [{ species_name: 'Shark', biomass_kg: 120 }];
+        const messages = [{ code: 'MEDIA_W01', severity: 'WARNING' }];
+        (0, vitest_1.expect)((0, biologicalMedia_1.serializeJsonbParam)(species)).toBe('[{"species_name":"Shark","biomass_kg":120}]');
+        (0, vitest_1.expect)((0, biologicalMedia_1.serializeJsonbParam)(messages)).toBe('[{"code":"MEDIA_W01","severity":"WARNING"}]');
+        (0, vitest_1.expect)(JSON.parse((0, biologicalMedia_1.serializeJsonbParam)([]))).toEqual([]);
+    });
+});
 (0, vitest_1.describe)('Biological Media immutable run presentation', () => {
     const run = {
         id: 'run-1',

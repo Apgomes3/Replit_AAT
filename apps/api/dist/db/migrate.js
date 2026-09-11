@@ -9,6 +9,7 @@ const pimAssignmentIndexMigration_1 = require("./pimAssignmentIndexMigration");
 const biologicalMediaSeed_1 = require("./biologicalMediaSeed");
 const thermalCorrelationSeed_1 = require("./thermalCorrelationSeed");
 const thermalWallConstructionSeed_1 = require("./thermalWallConstructionSeed");
+const documentFileMigration_1 = require("./documentFileMigration");
 dotenv_1.default.config();
 const schema = `
 -- USERS & AUTH
@@ -116,6 +117,7 @@ CREATE TABLE IF NOT EXISTS tanks (
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS system_id UUID REFERENCES systems(id) ON DELETE SET NULL;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE tanks ADD COLUMN IF NOT EXISTS custom_footprint JSONB;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS overflow_level_mm NUMERIC;
 
 CREATE TABLE IF NOT EXISTS tank_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -224,6 +226,12 @@ CREATE TABLE IF NOT EXISTS product_variants (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Tank-specific procurement and design-basis information. Shape remains governed
+-- by the existing shape_type field rather than being duplicated here.
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS product_description TEXT;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_classification VARCHAR(100);
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS tank_engineering_details JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS standard_boms (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -406,6 +414,32 @@ CREATE TABLE IF NOT EXISTS document_revisions (
   created_by UUID REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS document_classifications (
+  code VARCHAR(100) PRIMARY KEY,
+  display_name VARCHAR(100) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO document_classifications (code, display_name, display_order)
+VALUES ('Design', 'Design', 10), ('Commercial', 'Commercial', 20)
+ON CONFLICT (code) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  display_order = EXCLUDED.display_order;
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS classification VARCHAR(100);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'documents_classification_fkey'
+  ) THEN
+    ALTER TABLE documents
+      ADD CONSTRAINT documents_classification_fkey
+      FOREIGN KEY (classification) REFERENCES document_classifications(code);
+  END IF;
+END $$;
+
 -- Generated document provenance and editable review content.  The source
 -- snapshot belongs to the revision so approved/released evidence never
 -- changes when a product is regenerated.
@@ -536,6 +570,7 @@ INSERT INTO product_categories (name, code, description, is_system, sort_order) 
   ('Filtration', 'FILTRATION', 'Filtration systems and equipment', true, 10),
   ('Pumping', 'PUMPING', 'Pumps, blowers and fluid movers', true, 20),
   ('Disinfection', 'DISINFECTION', 'UV, ozone and chemical dosing', true, 30),
+  ('Ozone Generators', 'OZONE_GENERATORS', 'Ozone generation equipment', true, 35),
   ('Thermal', 'THERMAL', 'Heating and chilling equipment', true, 40),
   ('Pneumatic', 'PNEUMATIC', 'Pneumatic air and gas handling equipment', true, 45),
   ('Piping', 'PIPING', 'Pipes, fittings, valves and flanges', true, 50),
@@ -1508,6 +1543,49 @@ ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS calculation_
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS last_calculated_at TIMESTAMPTZ;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS calculation_inputs JSONB;
 ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS override_reason TEXT;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS inlet_pipe_dn INTEGER;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS discharge_pipe_dn INTEGER;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS bottom_drain_pipe_dn INTEGER;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS inlet_pipe_evidence JSONB;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS discharge_pipe_evidence JSONB;
+ALTER TABLE design_book_exhibit_hydraulics ADD COLUMN IF NOT EXISTS bottom_drain_pipe_evidence JSONB;
+
+-- Authoritative internal diameters are governed separately from nominal DN.
+CREATE TABLE IF NOT EXISTS pipe_sizing_standards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  dn INTEGER NOT NULL UNIQUE CHECK (dn > 0),
+  internal_diameter_mm NUMERIC(8,2) NOT NULL CHECK (internal_diameter_mm > 0),
+  pressure_velocity_min_m_s NUMERIC(6,3) NOT NULL DEFAULT 1.5 CHECK (pressure_velocity_min_m_s >= 0),
+  pressure_velocity_max_m_s NUMERIC(6,3) NOT NULL DEFAULT 3.0 CHECK (pressure_velocity_max_m_s > 0),
+  gravity_velocity_min_m_s NUMERIC(6,3) NOT NULL DEFAULT 0.1 CHECK (gravity_velocity_min_m_s >= 0),
+  gravity_velocity_max_m_s NUMERIC(6,3) NOT NULL DEFAULT 1.5 CHECK (gravity_velocity_max_m_s > 0),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (pressure_velocity_min_m_s <= pressure_velocity_max_m_s),
+  CHECK (gravity_velocity_min_m_s <= gravity_velocity_max_m_s)
+);
+INSERT INTO pipe_sizing_standards (dn, internal_diameter_mm) VALUES
+  (15,15),(20,20),(25,25),(32,32),(40,40),(50,50),(65,65),(80,80),
+  (100,100),(125,125),(150,150),(200,200),(250,250),(300,300),(350,350),(400,400)
+ON CONFLICT (dn) DO NOTHING;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_exhibit_hydraulics_inlet_pipe_dn') THEN
+    ALTER TABLE design_book_exhibit_hydraulics
+      ADD CONSTRAINT fk_exhibit_hydraulics_inlet_pipe_dn
+      FOREIGN KEY (inlet_pipe_dn) REFERENCES pipe_sizing_standards(dn) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_exhibit_hydraulics_discharge_pipe_dn') THEN
+    ALTER TABLE design_book_exhibit_hydraulics
+      ADD CONSTRAINT fk_exhibit_hydraulics_discharge_pipe_dn
+      FOREIGN KEY (discharge_pipe_dn) REFERENCES pipe_sizing_standards(dn) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_exhibit_hydraulics_bottom_drain_pipe_dn') THEN
+    ALTER TABLE design_book_exhibit_hydraulics
+      ADD CONSTRAINT fk_exhibit_hydraulics_bottom_drain_pipe_dn
+      FOREIGN KEY (bottom_drain_pipe_dn) REFERENCES pipe_sizing_standards(dn) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  END IF;
+END $$;
 
 -- DESIGN BOOK: Exhibit Theming & Substrate
 CREATE TABLE IF NOT EXISTS design_book_exhibit_substrate (
@@ -1831,6 +1909,37 @@ CREATE TABLE IF NOT EXISTS design_book_thermal_selections (
 );
 CREATE INDEX IF NOT EXISTS idx_design_book_thermal_selections_book
   ON design_book_thermal_selections(design_book_id, system_id);
+
+CREATE TABLE IF NOT EXISTS design_book_ozone_calculations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  target_concentration_mg_l NUMERIC NOT NULL DEFAULT 0.05
+    CHECK (target_concentration_mg_l BETWEEN 0.01 AND 0.20),
+  display_unit VARCHAR(10) NOT NULL DEFAULT 'g/h'
+    CHECK (display_unit IN ('mg/h','g/h','lb/h')),
+  ffvp_plenum_circuit_keys JSONB NOT NULL DEFAULT '[]'::jsonb
+    CHECK (jsonb_typeof(ffvp_plenum_circuit_keys) = 'array'),
+  input_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(input_snapshot) = 'object'),
+  result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(result_snapshot) = 'object'),
+  allocation_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(allocation_snapshot) = 'object'),
+  calculated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  calculated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id)
+);
+ALTER TABLE design_book_ozone_calculations ADD COLUMN IF NOT EXISTS allocation_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+  CHECK (jsonb_typeof(allocation_snapshot) = 'object');
+CREATE INDEX IF NOT EXISTS idx_design_book_ozone_calculations_book
+  ON design_book_ozone_calculations(design_book_id, system_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_ozone_calculation ON design_book_ozone_calculations;
+CREATE TRIGGER guard_released_design_book_ozone_calculation
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_ozone_calculations
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 DROP TRIGGER IF EXISTS guard_released_design_book_thermal_selection ON design_book_thermal_selections;
 CREATE TRIGGER guard_released_design_book_thermal_selection
 BEFORE INSERT OR UPDATE OR DELETE ON design_book_thermal_selections
@@ -2371,6 +2480,14 @@ ALTER TABLE lss_tan_generation_profiles ADD COLUMN IF NOT EXISTS edit_version IN
 ALTER TABLE lss_max_tan_profiles ADD COLUMN IF NOT EXISTS edit_version INTEGER NOT NULL DEFAULT 1;
 
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS biomass_method VARCHAR(30);
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS calculation_engine VARCHAR(30) NOT NULL DEFAULT 'MASS_BALANCE';
+ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS temperature_basis VARCHAR(20) NOT NULL DEFAULT 'LOWEST';
+ALTER TABLE lss_biological_media_cases DROP CONSTRAINT IF EXISTS lss_biological_media_cases_calculation_engine_check;
+ALTER TABLE lss_biological_media_cases ADD CONSTRAINT lss_biological_media_cases_calculation_engine_check
+  CHECK (calculation_engine IN ('MASS_BALANCE', 'AAT_CORE'));
+ALTER TABLE lss_biological_media_cases DROP CONSTRAINT IF EXISTS lss_biological_media_cases_temperature_basis_check;
+ALTER TABLE lss_biological_media_cases ADD CONSTRAINT lss_biological_media_cases_temperature_basis_check
+  CHECK (temperature_basis IN ('LOWEST', 'AVERAGE'));
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS water_volume_m3 NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS stocking_density_kg_m3 NUMERIC;
 ALTER TABLE lss_biological_media_cases ADD COLUMN IF NOT EXISTS feed_rate_pct_biomass_day NUMERIC;
@@ -2505,6 +2622,24 @@ ALTER TABLE uv_engineering_revisions ADD CONSTRAINT uv_engineering_positive_valu
 -- UV governance: PIM owns product identity/material/power/lamp count; engineering
 -- revisions own the approved reactor and irradiance evidence.
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS lamp_count INTEGER;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS ozone_production_capacity_g_h NUMERIC
+  CHECK (ozone_production_capacity_g_h IS NULL OR ozone_production_capacity_g_h > 0);
+UPDATE product_masters
+SET ozone_production_capacity_g_h = CASE product_code
+  WHEN 'PM-OZ-2' THEN 2
+  WHEN 'PM-OZ-3' THEN 3
+  WHEN 'PM-OZ-5' THEN 5
+  WHEN 'PM-OZ-7' THEN 7
+  WHEN 'PM-OZ-10' THEN 10
+  WHEN 'PM-OZ-15' THEN 15
+  WHEN 'PM-OZ-20' THEN 20
+END
+WHERE product_code IN ('PM-OZ-2', 'PM-OZ-3', 'PM-OZ-5', 'PM-OZ-7', 'PM-OZ-10', 'PM-OZ-15', 'PM-OZ-20')
+  AND ozone_production_capacity_g_h IS NULL;
+UPDATE product_masters
+SET product_category = 'Ozone Generators'
+WHERE product_code IN ('PM-OZ-2', 'PM-OZ-3', 'PM-OZ-5', 'PM-OZ-7', 'PM-OZ-10', 'PM-OZ-15', 'PM-OZ-20')
+  AND product_category = 'Disinfection';
 ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis VARCHAR(100) NOT NULL DEFAULT 'AAT Foundations';
 ALTER TABLE uv_engineering_revisions ADD COLUMN IF NOT EXISTS source_basis_verified BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE uv_engineering_revisions ALTER COLUMN source_basis SET DEFAULT 'AAT Foundations';
@@ -2856,12 +2991,185 @@ ALTER TABLE system_pump_selections
   DROP CONSTRAINT IF EXISTS uq_system_pump_selections_circuit_role;
 ALTER TABLE system_pump_selections
   ADD CONSTRAINT uq_system_pump_selections_circuit_role UNIQUE (system_id, circuit_key, pump_role);
+
+-- Governed field instrumentation and design-book specific control evidence.
+CREATE TABLE IF NOT EXISTS field_instrument_definitions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  tag_code VARCHAR(20) NOT NULL UNIQUE CHECK (tag_code ~ '^[A-Za-z0-9-]+$'),
+  numbering_rule VARCHAR(100) NOT NULL DEFAULT 'system-type-sequence',
+  signal_type VARCHAR(20) NOT NULL CHECK (signal_type IN ('analog', 'digital')),
+  signal_direction VARCHAR(20) NOT NULL CHECK (signal_direction IN ('input', 'output')),
+  requirement_rule VARCHAR(30) NOT NULL DEFAULT 'optional'
+    CHECK (requirement_rule IN ('optional', 'mandatory', 'pump_linked')),
+  default_control_logic TEXT,
+  default_range_min NUMERIC,
+  default_range_max NUMERIC,
+  default_unit VARCHAR(50),
+  allow_range_override BOOLEAN NOT NULL DEFAULT true,
+  default_calibration_required BOOLEAN NOT NULL DEFAULT false,
+  default_calibration_interval_days INTEGER CHECK (default_calibration_interval_days IS NULL OR default_calibration_interval_days > 0),
+  default_calibration_procedure TEXT,
+  default_datasheet_reference TEXT,
+  allow_calibration_override BOOLEAN NOT NULL DEFAULT true,
+  default_product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS design_book_lss_controls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  panel_type VARCHAR(10) NOT NULL CHECK (panel_type IN ('GPO', 'PLC')),
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id)
+);
+CREATE TABLE IF NOT EXISTS design_book_lss_instruments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  definition_id UUID REFERENCES field_instrument_definitions(id) ON DELETE SET NULL,
+  tag VARCHAR(100) NOT NULL,
+  sequence_number INTEGER NOT NULL CHECK (sequence_number BETWEEN 1 AND 99),
+  control_logic TEXT,
+  range_min NUMERIC,
+  range_max NUMERIC,
+  unit VARCHAR(50),
+  calibration_required BOOLEAN NOT NULL DEFAULT false,
+  calibration_interval_days INTEGER CHECK (calibration_interval_days IS NULL OR calibration_interval_days > 0),
+  calibration_procedure TEXT,
+  datasheet_reference TEXT,
+  product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
+  definition_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  product_snapshot JSONB,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(design_book_id, system_id, tag),
+  UNIQUE(design_book_id, system_id, definition_id, sequence_number)
+);
+CREATE INDEX IF NOT EXISTS idx_design_book_lss_instruments_system
+  ON design_book_lss_instruments(design_book_id, system_id);
+DROP TRIGGER IF EXISTS guard_released_design_book_lss_controls ON design_book_lss_controls;
+CREATE TRIGGER guard_released_design_book_lss_controls
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_lss_controls
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+DROP TRIGGER IF EXISTS guard_released_design_book_lss_instruments ON design_book_lss_instruments;
+CREATE TRIGGER guard_released_design_book_lss_instruments
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_lss_instruments
+FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
+-- The CREATE TABLE clauses cover clean installs; these preserve the new
+-- governed/default evidence fields for databases upgraded from task 242.
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_control_logic TEXT;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS control_logic TEXT;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_range_min NUMERIC;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_range_max NUMERIC;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_unit VARCHAR(50);
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS allow_range_override BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_calibration_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_calibration_interval_days INTEGER;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_calibration_procedure TEXT;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_datasheet_reference TEXT;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS allow_calibration_override BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS range_min NUMERIC;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS range_max NUMERIC;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS unit VARCHAR(50);
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS calibration_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS calibration_interval_days INTEGER;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS calibration_procedure TEXT;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS datasheet_reference TEXT;
+ALTER TABLE field_instrument_definitions DROP CONSTRAINT IF EXISTS field_instrument_range_check;
+ALTER TABLE field_instrument_definitions ADD CONSTRAINT field_instrument_range_check
+  CHECK (default_range_min IS NULL OR default_range_max IS NULL OR default_range_min <= default_range_max);
+ALTER TABLE field_instrument_definitions DROP CONSTRAINT IF EXISTS field_instrument_calibration_interval_check;
+ALTER TABLE field_instrument_definitions ADD CONSTRAINT field_instrument_calibration_interval_check
+  CHECK (default_calibration_interval_days IS NULL OR default_calibration_interval_days > 0);
+ALTER TABLE design_book_lss_instruments DROP CONSTRAINT IF EXISTS design_book_lss_instrument_range_check;
+ALTER TABLE design_book_lss_instruments ADD CONSTRAINT design_book_lss_instrument_range_check
+  CHECK (range_min IS NULL OR range_max IS NULL OR range_min <= range_max);
+ALTER TABLE design_book_lss_instruments DROP CONSTRAINT IF EXISTS design_book_lss_instrument_calibration_interval_check;
+ALTER TABLE design_book_lss_instruments ADD CONSTRAINT design_book_lss_instrument_calibration_interval_check
+  CHECK (calibration_interval_days IS NULL OR calibration_interval_days > 0);
+ALTER TABLE field_instrument_definitions
+  DROP CONSTRAINT IF EXISTS field_instrument_definitions_tag_code_check;
+ALTER TABLE field_instrument_definitions
+  ADD CONSTRAINT field_instrument_definitions_tag_code_check
+  CHECK (tag_code ~ '^[A-Za-z0-9-]+$');
+-- Correct the originally seeded all-caps pH code without conflating tag
+-- families: PostgreSQL's unique constraint remains case-sensitive.
+UPDATE field_instrument_definitions SET tag_code='pH'
+WHERE tag_code='PH'
+  AND NOT EXISTS (SELECT 1 FROM field_instrument_definitions WHERE tag_code='pH');
+UPDATE field_instrument_definitions SET name='High level float switch' WHERE tag_code='FLS-HL';
+UPDATE field_instrument_definitions SET name='Low level float switch' WHERE tag_code='FLS-LL';
+UPDATE field_instrument_definitions SET name='Additional float level switch' WHERE tag_code='FLS';
+UPDATE field_instrument_definitions SET name='Pressure sensor' WHERE tag_code='PS';
+INSERT INTO field_instrument_definitions
+  (name, tag_code, signal_type, signal_direction, requirement_rule, default_control_logic, sort_order)
+VALUES
+  ('Flow Switch', 'FS', 'digital', 'input', 'pump_linked', 'Prove pump flow; alarm and inhibit the associated pump on loss of flow.', 10),
+  ('High level float switch', 'FLS-HL', 'digital', 'input', 'optional', NULL, 20),
+  ('Low level float switch', 'FLS-LL', 'digital', 'input', 'optional', NULL, 30),
+  ('Additional float level switch', 'FLS', 'digital', 'input', 'optional', NULL, 40),
+  ('Temperature Sensor', 'TS', 'analog', 'input', 'optional', NULL, 50),
+  ('pH Sensor', 'pH', 'analog', 'input', 'optional', NULL, 60),
+  ('ORP Sensor', 'ORP', 'analog', 'input', 'optional', NULL, 70),
+  ('Pressure sensor', 'PS', 'digital', 'input', 'optional', NULL, 80),
+  ('Flow Meter', 'FM', 'analog', 'input', 'optional', NULL, 90),
+  ('3-way Electric Ball Valve', '3EBV', 'digital', 'output', 'optional', NULL, 100),
+  ('2-way Ball Valve', '2BV', 'digital', 'output', 'optional', NULL, 110),
+  ('Ultrasonic Level Sensor', 'ULS', 'analog', 'input', 'optional', NULL, 120),
+  ('Conductivity Sensor', 'CON', 'analog', 'input', 'optional', NULL, 130),
+  ('Dissolved Oxygen Sensor', 'DO', 'analog', 'input', 'optional', NULL, 140),
+  ('Water Leak Detector', 'WLD', 'digital', 'input', 'optional', NULL, 150),
+  ('Ozone Detector', 'O3D', 'analog', 'input', 'optional', NULL, 160)
+ON CONFLICT (tag_code) DO NOTHING;
+UPDATE field_instrument_definitions
+SET default_control_logic='Prove pump flow; alarm and inhibit the associated pump on loss of flow.'
+WHERE tag_code='FS' AND requirement_rule='pump_linked'
+  AND NULLIF(BTRIM(default_control_logic),'') IS NULL;
+
+-- Governed nominal water-density design parameters.  These values are managed
+-- only through Platform Administration and deliberately remain a compact,
+-- controlled water-type set.
+CREATE TABLE IF NOT EXISTS water_density_parameters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  water_type VARCHAR(20) NOT NULL UNIQUE
+    CHECK (water_type IN ('Freshwater', 'Brackish', 'Seawater')),
+  density_kg_m3 NUMERIC(10,3) NOT NULL CHECK (density_kg_m3 > 0),
+  conditions TEXT NOT NULL,
+  unit VARCHAR(20) NOT NULL DEFAULT 'kg/m3' CHECK (unit = 'kg/m3'),
+  source TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+INSERT INTO water_density_parameters
+  (water_type, density_kg_m3, conditions, unit, source, is_active)
+VALUES
+  ('Freshwater', 998.2, '20 °C; practical salinity 0 PSU', 'kg/m3',
+   'NIST Chemistry WebBook, thermophysical properties of water', true),
+  ('Brackish', 1011.0, '20 °C; practical salinity 15 PSU', 'kg/m3',
+   'UNESCO (1983), Algorithms for computation of fundamental properties of seawater', true),
+  ('Seawater', 1024.8, '20 °C; practical salinity 35 PSU', 'kg/m3',
+   'UNESCO (1983), Algorithms for computation of fundamental properties of seawater', true)
+ON CONFLICT (water_type) DO NOTHING;
 `;
 async function migrate() {
     const client = await index_1.default.connect();
     try {
         console.log('Running migrations...');
         await client.query(schema);
+        const movedDocumentFiles = await (0, documentFileMigration_1.migrateLegacyDocumentFiles)(client);
+        console.log(`Private document files ready (${movedDocumentFiles} legacy files moved).`);
         const adminResult = await client.query(`SELECT id FROM users WHERE role='admin' ORDER BY created_at, id LIMIT 1`);
         const seededTanProfiles = await (0, biologicalMediaSeed_1.seedTanGenerationProfiles)(client, adminResult.rows[0]?.id ?? null);
         console.log(`Biological Media TAN profiles ready (${seededTanProfiles} starter records added).`);

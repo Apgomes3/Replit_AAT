@@ -3,6 +3,24 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const biologicalMediaCalculations_1 = require("./biologicalMediaCalculations");
+(0, vitest_1.describe)('AAT Core Foundation engine', () => {
+    vitest_1.it.each([
+        ['large warm marine', 120, 24, 'Marine', 2.25, 2.7],
+        ['small warm marine', 100, 24, 'Marine', 3, 3],
+        ['warm freshwater', 120, 24, 'Freshwater', 3.5, 4.2],
+        ['cold marine override', 120, 17.9, 'Marine', 4, 4.8],
+        ['cold freshwater override', 20, 17.9, 'Freshwater', 4, 0.8],
+    ])('sizes %s from net volume', (_label, volume, temperature, waterType, percentage, expectedM3) => {
+        const result = (0, biologicalMediaCalculations_1.calculateAatCoreFoundation)({
+            calculation_engine: 'AAT_CORE',
+            biomass: { water_volume_m3: volume },
+            water: { temperature_c: temperature, water_type: waterType },
+        });
+        (0, vitest_1.expect)(result.status).toBe('VALID');
+        (0, vitest_1.expect)(result.media.foundation_percentage).toBeCloseTo(percentage);
+        (0, vitest_1.expect)(result.media.required_media_m3).toBeCloseTo(expectedM3);
+    });
+});
 const mediaProfile = {
     id: 'media-1',
     profile_code: 'BASSPRO-90',
@@ -61,6 +79,12 @@ const bassProInput = {
     },
 };
 (0, vitest_1.describe)('Biological Media deterministic preview calculations', () => {
+    (0, vitest_1.it)('matches saltwater profiles to legacy Marine system values', () => {
+        const result = (0, biologicalMediaCalculations_1.calculateBiologicalMediaPreview)(bassProInput, { mediaProfile: { ...mediaProfile, water_types: ['Saltwater'] }, tanProfile });
+        (0, vitest_1.expect)(result.messages).not.toEqual(vitest_1.expect.arrayContaining([
+            vitest_1.expect.objectContaining({ code: 'PROFILE_001', field: 'water.water_type' }),
+        ]));
+    });
     (0, vitest_1.it)('matches the BassPro design benchmark without converting TAN-N mass basis', () => {
         const result = (0, biologicalMediaCalculations_1.calculateBiologicalMediaPreview)(bassProInput, { mediaProfile, tanProfile });
         (0, vitest_1.expect)(result.biomass.design_biomass_kg).toBeCloseTo(14.94, 12);

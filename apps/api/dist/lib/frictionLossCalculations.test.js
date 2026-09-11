@@ -4,8 +4,6 @@ const vitest_1 = require("vitest");
 const frictionLossCalculations_1 = require("./frictionLossCalculations");
 const pump = { id: 'pump-1', project_equipment_item_id: 'pump-1', equip_code: 'P-101' };
 const pipe = {
-    project_piping_item_id: 'pipe-1',
-    piping_snapshot: { piping_code: 'PIPE-1' },
     component_kind: 'pipe',
     internal_diameter_mm: 100,
     straight_length_m: 10,
@@ -13,18 +11,21 @@ const pipe = {
     absolute_roughness_mm: 0.0015,
 };
 const fitting = {
-    project_piping_item_id: 'fit-1',
-    piping_snapshot: { piping_code: 'FIT-1' },
     component_kind: 'fitting',
     internal_diameter_mm: 100,
     fitting_k_value: 0.9,
     quantity: 2,
+};
+const tankBoundaries = {
+    start: { tank_id: 'tank-1', base_elevation_fl0_m: 0, water_depth_m: 3, pump_draw_height_m: 0.5, open_to_atmosphere: true, atmospheric_pressure_kpa: 101.325, water_temperature_c: 20, npsh_safety_margin_m: 0.5 },
+    end: { tank_id: 'tank-2', base_elevation_fl0_m: 5, water_depth_m: 2, open_to_atmosphere: true },
 };
 (0, vitest_1.describe)('calculateFrictionLoss', () => {
     (0, vitest_1.it)('calculates separate Darcy-Weisbach and K-value side totals', () => {
         const result = (0, frictionLossCalculations_1.calculateFrictionLoss)({
             flow_m3h: 36,
             selected_pump: pump,
+            tank_boundaries: tankBoundaries,
             components: [
                 { ...pipe, side: 'suction' },
                 { ...fitting, side: 'discharge' },
@@ -39,6 +40,8 @@ const fitting = {
         (0, vitest_1.expect)(result.side_totals.discharge.minor_head_loss_m).toBeGreaterThan(0);
         (0, vitest_1.expect)(result.results.combined_head_loss_m).toBeCloseTo(result.side_totals.suction.total_head_loss_m + result.side_totals.discharge.total_head_loss_m, 5);
         (0, vitest_1.expect)(result.results.combined_pressure_drop_kpa).toBeGreaterThan(0);
+        (0, vitest_1.expect)(result.results.static_head_m).toBe(4);
+        (0, vitest_1.expect)(result.results.total_dynamic_head_m).toBeCloseTo(result.results.combined_head_loss_m + 4, 5);
     });
     (0, vitest_1.it)('returns specific readiness reasons instead of zero defaults', () => {
         const result = (0, frictionLossCalculations_1.calculateFrictionLoss)({
@@ -59,6 +62,7 @@ const fitting = {
         const result = (0, frictionLossCalculations_1.calculateFrictionLoss)({
             flow_m3h: 10,
             selected_pump: pump,
+            tank_boundaries: tankBoundaries,
             components: [
                 { ...fitting, side: 'suction', quantity: 0 },
                 { ...fitting, side: 'discharge', fitting_k_value: null },
@@ -67,5 +71,63 @@ const fitting = {
         (0, vitest_1.expect)(result.status).toBe('incomplete');
         (0, vitest_1.expect)(result.reasons.some(reason => reason.includes('quantity must be greater than zero'))).toBe(true);
         (0, vitest_1.expect)(result.reasons.some(reason => reason.includes('K-value must be zero or greater'))).toBe(true);
+    });
+    (0, vitest_1.it)('uses free surfaces for static head and keeps pump draw height out of TDH', () => {
+        const first = (0, frictionLossCalculations_1.calculateFrictionLoss)({
+            flow_m3h: 36, selected_pump: pump, tank_boundaries: tankBoundaries,
+            components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+        });
+        const second = (0, frictionLossCalculations_1.calculateFrictionLoss)({
+            flow_m3h: 36, selected_pump: pump,
+            tank_boundaries: { ...tankBoundaries, start: { ...tankBoundaries.start, pump_draw_height_m: 2.5 } },
+            components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+        });
+        (0, vitest_1.expect)(first.results.static_head_m).toBe(4);
+        (0, vitest_1.expect)(second.results.static_head_m).toBe(4);
+        (0, vitest_1.expect)(second.results.total_dynamic_head_m).toBe(first.results.total_dynamic_head_m);
+    });
+    (0, vitest_1.it)('calculates NPSH available at the draw point without changing static head', () => {
+        const result = (0, frictionLossCalculations_1.calculateFrictionLoss)({
+            flow_m3h: 36,
+            selected_pump: { ...pump, npsh_required_m: 2 },
+            tank_boundaries: tankBoundaries,
+            components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+        });
+        (0, vitest_1.expect)(result.results.npsh_status).toBe('pass');
+        (0, vitest_1.expect)(result.results.npsh_available_m).toBeGreaterThan(2);
+        (0, vitest_1.expect)(result.results.npsh_required_m).toBe(2);
+        (0, vitest_1.expect)(result.results.npsh_inputs.suction_loss_m).toBe(result.side_totals.suction.total_head_loss_m);
+        (0, vitest_1.expect)(result.results.static_head_m).toBe(4);
+    });
+    (0, vitest_1.it)('blocks a selected pump when governed NPSH required exceeds available head', () => {
+        const result = (0, frictionLossCalculations_1.calculateFrictionLoss)({
+            flow_m3h: 36,
+            selected_pump: { ...pump, npsh_required_m: 20 },
+            tank_boundaries: tankBoundaries,
+            components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+        });
+        (0, vitest_1.expect)(result.results.npsh_status).toBe('blocked');
+        (0, vitest_1.expect)(result.status).toBe('ready');
+        (0, vitest_1.expect)(result.reasons).not.toContain(vitest_1.expect.stringContaining('NPSH available'));
+    });
+    (0, vitest_1.it)('warns when the pump has no governed NPSH-required evidence', () => {
+        const result = (0, frictionLossCalculations_1.calculateFrictionLoss)({
+            flow_m3h: 36,
+            selected_pump: pump,
+            tank_boundaries: tankBoundaries,
+            components: [{ ...pipe, side: 'suction' }, { ...fitting, side: 'discharge' }],
+        });
+        (0, vitest_1.expect)(result.results.npsh_status).toBe('warning');
+        (0, vitest_1.expect)(result.status).toBe('ready');
+    });
+});
+(0, vitest_1.describe)('evaluateNpshSuitability', () => {
+    (0, vitest_1.it)('applies the governed comparison consistently to catalog candidates', () => {
+        (0, vitest_1.expect)((0, frictionLossCalculations_1.evaluateNpshSuitability)(4.5, 3)).toEqual({
+            status: 'pass', npsh_available_m: 4.5, npsh_required_m: 3, npsh_margin_m: 1.5,
+        });
+        (0, vitest_1.expect)((0, frictionLossCalculations_1.evaluateNpshSuitability)(4.5, null).status).toBe('warning');
+        (0, vitest_1.expect)((0, frictionLossCalculations_1.evaluateNpshSuitability)(4.5, 5).status).toBe('blocked');
+        (0, vitest_1.expect)((0, frictionLossCalculations_1.evaluateNpshSuitability)(null, 3).status).toBe('blocked');
     });
 });

@@ -121,8 +121,8 @@ function request(app, token, body) {
         });
         (0, vitest_1.expect)(response.status).toBe(200);
         const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'));
-        (0, vitest_1.expect)(call.sql).toContain('CASE WHEN $15');
-        (0, vitest_1.expect)(call.params.slice(13, 20)).toEqual([false, false, false, false, false, false, false]);
+        (0, vitest_1.expect)(call.sql).toContain('CASE WHEN $23');
+        (0, vitest_1.expect)(call.params.slice(19, 29)).toEqual([false, false, false, false, false, false, false, false, false, false]);
     });
     (0, vitest_1.it)('updates all Francis basis fields when they are explicitly supplied', async () => {
         const response = await request(app, token, {
@@ -139,7 +139,7 @@ function request(app, token, body) {
         });
         (0, vitest_1.expect)(response.status).toBe(200);
         const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'));
-        (0, vitest_1.expect)(call.params.slice(13, 20)).toEqual([true, true, true, true, true, true, true]);
+        (0, vitest_1.expect)(call.params.slice(22, 29)).toEqual([true, true, true, true, true, true, true]);
     });
     (0, vitest_1.it)('accepts the Bazin alternative as an explicit saved method', async () => {
         const response = await request(app, token, {
@@ -164,6 +164,6 @@ function request(app, token, body) {
         (0, vitest_1.expect)(response.status).toBe(200);
         const call = state.calls.find(call => call.sql.includes('INSERT INTO design_book_exhibit_hydraulics'));
         (0, vitest_1.expect)(call.params[8]).toBeNull();
-        (0, vitest_1.expect)(call.params[15]).toBe(true);
+        (0, vitest_1.expect)(call.params[24]).toBe(true);
     });
 });

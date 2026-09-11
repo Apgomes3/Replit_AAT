@@ -216,6 +216,29 @@ function post(app, token) {
         (0, vitest_1.expect)(reclassifiedTds.body.revision.source_snapshot.specifications.pneumatic).toBeNull();
         (0, vitest_1.expect)(reclassifiedTds.body.revision.content.sections.pneumatic).toBeNull();
     });
+    (0, vitest_1.it)('freezes tank classification and engineering requirements into the TDS', async () => {
+        state.product.product_category = 'Tank';
+        state.product.product_description = 'FRP process tank';
+        state.product.tank_classification = 'Cylindrical atmospheric FRP tank';
+        state.product.tank_engineering_details = {
+            construction_type: 'FRP',
+            fabrication_method: 'Filament wound',
+            service_medium: 'Seawater',
+            max_operating_pressure_bar: 0.5,
+            proposed_design_standard: 'ASTM D3299',
+            required_astm_tests: 'Hydrostatic and laminate coupon tests',
+            certification_inspection_requirements: 'Third-party final inspection',
+        };
+        const response = await post(app, token);
+        (0, vitest_1.expect)(response.body.revision.content.sections.classification.tank_classification)
+            .toBe('Cylindrical atmospheric FRP tank');
+        (0, vitest_1.expect)(response.body.revision.content.sections.tank_engineering).toMatchObject({
+            service_medium: 'Seawater',
+            proposed_design_standard: 'ASTM D3299',
+        });
+        (0, vitest_1.expect)(response.body.revision.source_snapshot.product.tank_engineering_details.required_astm_tests)
+            .toContain('Hydrostatic');
+    });
     (0, vitest_1.it)('regenerates an editable draft in place without creating a duplicate document or revision', async () => {
         const initial = await post(app, token);
         state.product.product_name = 'Updated Circulation Pump';

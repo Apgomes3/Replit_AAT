@@ -14,7 +14,7 @@ describe('reviewed species catalog artifact', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(SPECIES_CATALOG_ARTIFACT.status).toBe('reviewed');
-    expect(SPECIES_CATALOG_ARTIFACT.version).toBe(3);
+    expect(SPECIES_CATALOG_ARTIFACT.version).toBe(4);
     expect(records).toHaveLength(SPECIES_CATALOG_STAGE_ONE_SIZE);
     expect(new Set(records.map(record => record.scientific_name.toLowerCase())).size).toBe(records.length);
     fetchSpy.mockRestore();
@@ -61,6 +61,39 @@ describe('reviewed species catalog artifact', () => {
       expect(record.average_size_cm).toBeGreaterThan(0);
       expect(record.reference_average_mass_kg).toBeGreaterThan(0);
       expect(record.source).toMatch(/provisional/i);
+    }
+  });
+
+  it('covers the reviewed freshwater lake expansion with complete planning provenance', async () => {
+    const records = await loadSpeciesCatalogStageOne();
+    const expectedNames = [
+      'Cyprinus carpio',
+      'Micropterus salmoides',
+      'Oncorhynchus mykiss',
+      'Esox lucius',
+      'Perca fluviatilis',
+      'Lepomis macrochirus',
+      'Sander vitreus',
+      'Pomoxis nigromaculatus',
+      'Ictalurus punctatus',
+    ];
+    const freshwaterLake = records.filter(record => expectedNames.includes(record.scientific_name));
+    const koi = records.find(record => record.scientific_name === 'Cyprinus carpio');
+
+    expect(freshwaterLake.map(record => record.scientific_name)).toEqual(expect.arrayContaining(expectedNames));
+    expect(koi).toEqual(expect.objectContaining({
+      common_name: 'Koi Fish',
+      family: 'Cyprinidae',
+      water_type: 'Freshwater',
+    }));
+    for (const record of freshwaterLake) {
+      expect(record.water_type).toBe('Freshwater');
+      expect(record.common_name).toBeTruthy();
+      expect(record.average_size_cm).toBeGreaterThan(0);
+      expect(record.reference_average_mass_kg).toBeGreaterThan(0);
+      expect(record.source).toMatch(/GBIF Backbone Taxonomy/);
+      expect(record.source).toMatch(/provisional/i);
+      expect(record.source).toMatch(/verify before design use/i);
     }
   });
 

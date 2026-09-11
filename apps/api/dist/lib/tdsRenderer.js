@@ -45,7 +45,7 @@ const contentLines = (content, document, revision) => {
     addFields('Classification', sections.classification);
     addFields('Engineering values', sections.engineering_values);
     addFields('Materials', sections.materials);
-    ['dimensions', 'electrical', 'hydraulic', 'pneumatic'].forEach(key => {
+    ['dimensions', 'electrical', 'hydraulic', 'pneumatic', 'tank_engineering'].forEach(key => {
         addFields(labelFor(key), sections[key]);
     });
     const classifiers = sections.classification?.classifier_values;

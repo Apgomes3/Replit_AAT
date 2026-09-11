@@ -43,7 +43,7 @@ async function waitForServer() {
     await db.end();
 });
 (0, vitest_1.describe)('compiled species catalog runtime', () => {
-    (0, vitest_1.it)('serves active shark and pelagic records through search and family facets', async () => {
+    (0, vitest_1.it)('serves active reviewed expansions through search and family and water-type facets', async () => {
         const admin = (await db.query(`SELECT id,email,role FROM users WHERE email='admin@edp.com'`)).rows[0];
         const auth = (user) => ({
             authorization: `Bearer ${jsonwebtoken_1.default.sign(user, process.env.JWT_SECRET || 'edp-secret-change-in-production')}`,
@@ -80,6 +80,20 @@ async function waitForServer() {
                     active: true,
                 }),
             ]));
+            const koiSearch = await fetch(`${baseUrl}/species-catalog?q=Koi&limit=12`, {
+                headers: auth(admin),
+            });
+            const koiPayload = await koiSearch.json();
+            (0, vitest_1.expect)(koiSearch.status).toBe(200);
+            (0, vitest_1.expect)(koiPayload.items).toEqual(vitest_1.expect.arrayContaining([
+                vitest_1.expect.objectContaining({
+                    scientific_name: 'Cyprinus carpio',
+                    common_name: 'Koi Fish',
+                    family: 'Cyprinidae',
+                    water_type: 'Freshwater',
+                    active: true,
+                }),
+            ]));
             const inactiveSearch = await fetch(`${baseUrl}/species-catalog?q=${encodeURIComponent(inactiveName)}&limit=12`, { headers: auth(admin) });
             (0, vitest_1.expect)((await inactiveSearch.json()).items).toHaveLength(0);
             const inactiveIncluded = await fetch(`${baseUrl}/species-catalog?q=${encodeURIComponent(inactiveName)}&include_inactive=true&limit=12`, { headers: auth(admin) });
@@ -93,9 +107,14 @@ async function waitForServer() {
                 vitest_1.expect.objectContaining({ family: 'Carangidae' }),
                 vitest_1.expect.objectContaining({ family: 'Scombridae' }),
                 vitest_1.expect.objectContaining({ family: 'Rhincodontidae' }),
+                vitest_1.expect.objectContaining({ family: 'Cyprinidae' }),
+                vitest_1.expect.objectContaining({ family: 'Centrarchidae' }),
+                vitest_1.expect.objectContaining({ family: 'Percidae' }),
+                vitest_1.expect.objectContaining({ family: 'Salmonidae' }),
             ]));
             (0, vitest_1.expect)(facetsPayload.water_types).toEqual(vitest_1.expect.arrayContaining([
                 vitest_1.expect.objectContaining({ water_type: 'Marine' }),
+                vitest_1.expect.objectContaining({ water_type: 'Freshwater' }),
             ]));
         }
         finally {

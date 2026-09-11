@@ -44,11 +44,14 @@ const systemLifecycle_1 = require("../lib/systemLifecycle");
 const router = (0, express_1.Router)();
 router.use(auth_1.authenticate, (0, auth_1.requireModuleAccess)('design_books'));
 const routeParam = (value) => Array.isArray(value) ? value[0] : value;
+const nullableNumeric = (value) => value === '' || value === null || value === undefined ? null : value;
 async function pumpCandidates(runner, projectId, systemId) {
     return (await runner(`SELECT pei.id, pei.id AS project_equipment_item_id, pei.equip_code, pei.description,
-            pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model
+            pm.id AS product_master_id, pm.product_code, pm.product_name, pm.manufacturer, pm.model,
+            ph.npsh_required_m
      FROM project_equipment_items pei
      JOIN product_masters pm ON pm.id=pei.product_master_id
+     LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
      LEFT JOIN product_families pf ON pf.id=pm.product_family_id
      WHERE pei.project_id=$1 AND pei.system_id=$2
        AND (pm.status IS NULL OR pm.status='Active')
@@ -62,15 +65,6 @@ async function pumpCandidates(runner, projectId, systemId) {
                   OR UPPER(pm.product_name) LIKE '%PUMP%'))
        )
      ORDER BY pei.equip_code`, [projectId, systemId])).rows;
-}
-async function pipingCandidates(runner, projectId, systemId) {
-    return (await runner(`SELECT ppi.id, ppi.id AS project_piping_item_id, ppi.piping_code, ppi.description,
-            ppi.quantity AS project_quantity, ppi.unit, ppi.system_id,
-            pm.id AS product_master_id, pm.product_code, pm.product_name, pm.application_type
-     FROM project_piping_items ppi
-     LEFT JOIN product_masters pm ON pm.id=ppi.product_master_id
-     WHERE ppi.project_id=$1 AND ppi.system_id=$2
-     ORDER BY ppi.piping_code`, [projectId, systemId])).rows;
 }
 router.get('/design-books/:bookId/friction-loss', async (req, res) => {
     const frozenResult = await (0, db_1.query)('SELECT status, review_snapshot, release_snapshot FROM design_books WHERE id=$1', [req.params.bookId]);
@@ -101,7 +95,7 @@ router.get('/design-books/:bookId/friction-loss/:systemId', async (req, res) => 
         const item = (snapshot.friction_loss_calculations || []).find((entry) => entry.system_id === systemId);
         if (!item)
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'LSS system not found in frozen Design Book package' } });
-        return res.json({ ...item, pump_candidates: [], piping_candidates: [], frozen: true });
+        return res.json({ ...item, pump_candidates: [], frozen: true });
     }
     const context = await (0, designBooks_1.loadReleaseContext)(String(req.params.bookId), db_1.query, false, false);
     if (!context)
@@ -113,7 +107,10 @@ router.get('/design-books/:bookId/friction-loss/:systemId', async (req, res) => 
     res.json({
         ...item,
         pump_candidates: frozen ? [] : await pumpCandidates(db_1.query, context.project_id, systemId),
-        piping_candidates: frozen ? [] : await pipingCandidates(db_1.query, context.project_id, systemId),
+        tank_candidates: frozen ? [] : (context.tanks || []).map((tank) => ({
+            id: tank.id, tank_code: tank.tank_code, tank_name: tank.tank_name,
+            design_water_level_mm: tank.design_water_level_mm, height_mm: tank.height_mm,
+        })),
         frozen,
     });
 });
@@ -157,48 +154,65 @@ router.put('/design-books/:bookId/friction-loss/:systemId', (0, auth_1.requireRo
             await client.query('ROLLBACK');
             return res.status(400).json({ error: { code: 'PUMP_SELECTION_NOT_READY', message: 'Select and recalculate the pump for this exact Flow Route circuit before calculating friction loss.' } });
         }
-        const piping = await pipingCandidates(runner, context.project_id, system.id);
         const requestedComponents = Array.isArray(req.body.components) ? req.body.components : [];
-        const components = requestedComponents.map((component, index) => {
-            const source = piping.find((entry) => entry.project_piping_item_id === component.project_piping_item_id);
-            if (!source)
-                return null;
-            return {
-                project_piping_item_id: source.project_piping_item_id,
-                piping_snapshot: source,
-                side: component.side,
-                component_kind: component.component_kind,
-                sort_order: index,
-                internal_diameter_mm: component.internal_diameter_mm,
-                straight_length_m: component.straight_length_m,
-                material: component.material,
-                absolute_roughness_mm: component.absolute_roughness_mm,
-                fitting_k_value: component.fitting_k_value,
-                quantity: component.quantity,
-            };
-        });
-        if (components.some((component) => !component)) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: { code: 'INELIGIBLE_PIPING_ITEM', message: 'Every pipe or fitting must be assigned to this project and LSS system.' } });
-        }
+        const components = requestedComponents.map((component, index) => ({
+            project_piping_item_id: null,
+            piping_snapshot: null,
+            side: component.side,
+            component_kind: component.component_kind,
+            sort_order: index,
+            internal_diameter_mm: nullableNumeric(component.internal_diameter_mm),
+            straight_length_m: nullableNumeric(component.straight_length_m),
+            material: component.material,
+            absolute_roughness_mm: nullableNumeric(component.absolute_roughness_mm),
+            fitting_k_value: nullableNumeric(component.fitting_k_value),
+            quantity: nullableNumeric(component.quantity),
+        }));
         const calculatedAt = new Date().toISOString();
+        const findTank = (id) => (context.tanks || []).find((tank) => tank.id === id);
+        const requestedBoundaries = req.body.tank_boundaries || {};
+        const startTank = findTank(requestedBoundaries.start?.tank_id);
+        const endTank = findTank(requestedBoundaries.end?.tank_id);
+        const tankBoundaries = {
+            start: {
+                tank_id: startTank?.id || null,
+                tank_snapshot: startTank ? { tank_id: startTank.id, tank_code: startTank.tank_code, tank_name: startTank.tank_name } : null,
+                base_elevation_fl0_m: requestedBoundaries.start?.base_elevation_fl0_m,
+                water_depth_m: requestedBoundaries.start?.water_depth_m,
+                pump_draw_height_m: requestedBoundaries.start?.pump_draw_height_m,
+                open_to_atmosphere: requestedBoundaries.start?.open_to_atmosphere !== false,
+                gauge_pressure_kpa: requestedBoundaries.start?.open_to_atmosphere === false ? requestedBoundaries.start?.gauge_pressure_kpa : 0,
+                atmospheric_pressure_kpa: requestedBoundaries.start?.atmospheric_pressure_kpa ?? frictionLossCalculations_1.STANDARD_ATMOSPHERIC_PRESSURE_KPA,
+                water_temperature_c: requestedBoundaries.start?.water_temperature_c ?? frictionLossCalculations_1.DEFAULT_WATER_TEMPERATURE_C,
+                npsh_safety_margin_m: requestedBoundaries.start?.npsh_safety_margin_m ?? frictionLossCalculations_1.DEFAULT_NPSH_SAFETY_MARGIN_M,
+            },
+            end: {
+                tank_id: endTank?.id || null,
+                tank_snapshot: endTank ? { tank_id: endTank.id, tank_code: endTank.tank_code, tank_name: endTank.tank_name } : null,
+                base_elevation_fl0_m: requestedBoundaries.end?.base_elevation_fl0_m,
+                water_depth_m: requestedBoundaries.end?.water_depth_m,
+                open_to_atmosphere: requestedBoundaries.end?.open_to_atmosphere !== false,
+                gauge_pressure_kpa: requestedBoundaries.end?.open_to_atmosphere === false ? requestedBoundaries.end?.gauge_pressure_kpa : 0,
+            },
+        };
         const calculation = (0, frictionLossCalculations_1.calculateFrictionLoss)({
             flow_m3h: circuit.flow_m3h,
             selected_pump: selectedPump,
             components,
+            tank_boundaries: tankBoundaries,
             calculated_at: calculatedAt,
         });
         if (calculation.status !== 'ready') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: { code: 'VALIDATION', message: calculation.reasons.join(' '), reasons: calculation.reasons } });
         }
-        const sourceSnapshot = (0, frictionLossCalculations_1.frictionSourceSnapshot)(circuit, selectedPump, components);
+        const sourceSnapshot = (0, frictionLossCalculations_1.frictionSourceSnapshot)(circuit, selectedPump, components, tankBoundaries);
         const sourceFingerprint = (0, frictionLossCalculations_1.frictionSourceFingerprint)(sourceSnapshot);
         const saved = await runner(`INSERT INTO design_book_friction_loss_calculations
          (design_book_id, system_id, circuit_key, project_equipment_item_id,
           calculation_version, status, freshness, source_fingerprint,
           source_snapshot, input_snapshot, result_snapshot, calculated_by, calculated_at)
-       VALUES ($1,$2,$3,$4,$5,'Ready','fresh',$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11)
+       VALUES ($1,$2,$3,$4,$5,$6,'fresh',$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12)
        ON CONFLICT (design_book_id, system_id, circuit_key) DO UPDATE SET
          project_equipment_item_id=EXCLUDED.project_equipment_item_id,
          calculation_version=EXCLUDED.calculation_version, status=EXCLUDED.status,
@@ -208,8 +222,12 @@ router.put('/design-books/:bookId/friction-loss/:systemId', (0, auth_1.requireRo
          calculated_at=EXCLUDED.calculated_at, updated_at=NOW()
        RETURNING *`, [
             context.id, system.id, circuit.circuit_key, selectedPump.project_equipment_item_id,
-            frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION, sourceFingerprint, JSON.stringify(sourceSnapshot),
-            JSON.stringify({ flow_m3h: circuit.flow_m3h, components }),
+            frictionLossCalculations_1.FRICTION_LOSS_CALCULATION_VERSION,
+            calculation.results.npsh_status === 'blocked'
+                ? 'Blocked'
+                : calculation.results.npsh_status === 'warning' ? 'Warning' : 'Ready',
+            sourceFingerprint, JSON.stringify(sourceSnapshot),
+            JSON.stringify({ flow_m3h: circuit.flow_m3h, components, tank_boundaries: tankBoundaries }),
             JSON.stringify(calculation), req.user.id, calculatedAt,
         ]);
         await runner('DELETE FROM design_book_friction_loss_components WHERE calculation_id=$1', [saved.rows[0].id]);

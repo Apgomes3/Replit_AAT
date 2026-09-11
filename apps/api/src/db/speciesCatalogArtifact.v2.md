@@ -1,4 +1,4 @@
-# Species catalog v2 and v3 review summary
+# Species catalog v2–v4 review summary
 
 ## Reviewed scope
 
@@ -59,17 +59,33 @@ limits, legal/conservation assessments, or final engineering design values.
 Engineers must verify each value against institution-approved references before
 design use.
 
+Version 4 is an additive collection of 20 commonly planned freshwater lake
+fish. It includes koi and other carp, largemouth and smallmouth bass, white
+bass, brown/rainbow/lake trout, northern pike and muskellunge, European and
+yellow perch, bluegill and pumpkinseed sunfish, walleye, black and white
+crappie, channel catfish, and brown bullhead. This is a representative planning
+collection rather than an attempt to catalog every freshwater or lake species.
+
+Scientific names and family placement use accepted species identities from the
+GBIF Backbone Taxonomy, with common names reviewed against freshwater fisheries
+and public-aquarium reference usage. All v4 records use `Freshwater` as their
+planning classification. Their positive size and mass values are provisional
+adult-scale planning references, not final engineering limits or husbandry,
+welfare, conservation, or legal guidance. Institution-approved references must
+be checked before design use.
+
 ## Import and history policy
 
-`speciesCatalogArtifact.v2.json` and `speciesCatalogArtifact.v3.json` are
-additive, reviewed artifacts layered on the immutable v1 artifact. Normal setup
-loads all three artifacts without a network request. Inserts use conflict-ignore
+`speciesCatalogArtifact.v2.json`, `speciesCatalogArtifact.v3.json`, and
+`speciesCatalogArtifact.v4.json` are additive, reviewed artifacts layered on
+the immutable v1 artifact. Normal setup loads all four artifacts without a
+network request. Inserts use conflict-ignore
 semantics, so repeat setup is idempotent; existing catalog rows and
 snapshot-backed exhibit allocations are not updated or deleted. Corrections
 remain available through the existing catalog maintenance workflow and do not
 rewrite captured allocation values. The unique case-insensitive scientific-name
 index prevents duplicate identities across artifact versions.
 
-Coverage: 19 penguins and 29 sharks in v2, plus 29 pelagic fish in v3, for 77
-reviewed expansion records. The composed catalog therefore contains 597 records
-when loaded with v1.
+Coverage: 19 penguins and 29 sharks in v2, 29 pelagic fish in v3, and 20
+freshwater lake fish in v4, for 97 reviewed expansion records. The composed
+catalog therefore contains 617 records when loaded with v1.

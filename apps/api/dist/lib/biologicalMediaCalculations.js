@@ -7,8 +7,9 @@
  * normalized input snapshot.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.calculateAmmoniaSpeciation = exports.calculateBiologicalMedia = exports.VALIDATION_TOLERANCE = exports.FEEDING_MODES = exports.BIOMASS_METHODS = exports.BIOLOGICAL_MEDIA_ENGINE_VERSION = void 0;
+exports.calculateAmmoniaSpeciation = exports.calculateBiologicalMedia = exports.VALIDATION_TOLERANCE = exports.FEEDING_MODES = exports.BIOMASS_METHODS = exports.BIOLOGICAL_MEDIA_ENGINES = exports.AAT_CORE_ENGINE_VERSION = exports.BIOLOGICAL_MEDIA_ENGINE_VERSION = void 0;
 exports.normalizeBiologicalMediaInput = normalizeBiologicalMediaInput;
+exports.calculateAatCoreFoundation = calculateAatCoreFoundation;
 exports.calculateBiomass = calculateBiomass;
 exports.calculateFeeding = calculateFeeding;
 exports.calculateAmmonia = calculateAmmonia;
@@ -19,6 +20,8 @@ exports.calculateNitrificationDemand = calculateNitrificationDemand;
 exports.calculateOptionalHydraulics = calculateOptionalHydraulics;
 exports.calculateBiologicalMediaPreview = calculateBiologicalMediaPreview;
 exports.BIOLOGICAL_MEDIA_ENGINE_VERSION = 'BIOFILTER_1_0';
+exports.AAT_CORE_ENGINE_VERSION = 'AAT_CORE_1_0';
+exports.BIOLOGICAL_MEDIA_ENGINES = ['MASS_BALANCE', 'AAT_CORE'];
 exports.BIOMASS_METHODS = ['VOLUME_DENSITY', 'SPECIES_LIST'];
 exports.FEEDING_MODES = ['GLOBAL', 'PER_SPECIES'];
 exports.VALIDATION_TOLERANCE = 0.001;
@@ -69,6 +72,8 @@ function normalizeBiologicalMediaInput(input) {
         ? biomass.species
         : Array.isArray(input?.species_rows) ? input.species_rows : [];
     return {
+        calculation_engine: upper(first(input?.calculation_engine, input?.engine)) || 'MASS_BALANCE',
+        temperature_basis: upper(input?.temperature_basis) || 'LOWEST',
         biomass: {
             method,
             water_volume_m3: finite(first(biomass.water_volume_m3, input?.water_volume_m3)),
@@ -116,6 +121,72 @@ function normalizeBiologicalMediaInput(input) {
             reactor_type: text(first(filter.reactor_type, input?.reactor_type)),
             media_profile_revision_id: first(filter.media_profile_revision_id, filter.media_profile_id, input?.media_profile_revision_id) || null,
             safety_factor: finite(first(filter.safety_factor, input?.safety_factor)),
+        },
+    };
+}
+function calculateAatCoreFoundation(input) {
+    const normalized = normalizeBiologicalMediaInput(input);
+    const volume = normalized.biomass.water_volume_m3;
+    const temperature = normalized.water.temperature_c;
+    const waterType = normalized.water.water_type;
+    const messages = [];
+    if (volume == null || volume <= 0)
+        add(messages, 'AAT_001', 'A positive linked net exhibit volume is required.');
+    if (temperature == null)
+        add(messages, 'AAT_002', 'Design water temperature is required to apply the cold-exhibit rule.', 'water.temperature_c');
+    const marine = ['MARINE', 'SALTWATER', 'SALT_WATER', 'SEAWATER'].includes(waterType || '');
+    const freshwater = ['FRESHWATER', 'FRESH_WATER'].includes(waterType || '');
+    if (!marine && !freshwater)
+        add(messages, 'AAT_003', 'AAT Core currently supports Marine and Freshwater exhibits.', 'water.water_type');
+    let foundationPercentage = null;
+    let rule = null;
+    if (!messages.length) {
+        if (temperature < 18) {
+            foundationPercentage = 4;
+            rule = 'Cold exhibit below 18°C';
+        }
+        else if (freshwater) {
+            foundationPercentage = 3.5;
+            rule = 'Freshwater exhibit';
+        }
+        else if (volume > 100) {
+            foundationPercentage = 2.25;
+            rule = 'Marine exhibit over 100 m³';
+        }
+        else {
+            foundationPercentage = 3;
+            rule = 'Marine exhibit at or below 100 m³';
+        }
+    }
+    const rate = foundationPercentage == null ? null : foundationPercentage / 100;
+    const mediaVolumeM3 = rate == null || volume == null ? null : Number((volume * rate).toFixed(12));
+    return {
+        engine_version: exports.AAT_CORE_ENGINE_VERSION,
+        calculation_engine: 'AAT_CORE',
+        status: messages.length ? 'BLOCKED' : 'VALID',
+        messages,
+        assumptions: [
+            'AAT Core Foundation sizes biological media as a fixed percentage of linked net exhibit volume.',
+            'Design temperatures below 18°C use the 4.0% cold-exhibit rule before water-type and size rules.',
+            'This is a simplified concept-sizing foundation, not a TAN mass-balance calculation.',
+        ],
+        biomass: { water_volume_m3: volume },
+        feeding: {},
+        ammonia: {},
+        capacity: {},
+        nitrification: {},
+        hydraulics: {},
+        media: {
+            required_media_m3: mediaVolumeM3,
+            required_media_l: mediaVolumeM3 == null ? null : mediaVolumeM3 * 1000,
+            installed_media_m3: mediaVolumeM3,
+            installed_media_l: mediaVolumeM3 == null ? null : mediaVolumeM3 * 1000,
+            foundation_rate: rate,
+            foundation_percentage: foundationPercentage,
+            foundation_rule: rule,
+            net_volume_m3: volume,
+            design_temperature_c: temperature,
+            water_type: waterType,
         },
     };
 }
@@ -320,6 +391,18 @@ function calculateAmmonia(input) {
 function profileField(profile, ...keys) {
     return finite(first(...keys.map(key => profile?.[key])));
 }
+function normalizeMediaWaterType(value) {
+    const normalized = String(value || '').trim().toUpperCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+    if (normalized === 'FRESHWATER' || normalized === 'FRESH WATER')
+        return 'FRESHWATER';
+    if (normalized === 'SALTWATER' || normalized === 'SALT WATER' || normalized === 'MARINE' || normalized === 'SEAWATER')
+        return 'SALTWATER';
+    if (normalized === 'BRACKISH' || normalized === 'BRACKISH WATER')
+        return 'BRACKISH';
+    if (normalized === 'UNIVERSAL')
+        return 'UNIVERSAL';
+    return normalized;
+}
 function validateMediaProfileForPreview(profile, input) {
     const normalized = normalizeBiologicalMediaInput(input);
     const messages = [];
@@ -330,8 +413,8 @@ function validateMediaProfileForPreview(profile, input) {
     if (!normalized.filter.reactor_type) {
         add(messages, 'PROFILE_001', 'A reactor type is required to verify media-profile compatibility.', 'filter.reactor_type');
     }
-    const waterType = normalized.water.water_type?.replace('SALT_WATER', 'MARINE');
-    const waterTypes = Array.isArray(profile.water_types) ? profile.water_types.map((v) => upper(v)) : [];
+    const waterType = normalizeMediaWaterType(normalized.water.water_type);
+    const waterTypes = Array.isArray(profile.water_types) ? profile.water_types.map((v) => normalizeMediaWaterType(v)) : [];
     if (waterType && !waterTypes.includes(waterType) && !waterTypes.includes('UNIVERSAL')) {
         add(messages, 'PROFILE_001', `The selected media profile is not approved for ${waterType}.`, 'water.water_type');
     }
@@ -489,6 +572,8 @@ function calculateOptionalHydraulics(input, feedResult, nitrification) {
 }
 function calculateBiologicalMediaPreview(input, options = {}) {
     const normalized = normalizeBiologicalMediaInput(input);
+    if (normalized.calculation_engine === 'AAT_CORE')
+        return calculateAatCoreFoundation(normalized);
     const biomass = calculateBiomass(normalized);
     const feeding = calculateFeeding(normalized, biomass, options.tanProfile);
     const ammonia = calculateAmmonia(normalized);

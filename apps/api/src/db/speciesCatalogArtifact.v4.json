@@ -1,0 +1,190 @@
+{
+  "version": 4,
+  "status": "reviewed",
+  "generated_at": "2026-09-11",
+  "base_version": 3,
+  "record_scope": "Representative freshwater lake fish for aquarium planning: koi and other carp, bass, trout, pike, perch, sunfish, walleye, crappie, and catfish",
+  "source": "Taxonomy and common-name provenance: GBIF Backbone Taxonomy accepted species names, reviewed against freshwater fisheries and public-aquarium reference usage. Freshwater classification and planning values are provisional references for early aquarium planning and require engineer verification before design use.",
+  "records": [
+    {
+      "scientific_name": "Cyprinus carpio",
+      "common_name": "Koi Fish",
+      "family": "Cyprinidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 60,
+      "reference_average_mass_kg": 4,
+      "source": "Taxonomy: GBIF Backbone Taxonomy accepted species Cyprinus carpio; koi common name reviewed against public-aquarium usage. Water type: freshwater planning classification. Size and mass: provisional koi planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Ctenopharyngodon idella",
+      "common_name": "Grass carp",
+      "family": "Xenocyprididae",
+      "water_type": "Freshwater",
+      "average_size_cm": 80,
+      "reference_average_mass_kg": 8,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Hypophthalmichthys molitrix",
+      "common_name": "Silver carp",
+      "family": "Xenocyprididae",
+      "water_type": "Freshwater",
+      "average_size_cm": 70,
+      "reference_average_mass_kg": 7,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Micropterus salmoides",
+      "common_name": "Largemouth bass",
+      "family": "Centrarchidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 45,
+      "reference_average_mass_kg": 1.8,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Micropterus dolomieu",
+      "common_name": "Smallmouth bass",
+      "family": "Centrarchidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 40,
+      "reference_average_mass_kg": 1.4,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Morone chrysops",
+      "common_name": "White bass",
+      "family": "Moronidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 30,
+      "reference_average_mass_kg": 0.7,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Salmo trutta",
+      "common_name": "Brown trout",
+      "family": "Salmonidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 45,
+      "reference_average_mass_kg": 1.5,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater lake planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Oncorhynchus mykiss",
+      "common_name": "Rainbow trout",
+      "family": "Salmonidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 50,
+      "reference_average_mass_kg": 2,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater lake planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Salvelinus namaycush",
+      "common_name": "Lake trout",
+      "family": "Salmonidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 65,
+      "reference_average_mass_kg": 4,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater lake planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Esox lucius",
+      "common_name": "Northern pike",
+      "family": "Esocidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 75,
+      "reference_average_mass_kg": 4,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Esox masquinongy",
+      "common_name": "Muskellunge",
+      "family": "Esocidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 100,
+      "reference_average_mass_kg": 9,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Perca fluviatilis",
+      "common_name": "European perch",
+      "family": "Percidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 30,
+      "reference_average_mass_kg": 0.6,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Perca flavescens",
+      "common_name": "Yellow perch",
+      "family": "Percidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 25,
+      "reference_average_mass_kg": 0.3,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Lepomis macrochirus",
+      "common_name": "Bluegill",
+      "family": "Centrarchidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 20,
+      "reference_average_mass_kg": 0.2,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Lepomis gibbosus",
+      "common_name": "Pumpkinseed",
+      "family": "Centrarchidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 18,
+      "reference_average_mass_kg": 0.15,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Sander vitreus",
+      "common_name": "Walleye",
+      "family": "Percidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 50,
+      "reference_average_mass_kg": 2,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Pomoxis nigromaculatus",
+      "common_name": "Black crappie",
+      "family": "Centrarchidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 25,
+      "reference_average_mass_kg": 0.35,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Pomoxis annularis",
+      "common_name": "White crappie",
+      "family": "Centrarchidae",
+      "water_type": "Freshwater",
+      "average_size_cm": 25,
+      "reference_average_mass_kg": 0.35,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Ictalurus punctatus",
+      "common_name": "Channel catfish",
+      "family": "Ictaluridae",
+      "water_type": "Freshwater",
+      "average_size_cm": 55,
+      "reference_average_mass_kg": 2.5,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    },
+    {
+      "scientific_name": "Ameiurus nebulosus",
+      "common_name": "Brown bullhead",
+      "family": "Ictaluridae",
+      "water_type": "Freshwater",
+      "average_size_cm": 30,
+      "reference_average_mass_kg": 0.6,
+      "source": "Taxonomy/common name: GBIF Backbone Taxonomy accepted species name; reviewed against freshwater fisheries references. Water type: freshwater planning classification. Size and mass: provisional lake-fish planning reference v4; verify before design use."
+    }
+  ]
+}
