@@ -1287,9 +1287,9 @@ export default function ProjectDetail() {
               <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); if (logoInputRef.current) logoInputRef.current.value = ''; }} />
               {project.logo_url ? (
-                <div className="relative w-full max-w-[120px] aspect-square rounded-lg overflow-hidden group mx-auto">
+                <div className="relative w-full max-w-[200px] aspect-[3/2] rounded-lg overflow-hidden group mx-auto bg-slate-50 border border-slate-100">
                   <img src={project.logo_url} alt="Client logo"
-                    className="w-full h-full object-cover" />
+                    className="w-full h-full object-contain p-2" />
                   {isPrivileged && (
                     <button
                       onClick={() => logoInputRef.current?.click()}
@@ -1304,7 +1304,7 @@ export default function ProjectDetail() {
                 <button
                   onClick={() => isPrivileged && logoInputRef.current?.click()}
                   disabled={logoUploading || !isPrivileged}
-                  className={`flex flex-col items-center justify-center gap-2 w-full max-w-[120px] aspect-square border-2 border-dashed rounded-lg transition-colors mx-auto
+                  className={`flex flex-col items-center justify-center gap-2 w-full max-w-[200px] aspect-[3/2] border-2 border-dashed rounded-lg transition-colors mx-auto
                     ${isPrivileged ? 'border-slate-200 hover:border-blue-300 hover:text-blue-500 text-slate-400 cursor-pointer' : 'border-slate-100 text-slate-300 cursor-default'}`}>
                   <ImagePlus className="w-6 h-6" />
                   <span className="text-xs">{logoUploading ? 'Uploading…' : isPrivileged ? 'Upload client logo' : 'No logo'}</span>
