@@ -4,6 +4,7 @@ import { pimAssignmentIndexMigration } from './pimAssignmentIndexMigration';
 import { seedBiologicalMediaEvidence, seedBiologicalMediaProfiles, seedTanGenerationProfiles } from './biologicalMediaSeed';
 import { seedThermalCorrelations } from './thermalCorrelationSeed';
 import { seedThermalWallConstructions } from './thermalWallConstructionSeed';
+import { migrateLegacyDocumentFiles } from './documentFileMigration';
 dotenv.config();
 
 const schema = `
@@ -408,6 +409,32 @@ CREATE TABLE IF NOT EXISTS document_revisions (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   created_by UUID REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS document_classifications (
+  code VARCHAR(100) PRIMARY KEY,
+  display_name VARCHAR(100) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO document_classifications (code, display_name, display_order)
+VALUES ('Design', 'Design', 10), ('Commercial', 'Commercial', 20)
+ON CONFLICT (code) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  display_order = EXCLUDED.display_order;
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS classification VARCHAR(100);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'documents_classification_fkey'
+  ) THEN
+    ALTER TABLE documents
+      ADD CONSTRAINT documents_classification_fkey
+      FOREIGN KEY (classification) REFERENCES document_classifications(code);
+  END IF;
+END $$;
 
 -- Generated document provenance and editable review content.  The source
 -- snapshot belongs to the revision so approved/released evidence never
@@ -3138,6 +3165,8 @@ async function migrate() {
   try {
     console.log('Running migrations...');
     await client.query(schema);
+    const movedDocumentFiles = await migrateLegacyDocumentFiles(client);
+    console.log(`Private document files ready (${movedDocumentFiles} legacy files moved).`);
     const adminResult = await client.query(
       `SELECT id FROM users WHERE role='admin' ORDER BY created_at, id LIMIT 1`,
     );

@@ -292,6 +292,7 @@ export interface Document {
   document_code: string;
   document_title: string;
   document_type?: string;
+  classification?: string;
   discipline?: string;
   project_id?: string;
   project_code?: string;

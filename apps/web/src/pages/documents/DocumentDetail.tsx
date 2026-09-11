@@ -16,6 +16,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import TdsRenderer from '../../components/documents/TdsRenderer';
 import TdsEditor from '../../components/documents/TdsEditor';
 import { useModalFocus } from '../../hooks/useModalFocus';
+import { DocumentRevision } from '../../types';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -355,6 +356,22 @@ export default function DocumentDetail() {
     }
   };
 
+  const downloadRevisionFile = async (revision: DocumentRevision) => {
+    try {
+      const response = await api.get(`/documents/${document.id}/revisions/${revision.id}/download`, {
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(response.data);
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = revision.file_name || `${document.document_code}-${revision.revision_code}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Failed to download document');
+    }
+  };
+
   const latestGeneratedRevision = document.generated_source === 'pim_tds' ? document.revisions?.[0] : null;
   const generatedContentEditable = canManageDocuments && !!latestGeneratedRevision &&
     ['Draft', 'Internal Review', 'Review Commented', 'Resubmitted'].includes(latestGeneratedRevision.status);
@@ -633,9 +650,9 @@ export default function DocumentDetail() {
                       <div className="text-xs text-slate-400 mt-0.5">{new Date(rev.created_at).toLocaleDateString()}{rev.issued_by_name ? ` · ${rev.issued_by_name}` : ''}</div>
                     </div>
                     {rev.file_path && (
-                      <a href={rev.file_path} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
+                      <button type="button" onClick={() => downloadRevisionFile(rev)} className="text-blue-600 hover:underline text-sm flex items-center gap-1">
                         <Download className="w-3.5 h-3.5" />{rev.file_name || 'Download'}
-                      </a>
+                      </button>
                     )}
                   </div>
                 ))}

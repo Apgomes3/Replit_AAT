@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import pool, { query } from '../db';
+import pool, { query, withTransaction } from '../db';
 import { authenticate, requireRole, requireModuleAccess, requireModuleManage, AuthRequest } from '../middleware/auth';
 import { logAudit } from '../db/audit';
 import multer from 'multer';
@@ -32,6 +32,8 @@ import { buildTankDesignSheet } from '../lib/tankDesignSheet';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const privateDocumentUploadsDir = path.join(__dirname, '../../private-uploads/documents');
+if (!fs.existsSync(privateDocumentUploadsDir)) fs.mkdirSync(privateDocumentUploadsDir, { recursive: true });
 const logoStorage = multer.diskStorage({
   destination: uploadsDir,
   filename: (_, file, cb) => {
@@ -43,6 +45,26 @@ const uploadLogo = multer({
   storage: logoStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
 });
+const documentStorage = multer.diskStorage({
+  destination: privateDocumentUploadsDir,
+  filename: (_, file, cb) => {
+    const unique = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+    cb(null, `document-${unique}${path.extname(file.originalname)}`);
+  },
+});
+const uploadProjectDocument = multer({
+  storage: documentStorage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
+
+function removeUploadedFile(file?: Express.Multer.File) {
+  if (!file) return;
+  try {
+    fs.unlinkSync(file.path);
+  } catch (error: any) {
+    if (error?.code !== 'ENOENT') console.error('Failed to clean up project document upload', error);
+  }
+}
 
 const router = Router();
 router.use(authenticate);
@@ -533,9 +555,109 @@ router.get('/projects/:id/equipment', authenticate, async (req: AuthRequest, res
 router.get('/projects/:id/documents', authenticate, async (req: AuthRequest, res: Response) => {
   const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!proj.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
-  const result = await query('SELECT * FROM documents WHERE project_id = $1 ORDER BY document_code', [proj.rows[0].id]);
+  const result = await query(
+    `SELECT d.*
+     FROM documents d
+     JOIN document_project_links dpl ON dpl.document_id = d.id
+     WHERE dpl.project_id = $1
+     ORDER BY d.document_code`,
+    [proj.rows[0].id],
+  );
   res.json({ items: result.rows });
 });
+
+router.get('/document-classifications', async (_req: AuthRequest, res: Response) => {
+  const result = await query(
+    'SELECT code, display_name FROM document_classifications WHERE is_active = true ORDER BY display_order, display_name',
+  );
+  res.json({ items: result.rows });
+});
+
+router.post(
+  '/projects/:id/documents',
+  requireRole('admin', 'engineer'),
+  requireModuleManage('projects'),
+  requireModuleManage('documents'),
+  uploadProjectDocument.single('file'),
+  async (req: AuthRequest, res: Response) => {
+    const file = req.file;
+    const documentCode = String(req.body.document_code || '').trim();
+    const documentTitle = String(req.body.document_title || '').trim();
+    const classification = String(req.body.classification || '').trim();
+
+    try {
+      if (!file || !documentCode || !documentTitle || !classification) {
+        removeUploadedFile(file);
+        return res.status(400).json({
+          error: { code: 'INVALID_REQUEST', message: 'File, document title, document code, and classification are required' },
+        });
+      }
+
+      const project = await query(
+        'SELECT id FROM projects WHERE id::text = $1 OR project_code = $1',
+        [req.params.id],
+      );
+      if (!project.rows[0]) {
+        removeUploadedFile(file);
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+      }
+
+      const allowedClassification = await query(
+        'SELECT code FROM document_classifications WHERE code = $1 AND is_active = true',
+        [classification],
+      );
+      if (!allowedClassification.rows[0]) {
+        removeUploadedFile(file);
+        return res.status(400).json({
+          error: { code: 'INVALID_CLASSIFICATION', message: 'Select an active document classification' },
+        });
+      }
+
+      const checksum = crypto.createHash('sha256').update(fs.readFileSync(file.path)).digest('hex');
+      const created = await withTransaction(async client => {
+        const document = await client.query(
+          `INSERT INTO documents
+             (document_code, document_title, classification, current_revision, status, created_by)
+           VALUES ($1,$2,$3,'A','Draft',$4)
+           RETURNING *`,
+          [documentCode, documentTitle, classification, req.user!.id],
+        );
+        await client.query(
+          `INSERT INTO document_revisions
+             (document_id, revision_code, status, issued_by, file_path, file_name, file_size, mime_type, checksum, created_by)
+           VALUES ($1,'A','Draft',$2,$3,$4,$5,$6,$7,$2)`,
+          [
+            document.rows[0].id,
+            req.user!.id,
+            `private-uploads/documents/${file.filename}`,
+            file.originalname,
+            file.size,
+            file.mimetype,
+            checksum,
+          ],
+        );
+        await client.query(
+          'INSERT INTO document_project_links (document_id, project_id, linked_by) VALUES ($1,$2,$3)',
+          [document.rows[0].id, project.rows[0].id, req.user!.id],
+        );
+        await client.query(
+          'INSERT INTO lifecycle_transitions (entity_type, entity_id, to_state, actor_id, comment) VALUES ($1,$2,$3,$4,$5)',
+          ['document', document.rows[0].id, 'Draft', req.user!.id, 'Document uploaded from project'],
+        );
+        return document.rows[0];
+      });
+
+      res.status(201).json(created);
+    } catch (error: any) {
+      removeUploadedFile(file);
+      if (error?.code === '23505') {
+        return res.status(409).json({ error: { code: 'DOCUMENT_CODE_EXISTS', message: 'A document with this code already exists' } });
+      }
+      console.error('Project document upload failed', error);
+      res.status(500).json({ error: { code: 'UPLOAD_FAILED', message: 'Document upload failed. No document was created.' } });
+    }
+  },
+);
 
 router.get('/projects/:id/change-requests', authenticate, async (req: AuthRequest, res: Response) => {
   const proj = await query('SELECT id FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);

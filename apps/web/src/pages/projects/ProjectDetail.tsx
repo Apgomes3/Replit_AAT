@@ -12,7 +12,7 @@ import Button from '../../components/ui/Button';
 import NewEntityModal from '../../components/ui/NewEntityModal';
 import { System, Document, ChangeRequest } from '../../types';
 import toast from 'react-hot-toast';
-import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus, GripVertical, Copy, BookMarked } from 'lucide-react';
+import { Plus, Network, X, Search, FileText, Send, Trash2, ChevronDown, ChevronRight, Pencil, MapPin, CheckCircle2, ArrowRight as ArrowRightIcon, User, ShoppingCart, ExternalLink, ImagePlus, GripVertical, Copy, BookMarked, Upload } from 'lucide-react';
 import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
@@ -51,6 +51,11 @@ export default function ProjectDetail() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
+  const canUploadDocuments = isPrivileged
+    && user?.moduleAccess?.projects !== 'view'
+    && user?.moduleAccess?.projects !== 'hidden'
+    && user?.moduleAccess?.documents !== 'view'
+    && user?.moduleAccess?.documents !== 'hidden';
   const [tab, setTab] = useState<Tab>('systems');
   const [showNewSystem, setShowNewSystem] = useState(false);
   const [showNewTank, setShowNewTank] = useState(false);
@@ -98,6 +103,11 @@ export default function ProjectDetail() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [showDocumentUpload, setShowDocumentUpload] = useState(false);
+  const [documentUpload, setDocumentUpload] = useState({ document_code: '', document_title: '', classification: 'Design' });
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentUploading, setDocumentUploading] = useState(false);
+  const [documentUploadError, setDocumentUploadError] = useState('');
 
   const [tankDisplayOrder, setTankDisplayOrder] = useState<string[]>([]);
   const tankDragIdx = useRef<number | null>(null);
@@ -206,6 +216,11 @@ export default function ProjectDetail() {
     queryKey: ['project-docs', id],
     queryFn: () => api.get(`/documents?project_id=${id}&page_size=200`).then(r => r.data),
     enabled: !!id,
+  });
+  const { data: documentClassifications } = useQuery({
+    queryKey: ['document-classifications'],
+    queryFn: () => api.get('/document-classifications').then(r => r.data),
+    enabled: canUploadDocuments,
   });
 
   const { data: changes } = useQuery({
@@ -549,9 +564,37 @@ export default function ProjectDetail() {
     { key: 'document_code', header: 'Code', render: r => <EntityCode code={r.document_code} /> },
     { key: 'document_title', header: 'Title', render: r => <span className="font-medium">{r.document_title}</span> },
     { key: 'document_type', header: 'Type' },
+    { key: 'classification', header: 'Classification' },
     { key: 'current_revision', header: 'Rev', render: r => <span className="font-mono text-xs">{r.current_revision}</span> },
     { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
   ];
+
+  const submitDocumentUpload = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!documentFile) {
+      setDocumentUploadError('Choose a file to upload.');
+      return;
+    }
+    setDocumentUploading(true);
+    setDocumentUploadError('');
+    try {
+      const form = new FormData();
+      form.append('file', documentFile);
+      form.append('document_code', documentUpload.document_code.trim());
+      form.append('document_title', documentUpload.document_title.trim());
+      form.append('classification', documentUpload.classification);
+      await api.post(`/projects/${id}/documents`, form);
+      await qc.invalidateQueries({ queryKey: ['project-docs', id] });
+      setShowDocumentUpload(false);
+      setDocumentUpload({ document_code: '', document_title: '', classification: 'Design' });
+      setDocumentFile(null);
+      toast.success('Document uploaded');
+    } catch (error: any) {
+      setDocumentUploadError(error?.response?.data?.error?.message || 'Document upload failed. Please try again.');
+    } finally {
+      setDocumentUploading(false);
+    }
+  };
 
   const fmt = (v?: number | null) => v != null ? <span>{v}</span> : <span className="text-slate-300">—</span>;
 
@@ -2084,6 +2127,11 @@ export default function ProjectDetail() {
                 <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">{documents.items.length}</span>
               )}
             </div>
+            {canUploadDocuments && (
+              <Button variant="primary" onClick={() => { setDocumentUploadError(''); setShowDocumentUpload(true); }}>
+                <Upload className="w-4 h-4" /> Upload document
+              </Button>
+            )}
           </div>
           {(documents?.items?.length ?? 0) === 0 ? (
             <div className="py-10 text-center text-sm text-slate-400">No documents associated with this project yet.</div>
@@ -2091,6 +2139,56 @@ export default function ProjectDetail() {
             <DataTable columns={docCols} data={documents?.items || []} tableId="project-documents-section" onRowClick={r => navigate(`/documents/${r.id}`)} />
           )}
         </div>
+
+        {showDocumentUpload && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div role="dialog" aria-modal="true" aria-labelledby="upload-document-title" className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                <h2 id="upload-document-title" className="text-base font-semibold text-slate-800">Upload project document</h2>
+                <button type="button" aria-label="Close dialog" onClick={() => setShowDocumentUpload(false)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form onSubmit={submitDocumentUpload} className="p-4 space-y-3">
+                <div>
+                  <label htmlFor="project-document-file" className="block text-xs font-medium text-slate-600 mb-1">File *</label>
+                  <input id="project-document-file" type="file" required onChange={e => setDocumentFile(e.target.files?.[0] || null)}
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label htmlFor="project-document-code" className="block text-xs font-medium text-slate-600 mb-1">Document code *</label>
+                  <input id="project-document-code" required value={documentUpload.document_code}
+                    onChange={e => setDocumentUpload(value => ({ ...value, document_code: e.target.value }))}
+                    className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+                </div>
+                <div>
+                  <label htmlFor="project-document-title-input" className="block text-xs font-medium text-slate-600 mb-1">Document title *</label>
+                  <input id="project-document-title-input" required value={documentUpload.document_title}
+                    onChange={e => setDocumentUpload(value => ({ ...value, document_title: e.target.value }))}
+                    className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+                </div>
+                <div>
+                  <label htmlFor="project-document-classification" className="block text-xs font-medium text-slate-600 mb-1">Classification *</label>
+                  <select id="project-document-classification" required value={documentUpload.classification}
+                    onChange={e => setDocumentUpload(value => ({ ...value, classification: e.target.value }))}
+                    className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600">
+                    <option value="">Select...</option>
+                    {(documentClassifications?.items || []).map((item: { code: string; display_name: string }) => (
+                      <option key={item.code} value={item.code}>{item.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+                {documentUploadError && <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{documentUploadError}</div>}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" onClick={() => setShowDocumentUpload(false)}>Cancel</Button>
+                  <Button type="submit" variant="primary" disabled={documentUploading}>
+                    {documentUploading ? 'Uploading…' : 'Upload document'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Changes section */}
         <div className="bg-white border border-slate-200 rounded-lg mt-4">
