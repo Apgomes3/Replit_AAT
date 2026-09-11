@@ -21,6 +21,10 @@ import ProjectReleasePOModal from './ProjectReleasePOModal';
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
 type Tab = 'systems' | 'tanks' | 'piping' | 'bom-release' | 'waterproofing' | 'theming' | 'acrylic';
+const DEFAULT_DOCUMENT_CLASSIFICATIONS = [
+  { code: 'Design', display_name: 'Design' },
+  { code: 'Commercial', display_name: 'Commercial' },
+];
 
 const ALL_SCOPES = ['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic'] as const;
 type ScopeKey = typeof ALL_SCOPES[number];
@@ -2173,7 +2177,10 @@ export default function ProjectDetail() {
                     onChange={e => setDocumentUpload(value => ({ ...value, classification: e.target.value }))}
                     className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600">
                     <option value="">Select...</option>
-                    {(documentClassifications?.items || []).map((item: { code: string; display_name: string }) => (
+                    {(documentClassifications?.items?.length
+                      ? documentClassifications.items
+                      : DEFAULT_DOCUMENT_CLASSIFICATIONS
+                    ).map((item: { code: string; display_name: string }) => (
                       <option key={item.code} value={item.code}>{item.display_name}</option>
                     ))}
                   </select>

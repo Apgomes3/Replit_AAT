@@ -104,4 +104,18 @@ describe('project document upload experience', () => {
     expect(await screen.findByText('Hydraulic Basis')).toBeVisible();
     expect(screen.queryByRole('button', { name: /upload document/i })).not.toBeInTheDocument();
   });
+
+  it('shows the standard classifications while the configured list is unavailable', async () => {
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/projects/project-1') return Promise.resolve({ data: project });
+      if (url === '/document-classifications') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: { items: [] } });
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /upload document/i }));
+    expect(screen.getByRole('option', { name: 'Design' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Commercial' })).toBeVisible();
+  });
 });
