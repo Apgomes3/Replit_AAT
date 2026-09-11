@@ -662,11 +662,6 @@ function LegacySpeciesSection({ bookId, exhibitId, allSpecies, onRefresh }: {
 }
 
 // ─── LSS Tab + New LSS Modal ─────────────────────────────────────────────────
-const SYSTEM_TYPES_LIST = [
-  'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
-  'Ozone', 'Heating', 'Chilling', 'Skimming', 'Carbon Dosing', 'Denitrification', 'Other',
-];
-
 const LSS_STATUSES = ['Draft', 'Design', 'For Review', 'Approved', 'Active', 'Released'];
 
 function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculations, onClose, onCreated }: {
@@ -681,7 +676,7 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
 }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    system_code: '', system_name: '', system_type: 'Life Support',
+    system_code: '', system_name: '',
     water_type: 'Marine', status: 'Draft', exhibit_id: '',
     design_flow_m3h: '', turnover_rate_hr: '',
     duty_description: '', redundancy_strategy: '',
@@ -738,7 +733,7 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
       const res = await api.post('/systems', {
         system_code:         form.system_code.trim().toUpperCase(),
         system_name:         form.system_name.trim(),
-        system_type:         form.system_type         || null,
+        system_type:         'Life Support',
         water_type:          form.water_type          || null,
         status:              form.status              || 'Draft',
         project_id:          projectId,
@@ -774,20 +769,12 @@ function NewLSSModal({ projectId, bookId, exhibits, hydraulics, tanks, calculati
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto">
-          {/* System Code + Type */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">System Code <span className="text-red-400">*</span></label>
-              <input placeholder="e.g. SYS-LSS-01"
-                value={form.system_code} onChange={e => set('system_code', e.target.value.toUpperCase())}
-                className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-stone-500 mb-1">Type</label>
-              <select value={form.system_type} onChange={e => set('system_type', e.target.value)} className={inputCls}>
-                {SYSTEM_TYPES_LIST.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
+          {/* System Code */}
+          <div>
+            <label className="block text-xs font-medium text-stone-500 mb-1">System Code <span className="text-red-400">*</span></label>
+            <input placeholder="e.g. SYS-LSS-01"
+              value={form.system_code} onChange={e => set('system_code', e.target.value.toUpperCase())}
+              className={inputCls} />
           </div>
 
           {/* System Name */}
