@@ -1117,7 +1117,7 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
 const WATER_TYPES = ['Marine', 'Freshwater', 'Brackish', 'Salt Water', 'Blackwater'];
 const TANK_SHAPES = ['Rectangular', 'Cylindrical', 'Custom'];
 
-function NewExhibitModal({ projectId, exhibits, onClose, onCreated }: {
+export function NewExhibitModal({ projectId, exhibits, onClose, onCreated }: {
   projectId: string;
   exhibits: any[];
   onClose: () => void;
@@ -1203,22 +1203,25 @@ function NewExhibitModal({ projectId, exhibits, onClose, onCreated }: {
               value={form.exhibit_name} onChange={e => set('exhibit_name', e.target.value)}
               className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-stone-500 mb-1">Link to previous exhibit</label>
-            <select
-              value={form.inherit_from_exhibit_id}
-              onChange={e => selectPreviousExhibit(e.target.value)}
-              className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-            >
-              <option value="">— None —</option>
-              {exhibits.map(exhibit => (
-                <option key={exhibit.id} value={exhibit.id}>
-                  {exhibit.exhibit_code ? `${exhibit.exhibit_code} — ` : ''}{exhibit.exhibit_name}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-stone-400">Copies water type and design temperatures; you can edit them below.</p>
-          </div>
+          {exhibits.length > 0 && (
+            <div>
+              <label htmlFor="inherit-from-exhibit" className="block text-xs font-medium text-stone-500 mb-1">Link to previous exhibit</label>
+              <select
+                id="inherit-from-exhibit"
+                value={form.inherit_from_exhibit_id}
+                onChange={e => selectPreviousExhibit(e.target.value)}
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              >
+                <option value="">— None —</option>
+                {exhibits.map(exhibit => (
+                  <option key={exhibit.id} value={exhibit.id}>
+                    {exhibit.exhibit_code ? `${exhibit.exhibit_code} — ` : ''}{exhibit.exhibit_name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-stone-400">Copies water type and design temperatures; you can edit them below.</p>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-stone-500 mb-1">Temp Min (°C)</label>
