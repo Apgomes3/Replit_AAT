@@ -2990,6 +2990,43 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     ));
   });
 
+  it('keeps Sand Filter process-rate editing focused while the allocation updates', async () => {
+    const user = userEvent.setup();
+    const sandProduct = {
+      id: 'sf-900',
+      product_code: 'PM-SF-900',
+      product_name: 'AAT Sand Filter 900',
+      diameter_mm: 900,
+    };
+    renderFlowRoute({
+      ...baseSystem,
+      sand_filter_allocations: [{
+        parent_loop_number: 1,
+        process_rate_ls_m2: 6,
+        notes: null,
+        products: [{
+          product_master_id: 'sf-900',
+          product_code: 'PM-SF-900',
+          product_name: 'AAT Sand Filter 900',
+          diameter_mm: 900,
+          quantity: 1,
+        }],
+      }],
+    }, baseBook, [], [], undefined, null, [], [], [sandProduct]);
+
+    await screen.findByRole('heading', { name: 'Primary Life Support' });
+    const route = within(document.querySelector('#flow-route')!);
+    await user.click(route.getByRole('button', { name: 'Edit' }));
+    const rateInput = route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' });
+
+    await user.clear(rateInput);
+    await user.type(rateInput, '6.5');
+
+    const updatedInput = route.getByRole('spinbutton', { name: 'AAT process rate for Loop 1' });
+    expect(updatedInput).toHaveValue('6.5');
+    expect(updatedInput).toHaveFocus();
+  });
+
   it('shows an actionable Sand Filter empty catalog state', async () => {
     const user = userEvent.setup();
     renderFlowRoute(baseSystem);

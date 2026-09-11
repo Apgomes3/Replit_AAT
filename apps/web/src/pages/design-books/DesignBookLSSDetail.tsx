@@ -4291,12 +4291,8 @@ export default function DesignBookLSSDetail() {
                   </div>
                 </div>
               )}
-              {filt === 'Sand Filter' && (
-                <FlowEquipmentSummary source={system} n={n} loopFlow={loopFlow} />
-              )}
-              {filt === 'Foam Fractionation' && (
-                <FlowEquipmentSummary source={system} n={n} loopFlow={loopFlow} />
-              )}
+              {(filt === 'Sand Filter' || filt === 'Foam Fractionation') &&
+                FlowEquipmentSummary({ source: system, n, loopFlow })}
               <div className="flex items-center gap-2 text-sm flex-wrap">
                 <Gauge className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
                 <span className="text-stone-500 text-xs">Loop flow:</span>
@@ -4551,12 +4547,8 @@ export default function DesignBookLSSDetail() {
                   <p className="text-xs text-stone-400">Not connected. Enable the link to define the Bio/Degas branch percentage.</p>
                 )}
               </div>
-              {curFilt === 'Foam Fractionation' && (
-                <FlowEquipmentSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
-              )}
-              {curFilt === 'Sand Filter' && (
-                <FlowEquipmentSummary source={flowForm} n={n} loopFlow={loopFlow} editable />
-              )}
+              {(curFilt === 'Foam Fractionation' || curFilt === 'Sand Filter') &&
+                FlowEquipmentSummary({ source: flowForm, n, loopFlow, editable: true })}
               <div className="border-t border-stone-100 pt-4">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
