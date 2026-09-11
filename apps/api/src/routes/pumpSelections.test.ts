@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   calls: [] as Array<{ sql: string; params: any[] }>,
   book: { id: 'book-1', project_id: 'project-1', status: 'Draft' } as any,
   system: {
-    id: 'system-1', project_id: 'project-1', design_flow_m3h: '100', calculation_inputs: { design_flow_source: 'manual_override' },
+    id: 'system-1', project_id: 'project-1', system_type: 'Life Support', design_flow_m3h: '100', calculation_inputs: { design_flow_source: 'manual_override' },
     loop1_name: 'Main return', loop1_flow_source: 'Bottom Drain', loop1_filtration: 'Sand Filter', loop1_flow_pct: '60',
   } as any,
   sideStreams: [{ id: 'side-1', system_id: 'system-1', parent_loop_number: 1, name: 'UV branch', preset: 'UV', flow_pct: '25', sort_order: 0 }] as any[],
@@ -140,7 +140,20 @@ describe('pump selection HTTP routes', () => {
       expect.objectContaining({ circuit_key: 'loop:1', circuit_kind: 'loop', flow_m3h: 60 }),
       expect.objectContaining({ circuit_key: 'side_stream:side-1', circuit_kind: 'side_stream', flow_m3h: 15 }),
     ]));
-    expect(response.body.pump_candidates[0]).toMatchObject({ id: 'pump-item-1', project_equipment_item_id: 'pump-item-1', power_kw: '3' });
+    expect(response.body.pump_candidates[0]).toMatchObject({
+      id: 'pump-item-1',
+      project_equipment_item_id: 'pump-item-1',
+      power_kw: '3',
+      npsh_suitability_by_circuit: {
+        'loop:1': {
+          status: 'blocked',
+          npsh_available_m: null,
+          npsh_required_m: null,
+          npsh_margin_m: null,
+          advisory: true,
+        },
+      },
+    });
     const candidateCall = state.calls.find(call => call.sql.includes('FROM project_equipment_items'));
     expect(candidateCall?.params).toEqual(['project-1', 'system-1']);
   });

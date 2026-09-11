@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateFrictionLoss,
+  evaluateNpshSuitability,
   FRICTION_LOSS_CALCULATION_VERSION,
 } from './frictionLossCalculations';
 
@@ -131,5 +132,16 @@ describe('calculateFrictionLoss', () => {
     });
     expect(result.results.npsh_status).toBe('warning');
     expect(result.status).toBe('ready');
+  });
+});
+
+describe('evaluateNpshSuitability', () => {
+  it('applies the governed comparison consistently to catalog candidates', () => {
+    expect(evaluateNpshSuitability(4.5, 3)).toEqual({
+      status: 'pass', npsh_available_m: 4.5, npsh_required_m: 3, npsh_margin_m: 1.5,
+    });
+    expect(evaluateNpshSuitability(4.5, null).status).toBe('warning');
+    expect(evaluateNpshSuitability(4.5, 5).status).toBe('blocked');
+    expect(evaluateNpshSuitability(null, 3).status).toBe('blocked');
   });
 });

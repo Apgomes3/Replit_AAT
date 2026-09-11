@@ -39,6 +39,29 @@ const nonNegative = (value: unknown) => {
 const round = (value: number | null, places = 6) =>
   value == null ? null : Number(value.toFixed(places));
 
+export type NpshSuitabilityStatus = 'pass' | 'warning' | 'blocked';
+
+export function evaluateNpshSuitability(
+  npshAvailableValue: unknown,
+  npshRequiredValue: unknown,
+) {
+  const npshAvailable = nonNegative(npshAvailableValue);
+  const npshRequired = nonNegative(npshRequiredValue);
+  const status: NpshSuitabilityStatus = npshAvailable == null
+    ? 'blocked'
+    : npshRequired == null
+      ? 'warning'
+      : npshAvailable >= npshRequired ? 'pass' : 'blocked';
+  return {
+    status,
+    npsh_available_m: round(npshAvailable),
+    npsh_required_m: round(npshRequired),
+    npsh_margin_m: npshAvailable == null || npshRequired == null
+      ? null
+      : round(npshAvailable - npshRequired),
+  };
+}
+
 export function frictionSourceFingerprint(source: unknown) {
   const canonical = JSON.stringify(source, (_, value) =>
     value && typeof value === 'object' && !Array.isArray(value)
@@ -277,12 +300,10 @@ export function calculateFrictionLoss(input: {
   const npshAvailable = npshPressureHead == null || startDepth == null || drawHeight == null || suctionLoss == null
     ? null
     : npshPressureHead + startDepth - drawHeight - suctionLoss - safetyMargin;
-  const npshRequired = nonNegative(input.selected_pump?.npsh_required_m);
-  const npshStatus = npshAvailable == null
-    ? 'blocked'
-    : npshRequired == null
-      ? 'warning'
-      : npshAvailable >= npshRequired ? 'pass' : 'blocked';
+  const npshSuitability = evaluateNpshSuitability(
+    npshAvailable,
+    input.selected_pump?.npsh_required_m,
+  );
 
   return {
     calculation_version: FRICTION_LOSS_CALCULATION_VERSION,
@@ -328,10 +349,10 @@ export function calculateFrictionLoss(input: {
       pressure_head_m: round(pressureHead),
       static_head_m: round(staticHead),
       total_dynamic_head_m: round(totalDynamicHead),
-      npsh_available_m: round(npshAvailable),
-      npsh_required_m: round(npshRequired),
-      npsh_margin_m: npshAvailable == null || npshRequired == null ? null : round(npshAvailable - npshRequired),
-      npsh_status: npshStatus,
+      npsh_available_m: npshSuitability.npsh_available_m,
+      npsh_required_m: npshSuitability.npsh_required_m,
+      npsh_margin_m: npshSuitability.npsh_margin_m,
+      npsh_status: npshSuitability.status,
       npsh_inputs: {
         atmospheric_pressure_kpa: round(atmosphericPressure),
         start_absolute_pressure_kpa: round(startAbsolutePressureKpa),

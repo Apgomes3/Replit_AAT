@@ -11,6 +11,7 @@ import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 import { reconcilePumpLinkedInstruments } from '../lib/lssControls';
+import { evaluateNpshSuitability } from '../lib/frictionLossCalculations';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -73,6 +74,27 @@ async function candidates(runner: any, projectId: string, systemId: string) {
      ORDER BY product_code NULLS LAST, equip_code NULLS LAST`,
     [projectId, systemId],
   )).rows;
+}
+
+function candidatesWithNpshSuitability(pumpCandidates: any[], frictionPackage: any) {
+  const circuitResults = new Map(
+    (frictionPackage?.items || []).map((item: any) => [
+      item.circuit_key,
+      item.result?.results || null,
+    ]),
+  );
+  return pumpCandidates.map(candidate => ({
+    ...candidate,
+    npsh_suitability_by_circuit: Object.fromEntries(
+      [...circuitResults.entries()].map(([circuitKey, results]: any) => [
+        circuitKey,
+        {
+          ...evaluateNpshSuitability(results?.npsh_available_m, candidate.npsh_required_m),
+          advisory: true,
+        },
+      ]),
+    ),
+  }));
 }
 
 async function eligiblePumpProduct(runner: any, productMasterId: string) {
@@ -158,9 +180,13 @@ router.get('/systems/:id/pump-selections', async (req: AuthRequest, res: Respons
   const system = context?.systems?.find((item: any) => item.id === req.params.id);
   if (!system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found in Design Book project' } });
   if (isRetiredSystem(system)) return res.status(409).json({ error: systemLifecycleError(system) });
+  const pumpCandidates = await candidates(query, designBook.project_id, String(req.params.id));
+  const frictionPackage = context.friction_loss_calculations?.find(
+    (item: any) => item.system_id === system.id,
+  );
   res.json({
     items: await liveItems(query, system),
-    pump_candidates: await candidates(query, designBook.project_id, String(req.params.id)),
+    pump_candidates: candidatesWithNpshSuitability(pumpCandidates, frictionPackage),
     pump_duty_types: await activeDutyTypes(query),
     frozen: false,
   });

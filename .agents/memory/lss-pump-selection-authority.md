@@ -9,6 +9,12 @@ The Design Book’s calculated system flow is the sole authority for circuit-lev
 
 **How to apply:** Keep display, sizing, freshness, and snapshots on that same flow basis. Treat changed assumptions or formulas as stale, and block release until active circuits have fresh ready selections.
 
+Candidate NPSH suitability is circuit-specific advisory evidence until the designer saves that candidate as the governed pump selection.
+
+**Why:** Candidates share catalog NPSH-required evidence, but NPSH available comes from each circuit's saved or current Friction Loss suction basis. Previewing that comparison must not mutate the selected pump or the authoritative static-head calculation.
+
+**How to apply:** Reuse the Friction Loss NPSH comparison for every candidate, label missing suction basis as blocked and missing governed NPSHr as warning, and refresh candidate previews after Friction Loss is saved.
+
 Thermal equipment heat is a downstream consumer of the saved Pump Selection result, not a second pump-sizing authority.
 
 **Why:** Revalidating Flow Route flow or catalog suitability while assembling Thermal heat can contradict Pump Selection and reject a usable saved shaft or motor-input power value. Thermal needs the frozen power result, not a newly resolved duty point.

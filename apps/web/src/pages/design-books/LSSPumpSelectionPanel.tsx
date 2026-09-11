@@ -20,6 +20,13 @@ type PumpCandidate = {
   npsh_required_m?: number | string | null;
   power_kw?: number | string | null;
   status?: string | null;
+  npsh_suitability_by_circuit?: Record<string, {
+    status: 'pass' | 'warning' | 'blocked';
+    npsh_available_m?: number | null;
+    npsh_required_m?: number | null;
+    npsh_margin_m?: number | null;
+    advisory?: boolean;
+  }>;
 };
 
 type PumpLine = {
@@ -83,18 +90,22 @@ function positiveNumber(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function pumpCandidateLabel(candidate: PumpCandidate) {
+function pumpCandidateLabel(candidate: PumpCandidate, circuitKey?: string) {
   const name = candidate.product_name || candidate.description || 'Draft pump';
   const identity = candidate.product_code || candidate.equip_code || 'Untagged';
   const flow = positiveNumber(candidate.design_flow_m3h);
   const head = positiveNumber(candidate.design_head_m);
   const power = positiveNumber(candidate.power_kw);
   const npsh = positiveNumber(candidate.npsh_required_m);
+  const suitability = circuitKey
+    ? candidate.npsh_suitability_by_circuit?.[circuitKey]
+    : null;
   const ratings = [
     flow != null ? `${numberText(flow)} m³/h` : null,
     head != null ? `${numberText(head)} m head` : null,
     power != null ? `${numberText(power)} kW` : null,
     npsh != null ? `NPSHr ${numberText(npsh)} m` : null,
+    suitability ? `NPSH ${suitability.status.toUpperCase()}` : null,
   ].filter(Boolean).join(' · ');
   return `${identity} — ${name}${ratings ? ` · ${ratings}` : ''}`;
 }
@@ -420,11 +431,28 @@ function PumpLineCard({
                   const id = pumpCandidateValue(candidate);
                   return (
                     <option key={id} value={id}>
-                      {pumpCandidateLabel(candidate)}
+                      {pumpCandidateLabel(candidate, line.circuit_key)}
                     </option>
                   );
                 })}
               </select>
+              {selectedCandidate?.npsh_suitability_by_circuit?.[line.circuit_key] && (() => {
+                const suitability = selectedCandidate.npsh_suitability_by_circuit![line.circuit_key];
+                return (
+                  <div className={`rounded-lg border px-3 py-2 text-xs ${statusStyle(
+                    suitability.status === 'pass' ? 'ready'
+                      : suitability.status === 'blocked' ? 'incompatible' : 'stale',
+                  )}`}>
+                    <span className="font-semibold">Advisory NPSH {suitability.status.toUpperCase()}</span>
+                    {' · '}NPSHr {numberText(suitability.npsh_required_m)} m
+                    {' · '}NPSHa {numberText(suitability.npsh_available_m)} m
+                    {suitability.npsh_margin_m != null
+                      ? ` · Margin ${numberText(suitability.npsh_margin_m)} m`
+                      : ''}
+                    <span className="ml-1">This becomes governed when the pump selection is saved.</span>
+                  </div>
+                );
+              })()}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-stone-500">
                   {requiredHead == null || perPumpFlow == null

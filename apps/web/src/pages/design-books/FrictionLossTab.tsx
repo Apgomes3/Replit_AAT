@@ -344,7 +344,10 @@ export default function FrictionLossTab({ book, readOnly, onRefresh }: any) {
   const [selectedSystem, setSelectedSystem] = useState<string | null>(null);
   const packages = book.friction_loss_calculations || [];
   const refresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['friction-loss-system', book.id, selectedSystem] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['friction-loss-system', book.id, selectedSystem] }),
+      queryClient.invalidateQueries({ queryKey: ['pump-selections', selectedSystem, book.id] }),
+    ]);
     onRefresh();
   };
   if (!packages.length) return <div className="rounded-2xl border border-stone-200 bg-white py-16 text-center"><Calculator className="mx-auto mb-3 h-10 w-10 text-stone-300" /><p className="font-semibold text-stone-700">No LSS systems to calculate</p><p className="mt-1 text-sm text-stone-500">Create and configure a Life Support system first.</p></div>;

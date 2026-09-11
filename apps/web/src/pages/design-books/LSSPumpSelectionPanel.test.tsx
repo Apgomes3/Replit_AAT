@@ -59,7 +59,17 @@ const response = {
     product_name: 'Circulation Pump 22kW',
     design_flow_m3h: 120,
     design_head_m: 24,
+    npsh_required_m: 3.2,
     power_kw: 22,
+    npsh_suitability_by_circuit: {
+      'loop:1': {
+        status: 'pass',
+        npsh_available_m: 4.5,
+        npsh_required_m: 3.2,
+        npsh_margin_m: 1.3,
+        advisory: true,
+      },
+    },
   }],
   frozen: false,
 };
@@ -197,6 +207,24 @@ describe('LSSPumpSelectionPanel', () => {
     expect(screen.queryByRole('option', { name: /PM-PUMP-CIR-22/ })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: /PM-PUMP-50-40/ })).toBeInTheDocument();
     expect(screen.getByText('1 compatible pump rated for at least 45.00 m³/h at 30.00 m.')).toBeInTheDocument();
+  });
+
+  it('shows candidate NPSH suitability before the selection is saved', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.type(await screen.findByLabelText('Initial design head for Sand Filter Loop'), '18');
+
+    expect(screen.getByRole('option', {
+      name: /PM-PUMP-CIR-22.*NPSHr 3\.20 m.*NPSH PASS/,
+    })).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText('Pump product for Sand Filter Loop'),
+      'equipment-1',
+    );
+    expect(screen.getByText(/Advisory NPSH PASS/).parentElement).toHaveTextContent(
+      'NPSHr 3.20 m · NPSHa 4.50 m · Margin 1.30 m',
+    );
+    expect(apiPut).not.toHaveBeenCalled();
   });
 
   it('does not show an existing out-of-duty selection as a catalogue recommendation', async () => {
