@@ -52,6 +52,44 @@ const FLOW_ROUTE_VIEW_STORAGE_KEY = 'lss-flow-route-view';
 type FlowViewMode = 'card' | 'list';
 type LssTab = 'overview' | 'flow' | 'pump' | 'biological-media' | 'bio-degas-plenum' | 'uv' | 'thermal' | 'ozone' | 'other';
 
+export function ProcessRateNumberInput({ value, onCommit, id, ariaLabel, className }: {
+  value: string | number;
+  onCommit: (value: string) => void;
+  id: string;
+  ariaLabel: string;
+  className: string;
+}) {
+  const [draft, setDraft] = useState(String(value ?? ''));
+  const focused = useRef(false);
+
+  useEffect(() => {
+    if (!focused.current) setDraft(String(value ?? ''));
+  }, [value]);
+
+  return (
+    <input
+      id={id}
+      type="number"
+      min="0.001"
+      step="0.1"
+      value={draft}
+      onFocus={() => { focused.current = true; }}
+      onChange={event => {
+        setDraft(event.target.value);
+        onCommit(event.target.value);
+      }}
+      onBlur={() => {
+        focused.current = false;
+      }}
+      onKeyDown={event => {
+        if (event.key === 'Enter') event.currentTarget.blur();
+      }}
+      aria-label={ariaLabel}
+      className={className}
+    />
+  );
+}
+
 const LSS_TABS: Array<{ id: LssTab; label: string }> = [
   { id: 'overview', label: 'System Overview' },
   { id: 'flow', label: 'Flow Route' },
@@ -4068,14 +4106,11 @@ export default function DesignBookLSSDetail() {
                         <span>{sliderMax}</span>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
-                        <input
+                        <ProcessRateNumberInput
                           id={`fractionator-rate-${n}`}
-                          type="number"
-                          min="0.001"
-                          step="0.1"
                           value={allocation.process_rate_ls_m2}
-                          onChange={event => updateAllocation({ process_rate_ls_m2: event.target.value })}
-                          aria-label={`AAT process rate for Loop ${n}`}
+                          onCommit={value => updateAllocation({ process_rate_ls_m2: value })}
+                          ariaLabel={`AAT process rate for Loop ${n}`}
                           className={`${inputCls} bg-white max-w-32`}
                         />
                         <span className="text-[10px] text-stone-500">L/s/m²</span>
