@@ -575,19 +575,27 @@ export default function ProjectDetail() {
 
   const submitDocumentUpload = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!documentFile) {
-      setDocumentUploadError('Choose a file to upload.');
+    const missingFields = [
+      !documentFile ? 'file' : null,
+      !documentUpload.document_code.trim() ? 'document code' : null,
+      !documentUpload.document_title.trim() ? 'document title' : null,
+      !documentUpload.classification ? 'classification' : null,
+    ].filter(Boolean);
+    if (missingFields.length) {
+      setDocumentUploadError(`Complete the following before uploading: ${missingFields.join(', ')}.`);
       return;
     }
     setDocumentUploading(true);
     setDocumentUploadError('');
     try {
       const form = new FormData();
-      form.append('file', documentFile);
+      form.append('file', documentFile!);
       form.append('document_code', documentUpload.document_code.trim());
       form.append('document_title', documentUpload.document_title.trim());
       form.append('classification', documentUpload.classification);
-      await api.post(`/projects/${id}/documents`, form);
+      await api.post(`/projects/${id}/documents`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       await qc.invalidateQueries({ queryKey: ['project-docs', id] });
       setShowDocumentUpload(false);
       setDocumentUpload({ document_code: '', document_title: '', classification: 'Design' });

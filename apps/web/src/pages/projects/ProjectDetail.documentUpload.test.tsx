@@ -90,9 +90,10 @@ describe('project document upload experience', () => {
     fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
-    const [url, body] = apiPost.mock.calls[0];
+    const [url, body, config] = apiPost.mock.calls[0];
     expect(url).toBe('/projects/project-1/documents');
     expect(body).toBeInstanceOf(FormData);
+    expect(config).toEqual({ headers: { 'Content-Type': 'multipart/form-data' } });
     expect((body as FormData).get('document_code')).toBe('DOC-002');
     expect((body as FormData).get('document_title')).toBe('Commercial Offer');
     expect((body as FormData).get('classification')).toBe('Commercial');
