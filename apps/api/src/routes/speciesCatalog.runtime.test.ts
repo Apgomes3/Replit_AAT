@@ -43,6 +43,63 @@ afterAll(async () => {
 });
 
 describe('compiled species catalog runtime', () => {
+  it('preserves every legacy field while inserting missing reviewed identities on reseed', async () => {
+    const compiledSeed = require(`${process.cwd()}/apps/api/dist/db/speciesCatalogSeed.js`) as {
+      seedSpeciesCatalog: (client: any, userId: string | null) => Promise<number>;
+    };
+    const legacyScientificName = 'Pomoxis nigromaculatus';
+    const missingScientificName = 'Sander vitreus';
+    const admin = (await db.query(`SELECT id FROM users WHERE email='admin@edp.com'`)).rows[0];
+    const client = await db.connect();
+
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `DELETE FROM aquarium_species_catalog
+         WHERE scientific_name IN ($1, $2)`,
+        [legacyScientificName, missingScientificName],
+      );
+      await client.query(
+        `INSERT INTO aquarium_species_catalog
+           (scientific_name, common_name, family, water_type, average_size_cm,
+            reference_average_mass_kg, source, active, created_by, updated_by,
+            created_at, updated_at)
+         VALUES ($1, 'Locally maintained crappie', 'Legacyidae', 'Brackish', 31.25,
+                 1.2345, 'Local legacy source', false, $2, NULL,
+                 '2001-02-03T04:05:06Z', '2007-08-09T10:11:12Z')`,
+        [legacyScientificName, admin.id],
+      );
+
+      const before = (await client.query(
+        'SELECT * FROM aquarium_species_catalog WHERE scientific_name=$1',
+        [legacyScientificName],
+      )).rows[0];
+
+      await compiledSeed.seedSpeciesCatalog(client, null);
+
+      const after = (await client.query(
+        'SELECT * FROM aquarium_species_catalog WHERE scientific_name=$1',
+        [legacyScientificName],
+      )).rows[0];
+      const inserted = (await client.query(
+        'SELECT * FROM aquarium_species_catalog WHERE scientific_name=$1',
+        [missingScientificName],
+      )).rows[0];
+
+      expect(after).toEqual(before);
+      expect(inserted).toEqual(expect.objectContaining({
+        scientific_name: missingScientificName,
+        common_name: 'Walleye',
+        family: 'Percidae',
+        water_type: 'Freshwater',
+        active: true,
+      }));
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
   it('serves active reviewed expansions through search and family and water-type facets', async () => {
     const admin = (await db.query(`SELECT id,email,role FROM users WHERE email='admin@edp.com'`)).rows[0];
     const auth = (user: any) => ({
