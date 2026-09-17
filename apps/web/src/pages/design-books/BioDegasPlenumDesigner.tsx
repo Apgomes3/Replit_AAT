@@ -144,13 +144,14 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
       : Number.isFinite(Number(preview?.media?.required_media_m3)) ? Number(preview.media.required_media_m3)
         : Number.isFinite(Number(preview?.media?.required_media_l)) ? Number(preview.media.required_media_l) / 1000 : null;
   const crateCount = calculateBioCrateCount(installedMediaM3);
-  const { data: saved, refetch } = useQuery({
+  const savedQueryEnabled = Boolean(systemId && bookId && crateCount);
+  const { data: saved, refetch, isLoading: savedLayoutLoading } = useQuery({
     queryKey: ['bio-degas-plenum-layout', systemId, bookId],
     queryFn: () => api.get(`/systems/${systemId}/bio-degas-plenum`, { params: { design_book_id: bookId } }).then(r => r.data),
-    enabled: Boolean(systemId && bookId && crateCount),
+    enabled: savedQueryEnabled,
   });
   const recommended = useMemo(() => crateCount ? createRecommendedPlenumLayout(crateCount) : null, [crateCount]);
-  const [layout, setLayout] = useState<PlenumLayout | null>(recommended);
+  const [layout, setLayout] = useState<PlenumLayout | null>(() => savedQueryEnabled ? null : recommended);
   const [sectionColumn, setSectionColumn] = useState(0);
   const [selectedStackNumber, setSelectedStackNumber] = useState<number | null>(null);
   const [editingDimension, setEditingDimension] = useState<keyof Pick<PlenumLayout, 'external_length_mm' | 'external_width_mm' | 'external_height_mm' | 'water_level_mm' | 'tray_gap_mm'> | null>(null);
@@ -167,11 +168,12 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
     enabled: showPimPromotion && !readOnly && !saved?.promoted_product_master_id,
   });
   useEffect(() => {
-    if (!recommended) return;
+    if (!recommended || savedQueryEnabled && savedLayoutLoading) return;
     const next = saved?.layout ? { ...recommended, ...saved.layout } : recommended;
     setLayout({ ...next, stacks: next.stacks || createStackPositions(crateCount, next.rows, next.stack_height) });
-  }, [saved, recommended]);
-  if (!crateCount || !layout) return <div className="rounded-xl border border-dashed border-stone-300 bg-white p-10 text-center"><p className="font-semibold text-stone-700">Calculate Biological Media first</p><p className="mt-1 text-sm text-stone-500">A current media-volume result is required before the plenum can be designed.</p></div>;
+  }, [saved, recommended, savedQueryEnabled, savedLayoutLoading]);
+  if (!crateCount) return <div className="rounded-xl border border-dashed border-stone-300 bg-white p-10 text-center"><p className="font-semibold text-stone-700">Calculate Biological Media first</p><p className="mt-1 text-sm text-stone-500">A current media-volume result is required before the plenum can be designed.</p></div>;
+  if (!layout) return <div className="rounded-xl border border-stone-200 bg-white p-10 text-center text-sm text-stone-500">Loading saved plenum layout…</div>;
 
   const assessment = assessPlenumLayout(layout, crateCount);
   const positions = (layout.stacks || createStackPositions(crateCount, layout.rows, layout.stack_height))
@@ -299,10 +301,13 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   const sw = layout.external_length_mm * ss, sh = layout.external_height_mm * ss, sox = sectionLeftGutter, soy = sectionH - 22 - sh;
   const trayCount = Number(layout.tray_count ?? 1);
   const trayGap = Number(layout.tray_gap_mm ?? TRAY_GAP_MM);
-  const usableTrayLength = assessment.internalLength - ACCESS_LENGTH_MM;
   const totalTrayLength = trayCount * DISPERSION_TRAY.length + Math.max(0, trayCount - 1) * DISPERSION_TRAY_GAP_MM;
-  const trayStartMm = layout.wall_thickness_mm + ACCESS_LENGTH_MM
-    + Math.max(0, (usableTrayLength - totalTrayLength) / 2);
+  const occupiedCrateColumns = Math.max(0, ...positions.map(position => position.column + 1));
+  const occupiedCrateLength = occupiedCrateColumns * BIO_CRATE_WIDTH_MM;
+  const occupiedEquipmentLength = Math.max(occupiedCrateLength, totalTrayLength);
+  const actualAccessLength = Math.max(0, assessment.internalLength - occupiedEquipmentLength);
+  const trayStartMm = layout.wall_thickness_mm + actualAccessLength
+    + Math.max(0, (occupiedEquipmentLength - totalTrayLength) / 2);
   const trayTopY = oy + wallPx + Math.max(0, (assessment.internalWidth - DISPERSION_TRAY.width) * scale / 2);
   const bottomClearance = assessment.internalHeight - DISPERSION_TRAY.height - trayGap - layout.stack_height * BIO_CRATE_HEIGHT_MM;
   const waterBottomY = soy + sh - layout.wall_thickness_mm * ss;
@@ -329,9 +334,9 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
       <figure className="overflow-hidden rounded-xl border border-stone-200 bg-white"><figcaption className="border-b bg-stone-50 px-4 py-3 font-semibold text-stone-800">Top view</figcaption><svg viewBox={`0 0 ${topW} ${topH}`} role="img" aria-label="Dynamic top view of plenum tank" className="h-auto w-full bg-slate-50">
         <rect x={ox} y={oy} width={drawW} height={drawH} rx="6" fill="#dbeafe" stroke="#1e3a5f" strokeWidth="3"/>
         <rect x={ox+wallPx} y={oy+wallPx} width={drawW-wallPx*2} height={drawH-wallPx*2} fill="#f8fafc" stroke="#64748b"/>
-        <rect x={ox+wallPx} y={oy+wallPx} width={ACCESS_LENGTH_MM*scale} height={drawH-wallPx*2} fill="#fef3c7" stroke="#d97706" strokeDasharray="5 4"/>
-        <text x={ox+wallPx+ACCESS_LENGTH_MM*scale/2} y={oy+drawH/2} textAnchor="middle" fontSize="10" fill="#92400e" transform={`rotate(-90 ${ox+wallPx+ACCESS_LENGTH_MM*scale/2} ${oy+drawH/2})`}>800 mm access</text>
-        {positions.map((p,i) => { const x=ox+wallPx+(ACCESS_LENGTH_MM+p.column*BIO_CRATE_WIDTH_MM)*scale; const y=oy+wallPx+p.row*BIO_CRATE_LENGTH_MM*scale; const selected=selectedStackNumber===p.stackNumber; return <g key={i} role="button" tabIndex={0} aria-label={`Select stack S${String(p.stackNumber).padStart(2, '0')}`} onClick={() => selectStack(p.stackNumber,p.row)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') selectStack(p.stackNumber,p.row); }}><rect x={x+2} y={y+2} width={BIO_CRATE_WIDTH_MM*scale-4} height={BIO_CRATE_LENGTH_MM*scale-4} rx="3" fill={selected?'#93c5fd':'#bfdbfe'} stroke={selected?'#1d4ed8':'#2563eb'} strokeWidth={selected?3:1}/><text x={x+BIO_CRATE_WIDTH_MM*scale/2} y={y+BIO_CRATE_LENGTH_MM*scale/2+4} textAnchor="middle" fontSize="10" fontWeight="600" fill="#1e3a8a">S{String(p.stackNumber).padStart(2,'0')} ×{p.crates}</text></g>; })}
+        <rect x={ox+wallPx} y={oy+wallPx} width={actualAccessLength*scale} height={drawH-wallPx*2} fill="#fef3c7" stroke="#d97706" strokeDasharray="5 4"/>
+        <text x={ox+wallPx+actualAccessLength*scale/2} y={oy+drawH/2} textAnchor="middle" fontSize="10" fill="#92400e" transform={`rotate(-90 ${ox+wallPx+actualAccessLength*scale/2} ${oy+drawH/2})`}>{Math.round(actualAccessLength)} mm access</text>
+        {positions.map((p,i) => { const x=ox+wallPx+(actualAccessLength+p.column*BIO_CRATE_WIDTH_MM)*scale; const y=oy+wallPx+p.row*BIO_CRATE_LENGTH_MM*scale; const selected=selectedStackNumber===p.stackNumber; return <g key={i} role="button" tabIndex={0} aria-label={`Select stack S${String(p.stackNumber).padStart(2, '0')}`} onClick={() => selectStack(p.stackNumber,p.row)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') selectStack(p.stackNumber,p.row); }}><rect x={x+2} y={y+2} width={BIO_CRATE_WIDTH_MM*scale-4} height={BIO_CRATE_LENGTH_MM*scale-4} rx="3" fill={selected?'#93c5fd':'#bfdbfe'} stroke={selected?'#1d4ed8':'#2563eb'} strokeWidth={selected?3:1}/><text x={x+BIO_CRATE_WIDTH_MM*scale/2} y={y+BIO_CRATE_LENGTH_MM*scale/2+4} textAnchor="middle" fontSize="10" fontWeight="600" fill="#1e3a8a">S{String(p.stackNumber).padStart(2,'0')} ×{p.crates}</text></g>; })}
         {Array.from({length:trayCount},(_,index)=><g key={index}>
           <rect x={ox+(trayStartMm+index*(DISPERSION_TRAY.length+DISPERSION_TRAY_GAP_MM))*scale} y={trayTopY} width={DISPERSION_TRAY.length*scale} height={DISPERSION_TRAY.width*scale} fill="none" stroke="#7c3aed" strokeWidth="2" strokeDasharray="7 4"/>
           <text x={ox+(trayStartMm+index*(DISPERSION_TRAY.length+DISPERSION_TRAY_GAP_MM)+DISPERSION_TRAY.length/2)*scale} y={trayTopY+13} textAnchor="middle" fontSize="9" fill="#6d28d9">Tray {index+1} · 3405 × 2005</text>
@@ -364,7 +369,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
           .filter(position => position.row === sectionColumn)
           .sort((a, b) => a.column - b.column)
           .map(position => {
-            const stackX = sox + (layout.wall_thickness_mm + ACCESS_LENGTH_MM + position.column * BIO_CRATE_WIDTH_MM) * ss;
+            const stackX = sox + (layout.wall_thickness_mm + actualAccessLength + position.column * BIO_CRATE_WIDTH_MM) * ss;
             const crateWidth = Math.max(4, BIO_CRATE_WIDTH_MM * ss - 3);
             const selected = selectedStackNumber === position.stackNumber;
             return <g key={`${position.row}:${position.column}`} role="button" tabIndex={0} aria-label={`Stack S${String(position.stackNumber).padStart(2, '0')}, column ${position.row + 1}, position ${position.column + 1}, ${position.crates} crates`} onClick={()=>selectStack(position.stackNumber,position.row)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' ')selectStack(position.stackNumber,position.row);}}>

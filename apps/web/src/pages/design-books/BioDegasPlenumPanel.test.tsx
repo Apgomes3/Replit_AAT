@@ -86,6 +86,15 @@ describe('BioDegasPlenumPanel', () => {
     expect(after).toEqual(before.slice(0, 2));
   });
 
+  it('updates the displayed access length from the current tank and equipment footprint', () => {
+    renderPanel({ preview: { media: { installed_media_l: 13_804 } } });
+    expect(screen.getByText('800 mm access')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'External length (mm)' }), { target: { value: '9000' } });
+
+    expect(screen.getByText('1440 mm access')).toBeInTheDocument();
+  });
+
   it('waits for a Biological Media calculation result', () => {
     renderPanel({ preview: null });
     expect(screen.getByText('Calculate Biological Media first')).toBeInTheDocument();
