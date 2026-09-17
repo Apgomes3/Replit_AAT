@@ -7,7 +7,9 @@ import '../../src/index.css';
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });
-const readOnly = new URLSearchParams(window.location.search).get('mode') === 'issued';
+const mode = new URLSearchParams(window.location.search).get('mode');
+const readOnly = mode === 'issued';
+const canOverrideProduct = mode === 'valves';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -18,7 +20,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           bookId="book-1"
           systemId="system-1"
           readOnly={readOnly}
-          canOverrideProduct={false}
+          canOverrideProduct={canOverrideProduct}
         />
       </main>
     </QueryClientProvider>

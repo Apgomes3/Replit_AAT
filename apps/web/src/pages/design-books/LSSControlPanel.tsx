@@ -252,12 +252,16 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
     });
     return ([...known.values()] as any[]).flatMap((definition: any) => {
       if (!isControlValve(definition)) return [definition];
-      const groups = savedInstruments.filter(item => definitionId(item) === definition.id)
-        .map(item => item.group_key || 'legacy');
+      const groups = [
+        ...savedInstruments.filter(item => definitionId(item) === definition.id)
+          .map(item => item.group_key || 'legacy'),
+        ...instruments.filter(item => item.definition_id === definition.id)
+          .map(item => item.group_key || 'legacy'),
+      ];
       const keys = groups.length ? [...new Set(groups)] : ['legacy'];
       return keys.map(group_key => ({ ...definition, group_key }));
     });
-  }, [control, savedInstruments]);
+  }, [control, savedInstruments, instruments]);
   const products: any[] = control?.products || control?.product_masters || productData?.items || productData || [];
   const ioSchedule = useMemo(() => scheduleRows(control, savedInstruments, definitions, products), [control, savedInstruments, definitions, products]);
 
@@ -302,7 +306,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
       return currentItem
          ? current.map(item => instrumentKey(item) === id ? { ...item, ...changes } : item)
         : [...current, {
-           definition_id: baseId, group_key: groupKey === 'legacy' ? undefined : groupKey,
+            definition_id: baseId, group_key: isControlValve(definition) ? groupKey : undefined,
            nominal_size: '', quantity: 1, product_master_id: null, product_supplied: false,
           control_logic: definition.default_control_logic || null, control_logic_supplied: false,
           range_min: String(definition.default_range_min ?? ''),

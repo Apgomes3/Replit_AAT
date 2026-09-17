@@ -63,6 +63,19 @@ function issuedSchedulePdf() {
   return completed;
 }
 
+function valveSchedulePdf(lines: string[]) {
+  const doc = new PDFDocument();
+  const chunks: Buffer[] = [];
+  doc.on('data', chunk => chunks.push(Buffer.from(chunk)));
+  const completed = new Promise<Buffer>((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+  lines.forEach(line => doc.text(line));
+  doc.end();
+  return completed;
+}
+
 async function openIssuedWorkspace(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height });
   await page.route('**/api/v1/systems/system-1/control**', route => route.fulfill({
@@ -108,6 +121,132 @@ async function openIssuedWorkspace(page: Page, width: number, height: number) {
   await expect(page.getByRole('heading', { name: 'LSS-01 · Field Instruments' })).toBeVisible();
 }
 
+test('control valve size groups retain their own actuator evidence after save and reload', async ({ page }) => {
+  const definition = {
+    id: 'two-way-valve',
+    name: 'Two way control valve',
+    description: 'Modulating two-way control valve and actuator assembly.',
+    tag_code: '2BV',
+    signal_type: 'Analog',
+    signal_direction: 'Output',
+    minimum_quantity: 0,
+  };
+  const products = [
+    { id: 'actuator-small', product_code: 'ACT-050', product_name: 'DN50 valve actuator', status: 'Active' },
+    { id: 'actuator-large', product_code: 'ACT-100', product_name: 'DN100 valve actuator', status: 'Active' },
+  ];
+  let savedInstruments: any[] = [];
+  let savedPayload: any;
+
+  await page.route('**/api/v1/products/masters**', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ items: products }),
+  }));
+  await page.route('**/api/v1/systems/system-1/control**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/io-schedule.pdf')) {
+      const pdf = await valveSchedulePdf(savedInstruments.flatMap(item => [
+        item.tag,
+        item.nominal_size,
+        `${item.product_snapshot.product_code} — ${item.product_snapshot.product_name}`,
+      ]));
+      await route.fulfill({
+        contentType: 'application/pdf',
+        headers: { 'Content-Disposition': 'attachment; filename="valve-schedule.pdf"' },
+        body: pdf,
+      });
+      return;
+    }
+    if (route.request().method() === 'PUT') {
+      savedPayload = route.request().postDataJSON();
+      savedInstruments = savedPayload.instruments.flatMap((group: any, groupIndex: number) =>
+        Array.from({ length: group.quantity }, (_, instanceIndex) => ({
+          id: `${group.group_key}-${instanceIndex}`,
+          definition_id: definition.id,
+          definition_snapshot: definition,
+          group_key: group.group_key,
+          nominal_size: group.nominal_size,
+          quantity: 1,
+          tag: `LSS-01-2BV-${String(groupIndex * 10 + instanceIndex + 1).padStart(2, '0')}`,
+          product_master_id: group.product_master_id,
+          product_snapshot: products.find(product => product.id === group.product_master_id),
+          control_logic: null,
+        })));
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+      return;
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        control: { panel_type: 'PLC' },
+        definitions: [definition],
+        instruments: savedInstruments,
+      }),
+    });
+  });
+
+  await page.goto('/e2e/fixtures/instrument-workspace.html?mode=valves');
+  await expect(page.getByRole('heading', { name: 'LSS-01 · Field Instruments' })).toBeVisible();
+
+  const sizes = page.getByLabel('Nominal size for Two way control valve');
+  const quantities = page.getByLabel('Quantity for Two way control valve');
+  const actuators = page.getByLabel('Product for Two way control valve');
+  await sizes.first().fill('DN50');
+  await quantities.first().fill('');
+  await quantities.first().pressSequentially('2');
+  await actuators.first().selectOption('actuator-small');
+  await page.getByRole('button', { name: '＋ Add size' }).first().click();
+  await expect(sizes).toHaveCount(2);
+  await sizes.nth(1).fill('DN100');
+  await actuators.nth(1).selectOption('actuator-large');
+
+  await page.getByRole('button', { name: 'Save control configuration' }).click();
+  await expect.poll(() => savedPayload?.instruments?.length).toBe(2);
+  expect(savedPayload.instruments).toEqual(expect.arrayContaining([
+    expect.objectContaining({ nominal_size: 'DN50', quantity: 2, product_master_id: 'actuator-small' }),
+    expect.objectContaining({ nominal_size: 'DN100', quantity: 1, product_master_id: 'actuator-large' }),
+  ]));
+  expect(new Set(savedPayload.instruments.map((item: any) => item.group_key)).size).toBe(2);
+
+  await page.reload();
+  await expect(sizes).toHaveCount(2);
+  await expect(sizes.first()).toHaveValue('DN50');
+  await expect(sizes.nth(1)).toHaveValue('DN100');
+  await expect(quantities.first()).toHaveValue('2');
+  await expect(quantities.nth(1)).toHaveValue('1');
+  await expect(actuators.first()).toHaveValue('actuator-small');
+  await expect(actuators.nth(1)).toHaveValue('actuator-large');
+  const configuration = page.getByRole('table', { name: 'Field instrument definitions' });
+  await expect(configuration.getByText('LSS-01-2BV-01, LSS-01-2BV-02')).toBeVisible();
+  await expect(configuration.getByRole('cell', { name: 'LSS-01-2BV-11' })).toBeVisible();
+
+  const schedule = page.getByRole('table', { name: 'PLC Output I/O schedule' });
+  await expect(schedule.getByRole('cell', { name: 'DN50', exact: true })).toHaveCount(2);
+  await expect(schedule.getByRole('cell', { name: 'DN100', exact: true })).toHaveCount(1);
+  await expect(schedule.getByText('ACT-050 — DN50 valve actuator (Active)')).toHaveCount(2);
+  await expect(schedule.getByText('ACT-100 — DN100 valve actuator (Active)')).toHaveCount(1);
+
+  const csvDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV' }).click();
+  const csvDownload = await csvDownloadPromise;
+  const csvPath = await csvDownload.path();
+  const csv = await readFile(csvPath!, 'utf8');
+  expect(csv).toContain('DN50');
+  expect(csv).toContain('ACT-050 — DN50 valve actuator (Active)');
+  expect(csv).toContain('DN100');
+  expect(csv).toContain('ACT-100 — DN100 valve actuator (Active)');
+
+  const pdfDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download PDF' }).click();
+  const pdfDownload = await pdfDownloadPromise;
+  const pdfPath = await pdfDownload.path();
+  const { stdout: pdfText } = await execFileAsync('pdftotext', [pdfPath!, '-']);
+  expect(pdfText).toContain('DN50');
+  expect(pdfText).toContain('ACT-050 — DN50 valve actuator');
+  expect(pdfText).toContain('DN100');
+  expect(pdfText).toContain('ACT-100 — DN100 valve actuator');
+});
+
 for (const viewport of viewports) {
   test(`${viewport.name}: field instrument list and cards remain usable`, async ({ page }) => {
     await openWorkspace(page, viewport.width, viewport.height);
@@ -133,11 +272,13 @@ for (const viewport of viewports) {
     expect(listMetrics.right).toBeLessThanOrEqual(viewport.width);
 
     const logic = page.getByLabel('Control logic for Pressure transmitter with an intentionally long field label');
+    await page.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter with an intentionally long field label' }).click();
     await logic.fill('Trip pump on high pressure');
     await cards.tap();
 
     const card = page.getByRole('article', { name: 'Pressure transmitter with an intentionally long field label' });
     await expect(card).toBeVisible();
+    await card.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter with an intentionally long field label' }).click();
     await expect(page.getByLabel('Control logic for Pressure transmitter with an intentionally long field label'))
       .toHaveValue('Trip pump on high pressure');
 
@@ -149,6 +290,7 @@ for (const viewport of viewports) {
     expect(bounds.every(bound => bound.left >= 0 && bound.right <= bound.width)).toBe(true);
 
     await list.tap();
+    await page.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter with an intentionally long field label' }).click();
     await expect(page.getByLabel('Control logic for Pressure transmitter with an intentionally long field label'))
       .toHaveValue('Trip pump on high pressure');
   });
@@ -162,6 +304,7 @@ for (const viewport of viewports) {
 
     const table = page.getByRole('table', { name: 'Field instrument definitions' });
     const scroller = table.locator('xpath=..');
+    await page.getByRole('button', { name: `View control details and evidence for ${issuedInstrumentName}` }).click();
     await expect(table.getByText(issuedTag)).toBeVisible();
     await expect(page.getByLabel(`Product for ${issuedInstrumentName}`)).toHaveValue('historic-product');
     await expect(page.getByLabel(`Product for ${issuedInstrumentName}`)).toBeDisabled();
@@ -187,6 +330,7 @@ for (const viewport of viewports) {
     await page.getByRole('button', { name: 'Cards' }).tap();
     const card = page.getByRole('article', { name: issuedInstrumentName });
     await expect(card).toBeVisible();
+    await card.getByRole('button', { name: `View control details and evidence for ${issuedInstrumentName}` }).click();
     await expect(card.getByText(issuedTag)).toBeVisible();
     await expect(card.getByText('Frozen product evidence')).toBeVisible();
     await expect(card.getByText('Frozen calibration and datasheet evidence')).toBeVisible();
