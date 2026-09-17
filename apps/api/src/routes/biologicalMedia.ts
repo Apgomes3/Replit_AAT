@@ -841,9 +841,12 @@ router.get('/systems/:id/bio-degas-plenum', async (req: AuthRequest, res: Respon
     return res.json(record || { layout: null, source_crate_count: null });
   }
   const result = await query(
-    `SELECT p.layout,p.source_crate_count,p.updated_at
+    `SELECT p.layout,p.source_crate_count,p.updated_at,p.project_equipment_item_id,
+            p.promoted_product_master_id,pm.product_code AS promoted_product_code,
+            pm.product_name AS promoted_product_name
      FROM systems s JOIN design_books db ON db.project_id=s.project_id
      LEFT JOIN design_book_bio_degas_plenum_layouts p ON p.system_id=s.id AND p.design_book_id=db.id
+     LEFT JOIN product_masters pm ON pm.id=p.promoted_product_master_id
      WHERE s.id=$1 AND db.id=$2`,
     [routeParam(req.params.id), designBookId],
   );
@@ -885,7 +888,7 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
   try {
     await client.query('BEGIN');
   const source = await client.query(
-    `SELECT c.preview_result,c.preview_stale
+    `SELECT c.preview_result,c.preview_stale,s.project_id,s.system_code,db.book_code
      FROM lss_biological_media_cases c JOIN systems s ON s.id=c.system_id
      JOIN design_books db ON db.id=c.design_book_id AND db.project_id=s.project_id
      WHERE c.system_id=$1 AND c.design_book_id=$2
@@ -937,13 +940,157 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
      VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (system_id,design_book_id) DO UPDATE SET
        layout=EXCLUDED.layout,source_crate_count=EXCLUDED.source_crate_count,updated_by=EXCLUDED.updated_by,updated_at=NOW()
-     RETURNING layout,source_crate_count,updated_at`,
+      RETURNING id,layout,source_crate_count,updated_at,project_equipment_item_id,promoted_product_master_id`,
     [routeParam(req.params.id), designBookId, serializeJsonbParam(savedLayout), crateCount, req.user!.id],
   );
+  const record = saved.rows[0];
+  const sourceRow = source.rows[0];
+  const equipmentCode = `${String(sourceRow.system_code || 'LSS').toUpperCase()}-BIO-PLENUM-${String(sourceRow.book_code || '').toUpperCase()}`
+    .replace(/[^A-Z0-9._-]+/g, '-').slice(0, 50);
+  const equipmentNotes = `FRP Bio/Degas plenum ${length} × ${width} × ${height} mm; ${crateCount} bio crates; ${trayCount} dispersion tray${trayCount === 1 ? '' : 's'}; ${trayGap} mm tray-to-crate gap.`;
+  let equipmentId = record.project_equipment_item_id;
+  if (equipmentId) {
+    await client.query(
+      `UPDATE project_equipment_items SET system_id=$2,description=$3,quantity=1,unit='EA',notes=$4,status='Design',updated_at=NOW()
+       WHERE id=$1`,
+      [equipmentId, routeParam(req.params.id), 'FRP Bio/Degas plenum tank', equipmentNotes],
+    );
+  } else {
+    const equipment = await client.query(
+      `INSERT INTO project_equipment_items
+        (equip_code,project_id,system_id,description,quantity,unit,notes,status)
+       VALUES ($1,$2,$3,$4,1,'EA',$5,'Design')
+       ON CONFLICT (project_id,equip_code) DO UPDATE SET
+         system_id=EXCLUDED.system_id,description=EXCLUDED.description,notes=EXCLUDED.notes,status='Design',updated_at=NOW()
+       RETURNING id`,
+      [equipmentCode, sourceRow.project_id, routeParam(req.params.id), 'FRP Bio/Degas plenum tank', equipmentNotes],
+    );
+    equipmentId = equipment.rows[0].id;
+    await client.query(
+      'UPDATE design_book_bio_degas_plenum_layouts SET project_equipment_item_id=$2 WHERE id=$1',
+      [record.id, equipmentId],
+    );
+  }
+  const breakdown = await client.query(
+    'SELECT id FROM design_book_equipment_breakdowns WHERE design_book_id=$1',
+    [designBookId],
+  );
+  if (breakdown.rows[0]) {
+    const snapshot = serializeJsonbParam({
+      plenum_layout_id: record.id, system_id: routeParam(req.params.id), layout: savedLayout,
+      source_crate_count: crateCount, project_equipment_item_id: equipmentId,
+    });
+    await client.query(
+      `INSERT INTO design_book_equipment_breakdown_lines
+        (breakdown_id,system_id,source_kind,source_id,source_key,source_snapshot,description,quantity,unit,notes,sort_order)
+       VALUES ($1,$2,'equipment',$3,$4,$5,$6,1,'EA',$7,0)
+       ON CONFLICT (breakdown_id,source_key) DO UPDATE SET
+         source_snapshot=EXCLUDED.source_snapshot,
+         description=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'description'
+           THEN design_book_equipment_breakdown_lines.description ELSE EXCLUDED.description END,
+         quantity=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'quantity'
+           THEN design_book_equipment_breakdown_lines.quantity ELSE EXCLUDED.quantity END,
+         unit=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'unit'
+           THEN design_book_equipment_breakdown_lines.unit ELSE EXCLUDED.unit END,
+         notes=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'notes'
+           THEN design_book_equipment_breakdown_lines.notes ELSE EXCLUDED.notes END,
+         updated_at=NOW()`,
+      [breakdown.rows[0].id, routeParam(req.params.id), equipmentId, `equipment:${equipmentId}`,
+        snapshot, 'FRP Bio/Degas plenum tank', equipmentNotes],
+    );
+  }
   await client.query('COMMIT');
-  res.json(saved.rows[0]);
+  res.json({ ...record, project_equipment_item_id: equipmentId });
   } catch (error) {
     await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/systems/:id/bio-degas-plenum/promote-to-pim', requireModuleManage('pim'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const designBookId = text(req.body.design_book_id);
+  const productCode = String(req.body.product_code || '').trim().toUpperCase();
+  const productName = String(req.body.product_name || '').trim();
+  const tankFamilyId = text(req.body.tank_family_id);
+  if (!designBookId || !productCode || !productName || !tankFamilyId) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Design Book, product code, product name, and FRP tank family are required.' } });
+  }
+  if (productCode.length > 50 || !/^[A-Z0-9][A-Z0-9._-]*$/.test(productCode)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Product code may contain only letters, numbers, dots, underscores, and hyphens.' } });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `SELECT p.*,s.project_id,s.system_code,db.book_code,db.status AS book_status,
+              pr.project_code,pr.project_name,tf.code AS family_code,tf.name AS family_name
+       FROM design_book_bio_degas_plenum_layouts p
+       JOIN systems s ON s.id=p.system_id
+       JOIN projects pr ON pr.id=s.project_id
+       JOIN design_books db ON db.id=p.design_book_id AND db.project_id=s.project_id
+       JOIN tank_families tf ON tf.id=$3
+       WHERE p.system_id=$1 AND p.design_book_id=$2
+       FOR UPDATE OF p`,
+      [routeParam(req.params.id), designBookId, tankFamilyId],
+    );
+    const source = result.rows[0];
+    if (!source) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Saved plenum layout or selected tank family was not found.' } });
+    }
+    if (!['Draft', 'In Progress'].includes(source.book_status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: { code: 'DESIGN_BOOK_READ_ONLY', message: 'The plenum can only be added to PIM while the Design Book is editable.' } });
+    }
+    if (source.promoted_product_master_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: { code: 'DUPLICATE_PROMOTION', message: 'This plenum layout has already been added to PIM.' } });
+    }
+    const duplicate = await client.query(
+      'SELECT id,product_code FROM product_masters WHERE product_code=$1 OR source_bio_degas_plenum_layout_id=$2',
+      [productCode, source.id],
+    );
+    if (duplicate.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: { code: 'DUPLICATE_PROMOTION', message: `PIM product ${duplicate.rows[0].product_code} already exists.` } });
+    }
+    const layout = source.layout || {};
+    const snapshot = {
+      layout_id: source.id, design_book_id: designBookId, system_id: source.system_id,
+      system_code: source.system_code, project_id: source.project_id,
+      project_code: source.project_code, project_name: source.project_name,
+      source_crate_count: source.source_crate_count, layout,
+    };
+    const product = (await client.query(
+      `INSERT INTO product_masters
+        (product_code,tank_family_id,product_name,product_category,application_type,primary_material_code,
+         standard_status,shape_type,length_mm,width_mm,height_mm,design_water_level_mm,notes,
+         tank_engineering_details,source_bio_degas_plenum_layout_id,source_bio_degas_plenum_snapshot)
+       VALUES ($1,$2,$3,'Tank','Bio/Degas Plenum','FRP','Concept','Rectangular',$4,$5,$6,$7,$8,$9::jsonb,$10,$11::jsonb)
+       RETURNING id,product_code,product_name`,
+      [productCode, tankFamilyId, productName, layout.external_length_mm, layout.external_width_mm,
+        layout.external_height_mm, layout.water_level_mm,
+        `${source.source_crate_count} bio crates; ${layout.tray_count || 1} dispersion tray(s).`,
+        serializeJsonbParam({ wall_thickness_mm: layout.wall_thickness_mm, tray_gap_mm: layout.tray_gap_mm, tray_count: layout.tray_count }),
+        source.id, serializeJsonbParam(snapshot)],
+    )).rows[0];
+    await client.query(
+      'UPDATE design_book_bio_degas_plenum_layouts SET promoted_product_master_id=$2,updated_at=NOW() WHERE id=$1',
+      [source.id, product.id],
+    );
+    if (source.project_equipment_item_id) {
+      await client.query(
+        'UPDATE project_equipment_items SET product_master_id=$2,updated_at=NOW() WHERE id=$1',
+        [source.project_equipment_item_id, product.id],
+      );
+    }
+    await client.query('COMMIT');
+    res.status(201).json(product);
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error?.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE_PROMOTION', message: 'This plenum layout or product code has already been added to PIM.' } });
     throw error;
   } finally {
     client.release();

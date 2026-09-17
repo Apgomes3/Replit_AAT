@@ -61,6 +61,17 @@ describe('BioDegasPlenumPanel', () => {
     expect(screen.getAllByRole('spinbutton', { name: 'Water level (mm)' })[0]).toHaveValue(1200);
   });
 
+  it('changes tray-to-crate gap without changing external tank height', () => {
+    renderPanel({ preview: { media: { installed_media_l: 477 } } });
+    const height = screen.getByRole('spinbutton', { name: 'External height (mm)' });
+    expect(height).toHaveValue(2390);
+
+    fireEvent.click(screen.getByRole('button', { name: /edit tray-to-crate gap/i }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Tray-to-crate gap (mm)' }), { target: { value: '110' } });
+
+    expect(height).toHaveValue(2390);
+  });
+
   it('waits for a Biological Media calculation result', () => {
     renderPanel({ preview: null });
     expect(screen.getByText('Calculate Biological Media first')).toBeInTheDocument();

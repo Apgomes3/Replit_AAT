@@ -2306,6 +2306,17 @@ CREATE TABLE IF NOT EXISTS design_book_bio_degas_plenum_layouts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(system_id, design_book_id)
 );
+ALTER TABLE design_book_bio_degas_plenum_layouts
+  ADD COLUMN IF NOT EXISTS project_equipment_item_id UUID REFERENCES project_equipment_items(id) ON DELETE SET NULL;
+ALTER TABLE design_book_bio_degas_plenum_layouts
+  ADD COLUMN IF NOT EXISTS promoted_product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL;
+ALTER TABLE product_masters
+  ADD COLUMN IF NOT EXISTS source_bio_degas_plenum_layout_id UUID REFERENCES design_book_bio_degas_plenum_layouts(id) ON DELETE SET NULL;
+ALTER TABLE product_masters
+  ADD COLUMN IF NOT EXISTS source_bio_degas_plenum_snapshot JSONB;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_masters_source_bio_degas_plenum
+  ON product_masters(source_bio_degas_plenum_layout_id)
+  WHERE source_bio_degas_plenum_layout_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_bio_degas_plenum_layout_book
   ON design_book_bio_degas_plenum_layouts(design_book_id, system_id);
 DROP TRIGGER IF EXISTS guard_released_bio_degas_plenum_layout ON design_book_bio_degas_plenum_layouts;

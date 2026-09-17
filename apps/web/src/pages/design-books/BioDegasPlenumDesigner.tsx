@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { RotateCcw, Save } from 'lucide-react';
+import { LibraryBig, RotateCcw, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 
@@ -152,6 +152,18 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   const [sectionColumn, setSectionColumn] = useState(0);
   const [selectedStackNumber, setSelectedStackNumber] = useState<number | null>(null);
   const [editingDimension, setEditingDimension] = useState<keyof Pick<PlenumLayout, 'external_length_mm' | 'external_width_mm' | 'external_height_mm' | 'water_level_mm' | 'tray_gap_mm'> | null>(null);
+  const [showPimPromotion, setShowPimPromotion] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [pimForm, setPimForm] = useState({
+    product_code: `BIO-PLENUM-${String(systemId || '').slice(0, 8).toUpperCase()}`,
+    product_name: 'FRP Bio/Degas plenum tank',
+    tank_family_id: '',
+  });
+  const { data: tankFamilies = [] } = useQuery({
+    queryKey: ['tank-families'],
+    queryFn: () => api.get('/tank-families').then(response => response.data?.items || response.data || []),
+    enabled: showPimPromotion && !readOnly && !saved?.promoted_product_master_id,
+  });
   useEffect(() => {
     if (!recommended) return;
     const next = saved?.layout ? { ...recommended, ...saved.layout } : recommended;
@@ -181,9 +193,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   });
   const setTrayGap = (value: number) => setLayout(current => {
     if (!current) return current;
-    const currentGap = Number(current.tray_gap_mm ?? TRAY_GAP_MM);
-    const nextHeight = Math.min(PLENUM_LIMITS.height, Math.max(1500, current.external_height_mm + value - currentGap));
-    return { ...current, tray_gap_mm: value, external_height_mm: nextHeight };
+    return { ...current, tray_gap_mm: value };
   });
   const updateStack = (index: number, key: 'row' | 'column' | 'quantity', value: number) =>
     setLayout(current => current ? {
@@ -250,6 +260,25 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
       toast.success('Bio/Degas plenum layout saved');
     } catch (error: any) { toast.error(error?.response?.data?.error?.message || 'Could not save plenum layout'); }
   };
+  const promoteToPim = async () => {
+    if (!pimForm.product_code.trim() || !pimForm.product_name.trim() || !pimForm.tank_family_id) {
+      return toast.error('Product code, product name, and FRP tank family are required.');
+    }
+    setPromoting(true);
+    try {
+      await api.post(`/systems/${systemId}/bio-degas-plenum/promote-to-pim`, {
+        design_book_id: bookId,
+        ...pimForm,
+      });
+      await refetch();
+      setShowPimPromotion(false);
+      toast.success('Plenum tank added to PIM');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Could not add plenum tank to PIM');
+    } finally {
+      setPromoting(false);
+    }
+  };
   const fields: Array<[Exclude<keyof PlenumLayout, 'stacks'>, string, number, number]> = [
     ['external_length_mm', 'External length', DISPERSION_TRAY.length, PLENUM_LIMITS.length],
     ['external_width_mm', 'External width', DISPERSION_TRAY.width, PLENUM_LIMITS.width],
@@ -273,7 +302,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   const trayStartMm = layout.wall_thickness_mm + ACCESS_LENGTH_MM
     + Math.max(0, (usableTrayLength - trayCount * DISPERSION_TRAY.length) / 2);
   const trayTopY = oy + wallPx + Math.max(0, (assessment.internalWidth - DISPERSION_TRAY.width) * scale / 2);
-  const actualCrateGap = Math.max(0, assessment.internalHeight - DISPERSION_TRAY.height - tallestArrangedStack * BIO_CRATE_HEIGHT_MM);
+  const bottomClearance = assessment.internalHeight - DISPERSION_TRAY.height - trayGap - tallestArrangedStack * BIO_CRATE_HEIGHT_MM;
   const waterBottomY = soy + sh - layout.wall_thickness_mm * ss;
   const waterTopY = waterBottomY - layout.water_level_mm * ss;
 
@@ -314,7 +343,11 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
         <line x1={ox+drawW+13} y1={oy+drawH} x2={ox+drawW+23} y2={oy+drawH} stroke="#64748b"/>
         {dimensionControl('external_width_mm', 'Width', ox+drawW+46, oy+drawH/2, DISPERSION_TRAY.width, PLENUM_LIMITS.width, true)}
       </svg></figure>
-      <figure className="overflow-hidden rounded-xl border border-stone-200 bg-white"><figcaption className="flex flex-wrap items-center justify-between gap-2 border-b bg-stone-50 px-4 py-2"><span className="font-semibold text-stone-800">Section view</span><span className="inline-flex rounded-lg border border-stone-200 bg-white p-1" aria-label="Section column">{Array.from({length:layout.rows},(_,row)=><button key={row} type="button" onClick={()=>setSectionColumn(row)} className={`rounded-md px-3 py-1 text-xs font-semibold transition ${sectionColumn===row?'bg-blue-600 text-white shadow-sm':'text-stone-600 hover:bg-stone-100'}`}>Column {row+1}</button>)}</span></figcaption><svg viewBox={`0 0 ${sectionW} ${sectionH}`} role="img" aria-label={`Dynamic section view of plenum tank, column ${sectionColumn + 1}`} className="h-auto w-full bg-slate-50">
+      <figure className="overflow-hidden rounded-xl border border-stone-200 bg-white"><figcaption className="flex flex-wrap items-center justify-between gap-2 border-b bg-stone-50 px-4 py-2"><span className="font-semibold text-stone-800">Section view</span><span className="flex flex-wrap items-center gap-2">
+        {editingDimension === 'tray_gap_mm' && !readOnly ? <input autoFocus aria-label="Tray-to-crate gap (mm)" type="number" min={TRAY_GAP_MM} max={PLENUM_LIMITS.height} value={trayGap} onChange={event=>setTrayGap(Number(event.target.value))} onBlur={()=>setEditingDimension(null)} onKeyDown={event=>{if(event.key==='Enter'||event.key==='Escape')setEditingDimension(null);}} className="h-8 w-44 rounded-lg border border-red-400 bg-white px-2 text-center font-mono text-xs font-semibold outline-none ring-2 ring-red-100"/>
+          : <button type="button" disabled={readOnly} aria-label={`Edit tray-to-crate gap, currently ${trayGap} mm`} onClick={()=>setEditingDimension('tray_gap_mm')} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60">Tray-to-crate gap {trayGap} mm</button>}
+        <span className="inline-flex rounded-lg border border-stone-200 bg-white p-1" aria-label="Section column">{Array.from({length:layout.rows},(_,row)=><button key={row} type="button" onClick={()=>setSectionColumn(row)} className={`rounded-md px-3 py-1 text-xs font-semibold transition ${sectionColumn===row?'bg-blue-600 text-white shadow-sm':'text-stone-600 hover:bg-stone-100'}`}>Column {row+1}</button>)}</span>
+      </span></figcaption><svg viewBox={`0 0 ${sectionW} ${sectionH}`} role="img" aria-label={`Dynamic section view of plenum tank, column ${sectionColumn + 1}`} className="h-auto w-full bg-slate-50">
         <rect x={sox} y={soy} width={sw} height={sh} fill="#eff6ff" stroke="#1e3a5f" strokeWidth="3"/>
         {Array.from({length:trayCount},(_,index)=><g key={index}>
           <rect x={sox+(trayStartMm+index*DISPERSION_TRAY.length)*ss} y={soy} width={DISPERSION_TRAY.length*ss} height={DISPERSION_TRAY.height*ss} fill="#ddd6fe" stroke="#7c3aed"/>
@@ -337,7 +370,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
                 key={level}
                 data-testid="section-crate"
                 x={stackX}
-                y={soy + sh - layout.wall_thickness_mm * ss - (level + 1) * BIO_CRATE_HEIGHT_MM * ss}
+                y={soy + (DISPERSION_TRAY.height + trayGap + (position.crates - level - 1) * BIO_CRATE_HEIGHT_MM) * ss}
                 width={crateWidth}
                 height={Math.max(3, BIO_CRATE_HEIGHT_MM * ss - 2)}
                 rx="1.5"
@@ -348,7 +381,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
               {Array.from({ length: position.crates }, (_, level) => <text
                 key={`label-${level}`}
                 x={stackX + crateWidth / 2}
-                y={soy + sh - layout.wall_thickness_mm * ss - level * BIO_CRATE_HEIGHT_MM * ss - BIO_CRATE_HEIGHT_MM * ss / 2 + 3}
+                y={soy + (DISPERSION_TRAY.height + trayGap + (position.crates - level - .5) * BIO_CRATE_HEIGHT_MM) * ss + 3}
                 textAnchor="middle"
                 fontSize="7"
                 fontWeight="600"
@@ -356,22 +389,16 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
               >S{String(position.stackNumber).padStart(2,'0')}</text>)}
               <text
                 x={stackX + crateWidth / 2}
-                y={soy + sh - layout.wall_thickness_mm * ss - position.crates * BIO_CRATE_HEIGHT_MM * ss - 4}
+                y={soy + (DISPERSION_TRAY.height + trayGap) * ss - 4}
                 textAnchor="middle"
                 fontSize="8"
                 fill="#334155"
               >S{String(position.stackNumber).padStart(2,'0')} · {position.crates}</text>
             </g>;
           })}
-        <line x1={sox+sw-46} y1={soy+DISPERSION_TRAY.height*ss} x2={sox+sw-46} y2={soy+DISPERSION_TRAY.height*ss+actualCrateGap*ss} stroke="#dc2626"/>
+        <line x1={sox+sw-46} y1={soy+DISPERSION_TRAY.height*ss} x2={sox+sw-46} y2={soy+(DISPERSION_TRAY.height+trayGap)*ss} stroke="#dc2626"/>
         <line x1={sox+sw-51} y1={soy+DISPERSION_TRAY.height*ss} x2={sox+sw-41} y2={soy+DISPERSION_TRAY.height*ss} stroke="#dc2626"/>
-        <line x1={sox+sw-51} y1={soy+DISPERSION_TRAY.height*ss+actualCrateGap*ss} x2={sox+sw-41} y2={soy+DISPERSION_TRAY.height*ss+actualCrateGap*ss} stroke="#dc2626"/>
-        {editingDimension === 'tray_gap_mm' && !readOnly ? <foreignObject x={sox+sw-238} y={soy+DISPERSION_TRAY.height*ss+8} width="122" height="30">
-          <input autoFocus aria-label="Tray-to-crate gap (mm)" type="number" min={TRAY_GAP_MM} max={PLENUM_LIMITS.height} value={trayGap} onChange={event=>setTrayGap(Number(event.target.value))} onBlur={()=>setEditingDimension(null)} onKeyDown={event=>{if(event.key==='Enter'||event.key==='Escape')setEditingDimension(null);}} className="h-7 w-full rounded-md border border-red-500 bg-white px-2 text-center font-mono text-[11px] font-semibold shadow-md outline-none ring-2 ring-red-100"/>
-        </foreignObject> : <g role="button" tabIndex={readOnly?-1:0} aria-label={`Edit tray-to-crate gap, currently ${trayGap} mm`} onClick={()=>!readOnly&&setEditingDimension('tray_gap_mm')} onKeyDown={event=>{if(!readOnly&&(event.key==='Enter'||event.key===' '))setEditingDimension('tray_gap_mm');}} className={readOnly?'':'cursor-pointer'}>
-          <rect x={sox+sw-238} y={soy+DISPERSION_TRAY.height*ss+10} width="122" height="24" rx="6" fill="#fff" stroke="#dc2626"/>
-          <text x={sox+sw-177} y={soy+DISPERSION_TRAY.height*ss+26} textAnchor="middle" fontSize="9" fontWeight="600" fill="#b91c1c">Tray-to-crate gap {trayGap} mm</text>
-        </g>}
+        <line x1={sox+sw-51} y1={soy+(DISPERSION_TRAY.height+trayGap)*ss} x2={sox+sw-41} y2={soy+(DISPERSION_TRAY.height+trayGap)*ss} stroke="#dc2626"/>
         <line x1={sox+sw+18} y1={soy} x2={sox+sw+18} y2={soy+sh} stroke="#64748b"/>
         <line x1={sox+sw+13} y1={soy} x2={sox+sw+23} y2={soy} stroke="#64748b"/>
         <line x1={sox+sw+13} y1={soy+sh} x2={sox+sw+23} y2={soy+sh} stroke="#64748b"/>
@@ -379,6 +406,22 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
         <text x={sectionW/2} y={sectionH-5} textAnchor="middle" fontSize="11" fill="#334155">{layout.external_length_mm} mm linked length · tallest arranged stack {tallestArrangedStack}</text>
       </svg></figure>
     </div>
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['Internal size',`${assessment.internalLength} × ${assessment.internalWidth} × ${assessment.internalHeight} mm`],['Layout capacity',`${assessment.capacity} crates`],['Required crates',crateCount],['Clear height below tray',`${assessment.verticalAvailable} mm`]].map(([label,value])=><div key={String(label)} className="rounded-xl border border-stone-200 bg-white p-4"><div className="text-xs text-stone-500">{label}</div><div className="mt-1 font-mono font-semibold text-stone-900">{value}</div></div>)}</div>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['Internal size',`${assessment.internalLength} × ${assessment.internalWidth} × ${assessment.internalHeight} mm`],['Layout capacity',`${assessment.capacity} crates`],['Required crates',crateCount],['Space below crates',`${Math.max(0,bottomClearance)} mm`]].map(([label,value])=><div key={String(label)} className="rounded-xl border border-stone-200 bg-white p-4"><div className="text-xs text-stone-500">{label}</div><div className="mt-1 font-mono font-semibold text-stone-900">{value}</div></div>)}</div>
+    {saved?.project_equipment_item_id && <section className="rounded-xl border border-blue-100 bg-blue-50/40 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3"><LibraryBig className="mt-0.5 h-5 w-5 text-blue-600"/><div>
+          <h3 className="font-semibold text-stone-900">Project equipment and PIM</h3>
+          <p className="mt-1 text-sm text-stone-600">This saved plenum is a project equipment item and is included in Equipment Breakdown as one FRP tank.</p>
+          {saved.promoted_product_master_id && <p className="mt-2 text-sm font-medium text-emerald-700">PIM product {saved.promoted_product_code} — {saved.promoted_product_name}</p>}
+        </div></div>
+        {!readOnly && !saved.promoted_product_master_id && <button type="button" onClick={()=>setShowPimPromotion(value=>!value)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">Add to FRP tank family PIM</button>}
+      </div>
+      {showPimPromotion && !saved.promoted_product_master_id && <div className="mt-4 grid gap-3 border-t border-blue-100 pt-4 md:grid-cols-3">
+        <label className="text-xs font-semibold text-stone-600">Product code<input value={pimForm.product_code} onChange={event=>setPimForm({...pimForm,product_code:event.target.value.toUpperCase()})} className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 font-mono text-sm"/></label>
+        <label className="text-xs font-semibold text-stone-600">Product name<input value={pimForm.product_name} onChange={event=>setPimForm({...pimForm,product_name:event.target.value})} className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"/></label>
+        <label className="text-xs font-semibold text-stone-600">FRP tank family<select value={pimForm.tank_family_id} onChange={event=>setPimForm({...pimForm,tank_family_id:event.target.value})} className="mt-1 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"><option value="">Select family</option>{tankFamilies.map((family:any)=><option key={family.id} value={family.id}>{family.code} — {family.name}</option>)}</select></label>
+        <div className="md:col-span-3 flex justify-end"><button type="button" disabled={promoting} onClick={promoteToPim} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{promoting?'Adding…':'Create reusable PIM product'}</button></div>
+      </div>}
+    </section>}
   </div>;
 }
