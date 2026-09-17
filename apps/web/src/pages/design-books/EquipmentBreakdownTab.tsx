@@ -198,9 +198,9 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
       </td></tr>}
     </Fragment>;
     return <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
-    <table className="min-w-[1500px] w-full text-xs">
+    <table className="min-w-[1080px] w-full table-auto text-xs">
       <thead className="bg-stone-50 text-left uppercase tracking-wide text-stone-500"><tr>
-        {columns.filter(column => !hidden.has(column.key)).map(column => <th key={column.key} className={`px-2 py-2 font-semibold ${column.key === 'quantity' ? 'w-12' : column.key === 'unit' ? 'w-14' : column.key === 'markup' ? 'w-24 whitespace-nowrap' : column.key === 'currency' ? 'w-20' : ['selling_price','total_price'].includes(column.key) ? 'w-24 whitespace-nowrap' : ['supplier','model','unit_cost'].includes(column.key) ? 'w-px whitespace-nowrap' : ''}`}>{column.label}</th>)}<th className="w-12 px-2 py-2 font-semibold" />
+        {columns.filter(column => !hidden.has(column.key)).map(column => <th key={column.key} className={`px-2 py-2 font-semibold ${column.key === 'description' ? 'w-52 max-w-[208px]' : column.key === 'quantity' ? 'w-12' : column.key === 'unit' ? 'w-14' : column.key === 'markup' ? 'w-24 whitespace-nowrap' : column.key === 'currency' ? 'w-20' : ['selling_price','total_price'].includes(column.key) ? 'w-24 whitespace-nowrap' : ['supplier','model','unit_cost'].includes(column.key) ? 'w-px whitespace-nowrap' : ''}`}>{column.label}</th>)}<th className="w-12 px-2 py-2 font-semibold" />
       </tr></thead>
       <tbody>{rows.map((row, rowIndex) => <Fragment key={row.id}>{insertControl(rowIndex)}<tr
         onDragOver={event => { if (!readOnly && draggingId) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setDragOverIndex(rowIndex + (event.clientY > rect.top + rect.height / 2 ? 1 : 0)); } }}
@@ -235,7 +235,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
           }
           const type = ['quantity','unit_cost','markup'].includes(field) ? 'number' : 'text';
           const contentWidth = ['quantity','unit','markup','supplier','model','unit_cost'].includes(field);
-          return <td key={field} className={`${field === 'quantity' ? 'w-12 min-w-[52px]' : field === 'unit' ? 'w-14 min-w-[56px]' : field === 'markup' ? 'w-24 min-w-[88px]' : contentWidth ? 'w-px whitespace-nowrap' : 'min-w-[100px]'} px-1 py-1`}><Field value={value} type={type} contentWidth={contentWidth} disabled={readOnly} saving={saving === key}
+          return <td key={field} className={`${field === 'description' ? 'w-52 min-w-[168px] max-w-[208px]' : field === 'quantity' ? 'w-12 min-w-[52px]' : field === 'unit' ? 'w-14 min-w-[56px]' : field === 'markup' ? 'w-24 min-w-[88px]' : contentWidth ? 'w-px whitespace-nowrap' : 'min-w-[100px]'} px-1 py-1`}><Field value={value} type={type} contentWidth={contentWidth} disabled={readOnly} saving={saving === key}
             onChange={next => setDrafts(current => ({ ...current, [key]: next }))}
             onCommit={() => {
               if (!Object.prototype.hasOwnProperty.call(drafts, key) || String(drafts[key]) === String(row[field] ?? '')) return;
