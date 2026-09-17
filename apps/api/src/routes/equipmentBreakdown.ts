@@ -18,6 +18,27 @@ const transaction = async <T>(fn: (db: Db) => Promise<T>) => {
 
 const numberOrNull = (value: any) => value == null || value === '' ? null : Number(value);
 const safeText = (value: any) => value == null ? null : String(value);
+export const equipmentBreakdownColumns = [
+  { key: 'system', label: 'System', value: (row: any) => row.system_name || 'Unassigned' },
+  { key: 'source_kind', label: 'Source', value: (row: any) => row.source_kind },
+  { key: 'description', label: 'Description', value: (row: any) => row.description },
+  { key: 'quantity', label: 'Qty', value: (row: any) => Number(row.quantity) },
+  { key: 'unit', label: 'Unit', value: (row: any) => row.unit },
+  { key: 'supplier', label: 'Supplier', value: (row: any) => row.supplier || '' },
+  { key: 'manufacturer', label: 'Manufacturer', value: (row: any) => row.manufacturer || '' },
+  { key: 'model', label: 'Model', value: (row: any) => row.model || '' },
+  { key: 'unit_cost', label: 'Unit Cost', value: (row: any) => numberOrNull(row.unit_cost) },
+  { key: 'markup', label: 'Markup %', value: (row: any) => numberOrNull(row.markup) },
+  { key: 'selling_price', label: 'Selling Price', value: (row: any) => numberOrNull(row.selling_price) },
+  { key: 'currency', label: 'Currency', value: (row: any) => row.currency },
+  { key: 'lead_time', label: 'Lead Time', value: (row: any) => row.lead_time || '' },
+  { key: 'exclusions', label: 'Exclusions', value: (row: any) => row.exclusions || '' },
+  { key: 'notes', label: 'Notes', value: (row: any) => row.notes || '' },
+];
+const configurableColumnKeys = new Set(equipmentBreakdownColumns.filter(column => column.key !== 'system').map(column => column.key));
+const normalizeHiddenColumns = (value: any) => Array.isArray(value)
+  ? [...new Set(value.map(String).filter(key => configurableColumnKeys.has(key)))]
+  : [];
 
 export function expandAllocationProducts(
   allocation: any,
@@ -36,6 +57,40 @@ export function expandAllocationProducts(
       unit: product?.unit || 'EA',
     };
   });
+}
+
+const BIO_CRATE_MEDIA_CAPACITY_M3 = 0.238;
+
+export function expandBiologicalMediaProducts(biologicalCase: any) {
+  const result = biologicalCase?.preview_result?.media;
+  if (!result) return [];
+  const requiredMediaL = Number(result.required_media_l);
+  const installedMediaM3 = Number(result.installed_media_m3 ?? (
+    Number.isFinite(Number(result.installed_media_l)) ? Number(result.installed_media_l) / 1000
+      : result.required_media_m3 ?? (Number.isFinite(requiredMediaL) ? requiredMediaL / 1000 : NaN)
+  ));
+  const products: any[] = [];
+  if (Number.isFinite(installedMediaM3) && installedMediaM3 > 0) {
+    products.push({
+      source_key: `${biologicalCase.id}:bio-crates`,
+      description: 'Bio media crate (1,040 × 740 × 530 mm)',
+      quantity: Math.ceil(installedMediaM3 / BIO_CRATE_MEDIA_CAPACITY_M3),
+      unit: 'EA',
+      notes: `${BIO_CRATE_MEDIA_CAPACITY_M3} m³ media capacity per crate`,
+      biological_media_result: result,
+    });
+  }
+  if (Number.isFinite(requiredMediaL) && requiredMediaL > 0) {
+    products.push({
+      source_key: `${biologicalCase.id}:required-media`,
+      description: 'Biological filter media',
+      quantity: requiredMediaL,
+      unit: 'L',
+      notes: 'Required media volume from Biological Media calculation',
+      biological_media_result: result,
+    });
+  }
+  return products;
 }
 
 async function sources(db: Db, bookId: string) {
@@ -93,6 +148,12 @@ async function sources(db: Db, bookId: string) {
     `SELECT * FROM system_flow_sand_filter_allocations WHERE system_id=ANY($1::uuid[])`, [ids])).rows;
   const ozone = (await db.query(
     `SELECT * FROM design_book_ozone_calculations WHERE design_book_id=$1 AND system_id=ANY($2::uuid[])`, [bookId, ids],
+  )).rows;
+  const biologicalMedia = (await db.query(
+    `SELECT id,system_id,preview_result,preview_stale,status
+     FROM lss_biological_media_cases
+     WHERE design_book_id=$1 AND system_id=ANY($2::uuid[])`,
+    [bookId, ids],
   )).rows;
   const selectedProductIds = [...fractionators, ...sandFilters]
     .flatMap(allocation => Array.isArray(allocation.products) ? allocation.products : [])
@@ -168,6 +229,8 @@ async function sources(db: Db, bookId: string) {
           return line('equipment', systemId, product.product_id, `${r.id}:${product.product_id || index}`, { ...product, ...catalog }, product.product_name || catalog.product_name || 'Ozone generator', product.quantity, product.unit || 'EA');
         });
       }),
+      ...biologicalMedia.filter(r => r.system_id === systemId).flatMap(r => expandBiologicalMediaProducts(r)
+        .map(product => line('equipment', systemId, r.id, product.source_key, product, product.description, product.quantity, product.unit))),
     ];
     return rows.map((r, index) => ({ ...r, sort_order: index }));
   });
@@ -205,19 +268,31 @@ async function sync(db: Db, bookId: string, userId?: string) {
 
 export async function readExisting(db: Db, bookId: string) {
   const breakdown = (await db.query(
-    'SELECT id FROM design_book_equipment_breakdowns WHERE design_book_id=$1',
+    'SELECT id,hidden_columns FROM design_book_equipment_breakdowns WHERE design_book_id=$1',
     [bookId],
   )).rows[0];
-  if (!breakdown) return { initialized: false, items: [] };
+  if (!breakdown) return { initialized: false, items: [], hidden_columns: [] };
   const items = (await db.query(`SELECT l.*,s.system_code,s.system_name
     FROM design_book_equipment_breakdown_lines l LEFT JOIN systems s ON s.id=l.system_id
     WHERE l.breakdown_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`, [breakdown.id])).rows;
-  return { initialized: true, items };
+  return { initialized: true, items, hidden_columns: normalizeHiddenColumns(breakdown.hidden_columns) };
 }
 
 router.get('/design-books/:id/equipment-breakdown', async (req: AuthRequest, res: Response) => {
   const result = await readExisting({ query }, String(req.params.id));
   res.json(result);
+});
+router.put('/design-books/:id/equipment-breakdown/columns', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+  const hiddenColumns = normalizeHiddenColumns(req.body?.hidden_columns);
+  const result = await query(
+    `INSERT INTO design_book_equipment_breakdowns (design_book_id,hidden_columns,updated_by)
+     SELECT id,$2::jsonb,$3 FROM design_books WHERE id=$1
+     ON CONFLICT (design_book_id) DO UPDATE SET hidden_columns=EXCLUDED.hidden_columns,updated_by=EXCLUDED.updated_by,updated_at=NOW()
+     RETURNING hidden_columns`,
+    [req.params.id, JSON.stringify(hiddenColumns), req.user?.id || null],
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book not found' } });
+  res.json({ hidden_columns: normalizeHiddenColumns(result.rows[0].hidden_columns) });
 });
 router.post('/design-books/:id/equipment-breakdown/refresh', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const items = await transaction(db => sync(db, String(req.params.id), req.user?.id));
@@ -274,22 +349,25 @@ router.delete('/design-books/:id/equipment-breakdown/lines/:lineId', requireModu
   res.status(204).end();
 });
 
-export async function createWorkbookBuffer(items: any[]) {
+export async function createWorkbookBuffer(items: any[], hiddenColumns: string[] = []) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'EDP Design Book';
-  const columns = ['System','Source','Description','Qty','Unit','Supplier','Manufacturer','Model','Unit Cost','Markup %','Selling Price','Currency','Lead Time','Exclusions','Notes'];
+  const hidden = new Set(normalizeHiddenColumns(hiddenColumns));
+  // Source kind is internal Design Book linkage (including manual-row identity),
+  // not part of the customer-facing commercial workbook.
+  const columns = equipmentBreakdownColumns.filter(column => column.key !== 'source_kind' && !hidden.has(column.key));
   const safeCell = (value: any) => {
     if (typeof value !== 'string') return value;
     return /^[=+\-@]/.test(value) ? `'${value}` : value;
   };
   const addRows = (sheet: ExcelJS.Worksheet, rows: any[]) => {
-    sheet.addRow(columns);
+    sheet.addRow(columns.map(column => column.label));
     sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
-    rows.forEach(row => sheet.addRow([row.system_name || 'Unassigned', row.source_kind, row.description, Number(row.quantity), row.unit, row.supplier || '', row.manufacturer || '', row.model || '', numberOrNull(row.unit_cost), numberOrNull(row.markup), numberOrNull(row.selling_price), row.currency, row.lead_time || '', row.exclusions || '', row.notes || ''].map(safeCell)));
-    sheet.columns = columns.map((header, i) => ({ header, width: Math.max(14, Math.min(34, header.length + 4, rows.reduce((n, r) => Math.max(n, String(r[header.toLowerCase().replace(/ /g, '_')] || '').length + 2), 0))) }));
+    rows.forEach(row => sheet.addRow(columns.map(column => safeCell(column.value(row)))));
+    sheet.columns = columns.map(column => ({ header: column.label, width: Math.max(14, Math.min(34, column.label.length + 4, rows.reduce((n, row) => Math.max(n, String(column.value(row) || '').length + 2), 0))) }));
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    sheet.autoFilter = { from: 'A1', to: `O${Math.max(1, rows.length + 1)}` };
+    sheet.autoFilter = { from: 'A1', to: `${sheet.getColumn(columns.length).letter}${Math.max(1, rows.length + 1)}` };
   };
   const summary = workbook.addWorksheet('Summary'); addRows(summary, items);
   const grouped = new Map<string, any[]>();
@@ -306,8 +384,8 @@ export async function createWorkbookBuffer(items: any[]) {
 }
 
 router.get('/design-books/:id/equipment-breakdown/export', async (req: AuthRequest, res: Response) => {
-  const { items } = await readExisting({ query }, String(req.params.id));
-  const buffer = await createWorkbookBuffer(items);
+  const { items, hidden_columns } = await readExisting({ query }, String(req.params.id));
+  const buffer = await createWorkbookBuffer(items, hidden_columns);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="design-book-equipment-breakdown.xlsx"`);
   res.send(Buffer.from(buffer));

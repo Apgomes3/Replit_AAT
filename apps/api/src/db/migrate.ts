@@ -3166,10 +3166,13 @@ ON CONFLICT (water_type) DO NOTHING;
 CREATE TABLE IF NOT EXISTS design_book_equipment_breakdowns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   design_book_id UUID NOT NULL UNIQUE REFERENCES design_books(id) ON DELETE CASCADE,
+  hidden_columns JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
+ALTER TABLE design_book_equipment_breakdowns
+  ADD COLUMN IF NOT EXISTS hidden_columns JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE TABLE IF NOT EXISTS design_book_equipment_breakdown_lines (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   breakdown_id UUID NOT NULL REFERENCES design_book_equipment_breakdowns(id) ON DELETE CASCADE,

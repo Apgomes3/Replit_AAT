@@ -63,6 +63,19 @@ describe('EquipmentBreakdownTab', () => {
     expect(screen.getByRole('button', { name: /export excel/i })).toBeVisible();
   });
 
+  it('persists hidden columns and removes them from the view', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: { initialized: true, items: rows, hidden_columns: [] } } as any)
+      .mockResolvedValue({ data: { initialized: true, items: rows, hidden_columns: ['supplier'] } } as any);
+    renderTab();
+    await user.click(await screen.findByRole('button', { name: 'Columns' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Supplier' }));
+    expect(api.put).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/columns', { hidden_columns: ['supplier'] });
+    expect(await screen.findAllByRole('columnheader', { name: 'Description' })).toHaveLength(2);
+    expect(screen.queryByRole('columnheader', { name: 'Supplier' })).not.toBeInTheDocument();
+  });
+
   it('initializes once after an uninitialized read for a manager', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: { initialized: false, items: [] } } as any)
       .mockResolvedValue({ data: { initialized: true, items: rows } } as any);

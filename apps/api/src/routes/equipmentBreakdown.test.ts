@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { createWorkbookBuffer, expandAllocationProducts, readExisting } from './equipmentBreakdown';
+import { createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -31,12 +31,27 @@ describe('equipment breakdown source normalization', () => {
     expect(expandAllocationProducts({ id: 'allocation-2', products: [] }, new Map(), 'Sand filter')).toEqual([]);
   });
 
+  it('creates separate crate and required-media lines from a Biological Media result', () => {
+    expect(expandBiologicalMediaProducts({
+      id: 'bio-case-1',
+      preview_result: { media: {
+        required_media_l: 13681.2305,
+        required_media_m3: 13.6812305,
+        installed_media_l: 13681.2305,
+        installed_media_m3: 13.6812305,
+      } },
+    })).toMatchObject([
+      { source_key: 'bio-case-1:bio-crates', quantity: 58, unit: 'EA' },
+      { source_key: 'bio-case-1:required-media', quantity: 13681.2305, unit: 'L' },
+    ]);
+  });
+
   it('reads an uninitialized schedule without inserting or syncing it', async () => {
     const calls: string[] = [];
     const db: any = { query: async (sql: string) => { calls.push(sql); return { rows: [] }; } };
-    await expect(readExisting(db, 'book-1')).resolves.toEqual({ initialized: false, items: [] });
+    await expect(readExisting(db, 'book-1')).resolves.toEqual({ initialized: false, items: [], hidden_columns: [] });
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain('SELECT id FROM design_book_equipment_breakdowns');
+    expect(calls[0]).toContain('SELECT id,hidden_columns FROM design_book_equipment_breakdowns');
     expect(calls.join(' ')).not.toMatch(/INSERT|UPDATE|DELETE/i);
   });
 
@@ -48,6 +63,18 @@ describe('equipment breakdown source normalization', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
     expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(['Summary', 'LSS-A', 'lss-a-2']);
-    expect(workbook.getWorksheet('Summary')?.getCell('C2').value).toBe("'=unsafe");
+    expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Source');
+    expect(workbook.getWorksheet('Summary')?.getCell('B2').value).toBe("'=unsafe");
+  });
+
+  it('removes hidden columns from the summary and per-LSS sheets', async () => {
+    const buffer = await createWorkbookBuffer([
+      { system_code: 'LSS-01', system_name: 'Main', source_kind: 'pump', description: 'Pump', quantity: 1, unit: 'EA', supplier: 'Hidden supplier', currency: 'USD' },
+    ], ['supplier', 'unit_cost']);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Supplier');
+    expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Unit Cost');
+    expect(workbook.getWorksheet('LSS-01')?.getRow(1).values).not.toContain('Supplier');
   });
 });
