@@ -60,7 +60,7 @@ function Field({ value, type = 'text', onChange, onCommit, disabled, saving, con
   return <div className="relative"><input type={type} value={value ?? ''} disabled={disabled} onChange={event => onChange(event.target.value)}
     onBlur={onCommit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
     style={contentWidth ? { width: `${Math.min(28, Math.max(9, String(value ?? '').length + 3))}ch` } : undefined}
-    className={`${contentWidth ? 'min-w-[72px] max-w-[224px]' : 'min-w-[90px] w-full'} rounded border border-stone-200 bg-white px-2 py-1 text-xs text-stone-700 disabled:bg-stone-50 disabled:text-stone-500`} />
+    className={`${contentWidth ? 'min-w-[72px] max-w-[224px]' : 'min-w-[90px] w-full'} rounded border border-transparent bg-transparent px-2 py-1 text-xs text-stone-700 transition-colors hover:bg-stone-50 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/20 disabled:bg-transparent disabled:text-stone-500`} />
     {saving && <span className="absolute right-1 top-1 text-[9px] text-blue-500">Saving…</span>}</div>;
 }
 
@@ -200,7 +200,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
     return <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
     <table className="min-w-[1500px] w-full text-xs">
       <thead className="bg-stone-50 text-left uppercase tracking-wide text-stone-500"><tr>
-        {columns.filter(column => !hidden.has(column.key)).map(column => <th key={column.key} className={`px-2 py-2 font-semibold ${column.key === 'quantity' ? 'w-12' : column.key === 'unit' ? 'w-14' : ['markup','currency'].includes(column.key) ? 'w-20' : ['supplier','model','unit_cost'].includes(column.key) ? 'w-px whitespace-nowrap' : ''}`}>{column.label}</th>)}<th className="w-12 px-2 py-2 font-semibold" />
+        {columns.filter(column => !hidden.has(column.key)).map(column => <th key={column.key} className={`px-2 py-2 font-semibold ${column.key === 'quantity' ? 'w-12' : column.key === 'unit' ? 'w-14' : column.key === 'markup' ? 'w-24 whitespace-nowrap' : column.key === 'currency' ? 'w-20' : ['selling_price','total_price'].includes(column.key) ? 'w-24 whitespace-nowrap' : ['supplier','model','unit_cost'].includes(column.key) ? 'w-px whitespace-nowrap' : ''}`}>{column.label}</th>)}<th className="w-12 px-2 py-2 font-semibold" />
       </tr></thead>
       <tbody>{rows.map((row, rowIndex) => <Fragment key={row.id}>{insertControl(rowIndex)}<tr
         onDragOver={event => { if (!readOnly && draggingId) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setDragOverIndex(rowIndex + (event.clientY > rect.top + rect.height / 2 ? 1 : 0)); } }}
@@ -221,7 +221,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
           const value = Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : row[field];
           if (field === 'selling_price' || field === 'total_price') {
             const calculated = calculateDraftPricing(row, drafts)[field];
-            return <td key={field} className="min-w-[100px] px-2 py-2 text-stone-700" data-testid={`${field}-${row.id}`}>
+             return <td key={field} className="w-24 min-w-[96px] whitespace-nowrap px-2 py-2 text-stone-700" data-testid={`${field}-${row.id}`}>
               {calculated == null ? '' : calculated.toFixed(2)}
             </td>;
           }
@@ -229,13 +229,13 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
              return <td key={field} className="w-20 min-w-[72px] px-1 py-1"><select value={normalizeCurrencyValue(value)}
               disabled={readOnly || saving === key || row.unit_cost == null} title={row.unit_cost == null ? 'Enter a Unit Cost before changing currency' : 'Currency'}
               onChange={event => void update(row, field, event.target.value)}
-              className="w-full rounded border border-stone-200 bg-white px-2 py-1 text-xs text-stone-700 disabled:bg-stone-50">
+               className="w-full rounded border border-transparent bg-transparent px-2 py-1 text-xs text-stone-700 transition-colors hover:bg-stone-50 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/20 disabled:bg-transparent">
               {currencies.map(currency => <option key={currency.value} value={currency.value}>{currency.label}</option>)}
             </select></td>;
           }
           const type = ['quantity','unit_cost','markup'].includes(field) ? 'number' : 'text';
           const contentWidth = ['quantity','unit','markup','supplier','model','unit_cost'].includes(field);
-          return <td key={field} className={`${field === 'quantity' ? 'w-12 min-w-[52px]' : field === 'unit' ? 'w-14 min-w-[56px]' : field === 'markup' ? 'w-20 min-w-[72px]' : contentWidth ? 'w-px whitespace-nowrap' : 'min-w-[100px]'} px-1 py-1`}><Field value={value} type={type} contentWidth={contentWidth} disabled={readOnly} saving={saving === key}
+          return <td key={field} className={`${field === 'quantity' ? 'w-12 min-w-[52px]' : field === 'unit' ? 'w-14 min-w-[56px]' : field === 'markup' ? 'w-24 min-w-[88px]' : contentWidth ? 'w-px whitespace-nowrap' : 'min-w-[100px]'} px-1 py-1`}><Field value={value} type={type} contentWidth={contentWidth} disabled={readOnly} saving={saving === key}
             onChange={next => setDrafts(current => ({ ...current, [key]: next }))}
             onCommit={() => {
               if (!Object.prototype.hasOwnProperty.call(drafts, key) || String(drafts[key]) === String(row[field] ?? '')) return;
