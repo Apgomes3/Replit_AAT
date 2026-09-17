@@ -1576,12 +1576,18 @@ export async function loadReleaseContext(
   let links: any[] = [];
   let biologicalMediaCases: any[] = [];
   let biologicalMediaRuns: any[] = [];
+  let bioDegasPlenumLayouts: any[] = [];
   if (systems.length) {
     const linksResult = await runner(
       'SELECT sel.*, e.exhibit_code FROM system_exhibit_links sel LEFT JOIN exhibits e ON e.id=sel.exhibit_id WHERE sel.system_id = ANY($1::uuid[])',
       [systems.map(system => system.id)],
     );
     links = linksResult.rows;
+    bioDegasPlenumLayouts = (await runner(
+      `SELECT * FROM design_book_bio_degas_plenum_layouts
+       WHERE design_book_id=$1 AND system_id = ANY($2::uuid[]) ORDER BY system_id`,
+      [id, systems.map(system => system.id)],
+    )).rows;
     biologicalMediaCases = (await runner(
       `SELECT c.*, mp.profile_code AS media_profile_code, mp.profile_name AS media_profile_name,
               mp.revision AS media_profile_revision, mp.status AS media_profile_status,
@@ -1712,6 +1718,7 @@ export async function loadReleaseContext(
     review_handovers: handovers,
     biological_media_cases: biologicalMediaCases,
     biological_media_runs: biologicalMediaRuns,
+    bio_degas_plenum_layouts: bioDegasPlenumLayouts,
     uv_selections: uvSelections,
     thermal_selections: thermalSelections,
     ozone_calculations: ozoneCalculations,

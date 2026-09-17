@@ -32,6 +32,13 @@ import {
   BIOLOGICAL_MEDIA_REACTOR_TYPES,
   normalizeBiologicalMediaWaterType,
 } from '../../lib/biologicalMediaOptions';
+import {
+  BioDegasPlenumPanel,
+  BIO_CRATE_MEDIA_CAPACITY_M3,
+  calculateBioCrateCount,
+  calculateBioCrateSpatialBasis,
+} from './BioDegasPlenumDesigner';
+export { BioDegasPlenumPanel, BIO_CRATE_MEDIA_CAPACITY_M3, calculateBioCrateCount, calculateBioCrateSpatialBasis };
 
 const SYSTEM_TYPES = [
   'Life Support', 'Filtration', 'Circulation', 'UV Sterilization',
@@ -512,101 +519,6 @@ function ManagedBiologicalProfileSelect({
 const bioNumber = (value: any) => value === '' || value == null ? null : Number(value);
 const bioFormat = (value: any, decimals = 4) => value == null || !Number.isFinite(Number(value))
   ? '—' : Number(value).toFixed(decimals);
-
-export const BIO_CRATE_MEDIA_CAPACITY_M3 = 0.238;
-export const BIO_CRATE_LENGTH_M = 1.04;
-export const BIO_CRATE_WIDTH_M = 0.74;
-export const BIO_CRATE_HEIGHT_M = 0.53;
-export const BIO_CRATE_MAX_STACK = 4;
-
-export function calculateBioCrateCount(mediaVolumeM3: unknown) {
-  const volume = Number(mediaVolumeM3);
-  return Number.isFinite(volume) && volume > 0
-    ? Math.ceil(volume / BIO_CRATE_MEDIA_CAPACITY_M3)
-    : null;
-}
-
-export function calculateBioCrateSpatialBasis(crateCount: unknown) {
-  const count = Number(crateCount);
-  if (!Number.isInteger(count) || count <= 0) return null;
-  const stackPositions = Math.ceil(count / BIO_CRATE_MAX_STACK);
-  const tallestStackCrates = Math.min(count, BIO_CRATE_MAX_STACK);
-  return {
-    stack_positions: stackPositions,
-    crate_only_footprint_m2: Number((stackPositions * BIO_CRATE_LENGTH_M * BIO_CRATE_WIDTH_M).toFixed(6)),
-    tallest_stack_crates: tallestStackCrates,
-    tallest_stack_height_m: tallestStackCrates * BIO_CRATE_HEIGHT_M,
-  };
-}
-
-export function BioDegasPlenumPanel({ data }: { data: any }) {
-  const preview = data?.preview;
-  const installedMediaM3 = Number.isFinite(Number(preview?.media?.installed_media_m3))
-    ? Number(preview.media.installed_media_m3)
-    : Number.isFinite(Number(preview?.media?.installed_media_l))
-      ? Number(preview.media.installed_media_l) / 1000
-      : Number.isFinite(Number(preview?.media?.required_media_m3))
-        ? Number(preview.media.required_media_m3)
-        : Number.isFinite(Number(preview?.media?.required_media_l))
-          ? Number(preview.media.required_media_l) / 1000
-          : null;
-  const crateCount = calculateBioCrateCount(installedMediaM3);
-  const allocatedCapacityM3 = crateCount == null ? null : crateCount * BIO_CRATE_MEDIA_CAPACITY_M3;
-  const spatialBasis = calculateBioCrateSpatialBasis(crateCount);
-  const stale = Boolean(preview?.is_stale);
-
-  return (
-    <div id="bio-degas-plenum" className="space-y-5">
-      <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-        <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-4">
-          <h2 className="font-semibold text-stone-800">Bio/Degas chamber sizing</h2>
-          <p className="mt-1 text-sm text-stone-500">Sizes the AAT plenum by the number of bio-crates required to hold the Biological Media result for this LSS.</p>
-        </div>
-        {crateCount == null ? (
-          <div className="p-5">
-            <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-center">
-              <p className="text-sm font-semibold text-stone-700">Calculate Biological Media first</p>
-              <p className="mt-1 text-xs text-stone-500">A current media-volume result is required before the bio-crate quantity can be calculated.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-5 p-5">
-            {stale && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">The Biological Media preview is stale. Recalculate it before relying on this crate quantity.</div>}
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-xl border border-stone-200 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-stone-400">Media volume from Biological Media</div>
-                <div className="mt-2 font-mono text-2xl font-semibold text-stone-900">{bioFormat(installedMediaM3, 3)} <span className="text-sm text-stone-500">m³</span></div>
-              </div>
-              <div className="rounded-xl border border-stone-200 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-stone-400">Capacity per bio-crate</div>
-                <div className="mt-2 font-mono text-2xl font-semibold text-stone-900">{BIO_CRATE_MEDIA_CAPACITY_M3.toFixed(3)} <span className="text-sm text-stone-500">m³</span></div>
-              </div>
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">Bio-crates required</div>
-                <div className="mt-2 font-mono text-4xl font-bold text-blue-950">{crateCount}</div>
-                <div className="mt-1 text-xs text-blue-700">Rounded up from {(Number(installedMediaM3) / BIO_CRATE_MEDIA_CAPACITY_M3).toFixed(3)} crates</div>
-              </div>
-            </div>
-            <div className="overflow-hidden rounded-xl border border-stone-200">
-              <div className="grid gap-px bg-stone-200 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="bg-white p-4"><div className="text-xs text-stone-500">Allocated crate capacity</div><div className="mt-1 font-mono font-semibold text-stone-800">{bioFormat(allocatedCapacityM3, 3)} m³</div></div>
-                <div className="bg-white p-4"><div className="text-xs text-stone-500">Crate dimensions (L × W × H)</div><div className="mt-1 font-mono font-semibold text-stone-800">1.040 × 0.740 × 0.530 m</div></div>
-                <div className="bg-white p-4"><div className="text-xs text-stone-500">Stack positions required</div><div className="mt-1 font-mono font-semibold text-stone-800">{spatialBasis?.stack_positions ?? '—'}</div><div className="mt-1 text-xs text-stone-400">Maximum {BIO_CRATE_MAX_STACK} crates per stack</div></div>
-                <div className="bg-white p-4"><div className="text-xs text-stone-500">Tallest crate stack</div><div className="mt-1 font-mono font-semibold text-stone-800">{bioFormat(spatialBasis?.tallest_stack_height_m, 3)} m</div><div className="mt-1 text-xs text-stone-400">{spatialBasis?.tallest_stack_crates ?? '—'} crates high</div></div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">Minimum crate-only footprint</div>
-              <div className="mt-1 font-mono text-2xl font-bold text-blue-950">{bioFormat(spatialBasis?.crate_only_footprint_m2, 3)} m²</div>
-              <p className="mt-1 text-xs text-blue-700">{spatialBasis?.stack_positions ?? '—'} stack positions × {(BIO_CRATE_LENGTH_M * BIO_CRATE_WIDTH_M).toFixed(4)} m² per crate footprint. Final chamber footprint must add layout, access, wall, pipework, and freeboard allowances.</p>
-            </div>
-            <p className="text-xs text-stone-500">Calculation: ceiling({bioFormat(installedMediaM3, 3)} m³ ÷ {BIO_CRATE_MEDIA_CAPACITY_M3.toFixed(3)} m³ per crate) = {crateCount} crates.</p>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
 
 export function BiologicalMediaCalculatorPanel({
   data, mediaProfiles, tanProfiles, maxTanProfiles, speciesCatalog, readOnly, form, onChange,
@@ -5340,7 +5252,7 @@ export default function DesignBookLSSDetail() {
         tabIndex={0}
         hidden={activeTab !== 'bio-degas-plenum'}
       >
-        <BioDegasPlenumPanel data={biologicalMedia} />
+        <BioDegasPlenumPanel data={biologicalMedia} systemId={systemId} bookId={bookId} readOnly={readOnly} />
       </div>
 
       <div

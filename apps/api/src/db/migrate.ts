@@ -2284,6 +2284,40 @@ CREATE TABLE IF NOT EXISTS lss_biological_media_cases (
 CREATE INDEX IF NOT EXISTS idx_lss_bio_media_cases_system
   ON lss_biological_media_cases(system_id, design_book_id);
 
+CREATE TABLE IF NOT EXISTS design_book_bio_degas_plenum_layouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  design_book_id UUID NOT NULL REFERENCES design_books(id) ON DELETE CASCADE,
+  layout JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(layout) = 'object'),
+  source_crate_count INTEGER NOT NULL CHECK (source_crate_count > 0),
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(system_id, design_book_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bio_degas_plenum_layout_book
+  ON design_book_bio_degas_plenum_layouts(design_book_id, system_id);
+DROP TRIGGER IF EXISTS guard_released_bio_degas_plenum_layout ON design_book_bio_degas_plenum_layouts;
+CREATE OR REPLACE FUNCTION prevent_frozen_bio_degas_plenum_mutation()
+RETURNS TRIGGER AS $$
+DECLARE
+  parent_status TEXT;
+BEGIN
+  SELECT status INTO parent_status
+  FROM design_books
+  WHERE id = COALESCE(NEW.design_book_id, OLD.design_book_id)
+  FOR UPDATE;
+  IF parent_status NOT IN ('Draft', 'In Progress') THEN
+    RAISE EXCEPTION 'Frozen Design Book plenum layouts are read-only'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER guard_released_bio_degas_plenum_layout
+BEFORE INSERT OR UPDATE OR DELETE ON design_book_bio_degas_plenum_layouts
+FOR EACH ROW EXECUTE FUNCTION prevent_frozen_bio_degas_plenum_mutation();
+
 CREATE TABLE IF NOT EXISTS lss_biological_media_species (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id UUID NOT NULL REFERENCES lss_biological_media_cases(id) ON DELETE CASCADE,

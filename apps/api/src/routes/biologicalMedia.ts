@@ -825,6 +825,128 @@ router.get('/systems/:id/biological-media', async (req: AuthRequest, res: Respon
   res.json(result);
 });
 
+const PLENUM_LIMITS = { length: 9000, width: 2250, height: 2500, minWall: 80 };
+const PLENUM_LAYOUT_FIELDS = ['external_length_mm', 'external_width_mm', 'external_height_mm', 'wall_thickness_mm', 'rows', 'stack_height', 'water_level_mm'];
+
+router.get('/systems/:id/bio-degas-plenum', async (req: AuthRequest, res: Response) => {
+  const designBookId = text(req.query.design_book_id);
+  if (!designBookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
+  const book = (await query('SELECT status,review_snapshot,release_snapshot FROM design_books WHERE id=$1', [designBookId])).rows[0];
+  if (!book) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book not found.' } });
+  const snapshot = book.status === 'Released' ? book.release_snapshot
+    : ['For Review', 'Approved'].includes(book.status) ? book.review_snapshot : null;
+  if (snapshot) {
+    const record = (snapshot.bio_degas_plenum_layouts || []).find((item: any) =>
+      item.system_id === routeParam(req.params.id) && item.design_book_id === designBookId);
+    return res.json(record || { layout: null, source_crate_count: null });
+  }
+  const result = await query(
+    `SELECT p.layout,p.source_crate_count,p.updated_at
+     FROM systems s JOIN design_books db ON db.project_id=s.project_id
+     LEFT JOIN design_book_bio_degas_plenum_layouts p ON p.system_id=s.id AND p.design_book_id=db.id
+     WHERE s.id=$1 AND db.id=$2`,
+    [routeParam(req.params.id), designBookId],
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book system not found.' } });
+  res.json(result.rows[0].layout ? result.rows[0] : { layout: null, source_crate_count: null });
+});
+
+router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+  const designBookId = text(req.body.design_book_id);
+  const layout = req.body.layout;
+  if (!designBookId || !layout || typeof layout !== 'object' || Array.isArray(layout)) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id and layout are required.' } });
+  }
+  if (PLENUM_LAYOUT_FIELDS.some(field => !Number.isFinite(Number(layout[field])))) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'All plenum dimensions and layout values must be finite numbers.' } });
+  }
+  const length = Number(layout.external_length_mm), width = Number(layout.external_width_mm);
+  const height = Number(layout.external_height_mm), wall = Number(layout.wall_thickness_mm);
+  const rows = Number(layout.rows), stack = Number(layout.stack_height), water = Number(layout.water_level_mm);
+  if (length <= 0 || width <= 0 || height <= 0 || length > PLENUM_LIMITS.length || width > PLENUM_LIMITS.width || height > PLENUM_LIMITS.height
+      || wall < PLENUM_LIMITS.minWall || wall * 2 >= Math.min(length, width) || ![1, 2].includes(rows)
+      || !Number.isInteger(stack) || stack < 1 || stack > 4 || water < 0 || water > height - wall) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: 'Plenum layout is outside the governed dimensional limits.' } });
+  }
+  const editable = await query(
+    `SELECT db.status AS book_status,s.status AS system_status
+     FROM design_books db JOIN systems s ON s.project_id=db.project_id
+     WHERE db.id=$1 AND s.id=$2`,
+    [designBookId, routeParam(req.params.id)],
+  );
+  if (!editable.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System or Design Book not found.' } });
+  if (!['Draft', 'In Progress'].includes(editable.rows[0].book_status)
+      || ['For Review', 'Approved', 'Released', ...RETIRED_SYSTEM_STATUSES].includes(editable.rows[0].system_status)) {
+    return res.status(409).json({ error: { code: 'DESIGN_BOOK_NOT_EDITABLE', message: 'Plenum layouts are read-only for frozen Design Books or reviewed systems.' } });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+  const source = await client.query(
+    `SELECT c.preview_result,c.preview_stale
+     FROM lss_biological_media_cases c JOIN systems s ON s.id=c.system_id
+     JOIN design_books db ON db.id=c.design_book_id AND db.project_id=s.project_id
+     WHERE c.system_id=$1 AND c.design_book_id=$2
+     FOR UPDATE OF c`,
+    [routeParam(req.params.id), designBookId],
+  );
+  if (!source.rows[0]?.preview_result?.media) {
+    await client.query('ROLLBACK');
+    return res.status(409).json({ error: { code: 'MISSING_SOURCE', message: 'Calculate Biological Media before saving a plenum layout.' } });
+  }
+  if (source.rows[0].preview_stale) {
+    await client.query('ROLLBACK');
+    return res.status(409).json({ error: { code: 'STALE_SOURCE', message: 'Recalculate Biological Media before saving a plenum layout.' } });
+  }
+  const media = source.rows[0].preview_result.media;
+  const installedM3 = numberOrNull(media.installed_media_m3) ?? numberOrNull(media.required_media_m3)
+    ?? ((numberOrNull(media.installed_media_l) ?? numberOrNull(media.required_media_l) ?? 0) / 1000);
+  const crateCount = Math.ceil((installedM3 || 0) / 0.238);
+  if (crateCount <= 0) {
+    await client.query('ROLLBACK');
+    return res.status(409).json({ error: { code: 'MISSING_SOURCE', message: 'The Biological Media result has no positive installed volume.' } });
+  }
+  const internalLength = length - wall * 2;
+  const internalWidth = width - wall * 2;
+  const verticalCapacity = Math.max(0, Math.min(4, Math.floor((height - wall - 620 - 100) / 530)));
+  const positions = Math.max(0, Math.floor((internalLength - 800) / 740))
+    * Math.min(rows, Math.max(0, Math.floor(internalWidth / 1040)));
+  const capacity = positions * Math.min(stack, verticalCapacity);
+  const stacks = Array.isArray(layout.stacks) ? layout.stacks.map((item: any) => ({
+    row: Number(item?.row), column: Number(item?.column), quantity: Number(item?.quantity),
+  })) : [];
+  const occupied = new Set(stacks.map((item: any) => `${item.row}:${item.column}`));
+  const stacksValid = stacks.length > 0
+    && occupied.size === stacks.length
+    && stacks.every((item: any) => Number.isInteger(item.row) && item.row >= 0 && item.row < rows
+      && Number.isInteger(item.column) && item.column >= 0 && item.column < Math.max(0, Math.floor((internalLength - 800) / 740))
+      && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= Math.min(stack, verticalCapacity))
+    && stacks.reduce((sum: number, item: any) => sum + item.quantity, 0) === crateCount;
+  if (length < 3405 || width < 2005 || stack > verticalCapacity || capacity < crateCount || !stacksValid) {
+    await client.query('ROLLBACK');
+    return res.status(400).json({ error: { code: 'INVALID_LAYOUT', message: `The layout cannot hold all ${crateCount} required crates with the governed access and tray clearances.` } });
+  }
+  const savedLayout = Object.fromEntries(PLENUM_LAYOUT_FIELDS.map(field => [field, Number(layout[field])]));
+  savedLayout.source_crate_count = crateCount;
+  savedLayout.stacks = stacks;
+  const saved = await client.query(
+    `INSERT INTO design_book_bio_degas_plenum_layouts (system_id,design_book_id,layout,source_crate_count,updated_by)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (system_id,design_book_id) DO UPDATE SET
+       layout=EXCLUDED.layout,source_crate_count=EXCLUDED.source_crate_count,updated_by=EXCLUDED.updated_by,updated_at=NOW()
+     RETURNING layout,source_crate_count,updated_at`,
+    [routeParam(req.params.id), designBookId, serializeJsonbParam(savedLayout), crateCount, req.user!.id],
+  );
+  await client.query('COMMIT');
+  res.json(saved.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/systems/:id/biological-media', requireModuleManage('design_books'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const designBookId = text(req.body.design_book_id);
   if (!designBookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
