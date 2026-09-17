@@ -18,6 +18,7 @@ import ActivityLog from '../../components/ui/ActivityLog';
 import toast from 'react-hot-toast';
 import { useConfirm } from '../../hooks/useConfirm';
 import { useAuthStore } from '../../store/authStore';
+import { calculateVendorComparison, MostCompetitiveBadge, VendorComparisonNotice } from './VendorPriceComparison';
 
 type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects' | 'activity';
 
@@ -1152,40 +1153,7 @@ export default function ProductMasterDetail() {
     { key: 'id', header: '', className: 'w-20', render: r => canManagePim ? <div className="flex gap-2"><button type="button" aria-label={`Edit vendor ${r.vendor_name}`} onClick={()=>editVendor(r)} className="text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4"/></button><button type="button" aria-label={`Delete vendor ${r.vendor_name}`} onClick={()=>void deleteVendor(r)} className="text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></div> : null },
   ];
 
-  const vendorComparison = (() => {
-    const rates = new Map<string, number>();
-    for (const row of exchangeRatesData?.items || []) {
-      const rate = Number(row.rate_per_usd);
-      if (Number.isFinite(rate) && rate > 0) rates.set(row.currency_code, rate);
-    }
-    rates.set('USD', 1);
-    const groups = new Map<string, VendorOption[]>();
-    for (const vendor of product.vendors || []) {
-      const itemCode = String(vendor.vendor_item_code || '').trim().toUpperCase();
-      if (!itemCode || vendor.unit_price == null || vendor.approved_status !== 'Approved') continue;
-      groups.set(itemCode, [...(groups.get(itemCode) || []), vendor]);
-    }
-    const competitiveIds = new Set<string>();
-    const incomparableCodes = new Set<string>();
-    for (const [itemCode, offers] of groups) {
-      if (offers.length < 2) continue;
-      const currencies = new Set(offers.map(offer => offer.currency || 'USD'));
-      const sameCurrency = currencies.size === 1;
-      if (!sameCurrency && offers.some(offer => !rates.has(offer.currency || 'USD'))) {
-        incomparableCodes.add(itemCode);
-        continue;
-      }
-      const values = offers.map(offer => ({
-        id: offer.id,
-        value: sameCurrency
-          ? Number(offer.unit_price)
-          : Number(offer.unit_price) / rates.get(offer.currency || 'USD')!,
-      }));
-      const lowest = Math.min(...values.map(entry => entry.value));
-      values.filter(entry => Math.abs(entry.value - lowest) < 1e-9).forEach(entry => competitiveIds.add(entry.id));
-    }
-    return { competitiveIds, incomparableCodes };
-  })();
+  const vendorComparison = calculateVendorComparison(product.vendors || [], exchangeRatesData?.items || []);
 
   const docCols: Column<Document>[] = [
     { key: 'document_type', header: 'Type', render: r => <div className="flex items-center gap-2">{docTypeIcon(r.document_type)}<span className="text-xs text-slate-600">{r.document_type}</span></div> },
@@ -2283,7 +2251,7 @@ export default function ProductMasterDetail() {
             <table className="min-w-[1250px] w-full text-xs">
               {vendorComparison.incomparableCodes.size > 0 && (
                 <caption className="caption-top border-b border-amber-200 bg-amber-50 px-3 py-2 text-left text-amber-800">
-                  Some item codes cannot be compared because an exchange rate is missing: {[...vendorComparison.incomparableCodes].join(', ')}.
+                  <VendorComparisonNotice itemCodes={vendorComparison.incomparableCodes} />
                 </caption>
               )}
               <thead className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500"><tr>
@@ -2306,7 +2274,7 @@ export default function ProductMasterDetail() {
                   </tr>;
                   const isCompetitive = vendorComparison.competitiveIds.has(vendor.id);
                   return <tr key={vendor.id} className={isCompetitive ? 'bg-emerald-50/60 hover:bg-emerald-50' : 'hover:bg-slate-50'}>
-                    <td className="px-3 py-2"><EntityCode code={vendor.vendor_option_code}/></td><td className="px-3 py-2 font-medium text-slate-800">{vendor.vendor_name || '—'}</td><td className="px-3 py-2">{vendor.manufacturer_name || '—'}</td><td className="px-3 py-2">{vendor.vendor_item_code || '—'}</td><td className="px-3 py-2"><div className="font-mono">{vendor.unit_price == null ? '—' : Number(vendor.unit_price).toFixed(2)}</div>{isCompetitive && <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 font-sans text-[10px] font-semibold text-emerald-800">Most competitive</span>}</td><td className="px-3 py-2">{vendor.currency || 'USD'}</td><td className="px-3 py-2"><StatusBadge status={vendor.approved_status}/></td><td className="px-3 py-2">{vendor.lead_time_days == null ? '—' : `${vendor.lead_time_days} days`}</td><td className="px-3 py-2">{vendor.region_scope || '—'}</td>
+                    <td className="px-3 py-2"><EntityCode code={vendor.vendor_option_code}/></td><td className="px-3 py-2 font-medium text-slate-800">{vendor.vendor_name || '—'}</td><td className="px-3 py-2">{vendor.manufacturer_name || '—'}</td><td className="px-3 py-2">{vendor.vendor_item_code || '—'}</td><td className="px-3 py-2"><div className="font-mono">{vendor.unit_price == null ? '—' : Number(vendor.unit_price).toFixed(2)}</div>{isCompetitive && <MostCompetitiveBadge />}</td><td className="px-3 py-2">{vendor.currency || 'USD'}</td><td className="px-3 py-2"><StatusBadge status={vendor.approved_status}/></td><td className="px-3 py-2">{vendor.lead_time_days == null ? '—' : `${vendor.lead_time_days} days`}</td><td className="px-3 py-2">{vendor.region_scope || '—'}</td>
                     <td className="px-3 py-2">{canManagePim && <div className="flex gap-2"><button type="button" aria-label={`Edit vendor ${vendor.vendor_name}`} onClick={()=>editVendor(vendor)} className="text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4"/></button><button type="button" aria-label={`Delete vendor ${vendor.vendor_name}`} onClick={()=>void deleteVendor(vendor)} className="text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></div>}</td>
                   </tr>;
                 })}
