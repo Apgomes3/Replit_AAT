@@ -324,7 +324,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
         <line x1={sox-18} y1={waterTopY} x2={sox-18} y2={waterBottomY} stroke="#0284c7"/>
         <line x1={sox-23} y1={waterTopY} x2={sox-13} y2={waterTopY} stroke="#0284c7"/>
         <line x1={sox-23} y1={waterBottomY} x2={sox-13} y2={waterBottomY} stroke="#0284c7"/>
-        {dimensionControl('water_level_mm', 'Water level', sox-46, (waterTopY+waterBottomY)/2, 0, assessment.internalHeight, true)}
+        {dimensionControl('water_level_mm', 'Water level', sox-46, soy+sh/2, 0, assessment.internalHeight, true)}
         {positions
           .filter(position => position.row === sectionColumn)
           .sort((a, b) => a.column - b.column)
