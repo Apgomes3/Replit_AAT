@@ -3097,6 +3097,8 @@ CREATE TABLE IF NOT EXISTS design_book_lss_instruments (
   product_master_id UUID REFERENCES product_masters(id) ON DELETE SET NULL,
   definition_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
   product_snapshot JSONB,
+   group_key VARCHAR(100),
+   nominal_size VARCHAR(100),
   created_by UUID REFERENCES users(id) ON DELETE SET NULL,
   updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -3104,6 +3106,8 @@ CREATE TABLE IF NOT EXISTS design_book_lss_instruments (
   UNIQUE(design_book_id, system_id, tag),
   UNIQUE(design_book_id, system_id, definition_id, sequence_number)
 );
+ ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS group_key VARCHAR(100);
+ ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS nominal_size VARCHAR(100);
 CREATE INDEX IF NOT EXISTS idx_design_book_lss_instruments_system
   ON design_book_lss_instruments(design_book_id, system_id);
 DROP TRIGGER IF EXISTS guard_released_design_book_lss_controls ON design_book_lss_controls;

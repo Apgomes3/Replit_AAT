@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, expandSandFilterProducts, normalizeEquipmentCurrency, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, expandSandFilterProducts, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -11,6 +11,12 @@ describe('equipment breakdown source normalization', () => {
     expect(calculateEquipmentPricing({ unit_cost: 10.125, markup: 12.5, quantity: 3.25 })).toEqual({ selling_price: 11.39, total_price: 37.02 });
     expect(calculateEquipmentPricing({ unit_cost: 100, markup: null, quantity: 2 })).toEqual({ selling_price: null, total_price: null });
     expect(calculateEquipmentPricing({ unit_cost: 100, markup: 10, quantity: null })).toEqual({ selling_price: 110, total_price: null });
+  });
+
+  it('rounds markup derived from PIM pricing to a whole number', () => {
+    expect(pimMarkup(100, 133.6)).toBe(34);
+    expect(pimMarkup(100, 133.4)).toBe(33);
+    expect(pimMarkup(0, 100)).toBeNull();
   });
 
   it('converts line costs through USD using administrator rates', () => {

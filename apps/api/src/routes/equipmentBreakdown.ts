@@ -33,6 +33,13 @@ export const calculateEquipmentPricing = (row: any) => {
     : null;
   return { selling_price: sellingPrice, total_price: totalPrice };
 };
+export const pimMarkup = (costValue: any, sellValue: any) => {
+  const cost = numberOrNull(costValue);
+  const sell = numberOrNull(sellValue);
+  return cost != null && sell != null && cost > 0
+    ? Math.round((sell - cost) / cost * 100)
+    : null;
+};
 export const convertEquipmentCurrency = (amount: any, oldRatePerUsd: any, nextRatePerUsd: any) => {
   const value = numberOrNull(amount), oldRate = numberOrNull(oldRatePerUsd), nextRate = numberOrNull(nextRatePerUsd);
   if (value == null) return null;
@@ -241,13 +248,14 @@ async function sources(db: Db, bookId: string) {
   const uvById = new Map(uvCatalog.map(product => [String(product.id), product]));
   const line = (kind: string, systemId: string, id: any, key: string, row: any, fallback: string, qty = 1, unit = 'EA') => {
     const cost = numberOrNull(row.cost), sell = numberOrNull(row.sell_price);
+    const markup = pimMarkup(cost, sell);
     return {
       source_kind: kind, system_id: systemId, source_id: id || null, source_key: `${kind}:${key}`,
       source_snapshot: row, description: row.description || row.product_name || row.component_name || fallback,
       quantity: numberOrNull(row.quantity) ?? qty, unit: row.unit || unit, supplier: null,
       manufacturer: row.manufacturer || null, model: row.model || null, unit_cost: cost,
-       markup: cost != null && sell != null && cost > 0 ? (sell - cost) / cost * 100 : null,
-       selling_price: calculateEquipmentPricing({ unit_cost: cost, markup: cost != null && sell != null && cost > 0 ? (sell - cost) / cost * 100 : null }).selling_price,
+        markup,
+        selling_price: calculateEquipmentPricing({ unit_cost: cost, markup }).selling_price,
        currency: row.currency || 'USD', lead_time: null, exclusions: null, notes: row.notes || null,
     };
   };

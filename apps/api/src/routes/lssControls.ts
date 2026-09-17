@@ -255,13 +255,14 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`lss-instruments:${bookId}:${system.id}`]);
     const definitions = await activeDefinitions(client.query.bind(client));
-      const requested = new Map<string, {
+      const requested = new Map<string, Array<{
         quantity: number; product_master_id: string | null; product_supplied: boolean;
+         group_key: string; nominal_size: string | null;
         control_logic: string | null; control_logic_supplied: boolean;
         range_min: number | null; range_max: number | null; unit: string | null; range_supplied: boolean;
         calibration_required: boolean; calibration_interval_days: number | null;
         calibration_procedure: string | null; datasheet_reference: string | null; calibration_supplied: boolean;
-      }>();
+      }>>();
     for (const item of input.instruments) {
       const definition = definitions.find((value: any) => value.id === item.definition_id);
       const quantity = Number(item.quantity);
@@ -273,7 +274,9 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Each instrument needs an active definition and quantity from 0 to 99.' } });
       }
-      if (requested.has(definition.id)) {
+      const isValve = ['2BV', '3EBV'].includes(String(definition.tag_code || '').toUpperCase());
+      const groupKey = isValve ? String(item.group_key || '').trim() : definition.id;
+      if (!groupKey || (requested.get(definition.id) || []).some(group => group.group_key === groupKey)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Each instrument definition may be supplied once.' } });
       }
@@ -306,8 +309,9 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
           return res.status(400).json({ error: { code: 'INVALID_PRODUCT', message: 'Select an active PIM product for an instrument override.' } });
         }
       }
-      requested.set(definition.id, {
+      const group = {
         quantity, product_master_id: item.product_master_id || null,
+         group_key: groupKey, nominal_size: isValve ? String(item.nominal_size || '').trim() || null : null,
         product_supplied: productSupplied,
           control_logic: String(item.control_logic || '').trim() || null,
           control_logic_supplied: Object.prototype.hasOwnProperty.call(item, 'control_logic'),
@@ -316,17 +320,18 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
           calibration_procedure: String(item.calibration_procedure || '').trim() || null,
           datasheet_reference: String(item.datasheet_reference || '').trim() || null,
           calibration_supplied: calibrationSupplied,
-      });
+      };
+      requested.set(definition.id, [...(requested.get(definition.id) || []), group]);
     }
     const minimum = await pumpMinimum(client.query.bind(client), system.id);
     const mandatory = definitions.find((definition: any) =>
-      definition.requirement_rule === 'mandatory' && (requested.get(definition.id)?.quantity || 0) < 1);
+      definition.requirement_rule === 'mandatory' && (requested.get(definition.id) || []).reduce((sum, group) => sum + group.quantity, 0) < 1);
     if (mandatory) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: { code: 'MANDATORY_INSTRUMENT', message: `${mandatory.name} requires at least one instrument.`, definition_id: mandatory.id } });
     }
     const underCountedPumpLinked = definitions.find((definition: any) =>
-      definition.requirement_rule === 'pump_linked' && (requested.get(definition.id)?.quantity || 0) < minimum);
+      definition.requirement_rule === 'pump_linked' && (requested.get(definition.id) || []).reduce((sum, group) => sum + group.quantity, 0) < minimum);
     if (underCountedPumpLinked) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: { code: 'MANDATORY_FLOW_SWITCHES', message: `${underCountedPumpLinked.name} quantity cannot be lower than the ${minimum} configured pump(s).`, minimum, definition_id: underCountedPumpLinked.id } });
@@ -341,9 +346,26 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
       'SELECT * FROM design_book_lss_instruments WHERE design_book_id=$1 AND system_id=$2 FOR UPDATE', [bookId, system.id],
     )).rows;
       for (const definition of definitions) {
-      const desired = requested.get(definition.id)?.quantity || 0;
-      const rows = existing.filter(row => row.definition_id === definition.id).sort((a, b) => a.sequence_number - b.sequence_number);
-      const requestedInstrument = requested.get(definition.id);
+      const groups = requested.get(definition.id) || [];
+      const valve = ['2BV', '3EBV'].includes(String(definition.tag_code || '').toUpperCase());
+      const allRows = existing.filter(row => row.definition_id === definition.id).sort((a, b) => a.sequence_number - b.sequence_number);
+      const used = new Set<string>();
+      let sequence = allRows.reduce((max, row) => Math.max(max, Number(row.sequence_number || 0)), 0);
+      for (const requestedInstrument of groups) {
+      const desired = requestedInstrument.quantity;
+      const rows = allRows.filter(row => {
+        if (used.has(row.id)) return false;
+        // Legacy rows have no group key and remain the first unsized group.
+        return valve ? (row.group_key === requestedInstrument.group_key
+          || (!row.group_key && requestedInstrument.group_key === groups[0].group_key)) : true;
+      }).slice(0, desired);
+      rows.forEach(row => used.add(row.id));
+      const excess = allRows.filter(row => !used.has(row.id) && (valve ? row.group_key === requestedInstrument.group_key : true));
+      if (excess.length > Math.max(0, desired - rows.length)) {
+        const remove = excess.slice(Math.max(0, desired - rows.length));
+        await client.query('DELETE FROM design_book_lss_instruments WHERE id = ANY($1::uuid[])', [remove.map(row => row.id)]);
+        remove.forEach(row => used.add(row.id));
+      }
       if (rows.length > desired) await client.query('DELETE FROM design_book_lss_instruments WHERE id = ANY($1::uuid[])', [rows.slice(desired).map(row => row.id)]);
       const requestedProduct = requestedInstrument;
         // Existing selections are frozen designer evidence. Each newly added
@@ -365,17 +387,25 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         const calibrationInterval = requestedProduct?.calibration_supplied ? requestedProduct.calibration_interval_days : definition.default_calibration_interval_days;
         const calibrationProcedure = requestedProduct?.calibration_supplied ? requestedProduct.calibration_procedure : definition.default_calibration_procedure;
         const datasheetReference = requestedProduct?.calibration_supplied ? requestedProduct.datasheet_reference : definition.default_datasheet_reference;
-      for (let sequence = rows.length + 1; sequence <= desired; sequence++) {
+      for (let index = rows.length; index < desired; index++) {
+        sequence += 1;
         const product = await productSnapshot(client.query.bind(client), selectedProduct);
         await client.query(
           `INSERT INTO design_book_lss_instruments
             (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,range_min,range_max,unit,
              calibration_required,calibration_interval_days,calibration_procedure,datasheet_reference,
-             product_master_id,definition_snapshot,product_snapshot,created_by,updated_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$17)`,
+             product_master_id,definition_snapshot,product_snapshot,group_key,nominal_size,created_by,updated_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18,$19,$19)`,
           [bookId, system.id, definition.id, buildInstrumentTag(system.system_code, definition.tag_code, sequence),
              sequence, controlLogic, rangeMin, rangeMax, unit, calibrationRequired, calibrationInterval,
-             calibrationProcedure, datasheetReference, selectedProduct, JSON.stringify(definition), JSON.stringify(product), req.user!.id],
+             calibrationProcedure, datasheetReference, selectedProduct, JSON.stringify(definition), JSON.stringify(product),
+             requestedInstrument.group_key, requestedInstrument.nominal_size, req.user!.id],
+        );
+      }
+      if (rows.length) {
+        await client.query(
+          'UPDATE design_book_lss_instruments SET group_key=$1,nominal_size=$2,updated_by=$3,updated_at=NOW() WHERE id=ANY($4::uuid[])',
+          [requestedInstrument.group_key, requestedInstrument.nominal_size, req.user!.id, rows.map(row => row.id)],
         );
       }
       if (rows.length && requestedProduct?.product_supplied) {
@@ -406,6 +436,10 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
             rows.slice(0, desired).map(row => row.id)],
         );
       }
+      }
+      // Remove rows for groups deleted by the designer.
+      const leftovers = allRows.filter(row => !used.has(row.id));
+      if (leftovers.length) await client.query('DELETE FROM design_book_lss_instruments WHERE id = ANY($1::uuid[])', [leftovers.map(row => row.id)]);
     }
     await client.query('COMMIT');
     await logAudit(req.user!.id, 'design_book_lss_control', `${bookId}:${system.id}`, 'UPDATE', { panel_type: input.panel_type });

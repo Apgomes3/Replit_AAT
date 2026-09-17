@@ -15,6 +15,7 @@ export type LssIoScheduleRow = {
   direction: string | null;
   assigned_product: string | null;
   control_logic: string | null;
+  nominal_size: string | null;
 };
 
 const text = (value: unknown) => {
@@ -58,6 +59,7 @@ export function projectLssIoSchedule(
         direction: text(definition.signal_direction),
         assigned_product: assignedProduct(instrument),
         control_logic: text(instrument.control_logic),
+        nominal_size: text(instrument.nominal_size),
         _sort_order: Number(definition.sort_order || 0),
         _tag_code: text(definition.tag_code) || '',
         _sequence: Number(instrument.sequence_number || 0),
@@ -127,7 +129,7 @@ export function renderLssIoSchedulePdf(book: RecordValue, rows: LssIoScheduleRow
       doc.font('ScheduleBold').fontSize(8).fillColor('#111827')
         .text(`${row.tag || 'Unavailable'}  ·  ${row.instrument || 'Unavailable'}`);
       doc.font('Schedule').fontSize(7.5).fillColor('#374151')
-        .text(`Signal: ${row.signal_type || 'Unavailable'} · Direction: ${row.direction || 'Unavailable'}`)
+         .text(`Signal: ${row.signal_type || 'Unavailable'} · Direction: ${row.direction || 'Unavailable'}${row.nominal_size ? ` · Size: ${row.nominal_size}` : ''}`)
         .text(`Assigned product: ${row.assigned_product || 'Unassigned'}`)
         .text(`Saved control logic: ${row.control_logic || 'Unassigned'}`);
       doc.moveDown(0.55);

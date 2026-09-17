@@ -14,6 +14,8 @@ type Props = {
 
 type DraftInstrument = {
   definition_id: string;
+  group_key?: string;
+  nominal_size?: string;
   quantity: number;
   product_master_id: string | null;
   /** Only send a product when the designer intentionally selected one. */
@@ -40,6 +42,7 @@ type IOScheduleRow = {
   signalType: string;
   product: string;
   controlLogic: string;
+  nominalSize: string;
 };
 
 type InstrumentFieldProps = {
@@ -62,6 +65,12 @@ const CONTROL_LOAD_TIMEOUT_MS = 10_000;
 
 function definitionId(item: any) {
   return item?.definition_id || item?.field_instrument_definition_id || item?.id || item?.definition_snapshot?.id;
+}
+function isControlValve(item: any) {
+  return ['2BV', '3EBV'].includes(String(item?.tag_code || '').toUpperCase());
+}
+function instrumentKey(item: any) {
+  return `${definitionId(item)}::${item?.group_key || 'legacy'}`;
 }
 
 function productId(item: any) {
@@ -182,6 +191,7 @@ function scheduleRows(control: any, savedInstruments: any[], definitions: any[],
       direction,
       tag: tags[index] || (quantity === 1 ? tags[0] : `Unallocated ${index + 1}`),
       instrument: item.instrument_name || definition.name || 'Historical field instrument',
+      nominalSize: item.nominal_size || '',
       signalType: item.signal_type || definition.signal_type || 'Unspecified',
       product: productLabel(product),
       // This is intentionally the instance value only: a catalogue default
@@ -240,7 +250,13 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
         known.set(id, { ...item.definition_snapshot, id });
       }
     });
-    return [...known.values()];
+    return ([...known.values()] as any[]).flatMap((definition: any) => {
+      if (!isControlValve(definition)) return [definition];
+      const groups = savedInstruments.filter(item => definitionId(item) === definition.id)
+        .map(item => item.group_key || 'legacy');
+      const keys = groups.length ? [...new Set(groups)] : ['legacy'];
+      return keys.map(group_key => ({ ...definition, group_key }));
+    });
   }, [control, savedInstruments]);
   const products: any[] = control?.products || control?.product_masters || productData?.items || productData || [];
   const ioSchedule = useMemo(() => scheduleRows(control, savedInstruments, definitions, products), [control, savedInstruments, definitions, products]);
@@ -252,9 +268,12 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
     savedInstruments.forEach(item => {
       const id = definitionId(item);
       if (!id) return;
-      const current = grouped.get(id);
-      grouped.set(id, {
+      const key = instrumentKey(item);
+      const current = grouped.get(key);
+      grouped.set(key, {
         definition_id: id,
+        group_key: item.group_key || (isControlValve({ ...item, ...(item.definition_snapshot || {}) }) ? 'legacy' : undefined),
+        nominal_size: item.nominal_size || '',
         quantity: current ? current.quantity + 1 : Number(item.quantity || 1),
             product_master_id: productId(item),
         product_supplied: false,
@@ -274,15 +293,17 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
     setInstruments([...grouped.values()]);
   }, [control]);
 
-  const drafts = useMemo(() => new Map(instruments.map(item => [item.definition_id, item])), [instruments]);
+  const drafts = useMemo(() => new Map(instruments.map(item => [instrumentKey(item), item])), [instruments]);
   const update = (id: string, changes: Partial<DraftInstrument>) => {
     setInstruments(current => {
-      const currentItem = current.find(item => item.definition_id === id);
-      const definition = definitions.find(item => definitionId(item) === id) || {};
+      const currentItem = current.find(item => instrumentKey(item) === id);
+      const [baseId, groupKey] = id.split('::');
+      const definition = definitions.find(item => definitionId(item) === baseId) || {};
       return currentItem
-        ? current.map(item => item.definition_id === id ? { ...item, ...changes } : item)
+         ? current.map(item => instrumentKey(item) === id ? { ...item, ...changes } : item)
         : [...current, {
-          definition_id: id, quantity: 1, product_master_id: null, product_supplied: false,
+           definition_id: baseId, group_key: groupKey === 'legacy' ? undefined : groupKey,
+           nominal_size: '', quantity: 1, product_master_id: null, product_supplied: false,
           control_logic: definition.default_control_logic || null, control_logic_supplied: false,
           range_min: String(definition.default_range_min ?? ''),
           range_max: String(definition.default_range_max ?? ''),
@@ -297,10 +318,18 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
         }];
     });
   };
+  const addValveGroup = (definition: any) => {
+    const groupKey = crypto.randomUUID();
+    update(instrumentKey({ ...definition, group_key: groupKey }), { group_key: groupKey, nominal_size: '', quantity: 1 });
+  };
+  const removeValveGroup = (definition: any) => {
+    const key = instrumentKey(definition);
+    setInstruments(current => current.filter(item => instrumentKey(item) !== key));
+  };
   const minQuantity = (definition: any) => Number(definition.minimum_quantity ?? definition.required_quantity
     ?? (definition.requirement_rule === 'pump_linked' ? control?.pump_linked_fs_minimum
       : String(definition.requirement_rule).toLowerCase() === 'mandatory' ? 1 : 0));
-  const currentQuantity = (definition: any) => drafts.get(definitionId(definition))?.quantity || 0;
+  const currentQuantity = (definition: any) => drafts.get(instrumentKey(definition))?.quantity || 0;
   const save = async () => {
     setSaving(true);
     try {
@@ -309,10 +338,11 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
         panel_type: panelType,
         instruments: instruments
           .filter(item => item.quantity > 0)
-          .map(({ product_supplied, control_logic_supplied, range_supplied, calibration_supplied,
-            product_master_id, control_logic, range_min, range_max, unit, calibration_required,
-            calibration_interval_days, calibration_procedure, datasheet_reference, ...item }) => ({
-            ...item,
+           .map(({ product_supplied, control_logic_supplied, range_supplied, calibration_supplied,
+             product_master_id, control_logic, range_min, range_max, unit, calibration_required,
+             calibration_interval_days, calibration_procedure, datasheet_reference, group_key, nominal_size, ...item }) => ({
+             ...item,
+             ...(group_key ? { group_key, ...(nominal_size ? { nominal_size } : {}) } : {}),
             ...(product_supplied ? { product_master_id } : {}),
             ...(control_logic_supplied ? { control_logic } : {}),
             ...(range_supplied ? {
@@ -320,12 +350,12 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
               range_max: range_max === '' ? null : Number(range_max),
               unit: unit || null,
             } : {}),
-            ...(calibration_supplied ? {
+             ...(calibration_supplied ? {
               calibration_required,
               calibration_interval_days: calibration_interval_days === '' ? null : Number(calibration_interval_days),
               calibration_procedure: calibration_procedure || null,
               datasheet_reference: datasheet_reference || null,
-            } : {}),
+             } : {}),
           })),
       });
       toast.success('Control configuration saved');
@@ -414,16 +444,17 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
               </tr>
             </thead>
             {definitions.map(definition => {
-            const id = definitionId(definition);
+             const id = instrumentKey(definition);
             const quantity = currentQuantity(definition);
             const minimum = minQuantity(definition);
-            const instances = savedInstruments.filter(item => definitionId(item) === id);
+             const instances = savedInstruments.filter(item => definitionId(item) === definitionId(definition)
+               && (!isControlValve(definition) || (item.group_key || 'legacy') === (definition.group_key || 'legacy')));
             const draft = drafts.get(id);
             const instrumentName = definition.name || 'Historical field instrument';
             const savedTags = instances.map(item => item.tag || item.instrument_tag).filter(Boolean);
             return <tbody key={id} className="border-b border-stone-100 last:border-0">
               <tr className="align-top">
-                <th scope="row" className="px-5 py-3 font-normal"><div className="flex items-center gap-2"><span className="font-semibold text-stone-800">{instrumentName}</span><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span></div><p className="mt-1 line-clamp-2 text-[11px] text-stone-500">{definition.description || 'No catalog description.'}</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen definition evidence</p>}</th>
+                 <th scope="row" className="px-5 py-3 font-normal"><div className="flex items-center gap-2"><span className="font-semibold text-stone-800">{instrumentName}</span><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span></div>{isControlValve(definition) && <label className="mt-2 block text-[11px] font-medium text-stone-500">Nominal size<input aria-label={`Nominal size for ${instrumentName}`} value={draft?.nominal_size || ''} disabled={readOnly} onChange={event => update(id, { nominal_size: event.target.value })} placeholder="e.g. DN50" className={`${inputClass} mt-1 px-2 py-1.5`} /></label>}<p className="mt-1 line-clamp-2 text-[11px] text-stone-500">{definition.description || 'No catalog description.'}</p>{control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen definition evidence</p>}{isControlValve(definition) && !readOnly && <div className="mt-2 flex gap-2"><button type="button" onClick={() => addValveGroup(definition)} className="text-[11px] font-semibold text-blue-700">＋ Add size</button>{definition.group_key !== 'legacy' && <button type="button" onClick={() => removeValveGroup(definition)} className="text-[11px] font-semibold text-red-600">Remove</button>}</div>}</th>
                 <td className="px-3 py-3"><span className="block font-medium text-stone-700">{definition.signal_type || 'Unspecified'}</span><span className="text-[10px] uppercase tracking-wide text-stone-400">{signalDirection(definition.signal_direction)}</span></td>
                 <td className="px-3 py-3">{minimum > 0 ? <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Required · min {minimum}</span> : <span className="text-stone-400">Optional</span>}</td>
                 <td className="px-3 py-3"><label className="sr-only" htmlFor={`instrument-quantity-${id}`}>Quantity for {instrumentName}</label><InstrumentQuantityField id={id} instrumentName={instrumentName} quantity={quantity} minimum={minimum} readOnly={readOnly} update={update} compact /></td>
@@ -434,7 +465,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
                 <td colSpan={6} className="px-5 pb-3 pt-0">
                   <details className="group rounded-lg border border-stone-200 bg-stone-50/40" open={definitions.length === 1}>
                     <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40">Control, range, calibration &amp; datasheet details for {instrumentName}</summary>
-                    <div className="grid gap-3 border-t border-stone-200 bg-white p-3 md:grid-cols-3">
+                     <div className="grid gap-3 border-t border-stone-200 bg-white p-3 md:grid-cols-3">
               <InstrumentDetailFields id={id} definition={definition} instrumentName={instrumentName} quantity={quantity} instances={instances} draft={draft} readOnly={readOnly} frozen={Boolean(control?.frozen)} update={update} layout="list" />
                     </div>
                   </details>
@@ -445,10 +476,11 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
           </table>
         </div> : <div className="grid gap-4 p-3 sm:p-5 xl:grid-cols-2" aria-label="Field instrument cards">
           {definitions.map(definition => {
-            const id = definitionId(definition);
+             const id = instrumentKey(definition);
             const quantity = currentQuantity(definition);
             const minimum = minQuantity(definition);
-            const instances = savedInstruments.filter(item => definitionId(item) === id);
+             const instances = savedInstruments.filter(item => definitionId(item) === definitionId(definition)
+               && (!isControlValve(definition) || (item.group_key || 'legacy') === (definition.group_key || 'legacy')));
             const draft = drafts.get(id);
             const instrumentName = definition.name || 'Historical field instrument';
             const savedTags = instances.map(item => item.tag || item.instrument_tag).filter(Boolean);
@@ -457,7 +489,9 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2"><h3 id={`instrument-card-${id}`} className="break-words font-semibold text-stone-800">{instrumentName}</h3><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span></div>
-                    <p className="mt-1 break-words text-xs text-stone-500">{definition.description || 'No catalog description.'}</p>
+                     <p className="mt-1 break-words text-xs text-stone-500">{definition.description || 'No catalog description.'}</p>
+                     {isControlValve(definition) && <label className="mt-2 block text-xs font-medium text-stone-500">Nominal size<input aria-label={`Nominal size for ${instrumentName}`} value={draft?.nominal_size || ''} disabled={readOnly} onChange={event => update(id, { nominal_size: event.target.value })} placeholder="e.g. DN50" className={inputClass} /></label>}
+                     {isControlValve(definition) && !readOnly && <div className="mt-2 flex gap-2"><button type="button" onClick={() => addValveGroup(definition)} className="text-xs font-semibold text-blue-700">＋ Add size</button>{definition.group_key !== 'legacy' && <button type="button" onClick={() => removeValveGroup(definition)} className="text-xs font-semibold text-red-600">Remove</button>}</div>}
                     {control?.frozen && <p className="mt-1 text-[10px] font-medium text-stone-400">Frozen definition evidence</p>}
                   </div>
                   <div className="text-right text-xs"><span className="block font-medium text-stone-700">{definition.signal_type || 'Unspecified'}</span><span className="text-[10px] uppercase tracking-wide text-stone-400">{signalDirection(definition.signal_direction)}</span></div>
@@ -484,7 +518,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
             <button type="button" onClick={() => exportCsv(`io-schedule-${systemId}.csv`, [
               { header: 'Panel', value: row => row.panel }, { header: 'Direction', value: row => row.direction },
               { header: 'Tag', value: row => row.tag }, { header: 'Instrument', value: row => row.instrument },
-              { header: 'Signal type', value: row => row.signalType }, { header: 'Assigned product', value: row => row.product },
+              { header: 'Signal type', value: row => row.signalType }, { header: 'Nominal size', value: row => row.nominalSize }, { header: 'Assigned product', value: row => row.product },
               { header: 'Saved control logic', value: row => row.controlLogic },
             ], ioSchedule)} disabled={ioSchedule.length === 0} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />Export CSV</button>
             <button type="button" onClick={() => void downloadPdf()} disabled={ioSchedule.length === 0 || pdfLoading} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-3.5 w-3.5" />{pdfLoading ? 'Preparing PDF…' : 'Download PDF'}</button>
@@ -507,8 +541,8 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
               <h3 className="bg-stone-50 px-5 py-2 text-xs font-semibold text-stone-600">{group.panel} panel · {group.direction} signals</h3>
               <table className="w-full min-w-[760px] text-left text-xs text-stone-600" aria-label={`${group.panel} ${group.direction} I/O schedule`}>
                 <caption className="sr-only">{group.panel} panel {group.direction} signal I/O schedule</caption>
-                <thead className="border-y border-stone-100 text-[10px] uppercase tracking-wide text-stone-400"><tr><th className="px-5 py-2 font-medium">Tag</th><th className="px-3 py-2 font-medium">Instrument</th><th className="px-3 py-2 font-medium">Signal type</th><th className="px-3 py-2 font-medium">Direction</th><th className="px-3 py-2 font-medium">Assigned product</th><th className="px-3 py-2 font-medium">Saved control logic</th></tr></thead>
-                <tbody>{rows.map((row, index) => <tr key={`${row.tag}-${row.instrument}-${index}`} className="border-b border-stone-100 last:border-0"><td className="whitespace-nowrap px-5 py-3 font-mono text-stone-700">{row.tag}</td><td className="px-3 py-3 font-medium text-stone-700">{row.instrument}</td><td className="px-3 py-3">{row.signalType}</td><td className="px-3 py-3">{row.direction}</td><td className="px-3 py-3">{row.product}</td><td className="px-3 py-3">{row.controlLogic}</td></tr>)}</tbody>
+                <thead className="border-y border-stone-100 text-[10px] uppercase tracking-wide text-stone-400"><tr><th className="px-5 py-2 font-medium">Tag</th><th className="px-3 py-2 font-medium">Instrument</th>{ioSchedule.some(item => item.nominalSize) && <th className="px-3 py-2 font-medium">Size</th>}<th className="px-3 py-2 font-medium">Signal type</th><th className="px-3 py-2 font-medium">Direction</th><th className="px-3 py-2 font-medium">Assigned product</th><th className="px-3 py-2 font-medium">Saved control logic</th></tr></thead>
+                <tbody>{rows.map((row, index) => <tr key={`${row.tag}-${row.instrument}-${index}`} className="border-b border-stone-100 last:border-0"><td className="whitespace-nowrap px-5 py-3 font-mono text-stone-700">{row.tag}</td><td className="px-3 py-3 font-medium text-stone-700">{row.instrument}</td>{ioSchedule.some(item => item.nominalSize) && <td className="px-3 py-3">{row.nominalSize || '—'}</td>}<td className="px-3 py-3">{row.signalType}</td><td className="px-3 py-3">{row.direction}</td><td className="px-3 py-3">{row.product}</td><td className="px-3 py-3">{row.controlLogic}</td></tr>)}</tbody>
               </table>
             </div>;
           })}
