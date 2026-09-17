@@ -107,6 +107,13 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
         ...current,
         items: (current.items || []).map((item: any) => item.id === row.id ? { ...item, ...response.data } : item),
       } : current);
+      setDrafts(current => {
+        const key = `${row.id}:${field}`;
+        if (!Object.prototype.hasOwnProperty.call(current, key) || current[key] !== value) return current;
+        const copy = { ...current };
+        delete copy[key];
+        return copy;
+      });
       await qc.invalidateQueries({ queryKey });
     } catch (error: any) {
       qc.setQueryData(queryKey, previous);
@@ -147,11 +154,20 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
     const previous = qc.getQueryData(queryKey);
     qc.setQueryData(queryKey, (current: any) => {
       if (!current) return current;
-      let position = 0;
+      const rowIds = new Set(rows.map(row => row.id));
+      let inserted = false;
+      const nextItems: any[] = [];
+      for (const item of current.items || []) {
+        if (!rowIds.has(item.id)) {
+          nextItems.push(item);
+        } else if (!inserted) {
+          nextItems.push(...ordered.map((row, index) => ({ ...row, sort_order: index })));
+          inserted = true;
+        }
+      }
       return {
         ...current,
-        items: (current.items || []).map((item: any) =>
-          item.system_id === rows[0]?.system_id ? { ...ordered[position++], sort_order: position - 1 } : item),
+        items: nextItems,
       };
     });
     try {
@@ -159,6 +175,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
         system_id: rows[0]?.system_id || null,
         line_ids: ids,
       });
+      await qc.invalidateQueries({ queryKey });
     } catch (error: any) {
       qc.setQueryData(queryKey, previous);
       toast.error(error?.response?.data?.error?.message || 'Could not reorder breakdown lines');
@@ -239,7 +256,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
             onChange={next => setDrafts(current => ({ ...current, [key]: next }))}
             onCommit={() => {
               if (!Object.prototype.hasOwnProperty.call(drafts, key) || String(drafts[key]) === String(row[field] ?? '')) return;
-              const next = drafts[key]; setDrafts(current => { const copy = { ...current }; delete copy[key]; return copy; }); update(row, field, next);
+              void update(row, field, drafts[key]);
             }} /></td>;
         })}
         <td className="px-2 py-2"><div className="flex items-center gap-1">
