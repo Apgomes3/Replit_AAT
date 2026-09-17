@@ -171,8 +171,8 @@ export default function ComponentDetail() {
       toast.success('Component updated');
       setEditing(false);
       qc.invalidateQueries({ queryKey: ['component', id] });
-    } catch {
-      toast.error('Failed to save changes');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Failed to save changes');
     } finally {
       setSaving(false);
     }

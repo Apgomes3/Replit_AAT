@@ -1275,11 +1275,10 @@ router.get('/vendor-options', authenticate, async (req: AuthRequest, res: Respon
 
 router.post('/vendor-options', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   const { product_master_id, vendor_name, manufacturer_name, vendor_item_code, approved_status, lead_time_days, region_scope } = req.body;
-  const vendorOptionCode = String(req.body.vendor_option_code || '').trim().toUpperCase();
   const unitPrice = req.body.unit_price === '' || req.body.unit_price == null ? null : Number(req.body.unit_price);
   const currency = String(req.body.currency || 'USD').trim().toUpperCase();
-  if (!vendorOptionCode || !product_master_id || !String(vendor_name || '').trim()) {
-    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Code, product, and vendor are required.' } });
+  if (!product_master_id || !String(vendor_name || '').trim()) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Product and vendor are required.' } });
   }
   if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
     return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Vendor price must be a non-negative number.' } });
@@ -1288,15 +1287,24 @@ router.post('/vendor-options', authenticate, requireModuleManage('pim'), async (
     return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR.' } });
   }
   try {
-    const result = await query(
-      `INSERT INTO vendor_options
-        (vendor_option_code,product_master_id,vendor_name,manufacturer_name,vendor_item_code,approved_status,
-         lead_time_days,region_scope,unit_price,currency)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [vendorOptionCode, product_master_id, String(vendor_name).trim(), manufacturer_name || null, vendor_item_code || null,
-        approved_status || 'Approved', lead_time_days || null, region_scope || null, unitPrice, currency],
-    );
-    res.status(201).json(result.rows[0]);
+    const created = await withProductTransaction(async client => {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('vendor-option-code'))`);
+      const sequence = await client.query(
+        `SELECT COALESCE(MAX((substring(vendor_option_code from '^VO-([0-9]+)$'))::integer),0)+1 AS next_number
+         FROM vendor_options`,
+      );
+      const vendorOptionCode = `VO-${String(sequence.rows[0].next_number).padStart(6, '0')}`;
+      const result = await client.query(
+        `INSERT INTO vendor_options
+          (vendor_option_code,product_master_id,vendor_name,manufacturer_name,vendor_item_code,approved_status,
+           lead_time_days,region_scope,unit_price,currency)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [vendorOptionCode, product_master_id, String(vendor_name).trim(), manufacturer_name || null, vendor_item_code || null,
+          approved_status || 'Approved', lead_time_days || null, region_scope || null, unitPrice, currency],
+      );
+      return result.rows[0];
+    });
+    res.status(201).json(created);
   } catch (error: any) {
     if (error?.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE', message: 'This vendor option code already exists.' } });
     throw error;
@@ -1428,7 +1436,7 @@ router.put('/components/:id', authenticate, requireModuleManage('pim'), async (r
     if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported component currency.' } });
     const result = await query(
       'UPDATE components SET component_code=COALESCE($1, component_code), component_name=$2, component_type=$3, component_category=$4, description=$5, primary_material_code=$6, standard_size=$7, weight_kg=$8, unit=$9, status=$10, notes=$11, synonyms=$12, cost=$13, sell_price=$14, currency=$15, manufacturer=$16, model=$17, updated_at=NOW() WHERE id=$18 RETURNING *',
-      [componentCode, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, currency, manufacturer || null, model || null, req.params.id]);
+      [componentCode, component_name, component_type, component_category, description, primary_material_code || null, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, currency, manufacturer || null, model || null, req.params.id]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
     await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', {
       summary: 'Component details updated',

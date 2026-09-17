@@ -284,6 +284,12 @@ export default function ProductMasterDetail() {
   });
   const tankCostRates: any[] = costRatesData?.items || [];
 
+  const { data: exchangeRatesData } = useQuery({
+    queryKey: ['platform-exchange-rates'],
+    queryFn: () => api.get('/admin/exchange-rates').then(r => r.data),
+    staleTime: 120000,
+  });
+
   const { data: electricalData, refetch: refetchElectrical } = useQuery({
     queryKey: ['product-electrical', id],
     queryFn: () => api.get(`/product-masters/${id}/electrical`).then(r => r.data),
@@ -1070,7 +1076,7 @@ export default function ProductMasterDetail() {
     }
   };
   const saveVendor = async () => {
-    if (!vendorForm.vendor_option_code.trim() || !vendorForm.vendor_name.trim()) return toast.error('Vendor option code and vendor are required');
+    if (!vendorForm.vendor_name.trim()) return toast.error('Vendor is required');
     setVendorSaving(true);
     try {
       const body = {
@@ -1145,6 +1151,41 @@ export default function ProductMasterDetail() {
     { key: 'unit_price', header: 'Vendor Price', render: r => r.unit_price == null ? '—' : `${Number(r.unit_price).toFixed(2)} ${r.currency || 'USD'}` },
     { key: 'id', header: '', className: 'w-20', render: r => canManagePim ? <div className="flex gap-2"><button type="button" aria-label={`Edit vendor ${r.vendor_name}`} onClick={()=>editVendor(r)} className="text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4"/></button><button type="button" aria-label={`Delete vendor ${r.vendor_name}`} onClick={()=>void deleteVendor(r)} className="text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></div> : null },
   ];
+
+  const vendorComparison = (() => {
+    const rates = new Map<string, number>();
+    for (const row of exchangeRatesData?.items || []) {
+      const rate = Number(row.rate_per_usd);
+      if (Number.isFinite(rate) && rate > 0) rates.set(row.currency_code, rate);
+    }
+    rates.set('USD', 1);
+    const groups = new Map<string, VendorOption[]>();
+    for (const vendor of product.vendors || []) {
+      const itemCode = String(vendor.vendor_item_code || '').trim().toUpperCase();
+      if (!itemCode || vendor.unit_price == null || vendor.approved_status !== 'Approved') continue;
+      groups.set(itemCode, [...(groups.get(itemCode) || []), vendor]);
+    }
+    const competitiveIds = new Set<string>();
+    const incomparableCodes = new Set<string>();
+    for (const [itemCode, offers] of groups) {
+      if (offers.length < 2) continue;
+      const currencies = new Set(offers.map(offer => offer.currency || 'USD'));
+      const sameCurrency = currencies.size === 1;
+      if (!sameCurrency && offers.some(offer => !rates.has(offer.currency || 'USD'))) {
+        incomparableCodes.add(itemCode);
+        continue;
+      }
+      const values = offers.map(offer => ({
+        id: offer.id,
+        value: sameCurrency
+          ? Number(offer.unit_price)
+          : Number(offer.unit_price) / rates.get(offer.currency || 'USD')!,
+      }));
+      const lowest = Math.min(...values.map(entry => entry.value));
+      values.filter(entry => Math.abs(entry.value - lowest) < 1e-9).forEach(entry => competitiveIds.add(entry.id));
+    }
+    return { competitiveIds, incomparableCodes };
+  })();
 
   const docCols: Column<Document>[] = [
     { key: 'document_type', header: 'Type', render: r => <div className="flex items-center gap-2">{docTypeIcon(r.document_type)}<span className="text-xs text-slate-600">{r.document_type}</span></div> },
@@ -2240,6 +2281,11 @@ export default function ProductMasterDetail() {
           )}
           {activeTab === 'vendors' && <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <table className="min-w-[1250px] w-full text-xs">
+              {vendorComparison.incomparableCodes.size > 0 && (
+                <caption className="caption-top border-b border-amber-200 bg-amber-50 px-3 py-2 text-left text-amber-800">
+                  Some item codes cannot be compared because an exchange rate is missing: {[...vendorComparison.incomparableCodes].join(', ')}.
+                </caption>
+              )}
               <thead className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500"><tr>
                 {['Code','Vendor','Manufacturer','Item code','Unit price','Currency','Status','Lead time','Region',''].map(header=><th key={header} className="px-3 py-2 font-semibold">{header}</th>)}
               </tr></thead>
@@ -2258,14 +2304,15 @@ export default function ProductMasterDetail() {
                     <td className="px-2 py-2"><input value={vendorForm.region_scope} onChange={e=>setVendorForm({...vendorForm,region_scope:e.target.value})} aria-label="Vendor region" className="w-28 rounded border px-2 py-1.5"/></td>
                     <td className="px-2 py-2"><div className="flex gap-1"><button type="button" disabled={vendorSaving} onClick={saveVendor} className="rounded bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50">Save</button><button type="button" onClick={()=>{setEditingVendorId(null);setShowVendorForm(false);setVendorForm(emptyVendorForm);}} className="rounded border bg-white px-2 py-1.5 text-slate-600">Cancel</button></div></td>
                   </tr>;
-                  return <tr key={vendor.id} className="hover:bg-slate-50">
-                    <td className="px-3 py-2"><EntityCode code={vendor.vendor_option_code}/></td><td className="px-3 py-2 font-medium text-slate-800">{vendor.vendor_name || '—'}</td><td className="px-3 py-2">{vendor.manufacturer_name || '—'}</td><td className="px-3 py-2">{vendor.vendor_item_code || '—'}</td><td className="px-3 py-2 font-mono">{vendor.unit_price == null ? '—' : Number(vendor.unit_price).toFixed(2)}</td><td className="px-3 py-2">{vendor.currency || 'USD'}</td><td className="px-3 py-2"><StatusBadge status={vendor.approved_status}/></td><td className="px-3 py-2">{vendor.lead_time_days == null ? '—' : `${vendor.lead_time_days} days`}</td><td className="px-3 py-2">{vendor.region_scope || '—'}</td>
+                  const isCompetitive = vendorComparison.competitiveIds.has(vendor.id);
+                  return <tr key={vendor.id} className={isCompetitive ? 'bg-emerald-50/60 hover:bg-emerald-50' : 'hover:bg-slate-50'}>
+                    <td className="px-3 py-2"><EntityCode code={vendor.vendor_option_code}/></td><td className="px-3 py-2 font-medium text-slate-800">{vendor.vendor_name || '—'}</td><td className="px-3 py-2">{vendor.manufacturer_name || '—'}</td><td className="px-3 py-2">{vendor.vendor_item_code || '—'}</td><td className="px-3 py-2"><div className="font-mono">{vendor.unit_price == null ? '—' : Number(vendor.unit_price).toFixed(2)}</div>{isCompetitive && <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 font-sans text-[10px] font-semibold text-emerald-800">Most competitive</span>}</td><td className="px-3 py-2">{vendor.currency || 'USD'}</td><td className="px-3 py-2"><StatusBadge status={vendor.approved_status}/></td><td className="px-3 py-2">{vendor.lead_time_days == null ? '—' : `${vendor.lead_time_days} days`}</td><td className="px-3 py-2">{vendor.region_scope || '—'}</td>
                     <td className="px-3 py-2">{canManagePim && <div className="flex gap-2"><button type="button" aria-label={`Edit vendor ${vendor.vendor_name}`} onClick={()=>editVendor(vendor)} className="text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4"/></button><button type="button" aria-label={`Delete vendor ${vendor.vendor_name}`} onClick={()=>void deleteVendor(vendor)} className="text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></div>}</td>
                   </tr>;
                 })}
                 {canManagePim && (showVendorForm && !editingVendorId ? <tr className="bg-blue-50/40">
-                  <td className="px-2 py-2"><input autoFocus value={vendorForm.vendor_option_code} onChange={e=>setVendorForm({...vendorForm,vendor_option_code:e.target.value.toUpperCase()})} placeholder="Code *" aria-label="Vendor option code" className="w-32 rounded border px-2 py-1.5 font-mono"/></td>
-                  <td className="px-2 py-2"><input value={vendorForm.vendor_name} onChange={e=>setVendorForm({...vendorForm,vendor_name:e.target.value})} placeholder="Vendor *" aria-label="Vendor name" className="w-40 rounded border px-2 py-1.5"/></td>
+                  <td className="px-3 py-2 font-medium text-slate-400">Automatic</td>
+                  <td className="px-2 py-2"><input autoFocus value={vendorForm.vendor_name} onChange={e=>setVendorForm({...vendorForm,vendor_name:e.target.value})} placeholder="Vendor *" aria-label="Vendor name" className="w-40 rounded border px-2 py-1.5"/></td>
                   <td className="px-2 py-2"><input value={vendorForm.manufacturer_name} onChange={e=>setVendorForm({...vendorForm,manufacturer_name:e.target.value})} placeholder="Manufacturer" aria-label="Vendor manufacturer" className="w-36 rounded border px-2 py-1.5"/></td>
                   <td className="px-2 py-2"><input value={vendorForm.vendor_item_code} onChange={e=>setVendorForm({...vendorForm,vendor_item_code:e.target.value})} placeholder="Item code" aria-label="Vendor item code" className="w-32 rounded border px-2 py-1.5 font-mono"/></td>
                   <td className="px-2 py-2"><input type="number" min="0" step="0.01" value={vendorForm.unit_price} onChange={e=>setVendorForm({...vendorForm,unit_price:e.target.value})} placeholder="0.00" aria-label="Vendor unit price" className="w-28 rounded border px-2 py-1.5"/></td>
