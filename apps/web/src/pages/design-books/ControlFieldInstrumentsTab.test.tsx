@@ -56,7 +56,8 @@ describe('ControlFieldInstrumentsTab', () => {
       { id: 'system-1', system_type: 'Life Support' },
       { id: 'system-2', system_type: 'Pump' },
       { id: 'system-3', system_type: 'LSS Compact' },
-    ])).toHaveLength(2);
+      { id: 'system-4', system_code: 'LSS-01', system_type: 'UV Sterilization' },
+    ])).toHaveLength(3);
   });
 
   it('resolves configured panel types and provides an explicit fallback', () => {

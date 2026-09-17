@@ -43,7 +43,8 @@ async function sources(db: Db, bookId: string) {
   if (!book) throw Object.assign(new Error('Design Book not found'), { status: 404, code: 'NOT_FOUND' });
   const systems = (await db.query(
     `SELECT * FROM systems WHERE project_id=$1 AND (LOWER(COALESCE(system_type,''))='lss'
-      OR LOWER(COALESCE(system_type,'')) LIKE '%life support%') ORDER BY system_code`,
+      OR LOWER(COALESCE(system_type,'')) LIKE '%life support%'
+      OR COALESCE(system_code,'') ~* '^LSS([[:space:]_-]|[0-9]|$)') ORDER BY system_code`,
     [book.project_id],
   )).rows;
   if (!systems.length) return [];

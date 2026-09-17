@@ -2,8 +2,14 @@
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import { createWorkbookBuffer, expandAllocationProducts, readExisting } from './equipmentBreakdown';
+import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
+  it('recognizes an LSS-coded system even when its equipment type is specialized', () => {
+    expect(isLifeSupportSystem({ system_code: 'LSS-01', system_type: 'UV Sterilization' })).toBe(true);
+    expect(isLifeSupportSystem({ system_code: 'P-01', system_type: 'Pump' })).toBe(false);
+  });
+
   it('expands every selected allocation product and overlays PIM commercial fields', () => {
     const products = expandAllocationProducts({
       id: 'allocation-1',

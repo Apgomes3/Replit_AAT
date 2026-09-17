@@ -7,7 +7,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const exceljs_1 = __importDefault(require("exceljs"));
 const equipmentBreakdown_1 = require("./equipmentBreakdown");
+const lssSystems_1 = require("../lib/lssSystems");
 (0, vitest_1.describe)('equipment breakdown source normalization', () => {
+    (0, vitest_1.it)('recognizes an LSS-coded system even when its equipment type is specialized', () => {
+        (0, vitest_1.expect)((0, lssSystems_1.isLifeSupportSystem)({ system_code: 'LSS-01', system_type: 'UV Sterilization' })).toBe(true);
+        (0, vitest_1.expect)((0, lssSystems_1.isLifeSupportSystem)({ system_code: 'P-01', system_type: 'Pump' })).toBe(false);
+    });
     (0, vitest_1.it)('expands every selected allocation product and overlays PIM commercial fields', () => {
         const products = (0, equipmentBreakdown_1.expandAllocationProducts)({
             id: 'allocation-1',

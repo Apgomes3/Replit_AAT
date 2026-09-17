@@ -12,8 +12,10 @@ function isLifeSupportSystem(system) {
         .trim()
         .toLowerCase()
         .replace(/[_-]+/g, ' ');
+    const code = String(system?.system_code || '').trim();
     return type === 'lss' ||
         /(^|[^a-z])lss([^a-z]|$)/.test(type) ||
         type === 'life support' ||
-        type.startsWith('life support ');
+        type.startsWith('life support ') ||
+        /^LSS(?:[\s_-]|\d|$)/i.test(code);
 }
