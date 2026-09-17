@@ -927,7 +927,7 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
       && Number.isInteger(item.column) && item.column >= 0 && item.column < Math.max(0, Math.floor((internalLength - 800) / 740))
       && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= Math.min(stack, verticalCapacity))
     && stacks.reduce((sum: number, item: any) => sum + item.quantity, 0) === crateCount;
-  const traysFit = internalWidth >= 2005 && internalLength - 800 >= trayCount * 3405;
+  const traysFit = internalWidth >= 2005 && internalLength - 800 >= trayCount * 3405 + Math.max(0, trayCount - 1) * 100;
   if (!traysFit || stack > verticalCapacity || capacity < crateCount || !stacksValid) {
     await client.query('ROLLBACK');
     return res.status(400).json({ error: { code: 'INVALID_LAYOUT', message: `The layout cannot hold all ${crateCount} required crates with the governed access and tray clearances.` } });

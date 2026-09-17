@@ -72,6 +72,20 @@ describe('BioDegasPlenumPanel', () => {
     expect(height).toHaveValue(2390);
   });
 
+  it('removes crates from the top while lower crates remain in place', () => {
+    renderPanel({ preview: { media: { installed_media_l: 714 } } });
+    const before = screen.getAllByTestId('section-crate')
+      .slice(0, 3)
+      .map(crate => crate.getAttribute('y'));
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Crates for stack 1' }), { target: { value: '2' } });
+
+    const after = screen.getAllByTestId('section-crate')
+      .slice(0, 2)
+      .map(crate => crate.getAttribute('y'));
+    expect(after).toEqual(before.slice(0, 2));
+  });
+
   it('waits for a Biological Media calculation result', () => {
     renderPanel({ preview: null });
     expect(screen.getByText('Calculate Biological Media first')).toBeInTheDocument();
