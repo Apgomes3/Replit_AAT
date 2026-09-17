@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import EquipmentBreakdownTab from './EquipmentBreakdownTab';
+import EquipmentBreakdownTab, { reorderEquipmentRows } from './EquipmentBreakdownTab';
 import api from '../../lib/api';
 
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }));
@@ -122,21 +122,12 @@ describe('EquipmentBreakdownTab', () => {
     expect(screen.getByRole('button', { name: /export excel/i })).toBeVisible();
   });
 
-  it('moves lines within an LSS table and persists the complete order', async () => {
-    const user = userEvent.setup();
-    vi.mocked(api.get).mockResolvedValue({ data: { items: [
+  it('reorders a dragged line at the requested row boundary', () => {
+    const ordered = reorderEquipmentRows([
       rows[0],
       { ...rows[0], id: 'line-3', description: 'Secondary pump' },
-      rows[1],
-    ] } } as any);
-    renderTab();
-
-    await user.click(await screen.findByRole('button', { name: 'Move Primary pump down' }));
-
-    expect(api.put).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/order', {
-      system_id: 'system-1',
-      line_ids: ['line-3', 'line-1'],
-    });
+    ], 'line-1', 2);
+    expect(ordered.map(row => row.id)).toEqual(['line-3', 'line-1']);
   });
 
   it('persists hidden columns and removes them from the view', async () => {

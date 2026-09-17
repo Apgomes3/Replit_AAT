@@ -950,7 +950,7 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
   const sourceRow = source.rows[0];
   const equipmentCode = `${String(sourceRow.system_code || 'LSS').toUpperCase()}-BIO-PLENUM-${String(sourceRow.book_code || '').toUpperCase()}`
     .replace(/[^A-Z0-9._-]+/g, '-').slice(0, 50);
-  const equipmentNotes = `FRP Bio/Degas plenum ${length} × ${width} × ${height} mm; ${crateCount} bio crates; ${trayCount} dispersion tray${trayCount === 1 ? '' : 's'}; ${trayGap} mm tray-to-crate gap.`;
+  const equipmentNotes = `Tank size: ${length} × ${width} × ${height} mm; ${crateCount} bio crates; ${trayCount} dispersion tray${trayCount === 1 ? '' : 's'}; ${trayGap} mm tray-to-crate gap.`;
   let equipmentId = record.project_equipment_item_id;
   if (equipmentId) {
     await client.query(

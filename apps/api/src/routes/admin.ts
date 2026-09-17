@@ -950,6 +950,7 @@ const fieldInstrumentInput = (body: any) => ({
   default_datasheet_reference: String(body?.default_datasheet_reference || '').trim() || null,
   allow_calibration_override: body?.allow_calibration_override !== false,
   default_product_master_id: body?.default_product_master_id || null,
+  default_component_id: body?.default_component_id || null,
   sort_order: Number.isInteger(Number(body?.sort_order)) ? Number(body.sort_order) : 0,
   is_active: body?.is_active !== false,
 });
@@ -960,9 +961,23 @@ async function validateFieldInstrument(input: ReturnType<typeof fieldInstrumentI
       !['optional', 'mandatory', 'pump_linked'].includes(input.requirement_rule)) {
     return 'Name, tag code, signal type/direction, and requirement rule are required.';
   }
+  if (input.default_product_master_id && input.default_component_id) {
+    return 'Choose either a default instrumentation product or component, not both.';
+  }
   if (input.default_product_master_id) {
     const product = await query('SELECT id FROM product_masters WHERE id=$1 AND status=\'Active\'', [input.default_product_master_id]);
-    if (!product.rows[0]) return 'Default PIM product must be an active product.';
+    if (!product.rows[0]) return 'Default PIM product must be an active instrumentation product.';
+    const instrumentation = await query(`SELECT id FROM product_masters WHERE id=$1 AND LOWER(BTRIM(COALESCE(product_category,'')))='instrumentation'`, [input.default_product_master_id]);
+    if (!instrumentation.rows[0]) return 'Default PIM product must be in the Instrumentation category.';
+  }
+  if (input.default_component_id) {
+    const component = await query(
+      `SELECT id FROM components WHERE id=$1 AND status='Active'
+       AND LOWER(BTRIM(COALESCE(component_category,'')))='instrumentation'
+       AND LOWER(BTRIM(COALESCE(component_type,'')))='instrument'`,
+      [input.default_component_id],
+    );
+    if (!component.rows[0]) return 'Default PIM component must be an active Instrumentation component.';
   }
   if ((input.default_range_min != null && !Number.isFinite(input.default_range_min)) ||
       (input.default_range_max != null && !Number.isFinite(input.default_range_max)) ||
@@ -981,21 +996,32 @@ router.get('/field-instruments', authenticate, async (req: AuthRequest, res: Res
     const timedQuery = (text: string, values?: any[]) => pool.query({
       text, values, query_timeout: 10_000,
     } as any);
-    const [result, products] = await Promise.all([
+    const [result, products, components] = await Promise.all([
       timedQuery(
-        `SELECT d.*, pm.product_code AS default_product_code, pm.product_name AS default_product_name,
-                pm.status AS default_product_status
+         `SELECT d.*, pm.product_code AS default_product_code, pm.product_name AS default_product_name,
+                 pm.status AS default_product_status, c.component_code AS default_component_code,
+                 c.component_name AS default_component_name, c.status AS default_component_status
          FROM field_instrument_definitions d
          LEFT JOIN product_masters pm ON pm.id=d.default_product_master_id
+          LEFT JOIN components c ON c.id=d.default_component_id
          ${includeInactive ? '' : 'WHERE d.is_active=true'}
          ORDER BY d.sort_order, d.tag_code`,
       ),
       timedQuery(
-        `SELECT id,product_code,product_name,status
-         FROM product_masters WHERE status='Active' ORDER BY product_code`,
+         `SELECT id,product_code,product_name,status,'product' AS source_type
+          FROM product_masters WHERE status='Active'
+            AND LOWER(BTRIM(COALESCE(product_category,'')))='instrumentation'
+          ORDER BY product_code`,
+      ),
+      timedQuery(
+        `SELECT id,component_code AS product_code,component_name AS product_name,status,'component' AS source_type
+         FROM components WHERE status='Active'
+           AND LOWER(BTRIM(COALESCE(component_category,'')))='instrumentation'
+           AND LOWER(BTRIM(COALESCE(component_type,'')))='instrument'
+         ORDER BY component_code`,
       ),
     ]);
-    res.json({ items: result.rows, products: products.rows });
+    res.json({ items: result.rows, products: [...products.rows, ...components.rows] });
   } catch (error: any) {
     const timedOut = error?.code === '57014' || /timeout|timed out/i.test(String(error?.message || ''));
     if (timedOut) {
@@ -1020,13 +1046,13 @@ router.post('/field-instruments', authenticate, requireRole('admin'), async (req
         (name,description,tag_code,numbering_rule,signal_type,signal_direction,requirement_rule,default_control_logic,
          default_range_min,default_range_max,default_unit,allow_range_override,default_calibration_required,
          default_calibration_interval_days,default_calibration_procedure,default_datasheet_reference,allow_calibration_override,
-         default_product_master_id,sort_order,is_active)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+          default_product_master_id,default_component_id,sort_order,is_active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
       [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
          input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_range_min,
          input.default_range_max, input.default_unit, input.allow_range_override, input.default_calibration_required,
          input.default_calibration_interval_days, input.default_calibration_procedure, input.default_datasheet_reference,
-         input.allow_calibration_override, input.default_product_master_id, input.sort_order, input.is_active],
+        input.allow_calibration_override, input.default_product_master_id, input.default_component_id, input.sort_order, input.is_active],
     );
     await logAudit(req.user!.id, 'field_instrument_definition', result.rows[0].id, 'CREATE', { definition: result.rows[0] });
     res.status(201).json(result.rows[0]);
@@ -1046,13 +1072,13 @@ router.put('/field-instruments/:id', authenticate, requireRole('admin'), async (
          requirement_rule=$7,default_control_logic=$8,default_range_min=$9,default_range_max=$10,default_unit=$11,
          allow_range_override=$12,default_calibration_required=$13,default_calibration_interval_days=$14,
          default_calibration_procedure=$15,default_datasheet_reference=$16,allow_calibration_override=$17,
-         default_product_master_id=$18,sort_order=$19,is_active=$20,updated_at=NOW()
+         default_product_master_id=$18,default_component_id=$19,sort_order=$20,is_active=$21,updated_at=NOW()
          WHERE id=$21 RETURNING *`,
       [input.name, input.description, input.tag_code, input.numbering_rule, input.signal_type,
          input.signal_direction, input.requirement_rule, input.default_control_logic, input.default_range_min,
          input.default_range_max, input.default_unit, input.allow_range_override, input.default_calibration_required,
          input.default_calibration_interval_days, input.default_calibration_procedure, input.default_datasheet_reference,
-         input.allow_calibration_override, input.default_product_master_id, input.sort_order, input.is_active, req.params.id],
+        input.allow_calibration_override, input.default_product_master_id, input.default_component_id, input.sort_order, input.is_active, req.params.id],
     );
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Field instrument not found.' } });
     await logAudit(req.user!.id, 'field_instrument_definition', result.rows[0].id, 'UPDATE', { definition: result.rows[0] });

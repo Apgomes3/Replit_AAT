@@ -3117,6 +3117,8 @@ FOR EACH ROW EXECUTE FUNCTION prevent_released_design_book_mutation();
 -- The CREATE TABLE clauses cover clean installs; these preserve the new
 -- governed/default evidence fields for databases upgraded from task 242.
 ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_control_logic TEXT;
+ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_component_id UUID REFERENCES components(id) ON DELETE SET NULL;
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS component_id UUID REFERENCES components(id) ON DELETE SET NULL;
 ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS control_logic TEXT;
 ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_range_min NUMERIC;
 ALTER TABLE field_instrument_definitions ADD COLUMN IF NOT EXISTS default_range_max NUMERIC;

@@ -461,14 +461,30 @@ router.post('/design-books/:id/equipment-breakdown/lines', requireModuleManage('
     const breakdown = (await db.query('SELECT id FROM design_book_equipment_breakdowns WHERE design_book_id=$1', [req.params.id])).rows[0]
       || (await db.query('INSERT INTO design_book_equipment_breakdowns (design_book_id,updated_by) VALUES ($1,$2) RETURNING id', [req.params.id,req.user?.id])).rows[0];
     const pricing = calculateEquipmentPricing(body);
-    const sortOrder = Number((await db.query(
+    const nextOrder = Number((await db.query(
       'SELECT COALESCE(MAX(sort_order),-1)+1 AS next_order FROM design_book_equipment_breakdown_lines WHERE breakdown_id=$1 AND system_id IS NOT DISTINCT FROM $2::uuid',
       [breakdown.id, body.system_id || null],
     )).rows[0]?.next_order || 0);
+    const requestedOrder = body.insert_at == null ? nextOrder : Number(body.insert_at);
+    if (!Number.isInteger(requestedOrder) || requestedOrder < 0 || requestedOrder > nextOrder) {
+      throw Object.assign(new Error('The requested insertion position is no longer valid. Refresh and try again.'), { status: 409, code: 'ORDER_CHANGED' });
+    }
+    await db.query(
+      `SELECT id FROM design_book_equipment_breakdown_lines
+       WHERE breakdown_id=$1 AND system_id IS NOT DISTINCT FROM $2::uuid FOR UPDATE`,
+      [breakdown.id, body.system_id || null],
+    );
+    if (requestedOrder < nextOrder) {
+      await db.query(
+        `UPDATE design_book_equipment_breakdown_lines SET sort_order=sort_order+1,updated_at=NOW()
+         WHERE breakdown_id=$1 AND system_id IS NOT DISTINCT FROM $2::uuid AND sort_order >= $3`,
+        [breakdown.id, body.system_id || null, requestedOrder],
+      );
+    }
     return (await db.query(`INSERT INTO design_book_equipment_breakdown_lines
       (breakdown_id,system_id,source_kind,source_key,description,quantity,unit,supplier,manufacturer,model,unit_cost,markup,selling_price,currency,lead_time,exclusions,notes,override_fields,sort_order)
       VALUES ($1,$2,'manual',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-       [breakdown.id,body.system_id || null,`manual:${randomUUID()}`,body.description.trim(),body.quantity ?? 1,body.unit || 'EA',body.supplier || null,body.manufacturer || null,body.model || null,body.unit_cost ?? null,body.markup ?? null,pricing.selling_price,currency,body.lead_time || null,body.exclusions || null,body.notes || null,JSON.stringify({ description:true,quantity:true,unit:true }),sortOrder])).rows[0];
+        [breakdown.id,body.system_id || null,`manual:${randomUUID()}`,body.description.trim(),body.quantity ?? 1,body.unit || 'EA',body.supplier || null,body.manufacturer || null,body.model || null,body.unit_cost ?? null,body.markup ?? null,pricing.selling_price,currency,body.lead_time || null,body.exclusions || null,body.notes || null,JSON.stringify({ description:true,quantity:true,unit:true }),requestedOrder])).rows[0];
   });
   res.status(201).json(withCalculatedPricing(created));
 });
