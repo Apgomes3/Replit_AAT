@@ -10,6 +10,43 @@ import { calculateWaterSurfaceAreaM2 } from '../lib/tankCalculations';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+async function refreshDefaultBomCost(db: { query: typeof query }, productId: string) {
+  await db.query(
+    `WITH latest_bom AS (
+       SELECT id FROM standard_boms WHERE product_master_id=$1
+       ORDER BY effective_from DESC NULLS LAST, created_at DESC LIMIT 1
+     ), priced AS (
+       SELECT COALESCE(bl.quantity,1) AS quantity,
+              COALESCE(c.cost,sp.cost) AS line_cost,
+              COALESCE(c.currency,sp.currency,'USD') AS line_currency,
+              pm.currency AS product_currency,
+              line_rate.rate_per_usd AS line_rate,
+              product_rate.rate_per_usd AS product_rate
+       FROM latest_bom lb
+       LEFT JOIN bom_lines bl ON bl.standard_bom_id=lb.id
+       LEFT JOIN components c ON c.id=bl.component_id
+       LEFT JOIN product_masters sp ON sp.id=bl.sub_product_id
+       JOIN product_masters pm ON pm.id=$1
+       LEFT JOIN platform_exchange_rates line_rate ON line_rate.currency_code=COALESCE(c.currency,sp.currency,'USD')
+       LEFT JOIN platform_exchange_rates product_rate ON product_rate.currency_code=pm.currency
+     ), total AS (
+       SELECT CASE WHEN COUNT(*) FILTER (
+          WHERE line_cost IS NOT NULL AND line_currency<>product_currency
+            AND (line_rate IS NULL OR product_rate IS NULL)
+        ) > 0 THEN NULL
+        ELSE COALESCE(SUM(quantity * CASE
+          WHEN line_cost IS NULL THEN 0
+          WHEN line_currency=product_currency THEN line_cost
+          ELSE line_cost / line_rate * product_rate
+        END),0) END AS value
+       FROM priced
+     )
+     UPDATE product_masters SET cost=(SELECT value FROM total),updated_at=NOW()
+     WHERE id=$1 AND cost_is_override=false`,
+    [productId],
+  );
+}
 const imageStorage = multer.diskStorage({
   destination: uploadsDir,
   filename: (_, file, cb) => {
@@ -450,7 +487,7 @@ router.get('/product-masters', authenticate, async (req: AuthRequest, res: Respo
          WHEN pm.design_flow_m3h IS NULL AND ph.design_flow_m3h IS NULL THEN 'empty'
          ELSE 'synchronized'
        END AS design_flow_sync_status,
-       pf.product_family_name, tf.name AS tank_family_name,
+       pf.product_family_name, tf.name AS tank_family_name, pm.cost AS bom_or_custom_cost,
        COALESCE(
          pm.surface_area_m2,
          CASE
@@ -487,7 +524,7 @@ router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
        END AS design_flow_sync_status,
        pm.design_flow_m3h AS product_design_flow_m3h,
        ph.design_flow_m3h AS hydraulic_design_flow_m3h,
-       pf.product_family_name, m.material_name,
+        pf.product_family_name, m.material_name, pm.cost AS bom_or_custom_cost,
        COALESCE(
          pm.surface_area_m2,
          CASE
@@ -891,7 +928,7 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
         }
       }
       const current = await client.query(
-        `SELECT pm.design_flow_m3h AS product_design_flow_m3h,
+        `SELECT pm.design_flow_m3h AS product_design_flow_m3h,pm.cost,pm.cost_is_override,pm.currency,
                 ph.design_flow_m3h AS hydraulic_design_flow_m3h
          FROM product_masters pm
          LEFT JOIN product_hydraulic ph ON ph.product_master_id=pm.id
@@ -917,7 +954,7 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
               ? Number(previousProductFlow)
               : null;
       const result = await client.query(
-        `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=CASE WHEN $33 THEN $6 ELSE power_kw END, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), lamp_count=CASE WHEN $34 THEN $35 ELSE lamp_count END, ozone_production_capacity_g_h=CASE WHEN $36 THEN $37 ELSE ozone_production_capacity_g_h END, updated_at=NOW() WHERE id=$31 RETURNING *`,
+        `UPDATE product_masters SET product_code=COALESCE($32, product_code), product_name=$1, product_category=$2, application_type=$3, design_flow_m3h=$4, design_head_m=$5, power_kw=CASE WHEN $33 THEN $6 ELSE power_kw END, primary_material_code=$7, standard_status=$8, image_url=$9, notes=$10, shape_type=$11, length_mm=$12, width_mm=$13, height_mm=$14, design_water_level_mm=$15, gross_volume_m3=$16, operating_volume_m3=$17, product_family_id=$18, synonyms=$19, tank_family_id=$20, cost=$21, cost_is_override=CASE WHEN $21::numeric IS DISTINCT FROM cost THEN true ELSE cost_is_override END, sell_price=$22, currency=$23, wall_thickness_mm=$24, weight_kg=$25, manufacturer=$26, model=$27, configuration=$28, control_type=$29, status=COALESCE($30,status), lamp_count=CASE WHEN $34 THEN $35 ELSE lamp_count END, ozone_production_capacity_g_h=CASE WHEN $36 THEN $37 ELSE ozone_production_capacity_g_h END, updated_at=NOW() WHERE id=$31 RETURNING *`,
         [product_name, product_category, application_type, linkedDesignFlow, design_head_m || null, power_kw, primary_material_code, standard_status, image_url || null, notes, shape_type || null, length_mm || null, width_mm || null, height_mm || null, design_water_level_mm || null, gross_volume_m3 || null, operating_volume_m3 || null, product_family_id || null, synonymsArr, tank_family_id || null, costVal, sellVal, currency || 'USD', wall_thickness_mm || null, weightVal, manufacturer || null, model || null, configuration || null, control_type || null, status || null, req.params.id, newCode, hasPowerKw, hasLampCount, lampCountValue, hasOzoneCapacity, ozoneCapacity]);
       const metadataResult = await client.query(
         `UPDATE product_masters
@@ -968,7 +1005,11 @@ router.put('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
         await insertAuditTx(client, req.user!.id, 'product', String(req.params.id), 'LINKED_DESIGN_FLOW_UPDATE',
           designFlowAuditDetails('product_master', linkedDesignFlow ?? null, previousProductFlow, previousHydraulicFlow));
       }
-      return { ...(metadataResult.rows[0] || result.rows[0]), design_flow_m3h: linkedDesignFlow, design_flow_sync_status: linkedDesignFlow == null ? 'empty' : 'synchronized' };
+      if (!result.rows[0].cost_is_override && result.rows[0].currency !== current.rows[0]?.currency) {
+        await refreshDefaultBomCost({ query: client.query.bind(client) as typeof query }, String(req.params.id));
+      }
+      const finalResult = await client.query('SELECT * FROM product_masters WHERE id=$1', [req.params.id]);
+      return { ...(finalResult.rows[0] || metadataResult.rows[0] || result.rows[0]), design_flow_m3h: linkedDesignFlow, design_flow_sync_status: linkedDesignFlow == null ? 'empty' : 'synchronized' };
     });
   } catch (error) {
     return next(error);
@@ -1118,24 +1159,37 @@ router.get('/product-boms/:id', authenticate, async (req: AuthRequest, res: Resp
   res.json({ ...bom.rows[0], lines: lines.rows });
 });
 
-router.post('/product-boms', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/product-boms', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   const { bom_code, product_master_id, revision_code, effective_from } = req.body;
   const result = await query('INSERT INTO standard_boms (bom_code, product_master_id, revision_code, effective_from) VALUES ($1,$2,$3,$4) RETURNING *',
     [bom_code, product_master_id, revision_code || 'A', effective_from]);
+  await refreshDefaultBomCost({ query }, product_master_id);
   res.status(201).json(result.rows[0]);
 });
 
-router.post('/product-boms/:id/lines', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/product-boms/:id/lines', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   const { line_number, component_id, sub_product_id, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks } = req.body;
   const result = await query(
     'INSERT INTO bom_lines (standard_bom_id, component_id, sub_product_id, line_number, component_type, component_reference_code, component_name, quantity, unit, is_optional, remarks) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
     [req.params.id, component_id || null, sub_product_id || null, line_number, component_type, component_reference_code, component_name, quantity || 1, unit, is_optional || false, remarks]);
+  const owner = await query('SELECT product_master_id FROM standard_boms WHERE id=$1', [req.params.id]);
+  if (owner.rows[0]) await refreshDefaultBomCost({ query }, owner.rows[0].product_master_id);
   res.status(201).json(result.rows[0]);
 });
 
-router.delete('/product-boms/:bomId/lines/:lineId', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/product-boms/:bomId/lines/:lineId', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   await query('DELETE FROM bom_lines WHERE id=$1 AND standard_bom_id=$2', [req.params.lineId, req.params.bomId]);
+  const owner = await query('SELECT product_master_id FROM standard_boms WHERE id=$1', [req.params.bomId]);
+  if (owner.rows[0]) await refreshDefaultBomCost({ query }, owner.rows[0].product_master_id);
   res.status(204).end();
+});
+
+router.post('/product-masters/:id/reset-bom-cost', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
+  const product = await query('UPDATE product_masters SET cost_is_override=false WHERE id::text=$1 OR product_code=$1 RETURNING id', [req.params.id]);
+  if (!product.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+  await refreshDefaultBomCost({ query }, product.rows[0].id);
+  const updated = await query('SELECT cost,cost_is_override,currency FROM product_masters WHERE id=$1', [product.rows[0].id]);
+  res.json(updated.rows[0]);
 });
 
 // PRODUCT RELATIONSHIPS
@@ -1327,15 +1381,22 @@ router.get('/components/:id', authenticate, async (req: AuthRequest, res: Respon
   res.json({ ...result.rows[0], used_in: usedIn.rows, documents: documents.rows });
 });
 
-router.post('/components', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/components', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   try {
-    const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, manufacturer, model } = req.body;
+    const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, manufacturer, model, cost, sell_price } = req.body;
     if (!component_code || !component_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'component_code and component_name required' } });
     const pmCode = primary_material_code || null;
     const wkg = (weight_kg === '' || weight_kg === null || weight_kg === undefined) ? null : parseFloat(String(weight_kg));
+    const costVal = (cost === '' || cost === null || cost === undefined) ? null : Number(cost);
+    const sellVal = (sell_price === '' || sell_price === null || sell_price === undefined) ? null : Number(sell_price);
+    const currency = String(req.body.currency || 'USD').toUpperCase();
+    if ((costVal !== null && (!Number.isFinite(costVal) || costVal < 0)) || (sellVal !== null && (!Number.isFinite(sellVal) || sellVal < 0))) {
+      return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Cost and sell price must be non-negative numbers.' } });
+    }
+    if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported component currency.' } });
     const result = await query(
-      'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost, manufacturer, model) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
-      [component_code, component_name, component_type || 'Vessel', component_category || 'Mechanical', description || null, pmCode, standard_size || null, wkg, unit || 'EA', status || 'Active', notes || null, req.user!.id, 0, manufacturer || null, model || null]);
+      'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost, sell_price, currency, manufacturer, model) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
+      [component_code, component_name, component_type || 'Vessel', component_category || 'Mechanical', description || null, pmCode, standard_size || null, wkg, unit || 'EA', status || 'Active', notes || null, req.user!.id, costVal, sellVal, currency, manufacturer || null, model || null]);
     await logAudit(req.user!.id, 'component', result.rows[0].id, 'CREATE', {
       summary: `Component ${component_code} created`,
       component_code,
@@ -1350,7 +1411,7 @@ router.post('/components', authenticate, async (req: AuthRequest, res: Response)
   }
 });
 
-router.put('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/components/:id', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   try {
     const { component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, cost, sell_price, manufacturer, model } = req.body;
     const componentCode = component_code === undefined || component_code === null
@@ -1360,11 +1421,14 @@ router.put('/components/:id', authenticate, async (req: AuthRequest, res: Respon
       return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'component_code cannot be blank' } });
     }
     const synonymsArr = Array.isArray(synonyms) ? synonyms.filter(Boolean) : [];
-    const costVal = (cost === null || cost === undefined || cost === '') ? 0 : parseFloat(String(cost));
+    const costVal = (cost === null || cost === undefined || cost === '') ? null : parseFloat(String(cost));
     const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
+    const currency = String(req.body.currency || 'USD').toUpperCase();
+    if ((costVal !== null && (!Number.isFinite(costVal) || costVal < 0)) || (sellVal !== null && (!Number.isFinite(sellVal) || sellVal < 0))) return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Cost and sell price must be non-negative numbers.' } });
+    if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported component currency.' } });
     const result = await query(
-      'UPDATE components SET component_code=COALESCE($1, component_code), component_name=$2, component_type=$3, component_category=$4, description=$5, primary_material_code=$6, standard_size=$7, weight_kg=$8, unit=$9, status=$10, notes=$11, synonyms=$12, cost=$13, sell_price=$14, manufacturer=$15, model=$16, updated_at=NOW() WHERE id=$17 RETURNING *',
-      [componentCode, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, manufacturer || null, model || null, req.params.id]);
+      'UPDATE components SET component_code=COALESCE($1, component_code), component_name=$2, component_type=$3, component_category=$4, description=$5, primary_material_code=$6, standard_size=$7, weight_kg=$8, unit=$9, status=$10, notes=$11, synonyms=$12, cost=$13, sell_price=$14, currency=$15, manufacturer=$16, model=$17, updated_at=NOW() WHERE id=$18 RETURNING *',
+      [componentCode, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, currency, manufacturer || null, model || null, req.params.id]);
     if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
     await logAudit(req.user!.id, 'component', String(req.params.id), 'UPDATE', {
       summary: 'Component details updated',
@@ -1377,6 +1441,13 @@ router.put('/components/:id', authenticate, async (req: AuthRequest, res: Respon
       cost: costVal,
       primary_material_code: primary_material_code || null,
     });
+    const products = await query(
+      `SELECT DISTINCT sb.product_master_id FROM bom_lines bl
+       JOIN standard_boms sb ON sb.id=bl.standard_bom_id
+       WHERE bl.component_id=$1`,
+      [req.params.id],
+    );
+    for (const product of products.rows) await refreshDefaultBomCost({ query }, product.product_master_id);
     res.json(result.rows[0]);
   } catch (err: any) {
     if (err?.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE', message: 'Component code already exists' } });
@@ -1414,7 +1485,7 @@ router.patch('/components/:id/status', authenticate, async (req: AuthRequest, re
   res.json(result.rows[0]);
 });
 
-router.post('/components/:id/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/components/:id/duplicate', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   const orig = await query('SELECT * FROM components WHERE id=$1', [req.params.id]);
   if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Component not found' } });
   const src = orig.rows[0];
@@ -1437,13 +1508,13 @@ router.post('/components/:id/duplicate', authenticate, async (req: AuthRequest, 
   const newCategory = req.body.component_category || src.component_category;
   const newStatus = req.body.status || src.status;
   const result = await query(
-    `INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, created_by, manufacturer, model)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
-    [newCode, newName, newType, newCategory, src.description, src.primary_material_code, src.standard_size, src.weight_kg, src.unit, newStatus, src.notes, src.synonyms || [], req.user!.id, src.manufacturer || null, src.model || null]);
+    `INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, synonyms, created_by, manufacturer, model, cost, sell_price, currency)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+    [newCode, newName, newType, newCategory, src.description, src.primary_material_code, src.standard_size, src.weight_kg, src.unit, newStatus, src.notes, src.synonyms || [], req.user!.id, src.manufacturer || null, src.model || null, src.cost, src.sell_price, src.currency || 'USD']);
   res.status(201).json(result.rows[0]);
 });
 
-router.delete('/components/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete('/components/:id', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const inUse = await query(
     `SELECT 1 FROM bom_lines WHERE component_id=$1 LIMIT 1`, [id]);

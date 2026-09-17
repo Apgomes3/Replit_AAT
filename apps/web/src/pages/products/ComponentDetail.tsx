@@ -147,6 +147,9 @@ export default function ComponentDetail() {
       synonyms: component.synonyms || [],
       manufacturer: component.manufacturer || '',
       model: component.model || '',
+      cost: component.cost == null ? '' : String(component.cost),
+      sell_price: component.sell_price == null ? '' : String(component.sell_price),
+      currency: component.currency || 'USD',
     });
     setEditing(true);
   };
@@ -164,7 +167,7 @@ export default function ComponentDetail() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put(`/components/${component.id}`, { ...form, weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null, synonyms: form.synonyms || [] });
+      await api.put(`/components/${component.id}`, { ...form, weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null, cost: form.cost === '' ? null : Number(form.cost), sell_price: form.sell_price === '' ? null : Number(form.sell_price), synonyms: form.synonyms || [] });
       toast.success('Component updated');
       setEditing(false);
       qc.invalidateQueries({ queryKey: ['component', id] });
@@ -331,6 +334,8 @@ export default function ComponentDetail() {
                   { label: 'Standard Size', value: component.standard_size },
                   { label: 'Weight', value: component.weight_kg ? `${component.weight_kg} kg` : null },
                   { label: 'Unit', value: component.unit },
+                  { label: 'Cost Price', value: component.cost == null ? null : `${Number(component.cost).toFixed(2)} ${component.currency || 'USD'}` },
+                  { label: 'Sell Price', value: component.sell_price == null ? null : `${Number(component.sell_price).toFixed(2)} ${component.currency || 'USD'}` },
                   { label: 'Notes', value: component.notes },
                   { label: 'Synonyms', value: component.synonyms?.length
                     ? <div className="flex flex-wrap gap-1">{component.synonyms.map((s: string) => <span key={s} className="bg-blue-600/10 text-blue-600 text-xs px-2 py-0.5 rounded-full">{s}</span>)}</div>
@@ -417,6 +422,23 @@ export default function ComponentDetail() {
                         {STATUSES.map(s => <option key={s}>{s}</option>)}
                       </select>
                     </div>
+                     <div>
+                       <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
+                       <input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm((f: any) => ({ ...f, cost: e.target.value }))}
+                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                     </div>
+                     <div>
+                       <label className="block text-xs font-medium text-slate-600 mb-1">Sell Price</label>
+                       <input type="number" min="0" step="0.01" value={form.sell_price} onChange={e => setForm((f: any) => ({ ...f, sell_price: e.target.value }))}
+                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+                     </div>
+                     <div>
+                       <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+                       <select value={form.currency} onChange={e => setForm((f: any) => ({ ...f, currency: e.target.value }))}
+                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                         {['USD','CNY','AUD','NZD','EUR'].map(currency => <option key={currency}>{currency}</option>)}
+                       </select>
+                     </div>
                     <div className="col-span-2">
                       <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                       <input value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))}

@@ -888,7 +888,7 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
   try {
     await client.query('BEGIN');
   const source = await client.query(
-    `SELECT c.preview_result,c.preview_stale,s.project_id,s.system_code,db.book_code
+    `SELECT c.preview_result,c.preview_input_snapshot,c.preview_stale,s.project_id,s.system_code,db.book_code
      FROM lss_biological_media_cases c JOIN systems s ON s.id=c.system_id
      JOIN design_books db ON db.id=c.design_book_id AND db.project_id=s.project_id
      WHERE c.system_id=$1 AND c.design_book_id=$2
@@ -899,7 +899,10 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
     await client.query('ROLLBACK');
     return res.status(409).json({ error: { code: 'MISSING_SOURCE', message: 'Calculate Biological Media before saving a plenum layout.' } });
   }
-  if (source.rows[0].preview_stale) {
+  const runner = client.query.bind(client) as DbRunner;
+  const currentContext = await linkedVolumeContext(routeParam(req.params.id), designBookId, runner);
+  if ('error' in currentContext || currentContext.status !== 'ready'
+      || isBiologicalMediaPreviewStale(source.rows[0], currentContext)) {
     await client.query('ROLLBACK');
     return res.status(409).json({ error: { code: 'STALE_SOURCE', message: 'Recalculate Biological Media before saving a plenum layout.' } });
   }

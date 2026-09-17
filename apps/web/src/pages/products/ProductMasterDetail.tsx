@@ -458,6 +458,16 @@ export default function ProductMasterDetail() {
       setSaving(false);
     }
   };
+  const resetBomCost = async () => {
+    try {
+      const response = await api.post(`/product-masters/${id}/reset-bom-cost`);
+      queryClient.setQueryData(['product-master', id], (current: any) => ({ ...current, ...response.data }));
+      setEditForm((current: any) => current ? { ...current, cost: response.data.cost == null ? '' : String(response.data.cost) } : current);
+      toast.success('Cost returned to the latest BOM total');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Could not restore BOM cost');
+    }
+  };
 
   const handleDuplicate = async () => {
     if (duplicating) return;
@@ -962,6 +972,8 @@ export default function ProductMasterDetail() {
       setShowAddLine(false);
       resetAddLineModal();
       queryClient.invalidateQueries({ queryKey: ['bom-detail', bom.id] });
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+      queryClient.invalidateQueries({ queryKey: ['product-masters'] });
     } catch {
       toast.error('Failed to add line');
     } finally {
@@ -974,6 +986,8 @@ export default function ProductMasterDetail() {
       await api.delete(`/product-boms/${bom.id}/lines/${lineId}`);
       toast.success('Line removed');
       queryClient.invalidateQueries({ queryKey: ['bom-detail', bom.id] });
+      queryClient.invalidateQueries({ queryKey: ['product-master', id] });
+      queryClient.invalidateQueries({ queryKey: ['product-masters'] });
     } catch {
       toast.error('Failed to remove line');
     }
@@ -1412,7 +1426,9 @@ export default function ProductMasterDetail() {
                   })()}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price <span className="font-normal text-slate-400">(override)</span></label>
+                  <div className="mb-1 flex items-center justify-between"><label className="block text-xs font-medium text-slate-600">Cost Price <span className="font-normal text-slate-400">({product.cost_is_override ? 'custom' : 'latest BOM total'})</span></label>
+                    {product.cost_is_override && <button type="button" onClick={resetBomCost} className="text-xs font-medium text-blue-600 hover:underline">Return to BOM cost</button>}
+                  </div>
                   <input type="number" min="0" step="any" placeholder="Leave blank to use estimate" value={editForm.cost} onChange={e => setEditForm((f: any) => ({ ...f, cost: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>
@@ -1571,7 +1587,9 @@ export default function ProductMasterDetail() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
+                  <div className="mb-1 flex items-center justify-between"><label className="block text-xs font-medium text-slate-600">Cost Price <span className="font-normal text-slate-400">({product.cost_is_override ? 'custom' : 'latest BOM total'})</span></label>
+                    {product.cost_is_override && <button type="button" onClick={resetBomCost} className="text-xs font-medium text-blue-600 hover:underline">Return to BOM cost</button>}
+                  </div>
                   <input type="number" min="0" step="any" placeholder="0.00" value={editForm.cost} onChange={e => setEditForm((f: any) => ({ ...f, cost: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
                 </div>

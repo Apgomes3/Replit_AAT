@@ -129,6 +129,7 @@ export interface ProductMaster {
   standard_status: string;
   cost?: number | string | null;
   sell_price?: number | string | null;
+  currency?: string;
   notes?: string;
   variants?: ProductVariant[];
   boms?: StandardBOM[];
@@ -285,6 +286,7 @@ export interface Component {
   status: string;
   cost?: number | string | null;
   sell_price?: number | string | null;
+  currency?: string;
   notes?: string;
   created_at: string;
 }

@@ -52,3 +52,4 @@
 - [Bio/Degas plenum crate sizing](bio-degas-plenum-crate-sizing.md) — use 0.238 m³ crates sized 1040×740×530 mm, stacked no more than four high.
 - [Bio/Degas plenum product boundary](bio-degas-plenum-product-boundary.md) — saved plenums are project equipment; reusable FRP PIM products require explicit promotion.
 - [Equipment Breakdown commercial boundary](equipment-breakdown-commercial-boundary.md) — sync engineering identities while preserving proposal overrides; release status must not freeze commercial edits.
+- [PIM commercial pricing](pim-commercial-pricing.md) — vendor offers are product-specific; components are saleable; product cost defaults to the latest BOM unless explicitly overridden.

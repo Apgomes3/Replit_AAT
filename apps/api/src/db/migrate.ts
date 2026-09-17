@@ -730,25 +730,20 @@ CREATE TABLE IF NOT EXISTS todos (
 
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS cost NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='product_masters' AND column_name='cost_is_override'
+  ) THEN
+    ALTER TABLE product_masters ADD COLUMN cost_is_override BOOLEAN NOT NULL DEFAULT false;
+    UPDATE product_masters SET cost_is_override=(cost IS NOT NULL);
+  END IF;
+END $$;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'USD';
 ALTER TABLE components ADD COLUMN IF NOT EXISTS cost NUMERIC;
 ALTER TABLE components ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
-
-UPDATE product_masters SET
-  cost = ROUND((RANDOM() * 4500 + 500)::numeric, 2)
-WHERE cost IS NULL;
-
-UPDATE product_masters SET
-  sell_price = ROUND((RANDOM() * 7000 + 800)::numeric, 2)
-WHERE sell_price IS NULL;
-
-UPDATE components SET
-  cost = ROUND((RANDOM() * 900 + 50)::numeric, 2)
-WHERE cost IS NULL;
-
-UPDATE components SET
-  sell_price = ROUND((RANDOM() * 1500 + 100)::numeric, 2)
-WHERE sell_price IS NULL;
+ALTER TABLE components ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'USD';
 
 -- BOM RELEASES (project-level material release documents)
 CREATE TABLE IF NOT EXISTS bom_releases (
@@ -3260,6 +3255,11 @@ CREATE TABLE IF NOT EXISTS design_book_equipment_breakdown_lines (
 );
 CREATE INDEX IF NOT EXISTS idx_design_book_breakdown_lines_system
   ON design_book_equipment_breakdown_lines(breakdown_id, system_id, sort_order);
+ALTER TABLE design_book_equipment_breakdown_lines
+  DROP CONSTRAINT IF EXISTS design_book_equipment_breakdown_lines_source_kind_check;
+ALTER TABLE design_book_equipment_breakdown_lines
+  ADD CONSTRAINT design_book_equipment_breakdown_lines_source_kind_check
+  CHECK (source_kind IN ('tank','equipment','pump','uv','filter','filter_media','fractionator','thermal','compact_unit','control_panel','instrument','manual'));
 `;
 
 async function migrate() {

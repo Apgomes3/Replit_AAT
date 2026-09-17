@@ -45,7 +45,7 @@ export default function ComponentsList() {
   const [form, setForm] = useState({
     component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical',
     description: '', primary_material_code: '', standard_size: '', weight_kg: '', unit: 'EA', notes: '',
-    manufacturer: '', model: '',
+    manufacturer: '', model: '', cost: '', sell_price: '', currency: 'USD',
   });
   const [submitting, setSubmitting] = useState(false);
   const [dupSaving, setDupSaving] = useState<string | null>(null);
@@ -104,6 +104,9 @@ export default function ComponentsList() {
       notes: row.notes || '',
       manufacturer: row.manufacturer || '',
       model: row.model || '',
+      cost: row.cost == null ? '' : String(row.cost),
+      sell_price: row.sell_price == null ? '' : String(row.sell_price),
+      currency: row.currency || 'USD',
     });
   };
 
@@ -114,6 +117,8 @@ export default function ComponentsList() {
       await api.put(`/components/${editRow.id}`, {
         ...editForm,
         weight_kg: editForm.weight_kg ? parseFloat(editForm.weight_kg) : null,
+        cost: editForm.cost === '' ? null : Number(editForm.cost),
+        sell_price: editForm.sell_price === '' ? null : Number(editForm.sell_price),
         synonyms: editRow.synonyms || [],
       });
       toast.success('Component updated');
@@ -130,10 +135,10 @@ export default function ComponentsList() {
     if (!form.component_code || !form.component_name) { toast.error('Code and name are required'); return; }
     setSubmitting(true);
     try {
-      await api.post('/components', { ...form, weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null });
+      await api.post('/components', { ...form, weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null, cost: form.cost === '' ? null : Number(form.cost), sell_price: form.sell_price === '' ? null : Number(form.sell_price) });
       toast.success('Component created');
       setShowModal(false);
-      setForm({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', description: '', primary_material_code: '', standard_size: '', weight_kg: '', unit: 'EA', notes: '', manufacturer: '', model: '' });
+      setForm({ component_code: '', component_name: '', component_type: 'Vessel', component_category: 'Mechanical', description: '', primary_material_code: '', standard_size: '', weight_kg: '', unit: 'EA', notes: '', manufacturer: '', model: '', cost: '', sell_price: '', currency: 'USD' });
       qc.invalidateQueries({ queryKey: ['components'] });
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || 'Failed to create component';
@@ -143,8 +148,8 @@ export default function ComponentsList() {
     }
   };
 
-  const fmtCurrency = (val: any) =>
-    val != null ? `$${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-slate-300">—</span>;
+  const fmtCurrency = (val: any, currency = 'USD') =>
+    val != null ? `${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}` : <span className="text-slate-300">—</span>;
 
   const columns: Column<Component>[] = [
     { key: 'component_code', header: 'Code', sortable: true, render: r => <Link to={`/products/components/${r.id}`}><EntityCode code={r.component_code} /></Link> },
@@ -165,8 +170,8 @@ export default function ComponentsList() {
     },
     { key: 'standard_size', header: 'Size', sortable: true },
     { key: 'unit', header: 'Unit', sortable: true },
-    { key: 'cost', header: 'Cost', sortable: true, sortValue: r => (r as any).cost ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost)}</span> },
-    { key: 'sell_price', header: 'Sell Price', sortable: true, sortValue: r => (r as any).sell_price ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price)}</span> },
+    { key: 'cost', header: 'Cost', sortable: true, sortValue: r => (r as any).cost ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.cost, r.currency)}</span> },
+    { key: 'sell_price', header: 'Sell Price', sortable: true, sortValue: r => (r as any).sell_price ?? 0, render: r => <span className="text-slate-600 text-sm">{fmtCurrency(r.sell_price, r.currency)}</span> },
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.status ?? '', render: r => (
       <InlineStatusSelect
         value={r.status ?? 'Active'}
@@ -413,6 +418,23 @@ export default function ComponentsList() {
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
+                <input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Sell Price</label>
+                <input type="number" min="0" step="0.01" value={form.sell_price} onChange={e => setForm(f => ({ ...f, sell_price: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+                <select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  {['USD','CNY','AUD','NZD','EUR'].map(currency => <option key={currency}>{currency}</option>)}
+                </select>
+              </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 sticky bottom-0 bg-white">
               <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
@@ -506,6 +528,23 @@ export default function ComponentsList() {
                 <input value={editForm.model} onChange={e => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
                   placeholder="e.g. CR 5-10"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Cost Price</label>
+                <input type="number" min="0" step="0.01" value={editForm.cost} onChange={e => setEditForm((f: any) => ({ ...f, cost: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Sell Price</label>
+                <input type="number" min="0" step="0.01" value={editForm.sell_price} onChange={e => setEditForm((f: any) => ({ ...f, sell_price: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+                <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  {['USD','CNY','AUD','NZD','EUR'].map(currency => <option key={currency}>{currency}</option>)}
+                </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
