@@ -55,6 +55,10 @@ describe('BioDegasPlenumPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /edit height/i }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Height (mm)' }), { target: { value: '2400' } });
     expect(screen.getByRole('spinbutton', { name: 'External height (mm)' })).toHaveValue(2400);
+
+    fireEvent.click(screen.getByRole('button', { name: /edit water level/i }));
+    fireEvent.change(screen.getAllByRole('spinbutton', { name: 'Water level (mm)' })[1], { target: { value: '1200' } });
+    expect(screen.getAllByRole('spinbutton', { name: 'Water level (mm)' })[0]).toHaveValue(1200);
   });
 
   it('waits for a Biological Media calculation result', () => {

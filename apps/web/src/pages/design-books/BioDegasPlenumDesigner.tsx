@@ -151,7 +151,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   const [layout, setLayout] = useState<PlenumLayout | null>(recommended);
   const [sectionColumn, setSectionColumn] = useState(0);
   const [selectedStackNumber, setSelectedStackNumber] = useState<number | null>(null);
-  const [editingDimension, setEditingDimension] = useState<keyof Pick<PlenumLayout, 'external_length_mm' | 'external_width_mm' | 'external_height_mm' | 'tray_gap_mm'> | null>(null);
+  const [editingDimension, setEditingDimension] = useState<keyof Pick<PlenumLayout, 'external_length_mm' | 'external_width_mm' | 'external_height_mm' | 'water_level_mm' | 'tray_gap_mm'> | null>(null);
   useEffect(() => {
     if (!recommended) return;
     const next = saved?.layout ? { ...recommended, ...saved.layout } : recommended;
@@ -195,14 +195,15 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
     setSectionColumn(row);
   };
   const dimensionControl = (
-    key: 'external_length_mm' | 'external_width_mm' | 'external_height_mm',
+    key: 'external_length_mm' | 'external_width_mm' | 'external_height_mm' | 'water_level_mm',
     label: string,
     x: number,
     y: number,
     min: number,
     max: number,
+    vertical = false,
   ) => editingDimension === key && !readOnly
-    ? <foreignObject x={x - 68} y={y - 15} width="136" height="30">
+    ? <foreignObject x={vertical ? Math.min(580, Math.max(2, x - 68)) : x - 68} y={y - 15} width="136" height="30">
         <input
           autoFocus
           aria-label={`${label} (mm)`}
@@ -233,6 +234,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
           }
         }}
         className={readOnly ? '' : 'cursor-pointer'}
+        transform={vertical ? `rotate(-90 ${x} ${y})` : undefined}
       >
         <rect x={x - 68} y={y - 13} width="136" height="26" rx="6" fill="#ffffff" stroke="#94a3b8"/>
         <text x={x} y={y + 4} textAnchor="middle" fontSize="10" fontWeight="600" fill="#334155">
@@ -256,13 +258,14 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
     ['water_level_mm', 'Water level', 0, assessment.internalHeight],
   ];
 
-  const topW = 720, topH = 300, pad = 28;
-  const sx = (topW - pad * 2) / layout.external_length_mm;
+  const topW = 720, topH = 300, pad = 28, topRightGutter = 76;
+  const sx = (topW - pad - topRightGutter) / layout.external_length_mm;
   const sy = (topH - pad * 2) / layout.external_width_mm;
   const scale = Math.min(sx, sy), drawW = layout.external_length_mm * scale, drawH = layout.external_width_mm * scale;
-  const ox = (topW - drawW) / 2, oy = (topH - drawH) / 2, wallPx = layout.wall_thickness_mm * scale;
-  const sectionW = 720, sectionH = 300, ss = Math.min((sectionW - 56) / layout.external_length_mm, (sectionH - 42) / layout.external_height_mm);
-  const sw = layout.external_length_mm * ss, sh = layout.external_height_mm * ss, sox = (sectionW - sw) / 2, soy = sectionH - 22 - sh;
+  const ox = pad, oy = (topH - drawH) / 2, wallPx = layout.wall_thickness_mm * scale;
+  const sectionW = 720, sectionH = 300, sectionLeftGutter = 76, sectionRightGutter = 76;
+  const ss = Math.min((sectionW - sectionLeftGutter - sectionRightGutter) / layout.external_length_mm, (sectionH - 42) / layout.external_height_mm);
+  const sw = layout.external_length_mm * ss, sh = layout.external_height_mm * ss, sox = sectionLeftGutter, soy = sectionH - 22 - sh;
   const tallestArrangedStack = Math.max(0, ...positions.map(position => position.crates));
   const trayCount = Number(layout.tray_count ?? 1);
   const trayGap = Number(layout.tray_gap_mm ?? TRAY_GAP_MM);
@@ -271,6 +274,8 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
     + Math.max(0, (usableTrayLength - trayCount * DISPERSION_TRAY.length) / 2);
   const trayTopY = oy + wallPx + Math.max(0, (assessment.internalWidth - DISPERSION_TRAY.width) * scale / 2);
   const actualCrateGap = Math.max(0, assessment.internalHeight - DISPERSION_TRAY.height - tallestArrangedStack * BIO_CRATE_HEIGHT_MM);
+  const waterBottomY = soy + sh - layout.wall_thickness_mm * ss;
+  const waterTopY = waterBottomY - layout.water_level_mm * ss;
 
   return <div id="bio-degas-plenum" className="space-y-5">
     <section className="rounded-xl border border-stone-200 bg-white p-5">
@@ -304,10 +309,10 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
         <line x1={ox} y1={topH-30} x2={ox} y2={topH-20} stroke="#64748b"/>
         <line x1={ox+drawW} y1={topH-30} x2={ox+drawW} y2={topH-20} stroke="#64748b"/>
         {dimensionControl('external_length_mm', 'Length', topW/2, topH-25, DISPERSION_TRAY.length, PLENUM_LIMITS.length)}
-        <line x1={topW-22} y1={oy} x2={topW-22} y2={oy+drawH} stroke="#64748b"/>
-        <line x1={topW-27} y1={oy} x2={topW-17} y2={oy} stroke="#64748b"/>
-        <line x1={topW-27} y1={oy+drawH} x2={topW-17} y2={oy+drawH} stroke="#64748b"/>
-        {dimensionControl('external_width_mm', 'Width', topW-82, topH/2, DISPERSION_TRAY.width, PLENUM_LIMITS.width)}
+        <line x1={ox+drawW+18} y1={oy} x2={ox+drawW+18} y2={oy+drawH} stroke="#64748b"/>
+        <line x1={ox+drawW+13} y1={oy} x2={ox+drawW+23} y2={oy} stroke="#64748b"/>
+        <line x1={ox+drawW+13} y1={oy+drawH} x2={ox+drawW+23} y2={oy+drawH} stroke="#64748b"/>
+        {dimensionControl('external_width_mm', 'Width', ox+drawW+46, oy+drawH/2, DISPERSION_TRAY.width, PLENUM_LIMITS.width, true)}
       </svg></figure>
       <figure className="overflow-hidden rounded-xl border border-stone-200 bg-white"><figcaption className="flex flex-wrap items-center justify-between gap-2 border-b bg-stone-50 px-4 py-2"><span className="font-semibold text-stone-800">Section view</span><span className="inline-flex rounded-lg border border-stone-200 bg-white p-1" aria-label="Section column">{Array.from({length:layout.rows},(_,row)=><button key={row} type="button" onClick={()=>setSectionColumn(row)} className={`rounded-md px-3 py-1 text-xs font-semibold transition ${sectionColumn===row?'bg-blue-600 text-white shadow-sm':'text-stone-600 hover:bg-stone-100'}`}>Column {row+1}</button>)}</span></figcaption><svg viewBox={`0 0 ${sectionW} ${sectionH}`} role="img" aria-label={`Dynamic section view of plenum tank, column ${sectionColumn + 1}`} className="h-auto w-full bg-slate-50">
         <rect x={sox} y={soy} width={sw} height={sh} fill="#eff6ff" stroke="#1e3a5f" strokeWidth="3"/>
@@ -316,6 +321,10 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
           <text x={sox+(trayStartMm+(index+.5)*DISPERSION_TRAY.length)*ss} y={soy+DISPERSION_TRAY.height*ss/2} textAnchor="middle" fontSize="9" fill="#5b21b6">Tray {index+1}</text>
         </g>)}
         <rect x={sox+layout.wall_thickness_mm*ss} y={soy+sh-layout.wall_thickness_mm*ss-layout.water_level_mm*ss} width={sw-layout.wall_thickness_mm*ss*2} height={layout.water_level_mm*ss} fill="#38bdf8" opacity=".25"/>
+        <line x1={sox-18} y1={waterTopY} x2={sox-18} y2={waterBottomY} stroke="#0284c7"/>
+        <line x1={sox-23} y1={waterTopY} x2={sox-13} y2={waterTopY} stroke="#0284c7"/>
+        <line x1={sox-23} y1={waterBottomY} x2={sox-13} y2={waterBottomY} stroke="#0284c7"/>
+        {dimensionControl('water_level_mm', 'Water level', sox-46, (waterTopY+waterBottomY)/2, 0, assessment.internalHeight, true)}
         {positions
           .filter(position => position.row === sectionColumn)
           .sort((a, b) => a.column - b.column)
@@ -363,10 +372,10 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
           <rect x={sox+sw-238} y={soy+DISPERSION_TRAY.height*ss+10} width="122" height="24" rx="6" fill="#fff" stroke="#dc2626"/>
           <text x={sox+sw-177} y={soy+DISPERSION_TRAY.height*ss+26} textAnchor="middle" fontSize="9" fontWeight="600" fill="#b91c1c">Tray-to-crate gap {trayGap} mm</text>
         </g>}
-        <line x1={sectionW-22} y1={soy} x2={sectionW-22} y2={soy+sh} stroke="#64748b"/>
-        <line x1={sectionW-27} y1={soy} x2={sectionW-17} y2={soy} stroke="#64748b"/>
-        <line x1={sectionW-27} y1={soy+sh} x2={sectionW-17} y2={soy+sh} stroke="#64748b"/>
-        {dimensionControl('external_height_mm', 'Height', sectionW-82, sectionH/2, 1500, PLENUM_LIMITS.height)}
+        <line x1={sox+sw+18} y1={soy} x2={sox+sw+18} y2={soy+sh} stroke="#64748b"/>
+        <line x1={sox+sw+13} y1={soy} x2={sox+sw+23} y2={soy} stroke="#64748b"/>
+        <line x1={sox+sw+13} y1={soy+sh} x2={sox+sw+23} y2={soy+sh} stroke="#64748b"/>
+        {dimensionControl('external_height_mm', 'Height', sox+sw+46, soy+sh/2, 1500, PLENUM_LIMITS.height, true)}
         <text x={sectionW/2} y={sectionH-5} textAnchor="middle" fontSize="11" fill="#334155">{layout.external_length_mm} mm linked length · tallest arranged stack {tallestArrangedStack}</text>
       </svg></figure>
     </div>
