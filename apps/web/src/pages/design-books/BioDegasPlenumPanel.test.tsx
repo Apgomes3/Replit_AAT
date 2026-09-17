@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BIO_CRATE_MEDIA_CAPACITY_M3,
@@ -42,6 +42,21 @@ describe('BioDegasPlenumPanel', () => {
     expect(screen.getAllByText('S01').length).toBeGreaterThanOrEqual(3);
   });
 
+  it('edits tank length, width, and height directly from drawing dimensions', () => {
+    renderPanel({ preview: { media: { installed_media_l: 477 } } });
+    fireEvent.click(screen.getByRole('button', { name: /edit length/i }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Length (mm)' }), { target: { value: '4000' } });
+    expect(screen.getByRole('spinbutton', { name: 'External length (mm)' })).toHaveValue(4000);
+
+    fireEvent.click(screen.getByRole('button', { name: /edit width/i }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Width (mm)' }), { target: { value: '2200' } });
+    expect(screen.getByRole('spinbutton', { name: 'External width (mm)' })).toHaveValue(2200);
+
+    fireEvent.click(screen.getByRole('button', { name: /edit height/i }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Height (mm)' }), { target: { value: '2400' } });
+    expect(screen.getByRole('spinbutton', { name: 'External height (mm)' })).toHaveValue(2400);
+  });
+
   it('waits for a Biological Media calculation result', () => {
     renderPanel({ preview: null });
     expect(screen.getByText('Calculate Biological Media first')).toBeInTheDocument();
@@ -57,6 +72,8 @@ describe('BioDegasPlenumPanel', () => {
       wall_thickness_mm: 80,
       rows: 2,
       stack_height: 3,
+      tray_count: 2,
+      tray_gap_mm: 100,
     });
     expect(assessment.capacity).toBe(60);
     expect(assessment.verticalCapacity).toBe(3);
@@ -67,8 +84,16 @@ describe('BioDegasPlenumPanel', () => {
     const layout = { ...createRecommendedPlenumLayout(58), stack_height: 4, wall_thickness_mm: 60 };
     expect(assessPlenumLayout(layout, 58).errors).toEqual(expect.arrayContaining([
       'Wall thickness must be at least 80 mm.',
-      'Only 3 crate layers fit below the tray with 100 mm clearance.',
+      'Only 3 crate layers fit with the selected tray-to-crate gap.',
     ]));
+  });
+
+  it('uses a second side-by-side tray only when the usable internal envelope fits it', () => {
+    const twoTrayLayout = createRecommendedPlenumLayout(58);
+    expect(twoTrayLayout.tray_count).toBe(2);
+    expect(assessPlenumLayout(twoTrayLayout, 58).errors).toEqual([]);
+    const tooShort = { ...twoTrayLayout, external_length_mm: 7400 };
+    expect(assessPlenumLayout(tooShort, 58).errors).toContain('Two dispersion trays do not fit inside the usable internal tank envelope.');
   });
 
   it.each([30, 31, 32, 33])('finds a compact valid two-row layout for %i crates', count => {

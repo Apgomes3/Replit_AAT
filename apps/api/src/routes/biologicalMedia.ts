@@ -826,7 +826,7 @@ router.get('/systems/:id/biological-media', async (req: AuthRequest, res: Respon
 });
 
 const PLENUM_LIMITS = { length: 9000, width: 2250, height: 2500, minWall: 80 };
-const PLENUM_LAYOUT_FIELDS = ['external_length_mm', 'external_width_mm', 'external_height_mm', 'wall_thickness_mm', 'rows', 'stack_height', 'water_level_mm'];
+const PLENUM_LAYOUT_FIELDS = ['external_length_mm', 'external_width_mm', 'external_height_mm', 'wall_thickness_mm', 'rows', 'stack_height', 'water_level_mm', 'tray_gap_mm', 'tray_count'];
 
 router.get('/systems/:id/bio-degas-plenum', async (req: AuthRequest, res: Response) => {
   const designBookId = text(req.query.design_book_id);
@@ -863,9 +863,11 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
   const length = Number(layout.external_length_mm), width = Number(layout.external_width_mm);
   const height = Number(layout.external_height_mm), wall = Number(layout.wall_thickness_mm);
   const rows = Number(layout.rows), stack = Number(layout.stack_height), water = Number(layout.water_level_mm);
+  const trayGap = Number(layout.tray_gap_mm), trayCount = Number(layout.tray_count);
   if (length <= 0 || width <= 0 || height <= 0 || length > PLENUM_LIMITS.length || width > PLENUM_LIMITS.width || height > PLENUM_LIMITS.height
       || wall < PLENUM_LIMITS.minWall || wall * 2 >= Math.min(length, width) || ![1, 2].includes(rows)
-      || !Number.isInteger(stack) || stack < 1 || stack > 4 || water < 0 || water > height - wall) {
+      || !Number.isInteger(stack) || stack < 1 || stack > 4 || water < 0 || water > height - wall
+      || !Number.isInteger(trayCount) || ![1, 2].includes(trayCount) || trayGap < 100) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Plenum layout is outside the governed dimensional limits.' } });
   }
   const editable = await query(
@@ -908,7 +910,7 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
   }
   const internalLength = length - wall * 2;
   const internalWidth = width - wall * 2;
-  const verticalCapacity = Math.max(0, Math.min(4, Math.floor((height - wall - 620 - 100) / 530)));
+  const verticalCapacity = Math.max(0, Math.min(4, Math.floor((height - wall - 620 - trayGap) / 530)));
   const positions = Math.max(0, Math.floor((internalLength - 800) / 740))
     * Math.min(rows, Math.max(0, Math.floor(internalWidth / 1040)));
   const capacity = positions * Math.min(stack, verticalCapacity);
@@ -922,7 +924,8 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
       && Number.isInteger(item.column) && item.column >= 0 && item.column < Math.max(0, Math.floor((internalLength - 800) / 740))
       && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= Math.min(stack, verticalCapacity))
     && stacks.reduce((sum: number, item: any) => sum + item.quantity, 0) === crateCount;
-  if (length < 3405 || width < 2005 || stack > verticalCapacity || capacity < crateCount || !stacksValid) {
+  const traysFit = internalWidth >= 2005 && internalLength - 800 >= trayCount * 3405;
+  if (!traysFit || stack > verticalCapacity || capacity < crateCount || !stacksValid) {
     await client.query('ROLLBACK');
     return res.status(400).json({ error: { code: 'INVALID_LAYOUT', message: `The layout cannot hold all ${crateCount} required crates with the governed access and tray clearances.` } });
   }

@@ -22,6 +22,8 @@ export type PlenumLayout = {
   rows: number;
   stack_height: number;
   water_level_mm: number;
+  tray_gap_mm: number;
+  tray_count: number;
   source_crate_count: number;
   stacks?: Array<{ row: number; column: number; quantity: number }>;
 };
@@ -37,12 +39,22 @@ export function createRecommendedPlenumLayout(crateCount: number): PlenumLayout 
   const positions = Math.ceil(crateCount / stack);
   const candidates = [1, 2].map(rows => {
     const columns = Math.ceil(positions / rows);
-    const length = Math.max(DISPERSION_TRAY.length, columns * BIO_CRATE_WIDTH_MM + ACCESS_LENGTH_MM + wall * 2);
-    const width = Math.max(DISPERSION_TRAY.width, rows * BIO_CRATE_LENGTH_MM + wall * 2);
+    const length = Math.max(
+      DISPERSION_TRAY.length + ACCESS_LENGTH_MM + wall * 2,
+      columns * BIO_CRATE_WIDTH_MM + ACCESS_LENGTH_MM + wall * 2,
+    );
+    const width = Math.max(
+      DISPERSION_TRAY.width + wall * 2,
+      rows * BIO_CRATE_LENGTH_MM + wall * 2,
+    );
     return { rows, length, width, area: length * width };
   }).filter(item => item.length <= PLENUM_LIMITS.length && item.width <= PLENUM_LIMITS.width)
     .sort((a, b) => a.area - b.area || a.length - b.length || a.rows - b.rows);
   const selected = candidates[0] || { rows: 2, length: PLENUM_LIMITS.length, width: PLENUM_LIMITS.width };
+  const internalLength = selected.length - wall * 2;
+  const internalWidth = selected.width - wall * 2;
+  const trayCount = internalWidth >= DISPERSION_TRAY.width
+    && internalLength - ACCESS_LENGTH_MM >= DISPERSION_TRAY.length * 2 ? 2 : 1;
   const height = Math.min(PLENUM_LIMITS.height, wall + stack * BIO_CRATE_HEIGHT_MM + TRAY_GAP_MM + DISPERSION_TRAY.height);
   const layout: PlenumLayout = {
     external_length_mm: selected.length,
@@ -52,6 +64,8 @@ export function createRecommendedPlenumLayout(crateCount: number): PlenumLayout 
     rows: selected.rows,
     stack_height: stack,
     water_level_mm: stack * BIO_CRATE_HEIGHT_MM,
+    tray_gap_mm: TRAY_GAP_MM,
+    tray_count: trayCount,
     source_crate_count: crateCount,
   };
   layout.stacks = createStackPositions(crateCount, layout.rows, layout.stack_height);
@@ -71,11 +85,13 @@ export function assessPlenumLayout(layout: PlenumLayout, crateCount: number) {
   const internalLength = layout.external_length_mm - wall * 2;
   const internalWidth = layout.external_width_mm - wall * 2;
   const internalHeight = layout.external_height_mm - wall;
+  const trayGap = Number(layout.tray_gap_mm ?? TRAY_GAP_MM);
+  const trayCount = Number(layout.tray_count ?? 1);
   const crateLengthCapacity = Math.max(0, Math.floor((internalLength - ACCESS_LENGTH_MM) / BIO_CRATE_WIDTH_MM));
   const crateWidthCapacity = Math.max(0, Math.floor(internalWidth / BIO_CRATE_LENGTH_MM));
   const rows = Math.max(1, Math.min(layout.rows, crateWidthCapacity));
   const positions = crateLengthCapacity * rows;
-  const verticalAvailable = internalHeight - DISPERSION_TRAY.height - TRAY_GAP_MM;
+  const verticalAvailable = internalHeight - DISPERSION_TRAY.height - trayGap;
   const verticalCapacity = Math.max(0, Math.min(BIO_CRATE_MAX_STACK, Math.floor(verticalAvailable / BIO_CRATE_HEIGHT_MM)));
   const capacity = positions * Math.min(layout.stack_height, verticalCapacity);
   const errors: string[] = [];
@@ -89,8 +105,10 @@ export function assessPlenumLayout(layout: PlenumLayout, crateCount: number) {
   });
   if (wall < PLENUM_LIMITS.minWall) errors.push('Wall thickness must be at least 80 mm.');
   if (layout.external_length_mm > PLENUM_LIMITS.length || layout.external_width_mm > PLENUM_LIMITS.width || layout.external_height_mm > PLENUM_LIMITS.height) errors.push('Tank exceeds the 40 ft transport envelope.');
-  if (layout.external_length_mm < DISPERSION_TRAY.length || layout.external_width_mm < DISPERSION_TRAY.width) errors.push('Tank is smaller than the dispersion tray.');
-  if (layout.stack_height > verticalCapacity) errors.push(`Only ${verticalCapacity} crate layers fit below the tray with 100 mm clearance.`);
+  if (![1, 2].includes(trayCount) || !Number.isInteger(trayCount)) errors.push('Use one or two dispersion trays.');
+  if (internalWidth < DISPERSION_TRAY.width || internalLength - ACCESS_LENGTH_MM < DISPERSION_TRAY.length * trayCount) errors.push(`${trayCount === 2 ? 'Two dispersion trays do' : 'The dispersion tray does'} not fit inside the usable internal tank envelope.`);
+  if (trayGap < TRAY_GAP_MM) errors.push('Tray-to-crate gap cannot be below 100 mm.');
+  if (layout.stack_height > verticalCapacity) errors.push(`Only ${verticalCapacity} crate layers fit with the selected tray-to-crate gap.`);
   if (capacity < crateCount) errors.push(`Layout holds ${capacity} of ${crateCount} required crates.`);
   if (stacks.some(item => !Number.isInteger(item.row) || !Number.isInteger(item.column) || item.row < 0 || item.row >= rows
       || item.column < 0 || item.column >= crateLengthCapacity)) errors.push('Every crate stack must remain inside the available tank grid.');
@@ -100,7 +118,7 @@ export function assessPlenumLayout(layout: PlenumLayout, crateCount: number) {
   const arrangedCrates = stacks.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   if (arrangedCrates !== crateCount) errors.push(`Stack quantities account for ${arrangedCrates} of ${crateCount} required crates.`);
   if (layout.water_level_mm < 0 || layout.water_level_mm > internalHeight) errors.push('Water level must remain inside the tank.');
-  return { internalLength, internalWidth, internalHeight, crateLengthCapacity, crateWidthCapacity, rows, positions, verticalCapacity, capacity, verticalAvailable, arrangedCrates, errors };
+  return { internalLength, internalWidth, internalHeight, trayGap, trayCount, crateLengthCapacity, crateWidthCapacity, rows, positions, verticalCapacity, capacity, verticalAvailable, arrangedCrates, errors };
 }
 
 export function calculateBioCrateSpatialBasis(crateCount: unknown) {
@@ -133,6 +151,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   const [layout, setLayout] = useState<PlenumLayout | null>(recommended);
   const [sectionColumn, setSectionColumn] = useState(0);
   const [selectedStackNumber, setSelectedStackNumber] = useState<number | null>(null);
+  const [editingDimension, setEditingDimension] = useState<keyof Pick<PlenumLayout, 'external_length_mm' | 'external_width_mm' | 'external_height_mm' | 'tray_gap_mm'> | null>(null);
   useEffect(() => {
     if (!recommended) return;
     const next = saved?.layout ? { ...recommended, ...saved.layout } : recommended;
@@ -151,7 +170,20 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
       const stackHeight = key === 'stack_height' ? value : current.stack_height;
       return { ...current, [key]: value, stacks: createStackPositions(crateCount, rows, stackHeight) };
     }
-    return { ...current, [key]: value };
+    const next = { ...current, [key]: value };
+    if (key === 'external_length_mm' || key === 'external_width_mm' || key === 'wall_thickness_mm') {
+      const nextInternalLength = next.external_length_mm - next.wall_thickness_mm * 2;
+      const nextInternalWidth = next.external_width_mm - next.wall_thickness_mm * 2;
+      next.tray_count = nextInternalWidth >= DISPERSION_TRAY.width
+        && nextInternalLength - ACCESS_LENGTH_MM >= DISPERSION_TRAY.length * 2 ? 2 : 1;
+    }
+    return next;
+  });
+  const setTrayGap = (value: number) => setLayout(current => {
+    if (!current) return current;
+    const currentGap = Number(current.tray_gap_mm ?? TRAY_GAP_MM);
+    const nextHeight = Math.min(PLENUM_LIMITS.height, Math.max(1500, current.external_height_mm + value - currentGap));
+    return { ...current, tray_gap_mm: value, external_height_mm: nextHeight };
   });
   const updateStack = (index: number, key: 'row' | 'column' | 'quantity', value: number) =>
     setLayout(current => current ? {
@@ -162,6 +194,51 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
     setSelectedStackNumber(stackNumber);
     setSectionColumn(row);
   };
+  const dimensionControl = (
+    key: 'external_length_mm' | 'external_width_mm' | 'external_height_mm',
+    label: string,
+    x: number,
+    y: number,
+    min: number,
+    max: number,
+  ) => editingDimension === key && !readOnly
+    ? <foreignObject x={x - 68} y={y - 15} width="136" height="30">
+        <input
+          autoFocus
+          aria-label={`${label} (mm)`}
+          type="number"
+          min={min}
+          max={max}
+          value={layout[key]}
+          onChange={event => set(key, Number(event.target.value))}
+          onBlur={() => setEditingDimension(null)}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === 'Escape') {
+              event.preventDefault();
+              setEditingDimension(null);
+            }
+          }}
+          className="h-7 w-full rounded-md border border-blue-500 bg-white px-2 text-center font-mono text-[11px] font-semibold text-slate-800 shadow-md outline-none ring-2 ring-blue-200"
+        />
+      </foreignObject>
+    : <g
+        role="button"
+        tabIndex={readOnly ? -1 : 0}
+        aria-label={`Edit ${label.toLowerCase()}, currently ${layout[key]} mm`}
+        onClick={() => !readOnly && setEditingDimension(key)}
+        onKeyDown={event => {
+          if (!readOnly && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            setEditingDimension(key);
+          }
+        }}
+        className={readOnly ? '' : 'cursor-pointer'}
+      >
+        <rect x={x - 68} y={y - 13} width="136" height="26" rx="6" fill="#ffffff" stroke="#94a3b8"/>
+        <text x={x} y={y + 4} textAnchor="middle" fontSize="10" fontWeight="600" fill="#334155">
+          {label} {layout[key]} mm
+        </text>
+      </g>;
   const save = async () => {
     if (assessment.errors.length) return toast.error('Resolve the layout errors before saving.');
     if (stale) return toast.error('Recalculate Biological Media before saving this layout.');
@@ -187,6 +264,13 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   const sectionW = 720, sectionH = 300, ss = Math.min((sectionW - 56) / layout.external_length_mm, (sectionH - 42) / layout.external_height_mm);
   const sw = layout.external_length_mm * ss, sh = layout.external_height_mm * ss, sox = (sectionW - sw) / 2, soy = sectionH - 22 - sh;
   const tallestArrangedStack = Math.max(0, ...positions.map(position => position.crates));
+  const trayCount = Number(layout.tray_count ?? 1);
+  const trayGap = Number(layout.tray_gap_mm ?? TRAY_GAP_MM);
+  const usableTrayLength = assessment.internalLength - ACCESS_LENGTH_MM;
+  const trayStartMm = layout.wall_thickness_mm + ACCESS_LENGTH_MM
+    + Math.max(0, (usableTrayLength - trayCount * DISPERSION_TRAY.length) / 2);
+  const trayTopY = oy + wallPx + Math.max(0, (assessment.internalWidth - DISPERSION_TRAY.width) * scale / 2);
+  const actualCrateGap = Math.max(0, assessment.internalHeight - DISPERSION_TRAY.height - tallestArrangedStack * BIO_CRATE_HEIGHT_MM);
 
   return <div id="bio-degas-plenum" className="space-y-5">
     <section className="rounded-xl border border-stone-200 bg-white p-5">
@@ -212,13 +296,25 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
         <rect x={ox+wallPx} y={oy+wallPx} width={ACCESS_LENGTH_MM*scale} height={drawH-wallPx*2} fill="#fef3c7" stroke="#d97706" strokeDasharray="5 4"/>
         <text x={ox+wallPx+ACCESS_LENGTH_MM*scale/2} y={oy+drawH/2} textAnchor="middle" fontSize="10" fill="#92400e" transform={`rotate(-90 ${ox+wallPx+ACCESS_LENGTH_MM*scale/2} ${oy+drawH/2})`}>800 mm access</text>
         {positions.map((p,i) => { const x=ox+wallPx+(ACCESS_LENGTH_MM+p.column*BIO_CRATE_WIDTH_MM)*scale; const y=oy+wallPx+p.row*BIO_CRATE_LENGTH_MM*scale; const selected=selectedStackNumber===p.stackNumber; return <g key={i} role="button" tabIndex={0} aria-label={`Select stack S${String(p.stackNumber).padStart(2, '0')}`} onClick={() => selectStack(p.stackNumber,p.row)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') selectStack(p.stackNumber,p.row); }}><rect x={x+2} y={y+2} width={BIO_CRATE_WIDTH_MM*scale-4} height={BIO_CRATE_LENGTH_MM*scale-4} rx="3" fill={selected?'#93c5fd':'#bfdbfe'} stroke={selected?'#1d4ed8':'#2563eb'} strokeWidth={selected?3:1}/><text x={x+BIO_CRATE_WIDTH_MM*scale/2} y={y+BIO_CRATE_LENGTH_MM*scale/2+4} textAnchor="middle" fontSize="10" fontWeight="600" fill="#1e3a8a">S{String(p.stackNumber).padStart(2,'0')} ×{p.crates}</text></g>; })}
-        <rect x={ox+(drawW-DISPERSION_TRAY.length*scale)/2} y={oy+(drawH-DISPERSION_TRAY.width*scale)/2} width={DISPERSION_TRAY.length*scale} height={DISPERSION_TRAY.width*scale} fill="none" stroke="#7c3aed" strokeWidth="2" strokeDasharray="7 4"/>
-        <text x={topW/2} y={oy+14} textAnchor="middle" fontSize="10" fill="#6d28d9">Dispersion tray 3405 × 2005</text>
-        <text x={topW/2} y={topH-5} textAnchor="middle" fontSize="11" fill="#334155">{layout.external_length_mm} mm external length</text>
+        {Array.from({length:trayCount},(_,index)=><g key={index}>
+          <rect x={ox+(trayStartMm+index*DISPERSION_TRAY.length)*scale} y={trayTopY} width={DISPERSION_TRAY.length*scale} height={DISPERSION_TRAY.width*scale} fill="none" stroke="#7c3aed" strokeWidth="2" strokeDasharray="7 4"/>
+          <text x={ox+(trayStartMm+(index+.5)*DISPERSION_TRAY.length)*scale} y={trayTopY+13} textAnchor="middle" fontSize="9" fill="#6d28d9">Tray {index+1} · 3405 × 2005</text>
+        </g>)}
+        <line x1={ox} y1={topH-25} x2={ox+drawW} y2={topH-25} stroke="#64748b"/>
+        <line x1={ox} y1={topH-30} x2={ox} y2={topH-20} stroke="#64748b"/>
+        <line x1={ox+drawW} y1={topH-30} x2={ox+drawW} y2={topH-20} stroke="#64748b"/>
+        {dimensionControl('external_length_mm', 'Length', topW/2, topH-25, DISPERSION_TRAY.length, PLENUM_LIMITS.length)}
+        <line x1={topW-22} y1={oy} x2={topW-22} y2={oy+drawH} stroke="#64748b"/>
+        <line x1={topW-27} y1={oy} x2={topW-17} y2={oy} stroke="#64748b"/>
+        <line x1={topW-27} y1={oy+drawH} x2={topW-17} y2={oy+drawH} stroke="#64748b"/>
+        {dimensionControl('external_width_mm', 'Width', topW-82, topH/2, DISPERSION_TRAY.width, PLENUM_LIMITS.width)}
       </svg></figure>
       <figure className="overflow-hidden rounded-xl border border-stone-200 bg-white"><figcaption className="flex flex-wrap items-center justify-between gap-2 border-b bg-stone-50 px-4 py-2"><span className="font-semibold text-stone-800">Section view</span><span className="inline-flex rounded-lg border border-stone-200 bg-white p-1" aria-label="Section column">{Array.from({length:layout.rows},(_,row)=><button key={row} type="button" onClick={()=>setSectionColumn(row)} className={`rounded-md px-3 py-1 text-xs font-semibold transition ${sectionColumn===row?'bg-blue-600 text-white shadow-sm':'text-stone-600 hover:bg-stone-100'}`}>Column {row+1}</button>)}</span></figcaption><svg viewBox={`0 0 ${sectionW} ${sectionH}`} role="img" aria-label={`Dynamic section view of plenum tank, column ${sectionColumn + 1}`} className="h-auto w-full bg-slate-50">
         <rect x={sox} y={soy} width={sw} height={sh} fill="#eff6ff" stroke="#1e3a5f" strokeWidth="3"/>
-        <rect x={sox} y={soy} width={sw} height={DISPERSION_TRAY.height*ss} fill="#ddd6fe" stroke="#7c3aed"/><text x={sectionW/2} y={soy+DISPERSION_TRAY.height*ss/2} textAnchor="middle" fontSize="11" fill="#5b21b6">620 mm dispersion tray</text>
+        {Array.from({length:trayCount},(_,index)=><g key={index}>
+          <rect x={sox+(trayStartMm+index*DISPERSION_TRAY.length)*ss} y={soy} width={DISPERSION_TRAY.length*ss} height={DISPERSION_TRAY.height*ss} fill="#ddd6fe" stroke="#7c3aed"/>
+          <text x={sox+(trayStartMm+(index+.5)*DISPERSION_TRAY.length)*ss} y={soy+DISPERSION_TRAY.height*ss/2} textAnchor="middle" fontSize="9" fill="#5b21b6">Tray {index+1}</text>
+        </g>)}
         <rect x={sox+layout.wall_thickness_mm*ss} y={soy+sh-layout.wall_thickness_mm*ss-layout.water_level_mm*ss} width={sw-layout.wall_thickness_mm*ss*2} height={layout.water_level_mm*ss} fill="#38bdf8" opacity=".25"/>
         {positions
           .filter(position => position.row === sectionColumn)
@@ -258,7 +354,19 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
               >S{String(position.stackNumber).padStart(2,'0')} · {position.crates}</text>
             </g>;
           })}
-        <line x1={sox} y1={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss} x2={sox+sw} y2={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss} stroke="#dc2626" strokeDasharray="5 4"/><text x={sox+sw-4} y={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss-4} textAnchor="end" fontSize="10" fill="#b91c1c">100 mm min gap</text>
+        <line x1={sox+sw-46} y1={soy+DISPERSION_TRAY.height*ss} x2={sox+sw-46} y2={soy+DISPERSION_TRAY.height*ss+actualCrateGap*ss} stroke="#dc2626"/>
+        <line x1={sox+sw-51} y1={soy+DISPERSION_TRAY.height*ss} x2={sox+sw-41} y2={soy+DISPERSION_TRAY.height*ss} stroke="#dc2626"/>
+        <line x1={sox+sw-51} y1={soy+DISPERSION_TRAY.height*ss+actualCrateGap*ss} x2={sox+sw-41} y2={soy+DISPERSION_TRAY.height*ss+actualCrateGap*ss} stroke="#dc2626"/>
+        {editingDimension === 'tray_gap_mm' && !readOnly ? <foreignObject x={sox+sw-238} y={soy+DISPERSION_TRAY.height*ss+8} width="122" height="30">
+          <input autoFocus aria-label="Tray-to-crate gap (mm)" type="number" min={TRAY_GAP_MM} max={PLENUM_LIMITS.height} value={trayGap} onChange={event=>setTrayGap(Number(event.target.value))} onBlur={()=>setEditingDimension(null)} onKeyDown={event=>{if(event.key==='Enter'||event.key==='Escape')setEditingDimension(null);}} className="h-7 w-full rounded-md border border-red-500 bg-white px-2 text-center font-mono text-[11px] font-semibold shadow-md outline-none ring-2 ring-red-100"/>
+        </foreignObject> : <g role="button" tabIndex={readOnly?-1:0} aria-label={`Edit tray-to-crate gap, currently ${trayGap} mm`} onClick={()=>!readOnly&&setEditingDimension('tray_gap_mm')} onKeyDown={event=>{if(!readOnly&&(event.key==='Enter'||event.key===' '))setEditingDimension('tray_gap_mm');}} className={readOnly?'':'cursor-pointer'}>
+          <rect x={sox+sw-238} y={soy+DISPERSION_TRAY.height*ss+10} width="122" height="24" rx="6" fill="#fff" stroke="#dc2626"/>
+          <text x={sox+sw-177} y={soy+DISPERSION_TRAY.height*ss+26} textAnchor="middle" fontSize="9" fontWeight="600" fill="#b91c1c">Tray-to-crate gap {trayGap} mm</text>
+        </g>}
+        <line x1={sectionW-22} y1={soy} x2={sectionW-22} y2={soy+sh} stroke="#64748b"/>
+        <line x1={sectionW-27} y1={soy} x2={sectionW-17} y2={soy} stroke="#64748b"/>
+        <line x1={sectionW-27} y1={soy+sh} x2={sectionW-17} y2={soy+sh} stroke="#64748b"/>
+        {dimensionControl('external_height_mm', 'Height', sectionW-82, sectionH/2, 1500, PLENUM_LIMITS.height)}
         <text x={sectionW/2} y={sectionH-5} textAnchor="middle" fontSize="11" fill="#334155">{layout.external_length_mm} mm linked length · tallest arranged stack {tallestArrangedStack}</text>
       </svg></figure>
     </div>
