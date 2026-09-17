@@ -18,6 +18,28 @@ const transaction = async <T>(fn: (db: Db) => Promise<T>) => {
 
 const numberOrNull = (value: any) => value == null || value === '' ? null : Number(value);
 const safeText = (value: any) => value == null ? null : String(value);
+export const normalizeEquipmentCurrency = (value: any) => String(value || 'USD').toUpperCase() === 'RMB' ? 'CNY' : String(value || 'USD').toUpperCase();
+const supportedCurrencies = new Set(['USD', 'CNY', 'AUD', 'NZD', 'EUR']);
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+export const calculateEquipmentPricing = (row: any) => {
+  const unitCost = numberOrNull(row?.unit_cost);
+  const markup = numberOrNull(row?.markup);
+  const quantity = numberOrNull(row?.quantity);
+  const sellingPrice = unitCost != null && Number.isFinite(unitCost) && markup != null && Number.isFinite(markup)
+    ? roundMoney(unitCost * (1 + markup / 100))
+    : null;
+  const totalPrice = sellingPrice != null && quantity != null && Number.isFinite(quantity)
+    ? roundMoney(quantity * sellingPrice)
+    : null;
+  return { selling_price: sellingPrice, total_price: totalPrice };
+};
+export const convertEquipmentCurrency = (amount: any, oldRatePerUsd: any, nextRatePerUsd: any) => {
+  const value = numberOrNull(amount), oldRate = numberOrNull(oldRatePerUsd), nextRate = numberOrNull(nextRatePerUsd);
+  if (value == null) return null;
+  if (oldRate == null || nextRate == null || !(oldRate > 0) || !(nextRate > 0)) return null;
+  return roundMoney(value / oldRate * nextRate);
+};
+const withCalculatedPricing = (row: any) => ({ ...row, ...calculateEquipmentPricing(row) });
 export const equipmentBreakdownColumns = [
   { key: 'system', label: 'System', value: (row: any) => row.system_name || 'Unassigned' },
   { key: 'source_kind', label: 'Source', value: (row: any) => row.source_kind },
@@ -29,7 +51,8 @@ export const equipmentBreakdownColumns = [
   { key: 'model', label: 'Model', value: (row: any) => row.model || '' },
   { key: 'unit_cost', label: 'Unit Cost', value: (row: any) => numberOrNull(row.unit_cost) },
   { key: 'markup', label: 'Markup %', value: (row: any) => numberOrNull(row.markup) },
-  { key: 'selling_price', label: 'Selling Price', value: (row: any) => numberOrNull(row.selling_price) },
+  { key: 'selling_price', label: 'Selling Price', value: (row: any) => calculateEquipmentPricing(row).selling_price },
+  { key: 'total_price', label: 'Total Price', value: (row: any) => calculateEquipmentPricing(row).total_price },
   { key: 'currency', label: 'Currency', value: (row: any) => row.currency },
   { key: 'lead_time', label: 'Lead Time', value: (row: any) => row.lead_time || '' },
   { key: 'exclusions', label: 'Exclusions', value: (row: any) => row.exclusions || '' },
@@ -196,8 +219,9 @@ async function sources(db: Db, bookId: string) {
       source_snapshot: row, description: row.description || row.product_name || row.component_name || fallback,
       quantity: numberOrNull(row.quantity) ?? qty, unit: row.unit || unit, supplier: null,
       manufacturer: row.manufacturer || null, model: row.model || null, unit_cost: cost,
-      markup: cost != null && sell != null && cost > 0 ? (sell - cost) / cost * 100 : null,
-      selling_price: sell, currency: row.currency || 'USD', lead_time: null, exclusions: null, notes: row.notes || null,
+       markup: cost != null && sell != null && cost > 0 ? (sell - cost) / cost * 100 : null,
+       selling_price: calculateEquipmentPricing({ unit_cost: cost, markup: cost != null && sell != null && cost > 0 ? (sell - cost) / cost * 100 : null }).selling_price,
+       currency: row.currency || 'USD', lead_time: null, exclusions: null, notes: row.notes || null,
     };
   };
   return systems.flatMap(system => {
@@ -242,7 +266,10 @@ async function sync(db: Db, bookId: string, userId?: string) {
     'INSERT INTO design_book_equipment_breakdowns (design_book_id,updated_by) VALUES ($1,$2) RETURNING *', [bookId, userId || null],
   )).rows[0];
   const next = await sources(db, bookId);
-  const existing = (await db.query('SELECT * FROM design_book_equipment_breakdown_lines WHERE breakdown_id=$1', [breakdown.id])).rows;
+  const existing = (await db.query(
+    'SELECT * FROM design_book_equipment_breakdown_lines WHERE breakdown_id=$1 ORDER BY id FOR UPDATE',
+    [breakdown.id],
+  )).rows;
   const keys = new Set(next.map(row => row.source_key));
   for (const row of next) {
     const old = existing.find(item => item.source_key === row.source_key);
@@ -254,16 +281,17 @@ async function sync(db: Db, bookId: string, userId?: string) {
       continue;
     }
     const overrides = old.override_fields || {};
-    const value = (field: string) => overrides[field] ? old[field] : row[field];
+     const value = (field: string) => overrides[field] ? old[field] : row[field];
+     const pricing = calculateEquipmentPricing({ unit_cost: value('unit_cost'), markup: value('markup'), quantity: value('quantity') });
     await db.query(`UPDATE design_book_equipment_breakdown_lines SET
       system_id=$1,source_id=$2,source_snapshot=$3,description=$4,quantity=$5,unit=$6,manufacturer=$7,model=$8,unit_cost=$9,markup=$10,selling_price=$11,currency=$12,notes=$13,updated_at=NOW()
-      WHERE id=$14`, [row.system_id,row.source_id,row.source_snapshot,value('description'),value('quantity'),value('unit'),value('manufacturer'),value('model'),value('unit_cost'),value('markup'),value('selling_price'),value('currency'),value('notes'),old.id]);
+       WHERE id=$14`, [row.system_id,row.source_id,row.source_snapshot,value('description'),value('quantity'),value('unit'),value('manufacturer'),value('model'),value('unit_cost'),value('markup'),pricing.selling_price,value('currency'),value('notes'),old.id]);
   }
   const obsolete = existing.filter(item => item.source_kind !== 'manual' && !keys.has(item.source_key));
   if (obsolete.length) await db.query('DELETE FROM design_book_equipment_breakdown_lines WHERE id=ANY($1::uuid[])', [obsolete.map(item => item.id)]);
   await db.query('UPDATE design_book_equipment_breakdowns SET updated_at=NOW(),updated_by=$2 WHERE id=$1', [breakdown.id,userId || null]);
   return (await db.query(`SELECT l.*,s.system_code,s.system_name FROM design_book_equipment_breakdown_lines l
-    LEFT JOIN systems s ON s.id=l.system_id WHERE l.breakdown_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`, [breakdown.id])).rows;
+    LEFT JOIN systems s ON s.id=l.system_id WHERE l.breakdown_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`, [breakdown.id])).rows.map(withCalculatedPricing);
 }
 
 export async function readExisting(db: Db, bookId: string) {
@@ -275,7 +303,7 @@ export async function readExisting(db: Db, bookId: string) {
   const items = (await db.query(`SELECT l.*,s.system_code,s.system_name
     FROM design_book_equipment_breakdown_lines l LEFT JOIN systems s ON s.id=l.system_id
     WHERE l.breakdown_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`, [breakdown.id])).rows;
-  return { initialized: true, items, hidden_columns: normalizeHiddenColumns(breakdown.hidden_columns) };
+  return { initialized: true, items: items.map(withCalculatedPricing), hidden_columns: normalizeHiddenColumns(breakdown.hidden_columns) };
 }
 
 router.get('/design-books/:id/equipment-breakdown', async (req: AuthRequest, res: Response) => {
@@ -299,27 +327,58 @@ router.post('/design-books/:id/equipment-breakdown/refresh', requireModuleManage
   res.json({ items });
 });
 router.put('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
-  const allowed = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','selling_price','currency','lead_time','exclusions','notes'];
+  const allowed = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','currency','lead_time','exclusions','notes'];
   const values: any[] = [], sets: string[] = [], fields: string[] = [];
   for (const field of allowed) if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-    if (['quantity','unit_cost','markup','selling_price'].includes(field) && req.body[field] !== null && (!Number.isFinite(Number(req.body[field])) || Number(req.body[field]) < 0)) return res.status(400).json({ error: { code: 'INVALID_VALUE', message: `${field} must be non-negative` } });
+    if (['quantity','unit_cost','markup'].includes(field) && req.body[field] !== null && (!Number.isFinite(Number(req.body[field])) || Number(req.body[field]) < 0)) return res.status(400).json({ error: { code: 'INVALID_VALUE', message: `${field} must be non-negative` } });
     values.push(req.body[field] === '' ? null : req.body[field]); sets.push(`${field}=$${values.length}`); fields.push(field);
   }
   if (!sets.length) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'No editable fields supplied' } });
-  const overrideParam = values.length + 1;
-  const lineIdParam = values.length + 2;
-  const bookIdParam = values.length + 3;
-  const result = await query(`UPDATE design_book_equipment_breakdown_lines l SET ${sets.join(',')},override_fields=override_fields || $${overrideParam}::jsonb,updated_at=NOW()
-    FROM design_book_equipment_breakdowns b
-    WHERE l.id=$${lineIdParam} AND l.breakdown_id=b.id AND b.design_book_id=$${bookIdParam} RETURNING l.*`,
-    [...values, JSON.stringify(Object.fromEntries(fields.map(f => [f, true]))), req.params.lineId, req.params.id]);
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Breakdown line not found' } });
-  res.json(result.rows[0]);
+  const updated = await transaction(async db => {
+    const current = (await db.query(`SELECT l.currency,l.unit_cost FROM design_book_equipment_breakdown_lines l
+      JOIN design_book_equipment_breakdowns b ON b.id=l.breakdown_id
+      WHERE l.id=$1 AND b.design_book_id=$2 FOR UPDATE OF l`, [req.params.lineId, req.params.id])).rows[0];
+    if (!current) throw Object.assign(new Error('Breakdown line not found'), { status: 404, code: 'NOT_FOUND' });
+    if (fields.includes('currency')) {
+      const nextCurrency = normalizeEquipmentCurrency(req.body.currency);
+      if (!supportedCurrencies.has(nextCurrency)) throw Object.assign(new Error('Currency must be USD, RMB, AUD, NZD, or EUR'), { status: 400, code: 'INVALID_CURRENCY' });
+      const currencyIndex = fields.indexOf('currency');
+      values[currencyIndex] = nextCurrency;
+      const oldCurrency = normalizeEquipmentCurrency(current.currency);
+      const explicitCostIndex = fields.indexOf('unit_cost');
+      if (oldCurrency !== nextCurrency && explicitCostIndex < 0) {
+        if (current.unit_cost == null) throw Object.assign(new Error('Enter a Unit Cost before changing currency'), { status: 409, code: 'CURRENCY_REQUIRES_COST' });
+        const rates = (await db.query('SELECT currency_code,rate_per_usd FROM platform_exchange_rates WHERE currency_code=ANY($1::text[])', [[oldCurrency, nextCurrency]])).rows;
+        const rate = (currency: string) => Number(rates.find(item => item.currency_code === currency)?.rate_per_usd);
+        const converted = convertEquipmentCurrency(current.unit_cost, rate(oldCurrency), rate(nextCurrency));
+        if (converted == null) throw Object.assign(new Error('An administrator must configure both exchange rates before changing currency'), { status: 409, code: 'EXCHANGE_RATE_MISSING' });
+        values.push(converted); sets.push(`unit_cost=$${values.length}`); fields.push('unit_cost');
+      }
+    }
+    const overrideParam = values.length + 1;
+    const lineIdParam = values.length + 2;
+    const bookIdParam = values.length + 3;
+    const result = await db.query(`UPDATE design_book_equipment_breakdown_lines l SET ${sets.join(',')},
+        selling_price=CASE
+          WHEN ${fields.includes('unit_cost') ? `$${fields.indexOf('unit_cost') + 1}` : 'l.unit_cost'} IS NULL
+            OR ${fields.includes('markup') ? `$${fields.indexOf('markup') + 1}` : 'l.markup'} IS NULL THEN NULL
+          ELSE ROUND((${fields.includes('unit_cost') ? `$${fields.indexOf('unit_cost') + 1}` : 'l.unit_cost'})::numeric
+            * (1 + (${fields.includes('markup') ? `$${fields.indexOf('markup') + 1}` : 'l.markup'})::numeric / 100), 2)
+        END,
+        override_fields=override_fields || $${overrideParam}::jsonb,updated_at=NOW()
+      FROM design_book_equipment_breakdowns b
+      WHERE l.id=$${lineIdParam} AND l.breakdown_id=b.id AND b.design_book_id=$${bookIdParam} RETURNING l.*`,
+      [...values, JSON.stringify(Object.fromEntries(fields.map(f => [f, true]))), req.params.lineId, req.params.id]);
+    return result.rows[0];
+  });
+  res.json(withCalculatedPricing(updated));
 });
 router.post('/design-books/:id/equipment-breakdown/lines', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const body = req.body || {};
   if (!String(body.description || '').trim()) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Description is required' } });
-  for (const field of ['quantity', 'unit_cost', 'markup', 'selling_price']) {
+  const currency = normalizeEquipmentCurrency(body.currency);
+  if (!supportedCurrencies.has(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR' } });
+  for (const field of ['quantity', 'unit_cost', 'markup']) {
     if (body[field] != null && body[field] !== '' && (!Number.isFinite(Number(body[field])) || Number(body[field]) < 0)) {
       return res.status(400).json({ error: { code: 'INVALID_VALUE', message: `${field} must be non-negative` } });
     }
@@ -335,12 +394,13 @@ router.post('/design-books/:id/equipment-breakdown/lines', requireModuleManage('
     }
     const breakdown = (await db.query('SELECT id FROM design_book_equipment_breakdowns WHERE design_book_id=$1', [req.params.id])).rows[0]
       || (await db.query('INSERT INTO design_book_equipment_breakdowns (design_book_id,updated_by) VALUES ($1,$2) RETURNING id', [req.params.id,req.user?.id])).rows[0];
+    const pricing = calculateEquipmentPricing(body);
     return (await db.query(`INSERT INTO design_book_equipment_breakdown_lines
       (breakdown_id,system_id,source_kind,source_key,description,quantity,unit,supplier,manufacturer,model,unit_cost,markup,selling_price,currency,lead_time,exclusions,notes,override_fields)
       VALUES ($1,$2,'manual',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
-      [breakdown.id,body.system_id || null,`manual:${randomUUID()}`,body.description.trim(),body.quantity ?? 1,body.unit || 'EA',body.supplier || null,body.manufacturer || null,body.model || null,body.unit_cost ?? null,body.markup ?? null,body.selling_price ?? null,body.currency || 'USD',body.lead_time || null,body.exclusions || null,body.notes || null,JSON.stringify({ description:true,quantity:true,unit:true })])).rows[0];
+       [breakdown.id,body.system_id || null,`manual:${randomUUID()}`,body.description.trim(),body.quantity ?? 1,body.unit || 'EA',body.supplier || null,body.manufacturer || null,body.model || null,body.unit_cost ?? null,body.markup ?? null,pricing.selling_price,currency,body.lead_time || null,body.exclusions || null,body.notes || null,JSON.stringify({ description:true,quantity:true,unit:true })])).rows[0];
   });
-  res.status(201).json(created);
+  res.status(201).json(withCalculatedPricing(created));
 });
 router.delete('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleManage('design_books'), async (req, res) => {
   const result = await query(`DELETE FROM design_book_equipment_breakdown_lines l USING design_book_equipment_breakdowns b

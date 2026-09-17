@@ -1251,4 +1251,30 @@ router.delete('/tank-cost-rates/:id', authenticate, requireRole('admin'), async 
   res.status(204).end();
 });
 
+const exchangeCurrencies = new Set(['USD', 'CNY', 'AUD', 'NZD', 'EUR']);
+router.get('/exchange-rates', authenticate, async (_req, res: Response) => {
+  const result = await query(`SELECT currency_code,rate_per_usd,updated_at
+    FROM platform_exchange_rates ORDER BY CASE currency_code WHEN 'USD' THEN 0 WHEN 'CNY' THEN 1 WHEN 'AUD' THEN 2 WHEN 'NZD' THEN 3 ELSE 4 END`);
+  res.json({ items: result.rows });
+});
+
+router.put('/exchange-rates/:currency', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const currency = String(req.params.currency || '').toUpperCase() === 'RMB' ? 'CNY' : String(req.params.currency || '').toUpperCase();
+  const rate = Number(req.body?.rate_per_usd);
+  if (!exchangeCurrencies.has(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported currency' } });
+  if (currency === 'USD' && rate !== 1) return res.status(400).json({ error: { code: 'INVALID_RATE', message: 'USD exchange rate must be 1' } });
+  if (!Number.isFinite(rate) || rate <= 0) return res.status(400).json({ error: { code: 'INVALID_RATE', message: 'Exchange rate must be greater than zero' } });
+  const before = (await query('SELECT * FROM platform_exchange_rates WHERE currency_code=$1', [currency])).rows[0];
+  const result = await query(`INSERT INTO platform_exchange_rates (currency_code,rate_per_usd,updated_by)
+    VALUES ($1,$2,$3) ON CONFLICT (currency_code) DO UPDATE
+    SET rate_per_usd=EXCLUDED.rate_per_usd,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING *`,
+    [currency, rate, req.user!.id]);
+  await logAudit(req.user!.id, 'platform_exchange_rate', currency, 'UPDATE', {
+    summary: `Exchange rate updated for ${currency === 'CNY' ? 'RMB' : currency}`,
+    before,
+    after: result.rows[0],
+  });
+  res.json(result.rows[0]);
+});
+
 export default router;

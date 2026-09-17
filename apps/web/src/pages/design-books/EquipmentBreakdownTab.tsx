@@ -6,7 +6,7 @@ import api from '../../lib/api';
 import { getLssSystems } from './ControlFieldInstrumentsTab';
 
 type Props = { book: any; readOnly: boolean };
-const editable = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','selling_price','currency','lead_time','exclusions','notes'];
+const editable = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','currency','lead_time','exclusions','notes'];
 const columns = [
   { key: 'source_kind', label: 'Source' },
   { key: 'description', label: 'Description' },
@@ -18,10 +18,15 @@ const columns = [
   { key: 'unit_cost', label: 'Cost' },
   { key: 'markup', label: 'Markup %' },
   { key: 'selling_price', label: 'Sell Price' },
+  { key: 'total_price', label: 'Total Price' },
   { key: 'currency', label: 'Currency' },
   { key: 'lead_time', label: 'Lead time' },
   { key: 'exclusions', label: 'Exclusions' },
   { key: 'notes', label: 'Notes' },
+];
+const currencies = [
+  { value: 'USD', label: 'USD' }, { value: 'CNY', label: 'RMB' }, { value: 'AUD', label: 'AUD' },
+  { value: 'NZD', label: 'NZD' }, { value: 'EUR', label: 'EUR' },
 ];
 
 function Field({ value, type = 'text', onChange, onCommit, disabled, saving }: { value: any; type?: string; onChange: (value: string) => void; onCommit: () => void; disabled: boolean; saving: boolean }) {
@@ -56,7 +61,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
   const update = async (row: any, field: string, value: string) => {
     setSaving(`${row.id}:${field}`);
     try {
-      const numeric = ['quantity','unit_cost','markup','selling_price'].includes(field);
+      const numeric = ['quantity','unit_cost','markup'].includes(field);
       await api.put(`/design-books/${book.id}/equipment-breakdown/lines/${row.id}`, { [field]: numeric && value === '' ? null : numeric ? Number(value) : value });
       qc.invalidateQueries({ queryKey: ['design-book-equipment-breakdown', book.id] });
     } catch (error: any) { toast.error(error?.response?.data?.error?.message || 'Could not save breakdown line'); }
@@ -94,10 +99,23 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
       </tr></thead>
       <tbody className="divide-y divide-stone-100">{rows.map(row => <tr key={row.id} className="align-top hover:bg-blue-50/20">
         {!hidden.has('source_kind') && <td className="px-2 py-2 text-stone-500 whitespace-nowrap">{row.source_kind}{row.source_kind === 'manual' && <span className="ml-1 rounded bg-amber-100 px-1 text-amber-700">manual</span>}</td>}
-        {editable.filter(field => !hidden.has(field)).map(field => {
-          const type = ['quantity','unit_cost','markup','selling_price'].includes(field) ? 'number' : 'text';
+        {columns.filter(column => column.key !== 'source_kind' && !hidden.has(column.key)).map(({ key: field }) => {
           const key = `${row.id}:${field}`;
           const value = Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : row[field];
+          if (field === 'selling_price' || field === 'total_price') {
+            return <td key={field} className="min-w-[100px] px-2 py-2 text-stone-700" data-testid={`${field}-${row.id}`}>
+              {row[field] == null ? '' : Number(row[field]).toFixed(2)}
+            </td>;
+          }
+          if (field === 'currency') {
+            return <td key={field} className="min-w-[100px] px-1 py-1"><select value={normalizeCurrencyValue(value)}
+              disabled={readOnly || saving === key || row.unit_cost == null} title={row.unit_cost == null ? 'Enter a Unit Cost before changing currency' : 'Currency'}
+              onChange={event => void update(row, field, event.target.value)}
+              className="w-full rounded border border-stone-200 bg-white px-2 py-1 text-xs text-stone-700 disabled:bg-stone-50">
+              {currencies.map(currency => <option key={currency.value} value={currency.value}>{currency.label}</option>)}
+            </select></td>;
+          }
+          const type = ['quantity','unit_cost','markup'].includes(field) ? 'number' : 'text';
           return <td key={field} className="min-w-[100px] px-1 py-1"><Field value={value} type={type} disabled={readOnly} saving={saving === key}
             onChange={next => setDrafts(current => ({ ...current, [key]: next }))}
             onCommit={() => {
@@ -125,4 +143,8 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
       grouped.map(({ system, rows }) => <section key={system.id} className="space-y-2"><div className="flex items-center justify-between"><div><h3 className="font-semibold text-stone-800">{system.system_code} — {system.system_name}</h3><p className="text-xs text-stone-500">{rows.length} proposal line{rows.length === 1 ? '' : 's'}</p></div></div>{table(rows)}</section>)}
     {items.some(row => !row.system_id) && <section className="space-y-2"><h3 className="font-semibold text-stone-800">Unassigned proposal lines</h3>{table(items.filter(row => !row.system_id))}</section>}
   </div>;
+}
+
+function normalizeCurrencyValue(value: any) {
+  return String(value || 'USD').toUpperCase() === 'RMB' ? 'CNY' : String(value || 'USD').toUpperCase();
 }

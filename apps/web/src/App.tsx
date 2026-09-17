@@ -36,6 +36,7 @@ import AdminSystemTypes from './pages/admin/AdminSystemTypes';
 import AdminAuditLog from './pages/admin/AdminAuditLog';
 import AdminPOStageRoles from './pages/admin/AdminPOStageRoles';
 import AdminTankCostRates from './pages/admin/AdminTankCostRates';
+import AdminExchangeRates from './pages/admin/AdminExchangeRates';
 import AdminBiologicalMediaProfiles from './pages/admin/AdminBiologicalMediaProfiles';
 import AdminUVEngineering from './pages/admin/AdminUVEngineering';
 import AdminThermalWallConstructions from './pages/admin/AdminThermalWallConstructions';
@@ -137,6 +138,7 @@ export default function App() {
             <Route path="admin/audit-log" element={<AdminAuditLog />} />
             <Route path="admin/po-stage-roles" element={<AdminPOStageRoles />} />
             <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
+            <Route path="admin/exchange-rates" element={<AdminGuard><AdminExchangeRates /></AdminGuard>} />
             <Route path="admin/biological-media-profiles" element={<AdminGuard><AdminBiologicalMediaProfiles /></AdminGuard>} />
             <Route path="admin/uv-engineering" element={<AdminGuard><AdminUVEngineering /></AdminGuard>} />
              <Route path="admin/thermal-wall-constructions" element={<EngineeringAdminGuard><AdminThermalWallConstructions /></EngineeringAdminGuard>} />

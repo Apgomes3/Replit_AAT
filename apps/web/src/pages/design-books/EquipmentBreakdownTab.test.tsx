@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import EquipmentBreakdownTab from './EquipmentBreakdownTab';
@@ -12,7 +12,7 @@ const book = { id: 'book-1', systems: [
   { id: 'system-2', system_id: 'system-2', system_type: 'LSS', system_code: 'LSS-02', system_name: 'Quarantine Life Support' },
 ] };
 const rows = [
-  { id: 'line-1', system_id: 'system-1', source_kind: 'pump', description: 'Primary pump', quantity: 1, unit: 'EA', currency: 'USD' },
+  { id: 'line-1', system_id: 'system-1', source_kind: 'pump', description: 'Primary pump', quantity: 2, unit: 'EA', unit_cost: 100, markup: 25, selling_price: 125, total_price: 250, currency: 'USD' },
   { id: 'line-2', system_id: 'system-2', source_kind: 'tank', description: 'Quarantine tank', quantity: 2, unit: 'EA', currency: 'USD' },
 ];
 
@@ -49,6 +49,51 @@ describe('EquipmentBreakdownTab', () => {
     expect(api.put).not.toHaveBeenCalled();
     await user.tab();
     expect(api.put).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/lines/line-1', { description: 'Proposal pump' });
+  });
+
+  it('shows calculated prices as read-only values and keeps incomplete values blank', async () => {
+    renderTab();
+    expect(await screen.findByTestId('selling_price-line-1')).toHaveTextContent('125.00');
+    expect(screen.getByTestId('total_price-line-1')).toHaveTextContent('250.00');
+    expect(screen.getByTestId('selling_price-line-2')).toBeEmptyDOMElement();
+    expect(screen.queryByDisplayValue('125')).not.toBeInTheDocument();
+  });
+
+  it('saves cost and markup edits without sending selling price overrides', async () => {
+    const user = userEvent.setup();
+    renderTab();
+    const cost = await screen.findByDisplayValue('100');
+    await user.clear(cost);
+    await user.type(cost, '120.5');
+    await user.tab();
+    expect(api.put).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/lines/line-1', { unit_cost: 120.5 });
+  });
+
+  it('refreshes calculated values after a cost edit', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: { initialized: true, items: rows } } as any)
+      .mockResolvedValue({ data: { initialized: true, items: [{ ...rows[0], unit_cost: 120, selling_price: 150, total_price: 300 }, rows[1]] } } as any);
+    renderTab();
+    const cost = await screen.findByDisplayValue('100');
+    await user.clear(cost);
+    await user.type(cost, '120');
+    await user.tab();
+    await waitFor(() => expect(screen.getByTestId('selling_price-line-1')).toHaveTextContent('150.00'));
+    expect(screen.getByTestId('total_price-line-1')).toHaveTextContent('300.00');
+  });
+
+  it('offers only supported currencies and requests automatic conversion when currency changes', async () => {
+    const user = userEvent.setup();
+    renderTab();
+    const currency = (await screen.findAllByRole('combobox'))[0];
+    expect(currency).toHaveTextContent('USD');
+    expect(currency).toHaveTextContent('RMB');
+    expect(currency).toHaveTextContent('AUD');
+    expect(currency).toHaveTextContent('NZD');
+    expect(currency).toHaveTextContent('EUR');
+    await user.selectOptions(currency, 'CNY');
+    expect(api.put).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/lines/line-1', { currency: 'CNY' });
   });
 
   it('adds a manual line and exposes refresh/export actions', async () => {

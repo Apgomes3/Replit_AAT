@@ -1,10 +1,29 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, normalizeEquipmentCurrency, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
+  it('calculates rounded selling and total prices for normal, zero, decimal, and incomplete inputs', () => {
+    expect(calculateEquipmentPricing({ unit_cost: 100, markup: 25, quantity: 2 })).toEqual({ selling_price: 125, total_price: 250 });
+    expect(calculateEquipmentPricing({ unit_cost: 0, markup: 0, quantity: 0 })).toEqual({ selling_price: 0, total_price: 0 });
+    expect(calculateEquipmentPricing({ unit_cost: 10.125, markup: 12.5, quantity: 3.25 })).toEqual({ selling_price: 11.39, total_price: 37.02 });
+    expect(calculateEquipmentPricing({ unit_cost: 100, markup: null, quantity: 2 })).toEqual({ selling_price: null, total_price: null });
+    expect(calculateEquipmentPricing({ unit_cost: 100, markup: 10, quantity: null })).toEqual({ selling_price: 110, total_price: null });
+  });
+
+  it('converts line costs through USD using administrator rates', () => {
+    expect(convertEquipmentCurrency(100, 1, 7.25)).toBe(725);
+    expect(convertEquipmentCurrency(725, 7.25, 1)).toBe(100);
+    expect(convertEquipmentCurrency(100.12, 1.5, 1.65)).toBe(110.13);
+    expect(convertEquipmentCurrency(100, null, 1.65)).toBeNull();
+  });
+
+  it('normalizes RMB to the stored CNY code', () => {
+    expect(normalizeEquipmentCurrency('RMB')).toBe('CNY');
+    expect(normalizeEquipmentCurrency('eur')).toBe('EUR');
+  });
   it('recognizes an LSS-coded system even when its equipment type is specialized', () => {
     expect(isLifeSupportSystem({ system_code: 'LSS-01', system_type: 'UV Sterilization' })).toBe(true);
     expect(isLifeSupportSystem({ system_code: 'P-01', system_type: 'Pump' })).toBe(false);
@@ -70,11 +89,29 @@ describe('equipment breakdown source normalization', () => {
   it('removes hidden columns from the summary and per-LSS sheets', async () => {
     const buffer = await createWorkbookBuffer([
       { system_code: 'LSS-01', system_name: 'Main', source_kind: 'pump', description: 'Pump', quantity: 1, unit: 'EA', supplier: 'Hidden supplier', currency: 'USD' },
-    ], ['supplier', 'unit_cost']);
+    ], ['supplier', 'unit_cost', 'total_price']);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
     expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Supplier');
     expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Unit Cost');
     expect(workbook.getWorksheet('LSS-01')?.getRow(1).values).not.toContain('Supplier');
+    expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Total Price');
+  });
+
+  it('exports calculated selling and total prices and leaves incomplete values blank', async () => {
+    const buffer = await createWorkbookBuffer([
+      { system_code: 'LSS-01', description: 'Complete', quantity: 2, unit_cost: 10, markup: 25 },
+      { system_code: 'LSS-01', description: 'Incomplete', quantity: 2, unit_cost: 10, markup: null },
+    ]);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    const sheet = workbook.getWorksheet('Summary')!;
+    const headers = (sheet.getRow(1).values as any[]).map(String);
+    const sellingColumn = headers.indexOf('Selling Price');
+    const totalColumn = headers.indexOf('Total Price');
+    expect(sheet.getRow(2).getCell(sellingColumn).value).toBe(12.5);
+    expect(sheet.getRow(2).getCell(totalColumn).value).toBe(25);
+    expect(sheet.getRow(3).getCell(sellingColumn).value).toBeNull();
+    expect(sheet.getRow(3).getCell(totalColumn).value).toBeNull();
   });
 });

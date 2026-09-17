@@ -1007,6 +1007,17 @@ INSERT INTO tank_cost_rates (material_code, label, cost_per_sqm_usd, notes)
 SELECT 'MAT-FRP-VE', 'FRP (Vinyl Ester)', 350, 'Base rate for FRP tank shell fabrication'
 WHERE NOT EXISTS (SELECT 1 FROM tank_cost_rates WHERE material_code = 'MAT-FRP-VE');
 
+-- PLATFORM EXCHANGE RATES (currency units per 1 USD)
+CREATE TABLE IF NOT EXISTS platform_exchange_rates (
+  currency_code VARCHAR(3) PRIMARY KEY CHECK (currency_code IN ('USD','CNY','AUD','NZD','EUR')),
+  rate_per_usd NUMERIC(18,8) CHECK (rate_per_usd IS NULL OR rate_per_usd > 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+INSERT INTO platform_exchange_rates (currency_code, rate_per_usd)
+VALUES ('USD',1),('CNY',NULL),('AUD',NULL),('NZD',NULL),('EUR',NULL)
+ON CONFLICT (currency_code) DO NOTHING;
+
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_scopes TEXT[] DEFAULT ARRAY['LSS','Tanks','Waterproofing','Theming','Acrylic'];
 
 -- DESIGN BOOKS
