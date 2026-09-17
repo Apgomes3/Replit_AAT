@@ -331,7 +331,10 @@ router.put('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleM
   const values: any[] = [], sets: string[] = [], fields: string[] = [];
   for (const field of allowed) if (Object.prototype.hasOwnProperty.call(req.body, field)) {
     if (['quantity','unit_cost','markup'].includes(field) && req.body[field] !== null && (!Number.isFinite(Number(req.body[field])) || Number(req.body[field]) < 0)) return res.status(400).json({ error: { code: 'INVALID_VALUE', message: `${field} must be non-negative` } });
-    values.push(req.body[field] === '' ? null : req.body[field]); sets.push(`${field}=$${values.length}`); fields.push(field);
+    values.push(req.body[field] === '' ? null : req.body[field]);
+    const cast = ['quantity','unit_cost','markup'].includes(field) ? '::numeric' : '';
+    sets.push(`${field}=$${values.length}${cast}`);
+    fields.push(field);
   }
   if (!sets.length) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'No editable fields supplied' } });
   const updated = await transaction(async db => {
@@ -358,12 +361,12 @@ router.put('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleM
     const overrideParam = values.length + 1;
     const lineIdParam = values.length + 2;
     const bookIdParam = values.length + 3;
+    const costExpression = fields.includes('unit_cost') ? `$${fields.indexOf('unit_cost') + 1}::numeric` : 'l.unit_cost';
+    const markupExpression = fields.includes('markup') ? `$${fields.indexOf('markup') + 1}::numeric` : 'l.markup';
     const result = await db.query(`UPDATE design_book_equipment_breakdown_lines l SET ${sets.join(',')},
         selling_price=CASE
-          WHEN ${fields.includes('unit_cost') ? `$${fields.indexOf('unit_cost') + 1}` : 'l.unit_cost'} IS NULL
-            OR ${fields.includes('markup') ? `$${fields.indexOf('markup') + 1}` : 'l.markup'} IS NULL THEN NULL
-          ELSE ROUND((${fields.includes('unit_cost') ? `$${fields.indexOf('unit_cost') + 1}` : 'l.unit_cost'})::numeric
-            * (1 + (${fields.includes('markup') ? `$${fields.indexOf('markup') + 1}` : 'l.markup'})::numeric / 100), 2)
+          WHEN ${costExpression} IS NULL OR ${markupExpression} IS NULL THEN NULL
+          ELSE ROUND(${costExpression} * (1 + ${markupExpression} / 100), 2)
         END,
         override_fields=override_fields || $${overrideParam}::jsonb,updated_at=NOW()
       FROM design_book_equipment_breakdowns b

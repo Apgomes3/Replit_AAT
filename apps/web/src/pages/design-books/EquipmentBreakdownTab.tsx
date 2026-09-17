@@ -29,6 +29,24 @@ const currencies = [
   { value: 'NZD', label: 'NZD' }, { value: 'EUR', label: 'EUR' },
 ];
 
+function calculateDraftPricing(row: any, drafts: Record<string, string>) {
+  const value = (field: string) => {
+    const key = `${row.id}:${field}`;
+    return Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : row[field];
+  };
+  const numeric = (field: string) => value(field) === '' || value(field) == null ? null : Number(value(field));
+  const cost = numeric('unit_cost');
+  const markup = numeric('markup');
+  const quantity = numeric('quantity');
+  const sellingPrice = cost != null && Number.isFinite(cost) && markup != null && Number.isFinite(markup)
+    ? Math.round((cost * (1 + markup / 100) + Number.EPSILON) * 100) / 100
+    : null;
+  const totalPrice = sellingPrice != null && quantity != null && Number.isFinite(quantity)
+    ? Math.round((sellingPrice * quantity + Number.EPSILON) * 100) / 100
+    : null;
+  return { selling_price: sellingPrice, total_price: totalPrice };
+}
+
 function Field({ value, type = 'text', onChange, onCommit, disabled, saving }: { value: any; type?: string; onChange: (value: string) => void; onCommit: () => void; disabled: boolean; saving: boolean }) {
   return <div className="relative"><input type={type} value={value ?? ''} disabled={disabled} onChange={event => onChange(event.target.value)}
     onBlur={onCommit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
@@ -60,11 +78,25 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
   const grouped = useMemo(() => systems.map(system => ({ system, rows: items.filter(row => row.system_id === system.id) })), [systems, items]);
   const update = async (row: any, field: string, value: string) => {
     setSaving(`${row.id}:${field}`);
+    const numeric = ['quantity','unit_cost','markup'].includes(field);
+    const nextValue = numeric && value === '' ? null : numeric ? Number(value) : value;
+    const queryKey = ['design-book-equipment-breakdown', book.id];
+    const previous = qc.getQueryData(queryKey);
+    qc.setQueryData(queryKey, (current: any) => current ? {
+      ...current,
+      items: (current.items || []).map((item: any) => item.id === row.id ? { ...item, [field]: nextValue } : item),
+    } : current);
     try {
-      const numeric = ['quantity','unit_cost','markup'].includes(field);
-      await api.put(`/design-books/${book.id}/equipment-breakdown/lines/${row.id}`, { [field]: numeric && value === '' ? null : numeric ? Number(value) : value });
-      qc.invalidateQueries({ queryKey: ['design-book-equipment-breakdown', book.id] });
-    } catch (error: any) { toast.error(error?.response?.data?.error?.message || 'Could not save breakdown line'); }
+      const response = await api.put(`/design-books/${book.id}/equipment-breakdown/lines/${row.id}`, { [field]: nextValue });
+      qc.setQueryData(queryKey, (current: any) => current ? {
+        ...current,
+        items: (current.items || []).map((item: any) => item.id === row.id ? { ...item, ...response.data } : item),
+      } : current);
+      await qc.invalidateQueries({ queryKey });
+    } catch (error: any) {
+      qc.setQueryData(queryKey, previous);
+      toast.error(error?.response?.data?.error?.message || 'Could not save breakdown line');
+    }
     finally { setSaving(null); }
   };
   const refresh = async () => { try { await api.post(`/design-books/${book.id}/equipment-breakdown/refresh`); await refetch(); toast.success('Equipment schedule refreshed'); } catch (error: any) { toast.error(error?.response?.data?.error?.message || 'Could not refresh equipment selections'); } };
@@ -103,8 +135,9 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
           const key = `${row.id}:${field}`;
           const value = Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : row[field];
           if (field === 'selling_price' || field === 'total_price') {
+            const calculated = calculateDraftPricing(row, drafts)[field];
             return <td key={field} className="min-w-[100px] px-2 py-2 text-stone-700" data-testid={`${field}-${row.id}`}>
-              {row[field] == null ? '' : Number(row[field]).toFixed(2)}
+              {calculated == null ? '' : calculated.toFixed(2)}
             </td>;
           }
           if (field === 'currency') {

@@ -69,6 +69,17 @@ describe('EquipmentBreakdownTab', () => {
     expect(api.put).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/lines/line-1', { unit_cost: 120.5 });
   });
 
+  it('recalculates sell and total prices while markup is being entered', async () => {
+    const user = userEvent.setup();
+    renderTab();
+    const markup = await screen.findByDisplayValue('25');
+    await user.clear(markup);
+    expect(screen.getByTestId('selling_price-line-1')).toBeEmptyDOMElement();
+    await user.type(markup, '50');
+    expect(screen.getByTestId('selling_price-line-1')).toHaveTextContent('150.00');
+    expect(screen.getByTestId('total_price-line-1')).toHaveTextContent('300.00');
+  });
+
   it('refreshes calculated values after a cost edit', async () => {
     const user = userEvent.setup();
     vi.mocked(api.get)
