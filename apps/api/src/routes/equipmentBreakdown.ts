@@ -82,6 +82,30 @@ export function expandAllocationProducts(
   });
 }
 
+export function expandSandFilterProducts(allocation: any, productById: Map<string, any>) {
+  return expandAllocationProducts(allocation, productById, 'Sand filter').flatMap(product => {
+    const filterQuantity = Number(product.quantity);
+    const mediaPerFilterKg = Number(product.sand_media_per_filter_kg);
+    const lines = [{ ...product, line_kind: 'filter' }];
+    if (Number.isFinite(filterQuantity) && filterQuantity > 0
+        && Number.isFinite(mediaPerFilterKg) && mediaPerFilterKg > 0) {
+      lines.push({
+        source_id: product.source_id,
+        source_key: `${product.source_key}:sand-media`,
+        line_kind: 'filter_media',
+        description: `${product.description} sand/media`,
+        quantity: filterQuantity * mediaPerFilterKg,
+        unit: 'kg',
+        notes: `${mediaPerFilterKg} kg per filter × ${filterQuantity} filter${filterQuantity === 1 ? '' : 's'}`,
+        product_master_id: product.product_master_id,
+        sand_media_per_filter_kg: mediaPerFilterKg,
+        filter_quantity: filterQuantity,
+      });
+    }
+    return lines;
+  });
+}
+
 const BIO_CRATE_MEDIA_CAPACITY_M3 = 0.238;
 
 export function expandBiologicalMediaProducts(biologicalCase: any) {
@@ -190,9 +214,12 @@ async function sources(db: Db, bookId: string) {
     });
   });
   const productMasters = selectedProductIds.length ? (await db.query(
-    `SELECT id,product_code,product_name,manufacturer,model,cost,sell_price,
+    `SELECT pm.id,pm.product_code,pm.product_name,pm.manufacturer,pm.model,pm.cost,pm.sell_price,
+             pd.sand_media_per_filter_kg,
             COALESCE(NULLIF(currency,''),'USD') AS currency
-     FROM product_masters WHERE id=ANY($1::uuid[])`, [[...new Set(selectedProductIds)]],
+      FROM product_masters pm
+      LEFT JOIN product_dimensions pd ON pd.product_master_id=pm.id
+      WHERE pm.id=ANY($1::uuid[])`, [[...new Set(selectedProductIds)]],
   )).rows : [];
   const productById = new Map(productMasters.map(product => [String(product.id), product]));
   const uvProducts = uv.flatMap(selection => {
@@ -243,8 +270,8 @@ async function sources(db: Db, bookId: string) {
       ...compact.filter(r => r.system_id === systemId).map(r => line('compact_unit', systemId, r.id, r.id, r, r.component_name, r.quantity || 1, r.unit || 'EA')),
       ...fractionators.filter(r => r.system_id === systemId).flatMap(r => expandAllocationProducts(r, productById, 'Foam fractionator')
         .map(product => line('fractionator', systemId, product.source_id, product.source_key, product, product.description, product.quantity, product.unit))),
-      ...sandFilters.filter(r => r.system_id === systemId).flatMap(r => expandAllocationProducts(r, productById, 'Sand filter')
-        .map(product => line('filter', systemId, product.source_id, product.source_key, product, product.description, product.quantity, product.unit))),
+      ...sandFilters.filter(r => r.system_id === systemId).flatMap(r => expandSandFilterProducts(r, productById)
+        .map(product => line(product.line_kind, systemId, product.source_id, product.source_key, product, product.description, product.quantity, product.unit))),
       ...ozone.filter(r => r.system_id === systemId).flatMap(r => {
         const raw = r.allocation_snapshot || {};
         const allocations = Array.isArray(raw.products) ? raw.products : [raw];
@@ -270,14 +297,22 @@ async function sync(db: Db, bookId: string, userId?: string) {
     'SELECT * FROM design_book_equipment_breakdown_lines WHERE breakdown_id=$1 ORDER BY id FOR UPDATE',
     [breakdown.id],
   )).rows;
+  const nextSortOrderBySystem = new Map<string, number>();
+  existing.forEach(item => {
+    const key = String(item.system_id || '');
+    nextSortOrderBySystem.set(key, Math.max(nextSortOrderBySystem.get(key) ?? 0, (Number(item.sort_order) || 0) + 1));
+  });
   const keys = new Set(next.map(row => row.source_key));
   for (const row of next) {
     const old = existing.find(item => item.source_key === row.source_key);
     if (!old) {
+      const systemKey = String(row.system_id || '');
+      const nextSortOrder = nextSortOrderBySystem.get(systemKey) ?? 0;
+      nextSortOrderBySystem.set(systemKey, nextSortOrder + 1);
       await db.query(`INSERT INTO design_book_equipment_breakdown_lines
         (breakdown_id,system_id,source_kind,source_id,source_key,source_snapshot,description,quantity,unit,supplier,manufacturer,model,unit_cost,markup,selling_price,currency,lead_time,exclusions,notes,sort_order)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-        [breakdown.id,row.system_id,row.source_kind,row.source_id,row.source_key,row.source_snapshot,row.description,row.quantity,row.unit,row.supplier,row.manufacturer,row.model,row.unit_cost,row.markup,row.selling_price,row.currency,row.lead_time,row.exclusions,row.notes,row.sort_order]);
+        [breakdown.id,row.system_id,row.source_kind,row.source_id,row.source_key,row.source_snapshot,row.description,row.quantity,row.unit,row.supplier,row.manufacturer,row.model,row.unit_cost,row.markup,row.selling_price,row.currency,row.lead_time,row.exclusions,row.notes,nextSortOrder]);
       continue;
     }
     const overrides = old.override_fields || {};
@@ -325,6 +360,34 @@ router.put('/design-books/:id/equipment-breakdown/columns', requireModuleManage(
 router.post('/design-books/:id/equipment-breakdown/refresh', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const items = await transaction(db => sync(db, String(req.params.id), req.user?.id));
   res.json({ items });
+});
+router.put('/design-books/:id/equipment-breakdown/order', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+  const lineIds = Array.isArray(req.body?.line_ids) ? req.body.line_ids.map(String) : [];
+  const systemId = req.body?.system_id ? String(req.body.system_id) : null;
+  if (!lineIds.length || new Set(lineIds).size !== lineIds.length) {
+    return res.status(400).json({ error: { code: 'INVALID_ORDER', message: 'A unique ordered list of line IDs is required.' } });
+  }
+  const reordered = await transaction(async db => {
+    const breakdown = (await db.query('SELECT id FROM design_book_equipment_breakdowns WHERE design_book_id=$1', [req.params.id])).rows[0];
+    if (!breakdown) throw Object.assign(new Error('Equipment Breakdown not found'), { status: 404, code: 'NOT_FOUND' });
+    const current = (await db.query(
+      `SELECT id FROM design_book_equipment_breakdown_lines
+       WHERE breakdown_id=$1 AND system_id IS NOT DISTINCT FROM $2::uuid
+       FOR UPDATE`,
+      [breakdown.id, systemId],
+    )).rows.map(row => String(row.id));
+    if (current.length !== lineIds.length || current.some(id => !lineIds.includes(id))) {
+      throw Object.assign(new Error('The requested order must contain every current line in this system exactly once.'), { status: 409, code: 'ORDER_CHANGED' });
+    }
+    for (const [index, lineId] of lineIds.entries()) {
+      await db.query(
+        'UPDATE design_book_equipment_breakdown_lines SET sort_order=$1,updated_at=NOW() WHERE id=$2 AND breakdown_id=$3',
+        [index, lineId, breakdown.id],
+      );
+    }
+    return lineIds;
+  });
+  res.json({ line_ids: reordered });
 });
 router.put('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const allowed = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','currency','lead_time','exclusions','notes'];
@@ -398,10 +461,14 @@ router.post('/design-books/:id/equipment-breakdown/lines', requireModuleManage('
     const breakdown = (await db.query('SELECT id FROM design_book_equipment_breakdowns WHERE design_book_id=$1', [req.params.id])).rows[0]
       || (await db.query('INSERT INTO design_book_equipment_breakdowns (design_book_id,updated_by) VALUES ($1,$2) RETURNING id', [req.params.id,req.user?.id])).rows[0];
     const pricing = calculateEquipmentPricing(body);
+    const sortOrder = Number((await db.query(
+      'SELECT COALESCE(MAX(sort_order),-1)+1 AS next_order FROM design_book_equipment_breakdown_lines WHERE breakdown_id=$1 AND system_id IS NOT DISTINCT FROM $2::uuid',
+      [breakdown.id, body.system_id || null],
+    )).rows[0]?.next_order || 0);
     return (await db.query(`INSERT INTO design_book_equipment_breakdown_lines
-      (breakdown_id,system_id,source_kind,source_key,description,quantity,unit,supplier,manufacturer,model,unit_cost,markup,selling_price,currency,lead_time,exclusions,notes,override_fields)
-      VALUES ($1,$2,'manual',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
-       [breakdown.id,body.system_id || null,`manual:${randomUUID()}`,body.description.trim(),body.quantity ?? 1,body.unit || 'EA',body.supplier || null,body.manufacturer || null,body.model || null,body.unit_cost ?? null,body.markup ?? null,pricing.selling_price,currency,body.lead_time || null,body.exclusions || null,body.notes || null,JSON.stringify({ description:true,quantity:true,unit:true })])).rows[0];
+      (breakdown_id,system_id,source_kind,source_key,description,quantity,unit,supplier,manufacturer,model,unit_cost,markup,selling_price,currency,lead_time,exclusions,notes,override_fields,sort_order)
+      VALUES ($1,$2,'manual',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+       [breakdown.id,body.system_id || null,`manual:${randomUUID()}`,body.description.trim(),body.quantity ?? 1,body.unit || 'EA',body.supplier || null,body.manufacturer || null,body.model || null,body.unit_cost ?? null,body.markup ?? null,pricing.selling_price,currency,body.lead_time || null,body.exclusions || null,body.notes || null,JSON.stringify({ description:true,quantity:true,unit:true }),sortOrder])).rows[0];
   });
   res.status(201).json(withCalculatedPricing(created));
 });

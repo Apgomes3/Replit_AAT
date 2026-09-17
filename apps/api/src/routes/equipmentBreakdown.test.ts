@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, normalizeEquipmentCurrency, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, expandSandFilterProducts, normalizeEquipmentCurrency, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -48,6 +48,32 @@ describe('equipment breakdown source normalization', () => {
 
   it('does not create an allocation placeholder when products are empty', () => {
     expect(expandAllocationProducts({ id: 'allocation-2', products: [] }, new Map(), 'Sand filter')).toEqual([]);
+  });
+
+  it('adds the PIM sand/media load for every selected filter unit', () => {
+    expect(expandSandFilterProducts({
+      id: 'sand-allocation-1',
+      products: [{ product_master_id: 'sand-filter-1', quantity: 3 }],
+    }, new Map([
+      ['sand-filter-1', { product_name: 'AAT Sand Filter 1200', sand_media_per_filter_kg: 250.5 }],
+    ]))).toMatchObject([
+      {
+        line_kind: 'filter',
+        source_key: 'sand-allocation-1:sand-filter-1',
+        description: 'AAT Sand Filter 1200',
+        quantity: 3,
+        unit: 'EA',
+      },
+      {
+        line_kind: 'filter_media',
+        source_key: 'sand-allocation-1:sand-filter-1:sand-media',
+        description: 'AAT Sand Filter 1200 sand/media',
+        quantity: 751.5,
+        unit: 'kg',
+        sand_media_per_filter_kg: 250.5,
+        filter_quantity: 3,
+      },
+    ]);
   });
 
   it('creates separate crate and required-media lines from a Biological Media result', () => {

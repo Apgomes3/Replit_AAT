@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Columns3, Download, RefreshCw, Plus, Trash2, PackageCheck } from 'lucide-react';
+import { ChevronDown, ChevronUp, Columns3, Download, RefreshCw, Plus, Trash2, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { getLssSystems } from './ControlFieldInstrumentsTab';
@@ -124,6 +124,33 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
       toast.error(error?.response?.data?.error?.message || 'Could not save column visibility');
     }
   };
+  const moveRow = async (rows: any[], index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= rows.length) return;
+    const ordered = [...rows];
+    [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
+    const ids = ordered.map(row => row.id);
+    const queryKey = ['design-book-equipment-breakdown', book.id];
+    const previous = qc.getQueryData(queryKey);
+    qc.setQueryData(queryKey, (current: any) => {
+      if (!current) return current;
+      let position = 0;
+      return {
+        ...current,
+        items: (current.items || []).map((item: any) =>
+          item.system_id === rows[0]?.system_id ? { ...ordered[position++], sort_order: position - 1 } : item),
+      };
+    });
+    try {
+      await api.put(`/design-books/${book.id}/equipment-breakdown/order`, {
+        system_id: rows[0]?.system_id || null,
+        line_ids: ids,
+      });
+    } catch (error: any) {
+      qc.setQueryData(queryKey, previous);
+      toast.error(error?.response?.data?.error?.message || 'Could not reorder breakdown lines');
+    }
+  };
   const table = (rows: any[], targetSystemId = '') => {
     const addingHere = showManual && manual.system_id === targetSystemId;
     const visibleColumnCount = columns.filter(column => !hidden.has(column.key)).length + 1;
@@ -132,7 +159,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
       <thead className="bg-stone-50 text-left uppercase tracking-wide text-stone-500"><tr>
         {columns.filter(column => !hidden.has(column.key)).map(column => <th key={column.key} className="px-2 py-2 font-semibold">{column.label}</th>)}<th className="px-2 py-2 font-semibold" />
       </tr></thead>
-      <tbody className="divide-y divide-stone-100">{rows.map(row => <tr key={row.id} className="align-top hover:bg-blue-50/20">
+      <tbody className="divide-y divide-stone-100">{rows.map((row, rowIndex) => <tr key={row.id} className="align-top hover:bg-blue-50/20">
         {!hidden.has('source_kind') && <td className="px-2 py-2 text-stone-500 whitespace-nowrap">{row.source_kind}{row.source_kind === 'manual' && <span className="ml-1 rounded bg-amber-100 px-1 text-amber-700">manual</span>}</td>}
         {columns.filter(column => column.key !== 'source_kind' && !hidden.has(column.key)).map(({ key: field }) => {
           const key = `${row.id}:${field}`;
@@ -159,7 +186,11 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
               const next = drafts[key]; setDrafts(current => { const copy = { ...current }; delete copy[key]; return copy; }); update(row, field, next);
             }} /></td>;
         })}
-        <td className="px-2 py-2">{!readOnly && row.source_kind === 'manual' && <button type="button" title="Remove line" onClick={() => removeManual(row)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>}</td>
+        <td className="px-2 py-2"><div className="flex items-center gap-1">
+          {!readOnly && <><button type="button" disabled={rowIndex === 0} aria-label={`Move ${row.description} up`} onClick={() => void moveRow(rows,rowIndex,-1)} className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-25"><ChevronUp className="h-4 w-4"/></button>
+          <button type="button" disabled={rowIndex === rows.length-1} aria-label={`Move ${row.description} down`} onClick={() => void moveRow(rows,rowIndex,1)} className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-25"><ChevronDown className="h-4 w-4"/></button></>}
+          {!readOnly && row.source_kind === 'manual' && <button type="button" title="Remove line" onClick={() => removeManual(row)} className="rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>}
+        </div></td>
       </tr>)}
       {!readOnly && <tr className="bg-amber-50/30">
         <td colSpan={visibleColumnCount} className="px-3 py-2">

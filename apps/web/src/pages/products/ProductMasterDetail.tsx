@@ -138,6 +138,9 @@ export default function ProductMasterDetail() {
     && user?.moduleAccess?.pim !== 'hidden'
     && user?.moduleAccess?.documents !== 'view'
     && user?.moduleAccess?.documents !== 'hidden';
+  const canManagePim = (user?.role === 'admin' || user?.role === 'engineer')
+    && user?.moduleAccess?.pim !== 'view'
+    && user?.moduleAccess?.pim !== 'hidden';
   const [tab, setTab] = useState<Tab>('bom');
 
   const [showDocModal, setShowDocModal] = useState(false);
@@ -202,6 +205,11 @@ export default function ProductMasterDetail() {
   const [variantSearch, setVariantSearch] = useState('');
   const [variantTarget, setVariantTarget] = useState<{ id: string; product_code: string; product_name: string } | null>(null);
   const [variantSubmitting, setVariantSubmitting] = useState(false);
+  const emptyVendorForm = { vendor_option_code: '', vendor_name: '', manufacturer_name: '', vendor_item_code: '', approved_status: 'Approved', lead_time_days: '', region_scope: '', unit_price: '', currency: 'USD' };
+  const [showVendorForm, setShowVendorForm] = useState(false);
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [vendorForm, setVendorForm] = useState(emptyVendorForm);
+  const [vendorSaving, setVendorSaving] = useState(false);
 
   const [showAddLine, setShowAddLine] = useState(false);
   const [lineSourceType, setLineSourceType] = useState<'component' | 'product'>('component');
@@ -1047,6 +1055,45 @@ export default function ProductMasterDetail() {
       toast.error('Failed to unlink');
     }
   };
+  const saveVendor = async () => {
+    if (!vendorForm.vendor_option_code.trim() || !vendorForm.vendor_name.trim()) return toast.error('Vendor option code and vendor are required');
+    setVendorSaving(true);
+    try {
+      const body = {
+        ...vendorForm,
+        product_master_id: product.id,
+        unit_price: vendorForm.unit_price === '' ? null : Number(vendorForm.unit_price),
+        lead_time_days: vendorForm.lead_time_days === '' ? null : Number(vendorForm.lead_time_days),
+      };
+      if (editingVendorId) await api.put(`/vendor-options/${editingVendorId}`, body);
+      else await api.post('/vendor-options', body);
+      await refetch();
+      setShowVendorForm(false); setEditingVendorId(null); setVendorForm(emptyVendorForm);
+      toast.success(editingVendorId ? 'Vendor option updated' : 'Vendor option added');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Could not save vendor option');
+    } finally { setVendorSaving(false); }
+  };
+  const editVendor = (vendor: VendorOption) => {
+    setEditingVendorId(vendor.id);
+    setVendorForm({
+      vendor_option_code: vendor.vendor_option_code,
+      vendor_name: vendor.vendor_name || '',
+      manufacturer_name: vendor.manufacturer_name || '',
+      vendor_item_code: vendor.vendor_item_code || '',
+      approved_status: vendor.approved_status || 'Approved',
+      lead_time_days: vendor.lead_time_days == null ? '' : String(vendor.lead_time_days),
+      region_scope: vendor.region_scope || '',
+      unit_price: vendor.unit_price == null ? '' : String(vendor.unit_price),
+      currency: vendor.currency || 'USD',
+    });
+    setShowVendorForm(true);
+  };
+  const deleteVendor = async (vendor: VendorOption) => {
+    if (!await confirm({ title: 'Remove vendor option?', message: `${vendor.vendor_name || vendor.vendor_option_code} will be removed from this product.`, confirmLabel: 'Remove', danger: true })) return;
+    try { await api.delete(`/vendor-options/${vendor.id}`); await refetch(); toast.success('Vendor option removed'); }
+    catch (error: any) { toast.error(error?.response?.data?.error?.message || 'Could not remove vendor option'); }
+  };
 
   const bomCols: Column<BOMLine>[] = [
     { key: 'line_number', header: '#', className: 'w-10' },
@@ -1081,6 +1128,8 @@ export default function ProductMasterDetail() {
     { key: 'approved_status', header: 'Status', render: r => <StatusBadge status={r.approved_status} /> },
     { key: 'lead_time_days', header: 'Lead Time', render: r => r.lead_time_days ? `${r.lead_time_days} days` : '—' },
     { key: 'region_scope', header: 'Region' },
+    { key: 'unit_price', header: 'Vendor Price', render: r => r.unit_price == null ? '—' : `${Number(r.unit_price).toFixed(2)} ${r.currency || 'USD'}` },
+    { key: 'id', header: '', className: 'w-20', render: r => canManagePim ? <div className="flex gap-2"><button type="button" aria-label={`Edit vendor ${r.vendor_name}`} onClick={()=>editVendor(r)} className="text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4"/></button><button type="button" aria-label={`Delete vendor ${r.vendor_name}`} onClick={()=>void deleteVendor(r)} className="text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></div> : null },
   ];
 
   const docCols: Column<Document>[] = [
@@ -2171,7 +2220,47 @@ export default function ProductMasterDetail() {
               )}
             </div>
           )}
-          {activeTab === 'vendors' && <DataTable columns={vendorCols} data={product.vendors || []} emptyMessage="No vendor options" />}
+          {activeTab === 'vendors' && <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table className="min-w-[1250px] w-full text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500"><tr>
+                {['Code','Vendor','Manufacturer','Item code','Unit price','Currency','Status','Lead time','Region',''].map(header=><th key={header} className="px-3 py-2 font-semibold">{header}</th>)}
+              </tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {(product.vendors || []).map((vendor: VendorOption) => {
+                  const editingVendor = editingVendorId === vendor.id;
+                  if (editingVendor) return <tr key={vendor.id} className="bg-blue-50/40">
+                    <td className="px-2 py-2"><input disabled value={vendorForm.vendor_option_code} aria-label="Vendor option code" className="w-32 rounded border bg-slate-100 px-2 py-1.5 font-mono"/></td>
+                    <td className="px-2 py-2"><input autoFocus value={vendorForm.vendor_name} onChange={e=>setVendorForm({...vendorForm,vendor_name:e.target.value})} aria-label="Vendor name" className="w-40 rounded border px-2 py-1.5"/></td>
+                    <td className="px-2 py-2"><input value={vendorForm.manufacturer_name} onChange={e=>setVendorForm({...vendorForm,manufacturer_name:e.target.value})} aria-label="Vendor manufacturer" className="w-36 rounded border px-2 py-1.5"/></td>
+                    <td className="px-2 py-2"><input value={vendorForm.vendor_item_code} onChange={e=>setVendorForm({...vendorForm,vendor_item_code:e.target.value})} aria-label="Vendor item code" className="w-32 rounded border px-2 py-1.5 font-mono"/></td>
+                    <td className="px-2 py-2"><input type="number" min="0" step="0.01" value={vendorForm.unit_price} onChange={e=>setVendorForm({...vendorForm,unit_price:e.target.value})} aria-label="Vendor unit price" className="w-28 rounded border px-2 py-1.5"/></td>
+                    <td className="px-2 py-2"><select value={vendorForm.currency} onChange={e=>setVendorForm({...vendorForm,currency:e.target.value})} aria-label="Vendor currency" className="rounded border px-2 py-1.5">{['USD','CNY','AUD','NZD','EUR'].map(currency=><option key={currency}>{currency}</option>)}</select></td>
+                    <td className="px-2 py-2"><select value={vendorForm.approved_status} onChange={e=>setVendorForm({...vendorForm,approved_status:e.target.value})} aria-label="Vendor status" className="rounded border px-2 py-1.5">{['Approved','Pending','Rejected'].map(status=><option key={status}>{status}</option>)}</select></td>
+                    <td className="px-2 py-2"><input type="number" min="0" value={vendorForm.lead_time_days} onChange={e=>setVendorForm({...vendorForm,lead_time_days:e.target.value})} aria-label="Vendor lead time days" className="w-24 rounded border px-2 py-1.5"/></td>
+                    <td className="px-2 py-2"><input value={vendorForm.region_scope} onChange={e=>setVendorForm({...vendorForm,region_scope:e.target.value})} aria-label="Vendor region" className="w-28 rounded border px-2 py-1.5"/></td>
+                    <td className="px-2 py-2"><div className="flex gap-1"><button type="button" disabled={vendorSaving} onClick={saveVendor} className="rounded bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50">Save</button><button type="button" onClick={()=>{setEditingVendorId(null);setShowVendorForm(false);setVendorForm(emptyVendorForm);}} className="rounded border bg-white px-2 py-1.5 text-slate-600">Cancel</button></div></td>
+                  </tr>;
+                  return <tr key={vendor.id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2"><EntityCode code={vendor.vendor_option_code}/></td><td className="px-3 py-2 font-medium text-slate-800">{vendor.vendor_name || '—'}</td><td className="px-3 py-2">{vendor.manufacturer_name || '—'}</td><td className="px-3 py-2">{vendor.vendor_item_code || '—'}</td><td className="px-3 py-2 font-mono">{vendor.unit_price == null ? '—' : Number(vendor.unit_price).toFixed(2)}</td><td className="px-3 py-2">{vendor.currency || 'USD'}</td><td className="px-3 py-2"><StatusBadge status={vendor.approved_status}/></td><td className="px-3 py-2">{vendor.lead_time_days == null ? '—' : `${vendor.lead_time_days} days`}</td><td className="px-3 py-2">{vendor.region_scope || '—'}</td>
+                    <td className="px-3 py-2">{canManagePim && <div className="flex gap-2"><button type="button" aria-label={`Edit vendor ${vendor.vendor_name}`} onClick={()=>editVendor(vendor)} className="text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4"/></button><button type="button" aria-label={`Delete vendor ${vendor.vendor_name}`} onClick={()=>void deleteVendor(vendor)} className="text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></div>}</td>
+                  </tr>;
+                })}
+                {canManagePim && (showVendorForm && !editingVendorId ? <tr className="bg-blue-50/40">
+                  <td className="px-2 py-2"><input autoFocus value={vendorForm.vendor_option_code} onChange={e=>setVendorForm({...vendorForm,vendor_option_code:e.target.value.toUpperCase()})} placeholder="Code *" aria-label="Vendor option code" className="w-32 rounded border px-2 py-1.5 font-mono"/></td>
+                  <td className="px-2 py-2"><input value={vendorForm.vendor_name} onChange={e=>setVendorForm({...vendorForm,vendor_name:e.target.value})} placeholder="Vendor *" aria-label="Vendor name" className="w-40 rounded border px-2 py-1.5"/></td>
+                  <td className="px-2 py-2"><input value={vendorForm.manufacturer_name} onChange={e=>setVendorForm({...vendorForm,manufacturer_name:e.target.value})} placeholder="Manufacturer" aria-label="Vendor manufacturer" className="w-36 rounded border px-2 py-1.5"/></td>
+                  <td className="px-2 py-2"><input value={vendorForm.vendor_item_code} onChange={e=>setVendorForm({...vendorForm,vendor_item_code:e.target.value})} placeholder="Item code" aria-label="Vendor item code" className="w-32 rounded border px-2 py-1.5 font-mono"/></td>
+                  <td className="px-2 py-2"><input type="number" min="0" step="0.01" value={vendorForm.unit_price} onChange={e=>setVendorForm({...vendorForm,unit_price:e.target.value})} placeholder="0.00" aria-label="Vendor unit price" className="w-28 rounded border px-2 py-1.5"/></td>
+                  <td className="px-2 py-2"><select value={vendorForm.currency} onChange={e=>setVendorForm({...vendorForm,currency:e.target.value})} aria-label="Vendor currency" className="rounded border px-2 py-1.5">{['USD','CNY','AUD','NZD','EUR'].map(currency=><option key={currency}>{currency}</option>)}</select></td>
+                  <td className="px-2 py-2"><select value={vendorForm.approved_status} onChange={e=>setVendorForm({...vendorForm,approved_status:e.target.value})} aria-label="Vendor status" className="rounded border px-2 py-1.5">{['Approved','Pending','Rejected'].map(status=><option key={status}>{status}</option>)}</select></td>
+                  <td className="px-2 py-2"><input type="number" min="0" value={vendorForm.lead_time_days} onChange={e=>setVendorForm({...vendorForm,lead_time_days:e.target.value})} placeholder="Days" aria-label="Vendor lead time days" className="w-24 rounded border px-2 py-1.5"/></td>
+                  <td className="px-2 py-2"><input value={vendorForm.region_scope} onChange={e=>setVendorForm({...vendorForm,region_scope:e.target.value})} placeholder="Region" aria-label="Vendor region" className="w-28 rounded border px-2 py-1.5"/></td>
+                  <td className="px-2 py-2"><div className="flex gap-1"><button type="button" disabled={vendorSaving} onClick={saveVendor} className="rounded bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50">Add</button><button type="button" onClick={()=>{setShowVendorForm(false);setVendorForm(emptyVendorForm);}} className="rounded border bg-white px-2 py-1.5 text-slate-600">Cancel</button></div></td>
+                </tr> : <tr><td colSpan={10} className="px-3 py-2"><button type="button" onClick={()=>{setEditingVendorId(null);setVendorForm(emptyVendorForm);setShowVendorForm(true);}} className="inline-flex items-center gap-1.5 rounded px-2 py-1.5 font-medium text-blue-700 hover:bg-blue-50"><Plus className="h-4 w-4"/> Add vendor row</button></td></tr>)}
+                {!canManagePim && !(product.vendors || []).length && <tr><td colSpan={10} className="p-8 text-center text-sm text-slate-400">No vendor options</td></tr>}
+              </tbody>
+            </table>
+          </div>}
 
           {activeTab === 'related' && (
             <div>

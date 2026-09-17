@@ -1219,11 +1219,58 @@ router.get('/vendor-options', authenticate, async (req: AuthRequest, res: Respon
   res.json({ items: result.rows });
 });
 
-router.post('/vendor-options', authenticate, async (req: AuthRequest, res: Response) => {
-  const { vendor_option_code, product_master_id, vendor_name, manufacturer_name, vendor_item_code, approved_status, lead_time_days, region_scope } = req.body;
-  const result = await query('INSERT INTO vendor_options (vendor_option_code, product_master_id, vendor_name, manufacturer_name, vendor_item_code, approved_status, lead_time_days, region_scope) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-    [vendor_option_code, product_master_id, vendor_name, manufacturer_name, vendor_item_code, approved_status || 'Approved', lead_time_days, region_scope]);
-  res.status(201).json(result.rows[0]);
+router.post('/vendor-options', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
+  const { product_master_id, vendor_name, manufacturer_name, vendor_item_code, approved_status, lead_time_days, region_scope } = req.body;
+  const vendorOptionCode = String(req.body.vendor_option_code || '').trim().toUpperCase();
+  const unitPrice = req.body.unit_price === '' || req.body.unit_price == null ? null : Number(req.body.unit_price);
+  const currency = String(req.body.currency || 'USD').trim().toUpperCase();
+  if (!vendorOptionCode || !product_master_id || !String(vendor_name || '').trim()) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Code, product, and vendor are required.' } });
+  }
+  if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
+    return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Vendor price must be a non-negative number.' } });
+  }
+  if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) {
+    return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR.' } });
+  }
+  try {
+    const result = await query(
+      `INSERT INTO vendor_options
+        (vendor_option_code,product_master_id,vendor_name,manufacturer_name,vendor_item_code,approved_status,
+         lead_time_days,region_scope,unit_price,currency)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [vendorOptionCode, product_master_id, String(vendor_name).trim(), manufacturer_name || null, vendor_item_code || null,
+        approved_status || 'Approved', lead_time_days || null, region_scope || null, unitPrice, currency],
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error: any) {
+    if (error?.code === '23505') return res.status(409).json({ error: { code: 'DUPLICATE', message: 'This vendor option code already exists.' } });
+    throw error;
+  }
+});
+
+router.put('/vendor-options/:id', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
+  const unitPrice = req.body.unit_price === '' || req.body.unit_price == null ? null : Number(req.body.unit_price);
+  const currency = String(req.body.currency || 'USD').trim().toUpperCase();
+  if (!String(req.body.vendor_name || '').trim()) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Vendor is required.' } });
+  if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Vendor price must be a non-negative number.' } });
+  if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR.' } });
+  const result = await query(
+    `UPDATE vendor_options SET vendor_name=$1,manufacturer_name=$2,vendor_item_code=$3,approved_status=$4,
+       lead_time_days=$5,region_scope=$6,unit_price=$7,currency=$8,updated_at=NOW()
+     WHERE id=$9 RETURNING *`,
+    [String(req.body.vendor_name).trim(), req.body.manufacturer_name || null, req.body.vendor_item_code || null,
+      req.body.approved_status || 'Approved', req.body.lead_time_days || null, req.body.region_scope || null,
+      unitPrice, currency, req.params.id],
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Vendor option not found.' } });
+  res.json(result.rows[0]);
+});
+
+router.delete('/vendor-options/:id', authenticate, requireModuleManage('pim'), async (req: AuthRequest, res: Response) => {
+  const result = await query('DELETE FROM vendor_options WHERE id=$1 RETURNING id', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Vendor option not found.' } });
+  res.status(204).end();
 });
 
 // PRODUCT USAGES

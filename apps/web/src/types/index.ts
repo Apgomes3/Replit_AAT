@@ -220,6 +220,8 @@ export interface VendorOption {
   approved_status: string;
   lead_time_days?: number;
   region_scope?: string;
+  unit_price?: number;
+  currency?: string;
   status: string;
 }
 

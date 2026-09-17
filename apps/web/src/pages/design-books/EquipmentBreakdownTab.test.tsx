@@ -122,6 +122,23 @@ describe('EquipmentBreakdownTab', () => {
     expect(screen.getByRole('button', { name: /export excel/i })).toBeVisible();
   });
 
+  it('moves lines within an LSS table and persists the complete order', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue({ data: { items: [
+      rows[0],
+      { ...rows[0], id: 'line-3', description: 'Secondary pump' },
+      rows[1],
+    ] } } as any);
+    renderTab();
+
+    await user.click(await screen.findByRole('button', { name: 'Move Primary pump down' }));
+
+    expect(api.put).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/order', {
+      system_id: 'system-1',
+      line_ids: ['line-3', 'line-1'],
+    });
+  });
+
   it('persists hidden columns and removes them from the view', async () => {
     const user = userEvent.setup();
     vi.mocked(api.get)
