@@ -195,13 +195,14 @@ describe('Design Book Thermal navigation', () => {
       linked_tanks: [{ tank_id: 'custom-1', shape: 'custom', surface_area_m2: '12.5' }],
     })).toBe(12.5);
   });
-  it('places Control and Field Instruments immediately after Friction Loss', () => {
+  it('places Equipment Breakdown after Control and Field Instruments', () => {
     expect(DESIGN_BOOK_TAB_ORDER).toEqual([
       'exhibits',
       'lss',
       'thermal',
       'piping',
       'control',
+      'equipment-breakdown',
       'review',
       'versions',
     ]);

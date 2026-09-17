@@ -26,6 +26,7 @@ import biologicalMediaRoutes from './routes/biologicalMedia';
 import pumpSelectionRoutes from './routes/pumpSelections';
 import lssControlRoutes from './routes/lssControls';
 import frictionLossRoutes from './routes/frictionLoss';
+import equipmentBreakdownRoutes from './routes/equipmentBreakdown';
 import ozoneCalculationRoutes from './routes/ozoneCalculations';
 import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
 import { errorHandler, notFound } from './middleware/errors';
@@ -65,6 +66,7 @@ app.use('/api/v1', biologicalMediaRoutes);
 app.use('/api/v1', pumpSelectionRoutes);
 app.use('/api/v1', lssControlRoutes);
 app.use('/api/v1', frictionLossRoutes);
+app.use('/api/v1', equipmentBreakdownRoutes);
 app.use('/api/v1', ozoneCalculationRoutes);
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));

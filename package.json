@@ -30,6 +30,7 @@
     "csv-parser": "^3.0.0",
     "dejavu-fonts-ttf": "^2.37.3",
     "dotenv": "^16.0.0",
+    "exceljs": "^4.4.0",
     "express": "^5.0.0",
     "helmet": "^8.0.0",
     "http-proxy-middleware": "^3.0.5",

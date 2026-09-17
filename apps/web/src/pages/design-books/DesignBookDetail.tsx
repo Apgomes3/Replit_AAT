@@ -23,13 +23,14 @@ import ModalDialog from '../../components/ui/ModalDialog';
 import FrictionLossTab from './FrictionLossTab';
 import ControlFieldInstrumentsTab, { getLssSystems } from './ControlFieldInstrumentsTab';
 import NewRevisionModal from './NewRevisionModal';
+import EquipmentBreakdownTab from './EquipmentBreakdownTab';
 
-type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'control' | 'review' | 'versions';
+type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'control' | 'equipment-breakdown' | 'review' | 'versions';
 
-export const DESIGN_BOOK_TAB_ORDER: Tab[] = ['exhibits', 'lss', 'thermal', 'piping', 'control', 'review', 'versions'];
+export const DESIGN_BOOK_TAB_ORDER: Tab[] = ['exhibits', 'lss', 'thermal', 'piping', 'control', 'equipment-breakdown', 'review', 'versions'];
 
 export function isDesignBookTab(value: string | null): value is Tab {
-  return value === 'exhibits' || value === 'lss' || value === 'thermal' || value === 'piping' || value === 'control' || value === 'review' || value === 'versions';
+  return value === 'exhibits' || value === 'lss' || value === 'thermal' || value === 'piping' || value === 'control' || value === 'equipment-breakdown' || value === 'review' || value === 'versions';
 }
 
 function WaterTypeBadge({ type }: { type?: string }) {
@@ -4733,6 +4734,7 @@ export default function DesignBookDetail() {
     thermal: 'Thermal',
     piping: 'Friction Loss',
     control: 'Control and Field Instruments',
+    'equipment-breakdown': 'Equipment Breakdown',
     review: 'Review & Handover',
     versions: 'Versions',
   };
@@ -4998,6 +5000,10 @@ export default function DesignBookDetail() {
           readOnly={isDesignReadOnly || !canEditControl}
           canOverrideProduct={canOverrideControlProduct}
         />
+      )}
+
+      {tab === 'equipment-breakdown' && (
+        <EquipmentBreakdownTab book={book} readOnly={!canManageDesignBooks} />
       )}
 
       {tab === 'review' && (

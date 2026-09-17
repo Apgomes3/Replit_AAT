@@ -728,6 +728,7 @@ CREATE TABLE IF NOT EXISTS todos (
 
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS cost NUMERIC;
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'USD';
 ALTER TABLE components ADD COLUMN IF NOT EXISTS cost NUMERIC;
 ALTER TABLE components ADD COLUMN IF NOT EXISTS sell_price NUMERIC;
 
@@ -3158,6 +3159,46 @@ VALUES
   ('Seawater', 1024.8, '20 °C; practical salinity 35 PSU', 'kg/m3',
    'UNESCO (1983), Algorithms for computation of fundamental properties of seawater', true)
 ON CONFLICT (water_type) DO NOTHING;
+
+-- Design Book commercial/procurement schedule. This intentionally lives outside
+-- the engineering release guards: it is a proposal workspace whose source
+-- identities remain linked while commercial overrides are preserved.
+CREATE TABLE IF NOT EXISTS design_book_equipment_breakdowns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  design_book_id UUID NOT NULL UNIQUE REFERENCES design_books(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS design_book_equipment_breakdown_lines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  breakdown_id UUID NOT NULL REFERENCES design_book_equipment_breakdowns(id) ON DELETE CASCADE,
+  system_id UUID REFERENCES systems(id) ON DELETE SET NULL,
+  source_kind VARCHAR(40) NOT NULL CHECK (source_kind IN ('tank','equipment','pump','uv','filter','fractionator','thermal','compact_unit','control_panel','instrument','manual')),
+  source_id UUID,
+  source_key VARCHAR(255) NOT NULL,
+  source_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  description TEXT NOT NULL DEFAULT '',
+  quantity NUMERIC NOT NULL DEFAULT 1 CHECK (quantity >= 0),
+  unit VARCHAR(30) NOT NULL DEFAULT 'EA',
+  supplier TEXT,
+  manufacturer TEXT,
+  model TEXT,
+  unit_cost NUMERIC CHECK (unit_cost IS NULL OR unit_cost >= 0),
+  markup NUMERIC CHECK (markup IS NULL OR markup >= 0),
+  selling_price NUMERIC CHECK (selling_price IS NULL OR selling_price >= 0),
+  currency VARCHAR(10) NOT NULL DEFAULT 'USD',
+  lead_time TEXT,
+  exclusions TEXT,
+  notes TEXT,
+  override_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(breakdown_id, source_key)
+);
+CREATE INDEX IF NOT EXISTS idx_design_book_breakdown_lines_system
+  ON design_book_equipment_breakdown_lines(breakdown_id, system_id, sort_order);
 `;
 
 async function migrate() {

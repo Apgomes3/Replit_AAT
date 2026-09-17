@@ -62,6 +62,7 @@ const biologicalMedia_1 = __importDefault(require("./routes/biologicalMedia"));
 const pumpSelections_1 = __importDefault(require("./routes/pumpSelections"));
 const lssControls_1 = __importDefault(require("./routes/lssControls"));
 const frictionLoss_1 = __importDefault(require("./routes/frictionLoss"));
+const equipmentBreakdown_1 = __importDefault(require("./routes/equipmentBreakdown"));
 const ozoneCalculations_1 = __importDefault(require("./routes/ozoneCalculations"));
 const uvEngineering_1 = __importStar(require("./routes/uvEngineering"));
 const errors_1 = require("./middleware/errors");
@@ -98,6 +99,7 @@ app.use('/api/v1', biologicalMedia_1.default);
 app.use('/api/v1', pumpSelections_1.default);
 app.use('/api/v1', lssControls_1.default);
 app.use('/api/v1', frictionLoss_1.default);
+app.use('/api/v1', equipmentBreakdown_1.default);
 app.use('/api/v1', ozoneCalculations_1.default);
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 app.use('/', (0, http_proxy_middleware_1.createProxyMiddleware)({
