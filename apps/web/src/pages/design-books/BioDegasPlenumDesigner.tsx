@@ -214,7 +214,35 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
         <rect x={sox} y={soy} width={sw} height={sh} fill="#eff6ff" stroke="#1e3a5f" strokeWidth="3"/>
         <rect x={sox} y={soy} width={sw} height={DISPERSION_TRAY.height*ss} fill="#ddd6fe" stroke="#7c3aed"/><text x={sectionW/2} y={soy+DISPERSION_TRAY.height*ss/2} textAnchor="middle" fontSize="11" fill="#5b21b6">620 mm dispersion tray</text>
         <rect x={sox+layout.wall_thickness_mm*ss} y={soy+sh-layout.wall_thickness_mm*ss-layout.water_level_mm*ss} width={sw-layout.wall_thickness_mm*ss*2} height={layout.water_level_mm*ss} fill="#38bdf8" opacity=".25"/>
-        {Array.from({length:tallestArrangedStack},(_,level)=><rect key={level} x={sox+(layout.wall_thickness_mm+ACCESS_LENGTH_MM)*ss} y={soy+sh-layout.wall_thickness_mm*ss-(level+1)*BIO_CRATE_HEIGHT_MM*ss} width={Math.min(assessment.crateLengthCapacity*BIO_CRATE_WIDTH_MM*ss, sw-(layout.wall_thickness_mm*2+ACCESS_LENGTH_MM)*ss)} height={BIO_CRATE_HEIGHT_MM*ss-2} fill="#bfdbfe" stroke="#2563eb"/>)}
+        {positions
+          .slice()
+          .sort((a, b) => b.row - a.row || a.column - b.column)
+          .map((position, stackIndex) => {
+            const rowOffset = position.row * Math.min(8, 70 * ss);
+            const stackX = sox + (layout.wall_thickness_mm + ACCESS_LENGTH_MM + position.column * BIO_CRATE_WIDTH_MM) * ss + rowOffset;
+            const crateWidth = Math.max(4, BIO_CRATE_WIDTH_MM * ss - 3);
+            return <g key={`${position.row}:${position.column}`} aria-label={`Stack ${stackIndex + 1}, row ${position.row + 1}, column ${position.column + 1}, ${position.crates} crates`}>
+              {Array.from({ length: position.crates }, (_, level) => <rect
+                key={level}
+                data-testid="section-crate"
+                x={stackX}
+                y={soy + sh - layout.wall_thickness_mm * ss - (level + 1) * BIO_CRATE_HEIGHT_MM * ss}
+                width={crateWidth}
+                height={Math.max(3, BIO_CRATE_HEIGHT_MM * ss - 2)}
+                rx="1.5"
+                fill={position.row === 0 ? '#bfdbfe' : '#dbeafe'}
+                stroke={position.row === 0 ? '#2563eb' : '#64748b'}
+                strokeWidth="1.25"
+              />)}
+              <text
+                x={stackX + crateWidth / 2}
+                y={soy + sh - layout.wall_thickness_mm * ss - position.crates * BIO_CRATE_HEIGHT_MM * ss - 4}
+                textAnchor="middle"
+                fontSize="8"
+                fill="#334155"
+              >R{position.row + 1} · {position.crates}</text>
+            </g>;
+          })}
         <line x1={sox} y1={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss} x2={sox+sw} y2={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss} stroke="#dc2626" strokeDasharray="5 4"/><text x={sox+sw-4} y={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss-4} textAnchor="end" fontSize="10" fill="#b91c1c">100 mm min gap</text>
         <text x={sectionW/2} y={sectionH-5} textAnchor="middle" fontSize="11" fill="#334155">{layout.external_length_mm} mm linked length · tallest arranged stack {tallestArrangedStack}</text>
       </svg></figure>

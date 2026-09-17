@@ -37,6 +37,7 @@ describe('BioDegasPlenumPanel', () => {
     expect(screen.getByText(/3 crates required/)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /dynamic top view/i })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /dynamic section view/i })).toBeInTheDocument();
+    expect(screen.getAllByTestId('section-crate')).toHaveLength(3);
   });
 
   it('waits for a Biological Media calculation result', () => {
