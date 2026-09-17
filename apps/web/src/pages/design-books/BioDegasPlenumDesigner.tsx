@@ -131,6 +131,8 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
   });
   const recommended = useMemo(() => crateCount ? createRecommendedPlenumLayout(crateCount) : null, [crateCount]);
   const [layout, setLayout] = useState<PlenumLayout | null>(recommended);
+  const [sectionColumn, setSectionColumn] = useState(0);
+  const [selectedStackNumber, setSelectedStackNumber] = useState<number | null>(null);
   useEffect(() => {
     if (!recommended) return;
     const next = saved?.layout ? { ...recommended, ...saved.layout } : recommended;
@@ -140,7 +142,7 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
 
   const assessment = assessPlenumLayout(layout, crateCount);
   const positions = (layout.stacks || createStackPositions(crateCount, layout.rows, layout.stack_height))
-    .map(item => ({ ...item, crates: item.quantity }));
+    .map((item, index) => ({ ...item, crates: item.quantity, stackNumber: index + 1 }));
   const stale = Boolean(preview?.is_stale || saved?.source_crate_count != null && saved.source_crate_count !== crateCount);
   const set = (key: keyof PlenumLayout, value: number) => setLayout(current => {
     if (!current) return current;
@@ -156,6 +158,10 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
       ...current,
       stacks: (current.stacks || []).map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item),
     } : current);
+  const selectStack = (stackNumber: number, row: number) => {
+    setSelectedStackNumber(stackNumber);
+    setSectionColumn(row);
+  };
   const save = async () => {
     if (assessment.errors.length) return toast.error('Resolve the layout errors before saving.');
     if (stale) return toast.error('Recalculate Biological Media before saving this layout.');
@@ -191,8 +197,8 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
       <details className="mt-4 rounded-lg border border-stone-200">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-stone-700">Adjust individual stack positions and quantities</summary>
         <div className="max-h-64 overflow-auto border-t p-3">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{positions.map((position, index) => <fieldset key={index} className="grid grid-cols-3 gap-2 rounded-lg bg-stone-50 p-2">
-            <legend className="px-1 text-xs font-semibold text-stone-500">Stack {index + 1}</legend>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{positions.map((position, index) => <fieldset key={index} onClick={() => selectStack(position.stackNumber, position.row)} className={`grid grid-cols-3 gap-2 rounded-lg p-2 transition ${selectedStackNumber === position.stackNumber ? 'bg-blue-50 ring-2 ring-blue-500' : 'bg-stone-50'}`}>
+            <legend className="px-1 text-xs font-semibold text-stone-500">S{String(position.stackNumber).padStart(2, '0')} · Column {position.row + 1}</legend>
             {([['row','Row',position.row],['column','Column',position.column],['quantity','Crates',position.crates]] as const).map(([key,label,value]) => <label key={key} className="text-[11px] text-stone-500">{label}<input aria-label={`${label} for stack ${index + 1}`} type="number" min={key === 'quantity' ? 1 : 0} max={key === 'row' ? layout.rows - 1 : key === 'column' ? Math.max(0, assessment.crateLengthCapacity - 1) : assessment.verticalCapacity} disabled={readOnly} value={value} onChange={event => updateStack(index, key, Number(event.target.value))} className="mt-0.5 w-full rounded border px-2 py-1 font-mono text-xs text-stone-800"/></label>)}
           </fieldset>)}</div>
         </div>
@@ -205,23 +211,23 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
         <rect x={ox+wallPx} y={oy+wallPx} width={drawW-wallPx*2} height={drawH-wallPx*2} fill="#f8fafc" stroke="#64748b"/>
         <rect x={ox+wallPx} y={oy+wallPx} width={ACCESS_LENGTH_MM*scale} height={drawH-wallPx*2} fill="#fef3c7" stroke="#d97706" strokeDasharray="5 4"/>
         <text x={ox+wallPx+ACCESS_LENGTH_MM*scale/2} y={oy+drawH/2} textAnchor="middle" fontSize="10" fill="#92400e" transform={`rotate(-90 ${ox+wallPx+ACCESS_LENGTH_MM*scale/2} ${oy+drawH/2})`}>800 mm access</text>
-        {positions.map((p,i) => { const x=ox+wallPx+(ACCESS_LENGTH_MM+p.column*BIO_CRATE_WIDTH_MM)*scale; const y=oy+wallPx+p.row*BIO_CRATE_LENGTH_MM*scale; return <g key={i}><rect x={x+2} y={y+2} width={BIO_CRATE_WIDTH_MM*scale-4} height={BIO_CRATE_LENGTH_MM*scale-4} rx="3" fill="#bfdbfe" stroke="#2563eb"/><text x={x+BIO_CRATE_WIDTH_MM*scale/2} y={y+BIO_CRATE_LENGTH_MM*scale/2+4} textAnchor="middle" fontSize="11" fill="#1e3a8a">×{p.crates}</text></g>; })}
+        {positions.map((p,i) => { const x=ox+wallPx+(ACCESS_LENGTH_MM+p.column*BIO_CRATE_WIDTH_MM)*scale; const y=oy+wallPx+p.row*BIO_CRATE_LENGTH_MM*scale; const selected=selectedStackNumber===p.stackNumber; return <g key={i} role="button" tabIndex={0} aria-label={`Select stack S${String(p.stackNumber).padStart(2, '0')}`} onClick={() => selectStack(p.stackNumber,p.row)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') selectStack(p.stackNumber,p.row); }}><rect x={x+2} y={y+2} width={BIO_CRATE_WIDTH_MM*scale-4} height={BIO_CRATE_LENGTH_MM*scale-4} rx="3" fill={selected?'#93c5fd':'#bfdbfe'} stroke={selected?'#1d4ed8':'#2563eb'} strokeWidth={selected?3:1}/><text x={x+BIO_CRATE_WIDTH_MM*scale/2} y={y+BIO_CRATE_LENGTH_MM*scale/2+4} textAnchor="middle" fontSize="10" fontWeight="600" fill="#1e3a8a">S{String(p.stackNumber).padStart(2,'0')} ×{p.crates}</text></g>; })}
         <rect x={ox+(drawW-DISPERSION_TRAY.length*scale)/2} y={oy+(drawH-DISPERSION_TRAY.width*scale)/2} width={DISPERSION_TRAY.length*scale} height={DISPERSION_TRAY.width*scale} fill="none" stroke="#7c3aed" strokeWidth="2" strokeDasharray="7 4"/>
         <text x={topW/2} y={oy+14} textAnchor="middle" fontSize="10" fill="#6d28d9">Dispersion tray 3405 × 2005</text>
         <text x={topW/2} y={topH-5} textAnchor="middle" fontSize="11" fill="#334155">{layout.external_length_mm} mm external length</text>
       </svg></figure>
-      <figure className="overflow-hidden rounded-xl border border-stone-200 bg-white"><figcaption className="border-b bg-stone-50 px-4 py-3 font-semibold text-stone-800">Section view</figcaption><svg viewBox={`0 0 ${sectionW} ${sectionH}`} role="img" aria-label="Dynamic section view of plenum tank" className="h-auto w-full bg-slate-50">
+      <figure className="overflow-hidden rounded-xl border border-stone-200 bg-white"><figcaption className="flex flex-wrap items-center justify-between gap-2 border-b bg-stone-50 px-4 py-2"><span className="font-semibold text-stone-800">Section view</span><span className="inline-flex rounded-lg border border-stone-200 bg-white p-1" aria-label="Section column">{Array.from({length:layout.rows},(_,row)=><button key={row} type="button" onClick={()=>setSectionColumn(row)} className={`rounded-md px-3 py-1 text-xs font-semibold transition ${sectionColumn===row?'bg-blue-600 text-white shadow-sm':'text-stone-600 hover:bg-stone-100'}`}>Column {row+1}</button>)}</span></figcaption><svg viewBox={`0 0 ${sectionW} ${sectionH}`} role="img" aria-label={`Dynamic section view of plenum tank, column ${sectionColumn + 1}`} className="h-auto w-full bg-slate-50">
         <rect x={sox} y={soy} width={sw} height={sh} fill="#eff6ff" stroke="#1e3a5f" strokeWidth="3"/>
         <rect x={sox} y={soy} width={sw} height={DISPERSION_TRAY.height*ss} fill="#ddd6fe" stroke="#7c3aed"/><text x={sectionW/2} y={soy+DISPERSION_TRAY.height*ss/2} textAnchor="middle" fontSize="11" fill="#5b21b6">620 mm dispersion tray</text>
         <rect x={sox+layout.wall_thickness_mm*ss} y={soy+sh-layout.wall_thickness_mm*ss-layout.water_level_mm*ss} width={sw-layout.wall_thickness_mm*ss*2} height={layout.water_level_mm*ss} fill="#38bdf8" opacity=".25"/>
         {positions
-          .slice()
-          .sort((a, b) => b.row - a.row || a.column - b.column)
-          .map((position, stackIndex) => {
-            const rowOffset = position.row * Math.min(8, 70 * ss);
-            const stackX = sox + (layout.wall_thickness_mm + ACCESS_LENGTH_MM + position.column * BIO_CRATE_WIDTH_MM) * ss + rowOffset;
+          .filter(position => position.row === sectionColumn)
+          .sort((a, b) => a.column - b.column)
+          .map(position => {
+            const stackX = sox + (layout.wall_thickness_mm + ACCESS_LENGTH_MM + position.column * BIO_CRATE_WIDTH_MM) * ss;
             const crateWidth = Math.max(4, BIO_CRATE_WIDTH_MM * ss - 3);
-            return <g key={`${position.row}:${position.column}`} aria-label={`Stack ${stackIndex + 1}, row ${position.row + 1}, column ${position.column + 1}, ${position.crates} crates`}>
+            const selected = selectedStackNumber === position.stackNumber;
+            return <g key={`${position.row}:${position.column}`} role="button" tabIndex={0} aria-label={`Stack S${String(position.stackNumber).padStart(2, '0')}, column ${position.row + 1}, position ${position.column + 1}, ${position.crates} crates`} onClick={()=>selectStack(position.stackNumber,position.row)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' ')selectStack(position.stackNumber,position.row);}}>
               {Array.from({ length: position.crates }, (_, level) => <rect
                 key={level}
                 data-testid="section-crate"
@@ -230,17 +236,26 @@ export function BioDegasPlenumPanel({ data, systemId, bookId, readOnly = false }
                 width={crateWidth}
                 height={Math.max(3, BIO_CRATE_HEIGHT_MM * ss - 2)}
                 rx="1.5"
-                fill={position.row === 0 ? '#bfdbfe' : '#dbeafe'}
-                stroke={position.row === 0 ? '#2563eb' : '#64748b'}
-                strokeWidth="1.25"
+                fill={selected ? '#93c5fd' : '#bfdbfe'}
+                stroke={selected ? '#1d4ed8' : '#2563eb'}
+                strokeWidth={selected ? 2.5 : 1.25}
               />)}
+              {Array.from({ length: position.crates }, (_, level) => <text
+                key={`label-${level}`}
+                x={stackX + crateWidth / 2}
+                y={soy + sh - layout.wall_thickness_mm * ss - level * BIO_CRATE_HEIGHT_MM * ss - BIO_CRATE_HEIGHT_MM * ss / 2 + 3}
+                textAnchor="middle"
+                fontSize="7"
+                fontWeight="600"
+                fill="#1e3a8a"
+              >S{String(position.stackNumber).padStart(2,'0')}</text>)}
               <text
                 x={stackX + crateWidth / 2}
                 y={soy + sh - layout.wall_thickness_mm * ss - position.crates * BIO_CRATE_HEIGHT_MM * ss - 4}
                 textAnchor="middle"
                 fontSize="8"
                 fill="#334155"
-              >R{position.row + 1} · {position.crates}</text>
+              >S{String(position.stackNumber).padStart(2,'0')} · {position.crates}</text>
             </g>;
           })}
         <line x1={sox} y1={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss} x2={sox+sw} y2={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss} stroke="#dc2626" strokeDasharray="5 4"/><text x={sox+sw-4} y={soy+DISPERSION_TRAY.height*ss+TRAY_GAP_MM*ss-4} textAnchor="end" fontSize="10" fill="#b91c1c">100 mm min gap</text>
