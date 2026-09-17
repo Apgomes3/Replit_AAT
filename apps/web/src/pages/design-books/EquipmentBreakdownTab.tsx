@@ -124,7 +124,10 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
       toast.error(error?.response?.data?.error?.message || 'Could not save column visibility');
     }
   };
-  const table = (rows: any[]) => <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+  const table = (rows: any[], targetSystemId = '') => {
+    const addingHere = showManual && manual.system_id === targetSystemId;
+    const visibleColumnCount = columns.filter(column => !hidden.has(column.key)).length + 1;
+    return <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
     <table className="min-w-[1500px] w-full text-xs">
       <thead className="bg-stone-50 text-left uppercase tracking-wide text-stone-500"><tr>
         {columns.filter(column => !hidden.has(column.key)).map(column => <th key={column.key} className="px-2 py-2 font-semibold">{column.label}</th>)}<th className="px-2 py-2 font-semibold" />
@@ -157,9 +160,24 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
             }} /></td>;
         })}
         <td className="px-2 py-2">{!readOnly && row.source_kind === 'manual' && <button type="button" title="Remove line" onClick={() => removeManual(row)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>}</td>
-      </tr>)}</tbody>
+      </tr>)}
+      {!readOnly && <tr className="bg-amber-50/30">
+        <td colSpan={visibleColumnCount} className="px-3 py-2">
+          {addingHere ? <div className="flex min-w-[720px] items-center gap-2">
+            <input autoFocus value={manual.description} onChange={event => setManual({ ...manual, description: event.target.value })} placeholder="Proposal line description *" aria-label="Proposal line description" className="min-w-[320px] flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"/>
+            <input type="number" min="0.01" step="any" value={manual.quantity} onChange={event => setManual({ ...manual, quantity: event.target.value })} aria-label="Proposal line quantity" className="w-24 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"/>
+            <input value={manual.unit} onChange={event => setManual({ ...manual, unit: event.target.value })} placeholder="Unit" aria-label="Proposal line unit" className="w-24 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"/>
+            <button type="button" onClick={addManual} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white">Add line</button>
+            <button type="button" onClick={() => { setShowManual(false); setManual({ system_id: '', description: '', quantity: '1', unit: 'EA', currency: 'USD' }); }} className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-600">Cancel</button>
+          </div> : <button type="button" onClick={() => { setManual({ system_id: targetSystemId, description: '', quantity: '1', unit: 'EA', currency: 'USD' }); setShowManual(true); }} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100">
+            <Plus className="h-4 w-4"/> Add proposal line
+          </button>}
+        </td>
+      </tr>}
+      </tbody>
     </table>
   </div>;
+  };
   return <div className="space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-5">
       <div className="flex items-start gap-3"><PackageCheck className="mt-0.5 h-5 w-5 text-blue-600" /><div><h2 className="font-semibold text-stone-900">Equipment Breakdown</h2><p className="mt-1 max-w-2xl text-sm text-stone-600">Proposal and procurement schedule linked to the current LSS selections. Commercial edits never change engineering selections and remain editable after release.</p></div></div>
@@ -167,14 +185,9 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
         {showColumns && <div className="absolute right-0 top-11 z-20 w-56 rounded-xl border border-stone-200 bg-white p-3 shadow-lg"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Visible columns</p><div className="space-y-1">{columns.map(column => <label key={column.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-stone-700 hover:bg-stone-50"><input type="checkbox" checked={!hidden.has(column.key)} onChange={event => void setColumnVisible(column.key, event.target.checked)} />{column.label}</label>)}</div></div>}
       </div>
     </div>
-    {!readOnly && <div className="flex justify-end"><button type="button" onClick={() => setShowManual(value => !value)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800"><Plus className="h-4 w-4" /> Add proposal line</button></div>}
-    {showManual && <div className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50/40 p-4 md:grid-cols-6">
-      <select value={manual.system_id} onChange={event => setManual({ ...manual, system_id: event.target.value })} className="rounded-lg border border-stone-200 bg-white px-2 py-2 text-sm"><option value="">Unassigned</option>{systems.map(system => <option key={system.id} value={system.id}>{system.system_code} — {system.system_name}</option>)}</select>
-      <input value={manual.description} onChange={event => setManual({ ...manual, description: event.target.value })} placeholder="Description *" className="rounded-lg border border-stone-200 px-2 py-2 text-sm md:col-span-2" /><input type="number" value={manual.quantity} onChange={event => setManual({ ...manual, quantity: event.target.value })} className="rounded-lg border border-stone-200 px-2 py-2 text-sm" /><input value={manual.unit} onChange={event => setManual({ ...manual, unit: event.target.value })} placeholder="Unit" className="rounded-lg border border-stone-200 px-2 py-2 text-sm" /><button type="button" onClick={addManual} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white">Add</button>
-    </div>}
     {isLoading ? <div className="rounded-xl border border-stone-200 bg-white p-10 text-center text-sm text-stone-400">Loading equipment schedule…</div> : data?.initialized === false && readOnly ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-10 text-center text-sm text-amber-800">This equipment schedule has not been initialized. A Design Book manager must initialize it before it can be viewed.</div> : !systems.length ? <div className="rounded-xl border border-stone-200 bg-white p-10 text-center text-sm text-stone-500">No Life Support Systems found.</div> :
-      grouped.map(({ system, rows }) => <section key={system.id} className="space-y-2"><div className="flex items-center justify-between"><div><h3 className="font-semibold text-stone-800">{system.system_code} — {system.system_name}</h3><p className="text-xs text-stone-500">{rows.length} proposal line{rows.length === 1 ? '' : 's'}</p></div></div>{table(rows)}</section>)}
-    {items.some(row => !row.system_id) && <section className="space-y-2"><h3 className="font-semibold text-stone-800">Unassigned proposal lines</h3>{table(items.filter(row => !row.system_id))}</section>}
+      grouped.map(({ system, rows }) => <section key={system.id} className="space-y-2"><div className="flex items-center justify-between"><div><h3 className="font-semibold text-stone-800">{system.system_code} — {system.system_name}</h3><p className="text-xs text-stone-500">{rows.length} proposal line{rows.length === 1 ? '' : 's'}</p></div></div>{table(rows, system.id)}</section>)}
+    {items.some(row => !row.system_id) && <section className="space-y-2"><h3 className="font-semibold text-stone-800">Unassigned proposal lines</h3>{table(items.filter(row => !row.system_id), '')}</section>}
   </div>;
 }
 

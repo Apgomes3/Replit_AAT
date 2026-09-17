@@ -110,10 +110,13 @@ describe('EquipmentBreakdownTab', () => {
   it('adds a manual line and exposes refresh/export actions', async () => {
     const user = userEvent.setup();
     renderTab();
-    await user.click(await screen.findByRole('button', { name: /add proposal line/i }));
-    await user.type(screen.getByPlaceholderText('Description *'), 'Freight and commissioning');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
-    expect(api.post).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/lines', expect.objectContaining({ description: 'Freight and commissioning' }));
+    await user.click((await screen.findAllByRole('button', { name: /add proposal line/i }))[0]);
+    await user.type(screen.getByRole('textbox', { name: 'Proposal line description' }), 'Freight and commissioning');
+    await user.click(screen.getByRole('button', { name: 'Add line' }));
+    expect(api.post).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/lines', expect.objectContaining({
+      description: 'Freight and commissioning',
+      system_id: 'system-1',
+    }));
     await user.click(screen.getByRole('button', { name: /refresh selections/i }));
     expect(api.post).toHaveBeenCalledWith('/design-books/book-1/equipment-breakdown/refresh');
     expect(screen.getByRole('button', { name: /export excel/i })).toBeVisible();
