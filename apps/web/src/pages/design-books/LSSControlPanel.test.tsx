@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LSSControlPanel from './LSSControlPanel';
@@ -62,6 +62,22 @@ describe('LSSControlPanel frozen evidence', () => {
     expect(screen.queryByLabelText('Control logic for Pressure transmitter')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Add control details and evidence for Pressure transmitter' }));
     expect(screen.getByLabelText('Control logic for Pressure transmitter')).toBeInTheDocument();
+  });
+
+  it('shows saved non-valve quantities when legacy rows carry a definition group key', async () => {
+    renderPanel({
+      control: { panel_type: 'GPO' },
+      definitions: [
+        { id: 'flow', name: 'Flow switch', tag_code: 'FS', minimum_quantity: 1 },
+      ],
+      instruments: [
+        { definition_id: 'flow', group_key: 'flow', tag: 'LSS-01-FS-01', quantity: 1 },
+        { definition_id: 'flow', group_key: 'flow', tag: 'LSS-01-FS-02', quantity: 1 },
+      ],
+    }, false);
+
+    await waitFor(() => expect(screen.getByLabelText('Quantity for Flow switch')).toHaveValue(2));
+    expect(screen.getByText('LSS-01-FS-01, LSS-01-FS-02')).toBeVisible();
   });
 
   it.each([
