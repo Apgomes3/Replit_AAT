@@ -57,6 +57,7 @@ export function calculateSystemAllowance(rows: any[], allowance: any, rates: Map
   }
   return roundMoney(subtotal * percentage / 100);
 }
+export const isProtectedEquipmentLine = (row: any) => ['manual', 'allowance'].includes(String(row?.source_kind || ''));
 async function withSystemAllowances(db: Db, rows: any[]) {
   if (!rows.some(row => row.source_kind === 'allowance')) return rows.map(withCalculatedPricing);
   const rates = (await db.query('SELECT currency_code,rate_per_usd FROM platform_exchange_rates')).rows;
@@ -434,7 +435,7 @@ async function sync(db: Db, bookId: string, userId?: string) {
       system_id=$1,source_id=$2,source_snapshot=$3,description=$4,quantity=$5,unit=$6,manufacturer=$7,model=$8,unit_cost=$9,markup=$10,selling_price=$11,currency=$12,notes=$13,updated_at=NOW()
        WHERE id=$14`, [row.system_id,row.source_id,row.source_snapshot,value('description'),value('quantity'),value('unit'),value('manufacturer'),value('model'),value('unit_cost'),value('markup'),pricing.selling_price,value('currency'),value('notes'),old.id]);
   }
-  const obsolete = existing.filter(item => item.source_kind !== 'manual' && !keys.has(item.source_key));
+  const obsolete = existing.filter(item => !isProtectedEquipmentLine(item) && !keys.has(item.source_key));
   if (obsolete.length) await db.query('DELETE FROM design_book_equipment_breakdown_lines WHERE id=ANY($1::uuid[])', [obsolete.map(item => item.id)]);
   await db.query('UPDATE design_book_equipment_breakdowns SET updated_at=NOW(),updated_by=$2 WHERE id=$1', [breakdown.id,userId || null]);
   const rows = (await db.query(`SELECT l.*,s.system_code,s.system_name FROM design_book_equipment_breakdown_lines l

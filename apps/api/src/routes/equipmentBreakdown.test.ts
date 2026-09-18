@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { calculateEquipmentPricing, calculateSystemAllowance, convertEquipmentCurrency, createWorkbookBuffer, equipmentCurrencyNumberFormat, expandAllocationProducts, expandBioDegasPlenumProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, calculateSystemAllowance, convertEquipmentCurrency, createWorkbookBuffer, equipmentCurrencyNumberFormat, expandAllocationProducts, expandBioDegasPlenumProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, isProtectedEquipmentLine, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -51,6 +51,11 @@ describe('equipment breakdown source normalization', () => {
     ], {
       system_id: 'lss-1', source_kind: 'allowance', allowance_percentage: 10, currency: 'USD',
     }, rates)).toBeNull();
+  });
+  it('protects manual and percentage allowance lines from refresh cleanup', () => {
+    expect(isProtectedEquipmentLine({ source_kind: 'manual' })).toBe(true);
+    expect(isProtectedEquipmentLine({ source_kind: 'allowance' })).toBe(true);
+    expect(isProtectedEquipmentLine({ source_kind: 'equipment' })).toBe(false);
   });
   it('recognizes an LSS-coded system even when its equipment type is specialized', () => {
     expect(isLifeSupportSystem({ system_code: 'LSS-01', system_type: 'UV Sterilization' })).toBe(true);
