@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBioDegasPlenumProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -95,6 +95,20 @@ describe('equipment breakdown source normalization', () => {
       { source_key: 'bio-case-1:bio-crates', quantity: 58, unit: 'EA' },
       { source_key: 'bio-case-1:required-media', quantity: 13681.2305, unit: 'L' },
     ]);
+  });
+
+  it('creates a dispersion-tray line from the saved Bio/Degas plenum layout', () => {
+    expect(expandBioDegasPlenumProducts({
+      id: 'plenum-layout-1',
+      layout: { tray_count: 2, external_length_mm: 8500 },
+    })).toMatchObject([{
+      source_key: 'bio-degas-plenum:plenum-layout-1:dispersion-trays',
+      description: 'Dispersion tray',
+      quantity: 2,
+      unit: 'EA',
+      plenum_layout_id: 'plenum-layout-1',
+    }]);
+    expect(expandBioDegasPlenumProducts({ id: 'draft', layout: {} })).toEqual([]);
   });
 
   it('consolidates control valves into one equipment line per size group', () => {

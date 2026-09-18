@@ -1001,6 +1001,36 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
       [breakdown.rows[0].id, routeParam(req.params.id), equipmentId, `equipment:${equipmentId}`,
         snapshot, 'FRP Bio/Degas plenum tank', equipmentNotes],
     );
+    const traySnapshot = serializeJsonbParam({
+      plenum_layout_id: record.id,
+      system_id: routeParam(req.params.id),
+      layout: savedLayout,
+    });
+    await client.query(
+      `INSERT INTO design_book_equipment_breakdown_lines
+        (breakdown_id,system_id,source_kind,source_id,source_key,source_snapshot,description,quantity,unit,notes,sort_order)
+       VALUES ($1,$2,'equipment',$3,$4,$5,'Dispersion tray',$6,'EA',$7,1)
+       ON CONFLICT (breakdown_id,source_key) DO UPDATE SET
+         source_snapshot=EXCLUDED.source_snapshot,
+         description=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'description'
+           THEN design_book_equipment_breakdown_lines.description ELSE EXCLUDED.description END,
+         quantity=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'quantity'
+           THEN design_book_equipment_breakdown_lines.quantity ELSE EXCLUDED.quantity END,
+         unit=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'unit'
+           THEN design_book_equipment_breakdown_lines.unit ELSE EXCLUDED.unit END,
+         notes=CASE WHEN design_book_equipment_breakdown_lines.override_fields ? 'notes'
+           THEN design_book_equipment_breakdown_lines.notes ELSE EXCLUDED.notes END,
+         updated_at=NOW()`,
+      [
+        breakdown.rows[0].id,
+        routeParam(req.params.id),
+        record.id,
+        `equipment:bio-degas-plenum:${record.id}:dispersion-trays`,
+        traySnapshot,
+        trayCount,
+        'Quantity from the saved Bio/Degas plenum layout',
+      ],
+    );
   }
   await client.query('COMMIT');
   res.json({ ...record, project_equipment_item_id: equipmentId });

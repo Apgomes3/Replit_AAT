@@ -148,6 +148,20 @@ export function expandBiologicalMediaProducts(biologicalCase: any) {
   return products;
 }
 
+export function expandBioDegasPlenumProducts(plenum: any) {
+  const trayCount = Number(plenum?.layout?.tray_count);
+  if (!Number.isInteger(trayCount) || trayCount <= 0) return [];
+  return [{
+    source_key: `bio-degas-plenum:${plenum.id}:dispersion-trays`,
+    description: 'Dispersion tray',
+    quantity: trayCount,
+    unit: 'EA',
+    notes: 'Quantity from the saved Bio/Degas plenum layout',
+    plenum_layout_id: plenum.id,
+    layout: plenum.layout,
+  }];
+}
+
 export function groupEquipmentInstrumentSources(instruments: any[]) {
   const grouped = new Map<string, any>();
 
@@ -248,6 +262,12 @@ async function sources(db: Db, bookId: string) {
      WHERE design_book_id=$1 AND system_id=ANY($2::uuid[])`,
     [bookId, ids],
   )).rows;
+  const bioDegasPlenums = (await db.query(
+    `SELECT id,system_id,layout,source_crate_count
+     FROM design_book_bio_degas_plenum_layouts
+     WHERE design_book_id=$1 AND system_id=ANY($2::uuid[])`,
+    [bookId, ids],
+  )).rows;
   const selectedProductIds = [...fractionators, ...sandFilters]
     .flatMap(allocation => Array.isArray(allocation.products) ? allocation.products : [])
     .map(product => String(product?.product_master_id || ''))
@@ -337,6 +357,8 @@ async function sources(db: Db, bookId: string) {
         });
       }),
       ...biologicalMedia.filter(r => r.system_id === systemId).flatMap(r => expandBiologicalMediaProducts(r)
+        .map(product => line('equipment', systemId, r.id, product.source_key, product, product.description, product.quantity, product.unit))),
+      ...bioDegasPlenums.filter(r => r.system_id === systemId).flatMap(r => expandBioDegasPlenumProducts(r)
         .map(product => line('equipment', systemId, r.id, product.source_key, product, product.description, product.quantity, product.unit))),
     ];
     return rows.map((r, index) => ({ ...r, sort_order: index }));
