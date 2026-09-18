@@ -655,10 +655,28 @@ export async function createWorkbookBuffer(items: any[], hiddenColumns: string[]
     if (typeof value !== 'string') return value;
     return /^[=+\-@]/.test(value) ? `'${value}` : value;
   };
+  let tableSequence = 0;
   const addRows = (sheet: ExcelJS.Worksheet, rows: any[]) => {
-    sheet.addRow(columns.map(column => column.label));
-    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+    const pricedCurrencies = new Set(rows
+      .filter(row => numberOrNull(row.total_price) != null)
+      .map(row => normalizeEquipmentCurrency(row.currency)));
+    const canTotalPrice = pricedCurrencies.size <= 1;
+    const descriptionKey = columns.some(column => column.key === 'description') ? 'description' : columns[0]?.key;
+    sheet.addTable({
+      name: `EquipmentTable${++tableSequence}`,
+      ref: 'A1',
+      headerRow: true,
+      totalsRow: rows.length > 0,
+      style: { theme: 'TableStyleMedium2', showRowStripes: true },
+      columns: columns.map(column => ({
+        name: column.label,
+        ...(column.key === descriptionKey ? {
+          totalsRowLabel: canTotalPrice ? 'Total' : 'Mixed currencies — no combined total',
+        } : {}),
+        ...(column.key === 'total_price' && canTotalPrice ? { totalsRowFunction: 'sum' as const } : {}),
+      })),
+      rows: rows.map(row => columns.map(column => safeCell(column.value(row)))),
+    });
     const columnNumber = (key: string) => {
       const index = columns.findIndex(column => column.key === key);
       return index < 0 ? null : index + 1;
@@ -668,8 +686,8 @@ export async function createWorkbookBuffer(items: any[], hiddenColumns: string[]
     const markupColumn = columnNumber('markup');
     const sellingColumn = columnNumber('selling_price');
     const totalColumn = columnNumber('total_price');
-    rows.forEach(row => {
-      const excelRow = sheet.addRow(columns.map(column => safeCell(column.value(row))));
+    rows.forEach((row, index) => {
+      const excelRow = sheet.getRow(index + 2);
       const rowNumber = excelRow.number;
       const currencyFormat = equipmentCurrencyNumberFormat(row.currency);
       if (costColumn) excelRow.getCell(costColumn).numFmt = currencyFormat;
@@ -694,7 +712,6 @@ export async function createWorkbookBuffer(items: any[], hiddenColumns: string[]
     });
     sheet.columns = columns.map(column => ({ header: column.label, width: Math.max(14, Math.min(34, column.label.length + 4, rows.reduce((n, row) => Math.max(n, String(column.value(row) || '').length + 2), 0))) }));
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    sheet.autoFilter = { from: 'A1', to: `${sheet.getColumn(columns.length).letter}${Math.max(1, rows.length + 1)}` };
   };
   const summary = workbook.addWorksheet('Summary'); addRows(summary, items);
   const grouped = new Map<string, any[]>();

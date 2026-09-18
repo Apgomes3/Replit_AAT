@@ -222,6 +222,7 @@ describe('equipment breakdown source normalization', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
     expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(['Summary', 'LSS-A', 'lss-a-2']);
+    expect(workbook.getWorksheet('Summary')?.getTables()).toHaveLength(1);
     expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Source');
     expect(workbook.getWorksheet('Summary')?.getCell('B2').value).toBe("'=unsafe");
   });
@@ -266,5 +267,22 @@ describe('equipment breakdown source normalization', () => {
     expect(sheet.getRow(3).getCell(totalColumn).value).toMatchObject({
       formula: expect.stringContaining('IF(OR('),
     });
+    const table = sheet.getTable('EquipmentTable1');
+    expect(table).toBeDefined();
+    const tableModel = (table as any).table;
+    expect(tableModel.totalsRow).toBe(true);
+    expect(tableModel.columns.find((column: any) => column.name === 'Total Price')?.totalsRowFunction).toBe('sum');
+  });
+
+  it('does not combine unlike currencies in an Excel table total', async () => {
+    const buffer = await createWorkbookBuffer([
+      { system_code: 'LSS-01', description: 'USD item', quantity: 1, unit_cost: 10, markup: 0, currency: 'USD', total_price: 10 },
+      { system_code: 'LSS-01', description: 'EUR item', quantity: 1, unit_cost: 10, markup: 0, currency: 'EUR', total_price: 10 },
+    ]);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    const tableModel = (workbook.getWorksheet('Summary')!.getTable('EquipmentTable1') as any).table;
+    expect(tableModel.columns.find((column: any) => column.name === 'Total Price')?.totalsRowFunction).toBe('none');
+    expect(tableModel.columns.find((column: any) => column.name === 'Description')?.totalsRowLabel).toBe('Mixed currencies — no combined total');
   });
 });
