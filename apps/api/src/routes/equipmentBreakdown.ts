@@ -20,6 +20,13 @@ const transaction = async <T>(fn: (db: Db) => Promise<T>) => {
 const numberOrNull = (value: any) => value == null || value === '' ? null : Number(value);
 const safeText = (value: any) => value == null ? null : String(value);
 export const normalizeEquipmentCurrency = (value: any) => String(value || 'USD').toUpperCase() === 'RMB' ? 'CNY' : String(value || 'USD').toUpperCase();
+export const equipmentCurrencyNumberFormat = (value: any) => ({
+  USD: '$#,##0.00',
+  CNY: '¥#,##0.00',
+  AUD: '"A$"#,##0.00',
+  NZD: '"NZ$"#,##0.00',
+  EUR: '€#,##0.00',
+}[normalizeEquipmentCurrency(value)] || '"$"#,##0.00');
 const supportedCurrencies = new Set(['USD', 'CNY', 'AUD', 'NZD', 'EUR']);
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export const calculateEquipmentPricing = (row: any) => {
@@ -663,6 +670,8 @@ export async function createWorkbookBuffer(items: any[], hiddenColumns: string[]
     rows.forEach(row => {
       const excelRow = sheet.addRow(columns.map(column => safeCell(column.value(row))));
       const rowNumber = excelRow.number;
+      const currencyFormat = equipmentCurrencyNumberFormat(row.currency);
+      if (costColumn) excelRow.getCell(costColumn).numFmt = currencyFormat;
       if (sellingColumn && costColumn && markupColumn) {
         const cost = sheet.getColumn(costColumn).letter;
         const markup = sheet.getColumn(markupColumn).letter;
@@ -670,6 +679,7 @@ export async function createWorkbookBuffer(items: any[], hiddenColumns: string[]
           formula: `IF(OR(${cost}${rowNumber}="",${markup}${rowNumber}=""),"",ROUND(${cost}${rowNumber}*(1+${markup}${rowNumber}/100),2))`,
           result: calculateEquipmentPricing(row).selling_price ?? '',
         };
+        excelRow.getCell(sellingColumn).numFmt = currencyFormat;
       }
       if (totalColumn && quantityColumn && sellingColumn) {
         const quantity = sheet.getColumn(quantityColumn).letter;
@@ -678,6 +688,7 @@ export async function createWorkbookBuffer(items: any[], hiddenColumns: string[]
           formula: `IF(OR(${quantity}${rowNumber}="",${selling}${rowNumber}=""),"",ROUND(${quantity}${rowNumber}*${selling}${rowNumber},2))`,
           result: calculateEquipmentPricing(row).total_price ?? '',
         };
+        excelRow.getCell(totalColumn).numFmt = currencyFormat;
       }
     });
     sheet.columns = columns.map(column => ({ header: column.label, width: Math.max(14, Math.min(34, column.label.length + 4, rows.reduce((n, row) => Math.max(n, String(column.value(row) || '').length + 2), 0))) }));

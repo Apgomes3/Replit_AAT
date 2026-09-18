@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { calculateEquipmentPricing, calculateSystemAllowance, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBioDegasPlenumProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, calculateSystemAllowance, convertEquipmentCurrency, createWorkbookBuffer, equipmentCurrencyNumberFormat, expandAllocationProducts, expandBioDegasPlenumProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -29,6 +29,11 @@ describe('equipment breakdown source normalization', () => {
   it('normalizes RMB to the stored CNY code', () => {
     expect(normalizeEquipmentCurrency('RMB')).toBe('CNY');
     expect(normalizeEquipmentCurrency('eur')).toBe('EUR');
+    expect(equipmentCurrencyNumberFormat('USD')).toContain('$');
+    expect(equipmentCurrencyNumberFormat('RMB')).toContain('¥');
+    expect(equipmentCurrencyNumberFormat('AUD')).toContain('A$');
+    expect(equipmentCurrencyNumberFormat('NZD')).toContain('NZ$');
+    expect(equipmentCurrencyNumberFormat('EUR')).toContain('€');
   });
   it('calculates system allowances from cost while excluding allowance lines', () => {
     const rates = new Map([['USD', 1], ['CNY', 7.2]]);
@@ -247,6 +252,9 @@ describe('equipment breakdown source normalization', () => {
       formula: expect.stringContaining('*'),
       result: 25,
     });
+    expect(sheet.getRow(2).getCell(headers.indexOf('Unit Cost')).numFmt).toBe('$#,##0.00');
+    expect(sheet.getRow(2).getCell(sellingColumn).numFmt).toBe('$#,##0.00');
+    expect(sheet.getRow(2).getCell(totalColumn).numFmt).toBe('$#,##0.00');
     expect(sheet.getRow(3).getCell(sellingColumn).value).toMatchObject({
       formula: expect.stringContaining('IF(OR('),
     });
