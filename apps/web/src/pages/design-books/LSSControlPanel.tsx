@@ -76,9 +76,7 @@ function effectiveValve(definition: any, type: 'Electric' | 'Pneumatic' = 'Elect
   return { ...definition, tag_code: `${threeWay ? '3' : '2'}${type === 'Pneumatic' ? 'PBV' : 'EBV'}`, name: `${threeWay ? '3-way' : '2-way'} ${type} Ball Valve` };
 }
 function instrumentKey(item: any) {
-  const effectiveDefinition = { ...item, ...(item?.definition_snapshot || {}) };
-  const groupKey = isControlValve(effectiveDefinition) ? item?.group_key || 'legacy' : 'legacy';
-  return `${definitionId(item)}::${groupKey}`;
+  return `${definitionId(item)}::${item?.group_key || 'legacy'}`;
 }
 
 function productId(item: any) {
@@ -280,11 +278,14 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
     savedInstruments.forEach(item => {
       const id = definitionId(item);
       if (!id) return;
-      const key = instrumentKey(item);
+      const definition = definitions.find(candidate => definitionId(candidate) === id);
+      const valve = isControlValve(definition || { ...item, ...(item.definition_snapshot || {}) });
+      const groupKey = valve ? item.group_key || 'legacy' : undefined;
+      const key = `${id}::${groupKey || 'legacy'}`;
       const current = grouped.get(key);
       grouped.set(key, {
         definition_id: id,
-        group_key: item.group_key || (isControlValve({ ...item, ...(item.definition_snapshot || {}) }) ? 'legacy' : undefined),
+        group_key: groupKey,
         nominal_size: item.nominal_size || '',
          actuation_type: item.actuation_type === 'Pneumatic' ? 'Pneumatic' : 'Electric',
         quantity: current ? current.quantity + 1 : Number(item.quantity || 1),

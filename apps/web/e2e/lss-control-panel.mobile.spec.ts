@@ -206,18 +206,23 @@ test('control valve size groups retain their own actuator evidence after save an
 
   await page.goto('/e2e/fixtures/instrument-workspace.html?mode=valves');
   await expect(page.getByRole('heading', { name: 'LSS-01 · Field Instruments' })).toBeVisible();
+  await page.waitForLoadState('networkidle');
 
-  const sizes = page.getByLabel('Nominal size for Two way control valve');
-  const quantities = page.getByLabel('Quantity for Two way control valve');
-  const actuators = page.getByLabel('Product for Two way control valve');
+  const sizes = page.getByLabel('Nominal size for 2-way Electric Ball Valve');
+  const quantities = page.getByLabel('Quantity for 2-way Electric Ball Valve');
+  const actuators = page.getByLabel('Product for 2-way Electric Ball Valve');
   await sizes.first().fill('DN50');
   await quantities.first().fill('');
   await quantities.first().pressSequentially('2');
   await actuators.first().selectOption('actuator-small');
+  await expect(quantities.first()).toHaveValue('2');
+  await expect(actuators.first()).toHaveValue('actuator-small');
   await page.getByRole('button', { name: '＋ Add size' }).first().click();
   await expect(sizes).toHaveCount(2);
   await sizes.nth(1).fill('DN100');
   await actuators.nth(1).selectOption('actuator-large');
+  await expect(sizes.nth(1)).toHaveValue('DN100');
+  await expect(actuators.nth(1)).toHaveValue('actuator-large');
 
   await page.getByRole('button', { name: 'Save control configuration' }).click();
   await expect.poll(() => savedPayload?.instruments?.length).toBe(2);
@@ -326,6 +331,98 @@ test('control valve size groups retain their own actuator evidence after save an
   await expect(schedule.getByText('ACT-075 — DN75 valve actuator (Active)')).toHaveCount(3);
   await expect(schedule.getByRole('cell', { name: 'DN100', exact: true })).toHaveCount(0);
   await expect(schedule.getByText('ACT-100 — DN100 valve actuator (Active)')).toHaveCount(0);
+});
+
+test('two-way and three-way valve actuation controls save the matching tags without changing siblings', async ({ page }) => {
+  const definitions = [
+    { id: 'two-way', name: 'Two way control valve', tag_code: '2BV', signal_type: 'Analog', signal_direction: 'Output', minimum_quantity: 0 },
+    { id: 'three-way', name: 'Three way control valve', tag_code: '3EBV', signal_type: 'Analog', signal_direction: 'Output', minimum_quantity: 0 },
+  ];
+  const products = [
+    { id: 'two-product', product_code: '2WAY', product_name: 'Two-way valve', status: 'Active' },
+    { id: 'three-product', product_code: '3WAY', product_name: 'Three-way valve', status: 'Active' },
+  ];
+  let savedInstruments = [
+    { definition_id: 'two-way', group_key: 'two-dn50', nominal_size: 'DN50', actuation_type: 'Electric', quantity: 1, product_master_id: 'two-product', product_snapshot: products[0], tag: 'LSS-01-2EBV-01' },
+    { definition_id: 'three-way', group_key: 'three-dn80', nominal_size: 'DN80', actuation_type: 'Electric', quantity: 1, product_master_id: 'three-product', product_snapshot: products[1], tag: 'LSS-01-3EBV-01' },
+    { definition_id: 'three-way', group_key: 'three-dn80', nominal_size: 'DN80', actuation_type: 'Electric', quantity: 1, product_master_id: 'three-product', product_snapshot: products[1], tag: 'LSS-01-3EBV-02' },
+  ];
+  let savedPayload: any;
+
+  await page.route('**/api/v1/products/masters**', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ items: products }),
+  }));
+  await page.route('**/api/v1/systems/system-1/control**', async route => {
+    if (route.request().method() === 'PUT') {
+      savedPayload = route.request().postDataJSON();
+      savedInstruments = savedPayload.instruments.flatMap((group: any) => {
+        const definition = definitions.find(item => item.id === group.definition_id)!;
+        const existing = savedInstruments.find(item => item.group_key === group.group_key);
+        const code = `${definition.tag_code.startsWith('3') ? '3' : '2'}${group.actuation_type === 'Pneumatic' ? 'PBV' : 'EBV'}`;
+        const productMasterId = Object.prototype.hasOwnProperty.call(group, 'product_master_id')
+          ? group.product_master_id
+          : existing?.product_master_id || null;
+        const product = products.find(item => item.id === productMasterId);
+        return Array.from({ length: group.quantity }, (_, index) => ({
+          ...group,
+          quantity: 1,
+          product_master_id: productMasterId,
+          product_snapshot: product,
+          tag: `LSS-01-${code}-${String(index + 1).padStart(2, '0')}`,
+        }));
+      });
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+      return;
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ control: { panel_type: 'PLC' }, definitions, instruments: savedInstruments }),
+    });
+  });
+
+  await page.goto('/e2e/fixtures/instrument-workspace.html?mode=valves');
+  await page.waitForLoadState('networkidle');
+  const table = page.getByRole('table', { name: 'Field instrument definitions' });
+  const twoType = page.getByLabel('Type for 2-way Electric Ball Valve');
+  const threeType = page.getByLabel('Type for 3-way Electric Ball Valve');
+
+  await expect(table.getByText('2EBV', { exact: true })).toBeVisible();
+  await expect(table.getByText('3EBV', { exact: true })).toBeVisible();
+  await twoType.selectOption('Pneumatic');
+  await expect(table.getByText('2PBV', { exact: true })).toBeVisible();
+  await expect(table.getByText('3EBV', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save control configuration' }).click();
+  await expect.poll(() => savedPayload?.instruments?.length).toBe(2);
+  expect(savedPayload.instruments).toEqual(expect.arrayContaining([
+    expect.objectContaining({ definition_id: 'two-way', group_key: 'two-dn50', nominal_size: 'DN50', actuation_type: 'Pneumatic', quantity: 1 }),
+    expect.objectContaining({ definition_id: 'three-way', group_key: 'three-dn80', nominal_size: 'DN80', actuation_type: 'Electric', quantity: 2 }),
+  ]));
+
+  await page.reload();
+  await expect(page.getByLabel('Type for 2-way Pneumatic Ball Valve')).toHaveValue('Pneumatic');
+  await expect(page.getByLabel('Nominal size for 2-way Pneumatic Ball Valve')).toHaveValue('DN50');
+  await expect(page.getByLabel('Product for 2-way Pneumatic Ball Valve')).toHaveValue('two-product');
+  await expect(page.getByLabel('Quantity for 2-way Pneumatic Ball Valve')).toHaveValue('1');
+  await expect(table.getByRole('cell', { name: 'LSS-01-2PBV-01' })).toBeVisible();
+  await expect(page.getByLabel('Type for 3-way Electric Ball Valve')).toHaveValue('Electric');
+  await expect(page.getByLabel('Nominal size for 3-way Electric Ball Valve')).toHaveValue('DN80');
+  await expect(page.getByLabel('Product for 3-way Electric Ball Valve')).toHaveValue('three-product');
+  await expect(page.getByLabel('Quantity for 3-way Electric Ball Valve')).toHaveValue('2');
+  await expect(table.getByText('LSS-01-3EBV-01, LSS-01-3EBV-02')).toBeVisible();
+
+  await page.getByLabel('Type for 3-way Electric Ball Valve').selectOption('Pneumatic');
+  await expect(table.getByText('3PBV', { exact: true })).toBeVisible();
+  await expect(table.getByText('2PBV', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save control configuration' }).click();
+  await expect.poll(() => savedPayload.instruments.find((item: any) => item.definition_id === 'three-way')?.actuation_type).toBe('Pneumatic');
+
+  await page.reload();
+  await expect(table.getByRole('cell', { name: 'LSS-01-2PBV-01' })).toBeVisible();
+  await expect(table.getByText('LSS-01-3PBV-01, LSS-01-3PBV-02')).toBeVisible();
+  await expect(page.getByLabel('Type for 2-way Pneumatic Ball Valve')).toHaveValue('Pneumatic');
+  await expect(page.getByLabel('Type for 3-way Pneumatic Ball Valve')).toHaveValue('Pneumatic');
 });
 
 for (const viewport of viewports) {

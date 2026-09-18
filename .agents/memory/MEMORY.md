@@ -43,6 +43,7 @@
 - [LSS controls workspace](lss-controls-workspace.md) — manage controls and instruments as a Design Book main tab after Friction Loss, with per-LSS drill-in.
 - [LSS I/O schedule evidence](lss-io-schedule-evidence.md) — schedules are instance-based; issued previews and exports must fail closed unless frozen evidence exists.
 - [LSS control loading boundary](lss-control-loading-boundary.md) — load one control panel with targeted, bounded queries; cancel obsolete browser requests rather than retrying indefinitely.
+- [LSS control draft grouping](lss-control-draft-grouping.md) — determine valve grouping from governed definitions before creating lightweight drafts that omit tag metadata.
 - [Instrument calibration evidence](instrument-calibration-evidence.md) — range, unit, calibration, and datasheet values become saved instance evidence and obey release immutability.
 - [Exhibit pipe sizing evidence](exhibit-pipe-sizing-evidence.md) — recommend the smallest in-band DN; freeze resolved pipe evidence and revalidate it whenever exhibit flow changes.
 - [PostgreSQL concurrency test synchronization](postgres-concurrency-test-synchronization.md) — correlate blocked work to the exact blocker PID instead of relying on timing or visible SQL text.
