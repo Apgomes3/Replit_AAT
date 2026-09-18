@@ -147,6 +147,44 @@ export function expandBiologicalMediaProducts(biologicalCase: any) {
   return products;
 }
 
+export function groupEquipmentInstrumentSources(instruments: any[]) {
+  const grouped = new Map<string, any>();
+
+  for (const instrument of instruments) {
+    const definition = instrument.definition_snapshot || {};
+    const tagCode = String(definition.tag_code || instrument.tag_code || '').toUpperCase();
+    const isControlValve = ['2BV', '3EBV'].includes(tagCode);
+    const definitionId = instrument.definition_id || definition.id || tagCode;
+    const nominalSize = String(instrument.nominal_size || '').trim();
+    const productId = instrument.product_master_id || instrument.product_snapshot?.id || '';
+    const groupIdentity = isControlValve
+      ? instrument.group_key || `legacy:${definitionId}:${nominalSize}:${productId}`
+      : `product:${productId || 'unassigned'}`;
+    const key = `${instrument.system_id}:${definitionId}:${groupIdentity}`;
+    const current = grouped.get(key);
+    if (current) {
+      current.quantity += 1;
+      current.instrument_ids.push(instrument.id);
+      continue;
+    }
+
+    const name = definition.name || instrument.tag_code || 'Control valve';
+    grouped.set(key, {
+      ...instrument,
+      equipment_source_key: `instrument-group:${definitionId}:${groupIdentity}`,
+      instrument_ids: [instrument.id],
+      quantity: 1,
+      description: isControlValve && nominalSize ? `${name} — ${nominalSize}` : name,
+      notes: [
+        isControlValve && nominalSize ? `Nominal size: ${nominalSize}` : null,
+        instrument.notes || null,
+      ].filter(Boolean).join('\n') || null,
+    });
+  }
+
+  return [...grouped.values()];
+}
+
 async function sources(db: Db, bookId: string) {
   const book = (await db.query('SELECT project_id FROM design_books WHERE id=$1', [bookId])).rows[0];
   if (!book) throw Object.assign(new Error('Design Book not found'), { status: 404, code: 'NOT_FOUND' });
@@ -246,6 +284,7 @@ async function sources(db: Db, bookId: string) {
      FROM product_masters WHERE id=ANY($1::uuid[])`, [[...new Set(uvProductIds)]],
   )).rows : [];
   const uvById = new Map(uvCatalog.map(product => [String(product.id), product]));
+  const equipmentInstruments = groupEquipmentInstrumentSources(instruments);
   const line = (kind: string, systemId: string, id: any, key: string, row: any, fallback: string, qty = 1, unit = 'EA') => {
     const cost = numberOrNull(row.cost), sell = numberOrNull(row.sell_price);
     const markup = pimMarkup(cost, sell);
@@ -274,7 +313,15 @@ async function sources(db: Db, bookId: string) {
         return line('thermal', systemId, r.id, r.id, { ...snapshot, ...r }, `${r.duty || 'Thermal'} equipment`);
       }),
       ...controls.filter(r => r.system_id === systemId).map(r => line('control_panel', systemId, r.id, r.id, r.control || r, 'Control panel')),
-      ...instruments.filter(r => r.system_id === systemId).map(r => line('instrument', systemId, r.id, r.id, r, r.definition_snapshot?.name || r.tag_code || 'Field instrument')),
+      ...equipmentInstruments.filter(r => r.system_id === systemId).map(r => line(
+        'instrument',
+        systemId,
+        r.id,
+        r.equipment_source_key,
+        r,
+        r.definition_snapshot?.name || r.tag_code || 'Field instrument',
+        r.quantity,
+      )),
       ...compact.filter(r => r.system_id === systemId).map(r => line('compact_unit', systemId, r.id, r.id, r, r.component_name, r.quantity || 1, r.unit || 'EA')),
       ...fractionators.filter(r => r.system_id === systemId).flatMap(r => expandAllocationProducts(r, productById, 'Foam fractionator')
         .map(product => line('fractionator', systemId, product.source_id, product.source_key, product, product.description, product.quantity, product.unit))),

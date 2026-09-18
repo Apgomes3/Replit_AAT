@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, expandSandFilterProducts, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -95,6 +95,73 @@ describe('equipment breakdown source normalization', () => {
       { source_key: 'bio-case-1:bio-crates', quantity: 58, unit: 'EA' },
       { source_key: 'bio-case-1:required-media', quantity: 13681.2305, unit: 'L' },
     ]);
+  });
+
+  it('consolidates control valves into one equipment line per size group', () => {
+    const valves = Array.from({ length: 12 }, (_, index) => ({
+      id: `valve-${index + 1}`,
+      system_id: 'system-1',
+      definition_id: 'definition-2bv',
+      group_key: 'dn50-group',
+      nominal_size: 'DN50',
+      product_master_id: 'product-actuator-1',
+      definition_snapshot: { id: 'definition-2bv', name: '2-way Ball Valve', tag_code: '2BV' },
+      product_name: 'DN50 actuated ball valve',
+      cost: 100,
+      sell_price: 150,
+    }));
+
+    expect(groupEquipmentInstrumentSources(valves)).toMatchObject([{
+      equipment_source_key: 'instrument-group:definition-2bv:dn50-group',
+      description: '2-way Ball Valve — DN50',
+      nominal_size: 'DN50',
+      product_master_id: 'product-actuator-1',
+      quantity: 12,
+      instrument_ids: valves.map(valve => valve.id),
+    }]);
+  });
+
+  it('keeps different valve sizes and actuators on separate equipment lines', () => {
+    const grouped = groupEquipmentInstrumentSources([
+      {
+        id: 'valve-1', system_id: 'system-1', definition_id: 'definition-2bv',
+        group_key: 'dn50-group', nominal_size: 'DN50', product_master_id: 'actuator-1',
+        definition_snapshot: { name: '2-way Ball Valve', tag_code: '2BV' },
+      },
+      {
+        id: 'valve-2', system_id: 'system-1', definition_id: 'definition-2bv',
+        group_key: 'dn80-group', nominal_size: 'DN80', product_master_id: 'actuator-2',
+        definition_snapshot: { name: '2-way Ball Valve', tag_code: '2BV' },
+      },
+    ]);
+
+    expect(grouped).toHaveLength(2);
+    expect(grouped.map(item => [item.nominal_size, item.product_master_id, item.quantity])).toEqual([
+      ['DN50', 'actuator-1', 1],
+      ['DN80', 'actuator-2', 1],
+    ]);
+  });
+
+  it('consolidates matching non-valve instruments into one equipment line', () => {
+    const grouped = groupEquipmentInstrumentSources([
+      {
+        id: 'flow-switch-1', system_id: 'system-1', definition_id: 'definition-fs',
+        product_master_id: 'flow-switch-product',
+        definition_snapshot: { name: 'Flow Switch', tag_code: 'FS' },
+      },
+      {
+        id: 'flow-switch-2', system_id: 'system-1', definition_id: 'definition-fs',
+        product_master_id: 'flow-switch-product',
+        definition_snapshot: { name: 'Flow Switch', tag_code: 'FS' },
+      },
+    ]);
+
+    expect(grouped).toMatchObject([{
+      equipment_source_key: 'instrument-group:definition-fs:product:flow-switch-product',
+      description: 'Flow Switch',
+      quantity: 2,
+      instrument_ids: ['flow-switch-1', 'flow-switch-2'],
+    }]);
   });
 
   it('reads an uninitialized schedule without inserting or syncing it', async () => {
