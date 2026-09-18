@@ -99,6 +99,9 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
       `SELECT id FROM field_instrument_definitions WHERE tag_code IN ('2EBV','2BV') AND is_active=true
        ORDER BY CASE WHEN tag_code='2EBV' THEN 0 ELSE 1 END LIMIT 1`,
     )).rows[0].id;
+    ids.threeWayControlValve = (await database.query(
+      `SELECT id FROM field_instrument_definitions WHERE tag_code='3EBV' AND is_active=true LIMIT 1`,
+    )).rows[0].id;
   });
 
   afterAll(async () => {
@@ -346,6 +349,107 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
       [{ id: ids.system, system_code: 'LSS-CTRL', system_name: 'Control LSS' }],
       [{ system_id: ids.system, control: deleted.body.control, instruments: remainingValves }],
     )).toEqual(bypassScheduleBeforeEdit);
+  });
+
+  it('persists electric and pneumatic two-way and three-way valve groups without changing sibling evidence', async () => {
+    const valveGroups = [
+      {
+        definition_id: ids.controlValve,
+        group_key: 'two-electric-dn40',
+        nominal_size: 'DN40',
+        actuation_type: 'Electric',
+        quantity: 1,
+        product_master_id: ids.productA,
+      },
+      {
+        definition_id: ids.controlValve,
+        group_key: 'two-pneumatic-dn50',
+        nominal_size: 'DN50',
+        actuation_type: 'Pneumatic',
+        quantity: 2,
+        product_master_id: ids.productB,
+      },
+      {
+        definition_id: ids.threeWayControlValve,
+        group_key: 'three-electric-dn65',
+        nominal_size: 'DN65',
+        actuation_type: 'Electric',
+        quantity: 1,
+        product_master_id: ids.productA,
+      },
+      {
+        definition_id: ids.threeWayControlValve,
+        group_key: 'three-pneumatic-dn80',
+        nominal_size: 'DN80',
+        actuation_type: 'Pneumatic',
+        quantity: 2,
+        product_master_id: ids.productB,
+      },
+    ];
+    const saved = await request('PUT', `/api/v1/systems/${ids.system}/control`, {
+      design_book_id: ids.book,
+      panel_type: 'PLC',
+      instruments: [...await editableInstruments(0), ...valveGroups],
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+
+    const loaded = await request('GET', `/api/v1/systems/${ids.system}/control?design_book_id=${ids.book}`);
+    expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
+    const valves = loaded.body.instruments.filter((item: any) =>
+      [ids.controlValve, ids.threeWayControlValve].includes(item.definition_id));
+    const expectedGroups = [
+      ['two-electric-dn40', 'Electric', 'DN40', ids.productA, 1, /-2EBV-\d{2}$/],
+      ['two-pneumatic-dn50', 'Pneumatic', 'DN50', ids.productB, 2, /-2PBV-\d{2}$/],
+      ['three-electric-dn65', 'Electric', 'DN65', ids.productA, 1, /-3EBV-\d{2}$/],
+      ['three-pneumatic-dn80', 'Pneumatic', 'DN80', ids.productB, 2, /-3PBV-\d{2}$/],
+    ] as const;
+    for (const [groupKey, actuationType, nominalSize, productId, quantity, tagPattern] of expectedGroups) {
+      const group = valves.filter((item: any) => item.group_key === groupKey);
+      expect(group).toHaveLength(quantity);
+      expect(group.every((item: any) =>
+        item.actuation_type === actuationType
+        && item.nominal_size === nominalSize
+        && item.product_master_id === productId
+        && item.product_snapshot?.id === productId
+        && tagPattern.test(item.tag))).toBe(true);
+    }
+
+    const siblingKeys = ['two-electric-dn40', 'two-pneumatic-dn50', 'three-electric-dn65'];
+    const siblingRowsBeforeEdit = (await database.query(
+      `SELECT * FROM design_book_lss_instruments
+       WHERE design_book_id=$1 AND system_id=$2 AND group_key=ANY($3::text[])
+       ORDER BY group_key,sequence_number,id`,
+      [ids.book, ids.system, siblingKeys],
+    )).rows;
+
+    const editedGroups = valveGroups.map(group => group.group_key === 'three-pneumatic-dn80'
+      ? { ...group, nominal_size: 'DN100', quantity: 1, product_master_id: ids.productA }
+      : group);
+    const edited = await request('PUT', `/api/v1/systems/${ids.system}/control`, {
+      design_book_id: ids.book,
+      panel_type: 'PLC',
+      instruments: [...await editableInstruments(0), ...editedGroups],
+    });
+    expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+
+    const siblingRowsAfterEdit = (await database.query(
+      `SELECT * FROM design_book_lss_instruments
+       WHERE design_book_id=$1 AND system_id=$2 AND group_key=ANY($3::text[])
+       ORDER BY group_key,sequence_number,id`,
+      [ids.book, ids.system, siblingKeys],
+    )).rows;
+    expect(siblingRowsAfterEdit).toEqual(siblingRowsBeforeEdit);
+    const changedGroup = edited.body.instruments.filter((item: any) =>
+      item.group_key === 'three-pneumatic-dn80');
+    expect(changedGroup).toEqual([
+      expect.objectContaining({
+        actuation_type: 'Pneumatic',
+        nominal_size: 'DN100',
+        product_master_id: ids.productA,
+        product_snapshot: expect.objectContaining({ id: ids.productA }),
+        tag: expect.stringMatching(/-3PBV-\d{2}$/),
+      }),
+    ]);
   });
 
   it('reconciles pump-driven FS evidence and creates none when no pumps are configured', async () => {

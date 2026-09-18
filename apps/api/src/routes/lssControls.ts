@@ -428,7 +428,11 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
       if (rows.length && requestedProduct?.product_supplied) {
         const product = await productSnapshot(client.query.bind(client), selectedProduct);
         await client.query(
-          'UPDATE design_book_lss_instruments SET product_master_id=$1,product_snapshot=$2::jsonb,updated_by=$3,updated_at=NOW() WHERE id=ANY($4::uuid[])',
+          `UPDATE design_book_lss_instruments
+              SET product_master_id=$1,product_snapshot=$2::jsonb,updated_by=$3,updated_at=NOW()
+            WHERE id=ANY($4::uuid[])
+              AND (product_master_id IS DISTINCT FROM $1
+                OR product_snapshot IS DISTINCT FROM $2::jsonb)`,
           [selectedProduct, JSON.stringify(product), req.user!.id, rows.slice(0, desired).map(row => row.id)],
         );
       }
