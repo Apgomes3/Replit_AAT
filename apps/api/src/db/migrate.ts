@@ -647,7 +647,7 @@ SELECT r.id, m.module_key, 'manage'
 FROM roles r
 CROSS JOIN (VALUES
   ('pim'), ('orders'), ('projects'), ('design_books'),
-  ('documents'), ('knowledge'), ('graph')
+  ('documents'), ('knowledge'), ('graph'), ('business_development')
 ) AS m(module_key)
 ON CONFLICT (role_id, module_key) DO NOTHING;
 
@@ -3276,6 +3276,72 @@ ALTER TABLE design_book_equipment_breakdown_lines
 ALTER TABLE design_book_equipment_breakdown_lines
   ADD CONSTRAINT design_book_equipment_breakdown_lines_source_kind_check
   CHECK (source_kind IN ('tank','equipment','pump','uv','filter','filter_media','fractionator','thermal','compact_unit','control_panel','instrument','manual','allowance'));
+
+-- BUSINESS DEVELOPMENT
+CREATE TABLE IF NOT EXISTS business_number_counters (
+  counter_key VARCHAR(120) PRIMARY KEY,
+  next_value INTEGER NOT NULL DEFAULT 1 CHECK (next_value > 0)
+);
+
+CREATE TABLE IF NOT EXISTS business_books (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  book_number VARCHAR(30) UNIQUE NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  design_book_id UUID REFERENCES design_books(id) ON DELETE SET NULL,
+  client_name VARCHAR(255) NOT NULL,
+  client_details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  project_location JSONB NOT NULL DEFAULT '{}'::jsonb,
+  owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  reporting_currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+  status VARCHAR(30) NOT NULL DEFAULT 'active',
+  notes TEXT,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT business_books_currency_check CHECK (reporting_currency ~ '^[A-Z]{3}$'),
+  CONSTRAINT business_books_status_check CHECK (status IN ('active','on_hold','won','lost','closed'))
+);
+CREATE INDEX IF NOT EXISTS idx_business_books_project ON business_books(project_id);
+CREATE INDEX IF NOT EXISTS idx_business_books_owner ON business_books(owner_id);
+CREATE INDEX IF NOT EXISTS idx_business_books_status ON business_books(status);
+
+CREATE TABLE IF NOT EXISTS business_opportunities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_book_id UUID NOT NULL REFERENCES business_books(id) ON DELETE CASCADE,
+  opportunity_number VARCHAR(40) UNIQUE NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  kind VARCHAR(30) NOT NULL DEFAULT 'package_scope',
+  status VARCHAR(30) NOT NULL DEFAULT 'draft',
+  owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  probability NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (probability >= 0 AND probability <= 100),
+  expected_decision_date DATE,
+  expected_value NUMERIC(18,2),
+  expected_currency VARCHAR(3),
+  outcome_notes TEXT,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT business_opportunities_kind_check CHECK (kind IN ('package_scope','sales_attempt')),
+  CONSTRAINT business_opportunities_status_check CHECK (status IN ('draft','active','in_review','won','lost','withdrawn')),
+  CONSTRAINT business_opportunities_currency_check CHECK (expected_currency IS NULL OR expected_currency ~ '^[A-Z]{3}$')
+);
+CREATE INDEX IF NOT EXISTS idx_business_opportunities_book ON business_opportunities(business_book_id);
+CREATE INDEX IF NOT EXISTS idx_business_opportunities_status ON business_opportunities(status);
+
+CREATE TABLE IF NOT EXISTS business_book_activities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_book_id UUID NOT NULL REFERENCES business_books(id) ON DELETE CASCADE,
+  opportunity_id UUID REFERENCES business_opportunities(id) ON DELETE CASCADE,
+  action VARCHAR(40) NOT NULL,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_business_book_activities_book ON business_book_activities(business_book_id, created_at DESC);
 `;
 
 async function migrate() {

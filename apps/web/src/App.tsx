@@ -57,6 +57,9 @@ import ExhibitDetail from './pages/design-books/ExhibitDetail';
 import DesignBookLSSDetail from './pages/design-books/DesignBookLSSDetail';
 import LSSCompactUnitsCatalog from './pages/design-books/LSSCompactUnitsCatalog';
 import SpeciesCatalog from './pages/design-books/SpeciesCatalog';
+import BusinessDevelopmentDashboard from './pages/business-development/BusinessDevelopmentDashboard';
+import BusinessBooksList from './pages/business-development/BusinessBooksList';
+import BusinessBookDetail from './pages/business-development/BusinessBookDetail';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -156,6 +159,9 @@ export default function App() {
             <Route path="design-books/:bookId/lss/:systemId" element={<ModuleGuard moduleKey="design_books"><DesignBookLSSDetail /></ModuleGuard>} />
             <Route path="lss-compact-units" element={<ModuleGuard moduleKey="design_books"><LSSCompactUnitsCatalog /></ModuleGuard>} />
             <Route path="species-catalog" element={<ModuleGuard moduleKey="design_books"><SpeciesCatalog /></ModuleGuard>} />
+             <Route path="business-development" element={<ModuleGuard moduleKey="business_development"><BusinessDevelopmentDashboard /></ModuleGuard>} />
+             <Route path="business-books" element={<ModuleGuard moduleKey="business_development"><BusinessBooksList /></ModuleGuard>} />
+             <Route path="business-books/:id" element={<ModuleGuard moduleKey="business_development"><BusinessBookDetail /></ModuleGuard>} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -6,6 +6,7 @@ export const MODULE_ACCESS_KEYS = [
   'documents',
   'knowledge',
   'graph',
+  'business_development',
 ] as const;
 
 export type ModuleAccessKey = typeof MODULE_ACCESS_KEYS[number];
@@ -19,4 +20,5 @@ export const MODULE_ACCESS_LABELS: Record<ModuleAccessKey, string> = {
   documents: 'Documents',
   knowledge: 'Knowledge Library',
   graph: 'Graph Explorer',
+  business_development: 'Business Development',
 };

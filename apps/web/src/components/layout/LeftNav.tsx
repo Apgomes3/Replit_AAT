@@ -1,12 +1,12 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal } from 'lucide-react';
+import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; end?: boolean };
-type ModuleKey = 'pim' | 'orders' | 'projects' | 'design_books' | 'documents' | 'knowledge' | 'graph';
+type ModuleKey = 'pim' | 'orders' | 'projects' | 'design_books' | 'business_development' | 'documents' | 'knowledge' | 'graph';
 type NavSection = { id: string; moduleKey: ModuleKey; label: string; hub: string; icon: any; items: NavItemDef[] };
 
 const PIM_ITEMS: NavItemDef[] = [
@@ -34,6 +34,12 @@ const SECTIONS: NavSection[] = [
       { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
       { id: 'lss-catalog', to: '/lss-compact-units', icon: Layers, label: 'LSS Unit Catalog' },
       { id: 'species-catalog', to: '/species-catalog', icon: Fish, label: 'Species Catalog' },
+    ],
+  },
+  {
+    id: 'business-development', moduleKey: 'business_development', label: 'Business Development', hub: '/business-development', icon: BriefcaseBusiness,
+    items: [
+      { id: 'business-books', to: '/business-books', icon: BriefcaseBusiness, label: 'Business Books' },
     ],
   },
 ];
