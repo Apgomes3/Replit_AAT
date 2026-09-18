@@ -158,6 +158,19 @@ describe('DesignBooksList search behavior', () => {
     expect(screen.getAllByRole('button', { name: 'New Design Book' })).toHaveLength(2);
   });
 
+  it('links each row directly to its Equipment Breakdown', async () => {
+    apiGet.mockResolvedValue({ data: { items: [book] } });
+    renderList();
+
+    const link = await screen.findByRole('link', {
+      name: `Open Equipment Breakdown for ${book.book_title}`,
+    });
+    expect(link).toHaveAttribute(
+      'href',
+      `/design-books/${book.id}?tab=equipment-breakdown`,
+    );
+  });
+
   it('hides stale rows during loading while keeping keyboard input usable', async () => {
     let resolveSearch: ((value: { data: { items: unknown[] } }) => void) | undefined;
     apiGet.mockImplementation((url: string) => {

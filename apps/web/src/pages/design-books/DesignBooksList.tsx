@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -7,7 +7,7 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import QueryError from '../../components/ui/QueryError';
-import { Plus, BookMarked, FolderOpen, X, ChevronRight } from 'lucide-react';
+import { Plus, BookMarked, FolderOpen, X, ChevronRight, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 
@@ -159,6 +159,7 @@ export default function DesignBooksList() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Rev</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Status</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Created By</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Equipment</th>
                 <th className="w-8" />
               </tr>
             </thead>
@@ -189,6 +190,17 @@ export default function DesignBooksList() {
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={book.status} /></td>
                   <td className="px-4 py-3 text-stone-500 text-xs">{book.created_by_name || '—'}</td>
+                  <td className="px-4 py-3">
+                    <Link
+                      to={`/design-books/${book.id}?tab=equipment-breakdown`}
+                      onClick={event => event.stopPropagation()}
+                      className="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      aria-label={`Open Equipment Breakdown for ${book.book_title}`}
+                    >
+                      <PackageCheck className="h-3.5 w-3.5" />
+                      Equipment Breakdown
+                    </Link>
+                  </td>
                   <td className="px-4 py-3"><ChevronRight className="w-4 h-4 text-stone-400" /></td>
                 </tr>
               ))}
