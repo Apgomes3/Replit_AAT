@@ -3260,6 +3260,7 @@ CREATE TABLE IF NOT EXISTS design_book_equipment_breakdown_lines (
   lead_time TEXT,
   exclusions TEXT,
   notes TEXT,
+  allowance_percentage NUMERIC CHECK (allowance_percentage IS NULL OR allowance_percentage >= 0),
   override_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -3269,10 +3270,12 @@ CREATE TABLE IF NOT EXISTS design_book_equipment_breakdown_lines (
 CREATE INDEX IF NOT EXISTS idx_design_book_breakdown_lines_system
   ON design_book_equipment_breakdown_lines(breakdown_id, system_id, sort_order);
 ALTER TABLE design_book_equipment_breakdown_lines
+  ADD COLUMN IF NOT EXISTS allowance_percentage NUMERIC CHECK (allowance_percentage IS NULL OR allowance_percentage >= 0);
+ALTER TABLE design_book_equipment_breakdown_lines
   DROP CONSTRAINT IF EXISTS design_book_equipment_breakdown_lines_source_kind_check;
 ALTER TABLE design_book_equipment_breakdown_lines
   ADD CONSTRAINT design_book_equipment_breakdown_lines_source_kind_check
-  CHECK (source_kind IN ('tank','equipment','pump','uv','filter','filter_media','fractionator','thermal','compact_unit','control_panel','instrument','manual'));
+  CHECK (source_kind IN ('tank','equipment','pump','uv','filter','filter_media','fractionator','thermal','compact_unit','control_panel','instrument','manual','allowance'));
 `;
 
 async function migrate() {

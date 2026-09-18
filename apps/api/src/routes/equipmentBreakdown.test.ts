@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
-import { calculateEquipmentPricing, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBioDegasPlenumProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
+import { calculateEquipmentPricing, calculateSystemAllowance, convertEquipmentCurrency, createWorkbookBuffer, expandAllocationProducts, expandBioDegasPlenumProducts, expandBiologicalMediaProducts, expandSandFilterProducts, groupEquipmentInstrumentSources, normalizeEquipmentCurrency, pimMarkup, readExisting } from './equipmentBreakdown';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 
 describe('equipment breakdown source normalization', () => {
@@ -29,6 +29,23 @@ describe('equipment breakdown source normalization', () => {
   it('normalizes RMB to the stored CNY code', () => {
     expect(normalizeEquipmentCurrency('RMB')).toBe('CNY');
     expect(normalizeEquipmentCurrency('eur')).toBe('EUR');
+  });
+  it('calculates system allowances from cost while excluding allowance lines', () => {
+    const rates = new Map([['USD', 1], ['CNY', 7.2]]);
+    const rows = [
+      { system_id: 'lss-1', source_kind: 'pump', quantity: 2, unit_cost: 100, currency: 'USD' },
+      { system_id: 'lss-1', source_kind: 'equipment', quantity: 1, unit_cost: 720, currency: 'CNY' },
+      { system_id: 'lss-1', source_kind: 'allowance', quantity: 1, unit_cost: 999, currency: 'USD' },
+      { system_id: 'lss-2', source_kind: 'pump', quantity: 1, unit_cost: 500, currency: 'USD' },
+    ];
+    expect(calculateSystemAllowance(rows, {
+      system_id: 'lss-1', source_kind: 'allowance', allowance_percentage: 10, currency: 'USD',
+    }, rates)).toBe(30);
+    expect(calculateSystemAllowance([
+      { system_id: 'lss-1', source_kind: 'equipment', quantity: 1, unit_cost: 100, currency: 'EUR' },
+    ], {
+      system_id: 'lss-1', source_kind: 'allowance', allowance_percentage: 10, currency: 'USD',
+    }, rates)).toBeNull();
   });
   it('recognizes an LSS-coded system even when its equipment type is specialized', () => {
     expect(isLifeSupportSystem({ system_code: 'LSS-01', system_type: 'UV Sterilization' })).toBe(true);

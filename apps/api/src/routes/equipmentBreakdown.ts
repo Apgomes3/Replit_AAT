@@ -34,6 +34,33 @@ export const calculateEquipmentPricing = (row: any) => {
     : null;
   return { selling_price: sellingPrice, total_price: totalPrice };
 };
+export function calculateSystemAllowance(rows: any[], allowance: any, rates: Map<string, number>) {
+  const percentage = numberOrNull(allowance?.allowance_percentage);
+  const targetCurrency = normalizeEquipmentCurrency(allowance?.currency);
+  const targetRate = rates.get(targetCurrency);
+  if (percentage == null || targetRate == null || !(targetRate > 0)) return null;
+  let subtotal = 0;
+  for (const row of rows) {
+    if (row.source_kind === 'allowance' || row.system_id !== allowance.system_id) continue;
+    const cost = numberOrNull(row.unit_cost), quantity = numberOrNull(row.quantity);
+    const sourceRate = rates.get(normalizeEquipmentCurrency(row.currency));
+    if (cost == null || quantity == null) continue;
+    if (sourceRate == null || !(sourceRate > 0)) return null;
+    subtotal += cost * quantity / sourceRate * targetRate;
+  }
+  return roundMoney(subtotal * percentage / 100);
+}
+async function withSystemAllowances(db: Db, rows: any[]) {
+  if (!rows.some(row => row.source_kind === 'allowance')) return rows.map(withCalculatedPricing);
+  const rates = (await db.query('SELECT currency_code,rate_per_usd FROM platform_exchange_rates')).rows;
+  const rateMap = new Map<string, number>(rates.map(row => [normalizeEquipmentCurrency(row.currency_code), Number(row.rate_per_usd)]));
+  if (!rateMap.has('USD')) rateMap.set('USD', 1);
+  return rows.map(row => {
+    if (row.source_kind !== 'allowance') return withCalculatedPricing(row);
+    const unitCost = calculateSystemAllowance(rows, row, rateMap);
+    return withCalculatedPricing({ ...row, quantity: 1, unit: 'EA', unit_cost: unitCost, markup: 0 });
+  });
+}
 export const pimMarkup = (costValue: any, sellValue: any) => {
   const cost = numberOrNull(costValue);
   const sell = numberOrNull(sellValue);
@@ -403,8 +430,9 @@ async function sync(db: Db, bookId: string, userId?: string) {
   const obsolete = existing.filter(item => item.source_kind !== 'manual' && !keys.has(item.source_key));
   if (obsolete.length) await db.query('DELETE FROM design_book_equipment_breakdown_lines WHERE id=ANY($1::uuid[])', [obsolete.map(item => item.id)]);
   await db.query('UPDATE design_book_equipment_breakdowns SET updated_at=NOW(),updated_by=$2 WHERE id=$1', [breakdown.id,userId || null]);
-  return (await db.query(`SELECT l.*,s.system_code,s.system_name FROM design_book_equipment_breakdown_lines l
-    LEFT JOIN systems s ON s.id=l.system_id WHERE l.breakdown_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`, [breakdown.id])).rows.map(withCalculatedPricing);
+  const rows = (await db.query(`SELECT l.*,s.system_code,s.system_name FROM design_book_equipment_breakdown_lines l
+    LEFT JOIN systems s ON s.id=l.system_id WHERE l.breakdown_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`, [breakdown.id])).rows;
+  return withSystemAllowances(db, rows);
 }
 
 export async function readExisting(db: Db, bookId: string) {
@@ -416,7 +444,7 @@ export async function readExisting(db: Db, bookId: string) {
   const items = (await db.query(`SELECT l.*,s.system_code,s.system_name
     FROM design_book_equipment_breakdown_lines l LEFT JOIN systems s ON s.id=l.system_id
     WHERE l.breakdown_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`, [breakdown.id])).rows;
-  return { initialized: true, items: items.map(withCalculatedPricing), hidden_columns: normalizeHiddenColumns(breakdown.hidden_columns) };
+  return { initialized: true, items: await withSystemAllowances(db, items), hidden_columns: normalizeHiddenColumns(breakdown.hidden_columns) };
 }
 
 router.get('/design-books/:id/equipment-breakdown', async (req: AuthRequest, res: Response) => {
@@ -468,12 +496,12 @@ router.put('/design-books/:id/equipment-breakdown/order', requireModuleManage('d
   res.json({ line_ids: reordered });
 });
 router.put('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
-  const allowed = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','currency','lead_time','exclusions','notes'];
+  const allowed = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','currency','lead_time','exclusions','notes','allowance_percentage'];
   const values: any[] = [], sets: string[] = [], fields: string[] = [];
   for (const field of allowed) if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-    if (['quantity','unit_cost','markup'].includes(field) && req.body[field] !== null && (!Number.isFinite(Number(req.body[field])) || Number(req.body[field]) < 0)) return res.status(400).json({ error: { code: 'INVALID_VALUE', message: `${field} must be non-negative` } });
+    if (['quantity','unit_cost','markup','allowance_percentage'].includes(field) && req.body[field] !== null && (!Number.isFinite(Number(req.body[field])) || Number(req.body[field]) < 0)) return res.status(400).json({ error: { code: 'INVALID_VALUE', message: `${field} must be non-negative` } });
     values.push(req.body[field] === '' ? null : req.body[field]);
-    const cast = ['quantity','unit_cost','markup'].includes(field) ? '::numeric' : '';
+    const cast = ['quantity','unit_cost','markup','allowance_percentage'].includes(field) ? '::numeric' : '';
     sets.push(`${field}=$${values.length}${cast}`);
     fields.push(field);
   }
@@ -566,9 +594,44 @@ router.post('/design-books/:id/equipment-breakdown/lines', requireModuleManage('
   });
   res.status(201).json(withCalculatedPricing(created));
 });
+router.post('/design-books/:id/equipment-breakdown/allowances', requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+  const type = String(req.body?.allowance_type || '');
+  const labels: Record<string, string> = {
+    pipe_fittings_supports: 'Pipe, Fittings and Supports',
+    cable_trays_supports: 'Cable, Cable Trays and Supports',
+  };
+  if (!labels[type]) return res.status(400).json({ error: { code: 'INVALID_ALLOWANCE', message: 'Select a supported allowance type' } });
+  const percentage = Number(req.body?.allowance_percentage);
+  if (!Number.isFinite(percentage) || percentage < 0) return res.status(400).json({ error: { code: 'INVALID_VALUE', message: 'Percentage must be non-negative' } });
+  const systemId = String(req.body?.system_id || '');
+  const currency = normalizeEquipmentCurrency(req.body?.currency);
+  if (!supportedCurrencies.has(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR' } });
+  const created = await transaction(async db => {
+    const book = (await db.query('SELECT project_id FROM design_books WHERE id=$1', [req.params.id])).rows[0];
+    if (!book) throw Object.assign(new Error('Design Book not found'), { status: 404, code: 'NOT_FOUND' });
+    const system = (await db.query('SELECT * FROM systems WHERE id=$1 AND project_id=$2', [systemId, book.project_id])).rows[0];
+    if (!system || !isLifeSupportSystem(system)) throw Object.assign(new Error('System is not an LSS in this Design Book project'), { status: 400, code: 'INVALID_SYSTEM' });
+    const breakdown = (await db.query('SELECT id FROM design_book_equipment_breakdowns WHERE design_book_id=$1', [req.params.id])).rows[0]
+      || (await db.query('INSERT INTO design_book_equipment_breakdowns (design_book_id,updated_by) VALUES ($1,$2) RETURNING id', [req.params.id,req.user?.id])).rows[0];
+    const sourceKey = `allowance:${systemId}:${type}`;
+    const nextOrder = Number((await db.query(
+      'SELECT COALESCE(MAX(sort_order),-1)+1 AS next_order FROM design_book_equipment_breakdown_lines WHERE breakdown_id=$1 AND system_id=$2',
+      [breakdown.id, systemId],
+    )).rows[0]?.next_order || 0);
+    return (await db.query(
+      `INSERT INTO design_book_equipment_breakdown_lines
+        (breakdown_id,system_id,source_kind,source_key,source_snapshot,description,quantity,unit,unit_cost,markup,currency,allowance_percentage,sort_order)
+       VALUES ($1,$2,'allowance',$3,$4,$5,1,'EA',0,0,$6,$7,$8)
+       ON CONFLICT (breakdown_id,source_key) DO UPDATE SET allowance_percentage=EXCLUDED.allowance_percentage,currency=EXCLUDED.currency,updated_at=NOW()
+       RETURNING *`,
+      [breakdown.id, systemId, sourceKey, JSON.stringify({ allowance_type: type, basis: 'system_cost_excluding_allowances' }), labels[type], currency, percentage, nextOrder],
+    )).rows[0];
+  });
+  res.status(201).json(created);
+});
 router.delete('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleManage('design_books'), async (req, res) => {
   const result = await query(`DELETE FROM design_book_equipment_breakdown_lines l USING design_book_equipment_breakdowns b
-    WHERE l.id=$1 AND l.breakdown_id=b.id AND b.design_book_id=$2 AND l.source_kind='manual' RETURNING l.id`, [req.params.lineId,req.params.id]);
+    WHERE l.id=$1 AND l.breakdown_id=b.id AND b.design_book_id=$2 AND l.source_kind IN ('manual','allowance') RETURNING l.id`, [req.params.lineId,req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Manual line not found' } });
   res.status(204).end();
 });

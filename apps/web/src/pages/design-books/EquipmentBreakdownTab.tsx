@@ -137,6 +137,20 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
     } catch (error: any) { toast.error(error?.response?.data?.error?.message || 'Could not add proposal line'); }
   };
   const removeManual = async (row: any) => { try { await api.delete(`/design-books/${book.id}/equipment-breakdown/lines/${row.id}`); await refetch(); toast.success('Proposal line removed'); } catch (error: any) { toast.error(error?.response?.data?.error?.message || 'Could not remove proposal line'); } };
+  const addAllowance = async (systemId: string, allowanceType: string) => {
+    try {
+      await api.post(`/design-books/${book.id}/equipment-breakdown/allowances`, {
+        system_id: systemId,
+        allowance_type: allowanceType,
+        allowance_percentage: 0,
+        currency: 'USD',
+      });
+      await refetch();
+      toast.success('System allowance added');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error?.message || 'Could not add system allowance');
+    }
+  };
   const setColumnVisible = async (key: string, visible: boolean) => {
     const next = visible ? hiddenColumns.filter(column => column !== key) : [...hiddenColumns, key];
     try {
@@ -232,7 +246,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
           setDragOverIndex(null);
         }}
         className={`align-top border-t border-stone-100 hover:bg-blue-50/20 ${dragOverIndex === rowIndex ? 'border-t-2 border-t-blue-500' : ''}`}>
-        {!hidden.has('source_kind') && <td className="px-2 py-2 text-stone-500 whitespace-nowrap">{row.source_kind}{row.source_kind === 'manual' && <span className="ml-1 rounded bg-amber-100 px-1 text-amber-700">manual</span>}</td>}
+        {!hidden.has('source_kind') && <td className="px-2 py-2 text-stone-500 whitespace-nowrap">{row.source_kind}{row.source_kind === 'manual' && <span className="ml-1 rounded bg-amber-100 px-1 text-amber-700">manual</span>}{row.source_kind === 'allowance' && <span className="ml-1 rounded bg-blue-100 px-1 text-blue-700">system %</span>}</td>}
         {columns.filter(column => column.key !== 'source_kind' && !hidden.has(column.key)).map(({ key: field }) => {
           const key = `${row.id}:${field}`;
           const value = Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : row[field];
@@ -250,9 +264,26 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
               {currencies.map(currency => <option key={currency.value} value={currency.value}>{currency.label}</option>)}
             </select></td>;
           }
+          if (row.source_kind === 'allowance' && field === 'description') {
+            const percentageKey = `${row.id}:allowance_percentage`;
+            const percentage = Object.prototype.hasOwnProperty.call(drafts, percentageKey) ? drafts[percentageKey] : row.allowance_percentage;
+            return <td key={field} className="w-52 min-w-[208px] px-2 py-2">
+              <div className="font-medium text-stone-700">{row.description}</div>
+              <label className="mt-1 flex items-center gap-1 text-[11px] text-stone-500">
+                <Field value={percentage} type="number" contentWidth disabled={readOnly} saving={saving === percentageKey}
+                  onChange={next => setDrafts(current => ({ ...current, [percentageKey]: next }))}
+                  onCommit={() => {
+                    if (!Object.prototype.hasOwnProperty.call(drafts, percentageKey) || String(drafts[percentageKey]) === String(row.allowance_percentage ?? '')) return;
+                    void update(row, 'allowance_percentage', drafts[percentageKey]);
+                  }} />
+                <span>% of system cost subtotal</span>
+              </label>
+            </td>;
+          }
           const type = ['quantity','unit_cost','markup'].includes(field) ? 'number' : 'text';
           const contentWidth = ['quantity','unit','markup','supplier','model','unit_cost'].includes(field);
-          return <td key={field} className={`${field === 'description' ? 'w-52 min-w-[168px] max-w-[208px]' : field === 'quantity' ? 'w-12 min-w-[52px]' : field === 'unit' ? 'w-14 min-w-[56px]' : field === 'markup' ? 'w-24 min-w-[88px]' : contentWidth ? 'w-px whitespace-nowrap' : 'min-w-[100px]'} px-1 py-1`}><Field value={value} type={type} contentWidth={contentWidth} disabled={readOnly} saving={saving === key}
+          const allowanceLocked = row.source_kind === 'allowance' && ['quantity','unit','unit_cost','markup'].includes(field);
+          return <td key={field} className={`${field === 'description' ? 'w-52 min-w-[168px] max-w-[208px]' : field === 'quantity' ? 'w-12 min-w-[52px]' : field === 'unit' ? 'w-14 min-w-[56px]' : field === 'markup' ? 'w-24 min-w-[88px]' : contentWidth ? 'w-px whitespace-nowrap' : 'min-w-[100px]'} px-1 py-1`}><Field value={value} type={type} contentWidth={contentWidth} disabled={readOnly || allowanceLocked} saving={saving === key}
             onChange={next => setDrafts(current => ({ ...current, [key]: next }))}
             onCommit={() => {
               if (!Object.prototype.hasOwnProperty.call(drafts, key) || String(drafts[key]) === String(row[field] ?? '')) return;
@@ -264,7 +295,7 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
             onDragStart={event => { draggingIdRef.current = row.id; setDraggingId(row.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', row.id); }}
             onDragEnd={() => { draggingIdRef.current = null; setDraggingId(null); setDragOverIndex(null); }}
             className="cursor-grab rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 active:cursor-grabbing"><GripVertical className="h-4 w-4"/></button>}
-          {!readOnly && row.source_kind === 'manual' && <button type="button" title="Remove line" onClick={() => removeManual(row)} className="rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>}
+          {!readOnly && ['manual','allowance'].includes(row.source_kind) && <button type="button" title="Remove line" onClick={() => removeManual(row)} className="rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>}
         </div></td>
        </tr></Fragment>)}{insertControl(rows.length)}
       {!readOnly && !showManual && <tr className="bg-amber-50/30">
@@ -274,6 +305,12 @@ export default function EquipmentBreakdownTab({ book, readOnly }: Props) {
            </button>
         </td>
       </tr>}
+      {!readOnly && <tr className="border-t border-blue-100 bg-blue-50/30"><td colSpan={visibleColumnCount} className="px-3 py-2">
+        <div className="flex flex-wrap gap-2">
+          {!rows.some(row => row.source_key?.endsWith(':pipe_fittings_supports')) && <button type="button" onClick={() => void addAllowance(targetSystemId, 'pipe_fittings_supports')} className="rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50">Add Pipe, Fittings and Supports %</button>}
+          {!rows.some(row => row.source_key?.endsWith(':cable_trays_supports')) && <button type="button" onClick={() => void addAllowance(targetSystemId, 'cable_trays_supports')} className="rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50">Add Cable, Cable Trays and Supports %</button>}
+        </div>
+      </td></tr>}
       </tbody>
     </table>
   </div>;
