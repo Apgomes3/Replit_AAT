@@ -133,10 +133,12 @@ test('control valve size groups retain their own actuator evidence after save an
   };
   const products = [
     { id: 'actuator-small', product_code: 'ACT-050', product_name: 'DN50 valve actuator', status: 'Active' },
+    { id: 'actuator-medium', product_code: 'ACT-075', product_name: 'DN75 valve actuator', status: 'Active' },
     { id: 'actuator-large', product_code: 'ACT-100', product_name: 'DN100 valve actuator', status: 'Active' },
   ];
   let savedInstruments: any[] = [];
   let savedPayload: any;
+  let nextSequence = 1;
 
   await page.route('**/api/v1/products/masters**', route => route.fulfill({
     contentType: 'application/json',
@@ -159,19 +161,36 @@ test('control valve size groups retain their own actuator evidence after save an
     }
     if (route.request().method() === 'PUT') {
       savedPayload = route.request().postDataJSON();
-      savedInstruments = savedPayload.instruments.flatMap((group: any, groupIndex: number) =>
-        Array.from({ length: group.quantity }, (_, instanceIndex) => ({
-          id: `${group.group_key}-${instanceIndex}`,
-          definition_id: definition.id,
-          definition_snapshot: definition,
-          group_key: group.group_key,
+      savedInstruments = savedPayload.instruments.flatMap((group: any) => {
+        const existing = savedInstruments.filter(item => item.group_key === group.group_key);
+        const retained = existing.slice(0, group.quantity).map(item => ({
+          ...item,
           nominal_size: group.nominal_size,
-          quantity: 1,
-          tag: `LSS-01-2BV-${String(groupIndex * 10 + instanceIndex + 1).padStart(2, '0')}`,
-          product_master_id: group.product_master_id,
-          product_snapshot: products.find(product => product.id === group.product_master_id),
-          control_logic: null,
-        })));
+          ...(Object.prototype.hasOwnProperty.call(group, 'product_master_id') ? {
+            product_master_id: group.product_master_id,
+            product_snapshot: products.find(product => product.id === group.product_master_id),
+          } : {}),
+        }));
+        const added = Array.from({ length: Math.max(0, group.quantity - retained.length) }, () => {
+          const sequence = nextSequence++;
+          const selectedProductId = Object.prototype.hasOwnProperty.call(group, 'product_master_id')
+            ? group.product_master_id
+            : null;
+          return {
+            id: `${group.group_key}-${sequence}`,
+            definition_id: definition.id,
+            definition_snapshot: definition,
+            group_key: group.group_key,
+            nominal_size: group.nominal_size,
+            quantity: 1,
+            tag: `LSS-01-2BV-${String(sequence).padStart(2, '0')}`,
+            product_master_id: selectedProductId,
+            product_snapshot: products.find(product => product.id === selectedProductId),
+            control_logic: null,
+          };
+        });
+        return [...retained, ...added];
+      });
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
       return;
     }
@@ -218,7 +237,7 @@ test('control valve size groups retain their own actuator evidence after save an
   await expect(actuators.nth(1)).toHaveValue('actuator-large');
   const configuration = page.getByRole('table', { name: 'Field instrument definitions' });
   await expect(configuration.getByText('LSS-01-2BV-01, LSS-01-2BV-02')).toBeVisible();
-  await expect(configuration.getByRole('cell', { name: 'LSS-01-2BV-11' })).toBeVisible();
+  await expect(configuration.getByRole('cell', { name: 'LSS-01-2BV-03' })).toBeVisible();
 
   const schedule = page.getByRole('table', { name: 'PLC Output I/O schedule' });
   await expect(schedule.getByRole('cell', { name: 'DN50', exact: true })).toHaveCount(2);
@@ -245,6 +264,68 @@ test('control valve size groups retain their own actuator evidence after save an
   expect(pdfText).toContain('ACT-050 — DN50 valve actuator');
   expect(pdfText).toContain('DN100');
   expect(pdfText).toContain('ACT-100 — DN100 valve actuator');
+
+  const untouchedGroupKey = savedInstruments.find(item => item.nominal_size === 'DN100')!.group_key;
+  const untouchedEvidence = savedInstruments
+    .filter(item => item.group_key === untouchedGroupKey)
+    .map(item => ({
+      nominal_size: item.nominal_size,
+      product_master_id: item.product_master_id,
+      product_snapshot: item.product_snapshot,
+      tag: item.tag,
+    }));
+
+  await quantities.first().fill('');
+  await quantities.first().pressSequentially('3');
+  await actuators.first().selectOption('actuator-medium');
+  await page.getByRole('button', { name: 'Save control configuration' }).click();
+  await expect.poll(() => savedInstruments.filter(item => item.nominal_size === 'DN50').length).toBe(3);
+  expect(savedInstruments.filter(item => item.group_key === untouchedGroupKey).map(item => ({
+    nominal_size: item.nominal_size,
+    product_master_id: item.product_master_id,
+    product_snapshot: item.product_snapshot,
+    tag: item.tag,
+  }))).toEqual(untouchedEvidence);
+
+  await page.reload();
+  await expect(quantities.first()).toHaveValue('3');
+  await expect(actuators.first()).toHaveValue('actuator-medium');
+  await expect(sizes.nth(1)).toHaveValue('DN100');
+  await expect(actuators.nth(1)).toHaveValue('actuator-large');
+  await expect(configuration.getByRole('cell', { name: 'LSS-01-2BV-03' })).toBeVisible();
+  await expect(schedule.getByRole('cell', { name: 'DN100', exact: true })).toHaveCount(1);
+  await expect(schedule.getByText('ACT-100 — DN100 valve actuator (Active)')).toHaveCount(1);
+
+  const remainingGroupKey = savedInstruments.find(item => item.nominal_size === 'DN50')!.group_key;
+  const remainingEvidence = savedInstruments
+    .filter(item => item.group_key === remainingGroupKey)
+    .map(item => ({
+      nominal_size: item.nominal_size,
+      product_master_id: item.product_master_id,
+      product_snapshot: item.product_snapshot,
+      tag: item.tag,
+    }));
+
+  await page.getByRole('button', { name: 'Remove' }).click();
+  await page.getByRole('button', { name: 'Save control configuration' }).click();
+  await expect.poll(() => savedInstruments.some(item => item.group_key === untouchedGroupKey)).toBe(false);
+  expect(savedInstruments.map(item => ({
+    nominal_size: item.nominal_size,
+    product_master_id: item.product_master_id,
+    product_snapshot: item.product_snapshot,
+    tag: item.tag,
+  }))).toEqual(remainingEvidence);
+
+  await page.reload();
+  await expect(sizes).toHaveCount(1);
+  await expect(sizes.first()).toHaveValue('DN50');
+  await expect(quantities.first()).toHaveValue('3');
+  await expect(actuators.first()).toHaveValue('actuator-medium');
+  await expect(configuration.getByText('LSS-01-2BV-01, LSS-01-2BV-02, LSS-01-2BV-04')).toBeVisible();
+  await expect(schedule.getByRole('cell', { name: 'DN50', exact: true })).toHaveCount(3);
+  await expect(schedule.getByText('ACT-075 — DN75 valve actuator (Active)')).toHaveCount(3);
+  await expect(schedule.getByRole('cell', { name: 'DN100', exact: true })).toHaveCount(0);
+  await expect(schedule.getByText('ACT-100 — DN100 valve actuator (Active)')).toHaveCount(0);
 });
 
 for (const viewport of viewports) {
