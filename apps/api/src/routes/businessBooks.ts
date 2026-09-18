@@ -59,6 +59,7 @@ async function projectSnapshot(client: any, projectId: string) {
   if (!result.rows[0]) return null;
   const p = result.rows[0];
   return {
+    project_name: p.project_name || '',
     client_name: p.client_name || '',
     client_details: { name: p.client_name || '', site_name: p.site_name || '' },
     project_location: { site_name: p.site_name || '', country: p.country || '', city: p.city || '' },
@@ -112,20 +113,24 @@ router.get('/', async (req, res, next) => {
 router.post('/', requireModuleManage('business_development'), async (req: AuthRequest, res, next) => {
   try {
     const body = req.body || {};
-    const titleError = required(body.title, 'title'); if (titleError) return bad(res, titleError, 'title');
-    if (!body.project_id) { const clientError = required(body.client_name, 'client_name'); if (clientError) return bad(res, clientError, 'client_name'); }
+    if (!body.project_id) {
+      const titleError = required(body.title, 'title'); if (titleError) return bad(res, titleError, 'title');
+      const clientError = required(body.client_name, 'client_name'); if (clientError) return bad(res, clientError, 'client_name');
+    }
     if (body.reporting_currency && currency(body.reporting_currency, 'reporting_currency')) return bad(res, currency(body.reporting_currency, 'reporting_currency')!, 'reporting_currency');
     if (body.status && !BOOK_STATUSES.includes(body.status)) return bad(res, 'Invalid Business Book status.', 'status');
     if (body.project_id && id(body.project_id, 'project_id')) return bad(res, id(body.project_id, 'project_id')!, 'project_id');
     if (body.design_book_id && id(body.design_book_id, 'design_book_id')) return bad(res, id(body.design_book_id, 'design_book_id')!, 'design_book_id');
     if (body.owner_id && id(body.owner_id, 'owner_id')) return bad(res, id(body.owner_id, 'owner_id')!, 'owner_id');
     const result = await withTransaction(async client => {
+      let title = typeof body.title === 'string' ? body.title.trim() : '';
       let clientName = typeof body.client_name === 'string' ? body.client_name.trim() : '';
       let details = body.client_details || {};
       let location = body.project_location || {};
       if (body.project_id) {
         const snapshot = await projectSnapshot(client, body.project_id);
         if (!snapshot) throw Object.assign(new Error('Project not found.'), { status: 404, code: 'NOT_FOUND' });
+        title = snapshot.project_name || title;
         clientName = snapshot.client_name || clientName; details = snapshot.client_details; location = snapshot.project_location;
       }
       if (body.design_book_id) {
@@ -137,7 +142,7 @@ router.post('/', requireModuleManage('business_development'), async (req: AuthRe
       const inserted = await client.query(
         `INSERT INTO business_books(book_number,title,project_id,design_book_id,client_name,client_details,project_location,owner_id,reporting_currency,status,notes,created_by,updated_by)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12) RETURNING *`,
-        [bookNumber, body.title.trim(), body.project_id || null, body.design_book_id || null, clientName, details, location, body.owner_id || req.user!.id, body.reporting_currency || 'USD', body.status || 'active', body.notes || null, req.user!.id],
+        [bookNumber, title, body.project_id || null, body.design_book_id || null, clientName, details, location, body.owner_id || req.user!.id, body.reporting_currency || 'USD', body.status || 'active', body.notes || null, req.user!.id],
       );
       await activity(client, inserted.rows[0].id, req.user!.id, 'created', { linked_project_id: body.project_id || null });
       return inserted.rows[0];
@@ -176,11 +181,13 @@ router.patch('/:id', requireModuleManage('business_development'), async (req: Au
       if (!current.rows[0]) throw Object.assign(new Error('Business Book not found.'), { status: 404, code: 'NOT_FOUND' });
       const changes: any = { ...body };
       let snapshotDetails = current.rows[0].client_details, snapshotLocation = current.rows[0].project_location, clientName = body.client_name ?? current.rows[0].client_name;
+      let projectTitle: string | null = null;
       if (body.project_id !== undefined && body.project_id !== current.rows[0].project_id) {
         if (body.project_id) {
           if (id(body.project_id, 'project_id')) throw Object.assign(new Error('project_id must be a valid UUID.'), { status: 400, code: 'VALIDATION' });
           const snapshot = await projectSnapshot(client, body.project_id);
           if (!snapshot) throw Object.assign(new Error('Project not found.'), { status: 404, code: 'NOT_FOUND' });
+          projectTitle = snapshot.project_name || current.rows[0].title;
           clientName = snapshot.client_name || clientName; snapshotDetails = snapshot.client_details; snapshotLocation = snapshot.project_location;
         }
         changes.project_id = body.project_id || null;
@@ -195,7 +202,8 @@ router.patch('/:id', requireModuleManage('business_development'), async (req: Au
       }
       const set: string[] = [], values: any[] = [req.params.id];
       const put = (column: string, value: any) => { values.push(value); set.push(`${column}=$${values.length}`); };
-      if (body.title !== undefined) put('title', body.title.trim());
+      if (projectTitle !== null) put('title', projectTitle);
+      else if (body.title !== undefined) put('title', body.title.trim());
       if (body.project_id !== undefined) put('project_id', body.project_id);
       if (body.design_book_id !== undefined) put('design_book_id', body.design_book_id);
       if (body.project_id !== undefined && body.project_id) { put('client_name', clientName); put('client_details', snapshotDetails); put('project_location', snapshotLocation); }

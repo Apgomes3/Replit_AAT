@@ -8,7 +8,7 @@ vi.mock('../db', () => {
   const clientQuery = vi.fn(async (sql: string, params: any[] = []) => {
     if (sql.includes('business_number_counters') && sql.includes('INSERT')) return { rows: [] };
     if (sql.includes('business_number_counters') && sql.includes('SELECT')) return { rows: [{ value: state.counter++ }] };
-    if (sql.includes('FROM projects WHERE id=$1')) return state.project ? { rows: [{ id: '33333333-3333-4333-8333-333333333333', client_name: 'Copied Client', site_name: 'Harbour', country: 'NZ', city: 'Auckland' }] } : { rows: [] };
+    if (sql.includes('FROM projects WHERE id=$1')) return state.project ? { rows: [{ id: '33333333-3333-4333-8333-333333333333', project_name: 'Harbour Aquarium', client_name: 'Copied Client', site_name: 'Harbour', country: 'NZ', city: 'Auckland' }] } : { rows: [] };
     if (sql.includes('SELECT book_number FROM business_books')) return { rows: [{ book_number: 'BD-2026-0001' }] };
     if (sql.includes('INSERT INTO business_book_activities')) { state.activities.push(params); return { rows: [] }; }
     if (sql.includes('INSERT INTO business_opportunities')) return { rows: [{ id: '44444444-4444-4444-8444-444444444444', opportunity_number: params[1], title: params[2] }] };
@@ -67,9 +67,10 @@ describe('business development foundation', () => {
   it('copies client and location snapshots when linked to a project', async () => {
     state.project = true;
     const response = await request('POST', '/api/v1/business-books', {
-      title: 'Linked', project_id: '33333333-3333-4333-8333-333333333333',
+      project_id: '33333333-3333-4333-8333-333333333333',
     });
     expect(response.status).toBe(201);
+    expect(response.json.title).toBe('Harbour Aquarium');
     expect(response.json.client_name).toBe('Copied Client');
   });
 

@@ -7,7 +7,7 @@ A Business Book represents one client project and may exist standalone or link t
 
 **Why:** Commercial work often begins before a managed project exists, and one client project can involve several independent pursuits.
 
-**How to apply:** Keep Business Books as durable commercial workspaces. Copy client/project details when linking rather than continuously inheriting them, and preserve explicit traceability to Project and Design Book sources.
+**How to apply:** Keep Business Books as durable commercial workspaces. When linking, use the Project name as the Business Book title and copy its client and location rather than continuously inheriting them. Preserve explicit traceability to Project and Design Book sources.
 
 Draft quotes remain linked to their estimate until issue. Issued estimates, quotes, and proposals freeze their pricing, currencies, exchange rates, source revisions, wording, and approval evidence.
 
