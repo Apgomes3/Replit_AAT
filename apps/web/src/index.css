@@ -1,20 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
+
+:root {
+  --ink: #20333a;
+  --muted: #6f8082;
+  --paper: #f5f8f6;
+  --surface: #ffffff;
+  --line: #dce7e2;
+  --accent: #087f73;
+  --accent-deep: #075c56;
+  --accent-wash: #e4f2ee;
+  --signal: #c36f3d;
+}
 
 @layer base {
   * { box-sizing: border-box; }
   html { height: 100%; }
   body {
     height: 100%;
-    font-family: 'Inter', system-ui, sans-serif;
-    background-color: #fafaf9;
-    color: #1c1917;
+    font-family: 'Manrope', system-ui, sans-serif;
+    background-color: var(--paper);
+    color: var(--ink);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
   #root { height: 100%; }
   :where(button, a, input, select, textarea, [tabindex]):focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px #fafaf9;
+    box-shadow: 0 0 0 2px var(--accent), 0 0 0 4px var(--paper);
   }
 }
 
@@ -54,6 +67,8 @@
 .animate-count-up {
   animation: count-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
+
+.font-mono { font-family: 'DM Mono', monospace; }
 
 .tds-section { page-break-inside: avoid; }
 

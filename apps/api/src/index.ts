@@ -28,7 +28,8 @@ import lssControlRoutes from './routes/lssControls';
 import frictionLossRoutes from './routes/frictionLoss';
 import equipmentBreakdownRoutes from './routes/equipmentBreakdown';
 import ozoneCalculationRoutes from './routes/ozoneCalculations';
-import businessBookRoutes from './routes/businessBooks';
+import clientRoutes from './routes/clients';
+import enquiryRoutes from './routes/enquiries';
 import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
 import { errorHandler, notFound } from './middleware/errors';
 
@@ -69,7 +70,8 @@ app.use('/api/v1', lssControlRoutes);
 app.use('/api/v1', frictionLossRoutes);
 app.use('/api/v1', equipmentBreakdownRoutes);
 app.use('/api/v1', ozoneCalculationRoutes);
-app.use('/api/v1/business-books', businessBookRoutes);
+app.use('/api/v1/clients', clientRoutes);
+app.use('/api/v1/enquiries', enquiryRoutes);
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 

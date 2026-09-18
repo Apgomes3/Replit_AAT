@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -39,7 +39,8 @@ const SECTIONS: NavSection[] = [
   {
     id: 'business-development', moduleKey: 'business_development', label: 'Business Development', hub: '/business-development', icon: BriefcaseBusiness,
     items: [
-      { id: 'business-books', to: '/business-books', icon: BriefcaseBusiness, label: 'Business Books' },
+      { id: 'clients', to: '/clients', icon: Users, label: 'Clients' },
+      { id: 'enquiries', to: '/enquiries', icon: ClipboardCheck, label: 'Enquiries' },
     ],
   },
 ];

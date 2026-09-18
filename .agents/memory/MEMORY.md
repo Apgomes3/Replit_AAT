@@ -54,4 +54,4 @@
 - [Bio/Degas plenum product boundary](bio-degas-plenum-product-boundary.md) — saved plenums are project equipment; reusable FRP PIM products require explicit promotion.
 - [Equipment Breakdown commercial boundary](equipment-breakdown-commercial-boundary.md) — sync engineering identities while preserving proposal overrides; release status must not freeze commercial edits.
 - [PIM commercial pricing](pim-commercial-pricing.md) — vendor offers are product-specific; components are saleable; product cost defaults to the latest BOM unless explicitly overridden.
-- [Business Development commercial records](business-development-commercial-records.md) — Business Books contain opportunities; drafts may stay linked, while issued commercial evidence is frozen.
+- [Business Development enquiries](business-development-commercial-records.md) — Clients are reusable; Enquiries stand alone or link to Projects, and quote imports are frozen snapshots.

@@ -3342,13 +3342,163 @@ CREATE TABLE IF NOT EXISTS business_book_activities (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_business_book_activities_book ON business_book_activities(business_book_id, created_at DESC);
+-- Enquiries replace the former Business Book / Opportunity hierarchy at the
+-- route/UI level. Legacy tables remain dormant so existing records are safe.
+CREATE TABLE IF NOT EXISTS clients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), client_code VARCHAR(30) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL, legal_name VARCHAR(255), email VARCHAR(255), phone VARCHAR(100), website VARCHAR(500),
+  address JSONB NOT NULL DEFAULT '{}'::jsonb, notes TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL, updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(100);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS country VARCHAR(100);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
+CREATE TABLE IF NOT EXISTS enquiries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), enquiry_number VARCHAR(30) UNIQUE NOT NULL,
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE RESTRICT, title VARCHAR(255) NOT NULL, description TEXT,
+  status VARCHAR(30) NOT NULL DEFAULT 'new' CHECK (status IN ('new','in_progress','quoted','won','lost','closed')),
+  contact_details JSONB NOT NULL DEFAULT '{}'::jsonb, received_date DATE NOT NULL DEFAULT CURRENT_DATE, due_date DATE,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL, design_book_id UUID REFERENCES design_books(id) ON DELETE SET NULL,
+  source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT enquiries_due_after_received CHECK (due_date IS NULL OR due_date >= received_date)
+);
+CREATE INDEX IF NOT EXISTS idx_enquiries_client ON enquiries(client_id);
+CREATE INDEX IF NOT EXISTS idx_enquiries_project ON enquiries(project_id);
+CREATE INDEX IF NOT EXISTS idx_enquiries_status ON enquiries(status);
+ALTER TABLE enquiries DROP CONSTRAINT IF EXISTS enquiries_status_check;
+ALTER TABLE enquiries ADD CONSTRAINT enquiries_status_check CHECK (status IN ('new','in_review','quoted','won','lost','closed'));
+CREATE TABLE IF NOT EXISTS enquiry_activities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), enquiry_id UUID NOT NULL REFERENCES enquiries(id) ON DELETE CASCADE,
+  action VARCHAR(50) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  actor_id UUID REFERENCES users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_enquiry_activities ON enquiry_activities(enquiry_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS enquiry_number_counters (counter_key VARCHAR(40) PRIMARY KEY, next_value INTEGER NOT NULL DEFAULT 1 CHECK (next_value > 0));
+CREATE TABLE IF NOT EXISTS enquiry_quotes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), enquiry_id UUID NOT NULL UNIQUE REFERENCES enquiries(id) ON DELETE CASCADE,
+  quote_number VARCHAR(30) UNIQUE NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft','issued','accepted','rejected','expired')),
+  currency VARCHAR(3) NOT NULL DEFAULT 'USD', notes TEXT,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL, updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT enquiry_quotes_currency_check CHECK (currency ~ '^[A-Z]{3}$')
+);
+CREATE TABLE IF NOT EXISTS enquiry_quote_lines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), quote_id UUID NOT NULL REFERENCES enquiry_quotes(id) ON DELETE CASCADE,
+  source_line_id UUID, source_design_book_id UUID REFERENCES design_books(id) ON DELETE SET NULL,
+  source_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, description TEXT NOT NULL, quantity NUMERIC NOT NULL DEFAULT 1 CHECK (quantity >= 0),
+  unit VARCHAR(50) NOT NULL DEFAULT 'EA', unit_price NUMERIC(18,2), currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+  sort_order INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT enquiry_quote_lines_currency_check CHECK (currency ~ '^[A-Z]{3}$')
+);
+CREATE INDEX IF NOT EXISTS idx_enquiry_quote_lines_quote ON enquiry_quote_lines(quote_id, sort_order);
+CREATE TABLE IF NOT EXISTS platform_migration_markers (
+  migration_key VARCHAR(150) PRIMARY KEY,
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
+
+/**
+ * Convert legacy timestamp/date values to the DATE values accepted by
+ * enquiries.  In particular, old expected decision dates can be earlier than
+ * today (or even earlier than created_at), while enquiries enforce
+ * due_date >= received_date.
+ */
+export function normalizeLegacyEnquiryDates(createdAt: any, expectedDecisionDate: any) {
+  const asDate = (value: any): string | null => {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+      if (match) return match[0];
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  };
+  const createdDate = asDate(createdAt);
+  const originalDueDate = asDate(expectedDecisionDate);
+  // Use the earliest known date as received_date. This retains a past due date
+  // exactly while satisfying the enquiry constraint.
+  const receivedDate = originalDueDate && createdDate
+    ? (originalDueDate < createdDate ? originalDueDate : createdDate)
+    : originalDueDate || createdDate;
+  return { receivedDate, dueDate: originalDueDate, originalDueDate };
+}
+
+export async function backfillLegacyBusinessDevelopment(client: any) {
+  const key = 'business-development-enquiries-v1';
+  const marker = await client.query('SELECT 1 FROM platform_migration_markers WHERE migration_key=$1', [key]);
+  if (marker.rows[0]) return;
+  await client.query('BEGIN');
+  try {
+    const legacyBooks = (await client.query('SELECT * FROM business_books ORDER BY id')).rows;
+    for (const book of legacyBooks) {
+      const normalized = String(book.client_name || 'Unknown client').trim().toLowerCase();
+      const clientCode = `LEGACY-${(await client.query('SELECT md5($1) AS hash', [normalized])).rows[0].hash.slice(0, 22)}`;
+      await client.query(
+        `INSERT INTO clients(client_code,name,address,notes,created_by,updated_by)
+         VALUES($1,$2,$3,$4,$5,$5) ON CONFLICT(client_code) DO NOTHING`,
+        [clientCode, String(book.client_name || 'Unknown client').trim() || 'Unknown client',
+          book.project_location || {}, book.notes || JSON.stringify(book.client_details || {}), book.created_by || null],
+      );
+      const clientRow = (await client.query('SELECT id FROM clients WHERE client_code=$1', [clientCode])).rows[0];
+      const opportunities = (await client.query('SELECT * FROM business_opportunities WHERE business_book_id=$1 ORDER BY id', [book.id])).rows;
+      const records = opportunities.length ? opportunities : [null];
+      for (const opportunity of records) {
+        const number = String(opportunity?.opportunity_number || book.book_number).slice(0, 30);
+        const statusMap: Record<string, string> = { active: 'in_review', in_review: 'in_review', withdrawn: 'closed', draft: 'new' };
+        const status = statusMap[opportunity?.status] || (['new', 'in_review', 'quoted', 'won', 'lost', 'closed'].includes(opportunity?.status) ? opportunity.status : 'new');
+        const description = opportunity
+          ? [opportunity.description, opportunity.outcome_notes].filter(Boolean).join('\n\n')
+          : book.notes || null;
+        const dates = normalizeLegacyEnquiryDates(
+          opportunity?.created_at || book.created_at,
+          opportunity?.expected_decision_date,
+        );
+        const metadata = {
+          legacy_business_book_id: book.id,
+          legacy_book_number: book.book_number,
+          legacy_opportunity_id: opportunity?.id || null,
+          legacy_snapshot: { client_details: book.client_details, project_location: book.project_location },
+          ...(dates.originalDueDate ? { legacy_expected_decision_date: dates.originalDueDate } : {}),
+        };
+        const inserted = await client.query(
+          `INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by)
+           VALUES($1,$2,$3,$4,$5,'{}'::jsonb,COALESCE($6,CURRENT_DATE),$7,$8,$9,$10,$11,$11)
+           ON CONFLICT(enquiry_number) DO NOTHING RETURNING id`,
+          [number, clientRow.id, opportunity?.title || book.title, description,
+            dates.receivedDate, dates.dueDate, book.project_id || null, book.design_book_id || null,
+            metadata, opportunity?.created_by || book.created_by || null],
+        );
+        if (inserted.rows[0]) {
+          await client.query(
+            `INSERT INTO enquiry_activities(enquiry_id,action,details,actor_id)
+             VALUES($1,'legacy_imported',$2,$3)`,
+            [inserted.rows[0].id, metadata, opportunity?.created_by || book.created_by || null],
+          );
+        }
+      }
+    }
+    await client.query('INSERT INTO platform_migration_markers(migration_key) VALUES($1)', [key]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
 
 async function migrate() {
   const client = await pool.connect();
   try {
     console.log('Running migrations...');
     await client.query(schema);
+    await backfillLegacyBusinessDevelopment(client);
     const movedDocumentFiles = await migrateLegacyDocumentFiles(client);
     console.log(`Private document files ready (${movedDocumentFiles} legacy files moved).`);
     const adminResult = await client.query(
@@ -3377,4 +3527,6 @@ async function migrate() {
   }
 }
 
-migrate();
+// Keep the migration runnable as a CLI while allowing focused tests to import
+// normalization helpers without opening a database connection.
+if (require.main === module) migrate();

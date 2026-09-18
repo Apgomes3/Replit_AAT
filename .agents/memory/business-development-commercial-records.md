@@ -1,22 +1,22 @@
 ---
-name: Business Development commercial records
-description: Governing hierarchy, source-link, approval, and currency rules for Business Books, estimates, quotes, and proposals.
+name: Business Development enquiries
+description: Governing Client, Enquiry, Project-link, and quote snapshot rules for Business Development.
 ---
 
-A Business Book represents one client project and may exist standalone or link to Project Management. It can contain multiple opportunities covering separate scopes, packages, or sales attempts.
+A Client is reusable master data. An Enquiry is the primary commercial record and belongs to one Client.
 
-**Why:** Commercial work often begins before a managed project exists, and one client project can involve several independent pursuits.
+**Why:** Commercial requests can arrive before engineering creates a Project, while the same Client may make many unrelated requests over time.
 
-**How to apply:** Keep Business Books as durable commercial workspaces. When linking, use the Project name as the Business Book title and copy its client and location rather than continuously inheriting them. Preserve explicit traceability to Project and Design Book sources.
+**How to apply:** Let an Enquiry remain standalone, link it to an existing Project, or create a new Project from it. Project and Design Book references require access to those modules. Do not reintroduce Business Books or Opportunities.
 
-Draft quotes remain linked to their estimate until issue. Issued estimates, quotes, and proposals freeze their pricing, currencies, exchange rates, source revisions, wording, and approval evidence.
+Quote lines imported from a linked Design Book Equipment Breakdown are point-in-time snapshots. They may be replaced only while the quote is a draft.
 
-**Why:** Upstream engineering and pricing continue to change, but issued customer commitments must remain reproducible.
+**Why:** Engineering and pricing continue to change, but issued customer commitments must remain reproducible.
 
-**How to apply:** Show source differences and require explicit refresh or revision. Never silently mutate an issued record.
+**How to apply:** Preserve source identity and snapshot data on each imported line. Allow only forward quote lifecycle transitions; never roll an issued or terminal quote back to draft to refresh it.
 
-Commercial documents require manager approval, and an author cannot approve their own document. Controlled numbers are generated automatically. Each quote may use its own selling currency.
+Client, Enquiry, and Quote numbers are controlled and generated transactionally. Each quote has its own selling currency.
 
-**Why:** The agreed workflow requires separation of duties, reliable document identity, and flexibility for client-facing currencies.
+**Why:** Commercial records need stable identities and flexibility for client-facing currencies.
 
-**How to apply:** Enforce approval separation on the server, allocate numbers transactionally, and never combine unlike currencies into one total without governed conversion.
+**How to apply:** Allocate numbers server-side and never combine unlike currencies into one total without governed conversion. Preserve legacy Business Book data through an idempotent backfill into Clients and Enquiries.

@@ -57,9 +57,10 @@ import ExhibitDetail from './pages/design-books/ExhibitDetail';
 import DesignBookLSSDetail from './pages/design-books/DesignBookLSSDetail';
 import LSSCompactUnitsCatalog from './pages/design-books/LSSCompactUnitsCatalog';
 import SpeciesCatalog from './pages/design-books/SpeciesCatalog';
-import BusinessDevelopmentDashboard from './pages/business-development/BusinessDevelopmentDashboard';
-import BusinessBooksList from './pages/business-development/BusinessBooksList';
-import BusinessBookDetail from './pages/business-development/BusinessBookDetail';
+import CommercialOverview from './pages/business-development/CommercialOverview';
+import ClientsList from './pages/business-development/ClientsList';
+import EnquiriesList from './pages/business-development/EnquiriesList';
+import EnquiryDetail from './pages/business-development/EnquiryDetail';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -159,9 +160,10 @@ export default function App() {
             <Route path="design-books/:bookId/lss/:systemId" element={<ModuleGuard moduleKey="design_books"><DesignBookLSSDetail /></ModuleGuard>} />
             <Route path="lss-compact-units" element={<ModuleGuard moduleKey="design_books"><LSSCompactUnitsCatalog /></ModuleGuard>} />
             <Route path="species-catalog" element={<ModuleGuard moduleKey="design_books"><SpeciesCatalog /></ModuleGuard>} />
-             <Route path="business-development" element={<ModuleGuard moduleKey="business_development"><BusinessDevelopmentDashboard /></ModuleGuard>} />
-             <Route path="business-books" element={<ModuleGuard moduleKey="business_development"><BusinessBooksList /></ModuleGuard>} />
-             <Route path="business-books/:id" element={<ModuleGuard moduleKey="business_development"><BusinessBookDetail /></ModuleGuard>} />
+              <Route path="business-development" element={<ModuleGuard moduleKey="business_development"><CommercialOverview /></ModuleGuard>} />
+              <Route path="clients" element={<ModuleGuard moduleKey="business_development"><ClientsList /></ModuleGuard>} />
+              <Route path="enquiries" element={<ModuleGuard moduleKey="business_development"><EnquiriesList /></ModuleGuard>} />
+              <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
           </Route>
         </Routes>
       </BrowserRouter>
